@@ -1,18 +1,44 @@
-//
-//  GlassPill.swift
-//  HomeFloorplan
-//
-//  Created by Maurizio Cinti on 18/05/26.
-//
-
 import SwiftUI
 
-struct GlassPill: View {
+/// Componente riusabile per le "pill" Liquid Glass usate nei controlli flottanti.
+/// Applica materiale traslucido, bordo bianco semitrasparente, ombra morbida.
+/// Forma: capsule.
+struct GlassPill<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
     var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+        content
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
     }
 }
 
-#Preview {
-    GlassPill()
+/// Versione circolare per bottoni singoli (es. il bottone di uscita).
+struct GlassCircle<Content: View>: View {
+    let content: Content
+    let size: CGFloat
+    
+    init(size: CGFloat = 40, @ViewBuilder content: () -> Content) {
+        self.size = size
+        self.content = content()
+    }
+    
+    var body: some View {
+        content
+            .frame(width: size, height: size)
+            .background(.ultraThinMaterial, in: Circle())
+            .overlay(
+                Circle()
+                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
+    }
 }

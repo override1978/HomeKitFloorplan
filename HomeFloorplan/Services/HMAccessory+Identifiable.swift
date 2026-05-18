@@ -1,8 +1,5 @@
-//
-//  HMAccessory+Identifiable.swift
-//  HomeFloorplan
-//
-//  Created by Maurizio Cinti on 18/05/26.
-//
+import HomeKit
 
-import Foundation
+extension HMAccessory: @retroactive Identifiable {
+    public var id: UUID { uniqueIdentifier }
+}
