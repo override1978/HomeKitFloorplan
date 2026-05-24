@@ -1,0 +1,18 @@
+//
+//  WindowCoveringAdapter.swift
+//  HomeFloorplan
+//
+//  Created by Maurizio Cinti on 21/05/26.
+//
+
+import SwiftUI
+
+struct WindowCoveringAdapter: View {
+    var body: some View {
+        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+    }
+}
+
+#Preview {
+    WindowCoveringAdapter()
+}
