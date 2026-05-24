@@ -90,6 +90,9 @@ final class HomeKitService: NSObject {
     }
     
     private func subscribe(to characteristic: HMCharacteristic) {
+        let supportsNotifications = characteristic.properties
+            .contains(HMCharacteristicPropertySupportsEventNotification)
+        
         // 1) Lettura valore iniziale
         characteristic.readValue { [weak self] error in
             guard let self else { return }
@@ -103,9 +106,6 @@ final class HomeKitService: NSObject {
         }
         
         // 2) Abilita notifiche se supportate
-        let supportsNotifications = characteristic.properties
-            .contains(HMCharacteristicPropertySupportsEventNotification)
-        
         if supportsNotifications && !characteristic.isNotificationEnabled {
             characteristic.enableNotification(true) { [weak self] error in
                 if let error {

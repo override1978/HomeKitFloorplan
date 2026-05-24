@@ -4,6 +4,7 @@ import HomeKit
 /// Sheet per scegliere un accessorio HomeKit da aggiungere al floorplan.
 struct AccessoryPickerSheet: View {
     @Environment(HomeKitService.self) private var homeKit
+    @Environment(IconOverrideStore.self) private var iconOverrides
     @Environment(\.dismiss) private var dismiss
     
     /// UUID degli accessori già piazzati: vengono mostrati ma disabilitati.
@@ -38,14 +39,17 @@ struct AccessoryPickerSheet: View {
     
     private func row(for accessory: HMAccessory) -> some View {
         let isPlaced = alreadyPlaced.contains(accessory.uniqueIdentifier)
+        let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+        let iconName = iconOverrides.effectiveIcon(for: accessory, adapter: adapter)
+        
         return Button {
             onPick(accessory)
             dismiss()
         } label: {
             HStack {
-                Image(systemName: iconName(for: accessory))
+                AccessoryIconView(iconName: iconName)
                     .foregroundStyle(.tint)
-                    .frame(width: 24)
+                    .frame(width: 24, height: 24)
                 VStack(alignment: .leading) {
                     Text(accessory.name)
                         .foregroundStyle(isPlaced ? .secondary : .primary)
@@ -64,35 +68,17 @@ struct AccessoryPickerSheet: View {
     }
     
     private var roomsWithAccessories: [(HMRoom, [HMAccessory])] {
-        guard let home = homeKit.currentHome else { return [] }
-        let filtered: (HMAccessory) -> Bool = { acc in
-            guard !searchText.isEmpty else { return true }
-            return acc.name.localizedCaseInsensitiveContains(searchText)
-        }
-        return home.rooms.map { room in
-            let accs = home.accessories
-                .filter { $0.room?.uniqueIdentifier == room.uniqueIdentifier }
-                .filter(filtered)
-            return (room, accs)
-        }
-        .filter { !$0.1.isEmpty }
-    }
-    
-    private func iconName(for accessory: HMAccessory) -> String {
-        switch accessory.category.categoryType {
-        case HMAccessoryCategoryTypeLightbulb: return "lightbulb.fill"
-        case HMAccessoryCategoryTypeOutlet: return "powerplug.fill"
-        case HMAccessoryCategoryTypeSwitch: return "switch.2"
-        case HMAccessoryCategoryTypeThermostat: return "thermometer"
-        case HMAccessoryCategoryTypeSensor: return "sensor.fill"
-        case HMAccessoryCategoryTypeDoorLock: return "lock.fill"
-        case HMAccessoryCategoryTypeWindow,
-             HMAccessoryCategoryTypeWindowCovering: return "blinds.horizontal.closed"
-        case HMAccessoryCategoryTypeFan: return "fan.fill"
-        case HMAccessoryCategoryTypeGarageDoorOpener: return "door.garage.closed"
-        case HMAccessoryCategoryTypeIPCamera,
-             HMAccessoryCategoryTypeVideoDoorbell: return "video.fill"
-        default: return "questionmark.circle"
+            guard let home = homeKit.currentHome else { return [] }
+            let filtered: (HMAccessory) -> Bool = { acc in
+                guard !searchText.isEmpty else { return true }
+                return acc.name.localizedCaseInsensitiveContains(searchText)
+            }
+            return home.rooms.map { room in
+                let accs = home.accessories
+                    .filter { $0.room?.uniqueIdentifier == room.uniqueIdentifier }
+                    .filter(filtered)
+                return (room, accs)
+            }
+            .filter { !$0.1.isEmpty }
         }
     }
-}

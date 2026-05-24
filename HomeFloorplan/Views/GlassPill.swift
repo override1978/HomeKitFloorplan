@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Componente riusabile per le "pill" Liquid Glass usate nei controlli flottanti.
-/// Applica materiale traslucido, bordo bianco semitrasparente, ombra morbida.
-/// Forma: capsule.
 struct GlassPill<Content: View>: View {
     let content: Content
     
@@ -21,7 +18,6 @@ struct GlassPill<Content: View>: View {
     }
 }
 
-/// Versione circolare per bottoni singoli (es. il bottone di uscita).
 struct GlassCircle<Content: View>: View {
     let content: Content
     let size: CGFloat
@@ -37,6 +33,27 @@ struct GlassCircle<Content: View>: View {
             .background(.ultraThinMaterial, in: Circle())
             .overlay(
                 Circle()
+                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
+    }
+}
+
+/// Variante più opaca del GlassPill, usata quando serve massima leggibilità
+/// del testo sopra contenuti molto variabili (es. titolo sopra una galleria
+/// di immagini). Usa .regularMaterial invece di .ultraThinMaterial.
+struct GlassTitlePill<Content: View>: View {
+    let content: Content
+    
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+    
+    var body: some View {
+        content
+            .background(.regularMaterial, in: Capsule())
+            .overlay(
+                Capsule()
                     .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
             )
             .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)

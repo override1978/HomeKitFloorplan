@@ -8,6 +8,7 @@ struct MarkerActionToolbar: View {
     let onRecenter: () -> Void
     let onDelete: () -> Void
     let onDismiss: () -> Void
+    let onChangeIcon: () -> Void
     
     @State private var renamePopoverPresented: Bool = false
     @State private var renameDraft: String = ""
@@ -55,6 +56,10 @@ struct MarkerActionToolbar: View {
                 
                 toolbarButton(systemImage: "scope", label: "Centra", action: onRecenter)
                 
+                Divider().frame(height: 24)
+                
+                toolbarButton(systemImage: "photo.on.rectangle", label: "Icona", action: onChangeIcon)   // 👈 NUOVO
+
                 Divider().frame(height: 24)
                 
                 toolbarButton(systemImage: "trash", label: "Elimina",

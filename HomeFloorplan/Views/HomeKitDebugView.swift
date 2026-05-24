@@ -1,131 +1,216 @@
 import SwiftUI
 import HomeKit
+import UIKit
 
 struct HomeKitDebugView: View {
     @Environment(HomeKitService.self) private var homeKit
+    @State private var searchText: String = ""
     
     var body: some View {
-        NavigationStack {
-            Group {
-                if !homeKit.isReady {
-                    ContentUnavailableView {
-                        Label("In attesa di HomeKit", systemImage: "house.badge.exclamationmark")
-                    } description: {
-                        Text("Concedi l'accesso a HomeKit quando richiesto. Se non vedi il prompt, controlla Impostazioni → Privacy → HomeKit.")
-                    }
-                } else if homeKit.allAccessories.isEmpty {
-                    ContentUnavailableView {
-                        Label("Nessun accessorio", systemImage: "lightbulb.slash")
-                    } description: {
-                        Text("Non è stato trovato alcun accessorio HomeKit. Verifica che l'app Casa abbia almeno una casa configurata con accessori.")
-                    }
-                } else {
-                    accessoryList
-                }
-            }
-            .navigationTitle(homeKit.currentHome?.name ?? "HomeKit")
-            .toolbar {
-                if let error = homeKit.lastError {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .labelStyle(.iconOnly)
-                    }
-                }
-            }
-        }
-    }
-    
-    private var accessoryList: some View {
-        List {
-            Section {
-                HStack {
-                    Text("Casa")
-                    Spacer()
-                    Text(homeKit.currentHome?.name ?? "—")
-                        .foregroundStyle(.secondary)
-                }
-                HStack {
-                    Text("Accessori totali")
-                    Spacer()
-                    Text("\(homeKit.allAccessories.count)")
-                        .foregroundStyle(.secondary)
-                }
-                HStack {
-                    Text("Stanze")
-                    Spacer()
-                    Text("\(homeKit.currentHome?.rooms.count ?? 0)")
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Riepilogo")
-            }
-            
-            ForEach(roomsWithAccessories, id: \.0.uniqueIdentifier) { room, accessories in
-                Section(room.name) {
-                    ForEach(accessories, id: \.uniqueIdentifier) { accessory in
-                        accessoryRow(accessory)
-                    }
-                }
-            }
-        }
-    }
-    
-    private func accessoryRow(_ accessory: HMAccessory) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Image(systemName: iconName(for: accessory))
-                    .foregroundStyle(.tint)
-                    .frame(width: 24)
-                VStack(alignment: .leading) {
-                    Text(accessory.name)
-                        .font(.body)
+        List(filteredAccessories, id: \.uniqueIdentifier) { accessory in
+            NavigationLink {
+                HomeKitDebugAccessoryDetail(accessory: accessory)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(accessory.name).font(.body)
                     Text(accessory.category.localizedDescription)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                if !accessory.isReachable {
-                    Image(systemName: "wifi.slash")
-                        .foregroundStyle(.orange)
-                        .font(.caption)
+            }
+        }
+        .searchable(text: $searchText, prompt: "Filtra accessori")
+        .navigationTitle("Debug HomeKit")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private var filteredAccessories: [HMAccessory] {
+        let sorted = homeKit.allAccessories.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        guard !searchText.isEmpty else { return sorted }
+        return sorted.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+}
+
+// MARK: - Dettaglio accessorio
+
+struct HomeKitDebugAccessoryDetail: View {
+    let accessory: HMAccessory
+    @Environment(HomeKitService.self) private var homeKit
+    @State private var copyConfirm: Bool = false
+    
+    var body: some View {
+        List {
+            identitySection
+            servicesSection
+        }
+        .navigationTitle(accessory.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    UIPasteboard.general.string = diagnosticDump()
+                    copyConfirm = true
+                } label: {
+                    Label("Copia diagnostica", systemImage: "doc.on.doc")
                 }
             }
-            Text("Servizi: \(accessory.services.count)")
+        }
+        .alert("Diagnostica copiata negli appunti", isPresented: $copyConfirm) {
+            Button("OK", role: .cancel) {}
+        }
+    }
+    
+    // MARK: Sezione identità
+    
+    @ViewBuilder
+    private var identitySection: some View {
+        Section("Identità") {
+            kvRow("Nome", accessory.name)
+            kvRow("UUID", accessory.uniqueIdentifier.uuidString)
+            kvRow("Categoria (raw)", accessory.category.categoryType)
+            kvRow("Categoria (display)", accessory.category.localizedDescription)
+            kvRow("Stanza", accessory.room?.name ?? "—")
+            kvRow("Manufacturer", accessoryInfoValue(for: HMCharacteristicTypeManufacturer) ?? "—")
+            kvRow("Model", accessoryInfoValue(for: HMCharacteristicTypeModel) ?? "—")
+            kvRow("Firmware", accessoryInfoValue(for: HMCharacteristicTypeFirmwareVersion) ?? "—")
+            kvRow("Serial", accessoryInfoValue(for: HMCharacteristicTypeSerialNumber) ?? "—")
+            kvRow("Hardware", accessoryInfoValue(for: HMCharacteristicTypeHardwareVersion) ?? "—")
+            kvRow("Reachable", accessory.isReachable ? "sì" : "no")
+            kvRow("Bridged", accessory.isBridged ? "sì" : "no")
+            kvRow("Blocked", accessory.isBlocked ? "sì" : "no")
+        }
+    }
+    
+    // MARK: Sezione servizi
+    
+    @ViewBuilder
+    private var servicesSection: some View {
+        Section("Servizi (\(accessory.services.count))") {
+            ForEach(accessory.services, id: \.uniqueIdentifier) { service in
+                DisclosureGroup {
+                    serviceBody(service)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(service.name ?? "Servizio")
+                                .font(.body)
+                            if service.isPrimaryService {
+                                Text("PRIMARY")
+                                    .font(.caption2)
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background(.blue.opacity(0.15))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        Text(service.serviceType)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func serviceBody(_ service: HMService) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            kvRow("serviceType (raw)", service.serviceType)
+            kvRow("uniqueIdentifier", service.uniqueIdentifier.uuidString)
+            kvRow("characteristics", "\(service.characteristics.count)")
+            
+            ForEach(service.characteristics, id: \.uniqueIdentifier) { ch in
+                Divider()
+                characteristicRow(ch)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    
+    @ViewBuilder
+    private func characteristicRow(_ ch: HMCharacteristic) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(ch.localizedDescription).font(.callout).bold()
+            Text("type: \(ch.characteristicType)")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text("value: \(String(describing: homeKit.value(for: ch) ?? ch.value))")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+            Text("props: \(ch.properties.joined(separator: ", "))")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if let format = ch.metadata?.format {
+                Text("format: \(format), min=\(metadataNumber(ch.metadata?.minimumValue)), max=\(metadataNumber(ch.metadata?.maximumValue)), step=\(metadataNumber(ch.metadata?.stepValue)), units=\(ch.metadata?.units ?? "—")")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
     
-    /// Raggruppa gli accessori per stanza.
-    private var roomsWithAccessories: [(HMRoom, [HMAccessory])] {
-        guard let home = homeKit.currentHome else { return [] }
-        return home.rooms.map { room in
-            let accs = home.accessories.filter { $0.room?.uniqueIdentifier == room.uniqueIdentifier }
-            return (room, accs)
+    // MARK: Helpers
+    
+    @ViewBuilder
+    private func kvRow(_ key: String, _ value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(key).foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
         }
-        .filter { !$0.1.isEmpty }
+        .font(.callout)
     }
     
-    /// Icona SF Symbol approssimativa in base alla categoria HomeKit.
-    private func iconName(for accessory: HMAccessory) -> String {
-        switch accessory.category.categoryType {
-        case HMAccessoryCategoryTypeLightbulb: return "lightbulb.fill"
-        case HMAccessoryCategoryTypeOutlet: return "powerplug.fill"
-        case HMAccessoryCategoryTypeSwitch: return "switch.2"
-        case HMAccessoryCategoryTypeThermostat: return "thermometer"
-        case HMAccessoryCategoryTypeSensor: return "sensor.fill"
-        case HMAccessoryCategoryTypeDoorLock: return "lock.fill"
-        case HMAccessoryCategoryTypeWindow,
-             HMAccessoryCategoryTypeWindowCovering: return "blinds.horizontal.closed"
-        case HMAccessoryCategoryTypeFan: return "fan.fill"
-        case HMAccessoryCategoryTypeGarageDoorOpener: return "door.garage.closed"
-        case HMAccessoryCategoryTypeIPCamera,
-             HMAccessoryCategoryTypeVideoDoorbell: return "video.fill"
-        case HMAccessoryCategoryTypeAirPurifier: return "air.purifier.fill"
-        case HMAccessoryCategoryTypeSprinkler: return "drop.fill"
-        case HMAccessoryCategoryTypeBridge: return "antenna.radiowaves.left.and.right"
-        default: return "questionmark.circle"
+    private func accessoryInfoValue(for charType: String) -> String? {
+        guard let infoService = accessory.services.first(where: { $0.serviceType == HMServiceTypeAccessoryInformation }) else {
+            return nil
         }
+        guard let ch = infoService.characteristics.first(where: { $0.characteristicType == charType }) else {
+            return nil
+        }
+        let raw = homeKit.value(for: ch) ?? ch.value
+        return raw.map { "\($0)" }
+    }
+    
+    private func metadataNumber(_ n: NSNumber?) -> String {
+        guard let n else { return "—" }
+        return n.stringValue
+    }
+    
+    // MARK: Diagnostic dump (clipboard)
+    
+    private func diagnosticDump() -> String {
+        var out: [String] = []
+        out.append("=== HomeKit Diagnostic ===")
+        out.append("Name: \(accessory.name)")
+        out.append("UUID: \(accessory.uniqueIdentifier)")
+        out.append("Category raw: \(accessory.category.categoryType)")
+        out.append("Category display: \(accessory.category.localizedDescription)")
+        out.append("Room: \(accessory.room?.name ?? "—")")
+        out.append("Manufacturer: \(accessoryInfoValue(for: HMCharacteristicTypeManufacturer) ?? "—")")
+        out.append("Model: \(accessoryInfoValue(for: HMCharacteristicTypeModel) ?? "—")")
+        out.append("Firmware: \(accessoryInfoValue(for: HMCharacteristicTypeFirmwareVersion) ?? "—")")
+        out.append("Hardware: \(accessoryInfoValue(for: HMCharacteristicTypeHardwareVersion) ?? "—")")
+        out.append("Reachable: \(accessory.isReachable)  Bridged: \(accessory.isBridged)  Blocked: \(accessory.isBlocked)")
+        out.append("")
+        out.append("Services (\(accessory.services.count)):")
+        for service in accessory.services {
+            out.append("─ Service: \(service.name ?? "?")  primary=\(service.isPrimaryService)")
+            out.append("  serviceType: \(service.serviceType)")
+            for ch in service.characteristics {
+                let value = homeKit.value(for: ch) ?? ch.value
+                out.append("  • \(ch.localizedDescription)")
+                out.append("      type: \(ch.characteristicType)")
+                out.append("      value: \(String(describing: value))")
+                out.append("      props: \(ch.properties.joined(separator: ", "))")
+                if let fmt = ch.metadata?.format {
+                    out.append("      meta: format=\(fmt) min=\(metadataNumber(ch.metadata?.minimumValue)) max=\(metadataNumber(ch.metadata?.maximumValue)) step=\(metadataNumber(ch.metadata?.stepValue)) units=\(ch.metadata?.units ?? "—")")
+                }
+            }
+        }
+        return out.joined(separator: "\n")
     }
 }

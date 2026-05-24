@@ -31,20 +31,27 @@ struct ContentView: View {
             if let floorplan = floorplans.first(where: { $0.id == id }) {
                 FloorplanEditorView(
                     floorplan: floorplan,
-                    columnVisibility: $columnVisibility
+                    columnVisibility: $columnVisibility,
+                    presentationStyle: .splitView
                 )
                 .toolbar(.hidden, for: .navigationBar)
             } else {
                 emptyState(text: "Planimetria non trovata")
             }
+        case .allFloorplans:
+            FloorplanListView(columnVisibility: $columnVisibility)
+                .toolbar(removing: .sidebarToggle)
         case .allAccessories:
-            // Placeholder per la futura vista "tutti gli accessori"
             NavigationStack {
-                AllAccessoriesPlaceholderView()
+                AllAccessoriesView()
             }
         case .debugHomeKit:
             NavigationStack {
                 HomeKitDebugView()
+            }
+        case .settings:
+            NavigationStack {
+                SettingsView()
             }
         case .none:
             emptyState(text: "Seleziona una planimetria")
@@ -61,14 +68,3 @@ struct ContentView: View {
     }
 }
 
-/// Placeholder per la futura vista "Tutti gli accessori"
-struct AllAccessoriesPlaceholderView: View {
-    var body: some View {
-        ContentUnavailableView {
-            Label("Tutti gli accessori", systemImage: "square.grid.2x2")
-        } description: {
-            Text("Vista in arrivo: elenco completo degli accessori HomeKit con stato live.")
-        }
-        .navigationTitle("Accessori")
-    }
-}

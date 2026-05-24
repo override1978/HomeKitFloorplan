@@ -8,6 +8,9 @@ struct HomeFloorplanApp: App {
     /// @State su un @Observable lo mantiene stabile e propagato via environment.
     @State private var homeKit = HomeKitService()
     
+    /// Store degli override icona per accessorio.
+    @State private var iconOverrides = IconOverrideStore()
+    
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Floorplan.self,
@@ -28,6 +31,7 @@ struct HomeFloorplanApp: App {
         WindowGroup {
             ContentView()
                 .environment(homeKit)
+                .environment(iconOverrides)
         }
         .modelContainer(sharedModelContainer)
     }

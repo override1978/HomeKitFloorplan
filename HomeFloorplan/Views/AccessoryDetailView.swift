@@ -1,170 +1,180 @@
 import SwiftUI
 import HomeKit
 
+/// Vista di dettaglio unificata per un accessorio HomeKit.
+/// Composta in 4 sezioni dall'alto verso il basso:
+/// 1. Header iconato (icona + nome + stanza + reachability)
+/// 2. Quick info dell'adapter (primaryStatusText, se presente)
+/// 3. Controlli specializzati (forniti dall'adapter via makeControlSection)
+/// 4. Dettagli tecnici (raw characteristics, in DisclosureGroup collassabile)
 struct AccessoryDetailView: View {
     let accessory: HMAccessory
+    
     @Environment(HomeKitService.self) private var homeKit
+    @Environment(IconOverrideStore.self) private var iconOverrides
+    @Environment(\.dismiss) private var dismiss
+    
     @State private var isObserving: Bool = false
-
-    var body: some View {
-        List {
+    @State private var rawExpanded: Bool = false
+    
+    private var adapter: any AccessoryAdapter {
+        AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+    }
+    
+    private var iconName: String {
+        iconOverrides.effectiveIcon(for: accessory, adapter: adapter)
+    }
+    
+    @ViewBuilder
+    private var quickInfoSection: some View {
+        if let text = adapter.primaryStatusText, !text.isEmpty {
             Section {
                 HStack {
-                    Text("Stanza")
+                    Text("Stato")
                     Spacer()
-                    Text(accessory.room?.name ?? "—")
+                    Text(text)
                         .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
                 }
-                HStack {
-                    Text("Raggiungibile")
-                    Spacer()
-                    Image(systemName: accessory.isReachable ? "checkmark.circle" : "xmark.circle")
-                        .foregroundStyle(accessory.isReachable ? .green : .red)
-                }
-            }
-
-            ForEach(accessory.services, id: \.uniqueIdentifier) { service in
-                Section {
-                    ForEach(service.characteristics, id: \.uniqueIdentifier) { ch in
-                        characteristicRow(ch)
-                    }
-                } header: {
-                    Text((service.name ?? "Servizio") as String)
-                }
-            }
-        }
-        .navigationTitle((accessory.name) as String)
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            if !isObserving {
-                homeKit.startObserving(accessoryUUIDs: [accessory.uniqueIdentifier])
-                isObserving = true
-            }
-        }
-        .onDisappear {
-            if isObserving {
-                homeKit.stopObserving(accessoryUUIDs: [accessory.uniqueIdentifier])
-                isObserving = false
             }
         }
     }
-
-    // MARK: - Rows
-
-    @ViewBuilder
-    private func characteristicRow(_ ch: HMCharacteristic) -> some View {
-        let value = homeKit.value(for: ch)
-        let writePermitted = ch.properties.contains(HMCharacteristicPropertyWritable)
-        let supportsReading = ch.properties.contains(HMCharacteristicPropertyReadable)
-
-        // Prefer infer from current value; fall back to metadata.format string constants
-        let isBool: Bool = {
-            if value is Bool { return true }
-            if let fmt = ch.metadata?.format as String? {
-                return fmt == HMCharacteristicMetadataFormatBool
-            }
-            return false
-        }()
-
-        let numericCurrent: Double? = numericValue(value)
-        let minNumber = (ch.metadata?.minimumValue as? NSNumber)?.doubleValue
-        let maxNumber = (ch.metadata?.maximumValue as? NSNumber)?.doubleValue
-
-        if isBool {
-            Toggle(isOn: bindingBool(for: ch)) {
-                Text(ch.localizedDescription)
-            }
-            .disabled(!writePermitted)
-        } else if let currentVal = numericCurrent {
-            if let min = minNumber, let max = maxNumber {
-                HStack {
-                    Text(ch.localizedDescription)
-                    Spacer()
-                    Slider(value: sliderBinding(for: ch, initial: currentVal, range: min...max), in: min...max)
-                        .frame(width: 180)
-                    Text("\(Int(currentVal))")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 50, alignment: .trailing)
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                headerSection
+                
+                if let quickInfo = adapter.primaryStatusText, !quickInfo.isEmpty {
+                    quickInfoSection
                 }
-                .disabled(!writePermitted)
-            } else {
-                Stepper(value: stepperBinding(for: ch, initial: currentVal)) {
-                    HStack {
-                        Text(ch.localizedDescription)
-                        Spacer()
-                        Text("\(Int(currentVal))")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
+                
+                if let controlView = adapter.makeControlSection(homeKit: homeKit) {
+                    Section("Controlli") {
+                        controlView
                     }
                 }
-                .disabled(!writePermitted)
+                
+                rawSection
             }
-        } else {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading) {
-                    Text(ch.localizedDescription)
-                    Text((ch.characteristicType ?? "Tipo sconosciuto") as String)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            .navigationTitle(accessory.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fine") { dismiss() }
+                }
+            }
+            .onAppear {
+                if !isObserving {
+                    homeKit.startObserving(accessoryUUIDs: [accessory.uniqueIdentifier])
+                    isObserving = true
+                }
+            }
+            .onDisappear {
+                if isObserving {
+                    homeKit.stopObserving(accessoryUUIDs: [accessory.uniqueIdentifier])
+                    isObserving = false
+                }
+            }
+        }
+    }
+    
+    // MARK: - Sections
+    
+    private var headerSection: some View {
+        Section {
+            HStack(spacing: 14) {
+                AccessoryIconView(iconName: iconName)
+                    .foregroundStyle(.tint)
+                    .frame(width: 36, height: 36)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(accessory.name)
+                        .font(.headline)
+                    HStack(spacing: 6) {
+                        Text(accessory.room?.name ?? "—")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        if !accessory.isReachable {
+                            Text("• Offline")
+                                .font(.subheadline)
+                                .foregroundStyle(.orange)
+                        }
+                    }
                 }
                 Spacer()
-                Text(formattedValue(value))
+                
+                if let battery = adapter.batteryInfo {
+                        BatteryBadgeView(info: battery)
+                    }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+    
+    private func quickInfoSection(_ text: String) -> some View {
+        Section {
+            HStack {
+                Text("Stato")
+                Spacer()
+                Text(text)
                     .foregroundStyle(.secondary)
             }
-            .contextMenu {
-                if supportsReading {
-                    Button("Leggi ora") {
-                        ch.readValue { _ in }
-                    }
+        }
+    }
+    
+    private var rawSection: some View {
+        Section {
+            DisclosureGroup("Dettagli tecnici (\(totalCharacteristicsCount))",
+                            isExpanded: $rawExpanded) {
+                ForEach(accessory.services, id: \.uniqueIdentifier) { service in
+                    serviceBlock(service)
                 }
             }
         }
     }
-
+    
+    @ViewBuilder
+    private func serviceBlock(_ service: HMService) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(serviceLabel(service))
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+            
+            ForEach(service.characteristics, id: \.uniqueIdentifier) { ch in
+                characteristicRow(ch)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    
+    @ViewBuilder
+    private func characteristicRow(_ ch: HMCharacteristic) -> some View {
+        let value = homeKit.value(for: ch) ?? ch.value
+        HStack(alignment: .firstTextBaseline) {
+            Text(ch.localizedDescription)
+                .font(.callout)
+            Spacer()
+            Text(formattedValue(value))
+                .font(.callout.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+    
     // MARK: - Helpers
-
-    private func bindingBool(for ch: HMCharacteristic) -> Binding<Bool> {
-        Binding<Bool>(
-            get: { (homeKit.value(for: ch) as? Bool) ?? false },
-            set: { newValue in
-                Task { try? await homeKit.write(newValue, to: ch) }
-            }
-        )
+    
+    private var totalCharacteristicsCount: Int {
+        accessory.services.reduce(0) { $0 + $1.characteristics.count }
     }
-
-    private func sliderBinding(for ch: HMCharacteristic, initial: Double, range: ClosedRange<Double>) -> Binding<Double> {
-        Binding<Double>(
-            get: { numericValue(homeKit.value(for: ch)) ?? initial },
-            set: { newValue in
-                let clamped = min(max(newValue, range.lowerBound), range.upperBound)
-                if ch.metadata?.format == HMCharacteristicMetadataFormatFloat {
-                    Task { try? await homeKit.write(clamped, to: ch) }
-                } else {
-                    Task { try? await homeKit.write(Int(clamped.rounded()), to: ch) }
-                }
-            }
-        )
+    
+    private func serviceLabel(_ service: HMService) -> String {
+        let name = service.name
+        return name.isEmpty ? service.localizedDescription : name
     }
-
-    private func stepperBinding(for ch: HMCharacteristic, initial: Double) -> Binding<Int> {
-        Binding<Int>(
-            get: { (homeKit.value(for: ch) as? Int) ?? Int(initial) },
-            set: { newValue in
-                Task { try? await homeKit.write(newValue, to: ch) }
-            }
-        )
-    }
-
-    private func numericValue(_ any: Any?) -> Double? {
-        if let d = any as? Double { return d }
-        if let f = any as? Float { return Double(f) }
-        if let i = any as? Int { return Double(i) }
-        if let u = any as? UInt { return Double(u) }
-        if let n = any as? NSNumber { return n.doubleValue }
-        return nil
-    }
-
+    
     private func formattedValue(_ any: Any?) -> String {
         switch any {
         case let b as Bool: return b ? "On" : "Off"
@@ -175,11 +185,5 @@ struct AccessoryDetailView: View {
         case .none: return "—"
         default: return String(describing: any!)
         }
-    }
-}
-
-#Preview {
-    NavigationStack {
-        Text("Seleziona un accessorio dalla lista")
     }
 }

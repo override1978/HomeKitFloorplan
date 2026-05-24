@@ -4,10 +4,21 @@ import HomeKit
 
 struct FloorplanEditorView: View {
     @Bindable var floorplan: Floorplan
-    //@Binding var columnVisibility: NavigationSplitViewVisibility
+    @Binding var columnVisibility: NavigationSplitViewVisibility
+    
+    /// Come è stato presentato l'editor. Cambia il bottone in alto a sinistra:
+    /// - .splitView: bottone "sidebar" per riaprire la sidebar (quando è nascosta)
+    /// - .pushed: bottone X per tornare alla vista precedente
+    var presentationStyle: PresentationStyle = .splitView
+
+    enum PresentationStyle {
+        case splitView    // detail di NavigationSplitView (dalla sidebar)
+        case pushed       // pushed su NavigationStack (dalla galleria)
+    }
     
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     
     @State private var isEditing: Bool = false
     @State private var showingPicker: Bool = false
@@ -16,6 +27,7 @@ struct FloorplanEditorView: View {
     @State private var shakeMarkerID: UUID?
     @State private var selectedMarkerID: UUID?
     @State private var pendingDelete: PlacedAccessory?
+    @State private var iconPickerTarget: PlacedAccessory?
     
     // Zoom & pan state
     @State private var zoomScale: CGFloat = 1.0
@@ -26,8 +38,6 @@ struct FloorplanEditorView: View {
     // Auto-hide controls
     @State private var controlsVisible: Bool = true
     @State private var hideTask: Task<Void, Never>?
-    
-    @Binding var columnVisibility: NavigationSplitViewVisibility
     
     private var currentTapMode: FloorplanTapMode {
         FloorplanTapMode(rawValue: floorplan.tapModeRaw) ?? .openPanel
@@ -88,7 +98,17 @@ struct FloorplanEditorView: View {
             )
         }
         .sheet(item: $controllingAccessory) { accessory in
-            AccessoryControlSheet(accessory: accessory)
+            AccessoryDetailView(accessory: accessory)
+        }
+        .sheet(item: $iconPickerTarget) { placed in
+            if let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID) {
+                let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+                IconPickerSheet(
+                    accessory: accessory,
+                    defaultIconName: adapter.iconName
+                )
+                .presentationDetents([.large])
+            }
         }
         .alert("Eliminare l'accessorio dal floorplan?",
                isPresented: Binding(
@@ -106,6 +126,11 @@ struct FloorplanEditorView: View {
         .onAppear {
             subscribeToAccessories()
             scheduleAutoHide()
+        }
+        .onChange(of: homeKit.isReady) { _, isReady in
+            if isReady {
+                subscribeToAccessories()
+            }
         }
         .onDisappear {
             unsubscribeFromAccessories()
@@ -133,20 +158,34 @@ struct FloorplanEditorView: View {
             HStack {
                 HStack(spacing: 10) {
                     // Bottone "Sidebar": appare solo quando la sidebar è nascosta
-                    if columnVisibility == .detailOnly {
-                        Button {
-                            withAnimation(.spring(response: 0.4)) {
-                                columnVisibility = .all
+                    switch presentationStyle {
+                    case .splitView:
+                        if columnVisibility == .detailOnly {
+                            Button {
+                                withAnimation(.spring(response: 0.4)) {
+                                    columnVisibility = .all
+                                }
+                            } label: {
+                                GlassCircle(size: 40) {
+                                    Image(systemName: "sidebar.left")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundStyle(.primary)
+                                }
                             }
+                            .buttonStyle(.plain)
+                            .transition(.scale.combined(with: .opacity))
+                        }
+                    case .pushed:
+                        Button {
+                            dismiss()
                         } label: {
                             GlassCircle(size: 40) {
-                                Image(systemName: "sidebar.left")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundStyle(.primary)
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Color.red)
                             }
                         }
                         .buttonStyle(.plain)
-                        .transition(.scale.combined(with: .opacity))
                     }
                     
                     GlassPill {
@@ -225,6 +264,9 @@ struct FloorplanEditorView: View {
                         withAnimation(.spring(response: 0.35)) {
                             selectedMarkerID = nil
                         }
+                    },
+                    onChangeIcon: {                         // 👈 NUOVO
+                        iconPickerTarget = placed
                     }
                 )
                 .padding(.bottom, 20)
@@ -447,12 +489,9 @@ struct FloorplanEditorView: View {
         let displayLabel = placed.customLabel?.isEmpty == false
             ? placed.customLabel!
             : (accessory?.name ?? "(rimosso)")
-        let action = accessory.map(AccessoryStateClassifier.quickAction) ?? .none
-        let isToggleable: Bool = {
-            if case .toggle = action { return true } else { return false }
-        }()
-        let stateChar = accessory.flatMap(AccessoryStateClassifier.primaryStateCharacteristic)
-        let isOn = AccessoryStateClassifier.isOn(value: stateChar.flatMap { homeKit.value(for: $0) })
+        let adapter: (any AccessoryAdapter)? = accessory.map { acc in
+            AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit)
+        }
         let isSelected = selectedMarkerID == placed.id
         
         let basePoint = CGPoint(
@@ -475,10 +514,8 @@ struct FloorplanEditorView: View {
             }
             
             AccessoryMarkerView(
-                accessory: accessory,
+                adapter: adapter,
                 isEditing: isEditing,
-                isOn: isOn,
-                isToggleable: isToggleable,
                 label: displayLabel,
                 hasCustomLabel: placed.customLabel?.isEmpty == false
             )
@@ -504,7 +541,7 @@ struct FloorplanEditorView: View {
             ? nil
             : TapGesture()
                 .onEnded {
-                    handleTap(on: placed, accessory: accessory, action: action)
+                    handleTap(on: placed, accessory: accessory, adapter: adapter)
                 }
         )
         .simultaneousGesture(
@@ -526,7 +563,7 @@ struct FloorplanEditorView: View {
     
     private func handleTap(on placed: PlacedAccessory,
                            accessory: HMAccessory?,
-                           action: AccessoryQuickAction) {
+                           adapter: (any AccessoryAdapter)?) {
         guard !isEditing else { return }
         guard let accessory else { return }
         
@@ -536,26 +573,22 @@ struct FloorplanEditorView: View {
         case .openPanel:
             controllingAccessory = accessory
         case .quickToggle:
-            switch action {
-            case .toggle(let characteristic):
-                performQuickToggle(characteristic: characteristic)
-            case .none:
+            if let adapter, adapter.supportsQuickToggle {
+                performQuickToggle(adapter: adapter)
+            } else {
                 triggerShake(for: placed.id)
                 controllingAccessory = accessory
             }
         }
     }
     
-    private func performQuickToggle(characteristic: HMCharacteristic) {
-        let current = homeKit.value(for: characteristic) ?? characteristic.value
-        let newValue = AccessoryStateClassifier.toggledValue(for: characteristic, current: current)
-        
+    private func performQuickToggle(adapter: any AccessoryAdapter) {
         let haptic = UIImpactFeedbackGenerator(style: .medium)
         haptic.impactOccurred()
         
         Task {
             do {
-                try await homeKit.write(newValue, to: characteristic)
+                try await adapter.performQuickToggle(via: homeKit)
             } catch {
                 let notif = UINotificationFeedbackGenerator()
                 notif.notificationOccurred(.error)

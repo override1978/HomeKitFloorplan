@@ -60,6 +60,9 @@ struct SidebarView: View {
             
             // SEZIONE VISTE
             Section {
+                NavigationLink(value: SidebarSelection.allFloorplans) {
+                        Label("Tutte le planimetrie", systemImage: "rectangle.stack")
+                    }
                 NavigationLink(value: SidebarSelection.allAccessories) {
                     Label("Tutti gli accessori", systemImage: "square.grid.2x2")
                 }
@@ -72,6 +75,9 @@ struct SidebarView: View {
                 NavigationLink(value: SidebarSelection.debugHomeKit) {
                     Label("Debug HomeKit", systemImage: "stethoscope")
                 }
+                NavigationLink(value: SidebarSelection.settings) {
+                        Label("Impostazioni", systemImage: "gearshape")
+                    }
             } header: {
                 Text("Strumenti")
             }
@@ -111,6 +117,8 @@ struct SidebarView: View {
 /// Hashable + Codable per integrarsi con NavigationSplitView.
 enum SidebarSelection: Hashable {
     case floorplan(UUID)
-    case allAccessories
-    case debugHomeKit
+        case allFloorplans       // <-- nuovo
+        case allAccessories
+        case debugHomeKit
+        case settings
 }

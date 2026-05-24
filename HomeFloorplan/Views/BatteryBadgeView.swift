@@ -1,18 +1,20 @@
-//
-//  BatteryBadgeView.swift
-//  HomeFloorplan
-//
-//  Created by Maurizio Cinti on 24/05/26.
-//
-
 import SwiftUI
 
+/// Badge compatto per visualizzare lo stato batteria di un accessorio.
+/// Mostra icona colorata + percentuale (se disponibile).
 struct BatteryBadgeView: View {
+    let info: BatteryInfo
+    var compact: Bool = false
+    
     var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+        HStack(spacing: compact ? 3 : 5) {
+            Image(systemName: info.symbolName)
+                .foregroundStyle(info.tintColor)
+            
+            Text(info.displayText)
+                .foregroundStyle(info.tintColor)
+                .monospacedDigit()
+        }
+        .font(compact ? .caption2.weight(.medium) : .subheadline.weight(.medium))
     }
-}
-
-#Preview {
-    BatteryBadgeView()
 }

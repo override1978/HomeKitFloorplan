@@ -2,25 +2,47 @@ import SwiftUI
 import HomeKit
 
 struct AccessoryMarkerView: View {
-    let accessory: HMAccessory?
+    let adapter: (any AccessoryAdapter)?
     let isEditing: Bool
-    let isOn: Bool
-    let isToggleable: Bool
     let label: String
     let hasCustomLabel: Bool
     
+    @AppStorage(MarkerSize.appStorageKey)
+    private var markerSizeRaw: String = MarkerSize.regular.rawValue
+    
+    @Environment(IconOverrideStore.self) private var iconOverrides
+    @Environment(HomeKitService.self) private var homeKit
+    @State private var showingIconPicker: Bool = false
+    
+    private var size: MarkerSize {
+        MarkerSize(rawValue: markerSizeRaw) ?? .regular
+    }
+    
+    private var style: MarkerStyle {
+        adapter?.markerStyle ?? .controllable
+    }
+    
+    private var urgency: MarkerUrgency {
+        adapter?.visualUrgency ?? .normal
+    }
+    
+    /// Nome icona da renderizzare: override utente se presente, altrimenti adapter.
+    private var effectiveIconName: String {
+        guard let adapter else { return "questionmark.circle.fill" }
+        return iconOverrides.effectiveIcon(for: adapter.accessory, adapter: adapter)
+    }
+    
+    private var shadowOpacity: Double {
+        urgency == .normal ? 0.18 : 0.30
+    }
+    
     var body: some View {
+        let _ = homeKit.characteristicValues
         VStack(spacing: 2) {
-            ZStack {
-                Circle()
-                    .fill(fillStyle)
-                    .overlay(Circle().stroke(strokeColor, lineWidth: 2))
-                    .frame(width: 44, height: 44)
-                Image(systemName: iconName)
-                    .foregroundStyle(iconColor)
-                    .font(.system(size: 20, weight: .semibold))
-            }
-            .shadow(radius: isOn ? 6 : 2)
+            shape
+                .shadow(color: .black.opacity(shadowOpacity),
+                        radius: urgency != .normal ? 5 : 3,
+                        y: 1)
             
             HStack(spacing: 3) {
                 if hasCustomLabel {
@@ -38,53 +60,118 @@ struct AccessoryMarkerView: View {
         }
         .scaleEffect(isEditing ? 1.1 : 1.0)
         .animation(.spring(response: 0.3), value: isEditing)
-        .animation(.easeInOut(duration: 0.2), value: isOn)
-        .contentShape(Rectangle())
+        .animation(.easeInOut(duration: 0.2), value: urgency)
+            .contentShape(Rectangle())
     }
     
+    // MARK: - Forma del marker (varia per style)
+    
+    @ViewBuilder
+    private var shape: some View {
+        switch style {
+        case .controllable:
+            controllableShape
+        case .sensorBoolean:
+            sensorBooleanShape
+        case .sensorNumeric:
+            sensorNumericShape
+        }
+    }
+    
+    private var controllableShape: some View {
+        ZStack {
+            Circle()
+                .fill(fillStyle)
+                .overlay(noAdapterStroke)        // 👈 stroke solo se errore
+                .frame(width: size.controllableDiameter, height: size.controllableDiameter)
+            
+            AccessoryIconView(iconName: effectiveIconName)
+                .foregroundStyle(iconColor)
+                .frame(width: size.controllableDiameter * 0.5,
+                       height: size.controllableDiameter * 0.5)
+        }
+    }
+
+    /// Bordo rosso solo quando l'adapter è nil (accessorio rimosso/errore).
+    /// Negli altri casi nessun bordo: il fill colorato o il material
+    /// sono già sufficienti a distinguere il marker.
+    @ViewBuilder
+    private var noAdapterStroke: some View {
+        if adapter == nil {
+            Circle().stroke(Color.red, lineWidth: 1.5)
+        }
+    }
+    
+    // Sensore booleano: cerchio piccolo discreto, diventa visibile in trigger
+    private var sensorBooleanShape: some View {
+        ZStack {
+            Circle()
+                .fill(fillStyle)
+                .overlay(
+                    Circle().stroke(strokeColor, lineWidth: 1.5)
+                )
+                .frame(width: size.sensorBoolDiameter, height: size.sensorBoolDiameter)
+            
+            AccessoryIconView(iconName: effectiveIconName)
+                .foregroundStyle(iconColor)
+                .frame(width: size.sensorBoolDiameter * 0.55,
+                       height: size.sensorBoolDiameter * 0.55)
+        }
+    }
+    
+    // Sensore numerico: pill larga con valore
+    private var sensorNumericShape: some View {
+        let value = adapter?.primaryStatusText ?? "—"
+        let pillSize = size.sensorNumericSize
+        
+        return ZStack {
+            Capsule()
+                .fill(fillStyle)
+                .overlay(
+                    Capsule().stroke(strokeColor, lineWidth: 1.5)
+                )
+                .frame(width: pillSize.width, height: pillSize.height)
+            
+            Text(value)
+                .foregroundStyle(iconColor)
+                .font(size.numericValueFont)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, 4)
+        }
+    }
+    
+    // MARK: - Colori derivati da urgency + adapter null state
+    
+    /// Riempimento: traslucido neutro per stato normale, tinto per gli altri.
     private var fillStyle: AnyShapeStyle {
-        if accessory == nil { return AnyShapeStyle(.thinMaterial) }
-        if isOn { return AnyShapeStyle(Color.yellow.opacity(0.85)) }
-        return AnyShapeStyle(.thinMaterial)
+        if adapter == nil { return AnyShapeStyle(.thinMaterial) }
+        switch urgency {
+        case .normal: return AnyShapeStyle(.thinMaterial)
+        case .ok:      return AnyShapeStyle(Color.green.opacity(0.85))
+        case .active: return AnyShapeStyle(Color.yellow.opacity(0.85))
+        case .warning: return AnyShapeStyle(Color.orange.opacity(0.85))
+        case .alarm: return AnyShapeStyle(Color.red.opacity(0.85))
+        }
     }
     
+    /// Bordo: secondary grigio per stato normale.
     private var strokeColor: Color {
-        if accessory == nil { return .red }
-        return isOn ? .orange : .accentColor
+        if adapter == nil { return .red }
+        switch urgency {
+        case .normal: return Color.secondary.opacity(0.5)
+        case .ok:      return .green
+        case .active: return .orange
+        case .warning: return Color(.systemOrange)
+        case .alarm: return .red
+        }
     }
     
     private var iconColor: Color {
-        if accessory == nil { return .red }
-        return isOn ? .white : .accentColor
-    }
-    
-    private var iconName: String {
-        guard let accessory else { return "questionmark.circle.fill" }
-        switch accessory.category.categoryType {
-        case HMAccessoryCategoryTypeLightbulb:
-            return isOn ? "lightbulb.fill" : "lightbulb"
-        case HMAccessoryCategoryTypeOutlet:
-            return "powerplug.fill"
-        case HMAccessoryCategoryTypeSwitch:
-            return "switch.2"
-        case HMAccessoryCategoryTypeThermostat:
-            return "thermometer"
-        case HMAccessoryCategoryTypeSensor:
-            return "sensor.fill"
-        case HMAccessoryCategoryTypeDoorLock:
-            return isOn ? "lock.open.fill" : "lock.fill"
-        case HMAccessoryCategoryTypeWindow,
-             HMAccessoryCategoryTypeWindowCovering:
-            return "blinds.horizontal.closed"
-        case HMAccessoryCategoryTypeFan:
-            return "fan.fill"
-        case HMAccessoryCategoryTypeGarageDoorOpener:
-            return "door.garage.closed"
-        case HMAccessoryCategoryTypeIPCamera,
-             HMAccessoryCategoryTypeVideoDoorbell:
-            return "video.fill"
-        default:
-            return "circle.fill"
+        if adapter == nil { return .red }
+        switch urgency {
+        case .normal:                                  return .primary
+        case .ok, .active, .warning, .alarm:           return .white     // 👈 .ok aggiunto qui
         }
     }
 }
