@@ -36,6 +36,7 @@ final class UnsupportedAdapter: AccessoryAdapter {
     var isOn: Bool { false }
     var supportsQuickToggle: Bool { false }
     var primaryStatusText: String? { nil }
+    var supportsFloorplanPlacement: Bool { true }
     
     func performQuickToggle(via homeKit: HomeKitService) async throws {
         // Noop: questo adapter non supporta tap rapido

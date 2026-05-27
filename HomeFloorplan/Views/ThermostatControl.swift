@@ -23,7 +23,7 @@ struct ThermostatControl: View {
     }
     
     private var mode: HeaterCoolerMode { adapter.currentMode }
-    private var isReachable: Bool { adapter.accessory.isReachable }
+    private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
     private var canEditTemperature: Bool { isReachable && mode != .off }
     
     var body: some View {
@@ -35,6 +35,10 @@ struct ThermostatControl: View {
                         fanSliderRow
                     }
             statusLine
+            
+            EnvironmentInfoSection(
+                        humidity: adapter.environmentHumidity
+                    )
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)

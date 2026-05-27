@@ -10,9 +10,22 @@
 		174C63AA2FBA5556004752B5 /* HomeFloorplan.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HomeFloorplan.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		17C588E52FC5FF4800A30E4C /* Exceptions for "HomeFloorplan" folder in "HomeFloorplan" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 174C63A92FBA5556004752B5 /* HomeFloorplan */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		174C63AC2FBA5556004752B5 /* HomeFloorplan */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				17C588E52FC5FF4800A30E4C /* Exceptions for "HomeFloorplan" folder in "HomeFloorplan" target */,
+			);
 			path = HomeFloorplan;
 			sourceTree = "<group>";
 		};
@@ -256,13 +269,15 @@
 				DEVELOPMENT_TEAM = R83KEW2BMW;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HomeFloorplan/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Home FloorPlan";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "L'app utilizza HomeKit per mostrare gli accessori sulla planimetria della casa e controllarli direttamente";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "L'app utilizza la libreria foto per importare immagini di planimetrie.";
+				INFOPLIST_KEY_NSSensorKitUsageDescription = "Usiamo il sensore LiDAR per rilevare le pareti e creare la planimetria automatica.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -299,13 +314,15 @@
 				DEVELOPMENT_TEAM = R83KEW2BMW;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HomeFloorplan/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Home FloorPlan";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "L'app utilizza HomeKit per mostrare gli accessori sulla planimetria della casa e controllarli direttamente";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "L'app utilizza la libreria foto per importare immagini di planimetrie.";
+				INFOPLIST_KEY_NSSensorKitUsageDescription = "Usiamo il sensore LiDAR per rilevare le pareti e creare la planimetria automatica.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (

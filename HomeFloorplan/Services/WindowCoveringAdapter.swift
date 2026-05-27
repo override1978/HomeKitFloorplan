@@ -49,14 +49,14 @@ final class WindowCoveringAdapter: AccessoryAdapter {
             return "blinds.horizontal.open"
         }
     }
-    
+    var supportsFloorplanPlacement: Bool { true }
     /// Per le tende "isOn" significa "aperta" (anche solo parzialmente).
     var isOn: Bool {
         currentPosition > 10
     }
     
     var supportsQuickToggle: Bool {
-        targetPositionCharacteristic != nil && accessory.isReachable
+        targetPositionCharacteristic != nil
     }
     
     var primaryStatusText: String? {

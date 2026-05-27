@@ -33,6 +33,11 @@ enum AccessoryAdapterFactory {
             return garage
         }
         
+        // 0.8 Purificatori d'aria (PRIMA dei sensori per evitare cattura via AirQualitySensor)
+        if let purifier = AirPurifierAdapter(accessory: accessory, homeKit: homeKit) {
+            return purifier
+        }
+        
         // 4. Termostati / Valvole TRV (DEVE precedere OnOffAdapter)
         if let thermo = ThermostatAdapter(accessory: accessory, homeKit: homeKit) {
             return thermo
@@ -41,6 +46,10 @@ enum AccessoryAdapterFactory {
         // 1.5 Termostati legacy (Thermostat classico)
         if let thermoLegacy = LegacyThermostatAdapter(accessory: accessory, homeKit: homeKit) {
             return thermoLegacy
+        }
+        
+        if accessory.services.contains(where: { $0.serviceType == ProgrammableSwitchAdapter.serviceType }) {
+            return ProgrammableSwitchAdapter(accessory: accessory, homeKit: homeKit)
         }
         
         // 1) Sensori: read-only
@@ -54,9 +63,15 @@ enum AccessoryAdapterFactory {
         }
         
         // 3. Luci dimmerabili (DEVE precedere OnOffAdapter)
-            if let dimmer = DimmableLightAdapter(accessory: accessory, homeKit: homeKit) {
-                return dimmer
-            }
+        if let dimmer = DimmableLightAdapter(accessory: accessory, homeKit: homeKit) {
+            return dimmer
+        }
+        
+        // PRIMA di OnOffAdapter
+        let outletServices = accessory.services.filter { $0.serviceType == MultiOutletAdapter.outletServiceType }
+        if outletServices.count >= 2 {
+            return MultiOutletAdapter(accessory: accessory, homeKit: homeKit)
+        }
         
         // 3) On/off generico: PowerState o Active
         if hasCharacteristic(accessory, type: HMCharacteristicTypePowerState) {

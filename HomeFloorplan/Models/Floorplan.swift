@@ -33,13 +33,15 @@ final class Floorplan {
     
     @Relationship(deleteRule: .cascade, inverse: \PlacedAccessory.floorplan)
     var accessories: [PlacedAccessory] = []
+    var homeUUID: UUID?
     
-    init(name: String, imageFilename: String) {
+    init(name: String, imageFilename: String, homeUUID: UUID? = nil) {
         self.id = UUID()
         self.name = name
         self.imageFilename = imageFilename
         self.createdAt = .now
         self.updatedAt = .now
+        self.homeUUID = homeUUID
     }
     
     var tapMode: FloorplanTapMode {
@@ -47,3 +49,5 @@ final class Floorplan {
         set { tapModeRaw = newValue.rawValue }
     }
 }
+
+

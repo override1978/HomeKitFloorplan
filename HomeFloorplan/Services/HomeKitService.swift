@@ -13,7 +13,39 @@ final class HomeKitService: NSObject {
     // MARK: - Public state
     
     /// La casa primaria scelta dall'utente nell'app Casa (può essere nil al primo avvio).
-    var currentHome: HMHome?
+    //var currentHome: HMHome?
+    /// UUID della casa selezionata dall'utente (persistita in UserDefaults).
+    /// Nil = usa la primary di HomeKit.
+    private static let selectedHomeUUIDKey = "selectedHomeUUID"
+
+    var selectedHomeUUID: UUID? {
+        didSet {
+            if let uuid = selectedHomeUUID {
+                UserDefaults.standard.set(uuid.uuidString, forKey: Self.selectedHomeUUIDKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.selectedHomeUUIDKey)
+            }
+            refreshAccessoriesList()
+        }
+    }
+
+    /// La casa attualmente attiva. Logica:
+    /// 1. Se l'utente ne ha scelta una via selectedHomeUUID, usa quella
+    /// 2. Altrimenti fallback su manager.primaryHome
+    /// 3. Altrimenti la prima disponibile
+    var currentHome: HMHome? {
+        guard let manager else { return nil }
+        if let uuid = selectedHomeUUID,
+           let match = manager.homes.first(where: { $0.uniqueIdentifier == uuid }) {
+            return match
+        }
+        return manager.primaryHome ?? manager.homes.first
+    }
+
+    /// Tutte le case configurate dall'utente in Apple Home (per il selettore).
+    var availableHomes: [HMHome] {
+        manager?.homes ?? []
+    }
     
     /// Tutti gli accessori di tutte le case configurate.
     var allAccessories: [HMAccessory] = []
@@ -29,16 +61,64 @@ final class HomeKitService: NSObject {
     /// Errori recenti (utile per debug e UI di diagnostica)
     var lastError: String?
     
+    /// Reachability di ogni accessorio, tracciata come @Observable.
+    /// Il delegate `accessoryDidUpdateReachability` aggiorna qui, e le view
+    /// che leggono via `isReachable(_:)` si ridisegnano correttamente.
+    var reachabilityMap: [UUID: Bool] = [:]
+    
+    /// Stato di autorizzazione HomeKit. `nil` finché non sappiamo (al lancio).
+    var authorizationStatus: HMHomeManagerAuthorizationStatus?
+
+    /// Helper che restituisce la reachability di un accessorio. Le view DEVONO
+    /// usare questa, non `accessory.isReachable` direttamente, per beneficiare
+    /// del tracking @Observable.
+    func isReachable(_ accessory: HMAccessory) -> Bool {
+        reachabilityMap[accessory.uniqueIdentifier] ?? accessory.isReachable
+    }
+    
     // MARK: - Private
     
-    private let manager = HMHomeManager()
+    private var manager: HMHomeManager?
+
+    /// True se HomeKit è stato attivato (HMHomeManager creato).
+    var isHomeKitActivated: Bool { manager != nil }
+    
     private var observedAccessoryUUIDs: Set<UUID> = []
     
     // MARK: - Init
     
     override init() {
         super.init()
-        manager.delegate = self
+        
+        // Retrocompatibilità: se l'utente ha già completato l'onboarding in passato,
+        // attiva HomeKit subito (altrimenti l'app si ritrova senza HMHomeManager).
+        let lastSeenOnboarding = UserDefaults.standard.integer(forKey: "onboardingLastSeenVersion")
+        if lastSeenOnboarding >= 1 {
+            activateHomeKit()
+        }
+    }
+    
+    /// Attiva HomeKit creando HMHomeManager e iniziando la lettura.
+    /// Chiamato dall'onboarding al tap "Concedi permessi", oppure all'init
+    /// per utenti che hanno già completato l'onboarding in passato.
+    func requestHomeKitAccess() {
+        activateHomeKit()
+    }
+
+    private func activateHomeKit() {
+        guard manager == nil else { return }
+        
+        let m = HMHomeManager()
+        m.delegate = self
+        manager = m
+        
+        authorizationStatus = m.authorizationStatus
+        
+        // Carica l'UUID casa selezionata da UserDefaults
+        if let str = UserDefaults.standard.string(forKey: Self.selectedHomeUUIDKey),
+           let uuid = UUID(uuidString: str) {
+            selectedHomeUUID = uuid
+        }
     }
     
     // MARK: - Lookup
@@ -51,6 +131,22 @@ final class HomeKitService: NSObject {
     /// Restituisce il valore corrente di una caratteristica (se osservata).
     func value(for characteristic: HMCharacteristic) -> Any? {
         characteristicValues[characteristic.uniqueIdentifier]
+    }
+    
+    /// Forza una rilettura dell'authorizationStatus dal framework HomeKit.
+    /// Utile quando l'utente torna dall'app Settings.
+    func reloadAuthorizationStatus() {
+        authorizationStatus = manager?.authorizationStatus
+    }
+    
+    /// Cambia la casa attiva. Triggera refresh delle liste e dei marker.
+    func setActiveHome(_ home: HMHome) {
+        selectedHomeUUID = home.uniqueIdentifier
+    }
+
+    /// Resetta alla casa primaria di HomeKit.
+    func resetToPrimaryHome() {
+        selectedHomeUUID = nil
     }
     
     // MARK: - Subscription lifecycle
@@ -116,28 +212,119 @@ final class HomeKitService: NSObject {
     }
     
     // MARK: - Write (comandi)
+    /// UUID di accessori che hanno fallito una scrittura recente.
+    /// Mappa UUID accessorio → timestamp dell'ultimo errore.
+    /// Le view leggono via `isLikelyOffline(_:)` per mostrare warning.
+    var lastWriteErrors: [UUID: Date] = [:]
+
+    /// Soglia entro cui consideriamo un accessorio ancora "potenzialmente offline".
+    /// Dopo questo tempo dall'ultimo errore, il flag si auto-cancella alla prossima lettura.
+    private static let offlineWindow: TimeInterval = 300  // 5 minuti
     
     /// Scrive un valore su una caratteristica (es. accende una luce).
     /// Aggiorna anche localmente per dare risposta UI immediata (ottimistico).
     func write(_ value: Any, to characteristic: HMCharacteristic) async throws {
-        try await characteristic.writeValue(value)
-        characteristicValues[characteristic.uniqueIdentifier] = value
+        do {
+            try await characteristic.writeValue(value)
+            characteristicValues[characteristic.uniqueIdentifier] = value
+            
+            // Successo: cancella eventuale errore precedente
+            if let uuid = characteristic.service?.accessory?.uniqueIdentifier {
+                lastWriteErrors.removeValue(forKey: uuid)
+            }
+        } catch {
+            // Fallimento: registra errore con timestamp
+            if let uuid = characteristic.service?.accessory?.uniqueIdentifier {
+                lastWriteErrors[uuid] = Date()
+            }
+            throw error
+        }
+    }
+    
+    /// True se l'accessorio ha avuto un errore di scrittura recente (entro `offlineWindow`).
+    /// Più affidabile di `accessory.isReachable` perché basato su azioni REALI fallite.
+    func isLikelyOffline(_ accessory: HMAccessory) -> Bool {
+        guard let lastError = lastWriteErrors[accessory.uniqueIdentifier] else {
+            return false
+        }
+        return Date().timeIntervalSince(lastError) < Self.offlineWindow
+    }
+    
+    /// "Stuzzica" tutti gli accessori HomeKit per forzare una rivalutazione della
+    /// reachability. Setta il delegate su ognuno (per ricevere notifiche future),
+    /// e tenta di leggere una characteristic readable di ciascuno.
+    /// L'effetto è simile a un "ping" e in molti casi sveglia device dormienti.
+    func refreshReachability() async {
+        let accessories = allAccessories
+        print("🔄 refreshReachability su \(accessories.count) accessori")
+        
+        for accessory in accessories {
+            accessory.delegate = self
+        }
+        
+        await withTaskGroup(of: Void.self) { group in
+            for accessory in accessories {
+                group.addTask { [weak self] in
+                    await self?.pokeAccessory(accessory)
+                }
+            }
+        }
+        
+        // Aggiorna reachability map per propagare a SwiftUI
+        await MainActor.run {
+            for accessory in allAccessories {
+                reachabilityMap[accessory.uniqueIdentifier] = accessory.isReachable
+            }
+            refreshAccessoriesList()
+        }
+        
+        print("✅ refreshReachability completato")
+    }
+
+    /// Tenta di leggere fino a 2 caratteristiche readable del primary service.
+    /// Questo "tocca" l'accessorio via HomeKit/HAP, scatena eventuali ri-connessioni
+    /// e aggiorna isReachable internamente.
+    private func pokeAccessory(_ accessory: HMAccessory) async {
+        let primaryService = accessory.services.first(where: { $0.isPrimaryService })
+                          ?? accessory.services.first
+        guard let service = primaryService else { return }
+        
+        let readableChars = service.characteristics
+            .filter { $0.properties.contains(HMCharacteristicPropertyReadable) }
+            .prefix(2)
+        
+        for ch in readableChars {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                ch.readValue { _ in
+                    continuation.resume()
+                }
+            }
+        }
     }
     
     // MARK: - Helpers per refresh
     
     private func refreshAccessoriesList() {
-        allAccessories = manager.homes.flatMap { $0.accessories }
+        allAccessories = currentHome?.accessories ?? []
     }
 }
+
+// MARK: - HMHomeManagerDelegate
 
 // MARK: - HMHomeManagerDelegate
 
 extension HomeKitService: HMHomeManagerDelegate {
     
     func homeManagerDidUpdateHomes(_ manager: HMHomeManager) {
-        currentHome = manager.homes.first
+        //currentHome = manager.homes.first
         refreshAccessoriesList()
+        
+        // Seed iniziale della reachability map
+        for accessory in allAccessories {
+            reachabilityMap[accessory.uniqueIdentifier] = accessory.isReachable
+        }
+        
+        authorizationStatus = manager.authorizationStatus
         isReady = true
     }
     
@@ -149,11 +336,24 @@ extension HomeKitService: HMHomeManagerDelegate {
         refreshAccessoriesList()
     }
     
-    func homeManagerDidUpdatePrimaryHome(_ manager: HMHomeManager) {
-        currentHome = manager.homes.first
+    /// True se HomeKit non ha permessi e non possiamo procedere.
+    var isAuthorizationDenied: Bool {
+        guard let status = authorizationStatus else { return false }
+        return !status.contains(.authorized) && status.contains(.determined)
+    }
+
+    /// True se non sappiamo ancora lo status (primo lancio, HomeKit non ha ancora risposto).
+    var isAuthorizationUnknown: Bool {
+        authorizationStatus == nil || !(authorizationStatus?.contains(.determined) ?? false)
+    }
+    
+    func homeManager(_ manager: HMHomeManager, didUpdate status: HMHomeManagerAuthorizationStatus) {
+        authorizationStatus = status
+        if status.contains(.authorized) {
+            refreshAccessoriesList()
+        }
     }
 }
-
 // MARK: - HMAccessoryDelegate
 
 extension HomeKitService: HMAccessoryDelegate {
@@ -171,7 +371,7 @@ extension HomeKitService: HMAccessoryDelegate {
     }
     
     func accessoryDidUpdateReachability(_ accessory: HMAccessory) {
-        // Forza un refresh della lista così le View possono mostrare lo stato offline
+        reachabilityMap[accessory.uniqueIdentifier] = accessory.isReachable
         refreshAccessoriesList()
     }
     

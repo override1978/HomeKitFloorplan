@@ -4,12 +4,10 @@ import SwiftData
 @main
 struct HomeFloorplanApp: App {
     
-    /// Service HomeKit condiviso, vive per tutta la durata dell'app.
-    /// @State su un @Observable lo mantiene stabile e propagato via environment.
     @State private var homeKit = HomeKitService()
-    
-    /// Store degli override icona per accessorio.
     @State private var iconOverrides = IconOverrideStore()
+    @State private var scenesService: HomeKitScenesService
+    @State private var onboarding = OnboardingService()
     
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -27,11 +25,21 @@ struct HomeFloorplanApp: App {
         }
     }()
     
+    init() {
+        let kit = HomeKitService()
+        self._homeKit = State(initialValue: kit)
+        self._scenesService = State(initialValue: HomeKitScenesService(homeKit: kit))
+        
+        print("🏠 RoomPlan supported: \(RoomPlanSupport.isSupported)")
+    }
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(homeKit)
                 .environment(iconOverrides)
+                .environment(scenesService)
+                .environment(onboarding)                            // 👈 NUOVO
         }
         .modelContainer(sharedModelContainer)
     }

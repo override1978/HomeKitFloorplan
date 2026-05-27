@@ -57,13 +57,15 @@ final class ThermostatAdapter: AccessoryAdapter {
     private let currentStateCharacteristic: HMCharacteristic?
     private let lowBatteryCharacteristic: HMCharacteristic?
     private let rotationSpeedCharacteristic: HMCharacteristic?
+    private let humidityCharacteristic: HMCharacteristic?
+    
     
     /// Banda intorno al target in modalità Auto. Quando l'utente imposta T,
     /// noi scriviamo HeatingThreshold = T - autoBand e CoolingThreshold = T + autoBand.
     static let autoBand: Double = 2.0
     
     init?(accessory: HMAccessory, homeKit: HomeKitService) {
-        // UUID HAP standard (costanti Swift potrebbero non esistere in iOS 26 SDK)
+        // UUID HAP standard
         let activeUUID = "000000B0-0000-1000-8000-0026BB765291"
         let targetStateUUID = "000000B2-0000-1000-8000-0026BB765291"
         let currentTempUUID = "00000011-0000-1000-8000-0026BB765291"
@@ -71,13 +73,14 @@ final class ThermostatAdapter: AccessoryAdapter {
         let coolingThresholdUUID = "0000000D-0000-1000-8000-0026BB765291"
         let currentStateUUID = "000000B1-0000-1000-8000-0026BB765291"
         let lowBatteryUUID = "00000079-0000-1000-8000-0026BB765291"
+        let rotationSpeedUUID = "00000029-0000-1000-8000-0026BB765291"
+        let humidityUUID = "00000010-0000-1000-8000-0026BB765291"
         
         guard let active = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: activeUUID),
               let targetState = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: targetStateUUID),
               let currentTemp = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: currentTempUUID)
         else { return nil }
         
-        // Almeno UNO tra heating o cooling deve esistere
         let heating = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: heatingThresholdUUID)
         let cooling = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: coolingThresholdUUID)
         guard heating != nil || cooling != nil else { return nil }
@@ -91,11 +94,8 @@ final class ThermostatAdapter: AccessoryAdapter {
         self.coolingTargetCharacteristic = cooling
         self.currentStateCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: currentStateUUID)
         self.lowBatteryCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: lowBatteryUUID)
-        
-        let rotationSpeedUUID = "00000029-0000-1000-8000-0026BB765291"
-        self.rotationSpeedCharacteristic = AccessoryAdapterFactory.findCharacteristic(
-            in: accessory, type: rotationSpeedUUID
-        )
+        self.rotationSpeedCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: rotationSpeedUUID)
+        self.humidityCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: humidityUUID)
     }
     
     // MARK: - AccessoryAdapter
@@ -162,7 +162,9 @@ final class ThermostatAdapter: AccessoryAdapter {
     
     var isOn: Bool { currentMode != .off && isHeatingOrCoolingActive }
     
-    var supportsQuickToggle: Bool { accessory.isReachable }
+    var supportsQuickToggle: Bool { true }
+    
+    var supportsFloorplanPlacement: Bool { true }
     
     var primaryStatusText: String? {
         guard accessory.isReachable else { return nil }
@@ -287,6 +289,16 @@ final class ThermostatAdapter: AccessoryAdapter {
     var hasLowBattery: Bool {
         guard let c = lowBatteryCharacteristic else { return false }
         return intValue(homeKit.value(for: c) ?? c.value) == 1
+    }
+    
+    var environmentHumidity: Double? {
+        guard let c = humidityCharacteristic else { return nil }
+        let raw = homeKit.value(for: c) ?? c.value
+        if let d = raw as? Double { return d }
+        if let f = raw as? Float { return Double(f) }
+        if let i = raw as? Int { return Double(i) }
+        if let n = raw as? NSNumber { return n.doubleValue }
+        return nil
     }
     
     // MARK: - Rotation speed (ventola AC)

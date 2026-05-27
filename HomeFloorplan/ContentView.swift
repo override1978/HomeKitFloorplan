@@ -3,26 +3,41 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(OnboardingService.self) private var onboarding
+    
     @Query private var floorplans: [Floorplan]
     
     @State private var selection: SidebarSelection?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(selection: $selection)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 320)
-        } detail: {
-            detailView
-        }
-        .navigationSplitViewStyle(.balanced)
-        .onAppear {
-            // All'avvio, se non c'è selezione e c'è almeno un floorplan, selezionalo
-            if selection == nil, let first = floorplans.first {
-                selection = .floorplan(first.id)
+        Group {
+            if onboarding.shouldShowOnboarding {
+                OnboardingView()
+            } else {
+                HomeKitGuardView {
+                    mainContent
+                }
             }
         }
+        .animation(.easeInOut(duration: 0.4), value: onboarding.shouldShowOnboarding)
     }
+    
+    // 👇 estrai NavigationSplitView in computed
+        private var mainContent: some View {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                SidebarView(selection: $selection)
+                    .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 320)
+            } detail: {
+                detailView
+            }
+            .navigationSplitViewStyle(.balanced)
+            .onAppear {
+                if selection == nil, let first = floorplans.first {
+                    selection = .floorplan(first.id)
+                }
+            }
+        }
     
     @ViewBuilder
     private var detailView: some View {
@@ -45,6 +60,8 @@ struct ContentView: View {
             NavigationStack {
                 AllAccessoriesView()
             }
+        case .scenes:
+            ScenesView()
         case .debugHomeKit:
             NavigationStack {
                 HomeKitDebugView()

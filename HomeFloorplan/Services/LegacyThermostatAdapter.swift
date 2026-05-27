@@ -26,11 +26,11 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
     private let heatingThresholdCharacteristic: HMCharacteristic?
     private let coolingThresholdCharacteristic: HMCharacteristic?
     private let lowBatteryCharacteristic: HMCharacteristic?
+    private let humidityCharacteristic: HMCharacteristic?
     
     static let autoBand: Double = 2.0
     
     init?(accessory: HMAccessory, homeKit: HomeKitService) {
-        // UUID HAP spec
         let currentTempUUID = "00000011-0000-1000-8000-0026BB765291"
         let targetTempUUID = "00000035-0000-1000-8000-0026BB765291"
         let currentStateUUID = "0000000F-0000-1000-8000-0026BB765291"
@@ -38,6 +38,7 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
         let heatingThresholdUUID = "00000012-0000-1000-8000-0026BB765291"
         let coolingThresholdUUID = "0000000D-0000-1000-8000-0026BB765291"
         let lowBatteryUUID = "00000079-0000-1000-8000-0026BB765291"
+        let humidityUUID = "00000010-0000-1000-8000-0026BB765291"
         
         guard let currentTemp = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: currentTempUUID),
               let targetTemp = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: targetTempUUID),
@@ -53,9 +54,12 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
         self.heatingThresholdCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: heatingThresholdUUID)
         self.coolingThresholdCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: coolingThresholdUUID)
         self.lowBatteryCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: lowBatteryUUID)
+        self.humidityCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: humidityUUID)
     }
     
     // MARK: - AccessoryAdapter
+    
+    var supportsFloorplanPlacement: Bool { true }
     
     var iconName: String {
         switch currentMode {
@@ -67,7 +71,7 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
     }
     
     var isOn: Bool { currentMode != .off && (heaterCoolerState == 2 || heaterCoolerState == 3) }
-    var supportsQuickToggle: Bool { accessory.isReachable }
+    var supportsQuickToggle: Bool { true }
     var primaryStatusText: String? {
         guard accessory.isReachable else { return nil }
         return String(format: "%.0f°", currentTemperature)
@@ -100,6 +104,16 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
         case 3: return .auto
         default: return .off
         }
+    }
+    
+    var environmentHumidity: Double? {
+        guard let c = humidityCharacteristic else { return nil }
+        let raw = homeKit.value(for: c) ?? c.value
+        if let d = raw as? Double { return d }
+        if let f = raw as? Float { return Double(f) }
+        if let i = raw as? Int { return Double(i) }
+        if let n = raw as? NSNumber { return n.doubleValue }
+        return nil
     }
     
     var supportedModes: [HeaterCoolerMode] {

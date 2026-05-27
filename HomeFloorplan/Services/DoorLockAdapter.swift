@@ -102,6 +102,8 @@ final class DoorLockAdapter: AccessoryAdapter {
     
     // MARK: - Public state
     
+    var supportsFloorplanPlacement: Bool { true }
+    
     var currentState: DoorLockCurrentState {
         let raw = intValue(homeKit.value(for: currentStateCharacteristic) ?? currentStateCharacteristic.value) ?? 3
         return DoorLockCurrentState(rawValue: raw) ?? .unknown

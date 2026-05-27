@@ -6,6 +6,13 @@ struct FloorplanEditorView: View {
     @Bindable var floorplan: Floorplan
     @Binding var columnVisibility: NavigationSplitViewVisibility
     
+    @AppStorage(MarkerSize.appStorageKey)
+    private var markerSizeRaw: String = MarkerSize.regular.rawValue
+    
+    private var size: MarkerSize {
+        MarkerSize(rawValue: markerSizeRaw) ?? .regular
+    }
+    
     /// Come è stato presentato l'editor. Cambia il bottone in alto a sinistra:
     /// - .splitView: bottone "sidebar" per riaprire la sidebar (quando è nascosta)
     /// - .pushed: bottone X per tornare alla vista precedente
@@ -38,6 +45,9 @@ struct FloorplanEditorView: View {
     // Auto-hide controls
     @State private var controlsVisible: Bool = true
     @State private var hideTask: Task<Void, Never>?
+    
+    @Environment(HomeKitScenesService.self) private var scenesService
+    @State private var showScenesPanel = false
     
     private var currentTapMode: FloorplanTapMode {
         FloorplanTapMode(rawValue: floorplan.tapModeRaw) ?? .openPanel
@@ -110,6 +120,13 @@ struct FloorplanEditorView: View {
                 .presentationDetents([.large])
             }
         }
+        .sheet(isPresented: $showScenesPanel) {
+            ScenesView(presentedAsSheet: true)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+        }
+        
+        
         .alert("Eliminare l'accessorio dal floorplan?",
                isPresented: Binding(
                 get: { pendingDelete != nil },
@@ -320,6 +337,19 @@ struct FloorplanEditorView: View {
                 Divider().frame(height: 20)
                 
                 Button {
+                    showScenesPanel = true
+                } label: {
+                    Image(systemName: "wand.and.sparkles")
+                        .font(.subheadline)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                            
+                Divider().frame(height: 20)
+                
+                Button {
                     withAnimation(.spring(response: 0.3)) {
                         isEditing.toggle()
                         if !isEditing { selectedMarkerID = nil }
@@ -477,8 +507,53 @@ struct FloorplanEditorView: View {
             ForEach(floorplan.accessories) { placed in
                 markerView(for: placed, in: rect)
             }
+            
+            // Hint flottante per planimetria vuota
+            if floorplan.accessories.isEmpty {
+                emptyMarkersHint
+                    .position(x: rect.midX, y: rect.midY)
+            }
         }
         .frame(width: container.width, height: container.height)
+    }
+
+    private var emptyMarkersHint: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "plus.circle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.tint)
+            
+            Text("Nessun accessorio piazzato")
+                .font(.headline)
+            
+            Text("Tap su + in alto a destra per aggiungere il primo accessorio HomeKit sulla planimetria.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            
+            Button {
+                showingPicker = true
+            } label: {
+                Label("Aggiungi accessorio", systemImage: "plus")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule()
+                            .fill(.tint)
+                    )
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(20)
+        .frame(maxWidth: 320)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.regularMaterial)
+                .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+        )
     }
     
     // MARK: - Marker
@@ -508,8 +583,8 @@ struct FloorplanEditorView: View {
         ZStack {
             if isEditing && isSelected {
                 Circle()
-                    .stroke(Color.orange, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
-                    .frame(width: 60, height: 60)
+                    .stroke(BrandColor.secondary, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+                    .frame(width: size.controllableDiameter, height: size.controllableDiameter)
                     .transition(.scale.combined(with: .opacity))
             }
             

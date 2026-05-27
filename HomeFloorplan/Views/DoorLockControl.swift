@@ -11,7 +11,7 @@ struct DoorLockControl: View {
     
     @State private var pendingTarget: DoorLockTargetState?
     
-    private var isReachable: Bool { adapter.accessory.isReachable }
+    private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
     
     var body: some View {
         VStack(spacing: 16) {

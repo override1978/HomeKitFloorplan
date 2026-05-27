@@ -41,6 +41,8 @@ final class MatterDeviceAdapter: AccessoryAdapter {
     @MainActor
     var batteryInfo: BatteryInfo? { nil }
     
+    var supportsFloorplanPlacement: Bool { true }
+    
     var iconName: String { "arrow.triangle.2.circlepath.circle.fill" }
     var isOn: Bool { false }
     var supportsQuickToggle: Bool { false }

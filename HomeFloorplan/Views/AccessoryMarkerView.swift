@@ -36,6 +36,18 @@ struct AccessoryMarkerView: View {
         urgency == .normal ? 0.18 : 0.30
     }
     
+    /// True se l'accessorio dichiara di non essere raggiungibile.
+    /// Distinto da "adapter == nil" che indica accessorio rimosso/sconosciuto.
+    private var isOffline: Bool {
+        guard let adapter else { return false }
+        return !homeKit.isReachable(adapter.accessory)
+    }
+    
+    private var isLikelyOffline: Bool {
+        guard let adapter else { return false }
+        return homeKit.isLikelyOffline(adapter.accessory)
+    }
+    
     var body: some View {
         let _ = homeKit.characteristicValues
         VStack(spacing: 2) {
@@ -43,6 +55,7 @@ struct AccessoryMarkerView: View {
                 .shadow(color: .black.opacity(shadowOpacity),
                         radius: urgency != .normal ? 5 : 3,
                         y: 1)
+                .opacity(isLikelyOffline ? 0.6 : 1.0)
             
             HStack(spacing: 3) {
                 if hasCustomLabel {
@@ -82,13 +95,22 @@ struct AccessoryMarkerView: View {
         ZStack {
             Circle()
                 .fill(fillStyle)
-                .overlay(noAdapterStroke)        // 👈 stroke solo se errore
+                .overlay(controllableStrokeOverlay)
                 .frame(width: size.controllableDiameter, height: size.controllableDiameter)
             
             AccessoryIconView(iconName: effectiveIconName)
                 .foregroundStyle(iconColor)
                 .frame(width: size.controllableDiameter * 0.5,
                        height: size.controllableDiameter * 0.5)
+        }
+    }
+
+    /// Bordo rosso solo per stati anomali (adapter nil OR offline). Negli altri
+    /// casi nessun bordo: il fill colorato fa già il suo lavoro.
+    @ViewBuilder
+    private var controllableStrokeOverlay: some View {
+        if adapter == nil || isLikelyOffline {
+            Circle().stroke(Color.red, lineWidth: 2)
         }
     }
 
@@ -108,7 +130,7 @@ struct AccessoryMarkerView: View {
             Circle()
                 .fill(fillStyle)
                 .overlay(
-                    Circle().stroke(strokeColor, lineWidth: 1.5)
+                    Circle().stroke(sensorBorderColor, lineWidth: 1.5)
                 )
                 .frame(width: size.sensorBoolDiameter, height: size.sensorBoolDiameter)
             
@@ -118,7 +140,7 @@ struct AccessoryMarkerView: View {
                        height: size.sensorBoolDiameter * 0.55)
         }
     }
-    
+
     // Sensore numerico: pill larga con valore
     private var sensorNumericShape: some View {
         let value = adapter?.primaryStatusText ?? "—"
@@ -128,7 +150,7 @@ struct AccessoryMarkerView: View {
             Capsule()
                 .fill(fillStyle)
                 .overlay(
-                    Capsule().stroke(strokeColor, lineWidth: 1.5)
+                    Capsule().stroke(sensorBorderColor, lineWidth: 1.5)
                 )
                 .frame(width: pillSize.width, height: pillSize.height)
             
@@ -141,37 +163,33 @@ struct AccessoryMarkerView: View {
         }
     }
     
+    /// Bordo sottile per sensori (sempre presente, anche se discreto).
+    /// Riprende il colore di stato quando c'è urgency, secondary quando neutro.
+    private var sensorBorderColor: Color {
+        if adapter == nil { return .red }
+        let urgency = adapter?.visualUrgency ?? .normal
+        switch urgency {
+        case .normal:  return Color.secondary.opacity(0.5)
+        case .ok:      return .green
+        case .active:  return .yellow
+        case .warning: return Color(.systemOrange)
+        case .alarm:   return .red
+        }
+    }
+    
     // MARK: - Colori derivati da urgency + adapter null state
     
-    /// Riempimento: traslucido neutro per stato normale, tinto per gli altri.
+    private var appearance: AccessoryAppearance {
+        AccessoryAppearance.from(adapter)
+    }
+
     private var fillStyle: AnyShapeStyle {
         if adapter == nil { return AnyShapeStyle(.thinMaterial) }
-        switch urgency {
-        case .normal: return AnyShapeStyle(.thinMaterial)
-        case .ok:      return AnyShapeStyle(Color.green.opacity(0.85))
-        case .active: return AnyShapeStyle(Color.yellow.opacity(0.85))
-        case .warning: return AnyShapeStyle(Color.orange.opacity(0.85))
-        case .alarm: return AnyShapeStyle(Color.red.opacity(0.85))
-        }
+        return appearance.markerFill
     }
-    
-    /// Bordo: secondary grigio per stato normale.
-    private var strokeColor: Color {
-        if adapter == nil { return .red }
-        switch urgency {
-        case .normal: return Color.secondary.opacity(0.5)
-        case .ok:      return .green
-        case .active: return .orange
-        case .warning: return Color(.systemOrange)
-        case .alarm: return .red
-        }
-    }
-    
+
     private var iconColor: Color {
         if adapter == nil { return .red }
-        switch urgency {
-        case .normal:                                  return .primary
-        case .ok, .active, .warning, .alarm:           return .white     // 👈 .ok aggiunto qui
-        }
+        return appearance.markerIconColor
     }
 }

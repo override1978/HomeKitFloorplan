@@ -85,13 +85,14 @@ final class OnOffAdapter: AccessoryAdapter {
     }
     
     var supportsQuickToggle: Bool {
-        powerCharacteristic != nil && isReachable
+        powerCharacteristic != nil
     }
     
     var primaryStatusText: String? {
         nil
     }
     
+    var supportsFloorplanPlacement: Bool { true }
     // MARK: - Control section (Apple Home style)
 
     @MainActor

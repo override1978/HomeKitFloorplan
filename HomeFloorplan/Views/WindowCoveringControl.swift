@@ -17,7 +17,7 @@ struct WindowCoveringControl: View {
     
     private var currentValue: Int { adapter.currentPositionValue }
     private var targetValue: Int { adapter.targetPositionValue }
-    private var isReachable: Bool { adapter.accessory.isReachable }
+    private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
     private var isMoving: Bool { currentValue != targetValue }
     
     var body: some View {

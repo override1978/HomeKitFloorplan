@@ -1,6 +1,10 @@
 import SwiftUI
+import HomeKit
 
 struct SettingsView: View {
+    @Environment(HomeKitService.self) private var homeKit
+    @Environment(OnboardingService.self) private var onboarding
+    
     @AppStorage(MarkerSize.appStorageKey)
     private var markerSizeRaw: String = MarkerSize.regular.rawValue
     
@@ -10,13 +14,27 @@ struct SettingsView: View {
     
     var body: some View {
         Form {
+            // MARK: - HomeKit
+            
             Section {
-                // Preview live
+                homeKitSection
+            } header: {
+                Text("HomeKit")
+            } footer: {
+                if homeKit.availableHomes.count > 1 {
+                    Text("Puoi avere più case configurate in Apple Home. Scegli quale gestire con HomeFloorplan.")
+                } else {
+                    Text("La casa attiva determina quali accessori e planimetrie sono visibili.")
+                }
+            }
+            
+            // MARK: - Marker
+            
+            Section {
                 MarkerPreviewView(size: currentMarkerSize)
                     .animation(.spring(response: 0.35, dampingFraction: 0.85),
                                value: markerSizeRaw)
                 
-                // Picker dimensione
                 Picker("Dimensione", selection: $markerSizeRaw) {
                     ForEach(MarkerSize.allCases) { size in
                         Text(size.localized).tag(size.rawValue)
@@ -29,16 +47,20 @@ struct SettingsView: View {
                 Text("La dimensione dei marker si applica a tutte le planimetrie.")
             }
             
-            // Sezioni future, già strutturate ma vuote
             Section {
-                Text("Casa HomeKit attiva")
-                    .foregroundStyle(.secondary)
-                Text("Da configurare")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                Button {
+                    onboarding.resetForDebug()
+                } label: {
+                    Label("Mostra onboarding al prossimo lancio", systemImage: "arrow.clockwise.circle")
+                        .foregroundStyle(.tint)
+                }
             } header: {
-                Text("HomeKit")
+                Text("Sviluppatore")
+            } footer: {
+                Text("Ripristina la prima esperienza. Killa e riapri l'app per vedere l'onboarding.")
             }
+            
+            // MARK: - Info
             
             Section {
                 HStack {
@@ -53,6 +75,74 @@ struct SettingsView: View {
         }
         .navigationTitle("Impostazioni")
         .navigationBarTitleDisplayMode(.large)
+    }
+    
+    // MARK: - HomeKit section
+    
+    @ViewBuilder
+    private var homeKitSection: some View {
+        let homes = homeKit.availableHomes
+        
+        if homes.isEmpty {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Nessuna casa configurata")
+                        .font(.body)
+                    Text("Configura una casa dall'app Casa di Apple per iniziare.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else if homes.count == 1, let only = homes.first {
+            HStack(spacing: 12) {
+                Image(systemName: "house.fill")
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Casa attiva")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(only.name)
+                        .font(.body)
+                }
+            }
+        } else {
+            Picker(selection: Binding(
+                get: { homeKit.currentHome?.uniqueIdentifier },
+                set: { newUUID in
+                    if let uuid = newUUID,
+                       let home = homes.first(where: { $0.uniqueIdentifier == uuid }) {
+                        homeKit.setActiveHome(home)
+                    } else {
+                        homeKit.resetToPrimaryHome()
+                    }
+                }
+            )) {
+                ForEach(homes, id: \.uniqueIdentifier) { home in
+                    HStack {
+                        Text(home.name)
+                        if home == homeKit.availableHomes.first(where: { _ in
+                            // Indicatore visivo della primaria HomeKit
+                            return false
+                        }) {
+                            Spacer()
+                            Text("Primaria")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .tag(home.uniqueIdentifier as UUID?)
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "house.fill")
+                        .foregroundStyle(.tint)
+                    Text("Casa attiva")
+                }
+            }
+            .pickerStyle(.menu)
+        }
     }
 }
 

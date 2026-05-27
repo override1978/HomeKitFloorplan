@@ -17,7 +17,7 @@ struct OnOffControlButton: View {
     }
     
     private var isOn: Bool { adapter.isOn }
-    private var isReachable: Bool { adapter.accessory.isReachable }
+    private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
     
     var body: some View {
         VStack(spacing: 10) {
@@ -82,6 +82,7 @@ struct OnOffControlButton: View {
             do {
                 try await adapter.performQuickToggle(via: homeKit)
             } catch {
+                // Feedback aptico di errore
                 let notif = UINotificationFeedbackGenerator()
                 notif.notificationOccurred(.error)
             }

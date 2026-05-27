@@ -11,7 +11,7 @@ struct GarageDoorControl: View {
     
     @State private var pendingTarget: GarageDoorTargetState?
     
-    private var isReachable: Bool { adapter.accessory.isReachable }
+    private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
     
     var body: some View {
         VStack(spacing: 16) {

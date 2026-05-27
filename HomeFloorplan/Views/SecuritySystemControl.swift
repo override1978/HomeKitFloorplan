@@ -13,7 +13,7 @@ struct SecuritySystemControl: View {
     @State private var pendingMode: SecurityMode?
     @State private var pulseAlarm: Bool = false
     
-    private var isReachable: Bool { adapter.accessory.isReachable }
+    private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
     private var currentMode: SecurityMode { adapter.currentMode }
     
     var body: some View {

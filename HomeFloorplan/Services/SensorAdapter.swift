@@ -31,7 +31,9 @@ final class SensorAdapter: AccessoryAdapter {
     }
     
     @MainActor
-    func makeControlSection(homeKit: HomeKitService) -> AnyView? { nil }
+    func makeControlSection(homeKit: HomeKitService) -> AnyView? {
+        AnyView(SensorEnvironmentSection(adapter: self))
+    }
     
     @MainActor
     var batteryInfo: BatteryInfo? {
@@ -39,6 +41,8 @@ final class SensorAdapter: AccessoryAdapter {
     }
     
     // MARK: - AccessoryAdapter
+    
+    var supportsFloorplanPlacement: Bool { true }
     
     var iconName: String {
         let triggered = isTriggered
@@ -63,6 +67,133 @@ final class SensorAdapter: AccessoryAdapter {
     // QUESTE qui dentro la classe
     var markerStyle: MarkerStyle {
         primaryKind.isBoolean ? .sensorBoolean : .sensorNumeric
+    }
+    
+    // MARK: - Environment readings (per la sezione "Ambiente" della DetailView)
+
+    // MARK: - Environment readings (per la sezione "Ambiente" della DetailView)
+
+    var environmentTemperature: Double? {
+        findDouble(byUUID: "00000011-0000-1000-8000-0026BB765291")
+    }
+
+    var environmentHumidity: Double? {
+        findDouble(byUUID: "00000010-0000-1000-8000-0026BB765291")
+    }
+
+    var environmentLightLevel: Int? {
+        findDouble(byUUID: "0000006B-0000-1000-8000-0026BB765291").map { Int($0) }
+    }
+
+    var environmentAirQuality: String? {
+        let airQualityUUID = "00000095-0000-1000-8000-0026BB765291"
+        guard let level = findInt(byUUID: airQualityUUID), level > 0 else { return nil }
+        switch level {
+        case 1: return "Ottima"
+        case 2: return "Buona"
+        case 3: return "Media"
+        case 4: return "Scarsa"
+        case 5: return "Pessima"
+        default: return nil
+        }
+    }
+
+    var environmentPM25: Double? {
+        findDouble(byUUID: "000000C6-0000-1000-8000-0026BB765291")
+    }
+
+    var environmentPM10: Double? {
+        findDouble(byUUID: "000000C7-0000-1000-8000-0026BB765291")
+    }
+
+    var environmentCO2: Double? {
+        findDouble(byUUID: "00000093-0000-1000-8000-0026BB765291")
+    }
+
+    var environmentVOC: Double? {
+        findDouble(byUUID: "000000C8-0000-1000-8000-0026BB765291")
+    }
+
+    // MARK: - Boolean sensor states (per SensorEnvironmentSection)
+
+    /// True se rilevato, false se non rilevato, nil se non espone smoke detector.
+    var smokeDetected: Bool? {
+        findIntByUUID("00000076-0000-1000-8000-0026BB765291").map { $0 == 1 }
+    }
+
+    /// 0=normal, 1=abnormal
+    var carbonMonoxideDetected: Bool? {
+        findIntByUUID("00000069-0000-1000-8000-0026BB765291").map { $0 == 1 }
+    }
+
+    /// 0=no leak, 1=leak detected
+    var leakDetected: Bool? {
+        findIntByUUID("00000070-0000-1000-8000-0026BB765291").map { $0 == 1 }
+    }
+
+    /// 0=closed, 1=open
+    var contactDetected: Bool? {
+        findIntByUUID("0000006A-0000-1000-8000-0026BB765291").map { $0 == 1 }
+    }
+
+    /// Bool direttamente
+    var motionDetected: Bool? {
+        findBoolByUUID("00000022-0000-1000-8000-0026BB765291")
+    }
+
+    /// 0=not occupied, 1=occupied
+    var occupancyDetected: Bool? {
+        findIntByUUID("00000071-0000-1000-8000-0026BB765291").map { $0 == 1 }
+    }
+
+    private func findIntByUUID(_ uuid: String) -> Int? {
+        for service in accessory.services {
+            for ch in service.characteristics where ch.characteristicType == uuid {
+                let raw = homeKit.value(for: ch) ?? ch.value
+                if let i = raw as? Int { return i }
+                if let u = raw as? UInt8 { return Int(u) }
+                if let n = raw as? NSNumber { return n.intValue }
+            }
+        }
+        return nil
+    }
+
+    private func findBoolByUUID(_ uuid: String) -> Bool? {
+        for service in accessory.services {
+            for ch in service.characteristics where ch.characteristicType == uuid {
+                let raw = homeKit.value(for: ch) ?? ch.value
+                if let b = raw as? Bool { return b }
+                if let i = raw as? Int { return i == 1 }
+                if let n = raw as? NSNumber { return n.boolValue }
+            }
+        }
+        return nil
+    }
+    // MARK: - Helpers per lookup characteristic per UUID (in qualunque servizio)
+
+    private func findDouble(byUUID uuid: String) -> Double? {
+        for service in accessory.services {
+            for ch in service.characteristics where ch.characteristicType == uuid {
+                let raw = homeKit.value(for: ch) ?? ch.value
+                if let d = raw as? Double { return d }
+                if let f = raw as? Float { return Double(f) }
+                if let i = raw as? Int { return Double(i) }
+                if let n = raw as? NSNumber { return n.doubleValue }
+            }
+        }
+        return nil
+    }
+
+    private func findInt(byUUID uuid: String) -> Int? {
+        for service in accessory.services {
+            for ch in service.characteristics where ch.characteristicType == uuid {
+                let raw = homeKit.value(for: ch) ?? ch.value
+                if let i = raw as? Int { return i }
+                if let u = raw as? UInt8 { return Int(u) }
+                if let n = raw as? NSNumber { return n.intValue }
+            }
+        }
+        return nil
     }
     
     var visualUrgency: MarkerUrgency {

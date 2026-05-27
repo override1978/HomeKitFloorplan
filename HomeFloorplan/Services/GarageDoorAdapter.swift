@@ -100,6 +100,8 @@ final class GarageDoorAdapter: AccessoryAdapter {
         // No-op: tap deve aprire DetailView.
     }
     
+    var supportsFloorplanPlacement: Bool { true }
+    
     @MainActor
     func makeControlSection(homeKit: HomeKitService) -> AnyView? {
         AnyView(GarageDoorControl(adapter: self))

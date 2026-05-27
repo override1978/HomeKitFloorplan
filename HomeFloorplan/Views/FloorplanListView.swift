@@ -171,14 +171,34 @@ struct FloorplanListView: View {
         ContentUnavailableView {
             Label("Nessuna planimetria", systemImage: "square.dashed")
         } description: {
-            Text("Crea la tua prima planimetria.")
-        } actions: {
-            Button {
-                showingNewSheet = true
-            } label: {
-                Label("Nuova planimetria", systemImage: "plus")
+            VStack(spacing: 12) {
+                Text("Crea la tua prima planimetria per iniziare.")
+                
+                Text("Carica un'immagine (planimetria, foto della casa, schema) e posiziona i marker dei tuoi accessori HomeKit per controllarli con un colpo d'occhio.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 4)
             }
-            .buttonStyle(.borderedProminent)
+        } actions: {
+            VStack(spacing: 10) {
+                Button {
+                    showingNewSheet = true
+                } label: {
+                    Label("Crea planimetria", systemImage: "plus.circle.fill")
+                        .font(.body.weight(.semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                
+                Text("Suggerimento: una foto della planimetria stampata, uno screenshot dal piano dell'architetto, o un disegno schematico vanno bene.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                    .padding(.top, 8)
+            }
         }
     }
     

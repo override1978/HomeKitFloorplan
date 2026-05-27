@@ -31,6 +31,11 @@ protocol AccessoryAdapter: AnyObject {
     var visualUrgency: MarkerUrgency { get }
     var batteryInfo: BatteryInfo? { get }
     
+    /// True se questo adapter può essere piazzato come marker sul floorplan.
+        /// Per pulsanti programmabili è false (sono read-only e non c'è nulla
+        /// di utile da fare con un tap).
+        var supportsFloorplanPlacement: Bool { get }
+    
     func performQuickToggle(via homeKit: HomeKitService) async throws
     
     var id: UUID { get }

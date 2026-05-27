@@ -23,6 +23,9 @@ protocol ThermostatControlling: AnyObject {
     var heaterCoolerState: Int { get }   // 0=inactive, 1=idle, 2=heating, 3=cooling
     var hasLowBattery: Bool { get }
     
+    /// Umidità relativa ambientale (se l'accessorio espone un servizio HumiditySensor).
+     var environmentHumidity: Double? { get }
+    
     // Unità
     var displayUnit: ThermostatAdapter.TemperatureUnit { get }
     func celsiusToDisplay(_ celsius: Double) -> Double

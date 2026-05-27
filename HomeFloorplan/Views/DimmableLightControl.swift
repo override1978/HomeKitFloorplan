@@ -22,7 +22,7 @@ struct DimmableLightControl: View {
     
     private var currentBrightness: Int { adapter.currentBrightness }
     private var isOn: Bool { adapter.isOn }
-    private var isReachable: Bool { adapter.accessory.isReachable }
+    private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
     private var sliderEnabled: Bool { isReachable }
     
     var body: some View {

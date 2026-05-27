@@ -27,7 +27,10 @@ struct AccessoryDetailView: View {
     
     @ViewBuilder
     private var quickInfoSection: some View {
-        if let text = adapter.primaryStatusText, !text.isEmpty {
+        // Non mostra la sezione "Stato" generica se l'adapter ha già un control
+        // specializzato (sarebbe ridondante).
+        if adapter.makeControlSection(homeKit: homeKit) == nil,
+           let text = adapter.primaryStatusText, !text.isEmpty {
             Section {
                 HStack {
                     Text("Stato")
@@ -85,7 +88,7 @@ struct AccessoryDetailView: View {
         Section {
             HStack(spacing: 14) {
                 AccessoryIconView(iconName: iconName)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(AccessoryAppearance.from(adapter).statusColor)
                     .frame(width: 36, height: 36)
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -95,11 +98,11 @@ struct AccessoryDetailView: View {
                         Text(accessory.room?.name ?? "—")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        if !accessory.isReachable {
-                            Text("• Offline")
-                                .font(.subheadline)
-                                .foregroundStyle(.orange)
-                        }
+                        if homeKit.isLikelyOffline(accessory) {
+                                Text("• Offline")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.orange)
+                            }
                     }
                 }
                 Spacer()

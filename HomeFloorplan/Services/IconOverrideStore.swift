@@ -64,4 +64,13 @@ extension IconOverrideStore {
         }
         return adapter.iconName
     }
+    
+    /// Restituisce l'icona effettiva per una scena.
+        /// Priorità: override utente → inferenza dal nome.
+        func effectiveIcon(for scene: SceneItem) -> String {
+            if let override = icon(for: scene.id) {
+                return override
+            }
+            return scene.symbolName
+        }
 }

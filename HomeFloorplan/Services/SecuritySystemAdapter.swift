@@ -96,6 +96,8 @@ final class SecuritySystemAdapter: AccessoryAdapter {
         }
     }
     
+    var supportsFloorplanPlacement: Bool { true }
+    
     /// Per il marker, "isOn" indica un sistema armato (qualsiasi modalità tranne Disarm).
     var isOn: Bool {
         currentMode != .disarm

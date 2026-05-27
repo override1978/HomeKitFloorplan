@@ -68,6 +68,8 @@ final class DimmableLightAdapter: AccessoryAdapter {
     
     // MARK: - Public state for control views
     
+    var supportsFloorplanPlacement: Bool { true }
+    
     /// Luminosità corrente in percentuale (0-100).
     var currentBrightness: Int {
         let raw = homeKit.value(for: brightnessCharacteristic) ?? brightnessCharacteristic.value

@@ -68,17 +68,24 @@ struct AccessoryPickerSheet: View {
     }
     
     private var roomsWithAccessories: [(HMRoom, [HMAccessory])] {
-            guard let home = homeKit.currentHome else { return [] }
-            let filtered: (HMAccessory) -> Bool = { acc in
-                guard !searchText.isEmpty else { return true }
-                return acc.name.localizedCaseInsensitiveContains(searchText)
-            }
-            return home.rooms.map { room in
-                let accs = home.accessories
-                    .filter { $0.room?.uniqueIdentifier == room.uniqueIdentifier }
-                    .filter(filtered)
-                return (room, accs)
-            }
-            .filter { !$0.1.isEmpty }
+        guard let home = homeKit.currentHome else { return [] }
+        
+        let filtered: (HMAccessory) -> Bool = { acc in
+            // Filtro 1: deve essere piazzabile sul floorplan
+            let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit)
+            guard adapter.supportsFloorplanPlacement else { return false }
+            
+            // Filtro 2: matcha il search
+            guard !searchText.isEmpty else { return true }
+            return acc.name.localizedCaseInsensitiveContains(searchText)
         }
+        
+        return home.rooms.map { room in
+            let accs = home.accessories
+                .filter { $0.room?.uniqueIdentifier == room.uniqueIdentifier }
+                .filter(filtered)
+            return (room, accs)
+        }
+        .filter { !$0.1.isEmpty }
     }
+}
