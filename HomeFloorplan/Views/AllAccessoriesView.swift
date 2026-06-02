@@ -20,7 +20,7 @@ struct AllAccessoriesView: View {
         }
 
         return Dictionary(grouping: filtered) { accessory in
-            accessory.room?.name ?? "Nessuna stanza"
+            accessory.room?.name ?? String(localized: "accessories.noRoom", defaultValue: "Nessuna stanza")
         }
     }
 
@@ -33,11 +33,11 @@ struct AllAccessoriesView: View {
                     if homeKit.allAccessories.isEmpty {
                         // Caso A: casa HomeKit vuota
                         ContentUnavailableView {
-                            Label("Nessun accessorio", systemImage: "house")
+                            Label(String(localized: "accessories.empty.title", defaultValue: "Nessun accessorio"), systemImage: "house")
                         } description: {
                             VStack(spacing: 8) {
-                                Text("La casa attiva non ha accessori configurati.")
-                                Text("Aggiungi accessori dall'app Casa di Apple per gestirli qui.")
+                                Text(String(localized: "accessories.empty.description", defaultValue: "La casa attiva non ha accessori configurati."))
+                                Text(String(localized: "accessories.empty.hint", defaultValue: "Aggiungi accessori dall'app Casa di Apple per gestirli qui."))
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -46,7 +46,7 @@ struct AllAccessoriesView: View {
                                 Button {
                                     UIApplication.shared.open(url)
                                 } label: {
-                                    Label("Apri Casa", systemImage: "arrow.up.right.square")
+                                    Label(String(localized: "accessories.empty.openHome", defaultValue: "Apri Casa"), systemImage: "arrow.up.right.square")
                                 }
                                 .buttonStyle(.bordered)
                             }
@@ -54,11 +54,11 @@ struct AllAccessoriesView: View {
                     } else if filteredGroups.isEmpty {
                         // Caso B: ci sono accessori ma i filtri/search non trovano niente
                         ContentUnavailableView(
-                            "Nessun risultato",
+                            String(localized: "accessories.noResults.title", defaultValue: "Nessun risultato"),
                             systemImage: "magnifyingglass",
                             description: Text(searchText.isEmpty
-                                              ? "Modifica i filtri per vedere accessori."
-                                              : "Modifica la ricerca o i filtri.")
+                                              ? String(localized: "accessories.noResults.filterHint", defaultValue: "Modifica i filtri per vedere accessori.")
+                                              : String(localized: "accessories.noResults.searchHint", defaultValue: "Modifica la ricerca o i filtri."))
                         )
                     } else {
                         // Caso C: normale - renderizza le sezioni stanze
@@ -70,11 +70,15 @@ struct AllAccessoriesView: View {
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
                 //.background(Color.clear)
+                .sheet(item: $selectedRoom) { room in
+                    RoomDetailSheet(room: room)
+                        .presentationDetents([.medium, .large])
+                }
                 .searchable(text: $searchText,
                             placement: .navigationBarDrawer(displayMode: .always))
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("Accessori")
+            .navigationTitle(String(localized: "accessories.navigationTitle", defaultValue: "Accessori"))
         }
     }
 
@@ -94,36 +98,44 @@ struct AllAccessoriesView: View {
                 }
             }
         } header: {
-            Button {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                    toggleExpanded(group.roomID)
-                }
-            } label: {
-                HStack(spacing: 10) {
+            HStack(spacing: 10) {
+                // Chevron: espande/collassa la sezione
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        toggleExpanded(group.roomID)
+                    }
+                } label: {
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
-                    
-                    Image(systemName: "square.split.bottomrightquarter.fill")
-                        .foregroundStyle(BrandColor.primary)
-                        .font(.subheadline)
-                    
-                    Text(group.roomName)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    
-                    Spacer()
-                    
-                    Text(group.summaryText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
                 }
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+
+                // Icona + nome stanza: apre il dettaglio stanza
+                Button {
+                    selectedRoom = homeKit.currentHome?.rooms.first { $0.uniqueIdentifier == group.roomID }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.split.bottomrightquarter.fill")
+                            .foregroundStyle(BrandColor.primary)
+                            .font(.subheadline)
+
+                        Text(group.roomName)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Text(group.summaryText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
-            .buttonStyle(.plain)
+            .padding(.vertical, 4)
             .textCase(nil)
         }
     }
@@ -131,6 +143,7 @@ struct AllAccessoriesView: View {
     // MARK: - Expanded state
 
     @State private var collapsedRooms: Set<UUID> = []
+    @State private var selectedRoom: HMRoom?
 
     private func toggleExpanded(_ roomID: UUID) {
         if collapsedRooms.contains(roomID) {
@@ -171,7 +184,7 @@ struct AllAccessoriesView: View {
         
         var summaryText: String {
             if onCount > 0 {
-                return "\(accessories.count) • \(onCount) attivi"
+                return "\(accessories.count) • \(onCount) \(String(localized: "accessories.summary.active", defaultValue: "attivi"))"
             }
             return "\(accessories.count)"
         }
@@ -209,7 +222,7 @@ struct AllAccessoriesView: View {
         // 3. Costruisci RoomGroup con count "attivi"
         let groups: [RoomGroup] = grouped.map { (roomID, accessories) -> RoomGroup in
             let roomName: String = {
-                if roomID == UUID.zero { return "Senza stanza" }
+                if roomID == UUID.zero { return String(localized: "accessories.noRoomGroup", defaultValue: "Senza stanza") }
                 return accessories.first?.room?.name ?? "—"
             }()
             let sortedAccessories = accessories.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -290,7 +303,7 @@ struct AllAccessoriesView: View {
             .background(
                 Capsule()
                     .fill(isSelected
-                          ? AnyShapeStyle(BrandColor.secondary)
+                          ? AnyShapeStyle(BrandColor.heroGradient)
                           : AnyShapeStyle(.regularMaterial))
             )
         }
@@ -343,18 +356,25 @@ struct AllAccessoriesView: View {
     private func accessoryRow(_ accessory: HMAccessory) -> some View {
         let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
         let iconName = iconOverrides.effectiveIcon(for: accessory, adapter: adapter)
-        
+        let displayName = strippedName(accessory.name, roomName: accessory.room?.name)
+        let summary = summaryFor(accessory: accessory, adapter: adapter)
+        let roomLabel = accessory.room?.name
+        let secondaryParts = [roomLabel, summary.isEmpty ? nil : summary].compactMap { $0 }
+        let secondaryText = secondaryParts.joined(separator: " • ")
+
         HStack(spacing: 12) {
             AccessoryIconView(iconName: iconName)
                 .foregroundStyle(AccessoryAppearance.from(adapter).statusColor)
                 .frame(width: 22, height: 22)
-            
+
             VStack(alignment: .leading, spacing: 2) {
-                Text(accessory.name)
+                Text(displayName)
                     .font(.body)
-                Text(summaryFor(accessory: accessory, adapter: adapter))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if !secondaryText.isEmpty {
+                    Text(secondaryText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             
@@ -382,9 +402,9 @@ struct AllAccessoriesView: View {
         // Fallback: power state + brightness se è una luce dimmerabile
         if let on = boolCharacteristic(type: HMCharacteristicTypePowerState, in: accessory) {
             if let brightness = intCharacteristic(type: HMCharacteristicTypeBrightness, in: accessory) {
-                return on ? "Acceso • \(brightness)%" : "Spento"
+                return on ? "\(String(localized: "accessory.state.on", defaultValue: "Acceso")) • \(brightness)%" : String(localized: "accessory.state.off", defaultValue: "Spento")
             }
-            return on ? "Acceso" : "Spento"
+            return on ? String(localized: "accessory.state.on", defaultValue: "Acceso") : String(localized: "accessory.state.off", defaultValue: "Spento")
         }
         return ""
     }
@@ -412,6 +432,16 @@ struct AllAccessoriesView: View {
         if let v = homeKit.value(for: ch) as? NSNumber { return v.intValue }
         return nil
     }
+
+    /// Rimuove il nome della stanza dal nome dell'accessorio (suffisso o prefisso con trattino).
+    private func strippedName(_ name: String, roomName: String?) -> String {
+        guard let roomName else { return name }
+        let suffix = " " + roomName
+        if name.hasSuffix(suffix) { return String(name.dropLast(suffix.count)) }
+        let prefix = roomName + " - "
+        if name.hasPrefix(prefix) { return String(name.dropFirst(prefix.count)) }
+        return name
+    }
 }
 
 #Preview {
@@ -430,8 +460,8 @@ extension UUID {
 #if !canImport(RoomPlan)
 private struct RoomPlanCaptureFallbackView: View {
     var body: some View {
-        ContentUnavailableView("RoomPlan non disponibile", systemImage: "exclamationmark.triangle", description: Text("Questa funzione richiede un dispositivo con LiDAR."))
-            .navigationTitle("Scansione stanza")
+        ContentUnavailableView(String(localized: "roomplan.unavailable.title", defaultValue: "RoomPlan non disponibile"), systemImage: "exclamationmark.triangle", description: Text(String(localized: "roomplan.unavailable.description", defaultValue: "Questa funzione richiede un dispositivo con LiDAR.")))
+            .navigationTitle(String(localized: "roomplan.scan.navigationTitle", defaultValue: "Scansione stanza"))
     }
 }
 #endif

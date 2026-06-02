@@ -12,7 +12,10 @@ final class HomeKitScenesService {
     var lastRunError: Error?
     
     private let homeKit: HomeKitService
-    
+
+    /// Logger attività. Iniettato dall'app dopo l'init.
+    var activityLogger: ActivityLoggerService?
+
     init(homeKit: HomeKitService) {
         self.homeKit = homeKit
     }
@@ -60,7 +63,7 @@ final class HomeKitScenesService {
             throw NSError(domain: "HomeKitScenesService", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Casa HomeKit non disponibile"])
         }
-        
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             home.executeActionSet(scene.actionSet) { error in
                 if let error {
@@ -70,6 +73,9 @@ final class HomeKitScenesService {
                 }
             }
         }
+
+        // Log esecuzione scena
+        activityLogger?.logSceneExecution(sceneName: scene.name, actionCount: scene.actionCount)
     }
 }
 
@@ -201,7 +207,7 @@ struct SceneItem: Identifiable {
             return SceneActionSummary(
                 accessoryID: uuid,
                 accessoryName: accessory.name,
-                roomName: accessory.room?.name ?? "Senza stanza",
+                roomName: accessory.room?.name ?? String(localized: "scene.action.noRoom", defaultValue: "Senza stanza"),
                 roomID: accessory.room?.uniqueIdentifier ?? UUID(),
                 description: description
             )
@@ -268,15 +274,17 @@ struct SceneActionSummary: Identifiable {
             switch ch.characteristicType {
             case onUUID, activeUUID:
                 if intVal(value) == 1 {
-                    parts.append("Acceso")
+                    parts.append(String(localized: "accessory.state.on", defaultValue: "Acceso"))
                 } else if intVal(value) == 0 {
-                    parts.append("Spento")
+                    parts.append(String(localized: "accessory.state.off", defaultValue: "Spento"))
                 }
             case brightnessUUID:
                 if let v = intVal(value) { parts.append("\(v)%") }
             case targetPositionUUID:
                 if let v = intVal(value) {
-                    parts.append(v == 0 ? "Chiusa" : (v == 100 ? "Aperta" : "\(v)%"))
+                    parts.append(v == 0
+                        ? String(localized: "accessory.position.closed", defaultValue: "Chiusa")
+                        : (v == 100 ? String(localized: "accessory.position.open", defaultValue: "Aperta") : "\(v)%"))
                 }
             case targetTempUUID, heatingThresholdUUID, coolingThresholdUUID:
                 if let t = doubleVal(value) {
@@ -284,34 +292,43 @@ struct SceneActionSummary: Identifiable {
                 }
             case targetHeaterCoolerStateUUID:
                 switch intVal(value) ?? -1 {
-                case 0: parts.append("Auto")
-                case 1: parts.append("Caldo")
-                case 2: parts.append("Freddo")
+                case 0: parts.append(String(localized: "thermostat.mode.auto", defaultValue: "Auto"))
+                case 1: parts.append(String(localized: "thermostat.mode.heat", defaultValue: "Caldo"))
+                case 2: parts.append(String(localized: "thermostat.mode.cool", defaultValue: "Freddo"))
                 default: break
                 }
             case rotationSpeedUUID:
-                if let v = intVal(value) { parts.append("Ventola \(v)%") }
+                if let v = intVal(value) {
+                    let fanStr = String(localized: "accessory.fan.speed", defaultValue: "Ventola")
+                    parts.append("\(fanStr) \(v)%")
+                }
             case lockTargetStateUUID:
-                if intVal(value) == 1 { parts.append("Chiudi") }
-                else if intVal(value) == 0 { parts.append("Apri") }
+                if intVal(value) == 1 { parts.append(String(localized: "accessory.lock.lock", defaultValue: "Chiudi")) }
+                else if intVal(value) == 0 { parts.append(String(localized: "accessory.lock.unlock", defaultValue: "Apri")) }
             case targetDoorStateUUID:
-                if intVal(value) == 0 { parts.append("Apri") }
-                else if intVal(value) == 1 { parts.append("Chiudi") }
+                if intVal(value) == 0 { parts.append(String(localized: "accessory.door.open", defaultValue: "Apri")) }
+                else if intVal(value) == 1 { parts.append(String(localized: "accessory.door.close", defaultValue: "Chiudi")) }
             case securityTargetStateUUID:
                 switch intVal(value) ?? -1 {
-                case 0: parts.append("Casa")
-                case 1: parts.append("Fuori")
-                case 2: parts.append("Notte")
-                case 3: parts.append("Disinserisci")
+                case 0: parts.append(String(localized: "security.mode.home", defaultValue: "Casa"))
+                case 1: parts.append(String(localized: "security.mode.away", defaultValue: "Fuori"))
+                case 2: parts.append(String(localized: "security.mode.night", defaultValue: "Notte"))
+                case 3: parts.append(String(localized: "security.mode.disarm", defaultValue: "Disinserisci"))
                 default: break
                 }
             case targetAirPurifierStateUUID:
-                if intVal(value) == 0 { parts.append("Modalità Manuale") }
-                else if intVal(value) == 1 { parts.append("Modalità Auto") }
+                if intVal(value) == 0 { parts.append(String(localized: "airpurifier.mode.manual", defaultValue: "Modalità Manuale")) }
+                else if intVal(value) == 1 { parts.append(String(localized: "airpurifier.mode.auto", defaultValue: "Modalità Auto")) }
             case hueUUID:
-                if let v = doubleVal(value) { parts.append("Tonalità \(Int(v))°") }
+                if let v = doubleVal(value) {
+                    let hueStr = String(localized: "light.hue", defaultValue: "Tonalità")
+                    parts.append("\(hueStr) \(Int(v))°")
+                }
             case saturationUUID:
-                if let v = doubleVal(value) { parts.append("Saturazione \(Int(v))%") }
+                if let v = doubleVal(value) {
+                    let satStr = String(localized: "light.saturation", defaultValue: "Saturazione")
+                    parts.append("\(satStr) \(Int(v))%")
+                }
             default:
                 // Fallback: mostra valore raw
                 if let intV = intVal(value) {
@@ -321,7 +338,9 @@ struct SceneActionSummary: Identifiable {
                 }
             }
         }
-        
-        return parts.isEmpty ? "Azione personalizzata" : parts.joined(separator: " • ")
+
+        return parts.isEmpty
+            ? String(localized: "scene.action.custom", defaultValue: "Azione personalizzata")
+            : parts.joined(separator: " • ")
     }
 }

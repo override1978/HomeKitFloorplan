@@ -69,13 +69,13 @@ struct GarageDoorControl: View {
     }
     
     private var statusText: String {
-        if adapter.obstructionDetected { return "Ostacolo rilevato" }
+        if adapter.obstructionDetected { return String(localized: "garage.state.obstruction", defaultValue: "Ostacolo rilevato") }
         switch adapter.currentState {
-        case .open:    return "Aperto"
-        case .closed:  return "Chiuso"
-        case .opening: return "Apertura in corso…"
-        case .closing: return "Chiusura in corso…"
-        case .stopped: return "Bloccato"
+        case .open:    return String(localized: "garage.state.open",    defaultValue: "Aperto")
+        case .closed:  return String(localized: "garage.state.closed",  defaultValue: "Chiuso")
+        case .opening: return String(localized: "garage.state.opening", defaultValue: "Apertura in corso…")
+        case .closing: return String(localized: "garage.state.closing", defaultValue: "Chiusura in corso…")
+        case .stopped: return String(localized: "garage.state.stopped", defaultValue: "Bloccato")
         }
     }
     
@@ -86,9 +86,9 @@ struct GarageDoorControl: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.white)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Ostacolo rilevato")
+                Text(String(localized: "garage.state.obstruction",   defaultValue: "Ostacolo rilevato"))
                     .font(.subheadline.weight(.semibold))
-                Text("Controlla che nulla blocchi la chiusura del garage.")
+                Text(String(localized: "garage.obstruction.message", defaultValue: "Controlla che nulla blocchi la chiusura del garage."))
                     .font(.caption)
             }
             .foregroundStyle(.white)
@@ -105,7 +105,7 @@ struct GarageDoorControl: View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.octagon.fill")
                 .foregroundStyle(.white)
-            Text("Garage bloccato a metà. Verifica manualmente.")
+            Text(String(localized: "garage.stopped.message", defaultValue: "Garage bloccato a metà. Verifica manualmente."))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.white)
         }
@@ -121,7 +121,9 @@ struct GarageDoorControl: View {
     
     private var actionButton: some View {
         let wantsToClose = (adapter.currentState == .open || adapter.currentState == .opening)
-        let label = wantsToClose ? "Chiudi" : "Apri"
+        let label = wantsToClose
+            ? String(localized: "garage.action.close", defaultValue: "Chiudi")
+            : String(localized: "garage.action.open",  defaultValue: "Apri")
         let symbol = wantsToClose ? "arrow.down.to.line" : "arrow.up.to.line"
         let tint: Color = wantsToClose ? .green : .orange
         
@@ -153,12 +155,12 @@ struct GarageDoorControl: View {
     private var batteryWarning: some View {
         HStack(spacing: 6) {
             Image(systemName: "battery.25percent")
-            Text("Batteria scarica")
+            Text(String(localized: "accessory.battery.low", defaultValue: "Batteria scarica"))
         }
         .font(.subheadline)
         .foregroundStyle(.red)
     }
-    
+
     // MARK: - Action
     
     private func performAction() {

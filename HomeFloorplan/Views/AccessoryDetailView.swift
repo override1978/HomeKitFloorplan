@@ -33,7 +33,7 @@ struct AccessoryDetailView: View {
            let text = adapter.primaryStatusText, !text.isEmpty {
             Section {
                 HStack {
-                    Text("Stato")
+                    Text(String(localized: "accessory.detail.status", defaultValue: "Stato"))
                     Spacer()
                     Text(text)
                         .foregroundStyle(.secondary)
@@ -53,7 +53,7 @@ struct AccessoryDetailView: View {
                 }
                 
                 if let controlView = adapter.makeControlSection(homeKit: homeKit) {
-                    Section("Controlli") {
+                    Section(String(localized: "accessory.detail.controls", defaultValue: "Controlli")) {
                         controlView
                     }
                 }
@@ -64,7 +64,7 @@ struct AccessoryDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fine") { dismiss() }
+                    Button(String(localized: "button.done", defaultValue: "Fine")) { dismiss() }
                 }
             }
             .onAppear {
@@ -99,7 +99,7 @@ struct AccessoryDetailView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         if homeKit.isLikelyOffline(accessory) {
-                                Text("• Offline")
+                                Text("• \(String(localized: "accessory.offline", defaultValue: "Offline"))")
                                     .font(.subheadline)
                                     .foregroundStyle(.orange)
                             }
@@ -118,7 +118,7 @@ struct AccessoryDetailView: View {
     private func quickInfoSection(_ text: String) -> some View {
         Section {
             HStack {
-                Text("Stato")
+                Text(String(localized: "accessory.detail.status", defaultValue: "Stato"))
                 Spacer()
                 Text(text)
                     .foregroundStyle(.secondary)
@@ -128,8 +128,10 @@ struct AccessoryDetailView: View {
     
     private var rawSection: some View {
         Section {
-            DisclosureGroup("Dettagli tecnici (\(totalCharacteristicsCount))",
-                            isExpanded: $rawExpanded) {
+            DisclosureGroup(
+                String(format: String(localized: "accessory.detail.rawTitle", defaultValue: "Dettagli tecnici (%d)"), totalCharacteristicsCount),
+                isExpanded: $rawExpanded
+            ) {
                 ForEach(accessory.services, id: \.uniqueIdentifier) { service in
                     serviceBlock(service)
                 }

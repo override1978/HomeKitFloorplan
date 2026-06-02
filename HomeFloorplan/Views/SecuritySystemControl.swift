@@ -53,7 +53,9 @@ struct SecuritySystemControl: View {
             Image(systemName: statusIcon)
                 .foregroundStyle(currentMode.tintColor)
                 .font(.title3)
-            Text(adapter.isTransitioning ? "Inserimento in corso…" : currentMode.displayName)
+            Text(adapter.isTransitioning
+                 ? String(localized: "security.state.arming", defaultValue: "Inserimento in corso…")
+                 : currentMode.displayName)
                 .font(.headline)
                 .foregroundStyle(.primary)
         }
@@ -111,7 +113,7 @@ struct SecuritySystemControl: View {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Il sistema sta cambiando stato. Può richiedere alcuni secondi.")
+                Text(String(localized: "security.state.arming.hint", defaultValue: "Il sistema sta cambiando stato. Può richiedere alcuni secondi."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -132,7 +134,7 @@ struct SecuritySystemControl: View {
                 HStack(spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.title)
-                    Text("ALLARME ATTIVO")
+                    Text(String(localized: "security.alarm.active", defaultValue: "ALLARME ATTIVO"))
                         .font(.title3.weight(.bold))
                 }
                 .foregroundStyle(.white)
@@ -143,7 +145,7 @@ struct SecuritySystemControl: View {
                     VStack(spacing: 6) {
                         Image(systemName: "lock.open.fill")
                             .font(.system(size: 32))
-                        Text("DISARMA")
+                        Text(String(localized: "security.action.disarm", defaultValue: "DISARMA"))
                             .font(.headline.weight(.bold))
                     }
                     .foregroundStyle(.red)

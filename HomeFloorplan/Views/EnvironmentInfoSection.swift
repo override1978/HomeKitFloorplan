@@ -31,7 +31,7 @@ struct EnvironmentInfoSection: View {
                     HStack {
                         Image(systemName: "leaf.fill")
                             .foregroundStyle(.green)
-                        Text("Ambiente")
+                        Text(String(localized: "environment.section.title", defaultValue: "Ambiente"))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -69,12 +69,12 @@ struct EnvironmentInfoSection: View {
                     }
                 }
                 .onAppear {
-                    print("🌱 EnvironmentInfoSection rendered with: airQ=\(airQuality ?? "nil") pm25=\(pm25.map(String.init(describing:)) ?? "nil") temp=\(temperatureC.map(String.init(describing:)) ?? "nil") hum=\(humidity.map(String.init(describing:)) ?? "nil")")
+                    dprint("🌱 EnvironmentInfoSection rendered with: airQ=\(airQuality ?? "nil") pm25=\(pm25.map(String.init(describing:)) ?? "nil") temp=\(temperatureC.map(String.init(describing:)) ?? "nil") hum=\(humidity.map(String.init(describing:)) ?? "nil")")
                 }
             } else {
                 EmptyView()
                     .onAppear {
-                        print("🌱 EnvironmentInfoSection: hasContent=false, niente da mostrare")
+                        dprint("🌱 EnvironmentInfoSection: hasContent=false, niente da mostrare")
                     }
             }
         }

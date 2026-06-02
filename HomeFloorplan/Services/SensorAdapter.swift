@@ -10,7 +10,7 @@ import SwiftUI
 /// di sicurezza (fumo, CO, acqua), poi presenza, poi numerici comuni.
 @MainActor
 @Observable
-final class SensorAdapter: AccessoryAdapter {
+final class SensorAdapter: AccessoryAdapter, EnvironmentReadable {
     let accessory: HMAccessory
     private let homeKit: HomeKitService
     
@@ -60,7 +60,7 @@ final class SensorAdapter: AccessoryAdapter {
     var primaryStatusText: String? {
         let raw = homeKit.value(for: primaryCharacteristic) ?? primaryCharacteristic.value
         let result = primaryKind.formattedValue(raw)
-        print("📊 [\(accessory.name)] kind=\(primaryKind), raw=\(String(describing: raw)) (\(type(of: raw))), formatted=\(String(describing: result))")
+        dprint("📊 [\(accessory.name)] kind=\(primaryKind), raw=\(String(describing: raw)) (\(type(of: raw))), formatted=\(String(describing: result))")
         return result
     }
     
@@ -89,11 +89,11 @@ final class SensorAdapter: AccessoryAdapter {
         let airQualityUUID = "00000095-0000-1000-8000-0026BB765291"
         guard let level = findInt(byUUID: airQualityUUID), level > 0 else { return nil }
         switch level {
-        case 1: return "Ottima"
-        case 2: return "Buona"
-        case 3: return "Media"
-        case 4: return "Scarsa"
-        case 5: return "Pessima"
+        case 1: return String(localized: "sensor.airQuality.excellent", defaultValue: "Ottima")
+        case 2: return String(localized: "sensor.airQuality.good",      defaultValue: "Buona")
+        case 3: return String(localized: "sensor.airQuality.fair",      defaultValue: "Media")
+        case 4: return String(localized: "sensor.airQuality.inferior",  defaultValue: "Scarsa")
+        case 5: return String(localized: "sensor.airQuality.poor",      defaultValue: "Pessima")
         default: return nil
         }
     }
@@ -311,7 +311,12 @@ final class SensorAdapter: AccessoryAdapter {
             switch self {
             case .temperature:
                 if let v = Self.doubleValueStatic(raw) {
-                    return "\(Int(v.rounded()))°"
+                    // Legge la preferenza utente da UserDefaults (stessa chiave di SettingsView)
+                    let saved = UserDefaults.standard.string(forKey: TemperatureUnit.appStorageKey) ?? ""
+                    let usesF = TemperatureUnit(rawValue: saved) == .fahrenheit
+                    let displayValue = usesF ? v * 9.0 / 5.0 + 32.0 : v
+                    let symbol = usesF ? "°F" : "°C"
+                    return "\(Int(displayValue.rounded()))\(symbol)"
                 }
             case .humidity:
                 if let v = Self.doubleValueStatic(raw) {
@@ -321,19 +326,18 @@ final class SensorAdapter: AccessoryAdapter {
                 if let v = Self.intValueStatic(raw) {
                     // 0=unknown, 1=excellent, 2=good, 3=fair, 4=inferior, 5=poor
                     switch v {
-                    case 1: return "Ottima"
-                            case 2: return "Buona"
-                            case 3: return "Media"
-                            case 4: return "Scarsa"
-                            case 5: return "Pessima."
+                    case 1: return String(localized: "sensor.airQuality.excellent", defaultValue: "Ottima")
+                    case 2: return String(localized: "sensor.airQuality.good",      defaultValue: "Buona")
+                    case 3: return String(localized: "sensor.airQuality.fair",      defaultValue: "Media")
+                    case 4: return String(localized: "sensor.airQuality.inferior",  defaultValue: "Scarsa")
+                    case 5: return String(localized: "sensor.airQuality.poor",      defaultValue: "Pessima")
                     default: return nil
                     }
                 }
             case .lightLevel:
                 if let v = Self.doubleValueStatic(raw) {
-                    // Mostra solo se sensato: lux > 1000 = "↑", < 10 = "↓", altrimenti il valore
-                    if v < 10 { return "buio" }
-                    if v > 5000 { return "sole" }
+                    if v < 10   { return String(localized: "sensor.lightLevel.dark",   defaultValue: "buio") }
+                    if v > 5000 { return String(localized: "sensor.lightLevel.bright", defaultValue: "sole") }
                     return "\(Int(v.rounded()))lx"
                 }
             case .smoke, .carbonMonoxide, .leak, .contact, .motion, .occupancy:

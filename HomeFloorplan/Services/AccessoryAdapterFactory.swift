@@ -87,7 +87,7 @@ enum AccessoryAdapterFactory {
     
     private static func hasCharacteristic(_ accessory: HMAccessory,
                                           type: String) -> Bool {
-        for service in accessory.services { 
+        for service in accessory.services { 
             for c in service.characteristics where c.characteristicType == type {
                 return true
             }

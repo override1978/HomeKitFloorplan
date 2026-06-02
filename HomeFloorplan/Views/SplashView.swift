@@ -19,11 +19,13 @@ struct SplashView: View {
                         .fill(Color.white.opacity(0.18))
                         .frame(width: 160, height: 160)
                         .blur(radius: 20)
-                    
-                    Image(systemName: "house.fill")
-                        .font(.system(size: 84, weight: .medium))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
+
+                    Image("HomeFloorplanIcon")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 120, height: 120)
+                        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
                 }
                 .scaleEffect(iconScale)
                 .opacity(iconOpacity)
@@ -32,8 +34,8 @@ struct SplashView: View {
                     Text("Home Floorplan")
                         .font(.system(size: 28, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
-                    
-                    Text("Controllo HomeKit visuale")
+
+                    Text(String(localized: "splash.tagline", defaultValue: "La tua casa, a colpo d'occhio"))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white.opacity(0.85))
                 }

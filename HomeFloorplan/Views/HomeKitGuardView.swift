@@ -15,7 +15,7 @@ struct HomeKitGuardView<Content: View>: View {
     @State private var loadingTooLong: Bool = false
 
     var body: some View {
-        let _ = print("🔐 status: \(String(describing: homeKit.authorizationStatus)) | denied: \(homeKit.isAuthorizationDenied) | unknown: \(homeKit.isAuthorizationUnknown) | ready: \(homeKit.isReady)")
+        let _ = { dprint("🔐 status: \(String(describing: homeKit.authorizationStatus)) | denied: \(homeKit.isAuthorizationDenied) | unknown: \(homeKit.isAuthorizationUnknown) | ready: \(homeKit.isReady)") }()
         
         Group {
             if homeKit.isAuthorizationDenied {
@@ -71,19 +71,19 @@ struct HomeKitGuardView<Content: View>: View {
                     }
                     
                     if loadingTooLong {
-                        Text("Sta richiedendo più del solito. Verifica che HomeKit sia attivo nelle Impostazioni iOS.")
+                        Text(String(localized: "homekit.loading.slow", defaultValue: "Sta richiedendo più del solito. Verifica che HomeKit sia attivo nelle Impostazioni iOS."))
                             .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.9))
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 40)
                             .transition(.opacity)
-                        
+
                         Button {
                             openSettings()
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "gearshape.fill")
-                                Text("Apri Impostazioni")
+                                Text(String(localized: "homekit.action.openSettings", defaultValue: "Apri Impostazioni"))
                             }
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Color(red: 0.95, green: 0.30, blue: 0.25))
@@ -109,22 +109,22 @@ struct HomeKitGuardView<Content: View>: View {
                 .foregroundStyle(BrandColor.primary)
             
             VStack(spacing: 12) {
-                Text("Permessi HomeKit non concessi")
+                Text(String(localized: "homekit.denied.title", defaultValue: "Accesso a HomeKit non concesso"))
                     .font(.title2.weight(.semibold))
-                
-                Text("Per visualizzare e controllare i tuoi accessori, HomeFloorplan ha bisogno dell'accesso a HomeKit. Puoi concederlo dalle impostazioni iOS in qualsiasi momento.")
+
+                Text(String(localized: "homekit.denied.message", defaultValue: "Per visualizzare e controllare i tuoi accessori, HomeFloorplan ha bisogno dell'accesso a HomeKit. Puoi concederlo dalle Impostazioni iOS in qualsiasi momento."))
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
             }
-            
+
             Button {
                 openSettings()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "gearshape.fill")
-                    Text("Apri Impostazioni")
+                    Text(String(localized: "homekit.action.openSettings", defaultValue: "Apri Impostazioni"))
                 }
                 .font(.body.weight(.semibold))
                 .padding(.horizontal, 24)

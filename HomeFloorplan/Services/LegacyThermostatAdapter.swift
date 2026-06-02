@@ -74,7 +74,8 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
     var supportsQuickToggle: Bool { true }
     var primaryStatusText: String? {
         guard accessory.isReachable else { return nil }
-        return String(format: "%.0f°", currentTemperature)
+        let display = celsiusToDisplay(currentTemperature)
+        return String(format: "%.0f%@", display, displayUnit.symbol)
     }
     var markerStyle: MarkerStyle { .sensorNumeric }
     var visualUrgency: MarkerUrgency {
@@ -180,14 +181,20 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
     }
     
     // MARK: - Display units (riuso enum di ThermostatAdapter)
-    
-    var displayUnit: ThermostatAdapter.TemperatureUnit {
-        let displayUnitsUUID = "00000036-0000-1000-8000-0026BB765291"
-        guard let c = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: displayUnitsUUID) else {
-            return .celsius
+
+    var displayUnit: ThermostatAdapter.DisplayUnit {
+        // Legge la preferenza utente (impostata in Impostazioni → Ambiente).
+        let saved = UserDefaults.standard.string(forKey: TemperatureUnit.appStorageKey) ?? ""
+        if let pref = TemperatureUnit(rawValue: saved) {
+            return pref == .fahrenheit ? .fahrenheit : .celsius
         }
-        let raw = intValue(homeKit.value(for: c) ?? c.value) ?? 0
-        return raw == 1 ? .fahrenheit : .celsius
+        // Fallback: caratteristica HomeKit TemperatureDisplayUnits (UUID 00000036)
+        let displayUnitsUUID = "00000036-0000-1000-8000-0026BB765291"
+        if let c = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: displayUnitsUUID) {
+            let raw = intValue(homeKit.value(for: c) ?? c.value) ?? 0
+            return raw == 1 ? .fahrenheit : .celsius
+        }
+        return .celsius
     }
     
     func celsiusToDisplay(_ celsius: Double) -> Double {
@@ -267,3 +274,15 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
 }
 
 extension LegacyThermostatAdapter: ThermostatControlling {}
+
+// MARK: - EnvironmentReadable
+
+extension LegacyThermostatAdapter: EnvironmentReadable {
+    var environmentTemperature: Double? { currentTemperature }
+    var environmentCO2:         Double? { nil }
+    var environmentPM25:        Double? { nil }
+    var environmentPM10:        Double? { nil }
+    var environmentVOC:         Double? { nil }
+    var environmentAirQuality:  String? { nil }
+    var environmentLightLevel:  Int?    { nil }
+}

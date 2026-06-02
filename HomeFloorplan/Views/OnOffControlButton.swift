@@ -68,8 +68,10 @@ struct OnOffControlButton: View {
     }
     
     private var stateLabel: String {
-        if !isReachable { return "Non raggiungibile" }
-        return isOn ? "Acceso" : "Spento"
+        if !isReachable { return String(localized: "accessory.unreachable", defaultValue: "Non raggiungibile") }
+        return isOn
+            ? String(localized: "accessory.state.on", defaultValue: "Acceso")
+            : String(localized: "accessory.state.off", defaultValue: "Spento")
     }
     
     // MARK: - Action

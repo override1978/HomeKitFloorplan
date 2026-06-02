@@ -5,6 +5,10 @@ import HomeKit
 import RoomPlan
 
 struct NewFloorplanSheet: View {
+    /// Called after a successful save with the new floorplan's UUID.
+    /// Use this to navigate to the newly created floorplan.
+    var onSaved: ((UUID) -> Void)?
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(HomeKitService.self) private var homeKit
@@ -18,6 +22,10 @@ struct NewFloorplanSheet: View {
     @State private var showRoomCapture = false
     @State private var isProcessingScan = false
     @State private var debugPlan: Floorplan2D?
+
+    @State private var showDrawingEditor = false
+    @State private var linkedRooms: [LinkedRoom] = []
+    @State private var savedDrawingDocument: DrawingDocument?
     
     var body: some View {
         NavigationStack {
@@ -43,7 +51,21 @@ struct NewFloorplanSheet: View {
                         }
                     }
                     
-                    // Opzione 2: RoomPlan scan (solo se LiDAR disponibile)
+                    // Opzione 2: Editor 2D
+                    Button {
+                        showDrawingEditor = true
+                    } label: {
+                        HStack {
+                            Label("Disegna planimetria", systemImage: "pencil.and.ruler")
+                                .foregroundStyle(.tint)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.tertiary)
+                                .font(.caption.weight(.semibold))
+                        }
+                    }
+
+                    // Opzione 3: RoomPlan scan (solo se LiDAR disponibile)
                     if RoomPlanSupport.isSupported {
                         Button {
                             showRoomCapture = true
@@ -109,16 +131,31 @@ struct NewFloorplanSheet: View {
             .task(id: pickerItem) {
                 await loadSelectedImage()
             }
+            .fullScreenCover(isPresented: $showDrawingEditor) {
+                DrawingFloorplanSheet(initialDocument: savedDrawingDocument) { drawnImage, rooms, doc in
+                    selectedImage = drawnImage
+                    linkedRooms = rooms
+                    savedDrawingDocument = doc
+                    if name.trimmingCharacters(in: .whitespaces).isEmpty {
+                        name = "Planimetria disegnata"
+                    }
+                }
+                .ignoresSafeArea()
+            }
             .fullScreenCover(isPresented: $showRoomCapture) {
                 RoomCaptureSheetView(
-                    onCompletion: { capturedStructure in        // 👈 ora CapturedStructure
+                    onCompletion: { capturedStructure in
                         showRoomCapture = false
                         Task {
-                            await processCapturedStructure(capturedStructure)   // 👈 nuovo nome
+                            await processCapturedStructure(capturedStructure)
                         }
                     },
                     onCancel: {
                         showRoomCapture = false
+                    },
+                    onError: { message in
+                        showRoomCapture = false
+                        errorMessage = message
                     }
                 )
                 .ignoresSafeArea()
@@ -148,22 +185,19 @@ struct NewFloorplanSheet: View {
     private func processCapturedStructure(_ structure: CapturedStructure) async {
         isProcessingScan = true
         defer { isProcessingScan = false }
-        
-        do {
-            // Genera debug plan PRIMA del render
-            let plan = try RoomPlanExportService.buildPlan(structure: structure)
-            debugPlan = plan
-            
-            let image = try RoomPlanExportService.exportAsImage(structure: structure)
-            selectedImage = image
-            errorMessage = nil
-            if name.trimmingCharacters(in: .whitespaces).isEmpty {
-                let count = structure.rooms.count
-                name = count > 1 ? "Piano (\(count) stanze)" : "Stanza scansionata"
-            }
-        } catch {
-            errorMessage = error.localizedDescription
+
+        // Render 3D top-down via SceneKit — nessun throw, restituisce sempre un'immagine
+        let image = RoomPlanExportService.exportAs3DTopDown(structure: structure)
+        selectedImage = image
+        errorMessage = nil
+
+        if name.trimmingCharacters(in: .whitespaces).isEmpty {
+            let count = structure.rooms.count
+            name = count > 1 ? "Piano (\(count) stanze)" : "Stanza scansionata"
         }
+
+        // Debug plan 2D ancora visibile in basso (facoltativo, puoi rimuoverlo)
+        debugPlan = try? RoomPlanExportService.buildPlan(structure: structure)
     }
     
     private func save() {
@@ -176,9 +210,17 @@ struct NewFloorplanSheet: View {
                 imageFilename: filename,
                 homeUUID: homeKit.currentHome?.uniqueIdentifier
             )
+            if !linkedRooms.isEmpty {
+                floorplan.linkedRooms = linkedRooms
+            }
+            if let doc = savedDrawingDocument {
+                floorplan.drawingDocument = doc
+            }
             modelContext.insert(floorplan)
             try modelContext.save()
+            let savedID = floorplan.id
             dismiss()
+            onSaved?(savedID)
         } catch {
             errorMessage = error.localizedDescription
             isSaving = false

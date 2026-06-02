@@ -27,7 +27,7 @@ protocol ThermostatControlling: AnyObject {
      var environmentHumidity: Double? { get }
     
     // Unità
-    var displayUnit: ThermostatAdapter.TemperatureUnit { get }
+    var displayUnit: ThermostatAdapter.DisplayUnit { get }
     func celsiusToDisplay(_ celsius: Double) -> Double
     func displayToCelsius(_ display: Double) -> Double
     

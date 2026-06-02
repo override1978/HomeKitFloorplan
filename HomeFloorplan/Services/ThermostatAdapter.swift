@@ -14,10 +14,10 @@ enum HeaterCoolerMode: Int, CaseIterable, Identifiable {
     
     var displayName: String {
         switch self {
-        case .off:  return "Spento"
-        case .auto: return "Auto"
-        case .heat: return "Caldo"
-        case .cool: return "Freddo"
+        case .off:  return String(localized: "thermostat.mode.off",  defaultValue: "Spento")
+        case .auto: return String(localized: "thermostat.mode.auto", defaultValue: "Auto")
+        case .heat: return String(localized: "thermostat.mode.heat", defaultValue: "Caldo")
+        case .cool: return String(localized: "thermostat.mode.cool", defaultValue: "Freddo")
         }
     }
     
@@ -125,7 +125,7 @@ final class ThermostatAdapter: AccessoryAdapter {
     
     // MARK: - Display units
 
-    enum TemperatureUnit {
+    enum DisplayUnit {
         case celsius, fahrenheit
         var symbol: String {
             switch self {
@@ -135,15 +135,22 @@ final class ThermostatAdapter: AccessoryAdapter {
         }
     }
 
-    /// Unità preferita di display (UUID 00000036 — TemperatureDisplayUnits).
-    /// Default: Celsius. HomeKit comunica sempre in °C internamente.
-    var displayUnit: TemperatureUnit {
-        let displayUnitsUUID = "00000036-0000-1000-8000-0026BB765291"
-        guard let c = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: displayUnitsUUID) else {
-            return .celsius
+    /// Unità preferita di display.
+    /// Legge la preferenza utente da UserDefaults (chiave "temperatureUnit", impostabile
+    /// in Impostazioni → Ambiente). Fallback: controlla la characteristic HomeKit UUID 00000036.
+    var displayUnit: DisplayUnit {
+        // Legge la preferenza utente (impostata in Impostazioni → Ambiente).
+        let saved = UserDefaults.standard.string(forKey: TemperatureUnit.appStorageKey) ?? ""
+        if let pref = TemperatureUnit(rawValue: saved) {
+            return pref == .fahrenheit ? .fahrenheit : .celsius
         }
-        let raw = intValue(homeKit.value(for: c) ?? c.value) ?? 0
-        return raw == 1 ? .fahrenheit : .celsius
+        // Fallback: caratteristica HomeKit TemperatureDisplayUnits (UUID 00000036)
+        let displayUnitsUUID = "00000036-0000-1000-8000-0026BB765291"
+        if let c = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: displayUnitsUUID) {
+            let raw = intValue(homeKit.value(for: c) ?? c.value) ?? 0
+            return raw == 1 ? .fahrenheit : .celsius
+        }
+        return .celsius
     }
 
     func celsiusToDisplay(_ celsius: Double) -> Double {
@@ -162,13 +169,14 @@ final class ThermostatAdapter: AccessoryAdapter {
     
     var isOn: Bool { currentMode != .off && isHeatingOrCoolingActive }
     
-    var supportsQuickToggle: Bool { true }
+    var supportsQuickToggle: Bool { false }
     
     var supportsFloorplanPlacement: Bool { true }
     
     var primaryStatusText: String? {
         guard accessory.isReachable else { return nil }
-        return String(format: "%.0f°", currentTemperature)
+        let display = celsiusToDisplay(currentTemperature)
+        return String(format: "%.0f%@", display, displayUnit.symbol)
     }
     
     var markerStyle: MarkerStyle { .sensorNumeric }
@@ -383,7 +391,7 @@ final class ThermostatAdapter: AccessoryAdapter {
     }
     
     // MARK: - Helpers
-    
+
     private func doubleValue(_ any: Any?) -> Double? {
         if let d = any as? Double { return d }
         if let f = any as? Float { return Double(f) }
@@ -391,11 +399,23 @@ final class ThermostatAdapter: AccessoryAdapter {
         if let n = any as? NSNumber { return n.doubleValue }
         return nil
     }
-    
+
     private func intValue(_ any: Any?) -> Int? {
         if let i = any as? Int { return i }
         if let u = any as? UInt8 { return Int(u) }
         if let n = any as? NSNumber { return n.intValue }
         return nil
     }
+}
+
+// MARK: - EnvironmentReadable
+
+extension ThermostatAdapter: EnvironmentReadable {
+    var environmentTemperature: Double? { currentTemperature }
+    var environmentCO2:         Double? { nil }
+    var environmentPM25:        Double? { nil }
+    var environmentPM10:        Double? { nil }
+    var environmentVOC:         Double? { nil }
+    var environmentAirQuality:  String? { nil }
+    var environmentLightLevel:  Int?    { nil }
 }

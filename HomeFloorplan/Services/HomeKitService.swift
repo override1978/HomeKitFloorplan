@@ -31,15 +31,14 @@ final class HomeKitService: NSObject {
 
     /// La casa attualmente attiva. Logica:
     /// 1. Se l'utente ne ha scelta una via selectedHomeUUID, usa quella
-    /// 2. Altrimenti fallback su manager.primaryHome
-    /// 3. Altrimenti la prima disponibile
+    /// 2. Altrimenti la prima disponibile (primaryHome è deprecated da iOS 16.1)
     var currentHome: HMHome? {
         guard let manager else { return nil }
         if let uuid = selectedHomeUUID,
            let match = manager.homes.first(where: { $0.uniqueIdentifier == uuid }) {
             return match
         }
-        return manager.primaryHome ?? manager.homes.first
+        return manager.homes.first
     }
 
     /// Tutte le case configurate dall'utente in Apple Home (per il selettore).
@@ -82,6 +81,12 @@ final class HomeKitService: NSObject {
 
     /// True se HomeKit è stato attivato (HMHomeManager creato).
     var isHomeKitActivated: Bool { manager != nil }
+
+    /// Logger attività. Iniettato dall'app dopo l'init.
+    var activityLogger: ActivityLoggerService?
+
+    /// Store eventi accessori per lo storico AI. Iniettato dall'app dopo l'init.
+    var accessoryEventStore: AccessoryEventStore?
     
     private var observedAccessoryUUIDs: Set<UUID> = []
     
@@ -227,10 +232,35 @@ final class HomeKitService: NSObject {
         do {
             try await characteristic.writeValue(value)
             characteristicValues[characteristic.uniqueIdentifier] = value
-            
+
             // Successo: cancella eventuale errore precedente
             if let uuid = characteristic.service?.accessory?.uniqueIdentifier {
                 lastWriteErrors.removeValue(forKey: uuid)
+            }
+
+            // Log attività
+            if let logger = activityLogger,
+               let accessory = characteristic.service?.accessory {
+                let (name, valStr) = ActivityLoggerService.describe(characteristic: characteristic, value: value)
+                await MainActor.run {
+                    logger.logWrite(
+                        characteristicUUID: characteristic.uniqueIdentifier,
+                        accessoryName: accessory.name,
+                        roomName: accessory.room?.name,
+                        characteristicDescription: name,
+                        value: valStr
+                    )
+                }
+            }
+
+            // Registra evento per lo storico AI (solo tipi rilevanti)
+            if let store = accessoryEventStore,
+               let accessory = characteristic.service?.accessory,
+               let dto = AccessoryEventStore.makeDTO(
+                   from: characteristic, value: value, accessory: accessory) {
+                await MainActor.run {
+                    store.saveEvent(dto)
+                }
             }
         } catch {
             // Fallimento: registra errore con timestamp
@@ -256,7 +286,7 @@ final class HomeKitService: NSObject {
     /// L'effetto è simile a un "ping" e in molti casi sveglia device dormienti.
     func refreshReachability() async {
         let accessories = allAccessories
-        print("🔄 refreshReachability su \(accessories.count) accessori")
+        dprint("🔄 refreshReachability su \(accessories.count) accessori")
         
         for accessory in accessories {
             accessory.delegate = self
@@ -278,7 +308,7 @@ final class HomeKitService: NSObject {
             refreshAccessoriesList()
         }
         
-        print("✅ refreshReachability completato")
+        dprint("✅ refreshReachability completato")
     }
 
     /// Tenta di leggere fino a 2 caratteristiche readable del primary service.
@@ -367,6 +397,25 @@ extension HomeKitService: HMAccessoryDelegate {
                    didUpdateValueFor characteristic: HMCharacteristic) {
         if let value = characteristic.value {
             characteristicValues[characteristic.uniqueIdentifier] = value
+
+            // Log cambiamento esterno (con echo-dedup e debounce interni al service)
+            if let logger = activityLogger {
+                let (name, valStr) = ActivityLoggerService.describe(characteristic: characteristic, value: value)
+                logger.logExternalChange(
+                    characteristicUUID: characteristic.uniqueIdentifier,
+                    accessoryName: accessory.name,
+                    roomName: accessory.room?.name,
+                    characteristicDescription: name,
+                    value: valStr
+                )
+            }
+
+            // Registra evento per lo storico AI (solo tipi rilevanti)
+            if let store = accessoryEventStore,
+               let dto = AccessoryEventStore.makeDTO(
+                   from: characteristic, value: value, accessory: accessory) {
+                store.saveEvent(dto)
+            }
         }
     }
     

@@ -22,6 +22,9 @@ struct FloorplanEditorView: View {
         case splitView    // detail di NavigationSplitView (dalla sidebar)
         case pushed       // pushed su NavigationStack (dalla galleria)
     }
+
+    /// When true, the editor enters edit mode automatically on first appear.
+    var startInEditMode: Bool = false
     
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
@@ -29,6 +32,10 @@ struct FloorplanEditorView: View {
     
     @State private var isEditing: Bool = false
     @State private var showingPicker: Bool = false
+    /// When set, the picker shows this room prominently (tap on room area).
+    @State private var pickerRoomFilter: UUID?
+    /// Normalized position where the user tapped — new accessories placed here.
+    @State private var pendingMarkerPosition: NormalizedPoint?
     @State private var dragDeltas: [UUID: CGSize] = [:]
     @State private var controllingAccessory: HMAccessory?
     @State private var shakeMarkerID: UUID?
@@ -48,10 +55,6 @@ struct FloorplanEditorView: View {
     
     @Environment(HomeKitScenesService.self) private var scenesService
     @State private var showScenesPanel = false
-    
-    private var currentTapMode: FloorplanTapMode {
-        FloorplanTapMode(rawValue: floorplan.tapModeRaw) ?? .openPanel
-    }
     
     private var selectedMarker: PlacedAccessory? {
         guard let id = selectedMarkerID else { return nil }
@@ -92,18 +95,47 @@ struct FloorplanEditorView: View {
                 floatingControls(in: proxy.size)
                     .opacity(shouldShowControls ? 1 : 0)
                     .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
+
+                // Right-side scenes panel overlay
+                if showScenesPanel {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                showScenesPanel = false
+                            }
+                        }
+                        .transition(.opacity)
+                }
+
+                HStack(spacing: 0) {
+                    Spacer()
+                    ScenesSidePanel(isPresented: $showScenesPanel)
+                        .frame(width: min(proxy.size.width * 0.72, 320))
+                        .offset(x: showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.88), value: showScenesPanel)
+                }
+                .ignoresSafeArea(edges: .vertical)
             }
             .contentShape(Rectangle())
-            .onTapGesture {
-                handleBackgroundTap()
+            .onTapGesture { location in
+                handleBackgroundTap(at: location, in: proxy.size)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $showingPicker) {
+        .sheet(isPresented: $showingPicker, onDismiss: {
+            pickerRoomFilter = nil
+            pendingMarkerPosition = nil
+        }) {
             AccessoryPickerSheet(
                 alreadyPlaced: Set(floorplan.accessories.map(\.homeKitAccessoryUUID)),
-                onPick: { accessory in
-                    addAccessory(accessory)
+                preferredRoomUUIDs: pickerRoomFilter != nil
+                    ? Set([pickerRoomFilter!])
+                    : Set(floorplan.linkedRooms.map(\.hmRoomUUID)),
+                onPick: { accessories in
+                    for accessory in accessories {
+                        addAccessory(accessory, at: pendingMarkerPosition)
+                    }
                 }
             )
         }
@@ -119,11 +151,6 @@ struct FloorplanEditorView: View {
                 )
                 .presentationDetents([.large])
             }
-        }
-        .sheet(isPresented: $showScenesPanel) {
-            ScenesView(presentedAsSheet: true)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.hidden)
         }
         
         
@@ -142,7 +169,14 @@ struct FloorplanEditorView: View {
         }
         .onAppear {
             subscribeToAccessories()
-            scheduleAutoHide()
+            restoreZoom()
+            if startInEditMode {
+                isEditing = true
+                controlsVisible = true
+                hideTask?.cancel()
+            } else {
+                scheduleAutoHide()
+            }
         }
         .onChange(of: homeKit.isReady) { _, isReady in
             if isReady {
@@ -296,46 +330,27 @@ struct FloorplanEditorView: View {
     private var topRightActions: some View {
         GlassPill {
             HStack(spacing: 0) {
-                Menu {
-                    ForEach(FloorplanTapMode.allCases, id: \.self) { mode in
-                        Button {
-                            floorplan.tapModeRaw = mode.rawValue
-                            floorplan.updatedAt = .now
-                            try? modelContext.save()
-                        } label: {
-                            HStack {
-                                Label(mode.localized, systemImage: mode.systemImage)
-                                if floorplan.tapModeRaw == mode.rawValue {
-                                    Spacer()
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
+                // Bottone + solo in edit mode
+                if isEditing {
+                    Button {
+                        pickerRoomFilter = nil
+                        pendingMarkerPosition = nil
+                        showingPicker = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.headline)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
                     }
-                } label: {
-                    Image(systemName: currentTapMode.systemImage)
-                        .font(.subheadline)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+
+                    Divider().frame(height: 20)
+                        .transition(.opacity)
                 }
-                .buttonStyle(.plain)
-                
-                Divider().frame(height: 20)
-                
-                Button {
-                    showingPicker = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.headline)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                
-                Divider().frame(height: 20)
-                
+
+                // Scene: sempre visibile
                 Button {
                     showScenesPanel = true
                 } label: {
@@ -346,9 +361,9 @@ struct FloorplanEditorView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                            
+
                 Divider().frame(height: 20)
-                
+
                 Button {
                     withAnimation(.spring(response: 0.3)) {
                         isEditing.toggle()
@@ -392,23 +407,56 @@ struct FloorplanEditorView: View {
         }
     }
     
-    private func handleBackgroundTap() {
+    private func handleBackgroundTap(at tapLocation: CGPoint, in containerSize: CGSize) {
+        // 1. Deselect marker in edit mode
         if isEditing && selectedMarkerID != nil {
             withAnimation(.spring(response: 0.35)) {
                 selectedMarkerID = nil
             }
             return
         }
+
+        // 2. Not editing: show controls
         if !isEditing {
             withAnimation(.easeInOut(duration: 0.25)) {
                 controlsVisible = true
             }
             scheduleAutoHide()
+            return
         }
+
+        // 3. Editing + has linked room areas: detect which area was tapped
+        guard !floorplan.linkedRooms.isEmpty else { return }
+
+        // Reverse the zoom/pan transform (scaleEffect anchor: .center, then offset)
+        let centerX = containerSize.width / 2
+        let centerY = containerSize.height / 2
+        let adjustedX = (tapLocation.x - centerX - effectiveOffset.width) / effectiveScale + centerX
+        let adjustedY = (tapLocation.y - centerY - effectiveOffset.height) / effectiveScale + centerY
+
+        // Compute the content rect using the saved image (aspect-fit).
+        guard let image = ImageStorageService.load(filename: floorplan.imageFilename) else { return }
+        let imgRect = imageRect(imageSize: image.size, container: containerSize)
+
+        // Normalize to [0, 1] within the content rect
+        let normX = (adjustedX - imgRect.origin.x) / imgRect.width
+        let normY = (adjustedY - imgRect.origin.y) / imgRect.height
+        guard normX >= 0, normX <= 1, normY >= 0, normY <= 1 else { return }
+
+        pendingMarkerPosition = NormalizedPoint(x: normX, y: normY)
+
+        // Hit-test linked room areas
+        pickerRoomFilter = floorplan.linkedRooms.first { room in
+            let r = room.normalizedRect
+            return normX >= r.x && normX <= r.x + r.width
+                && normY >= r.y && normY <= r.y + r.height
+        }?.hmRoomUUID
+
+        showingPicker = true
     }
     
     // MARK: - Zoom & pan
-    
+
     private func zoomPanGesture(in container: CGSize) -> some Gesture {
         let magnify = MagnificationGesture()
             .onChanged { value in
@@ -423,8 +471,9 @@ struct FloorplanEditorView: View {
                         zoomOffset = .zero
                     }
                 }
+                saveZoom()
             }
-        
+
         let drag = DragGesture(minimumDistance: 10)
             .onChanged { value in
                 guard effectiveScale > 1.01 else { return }
@@ -441,31 +490,32 @@ struct FloorplanEditorView: View {
                 )
                 liveOffset = .zero
                 clampOffset(in: container)
+                saveZoom()
             }
-        
+
         return magnify.simultaneously(with: drag)
     }
-    
+
     private func clampedScale(_ scale: CGFloat) -> CGFloat {
         min(max(scale, 1.0), 4.0)
     }
-    
+
     private func clampOffset(in container: CGSize) {
         let extraW = container.width * (zoomScale - 1) / 2
         let extraH = container.height * (zoomScale - 1) / 2
         let maxX = max(0, extraW)
         let maxY = max(0, extraH)
-        
+
         let clampedX = min(maxX, max(-maxX, zoomOffset.width))
         let clampedY = min(maxY, max(-maxY, zoomOffset.height))
-        
+
         if clampedX != zoomOffset.width || clampedY != zoomOffset.height {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                 zoomOffset = CGSize(width: clampedX, height: clampedY)
             }
         }
     }
-    
+
     private func resetZoom() {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
             zoomScale = 1.0
@@ -473,6 +523,32 @@ struct FloorplanEditorView: View {
             liveScale = 1.0
             liveOffset = .zero
         }
+        saveZoom()
+    }
+
+    // MARK: - Zoom persistence
+
+    /// UserDefaults keys are scoped to the floorplan UUID so each
+    /// planimetria remembers its own zoom and pan state independently.
+    private var zoomScaleKey:   String { "zoom_scale_\(floorplan.id.uuidString)" }
+    private var zoomOffsetXKey: String { "zoom_offsetX_\(floorplan.id.uuidString)" }
+    private var zoomOffsetYKey: String { "zoom_offsetY_\(floorplan.id.uuidString)" }
+
+    private func saveZoom() {
+        let ud = UserDefaults.standard
+        ud.set(Double(zoomScale),        forKey: zoomScaleKey)
+        ud.set(Double(zoomOffset.width), forKey: zoomOffsetXKey)
+        ud.set(Double(zoomOffset.height),forKey: zoomOffsetYKey)
+    }
+
+    private func restoreZoom() {
+        let ud = UserDefaults.standard
+        guard ud.object(forKey: zoomScaleKey) != nil else { return }
+        zoomScale  = CGFloat(ud.double(forKey: zoomScaleKey))
+        zoomOffset = CGSize(
+            width:  CGFloat(ud.double(forKey: zoomOffsetXKey)),
+            height: CGFloat(ud.double(forKey: zoomOffsetYKey))
+        )
     }
     
     // MARK: - Image rect
@@ -497,17 +573,17 @@ struct FloorplanEditorView: View {
         let rect = imageRect(imageSize: image.size, container: container)
         return ZStack(alignment: .topLeading) {
             Color.clear
-            
+
             Image(uiImage: image)
                 .resizable()
                 .scaledToFit()
                 .frame(width: rect.width, height: rect.height)
                 .position(x: rect.midX, y: rect.midY)
-            
+
             ForEach(floorplan.accessories) { placed in
                 markerView(for: placed, in: rect)
             }
-            
+
             // Hint flottante per planimetria vuota
             if floorplan.accessories.isEmpty {
                 emptyMarkersHint
@@ -518,34 +594,45 @@ struct FloorplanEditorView: View {
     }
 
     private var emptyMarkersHint: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "plus.circle.fill")
+        let hasAreas = !floorplan.linkedRooms.isEmpty
+        return VStack(spacing: 14) {
+            Image(systemName: hasAreas ? "rectangle.dashed.badge.plus" : "plus.circle.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.tint)
-            
+
             Text("Nessun accessorio piazzato")
                 .font(.headline)
-            
-            Text("Tap su + in alto a destra per aggiungere il primo accessorio HomeKit sulla planimetria.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-            
-            Button {
-                showingPicker = true
-            } label: {
-                Label("Aggiungi accessorio", systemImage: "plus")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule()
-                            .fill(.tint)
-                    )
-                    .foregroundStyle(.white)
+
+            if hasAreas {
+                Text("Tocca un'area stanza sulla planimetria per aggiungere il primo accessorio HomeKit.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            } else {
+                Text("Tap su + in alto a destra per aggiungere il primo accessorio HomeKit sulla planimetria.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                Button {
+                    pickerRoomFilter = nil
+                    pendingMarkerPosition = nil
+                    showingPicker = true
+                } label: {
+                    Label("Aggiungi accessorio", systemImage: "plus")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule()
+                                .fill(.tint)
+                        )
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(20)
         .frame(maxWidth: 320)
@@ -561,9 +648,24 @@ struct FloorplanEditorView: View {
     @ViewBuilder
     private func markerView(for placed: PlacedAccessory, in imageRect: CGRect) -> some View {
         let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID)
-        let displayLabel = placed.customLabel?.isEmpty == false
-            ? placed.customLabel!
-            : (accessory?.name ?? "(rimosso)")
+        let displayLabel: String = {
+            if let custom = placed.customLabel, !custom.isEmpty { return custom }
+            guard let accessory else { return "(rimosso)" }
+            let fullName = accessory.name
+            if let roomName = accessory.room?.name {
+                // Suffisso: "Faretti Cucina" → rimuovi " Cucina"
+                let suffix = " " + roomName
+                if fullName.hasSuffix(suffix) {
+                    return String(fullName.dropLast(suffix.count))
+                }
+                // Prefisso con trattino: "Cucina - Faretti" → rimuovi "Cucina - "
+                let prefix = roomName + " - "
+                if fullName.hasPrefix(prefix) {
+                    return String(fullName.dropFirst(prefix.count))
+                }
+            }
+            return fullName
+        }()
         let adapter: (any AccessoryAdapter)? = accessory.map { acc in
             AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit)
         }
@@ -580,21 +682,13 @@ struct FloorplanEditorView: View {
         
         let inverseScale = 1.0 / effectiveScale
         
-        ZStack {
-            if isEditing && isSelected {
-                Circle()
-                    .stroke(BrandColor.secondary, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
-                    .frame(width: size.controllableDiameter, height: size.controllableDiameter)
-                    .transition(.scale.combined(with: .opacity))
-            }
-            
-            AccessoryMarkerView(
-                adapter: adapter,
-                isEditing: isEditing,
-                label: displayLabel,
-                hasCustomLabel: placed.customLabel?.isEmpty == false
-            )
-        }
+        AccessoryMarkerView(
+            adapter: adapter,
+            isEditing: isEditing,
+            isSelected: isEditing && isSelected,
+            label: displayLabel,
+            hasCustomLabel: placed.customLabel?.isEmpty == false
+        )
         .scaleEffect(inverseScale)
         .position(livePoint)
         .offset(x: shaking ? 6 : 0)
@@ -624,7 +718,7 @@ struct FloorplanEditorView: View {
             ? TapGesture()
                 .onEnded {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        selectedMarkerID = placed.id
+                        selectedMarkerID = (selectedMarkerID == placed.id) ? nil : placed.id
                     }
                 }
             : nil
@@ -641,19 +735,14 @@ struct FloorplanEditorView: View {
                            adapter: (any AccessoryAdapter)?) {
         guard !isEditing else { return }
         guard let accessory else { return }
-        
+
         scheduleAutoHide()
-        
-        switch currentTapMode {
-        case .openPanel:
+
+        // Tap: toggle diretto se supportato, altrimenti apre il pannello dettaglio.
+        if let adapter, adapter.supportsQuickToggle {
+            performQuickToggle(adapter: adapter)
+        } else {
             controllingAccessory = accessory
-        case .quickToggle:
-            if let adapter, adapter.supportsQuickToggle {
-                performQuickToggle(adapter: adapter)
-            } else {
-                triggerShake(for: placed.id)
-                controllingAccessory = accessory
-            }
         }
     }
     
@@ -715,10 +804,10 @@ struct FloorplanEditorView: View {
     
     // MARK: - Marker actions
     
-    private func addAccessory(_ accessory: HMAccessory) {
+    private func addAccessory(_ accessory: HMAccessory, at position: NormalizedPoint? = nil) {
         let placed = PlacedAccessory(
             homeKitAccessoryUUID: accessory.uniqueIdentifier,
-            position: .center
+            position: position ?? .center
         )
         placed.floorplan = floorplan
         modelContext.insert(placed)

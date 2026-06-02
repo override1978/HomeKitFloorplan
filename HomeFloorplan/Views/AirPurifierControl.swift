@@ -84,9 +84,11 @@ struct AirPurifierControl: View {
     }
     
     private var stateLabel: String {
-        if !isReachable { return "Non raggiungibile" }
-        if !isActive { return "Spento" }
-        return adapter.isPurifying ? "Sta purificando" : "In attesa"
+        if !isReachable { return String(localized: "accessory.unreachable", defaultValue: "Non raggiungibile") }
+        if !isActive { return String(localized: "accessory.state.off", defaultValue: "Spento") }
+        return adapter.isPurifying
+            ? String(localized: "airpurifier.state.purifying", defaultValue: "Sta purificando")
+            : String(localized: "airpurifier.state.idle", defaultValue: "In attesa")
     }
     
     // MARK: - Mode pills
@@ -134,7 +136,7 @@ struct AirPurifierControl: View {
             HStack {
                 Image(systemName: "fan.fill")
                     .foregroundStyle(.secondary)
-                Text("Ventola")
+                Text(String(localized: "thermostat.fan", defaultValue: "Ventola"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -189,7 +191,7 @@ struct AirPurifierControl: View {
     }
     
     private func fanLabel(for level: Int) -> String {
-        if level == 0 { return "Spenta" }
+        if level == 0 { return String(localized: "airpurifier.fan.off", defaultValue: "Spenta") }
         return "\(level)%"
     }
     
@@ -207,15 +209,15 @@ struct AirPurifierControl: View {
         let warning = !critical && life <= 30
         let color: Color = critical ? .red : (warning ? .orange : .green)
         let text: String = {
-            if needsChange { return "Sostituire filtro" }
-            return "Vita filtro: \(life)%"
+            if needsChange { return String(localized: "airpurifier.filter.replace", defaultValue: "Sostituire filtro") }
+            return "\(String(localized: "airpurifier.filter.life", defaultValue: "Vita filtro")): \(life)%"
         }()
-        
+
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Image(systemName: "air.purifier")
                     .foregroundStyle(color)
-                Text("Filtro")
+                Text(String(localized: "airpurifier.filter.label", defaultValue: "Filtro"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()

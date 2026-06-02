@@ -14,12 +14,13 @@ struct ThermostatControl: View {
     
     @Environment(HomeKitService.self) private var homeKit
     
-    /// Target ottimistico durante l'interazione (per UI reattiva)
+    /// Target ottimistico durante l'interazione (per UI reattiva), in Celsius (come l'adapter).
     @State private var optimisticTarget: Double?
     @State private var optimisticFan: Int?
-    
+
+    /// Target in unità di display (°C o °F).
     private var displayTarget: Double {
-        optimisticTarget ?? adapter.displayTargetTemperature
+        adapter.celsiusToDisplay(optimisticTarget ?? adapter.displayTargetTemperature)
     }
     
     private var mode: HeaterCoolerMode { adapter.currentMode }
@@ -43,6 +44,7 @@ struct ThermostatControl: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .onChange(of: adapter.displayTargetTemperature) { _, newValue in
+            // optimisticTarget è in Celsius: confronta con il nuovo valore Celsius dall'adapter
             if let optimistic = optimisticTarget,
                abs(newValue - optimistic) < 0.05 {
                 optimisticTarget = nil
@@ -65,7 +67,7 @@ struct ThermostatControl: View {
                 .contentTransition(.numericText())
                 .foregroundStyle(targetColor)
             
-            Text("Ora: \(formatted(adapter.currentTemperature))")
+            Text("\(String(localized: "thermostat.now", defaultValue: "Ora")) \(formatted(adapter.celsiusToDisplay(adapter.currentTemperature)))")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .contentTransition(.numericText())
@@ -130,7 +132,7 @@ struct ThermostatControl: View {
             HStack {
                 Image(systemName: "fan.fill")
                     .foregroundStyle(.secondary)
-                Text("Ventola")
+                Text(String(localized: "thermostat.fan", defaultValue: "Ventola"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -194,8 +196,10 @@ struct ThermostatControl: View {
     }
 
     private func fanLabel(for level: Int) -> String {
-        if level == adapter.rotationSpeedRange.lowerBound { return "Auto" }
-        return "Livello \(level)"
+        if level == adapter.rotationSpeedRange.lowerBound {
+            return String(localized: "thermostat.mode.auto", defaultValue: "Auto")
+        }
+        return String(format: String(localized: "thermostat.fan.level", defaultValue: "Livello %d"), level)
     }
 
     private func fanShortLabel(for level: Int) -> String {
@@ -259,7 +263,7 @@ struct ThermostatControl: View {
             if adapter.hasLowBattery {
                 HStack(spacing: 4) {
                     Image(systemName: "battery.25percent")
-                    Text("Batteria")
+                    Text(String(localized: "accessory.battery.low", defaultValue: "Batteria"))
                 }
                 .font(.subheadline)
                 .foregroundStyle(.red)
@@ -268,12 +272,12 @@ struct ThermostatControl: View {
     }
     
     private var statusText: String {
-        if !isReachable { return "Non raggiungibile" }
-        if mode == .off { return "Spento" }
+        if !isReachable { return String(localized: "accessory.unreachable",       defaultValue: "Non raggiungibile") }
+        if mode == .off  { return String(localized: "thermostat.mode.off",        defaultValue: "Spento") }
         switch adapter.heaterCoolerState {
-        case 2: return "Sta riscaldando"
-        case 3: return "Sta raffreddando"
-        default: return "Temperatura raggiunta"
+        case 2: return String(localized: "thermostat.status.heating", defaultValue: "Sta riscaldando")
+        case 3: return String(localized: "thermostat.status.cooling", defaultValue: "Sta raffreddando")
+        default: return String(localized: "thermostat.status.idle",   defaultValue: "Temperatura raggiunta")
         }
     }
     
@@ -292,20 +296,22 @@ struct ThermostatControl: View {
     private func adjustTarget(by delta: Double) {
         let step = adapter.temperatureStep
         let direction = delta > 0 ? 1.0 : -1.0
-        let raw = displayTarget + (step * direction)
-        // Snap a multipli dello step
-        let snapped = (raw / step).rounded() * step
+        // Lavora in unità display per lo step visivo
+        let rawDisplay = displayTarget + (step * direction)
+        let snappedDisplay = (rawDisplay / step).rounded() * step
+        // Riconverti in Celsius per il range e la scrittura su HomeKit
+        let snappedCelsius = adapter.displayToCelsius(snappedDisplay)
         let range = adapter.targetRange
-        let clamped = min(max(snapped, range.lowerBound), range.upperBound)
-        guard clamped != displayTarget else { return }
-        
-        optimisticTarget = clamped
+        let clampedCelsius = min(max(snappedCelsius, range.lowerBound), range.upperBound)
+        guard abs(clampedCelsius - (optimisticTarget ?? adapter.displayTargetTemperature)) > 0.01 else { return }
+
+        optimisticTarget = clampedCelsius  // sempre in Celsius
         let haptic = UIImpactFeedbackGenerator(style: .light)
         haptic.impactOccurred()
-        
+
         Task {
             do {
-                try await adapter.setTargetTemperature(clamped)
+                try await adapter.setTargetTemperature(clampedCelsius)
             } catch {
                 optimisticTarget = nil
                 let notif = UINotificationFeedbackGenerator()
@@ -324,13 +330,15 @@ struct ThermostatControl: View {
     }
     
     // MARK: - Format
-    
+
+    /// Formatta un valore già convertito in unità display, aggiungendo il simbolo corretto.
     private func formatted(_ value: Double) -> String {
         let rounded = (value * 2).rounded() / 2
+        let symbol = adapter.displayUnit.symbol
         if rounded.truncatingRemainder(dividingBy: 1) == 0 {
-            return String(format: "%.0f°", rounded)
+            return String(format: "%.0f%@", rounded, symbol)
         } else {
-            return String(format: "%.1f°", rounded)
+            return String(format: "%.1f%@", rounded, symbol)
         }
     }
 }

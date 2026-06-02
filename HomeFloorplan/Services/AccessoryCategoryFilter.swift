@@ -18,16 +18,16 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
     
     var displayName: String {
         switch self {
-        case .all:             return "Tutti"
-        case .lights:          return "Luci"
-        case .outlets:         return "Prese"
-        case .climate:         return "Clima"
-        case .windowCoverings: return "Tende"
-        case .sensors:         return "Sensori"
-        case .security:        return "Sicurezza"
-        case .air:             return "Aria"
-        case .hubs:            return "Hub"
-        case .others:          return "Altri"
+        case .all:             return String(localized: "filter.category.all",            defaultValue: "Tutti")
+        case .lights:          return String(localized: "filter.category.lights",         defaultValue: "Luci")
+        case .outlets:         return String(localized: "filter.category.outlets",        defaultValue: "Prese")
+        case .climate:         return String(localized: "filter.category.climate",        defaultValue: "Clima")
+        case .windowCoverings: return String(localized: "filter.category.windowCoverings",defaultValue: "Tende")
+        case .sensors:         return String(localized: "filter.category.sensors",        defaultValue: "Sensori")
+        case .security:        return String(localized: "filter.category.security",       defaultValue: "Sicurezza")
+        case .air:             return String(localized: "filter.category.air",            defaultValue: "Aria")
+        case .hubs:            return String(localized: "filter.category.hubs",           defaultValue: "Hub")
+        case .others:          return String(localized: "filter.category.others",         defaultValue: "Altri")
         }
     }
     
@@ -109,11 +109,11 @@ enum AccessoryStateFilter: String, CaseIterable, Identifiable {
     
     var displayName: String {
         switch self {
-        case .all:        return "Tutti"
-        case .on:         return "Accesi"
-        case .offline:    return "Offline"
-        case .lowBattery: return "Batt. scarica"
-        case .alarm:      return "Allarme"
+        case .all:        return String(localized: "filter.state.all",        defaultValue: "Tutti")
+        case .on:         return String(localized: "filter.state.on",         defaultValue: "Accesi")
+        case .offline:    return String(localized: "filter.state.offline",    defaultValue: "Offline")
+        case .lowBattery: return String(localized: "filter.state.lowBattery", defaultValue: "Batt. scarica")
+        case .alarm:      return String(localized: "filter.state.alarm",      defaultValue: "Allarme")
         }
     }
     

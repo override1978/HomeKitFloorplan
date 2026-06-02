@@ -13,10 +13,10 @@ enum SecurityMode: Int, CaseIterable, Identifiable {
     
     var displayName: String {
         switch self {
-        case .stay:   return "Casa"
-        case .away:   return "Fuori"
-        case .night:  return "Notte"
-        case .disarm: return "Disinserito"
+        case .stay:   return String(localized: "security.mode.stay",   defaultValue: "Casa")
+        case .away:   return String(localized: "security.mode.away",   defaultValue: "Fuori")
+        case .night:  return String(localized: "security.mode.night",  defaultValue: "Notte")
+        case .disarm: return String(localized: "security.mode.disarm", defaultValue: "Disinserito")
         }
     }
     
@@ -107,7 +107,7 @@ final class SecuritySystemAdapter: AccessoryAdapter {
     var supportsQuickToggle: Bool { false }
     
     var primaryStatusText: String? {
-        if isTriggered { return "ALLARME" }
+        if isTriggered { return String(localized: "security.alarmActive", defaultValue: "ALLARME ATTIVO") }
         return currentMode.displayName
     }
     

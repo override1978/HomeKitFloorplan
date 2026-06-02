@@ -4,15 +4,18 @@ import HomeKit
 struct AccessoryMarkerView: View {
     let adapter: (any AccessoryAdapter)?
     let isEditing: Bool
+    let isSelected: Bool
     let label: String
     let hasCustomLabel: Bool
-    
+
     @AppStorage(MarkerSize.appStorageKey)
     private var markerSizeRaw: String = MarkerSize.regular.rawValue
-    
+
     @Environment(IconOverrideStore.self) private var iconOverrides
     @Environment(HomeKitService.self) private var homeKit
-    @State private var showingIconPicker: Bool = false
+
+    /// Angolo corrente del wiggle (cambia con animazione repeatForever).
+    @State private var wiggleAngle: Double = 0
     
     private var size: MarkerSize {
         MarkerSize(rawValue: markerSizeRaw) ?? .regular
@@ -56,7 +59,7 @@ struct AccessoryMarkerView: View {
                         radius: urgency != .normal ? 5 : 3,
                         y: 1)
                 .opacity(isLikelyOffline ? 0.6 : 1.0)
-            
+
             HStack(spacing: 3) {
                 if hasCustomLabel {
                     Image(systemName: "pencil")
@@ -72,9 +75,34 @@ struct AccessoryMarkerView: View {
             .background(.thinMaterial, in: Capsule())
         }
         .scaleEffect(isEditing ? 1.1 : 1.0)
+        .rotationEffect(.degrees(wiggleAngle))
         .animation(.spring(response: 0.3), value: isEditing)
         .animation(.easeInOut(duration: 0.2), value: urgency)
-            .contentShape(Rectangle())
+        .contentShape(Rectangle())
+        .onChange(of: isSelected) { _, selected in
+            if selected {
+                // Avvia wiggle: oscilla da -4° a +4°
+                wiggleAngle = -4
+                withAnimation(
+                    .easeInOut(duration: 0.13)
+                    .repeatForever(autoreverses: true)
+                ) {
+                    wiggleAngle = 4
+                }
+            } else {
+                // Ferma wiggle con spring verso 0
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
+                    wiggleAngle = 0
+                }
+            }
+        }
+        .onChange(of: isEditing) { _, editing in
+            if !editing {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) {
+                    wiggleAngle = 0
+                }
+            }
+        }
     }
     
     // MARK: - Forma del marker (varia per style)

@@ -12,9 +12,9 @@ enum MarkerSize: String, CaseIterable, Identifiable {
     
     var localized: String {
         switch self {
-        case .compact: return "Piccolo"
-        case .regular: return "Medio"
-        case .large: return "Grande"
+        case .compact: return String(localized: "marker.size.compact", defaultValue: "Piccolo")
+        case .regular: return String(localized: "marker.size.regular", defaultValue: "Medio")
+        case .large:   return String(localized: "marker.size.large",   defaultValue: "Grande")
         }
     }
     

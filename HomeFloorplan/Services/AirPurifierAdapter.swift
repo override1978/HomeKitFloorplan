@@ -11,8 +11,8 @@ enum AirPurifierMode: Int, CaseIterable, Identifiable {
     
     var displayName: String {
         switch self {
-        case .manual: return "Manuale"
-        case .auto:   return "Auto"
+        case .manual: return String(localized: "airpurifier.mode.manual", defaultValue: "Manuale")
+        case .auto:   return String(localized: "airpurifier.mode.auto",   defaultValue: "Auto")
         }
     }
     
@@ -196,11 +196,11 @@ final class AirPurifierAdapter: AccessoryAdapter {
     var airQualityLabel: String? {
         guard airQualityLevel > 0 else { return nil }
         switch airQualityLevel {
-        case 1: return "Ottima"
-        case 2: return "Buona"
-        case 3: return "Media"
-        case 4: return "Scarsa"
-        case 5: return "Pessima"
+        case 1: return String(localized: "sensor.airQuality.excellent", defaultValue: "Ottima")
+        case 2: return String(localized: "sensor.airQuality.good",      defaultValue: "Buona")
+        case 3: return String(localized: "sensor.airQuality.fair",      defaultValue: "Media")
+        case 4: return String(localized: "sensor.airQuality.inferior",  defaultValue: "Scarsa")
+        case 5: return String(localized: "sensor.airQuality.poor",      defaultValue: "Pessima")
         default: return nil
         }
     }
@@ -242,8 +242,8 @@ final class AirPurifierAdapter: AccessoryAdapter {
         try await homeKit.write(clamped, to: c)
     }
     
-    // MARK: - Helpers
-    
+    // MARK: - Helpers (non-private per uso in EnvironmentReadable extension)
+
     private func intValue(_ any: Any?) -> Int? {
         if let i = any as? Int { return i }
         if let u = any as? UInt8 { return Int(u) }
@@ -259,4 +259,17 @@ final class AirPurifierAdapter: AccessoryAdapter {
         if let n = any as? NSNumber { return n.doubleValue }
         return nil
     }
+}
+
+// MARK: - EnvironmentReadable
+
+extension AirPurifierAdapter: EnvironmentReadable {
+    var environmentTemperature: Double? { temperatureCelsius }
+    var environmentHumidity:    Double? { humidityPercentage }
+    var environmentCO2:         Double? { nil }
+    var environmentPM25:        Double? { pm25Density }
+    var environmentPM10:        Double? { nil }
+    var environmentVOC:         Double? { nil }
+    var environmentAirQuality:  String? { airQualityLabel }
+    var environmentLightLevel:  Int?    { nil }
 }

@@ -120,7 +120,7 @@ struct EditFloorplanSheet: View {
                 hasUnsavedChanges = true
             }
         } catch {
-            print("Errore caricamento immagine: \(error)")
+            dprint("Errore caricamento immagine: \(error)")
         }
     }
     
@@ -139,7 +139,7 @@ struct EditFloorplanSheet: View {
                 let newFilename = try ImageStorageService.save(pendingImage)
                 floorplan.imageFilename = newFilename
             } catch {
-                print("Errore salvataggio nuova immagine: \(error)")
+                dprint("Errore salvataggio nuova immagine: \(error)")
             }
         }
         

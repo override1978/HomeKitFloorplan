@@ -10,11 +10,46 @@ struct FloorplanListView: View {
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var floorplans: [Floorplan]
     @Namespace private var namespace
     @Binding var columnVisibility: NavigationSplitViewVisibility
-    
+
+    @AppStorage("primaryFloorplanID")  private var primaryFloorplanID:    String = ""
+    @AppStorage("pinnedFloorplanIDs") private var pinnedFloorplanIDsRaw: String = "[]"
+
+    private func decodePinnedIDs() -> [String] {
+        (try? JSONDecoder().decode([String].self, from: Data(pinnedFloorplanIDsRaw.utf8))) ?? []
+    }
+
+    private func encodePinnedIDs(_ ids: [String]) {
+        pinnedFloorplanIDsRaw = (try? String(data: JSONEncoder().encode(ids), encoding: .utf8)) ?? "[]"
+    }
+
+    private func isPinned(_ floorplan: Floorplan) -> Bool {
+        decodePinnedIDs().contains(floorplan.id.uuidString)
+    }
+
+    private func pinFloorplan(_ floorplan: Floorplan) {
+        var ids = decodePinnedIDs()
+        let key = floorplan.id.uuidString
+        guard !ids.contains(key) else { return }
+        ids.append(key)
+        encodePinnedIDs(ids)
+    }
+
+    private func unpinFloorplan(_ floorplan: Floorplan) {
+        let key = floorplan.id.uuidString
+        encodePinnedIDs(decodePinnedIDs().filter { $0 != key })
+        if primaryFloorplanID == key { primaryFloorplanID = "" }
+    }
+
+    private func setPrimary(_ floorplan: Floorplan) {
+        pinFloorplan(floorplan)
+        primaryFloorplanID = floorplan.id.uuidString
+    }
+
     @State private var layout: GalleryLayout = .grid
     @State private var pendingDelete: Floorplan?
     @State private var showingNewSheet = false
     @State private var editingFloorplan: Floorplan?
+    @State private var drawingEditFloorplan: Floorplan?
     
     enum GalleryLayout: String, CaseIterable {
         case grid, list
@@ -50,6 +85,21 @@ struct FloorplanListView: View {
                 EditFloorplanSheet(floorplan: floorplan)
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
+            }
+            .fullScreenCover(item: $drawingEditFloorplan) { floorplan in
+                DrawingFloorplanSheet(initialDocument: floorplan.drawingDocument) { image, rooms, doc in
+                    ImageStorageService.delete(filename: floorplan.imageFilename)
+                    if let newFilename = try? ImageStorageService.save(image) {
+                        floorplan.imageFilename = newFilename
+                    }
+                    floorplan.drawingDocument = doc
+                    if !rooms.isEmpty {
+                        floorplan.linkedRooms = rooms
+                    }
+                    floorplan.updatedAt = .now
+                    try? modelContext.save()
+                }
+                .ignoresSafeArea()
             }
             .alert("Eliminare la planimetria?",
                    isPresented: Binding(
@@ -258,6 +308,24 @@ struct FloorplanListView: View {
                 .background(.ultraThinMaterial, in: Capsule())
                 .padding(8)
             }
+            .overlay(alignment: .topLeading) {
+                // Badge pin/stella
+                if primaryFloorplanID == floorplan.id.uuidString {
+                    Image(systemName: "star.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.yellow)
+                        .padding(6)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .padding(8)
+                } else if isPinned(floorplan) {
+                    Image(systemName: "pin.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .padding(6)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .padding(8)
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 // Bottone "..." per il menu di gestione
                 Menu {
@@ -331,14 +399,24 @@ struct FloorplanListView: View {
                     } label: {
                         Label("Elimina", systemImage: "trash")
                     }
-                }
-                .swipeActions(edge: .trailing) {
                     Button {
-                        editingFloorplan = floorplan
+                        if floorplan.drawingDocumentJSON != nil {
+                            drawingEditFloorplan = floorplan
+                        } else {
+                            editingFloorplan = floorplan
+                        }
                     } label: {
-                        Label("Modifica", systemImage: "pencil")
+                        Label("Modifica", systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "pencil")
                     }
                     .tint(.blue)
+                }
+                .swipeActions(edge: .leading) {
+                    Button {
+                        duplicate(floorplan)
+                    } label: {
+                        Label("Duplica", systemImage: "doc.on.doc")
+                    }
+                    .tint(.orange)
                 }
                 .contextMenu {
                     managementMenuItems(for: floorplan)
@@ -348,13 +426,59 @@ struct FloorplanListView: View {
     }
     
     // MARK: - Context menu
-    
+
     @ViewBuilder
     private func managementMenuItems(for floorplan: Floorplan) -> some View {
+        let isPrimary = primaryFloorplanID == floorplan.id.uuidString
+        let pinned    = isPinned(floorplan)
+
+        // — Pin / principale —
+        if !pinned {
+            Button {
+                pinFloorplan(floorplan)
+            } label: {
+                Label("Aggiungi ad Accesso rapido", systemImage: "pin.fill")
+            }
+        } else {
+            if !isPrimary {
+                Button {
+                    setPrimary(floorplan)
+                } label: {
+                    Label("Imposta come principale", systemImage: "star.fill")
+                }
+            } else {
+                Button {
+                    primaryFloorplanID = ""
+                } label: {
+                    Label("Rimuovi da principale", systemImage: "star.slash")
+                }
+            }
+            Button {
+                unpinFloorplan(floorplan)
+            } label: {
+                Label("Rimuovi da Accesso rapido", systemImage: "pin.slash")
+            }
+        }
+
+        Divider()
         Button {
             editingFloorplan = floorplan
         } label: {
-            Label("Modifica", systemImage: "pencil")
+            Label("Rinomina", systemImage: "pencil")
+        }
+        Button {
+            if floorplan.drawingDocumentJSON != nil {
+                drawingEditFloorplan = floorplan
+            } else {
+                editingFloorplan = floorplan
+            }
+        } label: {
+            Label("Modifica", systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "photo")
+        }
+        Button {
+            duplicate(floorplan)
+        } label: {
+            Label("Duplica", systemImage: "doc.on.doc")
         }
         Divider()
         Button(role: .destructive) {
@@ -378,10 +502,35 @@ struct FloorplanListView: View {
     }
     
     // MARK: - Actions
-    
+
     private func delete(_ floorplan: Floorplan) {
         ImageStorageService.delete(filename: floorplan.imageFilename)
         modelContext.delete(floorplan)
+        try? modelContext.save()
+    }
+
+    /// Crea una copia della planimetria: stessa immagine (file separato), stesso disegno 2D,
+    /// stesse stanze collegate. I marker degli accessori NON vengono copiati.
+    private func duplicate(_ floorplan: Floorplan) {
+        // Copia l'immagine su disco (file separato, così le due planimetrie sono indipendenti)
+        let newImageFilename: String
+        if let image = ImageStorageService.load(filename: floorplan.imageFilename),
+           let filename = try? ImageStorageService.save(image) {
+            newImageFilename = filename
+        } else {
+            newImageFilename = floorplan.imageFilename
+        }
+
+        let copy = Floorplan(
+            name: "\(floorplan.name) (Copy)",
+            imageFilename: newImageFilename,
+            homeUUID: floorplan.homeUUID
+        )
+        copy.tapModeRaw         = floorplan.tapModeRaw
+        copy.linkedRoomsJSON    = floorplan.linkedRoomsJSON
+        copy.drawingDocumentJSON = floorplan.drawingDocumentJSON
+
+        modelContext.insert(copy)
         try? modelContext.save()
     }
 }

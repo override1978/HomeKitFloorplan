@@ -65,13 +65,15 @@ struct DoorLockControl: View {
     
     private var statusText: String {
         if adapter.isTransitioning {
-            return adapter.targetState == .secured ? "Chiusura in corso…" : "Apertura in corso…"
+            return adapter.targetState == .secured
+                ? String(localized: "doorlock.state.locking",   defaultValue: "Chiusura in corso…")
+                : String(localized: "doorlock.state.unlocking", defaultValue: "Apertura in corso…")
         }
         switch adapter.currentState {
-        case .jammed:    return "Bloccata"
-        case .unsecured: return "Aperta"
-        case .secured:   return "Chiusa"
-        case .unknown:   return "Stato sconosciuto"
+        case .jammed:    return String(localized: "doorlock.state.jammed",   defaultValue: "Bloccata")
+        case .unsecured: return String(localized: "doorlock.state.unlocked", defaultValue: "Aperta")
+        case .secured:   return String(localized: "doorlock.state.locked",   defaultValue: "Chiusa")
+        case .unknown:   return String(localized: "doorlock.state.unknown",  defaultValue: "Stato sconosciuto")
         }
     }
     
@@ -81,7 +83,7 @@ struct DoorLockControl: View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.white)
-            Text("Serratura bloccata. Controlla il meccanismo manualmente.")
+            Text(String(localized: "doorlock.jammed.message", defaultValue: "Serratura bloccata. Controlla il meccanismo manualmente."))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.leading)
@@ -98,7 +100,9 @@ struct DoorLockControl: View {
     
     private var actionButton: some View {
         let wantsToLock = adapter.currentState == .unsecured
-        let label = wantsToLock ? "Chiudi" : "Apri"
+        let label = wantsToLock
+            ? String(localized: "doorlock.action.lock",   defaultValue: "Chiudi")
+            : String(localized: "doorlock.action.unlock", defaultValue: "Apri")
         let symbol = wantsToLock ? "lock.fill" : "lock.open.fill"
         let tint: Color = wantsToLock ? .green : .orange
         
@@ -130,7 +134,7 @@ struct DoorLockControl: View {
     private var batteryWarning: some View {
         HStack(spacing: 6) {
             Image(systemName: "battery.25percent")
-            Text("Batteria scarica")
+            Text(String(localized: "accessory.battery.low", defaultValue: "Batteria scarica"))
         }
         .font(.subheadline)
         .foregroundStyle(.red)

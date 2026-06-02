@@ -52,9 +52,9 @@ final class MultiOutletAdapter: AccessoryAdapter {
     var primaryStatusText: String? {
         let total = outletServices.count
         if total == 0 { return nil }
-        if onCount == 0 { return "Tutte spente" }
-        if onCount == total { return "Tutte accese" }
-        return "\(onCount) di \(total) accese"
+        if onCount == 0 { return String(localized: "multioutlet.status.allOff", defaultValue: "Tutte spente") }
+        if onCount == total { return String(localized: "multioutlet.status.allOn", defaultValue: "Tutte accese") }
+        return "\(onCount) \(String(localized: "multioutlet.status.someOn.of", defaultValue: "di")) \(total) \(String(localized: "multioutlet.status.someOn.suffix", defaultValue: "accese"))"
     }
     
     var batteryInfo: BatteryInfo? {
@@ -79,7 +79,7 @@ final class MultiOutletAdapter: AccessoryAdapter {
            let value = homeKit.value(for: nameCh) as? String, !value.isEmpty {
             return value
         }
-        return "Presa \(index + 1)"
+        return "\(String(localized: "outlet.name.fallback", defaultValue: "Presa")) \(index + 1)"
     }
     
     /// Se l'OutletInUse characteristic esiste, ritorna se c'è qualcosa collegato.
@@ -144,7 +144,7 @@ private struct MultiOutletControl: View {
                 )
             
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(adapter.outletServices.count) prese")
+                Text("\(adapter.outletServices.count) \(String(localized: "outlet.count.suffix", defaultValue: "prese"))")
                     .font(.subheadline.weight(.semibold))
                 Text(adapter.primaryStatusText ?? "")
                     .font(.caption)
@@ -158,7 +158,7 @@ private struct MultiOutletControl: View {
                 Button {
                     setAllOutlets(on: false)
                 } label: {
-                    Text("Spegni tutte")
+                    Text(String(localized: "outlet.action.turnOffAll", defaultValue: "Spegni tutte"))
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -170,7 +170,7 @@ private struct MultiOutletControl: View {
                 Button {
                     setAllOutlets(on: true)
                 } label: {
-                    Text("Accendi tutte")
+                    Text(String(localized: "outlet.action.turnOnAll", defaultValue: "Accendi tutte"))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
@@ -192,7 +192,7 @@ private struct MultiOutletControl: View {
     
     private var outletsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Prese")
+            Text(String(localized: "outlet.section.title", defaultValue: "Prese"))
                 .font(.headline)
                 .padding(.leading, 4)
             
@@ -222,7 +222,7 @@ private struct MultiOutletControl: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
                     .font(.body)
-                Text(isOn ? "Accesa" : "Spenta")
+                Text(isOn ? String(localized: "outlet.state.on", defaultValue: "Accesa") : String(localized: "outlet.state.off", defaultValue: "Spenta"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

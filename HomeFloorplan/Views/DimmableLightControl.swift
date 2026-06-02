@@ -84,16 +84,16 @@ struct DimmableLightControl: View {
     }
     
     private var stateLabel: String {
-        if !isReachable { return "Non raggiungibile" }
-        if !isOn { return "Spenta" }
-        return "Accesa al \(currentBrightness)%"
+        if !isReachable { return String(localized: "accessory.unreachable", defaultValue: "Non raggiungibile") }
+        if !isOn { return String(localized: "light.state.off", defaultValue: "Spenta") }
+        return "\(String(localized: "light.state.on", defaultValue: "Accesa al")) \(currentBrightness)%"
     }
     
     // MARK: - Slider Apple-Home-style
     
     private var slider: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Luminosità")
+            Text(String(localized: "light.label.brightness", defaultValue: "Luminosità"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             

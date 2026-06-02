@@ -1,0 +1,197 @@
+import Foundation
+import UserNotifications
+
+// MARK: - AlertLevel
+
+enum AlertLevel {
+    case warning
+    case danger
+}
+
+// MARK: - AlertNotificationService
+
+/// Gestisce l'invio di notifiche locali per alert ambientali.
+/// Deduplicazione tramite cooldown in memoria: stesso tipo+stanza non genera
+/// più di una notifica ogni `cooldownInterval` secondi (default 30 min).
+final class AlertNotificationService {
+
+    // MARK: Singleton
+
+    static let shared = AlertNotificationService()
+
+    /// Intervallo minimo tra due notifiche per lo stesso sensore+stanza (secondi).
+    var cooldownInterval: TimeInterval = 30 * 60   // 30 minuti
+
+    /// Timestamp dell'ultima notifica inviata per identifier tipo+stanza.
+    private var lastSentDates: [String: Date] = [:]
+
+    private init() {}
+
+    // MARK: - Permessi
+
+    /// Richiede il permesso per le notifiche (chiamare all'avvio dell'app).
+    func requestAuthorization() {
+        UNUserNotificationCenter.current().requestAuthorization(
+            options: [.alert, .sound, .badge]
+        ) { granted, error in
+            if let error {
+                dprint("❌ Notifiche: permesso negato – \(error)")
+            } else {
+                dprint("🔔 Notifiche: permesso \(granted ? "concesso" : "negato")")
+            }
+        }
+    }
+
+    // MARK: - Invio alert
+
+    /// Invia una notifica locale per il superamento di una soglia.
+    /// - Suono differenziato per categoria: safety → defaultRingtone, health → default, comfort → nessuno
+    /// - Badge incrementale basato sulle notifiche già consegnate
+    /// - Cooldown: non reinvia per lo stesso tipo+stanza prima che sia trascorso `cooldownInterval`
+    func sendAlert(sensorType: SensorServiceType, roomName: String, value: Double, level: AlertLevel) {
+        // NOTIFICHE DISABILITATE — riabilitare rimuovendo questo return
+        return
+
+        let identifier = "\(sensorType.rawValue)-\(roomName)"
+
+        // Cooldown: ignora se è già stata inviata una notifica di recente
+        if let lastSent = lastSentDates[identifier],
+           Date().timeIntervalSince(lastSent) < cooldownInterval {
+            dprint("🔕 AlertNotification cooldown attivo per \(identifier), salto invio")
+            return
+        }
+        lastSentDates[identifier] = Date()
+
+        let content = UNMutableNotificationContent()
+        content.title = alertTitle(for: sensorType, level: level)
+        content.body = alertBody(for: sensorType, roomName: roomName, value: value, level: level)
+        content.categoryIdentifier = "ENVIRONMENT_ALERT"
+
+        // Suono in base alla categoria di urgenza del sensore
+        switch sensorType.notificationCategory {
+        case .safety:
+            // Suono ringtone — più prominente di .default per alert di sicurezza
+            content.sound = .defaultRingtone
+        case .health:
+            content.sound = .default
+        case .comfort:
+            content.sound = nil  // silenzioso — solo banner visivo
+        }
+
+        // Badge incrementale tramite setBadgeCount (iOS 16+, non deprecated).
+        // Legge il badge corrente dalla delivered notifications count e aggiunge 1.
+        UNUserNotificationCenter.current().getDeliveredNotifications { delivered in
+            // Usiamo il numero di notifiche consegnate come proxy del badge corrente,
+            // poi incrementiamo di 1 per quella in arrivo.
+            let newBadge = delivered.count + 1
+            UNUserNotificationCenter.current().setBadgeCount(newBadge) { _ in }
+
+            let request = UNNotificationRequest(
+                identifier: identifier,
+                content: content,
+                trigger: nil
+            )
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error {
+                    dprint("❌ AlertNotification: \(error)")
+                }
+            }
+        }
+    }
+
+    /// Azzera il badge dell'icona app (chiamare quando l'utente apre la Dashboard Ambiente).
+    func clearBadge() {
+        UNUserNotificationCenter.current().setBadgeCount(0) { error in
+            if let error {
+                dprint("❌ AlertNotification clearBadge: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Testi notifica
+
+    private func alertTitle(for type: SensorServiceType, level: AlertLevel) -> String {
+        let prefix = level == .danger
+            ? String(localized: "alert.prefix.alarm",   defaultValue: "⚠️ ALLARME")
+            : String(localized: "alert.prefix.warning", defaultValue: "⚠️ Attenzione")
+        switch type {
+        case .temperature:
+            return "\(prefix): \(String(localized: "alert.title.temperature",    defaultValue: "Temperatura elevata"))"
+        case .humidity:
+            return "\(prefix): \(String(localized: "alert.title.humidity",       defaultValue: "Umidità fuori soglia"))"
+        case .airQuality:
+            return "\(prefix): \(String(localized: "alert.title.airQuality",     defaultValue: "Qualità aria degradata"))"
+        case .carbonMonoxide:
+            return "\(prefix): \(String(localized: "alert.title.carbonMonoxide", defaultValue: "Monossido di carbonio"))"
+        case .carbonDioxide:
+            return "\(prefix): \(String(localized: "alert.title.carbonDioxide",  defaultValue: "Anidride carbonica elevata"))"
+        case .smoke:
+            return "\(prefix): \(String(localized: "alert.title.smoke",          defaultValue: "Fumo rilevato"))"
+        case .vocDensity:
+            return "\(prefix): \(String(localized: "alert.title.vocDensity",     defaultValue: "VOC elevati"))"
+        }
+    }
+
+    private func alertBody(
+        for type: SensorServiceType,
+        roomName: String,
+        value: Double,
+        level: AlertLevel
+    ) -> String {
+        let formattedValue = formatValue(value, for: type)
+        let levelText = level == .danger
+            ? String(localized: "alert.level.danger",  defaultValue: "livello critico")
+            : String(localized: "alert.level.warning", defaultValue: "livello di attenzione")
+
+        // Build body using localized template strings.
+        // Each key maps to a sentence with %1$@ = room, %2$@ = value, %3$@ = level.
+        switch type {
+        case .temperature:
+            let tmpl = String(localized: "alert.body.temperature",
+                              defaultValue: "In %1$@ la temperatura ha raggiunto %2$@ (%3$@).")
+            return String(format: tmpl, roomName, formattedValue, levelText)
+        case .humidity:
+            let tmpl = String(localized: "alert.body.humidity",
+                              defaultValue: "In %1$@ l'umidità è al %2$@ (%3$@).")
+            return String(format: tmpl, roomName, formattedValue, levelText)
+        case .airQuality:
+            let tmpl = String(localized: "alert.body.airQuality",
+                              defaultValue: "In %1$@ la qualità dell'aria ha raggiunto %2$@ (%3$@).")
+            return String(format: tmpl, roomName, formattedValue, levelText)
+        case .carbonMonoxide:
+            let tmpl = String(localized: "alert.body.carbonMonoxide",
+                              defaultValue: "In %1$@ il livello di CO è %2$@ (%3$@). Arieggiare immediatamente.")
+            return String(format: tmpl, roomName, formattedValue, levelText)
+        case .carbonDioxide:
+            let tmpl = String(localized: "alert.body.carbonDioxide",
+                              defaultValue: "In %1$@ la CO₂ ha raggiunto %2$@ (%3$@). Arieggiare l'ambiente.")
+            return String(format: tmpl, roomName, formattedValue, levelText)
+        case .smoke:
+            let tmpl = String(localized: "alert.body.smoke",
+                              defaultValue: "In %1$@ è stato rilevato del fumo. Verificare la situazione.")
+            return String(format: tmpl, roomName)
+        case .vocDensity:
+            let tmpl = String(localized: "alert.body.vocDensity",
+                              defaultValue: "In %1$@ la concentrazione di VOC è %2$@ (%3$@).")
+            return String(format: tmpl, roomName, formattedValue, levelText)
+        }
+    }
+
+    private func formatValue(_ value: Double, for type: SensorServiceType) -> String {
+        let unit = TemperatureUnit(
+            rawValue: UserDefaults.standard.string(forKey: TemperatureUnit.appStorageKey) ?? ""
+        ) ?? .celsius
+        switch type {
+        case .temperature:    return unit.format(value)
+        case .humidity:       return String(format: "%.0f%%", value)
+        case .airQuality:     return String(format: "%.0f/5", value)
+        case .carbonMonoxide: return String(format: "%.1f ppm", value)
+        case .carbonDioxide:  return String(format: "%.0f ppm", value)
+        case .smoke:
+            return value >= 1
+                ? String(localized: "smoke.detected",    defaultValue: "rilevato")
+                : String(localized: "smoke.notDetected", defaultValue: "assente")
+        case .vocDensity:     return String(format: "%.0f µg/m³", value)
+        }
+    }
+}

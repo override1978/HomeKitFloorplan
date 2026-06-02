@@ -1,6 +1,25 @@
 import Foundation
 import SwiftData
 
+// MARK: - LinkedRoom / CodableRect
+
+/// A HomeKit room linked to a normalized area on a floorplan image.
+/// Stored as JSON in `Floorplan.linkedRoomsJSON`.
+struct LinkedRoom: Codable {
+    var hmRoomUUID: UUID
+    var name: String
+    /// Rectangle with coordinates normalized to [0, 1] relative to the exported PNG.
+    var normalizedRect: CodableRect
+}
+
+/// Codable substitute for CGRect (which is not Codable by default).
+struct CodableRect: Codable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+}
+
 enum FloorplanTapMode: String, Codable, CaseIterable {
     case openPanel       // tap → apre il pannello di controllo
     case quickToggle     // tap → toggle immediato (se possibile), long press → pannello
@@ -34,7 +53,11 @@ final class Floorplan {
     @Relationship(deleteRule: .cascade, inverse: \PlacedAccessory.floorplan)
     var accessories: [PlacedAccessory] = []
     var homeUUID: UUID?
-    
+    /// JSON-encoded array of `LinkedRoom` — rooms with normalized rects on this floorplan.
+    var linkedRoomsJSON: Data?
+    /// JSON-encoded `DrawingDocument` — the 2D drawing associated with this floorplan, if any.
+    var drawingDocumentJSON: Data?
+
     init(name: String, imageFilename: String, homeUUID: UUID? = nil) {
         self.id = UUID()
         self.name = name
@@ -43,10 +66,34 @@ final class Floorplan {
         self.updatedAt = .now
         self.homeUUID = homeUUID
     }
-    
+
     var tapMode: FloorplanTapMode {
         get { FloorplanTapMode(rawValue: tapModeRaw) ?? .openPanel }
         set { tapModeRaw = newValue.rawValue }
+    }
+
+    /// Decoded list of rooms linked to this floorplan (from `linkedRoomsJSON`).
+    var linkedRooms: [LinkedRoom] {
+        get {
+            guard let data = linkedRoomsJSON,
+                  let rooms = try? JSONDecoder().decode([LinkedRoom].self, from: data)
+            else { return [] }
+            return rooms
+        }
+        set {
+            linkedRoomsJSON = try? JSONEncoder().encode(newValue)
+        }
+    }
+
+    /// Decoded drawing document (from `drawingDocumentJSON`), or nil if no drawing exists.
+    var drawingDocument: DrawingDocument? {
+        get {
+            guard let data = drawingDocumentJSON else { return nil }
+            return try? JSONDecoder().decode(DrawingDocument.self, from: data)
+        }
+        set {
+            drawingDocumentJSON = try? JSONEncoder().encode(newValue)
+        }
     }
 }
 

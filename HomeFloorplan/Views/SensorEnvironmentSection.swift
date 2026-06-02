@@ -114,44 +114,62 @@ struct BooleanSensorState {
         // Smoke
         if let s = adapter.smokeDetected {
             return s
-                ? BooleanSensorState(symbolName: "smoke.fill", label: "Fumo rilevato", isAlarm: true)
-                : BooleanSensorState(symbolName: "smoke", label: "Nessun fumo", isAlarm: false)
+                ? BooleanSensorState(symbolName: "smoke.fill",
+                                     label: String(localized: "sensor.smoke.detected",    defaultValue: "Fumo rilevato"),
+                                     isAlarm: true)
+                : BooleanSensorState(symbolName: "smoke",
+                                     label: String(localized: "sensor.smoke.clear",       defaultValue: "Nessun fumo"),
+                                     isAlarm: false)
         }
         // Carbon Monoxide
         if let s = adapter.carbonMonoxideDetected {
             return s
                 ? BooleanSensorState(symbolName: "exclamationmark.triangle.fill",
-                                     label: "CO rilevato", isAlarm: true)
+                                     label: String(localized: "sensor.co.detected",       defaultValue: "CO rilevato"),
+                                     isAlarm: true)
                 : BooleanSensorState(symbolName: "checkmark.shield",
-                                     label: "Aria sicura", isAlarm: false)
+                                     label: String(localized: "sensor.co.clear",          defaultValue: "Aria sicura"),
+                                     isAlarm: false)
         }
         // Leak
         if let s = adapter.leakDetected {
             return s
-                ? BooleanSensorState(symbolName: "drop.fill", label: "Perdita rilevata", isAlarm: true)
-                : BooleanSensorState(symbolName: "drop", label: "Asciutto", isAlarm: false)
+                ? BooleanSensorState(symbolName: "drop.fill",
+                                     label: String(localized: "sensor.leak.detected",     defaultValue: "Perdita rilevata"),
+                                     isAlarm: true)
+                : BooleanSensorState(symbolName: "drop",
+                                     label: String(localized: "sensor.leak.clear",        defaultValue: "Asciutto"),
+                                     isAlarm: false)
         }
         // Contact
         if let s = adapter.contactDetected {
             return s
-                ? BooleanSensorState(symbolName: "door.left.hand.open", label: "Aperta", isAlarm: false)
-                : BooleanSensorState(symbolName: "door.left.hand.closed", label: "Chiusa", isAlarm: false)
+                ? BooleanSensorState(symbolName: "door.left.hand.open",
+                                     label: String(localized: "sensor.contact.open",      defaultValue: "Aperta"),
+                                     isAlarm: false)
+                : BooleanSensorState(symbolName: "door.left.hand.closed",
+                                     label: String(localized: "sensor.contact.closed",    defaultValue: "Chiusa"),
+                                     isAlarm: false)
         }
         // Motion
         if let s = adapter.motionDetected {
             return s
                 ? BooleanSensorState(symbolName: "figure.walk.motion",
-                                     label: "Movimento rilevato", isAlarm: false)
+                                     label: String(localized: "sensor.motion.detected",   defaultValue: "Movimento rilevato"),
+                                     isAlarm: false)
                 : BooleanSensorState(symbolName: "figure.stand",
-                                     label: "Nessun movimento", isAlarm: false)
+                                     label: String(localized: "sensor.motion.clear",      defaultValue: "Nessun movimento"),
+                                     isAlarm: false)
         }
         // Occupancy
         if let s = adapter.occupancyDetected {
             return s
                 ? BooleanSensorState(symbolName: "person.fill",
-                                     label: "Presenza rilevata", isAlarm: false)
+                                     label: String(localized: "sensor.occupancy.detected",defaultValue: "Presenza rilevata"),
+                                     isAlarm: false)
                 : BooleanSensorState(symbolName: "person",
-                                     label: "Nessuna presenza", isAlarm: false)
+                                     label: String(localized: "sensor.occupancy.clear",   defaultValue: "Nessuna presenza"),
+                                     isAlarm: false)
         }
         return nil
     }
