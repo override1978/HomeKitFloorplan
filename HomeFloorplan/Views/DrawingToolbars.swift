@@ -187,6 +187,7 @@ struct DrawingToolbar: View {
 
     @Binding var mode: DrawingMode
     @Binding var wallKind: WallKind
+    @Binding var vertexSnapEnabled: Bool
     var hasSelection: Bool
     var onDelete: () -> Void
 
@@ -224,6 +225,26 @@ struct DrawingToolbar: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
                 )
+                .transition(.scale.combined(with: .opacity))
+            }
+
+            // ── Snap toggle (draw + select modes) ────────────────────────────
+            if mode == .draw || mode == .select {
+                Button {
+                    vertexSnapEnabled.toggle()
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: vertexSnapEnabled ? "magnet.fill" : "magnet")
+                            .font(.system(size: 16, weight: vertexSnapEnabled ? .semibold : .regular))
+                        Text("Snap")
+                            .font(.system(size: 10, weight: vertexSnapEnabled ? .semibold : .regular))
+                    }
+                    .foregroundStyle(vertexSnapEnabled ? BrandColor.primary : .secondary)
+                    .frame(width: 52, height: 48)
+                    .background(vertexSnapEnabled ? BrandColor.primary.opacity(0.12) : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
                 .transition(.scale.combined(with: .opacity))
             }
 
@@ -530,7 +551,7 @@ struct RoomAreaInspectorPanel: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "rectangle.dashed")
+            Image(systemName: area.points != nil ? "pentagon.fill" : "rectangle.dashed")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(BrandColor.primary)
                 .frame(width: 28)
@@ -538,10 +559,19 @@ struct RoomAreaInspectorPanel: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(area.name)
                     .font(.subheadline.weight(.semibold))
-                let w = Int(area.rect.width), h = Int(area.rect.height)
-                Text("\(w) × \(h) pt")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let pts = area.points {
+                    // Polygon mode: show vertex count and approximate area
+                    let sqPt = Int(area.polygonArea)
+                    Text("\(pts.count) vertici • ~\(sqPt) pt²")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    // Rect mode: show dimensions
+                    let w = Int(area.rect.width), h = Int(area.rect.height)
+                    Text("\(w) × \(h) pt")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()

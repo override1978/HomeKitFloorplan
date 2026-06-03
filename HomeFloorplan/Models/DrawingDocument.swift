@@ -115,26 +115,180 @@ struct RoomLabel: Identifiable, Equatable, Codable {
 
 // MARK: - RoomArea
 
-/// A colored rectangular area on the canvas linked to a HomeKit room.
-/// Drawn behind walls to visually identify room zones.
+/// A colored area on the canvas linked to a HomeKit room.
+/// Can be a simple rectangle (`points == nil`) or a free polygon (`points` holds the vertices).
+/// Always stores `rect` for backward compatibility with existing persisted data.
 struct RoomArea: Identifiable, Equatable, Codable {
     let id: UUID
     /// UUID of the associated HMRoom (nil if not linked to HomeKit).
     var hmRoomUUID: UUID?
     /// Display name shown on the canvas (typically the HMRoom.name).
     var name: String
-    /// Rectangle in canvas coordinates.
+    /// Bounding rectangle in canvas coordinates. Always present for backward compatibility.
     var rect: CGRect
     /// Index into `RoomLabelPalette.colors`, assigned sequentially on creation.
     var colorIndex: Int
+    /// Optional polygon vertices in canvas coordinates.
+    /// `nil` means the area is a plain rectangle (legacy mode).
+    /// When non-nil and count >= 3, the area is a free polygon.
+    var points: [CGPoint]?
 
     init(id: UUID = UUID(), hmRoomUUID: UUID? = nil, name: String,
-         rect: CGRect, colorIndex: Int = 0) {
+         rect: CGRect, colorIndex: Int = 0, points: [CGPoint]? = nil) {
         self.id = id
         self.hmRoomUUID = hmRoomUUID
         self.name = name
         self.rect = rect
         self.colorIndex = colorIndex
+        self.points = points
+    }
+
+    // MARK: - Geometry helpers
+
+    /// The effective polygon vertices for this area.
+    /// Returns `points` if it is a valid polygon (≥ 3 vertices),
+    /// otherwise returns the four corners of `rect` in TL → TR → BR → BL order.
+    var effectivePoints: [CGPoint] {
+        if let pts = points, pts.count >= 3 { return pts }
+        return [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.maxY)
+        ]
+    }
+
+    /// The bounding rectangle of the effective polygon.
+    var boundingRect: CGRect {
+        guard let pts = points, pts.count >= 3 else { return rect }
+        let xs = pts.map(\.x), ys = pts.map(\.y)
+        let minX = xs.min()!, minY = ys.min()!
+        return CGRect(x: minX, y: minY,
+                      width: xs.max()! - minX,
+                      height: ys.max()! - minY)
+    }
+
+    /// Centroid of the effective polygon (average of vertices).
+    var centroid: CGPoint {
+        let pts = effectivePoints
+        let sum = pts.reduce(CGPoint.zero) { CGPoint(x: $0.x + $1.x, y: $0.y + $1.y) }
+        return CGPoint(x: sum.x / CGFloat(pts.count), y: sum.y / CGFloat(pts.count))
+    }
+
+    /// Signed area via the Shoelace formula (always returns positive value).
+    var polygonArea: CGFloat {
+        let pts = effectivePoints
+        let n = pts.count
+        var area: CGFloat = 0
+        for i in 0 ..< n {
+            let j = (i + 1) % n
+            area += pts[i].x * pts[j].y
+            area -= pts[j].x * pts[i].y
+        }
+        return abs(area) / 2
+    }
+
+    /// Ray-casting point-in-polygon test on `effectivePoints`.
+    func contains(_ point: CGPoint) -> Bool {
+        let pts = effectivePoints
+        let n = pts.count
+        var inside = false
+        var j = n - 1
+        for i in 0 ..< n {
+            let xi = pts[i].x, yi = pts[i].y
+            let xj = pts[j].x, yj = pts[j].y
+            let intersect = ((yi > point.y) != (yj > point.y)) &&
+                            (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi)
+            if intersect { inside.toggle() }
+            j = i
+        }
+        return inside
+    }
+
+    /// Converts a rect-based area to a polygon by materialising the four corners into `points`.
+    mutating func promoteToPolygon() {
+        guard points == nil else { return }
+        points = [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.maxY),
+            CGPoint(x: rect.minX, y: rect.maxY)
+        ]
+    }
+
+    /// Reverts a polygon area back to a simple rectangle using the bounding box, clearing `points`.
+    mutating func revertToRect() {
+        rect = boundingRect
+        points = nil
+    }
+
+    /// Finds the polygon edge closest to `point` within `threshold` canvas units.
+    /// - Returns: the edge index (0-based, where edge `i` runs from `effectivePoints[i]`
+    ///   to `effectivePoints[(i+1) % count]`) and the projected point on that edge,
+    ///   or `nil` if no edge is within the threshold.
+    func nearestEdge(to point: CGPoint, threshold: CGFloat) -> (edgeIndex: Int, point: CGPoint)? {
+        let pts = effectivePoints
+        let n = pts.count
+        var best: (edgeIndex: Int, point: CGPoint, dist: CGFloat)?
+        for i in 0 ..< n {
+            let a = pts[i]
+            let b = pts[(i + 1) % n]
+            let dx = b.x - a.x
+            let dy = b.y - a.y
+            let lenSq = dx * dx + dy * dy
+            guard lenSq > 0 else { continue }
+            // Parameter t of the projection, clamped to [0, 1]
+            let t = max(0, min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lenSq))
+            let projected = CGPoint(x: a.x + t * dx, y: a.y + t * dy)
+            let dist = hypot(point.x - projected.x, point.y - projected.y)
+            if dist < threshold {
+                if best == nil || dist < best!.dist {
+                    best = (i, projected, dist)
+                }
+            }
+        }
+        return best.map { (edgeIndex: $0.edgeIndex, point: $0.point) }
+    }
+
+    /// Inserts a new vertex into the polygon at the specified edge.
+    /// `edgeIndex` is the index of the first vertex of the edge; the new vertex is inserted
+    /// at position `edgeIndex + 1`. Auto-promotes rect-only areas to polygon.
+    mutating func insertVertex(at edgeIndex: Int, point: CGPoint) {
+        promoteToPolygon()
+        guard var pts = points else { return }
+        // Edge i runs from pts[i] to pts[(i+1) % n].
+        // Insert the new vertex right after pts[i], i.e. at position i+1.
+        // When edgeIndex == n-1 (last edge, wrapping to pts[0]), inserting at n appends
+        // before the closing wrap, which is correct polygon semantics.
+        pts.insert(point, at: edgeIndex + 1)
+        self.points = pts
+        rect = boundingRect
+    }
+
+    // MARK: - Backward-compatible Codable
+
+    private enum CodingKeys: String, CodingKey {
+        case id, hmRoomUUID, name, rect, colorIndex, points
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id         = try c.decode(UUID.self,    forKey: .id)
+        hmRoomUUID = try c.decodeIfPresent(UUID.self,    forKey: .hmRoomUUID)
+        name       = try c.decode(String.self,  forKey: .name)
+        rect       = try c.decode(CGRect.self,  forKey: .rect)
+        colorIndex = try c.decode(Int.self,     forKey: .colorIndex)
+        points     = try c.decodeIfPresent([CGPoint].self, forKey: .points)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id,         forKey: .id)
+        try c.encodeIfPresent(hmRoomUUID, forKey: .hmRoomUUID)
+        try c.encode(name,       forKey: .name)
+        try c.encode(rect,       forKey: .rect)
+        try c.encode(colorIndex, forKey: .colorIndex)
+        try c.encodeIfPresent(points, forKey: .points)
     }
 }
 

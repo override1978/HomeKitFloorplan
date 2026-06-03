@@ -1,15 +1,25 @@
 import Foundation
 import SwiftData
 
-// MARK: - LinkedRoom / CodableRect
+// MARK: - LinkedRoom / CodableRect / CodablePoint
+
+/// Codable substitute for CGPoint (which is not Codable by default).
+struct CodablePoint: Codable {
+    var x: Double
+    var y: Double
+}
 
 /// A HomeKit room linked to a normalized area on a floorplan image.
 /// Stored as JSON in `Floorplan.linkedRoomsJSON`.
 struct LinkedRoom: Codable {
     var hmRoomUUID: UUID
     var name: String
-    /// Rectangle with coordinates normalized to [0, 1] relative to the exported PNG.
+    /// Bounding rectangle with coordinates normalized to [0, 1] relative to the exported PNG.
+    /// Always present for backward compatibility.
     var normalizedRect: CodableRect
+    /// Optional polygon vertices normalized to [0, 1].
+    /// Non-nil only when the originating `RoomArea` has `points` (polygon mode).
+    var normalizedPoints: [CodablePoint]?
 }
 
 /// Codable substitute for CGRect (which is not Codable by default).

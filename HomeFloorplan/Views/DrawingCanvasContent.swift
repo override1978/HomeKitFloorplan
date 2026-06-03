@@ -165,6 +165,10 @@ struct DrawingCanvasContent: View {
             guard let wall = document.wall(for: id) else { return }
             drawEndpointHandle(at: wall.start, context: &context)
             drawEndpointHandle(at: wall.end, context: &context)
+            // Filled midpoint handle: indicates the wall body is draggable
+            let mid = CGPoint(x: (wall.start.x + wall.end.x) / 2,
+                              y: (wall.start.y + wall.end.y) / 2)
+            drawEndpointHandle(at: mid, context: &context, filled: true)
 
         case .opening(let id):
             guard let opening = document.opening(for: id),
@@ -230,45 +234,59 @@ func drawRoomLabel(_ label: RoomLabel,
 func drawRoomArea(_ area: RoomArea,
                   context: inout GraphicsContext,
                   selected: Bool) {
-    let cgColor      = RoomLabelPalette.color(at: area.colorIndex)
-    let fillColor    = Color(cgColor: cgColor).opacity(0.15)
-    let borderColor  = Color(cgColor: cgColor).opacity(0.45)
-    let textColor    = Color(cgColor: cgColor).opacity(0.7)
-    let cornerRadius: CGFloat = 8
+    let cgColor     = RoomLabelPalette.color(at: area.colorIndex)
+    let fillColor   = Color(cgColor: cgColor).opacity(0.15)
+    let borderColor = Color(cgColor: cgColor).opacity(0.45)
+    let textColor   = Color(cgColor: cgColor).opacity(0.7)
 
-    context.fill(
-        Path(roundedRect: area.rect, cornerRadius: cornerRadius),
-        with: .color(fillColor)
-    )
+    // Build fill path: rounded rect for legacy areas, polygon for promoted ones.
+    let fillPath: Path
+    let borderPath: Path
+    if let pts = area.points, pts.count >= 3 {
+        // Polygon mode — use effectivePoints directly
+        var p = Path()
+        p.move(to: pts[0])
+        for pt in pts.dropFirst() { p.addLine(to: pt) }
+        p.closeSubpath()
+        fillPath   = p
+        borderPath = p
+    } else {
+        fillPath   = Path(area.rect)
+        borderPath = Path(area.rect)
+    }
+
+    context.fill(fillPath, with: .color(fillColor))
 
     if selected {
-        context.stroke(
-            Path(roundedRect: area.rect, cornerRadius: cornerRadius),
-            with: .color(DrawingStyle.selectionColor),
-            style: StrokeStyle(lineWidth: 2)
-        )
-        let corners: [CGPoint] = [
-            CGPoint(x: area.rect.minX, y: area.rect.minY),
-            CGPoint(x: area.rect.maxX, y: area.rect.minY),
-            CGPoint(x: area.rect.minX, y: area.rect.maxY),
-            CGPoint(x: area.rect.maxX, y: area.rect.maxY)
-        ]
-        for corner in corners {
+        context.stroke(borderPath,
+                       with: .color(DrawingStyle.selectionColor),
+                       style: StrokeStyle(lineWidth: 2))
+        // Draw a handle at each effective vertex
+        for corner in area.effectivePoints {
             drawEndpointHandle(at: corner, context: &context)
         }
+        // Draw a "+" indicator at the midpoint of each edge to hint that tapping adds a vertex
+        let pts = area.effectivePoints
+        for i in 0 ..< pts.count {
+            let a = pts[i]
+            let b = pts[(i + 1) % pts.count]
+            let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+            drawEdgeMidpointIndicator(at: mid, context: &context)
+        }
     } else {
-        context.stroke(
-            Path(roundedRect: area.rect, cornerRadius: cornerRadius),
-            with: .color(borderColor),
-            style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
-        )
+        context.stroke(borderPath,
+                       with: .color(borderColor),
+                       style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
     }
 
     let font = Font.system(size: 14, weight: .semibold)
     let resolvedText = context.resolve(
-        Text(area.name.uppercased()).font(font).foregroundColor(selected ? DrawingStyle.selectionColor : textColor)
+        Text(area.name.uppercased())
+            .font(font)
+            .foregroundColor(selected ? DrawingStyle.selectionColor : textColor)
     )
-    context.draw(resolvedText, at: CGPoint(x: area.rect.midX, y: area.rect.midY), anchor: .center)
+    let labelPt = area.centroid
+    context.draw(resolvedText, at: labelPt, anchor: .center)
 }
 
 func drawFurnitureItem(_ item: FurnitureItem,
@@ -310,6 +328,29 @@ func drawFurnitureItem(_ item: FurnitureItem,
         Text(item.name).font(font).foregroundColor(textColor)
     )
     context.draw(resolvedText, at: CGPoint(x: item.rect.midX, y: item.rect.midY), anchor: .center)
+}
+
+/// Draws a small "+" circle at a polygon edge midpoint to indicate the edge is tappable
+/// for inserting a new vertex.
+func drawEdgeMidpointIndicator(at point: CGPoint, context: inout GraphicsContext) {
+    let r: CGFloat = 5
+    let rect = CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)
+    // White filled circle with selection-color border
+    context.fill(Path(ellipseIn: rect), with: .color(Color(.systemBackground)))
+    context.stroke(Path(ellipseIn: rect),
+                   with: .color(DrawingStyle.selectionColor.opacity(0.6)),
+                   lineWidth: 1.5)
+    // "+" arms
+    let arm: CGFloat = 3
+    let style = StrokeStyle(lineWidth: 1.5, lineCap: .round)
+    var h = Path()
+    h.move(to: CGPoint(x: point.x - arm, y: point.y))
+    h.addLine(to: CGPoint(x: point.x + arm, y: point.y))
+    var v = Path()
+    v.move(to: CGPoint(x: point.x, y: point.y - arm))
+    v.addLine(to: CGPoint(x: point.x, y: point.y + arm))
+    context.stroke(h, with: .color(DrawingStyle.selectionColor.opacity(0.7)), style: style)
+    context.stroke(v, with: .color(DrawingStyle.selectionColor.opacity(0.7)), style: style)
 }
 
 func drawEndpointHandle(at point: CGPoint,

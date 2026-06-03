@@ -19,6 +19,9 @@ struct DrawingCanvasView: UIViewRepresentable {
     @Binding var selection: DrawingSelection
     /// The wall kind to use when committing a new wall in draw mode.
     @Binding var wallKind: WallKind
+    /// When true, wall drawing/endpoint dragging use vertex snap first (30pt radius).
+    /// When false, only 20pt grid snap is applied.
+    var vertexSnapEnabled: Bool
 
     var onCommit: (DrawingDocument) -> Void
     var onPlaceOpening: (OpeningKind, CGPoint) -> Void
@@ -42,6 +45,21 @@ struct DrawingCanvasView: UIViewRepresentable {
     var onBeginResizeRoomArea: (UUID) -> Void
     /// Called when a room area corner is dragged to resize (new rect in canvas coords).
     var onResizeRoomArea: (UUID, CGRect) -> Void
+    /// Called when a polygon vertex of a room area is dragged to a new position.
+    /// - Parameters:
+    ///   - id: the room area UUID
+    ///   - vertexIndex: index into `area.effectivePoints`
+    ///   - point: new canvas-space position (fine-snapped)
+    var onMoveRoomAreaVertex: ((UUID, Int, CGPoint) -> Void)?
+    /// Called when the user taps on a polygon edge of a selected room area to insert a new vertex.
+    /// - Parameters:
+    ///   - id: the room area UUID
+    ///   - edgeIndex: index of the first vertex of the tapped edge
+    ///   - point: insertion point in canvas space (fine-snapped, projected onto the edge)
+    var onInsertRoomAreaVertex: ((UUID, Int, CGPoint) -> Void)?
+    /// Called when the user double-taps a polygon vertex of a selected room area to remove it.
+    /// Only fired when the area has > 3 vertices so the polygon remains valid.
+    var onRemoveRoomAreaVertex: ((UUID, Int) -> Void)?
     /// Called when the user taps to place a furniture item (canvas-space point).
     var onPlaceFurniture: (CGPoint) -> Void
     /// Called once when the user begins dragging a furniture item (used to push undo).
@@ -60,6 +78,11 @@ struct DrawingCanvasView: UIViewRepresentable {
     ///   - endpointIndex: 0 = start, 1 = end
     ///   - point: new canvas-space position (smartSnapped)
     var onMoveWallEndpoint: ((UUID, Int, CGPoint) -> Void)?
+    /// Called once when the user begins dragging the body of a wall (used to push undo).
+    var onBeginMoveWall: ((UUID) -> Void)?
+    /// Called while the user drags the body of a wall to translate it.
+    /// `delta` is the offset from the touch-down position (anti-drift pattern).
+    var onMoveWall: ((UUID, CGSize) -> Void)?
 
     // MARK: makeUIView
 
@@ -93,11 +116,23 @@ struct DrawingCanvasView: UIViewRepresentable {
         sv.addGestureRecognizer(mainGesture)
         context.coordinator.mainGesture = mainGesture
 
-        // Tap for selection / placeOpening / placeRoomLabel
+        // Double-tap: remove polygon vertex on selected room area
+        let doubleTapGesture = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleDoubleTap(_:))
+        )
+        doubleTapGesture.numberOfTapsRequired = 2
+        doubleTapGesture.delegate = context.coordinator
+        sv.addGestureRecognizer(doubleTapGesture)
+        context.coordinator.doubleTapGesture = doubleTapGesture
+
+        // Single-tap for selection / placeOpening / placeRoomLabel
+        // Requires the double-tap to fail so a quick double-tap doesn't trigger both.
         let tapGesture = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleTap(_:))
         )
+        tapGesture.require(toFail: doubleTapGesture)
         sv.addGestureRecognizer(tapGesture)
 
         return sv
@@ -118,6 +153,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         default: gestureEnabled = false
         }
         context.coordinator.mainGesture?.isEnabled = gestureEnabled
+        context.coordinator.vertexSnapEnabled = vertexSnapEnabled
 
         context.coordinator.updateContent(document: document, mode: mode, selection: selection)
     }
@@ -131,6 +167,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         var parent: DrawingCanvasView
         var hostedView: UIView?
         weak var mainGesture: UILongPressGestureRecognizer?
+        weak var doubleTapGesture: UITapGestureRecognizer?
 
         // Draw wall state
         private var drawStartPoint: CGPoint?
@@ -164,9 +201,27 @@ struct DrawingCanvasView: UIViewRepresentable {
         private var draggingWallEndpointID: UUID?
         private var draggingEndpointIndex: Int?   // 0 = start, 1 = end
 
+        // Drag whole-wall state
+        private var draggingWallID: UUID?
+        private var dragWallTouchStart: CGPoint?
+
+        /// Mirrors `DrawingCanvasView.vertexSnapEnabled`; updated in `updateUIView`.
+        var vertexSnapEnabled: Bool = true
+
         private var contentState = DrawingContentState()
 
         init(parent: DrawingCanvasView) { self.parent = parent }
+
+        // MARK: Snap helper
+
+        /// Returns either smartSnap (vertex-first) or plain grid snap depending on the toggle.
+        private func performSnap(_ point: CGPoint) -> SnapResult {
+            if vertexSnapEnabled {
+                return parent.document.smartSnap(point)
+            } else {
+                return .grid(DrawingDocument.snap(point))
+            }
+        }
 
         func makeHostingController() -> UIHostingController<DrawingContentWrapper> {
             UIHostingController(rootView: DrawingContentWrapper(state: contentState))
@@ -213,7 +268,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         // MARK: Draw walls
 
         private func handleDrawGesture(_ gr: UILongPressGestureRecognizer, rawPoint: CGPoint) {
-            let snapResult = parent.document.smartSnap(rawPoint)
+            let snapResult = performSnap(rawPoint)
             let snapped = snapResult.point
 
             switch gr.state {
@@ -285,15 +340,15 @@ struct DrawingCanvasView: UIViewRepresentable {
                 // Check room area corners first (resize takes priority over move)
                 if case .roomArea(let id) = parent.selection,
                    let area = parent.document.roomArea(for: id) {
-                    if let cornerIdx = hitCorner(point: rawPoint, rect: area.rect, threshold: 20) {
+                    if let cornerIdx = hitVertex(point: rawPoint, in: area) {
                         resizingRoomAreaID  = id
                         resizingCornerIndex = cornerIdx
                         resizeOriginalRect  = area.rect
                         parent.onBeginResizeRoomArea(id)
                         return
                     }
-                    // Not near a corner — check if inside the rect for move
-                    if area.rect.contains(rawPoint) {
+                    // Not near a vertex — check if inside the area for move
+                    if area.contains(rawPoint) {
                         draggingRoomAreaID = id
                         dragAreaTouchStart = rawPoint
                         parent.onBeginMoveRoomArea(id)
@@ -303,7 +358,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 // Check furniture item corners first (resize), then body (move)
                 if case .furniture(let id) = parent.selection,
                    let item = parent.document.furnitureItem(for: id) {
-                    if let cornerIdx = hitCorner(point: rawPoint, rect: item.rect, threshold: 20) {
+                    if let cornerIdx = hitCorner(point: rawPoint, rect: item.rect) {
                         resizingFurnitureID = id
                         resizingFurnitureCornerIndex = cornerIdx
                         resizeFurnitureOriginalRect  = item.rect
@@ -336,7 +391,8 @@ struct DrawingCanvasView: UIViewRepresentable {
                         parent.onBeginMoveOpening(id)
                     }
                 }
-                // Wall endpoint drag — hit-test start/end circles when a wall is selected
+                // Wall endpoint drag — hit-test start/end circles when a wall is selected,
+                // then fall back to whole-wall body drag.
                 if case .wall(let id) = parent.selection,
                    let wall = parent.document.wall(for: id) {
                     let distToStart = hypot(rawPoint.x - wall.start.x, rawPoint.y - wall.start.y)
@@ -349,6 +405,15 @@ struct DrawingCanvasView: UIViewRepresentable {
                         draggingWallEndpointID = id
                         draggingEndpointIndex  = 1
                         parent.onBeginMoveWallEndpoint?(id)
+                    } else {
+                        // No endpoint handle hit — check if the touch is on the wall body
+                        let proj = wall.project(rawPoint)
+                        let tolerance = DrawingDocument.wallWidth(for: wall.kind) / 2 + 6
+                        if proj.distance < tolerance {
+                            draggingWallID      = id
+                            dragWallTouchStart  = rawPoint
+                            parent.onBeginMoveWall?(id)
+                        }
                     }
                 }
             case .changed:
@@ -371,16 +436,13 @@ struct DrawingCanvasView: UIViewRepresentable {
                     parent.onMoveFurniture(id, delta)
                     return
                 }
-                // Resize room area
+                // Resize / reshape room area vertex
                 if let id = resizingRoomAreaID,
-                   let cornerIdx = resizingCornerIndex,
-                   let originalRect = resizeOriginalRect {
+                   let cornerIdx = resizingCornerIndex {
                     let snapped = DrawingDocument.fineSnap(rawPoint)
-                    let newRect = computeResizedRect(original: originalRect,
-                                                     cornerIndex: cornerIdx,
-                                                     newCornerPosition: snapped,
-                                                     minSize: 40)
-                    parent.onResizeRoomArea(id, newRect)
+                    // Always delegate to handleMoveRoomAreaVertex which auto-promotes
+                    // legacy rect areas to polygon on the first vertex drag.
+                    parent.onMoveRoomAreaVertex?(id, cornerIdx, snapped)
                     return
                 }
                 if let id = draggingRoomAreaID, let touchStart = dragAreaTouchStart {
@@ -400,8 +462,14 @@ struct DrawingCanvasView: UIViewRepresentable {
                 }
                 // Move wall endpoint
                 if let id = draggingWallEndpointID, let epIdx = draggingEndpointIndex {
-                    let snapped = parent.document.smartSnap(rawPoint).point
+                    let snapped = performSnap(rawPoint).point
                     parent.onMoveWallEndpoint?(id, epIdx, snapped)
+                }
+                // Move whole wall
+                if let id = draggingWallID, let touchStart = dragWallTouchStart {
+                    let delta = CGSize(width: rawPoint.x - touchStart.x,
+                                       height: rawPoint.y - touchStart.y)
+                    parent.onMoveWall?(id, delta)
                 }
             case .ended, .cancelled, .failed:
                 draggingOpeningID            = nil
@@ -418,6 +486,8 @@ struct DrawingCanvasView: UIViewRepresentable {
                 resizeFurnitureOriginalRect  = nil
                 draggingWallEndpointID       = nil
                 draggingEndpointIndex        = nil
+                draggingWallID               = nil
+                dragWallTouchStart           = nil
             default:
                 break
             }
@@ -425,9 +495,33 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         // MARK: Resize helpers
 
+        /// Current zoom scale of the hosting scroll view (1.0 if unavailable).
+        private var currentZoomScale: CGFloat {
+            (hostedView?.superview as? UIScrollView)?.zoomScale ?? 1.0
+        }
+
+        /// Converts a screen-space touch radius to canvas-space, accounting for zoom.
+        /// A 24pt finger target on screen becomes 24/zoomScale canvas units.
+        private func canvasThreshold(_ screenPts: CGFloat = 24) -> CGFloat {
+            screenPts / currentZoomScale
+        }
+
+        /// Returns the vertex index if `point` is within `threshold` of any effective
+        /// vertex of the given `RoomArea` (supports both rect and polygon modes).
+        private func hitVertex(point: CGPoint, in area: RoomArea, threshold: CGFloat? = nil) -> Int? {
+            let t = threshold ?? canvasThreshold()
+            for (i, vertex) in area.effectivePoints.enumerated() {
+                if hypot(point.x - vertex.x, point.y - vertex.y) < t {
+                    return i
+                }
+            }
+            return nil
+        }
+
         /// Returns the corner index (0=TL, 1=TR, 2=BL, 3=BR) if `point` is within
         /// `threshold` of any corner of `rect`, else nil.
-        private func hitCorner(point: CGPoint, rect: CGRect, threshold: CGFloat = 20) -> Int? {
+        private func hitCorner(point: CGPoint, rect: CGRect, threshold: CGFloat? = nil) -> Int? {
+            let t = threshold ?? canvasThreshold()
             let corners: [CGPoint] = [
                 CGPoint(x: rect.minX, y: rect.minY),  // 0: topLeft
                 CGPoint(x: rect.maxX, y: rect.minY),  // 1: topRight
@@ -435,7 +529,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 CGPoint(x: rect.maxX, y: rect.maxY)   // 3: bottomRight
             ]
             for (i, corner) in corners.enumerated() {
-                if hypot(point.x - corner.x, point.y - corner.y) < threshold {
+                if hypot(point.x - corner.x, point.y - corner.y) < t {
                     return i
                 }
             }
@@ -493,9 +587,67 @@ struct DrawingCanvasView: UIViewRepresentable {
             case .placeFurniture:
                 parent.onPlaceFurniture(tapPoint)
             case .select:
+                // If the tap lands on a handle of the currently selected element, keep the
+                // selection as-is (the user may have intended a drag that was too short).
+                if isTapOnSelectionHandle(tapPoint, selection: parent.selection, doc: parent.document) {
+                    return
+                }
+                // If a room area is selected and the tap hits a polygon edge (but not a vertex
+                // handle, already guarded above), insert a new vertex on that edge.
+                if case .roomArea(let id) = parent.selection,
+                   let area = parent.document.roomArea(for: id),
+                   let edge = area.nearestEdge(to: tapPoint, threshold: canvasThreshold()) {
+                    let snapped = DrawingDocument.fineSnap(edge.point)
+                    parent.onInsertRoomAreaVertex?(id, edge.edgeIndex, snapped)
+                    return
+                }
                 parent.selection = hitTest(tapPoint, in: parent.document)
             case .draw, .drawRoomArea:
                 break
+            }
+        }
+
+        // MARK: Double-tap gesture (remove polygon vertex)
+
+        @objc func handleDoubleTap(_ gr: UITapGestureRecognizer) {
+            guard parent.mode == .select else { return }
+            let tapPoint = gr.location(in: hostedView)
+            // Only act when a room area is selected and the double-tap lands on a vertex
+            guard case .roomArea(let id) = parent.selection,
+                  let area = parent.document.roomArea(for: id),
+                  area.effectivePoints.count > 3,         // keep minimum 3 vertices
+                  let vertexIdx = hitVertex(point: tapPoint, in: area) else { return }
+            parent.onRemoveRoomAreaVertex?(id, vertexIdx)
+        }
+
+        /// Returns true if `point` is within handle-tap distance of any selection handle
+        /// for the currently selected element. Used to prevent tap-deselection when the
+        /// user intends to drag a handle but the gesture registers as a short tap.
+        private func isTapOnSelectionHandle(_ point: CGPoint,
+                                            selection: DrawingSelection,
+                                            doc: DrawingDocument) -> Bool {
+            let t = canvasThreshold()
+            switch selection {
+            case .roomArea(let id):
+                guard let area = doc.roomArea(for: id) else { return false }
+                return area.effectivePoints.contains {
+                    hypot(point.x - $0.x, point.y - $0.y) < t
+                }
+            case .furniture(let id):
+                guard let item = doc.furnitureItem(for: id) else { return false }
+                let corners: [CGPoint] = [
+                    CGPoint(x: item.rect.minX, y: item.rect.minY),
+                    CGPoint(x: item.rect.maxX, y: item.rect.minY),
+                    CGPoint(x: item.rect.minX, y: item.rect.maxY),
+                    CGPoint(x: item.rect.maxX, y: item.rect.maxY)
+                ]
+                return corners.contains { hypot(point.x - $0.x, point.y - $0.y) < t }
+            case .wall(let id):
+                guard let wall = doc.wall(for: id) else { return false }
+                return hypot(point.x - wall.start.x, point.y - wall.start.y) < t
+                    || hypot(point.x - wall.end.x,   point.y - wall.end.y)   < t
+            case .opening, .roomLabel, .none:
+                return false
             }
         }
 
@@ -535,7 +687,7 @@ struct DrawingCanvasView: UIViewRepresentable {
             if let b = bestWall { return .wall(b.id) }
             // Room areas — last added wins (reversed order)
             for area in doc.roomAreas.reversed() {
-                if area.rect.contains(point) {
+                if area.contains(point) {
                     return .roomArea(area.id)
                 }
             }
@@ -552,6 +704,20 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         func gestureRecognizer(_ gr: UIGestureRecognizer,
                                shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool { false }
+
+        /// Prevents the tap gesture from firing when the long-press (main) gesture is already
+        /// in an active dragging state (began / changed). Without this, a slow drag that ends
+        /// near the touch-down point triggers a tap, deselecting the element just dragged.
+        func gestureRecognizer(_ gr: UIGestureRecognizer,
+                               shouldReceive touch: UITouch) -> Bool {
+            // If this is the tap recognizer and the main gesture is mid-drag, swallow the tap.
+            if gr is UITapGestureRecognizer,
+               let main = mainGesture,
+               main.state == .began || main.state == .changed {
+                return false
+            }
+            return true
+        }
     }
 }
 

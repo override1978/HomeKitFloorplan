@@ -77,7 +77,7 @@ struct FloorplanEditorView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                Color(.systemBackground)
+                Color.white
                     .ignoresSafeArea()
                 
                 if let image = ImageStorageService.load(filename: floorplan.imageFilename) {

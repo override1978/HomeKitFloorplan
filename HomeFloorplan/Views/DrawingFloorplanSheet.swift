@@ -36,6 +36,8 @@ struct DrawingFloorplanSheet: View {
     @State private var mode: DrawingMode = .draw
     @State private var selection: DrawingSelection = .none
     @State private var wallKind: WallKind = .exterior
+    /// When false, wall drawing snaps only to the 20pt grid (no vertex snapping).
+    @State private var vertexSnapEnabled: Bool = true
 
     // MARK: Room label placement state
 
@@ -67,10 +69,11 @@ struct DrawingFloorplanSheet: View {
         ZStack(alignment: .bottom) {
             // Canvas (fills entire screen)
             DrawingCanvasView(
-                document:  $document,
-                mode:      $mode,
-                selection: $selection,
-                wallKind:  $wallKind,
+                document:          $document,
+                mode:              $mode,
+                selection:         $selection,
+                wallKind:          $wallKind,
+                vertexSnapEnabled: vertexSnapEnabled,
                 onCommit: { newDoc in
                     pushUndo()
                     document = newDoc
@@ -86,13 +89,18 @@ struct DrawingFloorplanSheet: View {
                 onMoveRoomArea: handleMoveRoomArea(id:delta:),
                 onBeginResizeRoomArea: { _ in pushUndo() },
                 onResizeRoomArea: handleResizeRoomArea(id:newRect:),
+                onMoveRoomAreaVertex: handleMoveRoomAreaVertex(id:vertexIndex:to:),
+                onInsertRoomAreaVertex: handleInsertRoomAreaVertex(id:edgeIndex:at:),
+                onRemoveRoomAreaVertex: handleRemoveRoomAreaVertex(id:vertexIndex:),
                 onPlaceFurniture: handlePlaceFurniture(at:),
                 onBeginMoveFurniture: { _ in pushUndo() },
                 onMoveFurniture: handleMoveFurniture(id:delta:),
                 onBeginResizeFurniture: { _ in pushUndo() },
                 onResizeFurniture: handleResizeFurniture(id:newRect:),
                 onBeginMoveWallEndpoint: { _ in pushUndo() },
-                onMoveWallEndpoint: handleMoveWallEndpoint(id:endpointIndex:to:)
+                onMoveWallEndpoint: handleMoveWallEndpoint(id:endpointIndex:to:),
+                onBeginMoveWall: { _ in pushUndo() },
+                onMoveWall: handleMoveWall(id:delta:)
             )
             .ignoresSafeArea()
 
@@ -178,6 +186,7 @@ struct DrawingFloorplanSheet: View {
                 DrawingToolbar(
                     mode: $mode,
                     wallKind: $wallKind,
+                    vertexSnapEnabled: $vertexSnapEnabled,
                     hasSelection: selection != .none,
                     onDelete: deleteSelected
                 )
@@ -235,11 +244,19 @@ struct DrawingFloorplanSheet: View {
                 rooms: homeKit.currentHome?.rooms ?? [],
                 onPick: { room in
                     guard let rect = pendingAreaRect else { return }
+                    // New areas are always created as polygons (4 draggable vertices from birth).
+                    let initialPoints: [CGPoint] = [
+                        CGPoint(x: rect.minX, y: rect.minY),
+                        CGPoint(x: rect.maxX, y: rect.minY),
+                        CGPoint(x: rect.maxX, y: rect.maxY),
+                        CGPoint(x: rect.minX, y: rect.maxY)
+                    ]
                     let area = RoomArea(
                         hmRoomUUID: room.uniqueIdentifier,
                         name: room.name,
                         rect: rect,
-                        colorIndex: document.roomAreas.count
+                        colorIndex: document.roomAreas.count,
+                        points: initialPoints
                     )
                     pushUndo()
                     document.roomAreas.append(area)
@@ -318,30 +335,86 @@ struct DrawingFloorplanSheet: View {
     /// `delta` is the total offset from the touch-down position.
     private func handleMoveRoomArea(id: UUID, delta: CGSize) {
         guard let idx = document.roomAreas.firstIndex(where: { $0.id == id }) else { return }
-        // We keep a baseline origin in the undo snapshot; just apply delta from it.
-        // Since the undo snapshot is pushed in onBeginMoveRoomArea, the document at
-        // that moment is undoStack.last. We read the original rect from there to
-        // avoid drift from accumulating tiny deltas.
         guard let originalDoc = undoStack.last,
               let originalArea = originalDoc.roomArea(for: id) else {
-            // Fallback: just offset from current (less accurate but safe)
+            // Fallback: offset from current position
             document.roomAreas[idx].rect.origin.x += delta.width
             document.roomAreas[idx].rect.origin.y += delta.height
+            if let pts = document.roomAreas[idx].points {
+                document.roomAreas[idx].points = pts.map {
+                    CGPoint(x: $0.x + delta.width, y: $0.y + delta.height)
+                }
+            }
             return
         }
         document.roomAreas[idx].rect.origin = CGPoint(
             x: originalArea.rect.origin.x + delta.width,
             y: originalArea.rect.origin.y + delta.height
         )
+        // Move polygon vertices by the same delta
+        if let originalPts = originalArea.points {
+            document.roomAreas[idx].points = originalPts.map {
+                CGPoint(x: $0.x + delta.width, y: $0.y + delta.height)
+            }
+        }
     }
 
     // MARK: - Room area resize
 
-    /// Called repeatedly while the user drags a corner handle to resize a room area.
-    /// `newRect` is already grid-snapped and minimum-enforced by the Coordinator.
+    /// Called repeatedly while the user drags a vertex handle to resize/reshape a room area.
+    /// For rect-mode areas `newRect` re-applies the bounding box; for polygon areas
+    /// the Coordinator passes a sentinel rect with `.null` origin and the vertex index
+    /// encoded in size (see DrawingCanvasView `onResizeRoomArea` usage).
+    /// Here we just store the rect for rect-mode (polygon vertex dragging is handled
+    /// via `onMoveRoomAreaVertex`).
     private func handleResizeRoomArea(id: UUID, newRect: CGRect) {
         guard let idx = document.roomAreas.firstIndex(where: { $0.id == id }) else { return }
         document.roomAreas[idx].rect = newRect
+        // For rect-mode areas, clear any stale points so they stay in sync.
+        if document.roomAreas[idx].points == nil {
+            // rect-only — nothing else to update
+        }
+    }
+
+    // MARK: - Room area polygon vertex drag
+
+    /// Called repeatedly while the user drags a polygon vertex.
+    /// Moves the vertex at `vertexIndex` to `newPoint` and updates `rect` to the new bounding box.
+    private func handleMoveRoomAreaVertex(id: UUID, vertexIndex: Int, to newPoint: CGPoint) {
+        guard let idx = document.roomAreas.firstIndex(where: { $0.id == id }) else { return }
+        // Auto-promote legacy rect-only areas to polygon on the first vertex drag.
+        if document.roomAreas[idx].points == nil {
+            document.roomAreas[idx].promoteToPolygon()
+        }
+        guard var pts = document.roomAreas[idx].points,
+              vertexIndex < pts.count else { return }
+        pts[vertexIndex] = newPoint
+        document.roomAreas[idx].points = pts
+        document.roomAreas[idx].rect = document.roomAreas[idx].boundingRect
+    }
+
+    // MARK: - Room area vertex insertion
+
+    /// Called when the user taps a polygon edge to add a new vertex at that point.
+    private func handleInsertRoomAreaVertex(id: UUID, edgeIndex: Int, at point: CGPoint) {
+        guard let idx = document.roomAreas.firstIndex(where: { $0.id == id }) else { return }
+        pushUndo()
+        document.roomAreas[idx].insertVertex(at: edgeIndex, point: point)
+    }
+
+    // MARK: - Room area vertex removal
+
+    /// Called when the user double-taps a polygon vertex to remove it.
+    /// Requires the area to have > 3 vertices (enforced also by the canvas coordinator).
+    private func handleRemoveRoomAreaVertex(id: UUID, vertexIndex: Int) {
+        guard let idx = document.roomAreas.firstIndex(where: { $0.id == id }),
+              var pts = document.roomAreas[idx].points,
+              pts.count > 3,
+              vertexIndex < pts.count else { return }
+        pushUndo()
+        pts.remove(at: vertexIndex)
+        document.roomAreas[idx].points = pts
+        document.roomAreas[idx].rect = document.roomAreas[idx].boundingRect
     }
 
     // MARK: - Furniture placement
@@ -405,6 +478,31 @@ struct DrawingFloorplanSheet: View {
         }
     }
 
+    // MARK: - Wall body movement
+
+    /// Called repeatedly while the user drags the body of a wall.
+    /// Reads original endpoints from the undo snapshot to avoid delta drift.
+    private func handleMoveWall(id: UUID, delta: CGSize) {
+        guard let idx = document.walls.firstIndex(where: { $0.id == id }) else { return }
+        guard let originalDoc = undoStack.last,
+              let originalWall = originalDoc.wall(for: id) else {
+            // Fallback: offset from current position
+            document.walls[idx].start.x += delta.width
+            document.walls[idx].start.y += delta.height
+            document.walls[idx].end.x   += delta.width
+            document.walls[idx].end.y   += delta.height
+            return
+        }
+        document.walls[idx].start = CGPoint(
+            x: originalWall.start.x + delta.width,
+            y: originalWall.start.y + delta.height
+        )
+        document.walls[idx].end = CGPoint(
+            x: originalWall.end.x + delta.width,
+            y: originalWall.end.y + delta.height
+        )
+    }
+
     // MARK: - Opening mutation (resize / flip)
 
     /// Applies a mutation to a specific opening without pushing undo (live slider).
@@ -447,15 +545,15 @@ struct DrawingFloorplanSheet: View {
     }
 
     /// Renders the document cropped to the drawing content with margin, scaled to
-    /// a fixed output size suitable for iPad display (2048pt @2x = 4096px).
+    /// the screen diagonal (width×height of the device screen), keeping the
+    /// floorplan centred and well-proportioned.
     /// Also returns `[LinkedRoom]` with normalized rects relative to the exported image.
     private func renderToImage(_ doc: DrawingDocument) -> (UIImage, [LinkedRoom]) {
         var allPoints: [CGPoint] = doc.walls.flatMap { [$0.start, $0.end] }
                                   + doc.roomLabels.map(\.position)
-        // Include room area corners in bounding box
+        // Include all effective polygon vertices for each room area in the bounding box
         for area in doc.roomAreas {
-            allPoints.append(CGPoint(x: area.rect.minX, y: area.rect.minY))
-            allPoints.append(CGPoint(x: area.rect.maxX, y: area.rect.maxY))
+            allPoints.append(contentsOf: area.effectivePoints)
         }
         // Include furniture item corners in bounding box
         for item in doc.furnitureItems {
@@ -463,12 +561,15 @@ struct DrawingFloorplanSheet: View {
             allPoints.append(CGPoint(x: item.rect.maxX, y: item.rect.maxY))
         }
 
-        let outputPt: CGFloat   = 2048   // logical points for the output image
-        let scale: CGFloat      = 2.0    // @2x = 4096 physical pixels
-        let marginFraction: CGFloat = 0.08  // 8% padding on each side
+        // Output size = screen dimensions so the exported image matches the device display
+        let screenBounds = UIScreen.main.bounds
+        let outputW: CGFloat    = screenBounds.width
+        let outputH: CGFloat    = screenBounds.height
+        let scale: CGFloat      = 2.0   // @2x physical pixels
+        let marginFraction: CGFloat = 0.08  // 8% padding around the drawing
 
         func blankImage() -> UIImage {
-            let size = CGSize(width: outputPt, height: outputPt)
+            let size = CGSize(width: outputW, height: outputH)
             let fmt  = UIGraphicsImageRendererFormat()
             fmt.scale = scale
             return UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
@@ -489,34 +590,50 @@ struct DrawingFloorplanSheet: View {
         let longestSide = max(drawingW, drawingH)
         guard longestSide > 0 else { return (blankImage(), []) }
 
-        // Square crop region: side = longest dimension + uniform margin on all 4 sides.
-        let margin      = longestSide * marginFraction
-        let paddedSide  = longestSide + margin * 2
-        let scaleFactor = outputPt / paddedSide
+        // Fit the padded floorplan inside the output rectangle (outputW × outputH),
+        // centred, preserving aspect ratio (uniform scale = fit to shorter dimension ratio).
+        let margin       = longestSide * marginFraction
+        let paddedW      = drawingW + margin * 2
+        let paddedH      = drawingH + margin * 2
+        // Scale to fill the output size while keeping the drawing proportioned
+        let scaleFactor  = min(outputW / paddedW, outputH / paddedH)
 
         // Centre of the bounding box in canvas space
         let centerX = (minX + maxX) / 2
         let centerY = (minY + maxY) / 2
 
-        // Top-left corner of the square crop region in canvas space
-        let originX = centerX - paddedSide / 2
-        let originY = centerY - paddedSide / 2
+        // How much canvas space the output rectangle covers at this scale
+        let cropW = outputW / scaleFactor
+        let cropH = outputH / scaleFactor
 
-        // Build LinkedRoom list with normalized rects
+        // Top-left corner of the crop region in canvas space (centred on drawing)
+        let originX = centerX - cropW / 2
+        let originY = centerY - cropH / 2
+
+        // Build LinkedRoom list with normalized rects (and optional polygon vertices).
+        // Normalise coords by the crop dimensions so [0,1] maps exactly to the image edges.
         let linkedRooms: [LinkedRoom] = doc.roomAreas.compactMap { area in
             guard let hmUUID = area.hmRoomUUID else { return nil }
-            let normX = Double((area.rect.minX - originX) / paddedSide)
-            let normY = Double((area.rect.minY - originY) / paddedSide)
-            let normW = Double(area.rect.width  / paddedSide)
-            let normH = Double(area.rect.height / paddedSide)
+            let normX = Double((area.rect.minX - originX) / cropW)
+            let normY = Double((area.rect.minY - originY) / cropH)
+            let normW = Double(area.rect.width  / cropW)
+            let normH = Double(area.rect.height / cropH)
+            // Normalize polygon vertices when present
+            let normalizedPoints: [CodablePoint]? = area.points.map { pts in
+                pts.map { CodablePoint(
+                    x: Double(($0.x - originX) / cropW),
+                    y: Double(($0.y - originY) / cropH)
+                )}
+            }
             return LinkedRoom(
                 hmRoomUUID: hmUUID,
                 name: area.name,
-                normalizedRect: CodableRect(x: normX, y: normY, width: normW, height: normH)
+                normalizedRect: CodableRect(x: normX, y: normY, width: normW, height: normH),
+                normalizedPoints: normalizedPoints
             )
         }
 
-        let outputSize = CGSize(width: outputPt, height: outputPt)
+        let outputSize = CGSize(width: outputW, height: outputH)
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = scale
         let renderer = UIGraphicsImageRenderer(size: outputSize, format: fmt)
@@ -528,7 +645,7 @@ struct DrawingFloorplanSheet: View {
             cgCtx.setFillColor(UIColor.white.cgColor)
             cgCtx.fill(CGRect(origin: .zero, size: outputSize))
 
-            // Transform: shift to crop origin, then scale to fit outputPt
+            // Transform: shift to crop origin, then scale to fit output size
             cgCtx.translateBy(x: -originX * scaleFactor, y: -originY * scaleFactor)
             cgCtx.scaleBy(x: scaleFactor, y: scaleFactor)
 
