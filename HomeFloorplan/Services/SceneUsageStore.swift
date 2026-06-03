@@ -178,15 +178,6 @@ final class SceneUsageStore {
         usageByScene.values.max(by: { $0.totalExecutions < $1.totalExecutions })?.sceneName
     }
 
-    /// Ultima scena eseguita.
-    var lastExecutedSceneName: String? {
-        usageByScene.values
-            .compactMap { $0.lastExecutedAt.map { ($0, $1: $0.sceneName) } }
-            .sorted { $0.0 > $1.0 }
-            .first?.1.sceneName
-        // Simplified: just find the entry with most recent lastExecutedAt
-    }
-
     /// Ultima scena eseguita (nome).
     var lastExecutedScene: SceneUsageSummary? {
         usageByScene.values

@@ -163,13 +163,13 @@ struct HabitsView: View {
                     Circle()
                         .fill(Color.accentColor.opacity(0.12))
                         .frame(width: 40, height: 40)
-                    Image(systemName: "lightbulb.fill")
+                    Image(systemName: pattern.sfSymbol)
                         .font(.system(size: 17))
                         .foregroundStyle(Color.accentColor)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(pattern.accessoryName)
+                    Text(pattern.displayTitle)
                         .font(.subheadline.weight(.semibold))
                     Text(pattern.description)
                         .font(.caption)

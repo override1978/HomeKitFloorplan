@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 // MARK: - ScenesView
 //
@@ -335,8 +336,8 @@ private struct ScenesHeroView: View {
                 heroStatCell(
                     icon: "star.fill",
                     iconColor: .orange,
-                    titleKey: "scenes.hero.mostUsed",
-                    titleDefault: "Più usata",
+                    title: String(localized: "scenes.hero.mostUsed",
+                                  defaultValue: "Più usata"),
                     value: mostUsedName ?? "—"
                 )
 
@@ -345,8 +346,8 @@ private struct ScenesHeroView: View {
                 heroStatCell(
                     icon: "clock.arrow.circlepath",
                     iconColor: Color.orange.opacity(0.65),
-                    titleKey: "scenes.hero.lastExecuted",
-                    titleDefault: "Ultima",
+                    title: String(localized: "scenes.hero.lastExecuted",
+                                  defaultValue: "Ultima"),
                     value: {
                         guard let s = lastExecutedScene,
                               let d = s.lastExecutedAt else { return "—" }
@@ -373,8 +374,7 @@ private struct ScenesHeroView: View {
 
     private func heroStatCell(icon: String,
                                iconColor: Color,
-                               titleKey: String,
-                               titleDefault: String,
+                               title: String,
                                value: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
@@ -383,8 +383,7 @@ private struct ScenesHeroView: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(String(localized: String.LocalizationValue(titleKey),
-                            defaultValue: titleDefault))
+                Text(title)
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.tertiary)
                     .textCase(.uppercase)
@@ -419,7 +418,6 @@ private struct SceneSuggestionsSection: View {
         VStack(alignment: .leading, spacing: 10) {
             sceneSectionHeader(
                 icon: "sparkles",
-                titleKey: "scenes.suggestions.header",
                 titleDefault: "SUGGERITE ORA"
             )
 
@@ -582,8 +580,7 @@ private struct SceneIntentCategoryBar: View {
             HStack(spacing: 5) {
                 Image(systemName: cat.sfSymbol)
                     .font(.system(size: 11, weight: .medium))
-                Text(String(localized: String.LocalizationValue(cat.localizedKey),
-                            defaultValue: cat.defaultLabel))
+                Text(cat.defaultLabel)
                     .font(.subheadline.weight(.medium))
             }
             .foregroundStyle(isSelected ? .white : .primary)
@@ -625,7 +622,6 @@ private struct SceneFeaturedSection: View {
         VStack(alignment: .leading, spacing: 10) {
             sceneSectionHeader(
                 icon: "star.fill",
-                titleKey: "scenes.featured.header",
                 titleDefault: "PIÙ USATE"
             )
 
@@ -792,7 +788,6 @@ private struct SceneAllSection: View {
         VStack(alignment: .leading, spacing: 10) {
             sceneSectionHeader(
                 icon: "list.bullet",
-                titleKey: "scenes.all.header",
                 titleDefault: "TUTTE LE SCENE"
             )
 
@@ -925,14 +920,12 @@ private struct SceneListRow: View {
 // MARK: - Section header helper
 
 private func sceneSectionHeader(icon: String,
-                                 titleKey: String,
                                  titleDefault: String) -> some View {
     HStack(spacing: 6) {
         Image(systemName: icon)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Color.orange)
-        Text(String(localized: String.LocalizationValue(titleKey),
-                    defaultValue: titleDefault))
+        Text(titleDefault)
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .textCase(.uppercase)

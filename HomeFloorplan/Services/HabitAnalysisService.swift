@@ -51,16 +51,23 @@ final class HabitAnalysisService {
         }
 
         let events = loadRecentEvents(days: 14)
-        guard !events.isEmpty else { return }
+        let sceneEvents = loadRecentSceneEvents(days: 14)
+        guard !events.isEmpty || !sceneEvents.isEmpty else { return }
 
-        let payload = buildPayload(events: events)
+        let payload = buildPayload(events: events, sceneEvents: sceneEvents)
 
         let systemPrompt = """
         Sei un assistente per la domotica domestica. Analizza i pattern di utilizzo degli accessori \
-        e identifica le abitudini significative (confidenza > 0.75, frequenza > 5 giorni su 7). \
-        Per ogni abitudine trovata, genera anche la regola corrispondente in formato strutturato. \
-        Rispondi SOLO con un JSON array (nessun testo aggiuntivo, nessun markdown):
-        [{"accessoryName":"...","accessoryID":"...","roomName":"...","description":"testo breve in italiano (max 1 frase)","confidence":0.87,"rule":{"triggerType":"calendar"|"characteristic","time":"22:18","weekdays":[1,2,3,4,5,6,7],"action":"on"|"off"|"dim"|"open"|"close","value":30}}]
+        e delle scene HomeKit, e identifica le abitudini significative (confidenza > 0.75, \
+        frequenza > 5 giorni su 7). Per ogni abitudine trovata, genera anche la regola corrispondente \
+        in formato strutturato. \
+        Rispondi SOLO con un JSON array (nessun testo aggiuntivo, nessun markdown). \
+        Ogni elemento può essere di tipo "accessory" (comportamento su un singolo accessorio) \
+        o "scene" (attivazione di una scena HomeKit). \
+        Formato per tipo accessory: \
+        {"patternType":"accessory","accessoryName":"...","accessoryID":"...","roomName":"...","description":"testo breve in italiano (max 1 frase)","confidence":0.87,"rule":{"triggerType":"calendar","time":"22:18","weekdays":[1,2,3,4,5,6,7],"action":"on"|"off"|"dim","value":30}} \
+        Formato per tipo scene: \
+        {"patternType":"scene","sceneName":"...","accessoryName":"...","accessoryID":"","roomName":"","description":"testo breve in italiano (max 1 frase)","confidence":0.87,"rule":{"triggerType":"calendar","time":"21:00","weekdays":[1,2,3,4,5,6,7],"action":"scene"}}
         """
 
         do {
@@ -97,8 +104,8 @@ final class HabitAnalysisService {
 
     // MARK: - Payload Builder
 
-    private func buildPayload(events: [AccessoryEvent]) -> String {
-        // Raggruppa per accessoryID
+    private func buildPayload(events: [AccessoryEvent], sceneEvents: [ActivityEvent]) -> String {
+        // ── Accessori ──────────────────────────────────────────────────────────
         let grouped = Dictionary(grouping: events, by: \.accessoryID)
 
         var accessories: [[String: Any]] = []
@@ -161,10 +168,42 @@ final class HabitAnalysisService {
             ])
         }
 
-        let payloadDict: [String: Any] = [
+        // ── Scene ──────────────────────────────────────────────────────────────
+        // Raggruppa per nome scena e aggrega orari e giorni di attivazione
+        let groupedScenes = Dictionary(grouping: sceneEvents, by: \.title)
+
+        var scenes: [[String: Any]] = []
+        for (sceneName, sceneActivations) in groupedScenes {
+            guard sceneActivations.count >= 3 else { continue }  // soglia minima
+
+            let timestamps = sceneActivations.map(\.timestamp)
+            guard let avgTime = averageTimeString(from: timestamps) else { continue }
+
+            let weekdays = Array(Set(timestamps.map {
+                Calendar.current.component(.weekday, from: $0)
+            })).sorted()
+
+            let frequency = Double(Set(timestamps.map {
+                Calendar.current.startOfDay(for: $0)
+            }).count) / 14.0
+
+            scenes.append([
+                "name":      sceneName,
+                "avgTime":   avgTime,
+                "weekdays":  weekdays,
+                "frequency": Double(round(frequency * 100) / 100),
+                "count":     sceneActivations.count,
+            ])
+        }
+
+        // ── Payload finale ─────────────────────────────────────────────────────
+        var payloadDict: [String: Any] = [
             "analysisWindow": "14 days",
             "accessories":    accessories,
         ]
+        if !scenes.isEmpty {
+            payloadDict["scenes"] = scenes
+        }
 
         guard let data = try? JSONSerialization.data(withJSONObject: payloadDict, options: [.sortedKeys]),
               let str = String(data: data, encoding: .utf8)
@@ -182,10 +221,7 @@ final class HabitAnalysisService {
         else { return [] }
 
         return jsonArray.compactMap { item -> HabitPattern? in
-            guard let name        = item["accessoryName"] as? String,
-                  let idStr       = item["accessoryID"] as? String ?? (item["accessoryName"] as? String),
-                  let room        = item["roomName"] as? String,
-                  let description = item["description"] as? String,
+            guard let description = item["description"] as? String,
                   let confidence  = item["confidence"] as? Double,
                   confidence >= 0.75,
                   let ruleDict    = item["rule"] as? [String: Any],
@@ -193,16 +229,44 @@ final class HabitAnalysisService {
                   let ruleJSON    = String(data: ruleData, encoding: .utf8)
             else { return nil }
 
-            let accessoryID = UUID(uuidString: idStr) ?? UUID()
+            let rawType = item["patternType"] as? String ?? "accessory"
+            let patternType: PatternType = rawType == "scene" ? .scene : .accessory
 
-            return HabitPattern(
-                accessoryName:    name,
-                accessoryID:      accessoryID,
-                roomName:         room,
-                description:      description,
-                confidence:       confidence,
-                suggestedRuleJSON: ruleJSON
-            )
+            if patternType == .scene {
+                // Pattern scena: sceneName obbligatorio, accessoryID non applicabile
+                guard let sceneName = item["sceneName"] as? String, !sceneName.isEmpty
+                else { return nil }
+
+                return HabitPattern(
+                    patternType:       .scene,
+                    accessoryName:     sceneName,  // usato anche come fallback
+                    accessoryID:       UUID(),      // sentinel — non viene usato per le scene
+                    sceneName:         sceneName,
+                    roomName:          item["roomName"] as? String ?? "",
+                    description:       description,
+                    confidence:        confidence,
+                    suggestedRuleJSON: ruleJSON
+                )
+            } else {
+                // Pattern accessorio
+                guard let name  = item["accessoryName"] as? String,
+                      let idStr = item["accessoryID"] as? String,
+                      let room  = item["roomName"] as? String
+                else { return nil }
+
+                let accessoryID = UUID(uuidString: idStr) ?? UUID()
+
+                return HabitPattern(
+                    patternType:       .accessory,
+                    accessoryName:     name,
+                    accessoryID:       accessoryID,
+                    sceneName:         nil,
+                    roomName:          room,
+                    description:       description,
+                    confidence:        confidence,
+                    suggestedRuleJSON: ruleJSON
+                )
+            }
         }
     }
 
@@ -216,12 +280,23 @@ final class HabitAnalysisService {
     // MARK: - Pattern Merge
 
     private func mergePatterns(_ newPatterns: [HabitPattern]) {
-        // Aggiungi solo pattern non già presenti (confronto per accessoryID + descrizione)
         for new in newPatterns {
-            let alreadyExists = patterns.contains {
-                $0.accessoryID == new.accessoryID &&
-                $0.description == new.description &&
-                $0.status != .dismissed
+            let alreadyExists: Bool
+            if new.patternType == .scene {
+                // Dedup scene per nome scena + descrizione
+                alreadyExists = patterns.contains {
+                    $0.patternType == .scene &&
+                    $0.sceneName == new.sceneName &&
+                    $0.description == new.description &&
+                    $0.status != .dismissed
+                }
+            } else {
+                // Dedup accessori per accessoryID + descrizione
+                alreadyExists = patterns.contains {
+                    $0.accessoryID == new.accessoryID &&
+                    $0.description == new.description &&
+                    $0.status != .dismissed
+                }
             }
             if !alreadyExists {
                 patterns.append(new)
@@ -260,6 +335,20 @@ final class HabitAnalysisService {
 
         let descriptor = FetchDescriptor<AccessoryEvent>(
             predicate: #Predicate<AccessoryEvent> { $0.timestamp >= cutoff }
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// Carica le esecuzioni di scene registrate negli ultimi N giorni.
+    private func loadRecentSceneEvents(days: Int) -> [ActivityEvent] {
+        let context = ModelContext(modelContainer)
+        let cutoff = Date(timeIntervalSinceNow: -Double(days) * 24 * 3600)
+        let sceneRaw = ActivityEventCategory.sceneExecution.rawValue
+
+        let descriptor = FetchDescriptor<ActivityEvent>(
+            predicate: #Predicate<ActivityEvent> {
+                $0.timestamp >= cutoff && $0.categoryRaw == sceneRaw
+            }
         )
         return (try? context.fetch(descriptor)) ?? []
     }
