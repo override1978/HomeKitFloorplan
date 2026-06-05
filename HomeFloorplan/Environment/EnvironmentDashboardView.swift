@@ -18,6 +18,7 @@ struct EnvironmentDashboardView: View {
 
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
+    @Environment(ActionExecutionService.self) private var executionService
 
     @StateObject private var vm = EnvironmentViewModel()
     @Environment(RuleEngineService.self) private var ruleEngine
@@ -25,6 +26,7 @@ struct EnvironmentDashboardView: View {
     @State private var selectedSensor: SensorData?
     @State private var showThresholdSettings = false
     @State private var isRefreshing = false
+    @State private var isReordering = false
     @AppStorage("outdoorRoomName") private var outdoorRoomName: String = ""
     @State private var outdoorRefreshID = UUID()
 
@@ -32,8 +34,13 @@ struct EnvironmentDashboardView: View {
     @State private var aiService: AmbientalAIService?
     /// Sheet per la creazione di una nuova regola da un RuleDraft AI.
     @State private var pendingRuleDraft: RuleDraft?
-    /// Esecutore Next Action (stateless, condiviso).
-    private let nextActionExecutor = NextActionExecutor()
+
+    /// Timestamp dell'ultimo campionamento automatico (onAppear).
+    /// Usato per evitare campionamenti ravvicinati che comprimerebbero la stdDev baseline.
+    @State private var lastSampledAt: Date?
+
+    /// Intervallo minimo tra campionamenti automatici (5 minuti).
+    private let samplingThrottle: TimeInterval = 5 * 60
 
     // iPad: 2 colonne adattive da 300pt min
     private let columns = [GridItem(.adaptive(minimum: 300), spacing: 14)]
@@ -69,16 +76,22 @@ struct EnvironmentDashboardView: View {
             .sheet(isPresented: $showThresholdSettings) {
                 AlertThresholdSettingsView()
             }
+            .sheet(isPresented: $isReordering) {
+                EnvironmentRoomReorderSheet(vm: vm)
+            }
             .onAppear {
                 vm.configure(modelContainer: modelContext.container)
                 vm.loadFromCoreData()
                 sampleIfNeeded()
                 AlertNotificationService.shared.clearBadge()
                 if aiService == nil {
+                    // Inietta il tracker condiviso così dismiss/expiration e execution
+                    // finiscono nello stesso dataset di efficacia.
                     aiService = AmbientalAIService(
                         aiSettings: AISettings(),
                         modelContainer: modelContext.container,
-                        homeKit: homeKit
+                        homeKit: homeKit,
+                        tracker: executionService.tracker
                     )
                 }
                 Task { await aiService?.analyzeRooms(vm.rooms) }
@@ -98,7 +111,7 @@ struct EnvironmentDashboardView: View {
                     accessoryActionType: executedDraft.actionType,
                     accessoryValue: executedDraft.actionValue
                 )
-                Task { _ = await nextActionExecutor.execute(tempAction, in: home) }
+                Task { await executionService.executeRaw(tempAction, in: home) }
             }
         }
     }
@@ -138,7 +151,7 @@ struct EnvironmentDashboardView: View {
                         },
                         onExecuteAction: { action, insight in
                             guard let home = homeKit.currentHome else { return }
-                            Task { _ = await nextActionExecutor.execute(action, in: home) }
+                            Task { await executionService.execute(action, insight: insight, in: home) }
                         },
                         onCreateRule: { draft, _ in
                             openRuleEditor(draft: draft)
@@ -167,9 +180,9 @@ struct EnvironmentDashboardView: View {
                             onSensorTap: { sensor in selectedSensor = sensor },
                             aiInsights: aiService?.visibleInsights(for: room.roomName) ?? [],
                             onDismissInsight: { insight in aiService?.dismiss(insight) },
-                            onExecuteAction: { action, _ in
+                            onExecuteAction: { action, insight in
                                 guard let home = homeKit.currentHome else { return }
-                                Task { _ = await nextActionExecutor.execute(action, in: home) }
+                                Task { await executionService.execute(action, insight: insight, in: home) }
                             },
                             onCreateRule: { draft, _ in
                                 openRuleEditor(draft: draft)
@@ -226,6 +239,10 @@ struct EnvironmentDashboardView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             HStack(spacing: 4) {
+                Button { isReordering = true } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .disabled(vm.rooms.isEmpty)
                 Button { showThresholdSettings = true } label: {
                     Image(systemName: "slider.horizontal.3")
                 }
@@ -245,6 +262,13 @@ struct EnvironmentDashboardView: View {
 
     private func sampleIfNeeded() {
         guard let home = homeKit.currentHome else { return }
+        // Throttle: non campionare se il campionamento precedente è avvenuto
+        // meno di 5 minuti fa. Evita che aperture ravvicinate della Dashboard
+        // producano cluster di letture temporalmente compresse, che abbassano
+        // artificialmente la stdDev della baseline e generano falsi positivi AI.
+        if let last = lastSampledAt,
+           Date().timeIntervalSince(last) < samplingThrottle { return }
+        lastSampledAt = Date()
         Task {
             await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: modelContext.container)
             vm.loadFromCoreData()
@@ -261,6 +285,62 @@ struct EnvironmentDashboardView: View {
             outdoorRefreshID = UUID()
             await aiService?.analyzeRooms(vm.rooms)
             isRefreshing = false
+        }
+    }
+}
+
+// MARK: - EnvironmentRoomReorderSheet
+
+private struct EnvironmentRoomReorderSheet: View {
+    @ObservedObject var vm: EnvironmentViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var localRooms: [RoomEnvironmentData] = []
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(localRooms) { room in
+                    HStack(spacing: 12) {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(.secondary)
+                        Text(room.roomName)
+                            .font(.body)
+                        Spacer()
+                        Circle()
+                            .fill(room.qualityColor)
+                            .frame(width: 8, height: 8)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .onMove { indices, destination in
+                    localRooms.move(fromOffsets: indices, toOffset: destination)
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Ordine stanze")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Ripristina") {
+                        vm.saveOrder([])
+                        vm.loadFromCoreData()
+                        dismiss()
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Fine") {
+                        vm.saveOrder(localRooms)
+                        vm.loadFromCoreData()
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+        .onAppear {
+            localRooms = vm.rooms
         }
     }
 }

@@ -2,10 +2,22 @@ import Foundation
 
 // MARK: - InsightSeverity
 
-enum InsightSeverity: String, Codable {
+enum InsightSeverity: String, Codable, Comparable {
     case info    = "info"     // 🔵 osservazione
     case warning = "warning"  // 🟡 attenzione
     case anomaly = "anomaly"  // 🔴 anomalia significativa
+
+    private var sortOrder: Int {
+        switch self {
+        case .info:    return 0
+        case .warning: return 1
+        case .anomaly: return 2
+        }
+    }
+
+    static func < (lhs: InsightSeverity, rhs: InsightSeverity) -> Bool {
+        lhs.sortOrder < rhs.sortOrder
+    }
 
     var sfSymbol: String {
         switch self {
@@ -90,6 +102,9 @@ struct AmbientalAIInsight: Identifiable {
     var isDismissed: Bool
     /// Azioni suggerite dall'AI (max 3). Possono essere vuote.
     let nextActions: [AINextAction]
+    /// Intent semantici risolti dal LLM per questo insight (es. ["coolRoom", "reduceHumidity"]).
+    /// Usati da ActionEffectivenessTracker per registrare dismissal ed expiration.
+    let resolvedIntents: [String]
 
     init(
         id: UUID = UUID(),
@@ -98,7 +113,8 @@ struct AmbientalAIInsight: Identifiable {
         severity: InsightSeverity,
         generatedAt: Date = Date(),
         isDismissed: Bool = false,
-        nextActions: [AINextAction] = []
+        nextActions: [AINextAction] = [],
+        resolvedIntents: [String] = []
     ) {
         self.id = id
         self.roomName = roomName
@@ -107,6 +123,7 @@ struct AmbientalAIInsight: Identifiable {
         self.generatedAt = generatedAt
         self.isDismissed = isDismissed
         self.nextActions = nextActions
+        self.resolvedIntents = resolvedIntents
     }
 
     /// True se l'insight è scaduto (più vecchio di 2 ore).

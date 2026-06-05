@@ -64,15 +64,29 @@ final class HomeKitService: NSObject {
     /// Il delegate `accessoryDidUpdateReachability` aggiorna qui, e le view
     /// che leggono via `isReachable(_:)` si ridisegnano correttamente.
     var reachabilityMap: [UUID: Bool] = [:]
-    
+
+    /// Incrementato ogni volta che la reachabilityMap cambia (anche solo in valore,
+    /// non solo in conteggio). Le view osservano questo per reagire a tutti i cambi.
+    var reachabilityVersion: Int = 0
+
+    /// Diventa true dopo il secondo refresh differito (~12 s dal lancio).
+    /// Finché è false, `isReachable(_:)` restituisce sempre true per evitare
+    /// false-offline durante la fase di discovery iniziale di HomeKit.
+    var reachabilitySettled: Bool = false
+
     /// Stato di autorizzazione HomeKit. `nil` finché non sappiamo (al lancio).
     var authorizationStatus: HMHomeManagerAuthorizationStatus?
 
     /// Helper che restituisce la reachability di un accessorio. Le view DEVONO
     /// usare questa, non `accessory.isReachable` direttamente, per beneficiare
     /// del tracking @Observable.
+    ///
+    /// Durante il grace period iniziale (`!reachabilitySettled`) restituisce
+    /// sempre `true`: HomeKit impiega fino a ~12s per stabilizzare la reachability
+    /// al lancio, e durante questo intervallo i valori sono inaffidabili.
     func isReachable(_ accessory: HMAccessory) -> Bool {
-        reachabilityMap[accessory.uniqueIdentifier] ?? accessory.isReachable
+        guard reachabilitySettled else { return true }
+        return reachabilityMap[accessory.uniqueIdentifier] ?? accessory.isReachable
     }
     
     // MARK: - Private
@@ -305,9 +319,10 @@ final class HomeKitService: NSObject {
             for accessory in allAccessories {
                 reachabilityMap[accessory.uniqueIdentifier] = accessory.isReachable
             }
+            reachabilityVersion += 1
             refreshAccessoriesList()
         }
-        
+
         dprint("✅ refreshReachability completato")
     }
 
@@ -332,10 +347,42 @@ final class HomeKitService: NSObject {
         }
     }
     
+    // MARK: - Security system persistent observation
+
+    /// Abilita le notifiche HomeKit sulle caratteristiche di tutti i SecuritySystem
+    /// presenti nella casa. Chiamato ad ogni `homeManagerDidUpdateHomes` in modo che
+    /// il delegate `accessory(_:service:didUpdateValueFor:)` riceva gli aggiornamenti
+    /// anche quando SecurityView non è visibile (es. allarme scatta mentre l'utente
+    /// è su un'altra tab).
+    private func startObservingSecuritySystems() {
+        let securitySystemServiceType = "0000007E-0000-1000-8000-0026BB765291"
+        for accessory in allAccessories {
+            guard accessory.services.contains(where: { $0.serviceType == securitySystemServiceType })
+            else { continue }
+
+            accessory.delegate = self
+            for service in accessory.services {
+                for characteristic in service.characteristics {
+                    subscribe(to: characteristic)
+                }
+            }
+        }
+    }
+
     // MARK: - Helpers per refresh
-    
+
     private func refreshAccessoriesList() {
-        allAccessories = currentHome?.accessories ?? []
+        let fresh = currentHome?.accessories ?? []
+        // Re-imposta il delegate su ogni accessorio ad ogni refresh:
+        // HomeKit può ricreare internamente gli oggetti HMAccessory (il delegate
+        // è weak), quindi questa è l'unica garanzia che accessoryDidUpdateReachability
+        // venga sempre ricevuto per tutti gli accessori della casa.
+        for accessory in fresh {
+            if accessory.delegate == nil {
+                accessory.delegate = self
+            }
+        }
+        allAccessories = fresh
     }
 }
 
@@ -346,16 +393,43 @@ final class HomeKitService: NSObject {
 extension HomeKitService: HMHomeManagerDelegate {
     
     func homeManagerDidUpdateHomes(_ manager: HMHomeManager) {
+        // Ogni volta che HomeKit aggiorna le case, resettiamo il grace period:
+        // i valori di reachability sono di nuovo potenzialmente instabili.
+        reachabilitySettled = false
+
         //currentHome = manager.homes.first
         refreshAccessoriesList()
-        
-        // Seed iniziale della reachability map
+
+        // Seed iniziale della reachability map con lo stato attuale.
+        // Il delegate è già impostato da refreshAccessoriesList() chiamata sopra.
         for accessory in allAccessories {
             reachabilityMap[accessory.uniqueIdentifier] = accessory.isReachable
         }
-        
+        reachabilityVersion += 1
+
         authorizationStatus = manager.authorizationStatus
         isReady = true
+
+        // Abilita immediatamente le notifiche HomeKit sul sistema di allarme,
+        // così gli aggiornamenti di stato arrivano anche quando SecurityView non è visibile.
+        startObservingSecuritySystems()
+
+        // HomeKit impiega alcuni secondi dopo il lancio per completare la discovery
+        // e aggiornare isReachable. Eseguiamo due refresh differiti: uno precoce
+        // (4s) e uno tardivo (12s) per coprire device più lenti (Matter bridge, mesh).
+        // Solo dopo il secondo refresh impostiamo reachabilitySettled = true:
+        // finché non è settled, isReachable() restituisce sempre true (grace period),
+        // evitando i false-offline tipici dei primi secondi dopo il lancio.
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            await refreshReachability()
+            try? await Task.sleep(for: .seconds(8))
+            await refreshReachability()
+            await MainActor.run {
+                reachabilitySettled = true
+                reachabilityVersion += 1   // forza un ultimo redraw con i dati stabilizzati
+            }
+        }
     }
     
     func homeManager(_ manager: HMHomeManager, didAdd home: HMHome) {
@@ -421,6 +495,7 @@ extension HomeKitService: HMAccessoryDelegate {
     
     func accessoryDidUpdateReachability(_ accessory: HMAccessory) {
         reachabilityMap[accessory.uniqueIdentifier] = accessory.isReachable
+        reachabilityVersion += 1
         refreshAccessoriesList()
     }
     

@@ -12,9 +12,14 @@ import Observation
 /// - Tiene traccia dell'ultima urgency notificata per UUID per evitare notifiche duplicate
 /// - Cooldown di 60s per stesso UUID: non rinotifica se già in allarme
 /// - Chiede il permesso notifiche al primo avvio
+/// - Rispetta la preferenza `securityNotificationsEnabled` (AppStorage)
 @MainActor
 @Observable
 final class SecurityNotificationService {
+
+    // MARK: - AppStorage keys
+
+    static let enabledKey = "securityNotificationsEnabled"
 
     // MARK: - Init
 
@@ -82,18 +87,33 @@ final class SecurityNotificationService {
     private func checkMonitoredSensors() {
         guard let home = homeKit.currentHome else { return }
         let monitoredUUIDs = parseUUIDs(observedUUIDsRaw)
-        guard !monitoredUUIDs.isEmpty else { return }
 
+        // Costruisce l'insieme di accessori da controllare:
+        // 1. Tutti i sensori configurati dall'utente (se presenti)
+        // 2. SEMPRE il sistema di allarme (SecuritySystemAdapter), anche se non
+        //    esplicitamente in monitoredUUIDs — l'allarme non deve mai essere mancato.
+        var accessoriesToCheck: [HMAccessory] = []
         for acc in home.accessories {
-            guard monitoredUUIDs.contains(acc.uniqueIdentifier) else { continue }
+            let isMonitored = monitoredUUIDs.contains(acc.uniqueIdentifier)
+            let isSecuritySystem = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit) is SecuritySystemAdapter
+            if isMonitored || isSecuritySystem {
+                accessoriesToCheck.append(acc)
+            }
+        }
+
+        guard !accessoriesToCheck.isEmpty else { return }
+
+        for acc in accessoriesToCheck {
             let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit)
 
             let urgency = adapter.visualUrgency
             let accID = acc.uniqueIdentifier
 
-            // Considera solo alarm e warning degni di notifica
-            guard urgency == .alarm || urgency == .warning else {
-                // Se l'urgency torna a normale, rimuovi il cooldown
+            // Invia notifica push solo per eventi critici (.alarm):
+            // fumo, CO, perdita acqua, antifurto scattato.
+            // I .warning (porta aperta, movimento, occupazione) aggiornano l'UI
+            // ma NON generano notifiche push — sono troppo frequenti e non urgenti.
+            guard urgency == .alarm else {
                 lastNotifiedUrgency.removeValue(forKey: accID)
                 continue
             }
@@ -114,28 +134,21 @@ final class SecurityNotificationService {
     // MARK: - Notification
 
     private func sendNotification(for accessory: HMAccessory, adapter: any AccessoryAdapter, urgency: MarkerUrgency) {
-        // NOTIFICHE DISABILITATE — riabilitare rimuovendo questo return
-        return
+        guard urgency == .alarm else { return }
+        // Rispetta la preferenza utente (default: abilitato)
+        let enabled = UserDefaults.standard.object(forKey: SecurityNotificationService.enabledKey) as? Bool ?? true
+        guard enabled else { return }
 
         let content = UNMutableNotificationContent()
-        content.sound = urgency == .alarm ? .defaultCritical : .default
+        content.sound = .defaultCritical
 
         let roomName = accessory.room?.name
         let accName = accessory.name
         let location = roomName.map { "\($0) · " } ?? ""
 
-        switch urgency {
-        case .alarm:
-            content.title = "⚠️ Allarme: \(accName)"
-            content.body = "\(location)\(adapter.primaryStatusText ?? "Allarme rilevato")"
-            content.interruptionLevel = .critical
-        case .warning:
-            content.title = "Attenzione: \(accName)"
-            content.body = "\(location)\(adapter.primaryStatusText ?? "Evento rilevato")"
-            content.interruptionLevel = .active
-        default:
-            return
-        }
+        content.title = "⚠️ Allarme: \(accName)"
+        content.body = "\(location)\(adapter.primaryStatusText ?? "Allarme rilevato")"
+        content.interruptionLevel = .critical
 
         let request = UNNotificationRequest(
             identifier: "security-\(accessory.uniqueIdentifier.uuidString)",

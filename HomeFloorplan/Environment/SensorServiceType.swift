@@ -192,4 +192,26 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .vocDensity:     return 1000.0
         }
     }
+
+    // MARK: Soglie basse (comfort minimo)
+
+    /// Soglia bassa di default: valori SOTTO questa soglia indicano un problema.
+    /// Nil se il tipo non ha un range minimo di comfort (es. CO, fumo, VOC — più basso è sempre meglio).
+    var defaultLowWarning: Double? {
+        switch self {
+        case .humidity:     return 40.0  // WHO/ASHRAE: sotto 40% aria troppo secca
+        case .temperature:  return 18.0  // sotto 18°C discomfort freddo
+        default:            return nil   // CO, fumo, VOC, CO₂, qualità aria: no soglia bassa
+        }
+    }
+
+    /// Soglia bassa danger di default: valori SOTTO questa soglia sono critici.
+    /// Nil se il tipo non ha soglia bassa.
+    var defaultLowDanger: Double? {
+        switch self {
+        case .humidity:     return 30.0  // sotto 30% problemi di salute (mucose, statica)
+        case .temperature:  return 14.0  // sotto 14°C ipotermia rischio per anziani/bambini
+        default:            return nil
+        }
+    }
 }

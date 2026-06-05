@@ -15,7 +15,7 @@ struct MarkerActionToolbar: View {
     @FocusState private var renameFieldFocused: Bool
     
     var body: some View {
-        GlassPill {
+        GlassTitlePill {
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Selezionato")

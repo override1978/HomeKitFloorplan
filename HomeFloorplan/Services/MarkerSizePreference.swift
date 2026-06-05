@@ -45,6 +45,15 @@ enum MarkerSize: String, CaseIterable, Identifiable {
         }
     }
     
+    /// Dimensione del marker camera (rettangolo 16:9).
+    var cameraMarkerSize: CGSize {
+        switch self {
+        case .compact: return CGSize(width: 88,  height: 50)
+        case .regular: return CGSize(width: 112, height: 63)
+        case .large:   return CGSize(width: 136, height: 76)
+        }
+    }
+
     /// Font dell'icona dentro il cerchio.
     var iconFont: Font {
         switch self {

@@ -170,7 +170,7 @@ private struct ThresholdRow: View {
 // MARK: - ThresholdValueRow
 //
 // Riga singola per una soglia: label + valore bold centrato + bottoni –/+
-// Layout fisso e ben spaziato, nessuna sovrapposizione.
+// Supporta long-press con accelerazione: dopo 0.5s il passo raddoppia ogni secondo.
 
 private struct ThresholdValueRow: View {
 
@@ -181,6 +181,10 @@ private struct ThresholdValueRow: View {
     let step: Double
     let range: ClosedRange<Double>
     let format: (Double) -> String
+
+    // Long-press repeat state
+    @State private var repeatTimer: Timer?
+    @State private var pressStartDate: Date?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -201,18 +205,17 @@ private struct ThresholdValueRow: View {
             // Controllo –  valore  +
             HStack(spacing: 0) {
                 // Bottone –
-                Button {
-                    let newVal = max(range.lowerBound, value - step)
-                    value = (newVal * 10).rounded() / 10
-                } label: {
-                    Image(systemName: "minus")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(value <= range.lowerBound ? Color(.tertiaryLabel) : color)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(color.opacity(0.08)))
+                StepButton(
+                    systemImage: "minus",
+                    color: color,
+                    isDisabled: value <= range.lowerBound
+                ) {
+                    applyStep(-step)
+                } onLongPressStart: {
+                    startRepeating(direction: -1)
+                } onLongPressEnd: {
+                    stopRepeating()
                 }
-                .disabled(value <= range.lowerBound)
-                .buttonStyle(.plain)
 
                 // Valore
                 Text(format(value))
@@ -223,18 +226,17 @@ private struct ThresholdValueRow: View {
                     .contentTransition(.numericText())
 
                 // Bottone +
-                Button {
-                    let newVal = min(range.upperBound, value + step)
-                    value = (newVal * 10).rounded() / 10
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(value >= range.upperBound ? Color(.tertiaryLabel) : color)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(color.opacity(0.08)))
+                StepButton(
+                    systemImage: "plus",
+                    color: color,
+                    isDisabled: value >= range.upperBound
+                ) {
+                    applyStep(+step)
+                } onLongPressStart: {
+                    startRepeating(direction: +1)
+                } onLongPressEnd: {
+                    stopRepeating()
                 }
-                .disabled(value >= range.upperBound)
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)
@@ -243,6 +245,93 @@ private struct ThresholdValueRow: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(color.opacity(0.06))
         )
+    }
+
+    // MARK: - Long-press helpers
+
+    private func applyStep(_ delta: Double) {
+        let newVal = min(range.upperBound, max(range.lowerBound, value + delta))
+        value = (newVal * 10).rounded() / 10
+    }
+
+    /// Avvia un timer che ripete il passo con accelerazione.
+    /// Frequenza base: ogni 0.12s. Dopo 1s continuo: ogni 0.06s (2× il passo).
+    /// Dopo 2s continuo: ogni 0.04s (3× il passo).
+    private func startRepeating(direction: Double) {
+        // Evita di avviare un secondo timer se uno è già in esecuzione
+        guard repeatTimer == nil else { return }
+        pressStartDate = Date()
+        repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
+            let elapsed = Date().timeIntervalSince(pressStartDate ?? Date())
+            // Scala il moltiplicatore del passo in base al tempo premuto
+            let multiplier: Double
+            switch elapsed {
+            case ..<1.0: multiplier = 1
+            case 1.0..<2.0: multiplier = 5
+            default: multiplier = 20
+            }
+            applyStep(direction * step * multiplier)
+        }
+    }
+
+    private func stopRepeating() {
+        repeatTimer?.invalidate()
+        repeatTimer = nil
+        pressStartDate = nil
+    }
+}
+
+// MARK: - StepButton
+//
+// Pulsante singolo +/– con supporto tap e long-press separati.
+//
+// Strategia gesture:
+//   - Un unico DragGesture(minimumDistance: 0) gestisce onChanged (touch-down)
+//     e onEnded (finger-up). È la soluzione affidabile per rilevare il rilascio.
+//   - LongPressGesture in simultaneo attiva il timer dopo 0.3s.
+//   - TapGesture in simultaneo gestisce il tap rapido.
+//   - Due .gesture() separati sullo stesso view si sovrascrivono in SwiftUI,
+//     quindi tutto è consolidato in un unico .simultaneousGesture sequenziale.
+
+private struct StepButton: View {
+    let systemImage: String
+    let color: Color
+    let isDisabled: Bool
+    let onTap: () -> Void
+    let onLongPressStart: () -> Void
+    let onLongPressEnd: () -> Void
+
+    // Traccia se il dito è attualmente premuto per mandare onLongPressEnd al rilascio.
+    @GestureState private var isPressed: Bool = false
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(isDisabled ? Color(.tertiaryLabel) : color)
+            .frame(width: 36, height: 36)
+            .background(Circle().fill(color.opacity(0.08)))
+            // Unico DragGesture per rilevare touch-down e finger-up
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($isPressed) { _, state, _ in state = true }
+                    .onEnded { _ in onLongPressEnd() }
+            )
+            // LongPress attiva il timer dopo 0.3s di pressione continua
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.3)
+                    .onEnded { _ in onLongPressStart() }
+            )
+            // Tap rapido (< 0.3s) esegue un singolo step
+            .simultaneousGesture(
+                TapGesture()
+                    .onEnded { onTap() }
+            )
+            // Safety net: GestureState torna false non appena il gesto si cancella
+            // (es. scroll della lista che "ruba" il tocco). Ferma sempre il timer.
+            .onChange(of: isPressed) { _, pressed in
+                if !pressed { onLongPressEnd() }
+            }
+            .opacity(isDisabled ? 0.4 : 1)
     }
 }
 

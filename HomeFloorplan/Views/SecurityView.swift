@@ -99,7 +99,10 @@ struct SecurityView: View {
     var body: some View {
         navigationContent
             .task { startObserving() }
-            .onDisappear { stopObserving() }
+            // Non fermiamo l'osservazione su onDisappear: vogliamo che le notifiche
+            // HomeKit sui sensori monitorati rimangano attive anche quando l'utente
+            // è su un'altra tab. Il sistema di allarme è già osservato globalmente
+            // da HomeKitService.startObservingSecuritySystems() al lancio.
     }
 
     private var navigationContent: some View {

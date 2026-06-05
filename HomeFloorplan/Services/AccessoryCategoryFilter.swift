@@ -10,6 +10,7 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
     case windowCoverings
     case sensors
     case security
+    case cameras
     case air
     case hubs
     case others
@@ -25,6 +26,7 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         case .windowCoverings: return String(localized: "filter.category.windowCoverings",defaultValue: "Tende")
         case .sensors:         return String(localized: "filter.category.sensors",        defaultValue: "Sensori")
         case .security:        return String(localized: "filter.category.security",       defaultValue: "Sicurezza")
+        case .cameras:         return String(localized: "filter.category.cameras",        defaultValue: "Telecamere")
         case .air:             return String(localized: "filter.category.air",            defaultValue: "Aria")
         case .hubs:            return String(localized: "filter.category.hubs",           defaultValue: "Hub")
         case .others:          return String(localized: "filter.category.others",         defaultValue: "Altri")
@@ -40,6 +42,7 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         case .windowCoverings: return "blinds.horizontal.closed"
         case .sensors:         return "sensor.fill"
         case .security:        return "shield.fill"
+        case .cameras:         return "camera.fill"
         case .air:             return "air.purifier"
         case .hubs:            return "wifi.router.fill"
         case .others:          return "questionmark.circle"
@@ -64,6 +67,7 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         case is SecuritySystemAdapter:       return .security
         case is DoorLockAdapter:             return .security
         case is GarageDoorAdapter:           return .security
+        case is CameraAdapter:               return .cameras
         case is AirPurifierAdapter:          return .air
         case is MatterDeviceAdapter:         return .others
         case is MultiOutletAdapter:          return .outlets
@@ -92,6 +96,8 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         case HMAccessoryCategoryTypeSensor:           return .sensors
         case HMAccessoryCategoryTypeAirPurifier:      return .air
         case HMAccessoryCategoryTypeFan:              return .air
+        case HMAccessoryCategoryTypeIPCamera:         return .cameras
+        case HMAccessoryCategoryTypeVideoDoorbell:    return .cameras
         default:                                      return .others
         }
     }

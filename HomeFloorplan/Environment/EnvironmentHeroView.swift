@@ -177,13 +177,8 @@ struct EnvironmentHeroView: View {
                     Rectangle()
                         .fill(color.opacity(0.6))
                         .frame(height: 3)
-                        .clipShape(
-                            .rect(
-                                bottomLeadingRadius: 20,
-                                bottomTrailingRadius: 20
-                            )
-                        )
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         )
         .shadow(color: color.opacity(0.12), radius: 12, x: 0, y: 4)
         .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)

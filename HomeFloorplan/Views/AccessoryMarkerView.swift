@@ -53,6 +53,27 @@ struct AccessoryMarkerView: View {
     
     var body: some View {
         let _ = homeKit.characteristicValues
+        markerContent
+    }
+
+    @ViewBuilder
+    private var markerContent: some View {
+        // Telecamere: rettangolo con snapshot periodica — gestisce label e wiggle internamente.
+        if style == .camera, let cameraAdapter = adapter as? CameraAdapter {
+            CameraMarkerView(
+                adapter: cameraAdapter,
+                size: size.cameraMarkerSize,
+                isEditing: isEditing,
+                isSelected: isEditing && isSelected,
+                label: label,
+                hasCustomLabel: hasCustomLabel
+            )
+        } else {
+            standardMarkerContent
+        }
+    }
+
+    private var standardMarkerContent: some View {
         VStack(spacing: 2) {
             shape
                 .shadow(color: .black.opacity(shadowOpacity),
@@ -106,7 +127,7 @@ struct AccessoryMarkerView: View {
     }
     
     // MARK: - Forma del marker (varia per style)
-    
+
     @ViewBuilder
     private var shape: some View {
         switch style {
@@ -116,6 +137,10 @@ struct AccessoryMarkerView: View {
             sensorBooleanShape
         case .sensorNumeric:
             sensorNumericShape
+        case .camera:
+            // CameraMarkerView si auto-gestisce (label, wiggle, snapshot cycle).
+            // Viene reso direttamente nel body; qui non emittiamo nulla.
+            EmptyView()
         }
     }
     

@@ -10,6 +10,8 @@ enum MarkerStyle {
     case sensorBoolean
     /// Pill larga con valore numerico (temperatura, umidità, ecc.).
     case sensorNumeric
+    /// Rettangolo 16:9 con snapshot periodica (telecamere HomeKit).
+    case camera
 }
 
 enum MarkerUrgency {

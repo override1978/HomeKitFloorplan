@@ -522,9 +522,16 @@ struct DrawRoomAreaBanner: View {
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(BrandColor.primary)
 
-            Text("Trascina per disegnare l'area della stanza")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "drawing.banner.roomArea.title",
+                            defaultValue: "Trascina per disegnare l'area della stanza"))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text(String(localized: "drawing.banner.roomArea.subtitle",
+                            defaultValue: "Collega a HomeKit per abilitare il layer Ambiente"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 

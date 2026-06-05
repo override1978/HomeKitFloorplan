@@ -17,6 +17,13 @@ final class SensorLogger {
 
     private init() {}
 
+    // MARK: - Sprint 5B: follow-up hook
+
+    /// Iniettato da HomeFloorplanApp.init() dopo la creazione del tracker condiviso.
+    /// SensorLogger chiama recordOutcome() per ogni nuova lettura, consentendo
+    /// ad ActionEffectivenessTracker di chiudere le misurazioni "pending".
+    weak var effectivenessTracker: ActionEffectivenessTracker?
+
     // MARK: - Campionamento principale
 
     /// Campiona tutti i sensori ambientali della casa e salva le letture.
@@ -67,6 +74,20 @@ final class SensorLogger {
             dprint("✅ SensorLogger: salvate \(readings.count) letture")
         } catch {
             dprint("❌ SensorLogger save error: \(error)")
+        }
+
+        // Sprint 5B: notifica il tracker per chiudere le misurazioni "pending"
+        // corrispondenti alle nuove letture appena salvate.
+        if let tracker = effectivenessTracker {
+            let now = Date()
+            for reading in readings {
+                tracker.recordOutcome(
+                    roomName: reading.roomName,
+                    sensorTypeRaw: reading.serviceType.rawValue,
+                    followUpValue: reading.value,
+                    readAt: now
+                )
+            }
         }
     }
 

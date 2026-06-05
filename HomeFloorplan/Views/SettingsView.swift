@@ -27,13 +27,8 @@ struct SettingsView: View {
     @AppStorage(TemperatureUnit.appStorageKey)
     private var temperatureUnitRaw: String = TemperatureUnit.celsius.rawValue
 
-    /// Abilita/disabilita le notifiche ambientali di soglia.
-    @AppStorage("alertNotificationsEnabled")
-    private var alertNotificationsEnabled: Bool = true
-
     /// Stanze distinte presenti in SwiftData, caricate all'apertura della view.
     @State private var availableRooms: [String] = []
-    @State private var showThresholdSettings = false
     
     var body: some View {
         Form {
@@ -138,33 +133,26 @@ struct SettingsView: View {
             // MARK: - Notifiche
 
             Section {
-                Toggle(isOn: $alertNotificationsEnabled) {
-                    Label(String(localized: "settings.notifications.toggle", defaultValue: "Notifiche ambientali"), systemImage: "bell.badge")
-                }
-                .onChange(of: alertNotificationsEnabled) { _, enabled in
-                    if enabled {
-                        AlertNotificationService.shared.requestAuthorization()
-                    }
+                NavigationLink {
+                    EnvironmentNotificationsSettingsView()
+                } label: {
+                    Label(String(localized: "settings.notifications.environment.link",
+                                 defaultValue: "Notifiche Ambiente"),
+                          systemImage: "leaf")
                 }
 
-                if alertNotificationsEnabled {
-                    Button {
-                        showThresholdSettings = true
-                    } label: {
-                        Label(String(localized: "settings.notifications.thresholds", defaultValue: "Configura soglie"), systemImage: "slider.horizontal.3")
-                            .foregroundStyle(.tint)
-                    }
-                    .buttonStyle(.plain)
+                NavigationLink {
+                    SecurityNotificationsSettingsView()
+                } label: {
+                    Label(String(localized: "settings.notifications.security.link",
+                                 defaultValue: "Notifiche Sicurezza"),
+                          systemImage: "lock.shield.fill")
                 }
             } header: {
                 Text(String(localized: "settings.notifications.header", defaultValue: "Notifiche"))
             } footer: {
-                Text(alertNotificationsEnabled
-                     ? String(localized: "settings.notifications.footer.on", defaultValue: "Le notifiche vengono inviate al massimo ogni 30 minuti per sensore.")
-                     : String(localized: "settings.notifications.footer.off", defaultValue: "Nessun alert sarà inviato finché le notifiche sono disabilitate."))
-            }
-            .sheet(isPresented: $showThresholdSettings) {
-                AlertThresholdSettingsView()
+                Text(String(localized: "settings.notifications.footer",
+                            defaultValue: "Configura separatamente gli alert ambientali (soglie temperatura, umidità, aria) e le notifiche di sicurezza (antifurto, fumo, CO, acqua)."))
             }
 
             // MARK: - Intelligenza Artificiale
@@ -188,6 +176,13 @@ struct SettingsView: View {
                     Label(String(localized: "settings.developer.showOnboarding", defaultValue: "Mostra onboarding al prossimo lancio"), systemImage: "arrow.clockwise.circle")
                         .foregroundStyle(.tint)
                 }
+                #if DEBUG
+                NavigationLink {
+                    AITraceView()
+                } label: {
+                    Label("AI Pipeline Trace", systemImage: "waveform.and.magnifyingglass")
+                }
+                #endif
             } header: {
                 Text(String(localized: "settings.developer.header", defaultValue: "Sviluppatore"))
             } footer: {

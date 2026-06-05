@@ -11,6 +11,12 @@ import Observation
 ///
 /// Frequenza: chiamato ogni 15 minuti per stanza (solo se app attiva).
 /// Graceful degradation: se AI non configurata, `insights` rimane vuoto senza errori.
+///
+/// Sprint 4: pre-processing deterministico prima di ogni chiamata LLM:
+///   - Gate AI: salta la chiamata se tutto è nella norma (urgency=normal, nessuna anomalia)
+///   - Severity clamping: la severity LLM è limitata al ceiling deterministico
+///   - Intent filtering: intent HVAC/ventilazione rimossi per stanze outdoor
+///   - RoomType: classificazione keyword-based, override tramite UserDefaults "outdoorRoomName"
 @Observable
 @MainActor
 final class AmbientalAIService {
@@ -27,16 +33,35 @@ final class AmbientalAIService {
     private let aiSettings: AISettings
     private let modelContainer: ModelContainer
     private let homeKit: HomeKitService
+    private let resolver: ActionResolver
+    let effectivenessTracker: ActionEffectivenessTracker
     /// Intervallo minimo tra analisi per la stessa stanza (15 min).
     private var lastAnalysisByRoom: [String: Date] = [:]
     private let minInterval: TimeInterval = 15 * 60
 
+    /// Nome stanza outdoor impostato dall'utente (AppStorage "outdoorRoomName").
+    private var outdoorRoomName: String {
+        UserDefaults.standard.string(forKey: "outdoorRoomName") ?? ""
+    }
+
     // MARK: - Init
 
-    init(aiSettings: AISettings, modelContainer: ModelContainer, homeKit: HomeKitService) {
+    /// - Parameter tracker: Tracker condiviso. Se nil, ne viene creato uno autonomo
+    ///   (backward-compatible per le istanze locali nelle view come EnvironmentContextDashboard).
+    init(
+        aiSettings: AISettings,
+        modelContainer: ModelContainer,
+        homeKit: HomeKitService,
+        tracker: ActionEffectivenessTracker? = nil
+    ) {
         self.aiSettings = aiSettings
         self.modelContainer = modelContainer
         self.homeKit = homeKit
+        let resolvedTracker = tracker ?? ActionEffectivenessTracker(modelContainer: modelContainer)
+        self.effectivenessTracker = resolvedTracker
+        // Sprint 6: passa il tracker al resolver così i candidati vengono
+        // ordinati per effectiveness storica per accessorio.
+        self.resolver = ActionResolver(homeKit: homeKit, tracker: resolvedTracker)
     }
 
     // MARK: - Public API
@@ -48,6 +73,16 @@ final class AmbientalAIService {
 
         isAnalyzing = true
         defer { isAnalyzing = false }
+
+        // Traccia gli insight scaduti prima di rimuoverli
+        for insight in insights where insight.isExpired && !insight.isDismissed {
+            effectivenessTracker.trackExpiration(
+                intents: insight.resolvedIntents,
+                roomName: insight.roomName,
+                severityRaw: insight.severity.rawValue,
+                suggestedAt: insight.generatedAt
+            )
+        }
 
         // Rimuovi insight scaduti prima di procedere
         insights = insights.filter { $0.isVisible }
@@ -67,10 +102,23 @@ final class AmbientalAIService {
         lastAnalyzed = Date()
     }
 
-    /// Dismette un insight specifico.
+    /// Dismette un insight specifico e registra il dismissal per il tracking.
     func dismiss(_ insight: AmbientalAIInsight) {
         if let idx = insights.firstIndex(where: { $0.id == insight.id }) {
             insights[idx].isDismissed = true
+            effectivenessTracker.trackDismissal(
+                intents: insight.resolvedIntents,
+                roomName: insight.roomName,
+                severityRaw: insight.severity.rawValue,
+                suggestedAt: insight.generatedAt
+            )
+            // Phase 7 trace: dismissal event
+            #if DEBUG
+            AITraceLogger.shared.logInsightDismissed(
+                roomName: insight.roomName,
+                intents: insight.resolvedIntents
+            )
+            #endif
         }
     }
 
@@ -87,9 +135,62 @@ final class AmbientalAIService {
     // MARK: - Room Analysis
 
     private func analyzeRoom(_ room: RoomEnvironmentData, readings: [SensorReading]) async {
-        let payload = buildPayload(room: room, readings: readings)
+        // Step 1: calcola baseline 7 giorni
+        let baseline = computeBaseline(sensors: room.sensors, readings: readings)
 
-        let systemPrompt = buildSystemPrompt()
+        // Phase 1 trace: raw sensor snapshot
+        #if DEBUG
+        AITraceLogger.shared.logRawSnapshot(
+            roomName: room.roomName,
+            sensors: room.sensors.map { (type: $0.serviceType.rawValue, value: $0.currentValue) }
+        )
+        #endif
+
+        // Step 2: pre-processing deterministico
+        let preResult = EnvironmentPreProcessor.preProcess(
+            room: room,
+            baselineByType: baseline,
+            outdoorRoomName: outdoorRoomName
+        )
+
+        // Phase 2 trace: preprocessor evaluation with full baseline stats
+        #if DEBUG
+        let baselineStats: [String: BaselineStat] = baseline.reduce(into: [:]) { dict, pair in
+            // Count samples used for this sensor type
+            let n = readings.filter { $0.serviceTypeRaw == pair.key }.count
+            dict[pair.key] = BaselineStat(avg: pair.value.avg, stdDev: pair.value.stdDev, sampleCount: n)
+        }
+        AITraceLogger.shared.logPreprocessor(roomName: room.roomName, result: preResult, baselineStats: baselineStats)
+        #endif
+
+        // Step 3: AI Call Gate — salta se tutto è nella norma
+        guard preResult.shouldCallAI else {
+            dprint("🛑 [Gate] \(room.roomName): skip AI — tutto normale")
+            return
+        }
+
+        // Step 4: costruisce payload con stato pre-valutato (no raw values/thresholds)
+        let payload = buildPayload(room: room, readings: readings, baseline: baseline, preResult: preResult)
+        let systemPrompt = buildSystemPrompt(roomType: preResult.roomType)
+
+        // Phase 3 trace: payload summary with actionable breakdown
+        #if DEBUG
+        let anomalousSensors = preResult.sensorStatuses
+            .filter { $0.isAnomaly || $0.urgency != "normal" }
+            .map { $0.type }
+        let actionableSensors = preResult.sensorStatuses
+            .filter { $0.actionableAnomaly || $0.urgency != "normal" }
+            .map { s -> String in
+                let dir = s.anomalyDirection != "none" ? "(\(s.anomalyDirection))" : ""
+                return "\(s.type)\(dir)"
+            }
+        AITraceLogger.shared.logPayload(
+            roomName: room.roomName,
+            roomType: preResult.roomType.rawValue,
+            anomalousSensors: anomalousSensors,
+            actionableSensors: actionableSensors
+        )
+        #endif
 
         do {
             let service = AIService(settings: aiSettings)
@@ -97,19 +198,50 @@ final class AmbientalAIService {
                 systemPrompt: systemPrompt,
                 userPrompt: payload
             )
-            if let insight = parseInsight(response: response, roomName: room.roomName) {
+            if let insight = parseInsight(response: response, roomName: room.roomName, preResult: preResult) {
                 // Rimuovi eventuale insight precedente per la stessa stanza
                 insights.removeAll { $0.roomName == room.roomName }
                 insights.append(insight)
+
+                // Phase 7 trace: final insight delivered to UI
+                #if DEBUG
+                AITraceLogger.shared.logFinalInsight(
+                    roomName: insight.roomName,
+                    severity: insight.severity.rawValue,
+                    message: insight.message,
+                    actionsCount: insight.nextActions.count
+                )
+                #endif
             }
         } catch {
             // Graceful degradation: non mostrare errori all'utente
         }
     }
 
+    // MARK: - Baseline Computation
+
+    /// Calcola la baseline 7 giorni per ogni tipo di sensore della stanza.
+    /// Estratto da buildPayload per riutilizzo nel pre-processor.
+    /// Richiede almeno 5 letture per tipo per includere il tipo nel risultato.
+    private func computeBaseline(
+        sensors: [SensorData],
+        readings: [SensorReading]
+    ) -> [String: (avg: Double, stdDev: Double)] {
+        var result: [String: (avg: Double, stdDev: Double)] = [:]
+        for sensor in sensors {
+            let forType = readings.filter { $0.serviceTypeRaw == sensor.serviceType.rawValue }
+            guard forType.count > 5 else { continue }
+            let values = forType.map(\.value)
+            let avg = values.reduce(0, +) / Double(values.count)
+            let variance = values.reduce(0) { $0 + pow($1 - avg, 2) } / Double(values.count)
+            result[sensor.serviceType.rawValue] = (avg: avg, stdDev: sqrt(variance))
+        }
+        return result
+    }
+
     // MARK: - System Prompt Builder
 
-    private func buildSystemPrompt() -> String {
+    private func buildSystemPrompt(roomType: RoomType) -> String {
         let cal = Calendar.current
         let now = Date()
         let hour = cal.component(.hour, from: now)
@@ -134,83 +266,92 @@ final class AmbientalAIService {
         default:        season = "autunno"
         }
 
+        // Contesto tipo stanza per il LLM
+        let roomTypeContext: String
+        switch roomType {
+        case .outdoor:
+            roomTypeContext = "TIPO STANZA: outdoor (balcone/terrazzo/giardino). " +
+                "NON suggerire HVAC, ventilazione o deumidificazione — " +
+                "stai già all'aperto. Usa intent coolRoom/heatRoom solo per comfort estremo."
+        case .utility:
+            roomTypeContext = "TIPO STANZA: utility (garage/lavanderia/cantina)."
+        case .transit:
+            roomTypeContext = "TIPO STANZA: transit (ingresso/corridoio)."
+        case .indoor:
+            roomTypeContext = "TIPO STANZA: indoor."
+        }
+
         return """
         Sei un assistente domotico integrato in un'app per la casa. \
         Ora: \(timeOfDay), stagione: \(season). \
-        Analizza i dati di una stanza e, SE noti qualcosa di insolito rispetto alla storia recente, \
-        comunicalo in modo naturale e diretto — come farebbe un amico che conosce bene la casa. \
-
+        \(roomTypeContext) \
+        \
+        DATI CHE RICEVI: \
+        - `sensorStatus`: stato pre-valutato (urgency + deviazione dalla media in σ). \
+        - NON devi valutare soglie — sono già calcolate nel campo `urgency`. \
+        - Concentrati su sensori con `isAnomaly: true` che non sono già in urgency warning/danger. \
+        - Se tutto è `urgency: normal` e nessun `isAnomaly: true` → hasInsight=false. \
+        \
         TONO DEL MESSAGGIO (fondamentale): \
         - Scrivi UNA sola frase breve in italiano colloquiale, massimo 12 parole. \
         - NON usare termini tecnici: niente "baseline", "normalizzare", "trend storico", "rilevato". \
         - NON includere numeri né confronti espliciti (non scrivere "72% invece della media di 65%"). \
         - NON aggiungere spiegazioni dopo la virgola ("...è rimasta su per tutta la sera" → troppo). \
         - NON spiegare l'azione — ci sono già i pulsanti per quello. \
+        - Usa SEMPRE il nome della stanza nel messaggio (campo `room` del JSON). \
         - Esempi di tono CORRETTO: \
-          "L'umidità in cucina è un po' alta stasera." \
+          "L'umidità in cucina è un po' alta." \
           "Fa ancora un po' caldo in mansarda." \
-          "L'aria nel soggiorno è un po' pesante stasera." \
-          "CO₂ leggermente alta in camera." \
-          "Sul balcone l'umidità è salita parecchio." \
+          "L'aria nel soggiorno è un po' pesante." \
+          "La CO₂ in camera è un po' alta." \
+          "Sul balcone fa davvero caldo." \
+          "L'aria in lavanderia è viziata." \
         - Esempi di tono SBAGLIATO (da evitare): \
           "L'umidità è al 72%, superiore alla media storica del 65%." \
           "Fa un po' caldo in mansarda, la temperatura è rimasta alta tutta la sera." \
-          "Al balcone l'umidità è salita." \
           "Suggerirei di attivare la ventilazione per normalizzare." \
-
+          "L'ambiente ha raggiunto valori anomali." \
+        \
         ARTICOLI E PREPOSIZIONI con i nomi delle stanze — regola italiana: \
         - Stanze con articolo determinativo femminile: "in cucina", "in camera", "in mansarda", \
           "in lavanderia", "sul balcone", "sul terrazzo", "in bagno". \
         - Stanze con articolo maschile: "nel soggiorno", "nello studio", "nel garage", \
           "nell'ingresso", "nel corridoio". \
         - Se non sei sicuro → usa "nella stanza [nome]" come fallback sicuro. \
-
-        NON ripetere warning già coperti dalle soglie manuali (thresholds) nel payload. \
-        Se tutto è nella norma → hasInsight=false. Sii selettivo: meglio nessun insight che uno banale. \
-
-        AZIONI — due tipi possibili: \
-
-        1. TIPO "suggest" — controlla un accessorio HomeKit: \
-           Usa SOLO accessori presenti in "controllableAccessories". \
-           - NON suggerire luci, cappe aspiranti, o accessori non ambientali. \
-           - umidità alta → purificatore (setMode Auto) o deumidificatore. \
-           - temperatura alta in estate → climatizzatore cool (setMode=2) o ventilatore. \
-           - temperatura bassa in inverno → climatizzatore heat (setMode=1) o valvola. \
-           - qualità aria bassa / CO2 alta → purificatore Auto. \
-           - Valvole (category=valve): solo in inverno. \
-           - Di sera/notte non suggerire apertura tende o veneziane. \
-           - Se l'accessorio è già attivo (currentState) → non suggerirlo. \
-
-        2. TIPO "tip" — consiglio manuale fisico, SENZA accessorio: \
-           Usalo quando non c'è un accessorio adatto MA c'è un'azione manuale utile. \
-           Esempi: "Apri la finestra", "Arieggia la stanza", "Abbassa la tapparella", \
-           "Apri un po' la finestra", "Fai girare un po' d'aria". \
-           Per i tip: accessoryID, accessoryActionType e accessoryValue devono essere omessi (null). \
-
-        Puoi combinare tip e suggest nella stessa nextActions (es. un suggest + un tip come alternativa). \
-        Se non esiste né un accessorio pertinente né un tip utile → nextActions: []. \
-
+        \
+        INTENT — indica SOLO il problema ambientale rilevato, senza scegliere dispositivi: \
+        Valori possibili (array di stringhe, max 2): \
+          "coolRoom"         — temperatura troppo alta \
+          "heatRoom"         — temperatura troppo bassa \
+          "reduceHumidity"   — umidità troppo alta \
+          "increaseHumidity" — umidità troppo bassa / aria troppo secca \
+          "improveAirQuality"— qualità aria scarsa, VOC alto \
+          "ventilateRoom"    — aria viziata, ricambio necessario \
+          "reduceCO2"        — CO₂ (anidride carbonica) alta (>1000 ppm) \
+          "respondToSmoke"   — rilevato fumo \
+          "respondToCO"      — rilevato monossido di carbonio \
+        Usa un array vuoto se nessun intent è applicabile. \
+        NON inventare valori diversi da quelli elencati. \
+        \
         Rispondi SOLO con JSON valido (nessun testo, nessun markdown):
         {"hasInsight":true,"message":"una frase breve colloquiale","severity":"info"|"warning"|"anomaly",\
-        "nextActions":[\
-          {"label":"max 22 char","actionType":"suggest","accessoryID":"UUID reale",\
-           "accessoryActionType":"on"|"off"|"setMode"|"setSpeed"|"setTemp","accessoryValue":0.5},\
-          {"label":"Apri la finestra","actionType":"tip"}\
-        ]}
-        accessoryID deve essere un UUID reale da controllableAccessories, mai inventato.
+        "intents":["coolRoom"]}
         """
     }
 
     // MARK: - Payload Builder
 
-    private func buildPayload(room: RoomEnvironmentData, readings: [SensorReading]) -> String {
-        var currentValues: [String: Double] = [:]
-        for sensor in room.sensors {
-            currentValues[sensor.serviceType.rawValue] = sensor.currentValue
-        }
+    /// Costruisce il payload JSON per il LLM con stato pre-valutato (Sprint 4).
+    /// Invia `sensorStatus` (urgency+sigma già calcolati) invece di raw values+thresholds.
+    private func buildPayload(
+        room: RoomEnvironmentData,
+        readings: [SensorReading],
+        baseline: [String: (avg: Double, stdDev: Double)],
+        preResult: PreProcessorResult
+    ) -> String {
+        let now = Date()
 
         // Suddividi le letture nelle ultime 12 ore in fasce da 4h
-        let now = Date()
         let periodRanges: [(String, TimeInterval, TimeInterval)] = [
             ("00:00-04:00", -12 * 3600, -8 * 3600),
             ("04:00-08:00", -8  * 3600, -4 * 3600),
@@ -225,7 +366,6 @@ final class AmbientalAIService {
             guard !slice.isEmpty else { continue }
 
             var periodData: [String: Any] = ["range": label]
-            // Per ogni tipo di sensore presente nella stanza
             for sensor in room.sensors {
                 let typeReadings = slice.filter { $0.serviceTypeRaw == sensor.serviceType.rawValue }
                 guard !typeReadings.isEmpty else { continue }
@@ -239,42 +379,40 @@ final class AmbientalAIService {
             periods.append(periodData)
         }
 
-        // Baseline 7 giorni (dai dati storici SwiftData)
-        var baseline: [String: Any] = [:]
-        for sensor in room.sensors {
-            let allForType = readings.filter { $0.serviceTypeRaw == sensor.serviceType.rawValue }
-            guard allForType.count > 5 else { continue }
-            let values = allForType.map(\.value)
-            let avg = values.reduce(0, +) / Double(values.count)
-            let variance = values.reduce(0) { $0 + pow($1 - avg, 2) } / Double(values.count)
-            baseline["avg\(sensor.serviceType.rawValue.capitalized)"] = Double(round(avg * 10) / 10)
-            baseline["stdDev\(sensor.serviceType.rawValue.capitalized)"] = Double(round(sqrt(variance) * 10) / 10)
+        // Baseline 7 giorni (formattata per JSON)
+        var baselineJSON: [String: Any] = [:]
+        for (typeRaw, stats) in baseline {
+            baselineJSON["avg\(typeRaw.capitalized)"]    = Double(round(stats.avg    * 10) / 10)
+            baselineJSON["stdDev\(typeRaw.capitalized)"] = Double(round(stats.stdDev * 10) / 10)
         }
 
-        // Soglie attuali
-        var thresholds: [String: Double] = [:]
-        for sensor in room.sensors {
-            thresholds["\(sensor.serviceType.rawValue)Warning"] = sensor.warningThreshold
-            thresholds["\(sensor.serviceType.rawValue)Critical"] = sensor.dangerThreshold
+        // Sensor status come array Codable
+        let sensorStatusArray: [[String: Any]] = preResult.sensorStatuses.map { entry in
+            var dict: [String: Any] = [
+                "type":    entry.type,
+                "value":   entry.value,
+                "urgency": entry.urgency,
+                "isAnomaly": entry.isAnomaly,
+            ]
+            if let sigma = entry.deviationSigma {
+                dict["deviationSigma"] = sigma
+            }
+            return dict
         }
 
-        // Lista completa degli accessori controllabili nella stanza
-        let controllableAccessories = buildControllableAccessories(for: room.roomName)
-
-        // Ora locale per contestualizzare il payload
-        let cal2 = Calendar.current
-        let nowHour = cal2.component(.hour, from: now)
-        let nowMin  = cal2.component(.minute, from: now)
+        // Ora locale
+        let cal = Calendar.current
+        let nowHour = cal.component(.hour, from: now)
+        let nowMin  = cal.component(.minute, from: now)
         let localTime = String(format: "%02d:%02d", nowHour, nowMin)
 
         let payloadDict: [String: Any] = [
-            "room":                    room.roomName,
-            "localTime":               localTime,
-            "currentValues":           currentValues,
-            "periods":                 periods,
-            "baseline7d":              baseline,
-            "thresholds":              thresholds,
-            "controllableAccessories": controllableAccessories,
+            "room":         room.roomName,
+            "roomType":     preResult.roomType.rawValue,
+            "localTime":    localTime,
+            "sensorStatus": sensorStatusArray,
+            "periods":      periods,
+            "baseline7d":   baselineJSON,
         ]
 
         guard let data = try? JSONSerialization.data(withJSONObject: payloadDict, options: [.sortedKeys]),
@@ -284,208 +422,92 @@ final class AmbientalAIService {
         return str
     }
 
-    // MARK: - Controllable Accessories Builder
-
-    /// Costruisce la lista degli accessori controllabili in una stanza per il payload AI.
-    /// Esclude i sensori read-only. Include uuid, name, category, capabilities, currentState.
-    private func buildControllableAccessories(for roomName: String) -> [[String: Any]] {
-        let accessories = homeKit.allAccessories.filter { $0.room?.name == roomName }
-        var result: [[String: Any]] = []
-
-        for accessory in accessories {
-            let (category, capabilities, currentState) = describeAccessory(accessory)
-            guard !capabilities.isEmpty else { continue }  // salta sensori read-only
-
-            var entry: [String: Any] = [
-                "uuid":         accessory.uniqueIdentifier.uuidString,
-                "name":         accessory.name,
-                "category":     category,
-                "capabilities": capabilities,
-            ]
-            if let state = currentState {
-                entry["currentState"] = state
-            }
-            result.append(entry)
-        }
-        return result
-    }
-
-    /// Determina categoria, capabilities e stato corrente di un accessorio.
-    /// Restituisce (category, capabilities, currentState?).
-    /// capabilities è vuoto per accessori read-only (sensori puri).
-    private func describeAccessory(_ accessory: HMAccessory) -> (String, [String: Any], [String: Any]?) {
-        let services = accessory.services
-
-        func charValue(_ type: String) -> Any? {
-            services.flatMap(\.characteristics).first { $0.characteristicType == type }?.value
-        }
-        func hasChar(_ type: String) -> Bool {
-            services.flatMap(\.characteristics).contains { $0.characteristicType == type }
-        }
-
-        // ── Purificatore d'aria ──────────────────────────────────────────
-        let purifierServiceType = "000000BB-0000-1000-8000-0026BB765291"
-        if services.contains(where: { $0.serviceType == purifierServiceType }) {
-            var caps: [String: Any] = [
-                "on":  "accendi (Active=1)",
-                "off": "spegni (Active=0)",
-            ]
-            if hasChar(HMCharacteristicTypeRotationSpeed) {
-                caps["setSpeed"] = "velocità ventola 0-100"
-            }
-            // TargetAirPurifierState
-            if hasChar("000000A8-0000-1000-8000-0026BB765291") {
-                caps["setMode"] = "0=Manuale, 1=Auto"
-            }
-            var state: [String: Any] = [:]
-            if let v = charValue(HMCharacteristicTypeActive) as? Int       { state["active"] = v }
-            if let v = charValue(HMCharacteristicTypeRotationSpeed) as? Double { state["speed"] = Int(v) }
-            return ("airPurifier", caps, state.isEmpty ? nil : state)
-        }
-
-        // ── Termostato HeaterCooler ──────────────────────────────────────
-        let heaterCoolerType = "000000BC-0000-1000-8000-0026BB765291"
-        let thermostatType   = "0000004A-0000-1000-8000-0026BB765291"
-        if services.contains(where: { $0.serviceType == heaterCoolerType || $0.serviceType == thermostatType }) {
-            var caps: [String: Any] = [
-                "on":  "attiva (Active=1)",
-                "off": "spegni (Active=0)",
-            ]
-            // TargetHeaterCoolerState
-            if hasChar("000000B2-0000-1000-8000-0026BB765291") {
-                caps["setMode"] = "0=Auto, 1=Caldo, 2=Freddo"
-            }
-            if hasChar(HMCharacteristicTypeTargetTemperature) {
-                caps["setTemp"] = "temperatura target °C"
-            }
-            var state: [String: Any] = [:]
-            if let v = charValue(HMCharacteristicTypeActive) as? Int              { state["active"] = v }
-            if let v = charValue(HMCharacteristicTypeCurrentTemperature) as? Double { state["currentTemp"] = v }
-            if let v = charValue(HMCharacteristicTypeTargetTemperature) as? Double  { state["targetTemp"] = v }
-            if let v = charValue("000000B2-0000-1000-8000-0026BB765291") as? Int   { state["mode"] = v }
-            return ("thermostat", caps, state.isEmpty ? nil : state)
-        }
-
-        // ── Valvola (TRV) ────────────────────────────────────────────────
-        let valveType = "00000081-0000-1000-8000-0026BB765291"
-        if services.contains(where: { $0.serviceType == valveType }) {
-            let caps: [String: Any] = [
-                "on":  "apri valvola (Active=1)",
-                "off": "chiudi valvola (Active=0)",
-            ]
-            var state: [String: Any] = [:]
-            if let v = charValue(HMCharacteristicTypeActive) as? Int { state["active"] = v }
-            return ("valve", caps, state.isEmpty ? nil : state)
-        }
-
-        // ── Luce dimmerabile ─────────────────────────────────────────────
-        if hasChar(HMCharacteristicTypeBrightness) {
-            let caps: [String: Any] = [
-                "on":  "accendi",
-                "off": "spegni",
-                "dim": "luminosità 0.0-1.0",
-            ]
-            var state: [String: Any] = [:]
-            if let v = charValue(HMCharacteristicTypePowerState) as? Bool { state["on"] = v }
-            if let v = charValue(HMCharacteristicTypeBrightness) as? Int  { state["brightness"] = v }
-            return ("dimmableLight", caps, state.isEmpty ? nil : state)
-        }
-
-        // ── Tenda / Tapparella ───────────────────────────────────────────
-        if hasChar(HMCharacteristicTypeCurrentPosition) && hasChar(HMCharacteristicTypeTargetPosition) {
-            let caps: [String: Any] = [
-                "open":  "apri completamente (100%)",
-                "close": "chiudi completamente (0%)",
-                "dim":   "posizione parziale 0.0-1.0",
-            ]
-            var state: [String: Any] = [:]
-            if let v = charValue(HMCharacteristicTypeCurrentPosition) as? Int { state["position"] = v }
-            return ("windowCovering", caps, state.isEmpty ? nil : state)
-        }
-
-        // ── On/Off generico ──────────────────────────────────────────────
-        if hasChar(HMCharacteristicTypePowerState) || hasChar(HMCharacteristicTypeActive) {
-            // Escludi se tutti i servizi sono read-only
-            let allReadOnly = services.flatMap(\.characteristics).allSatisfy {
-                $0.properties.contains(HMCharacteristicPropertyReadable) &&
-                !$0.properties.contains(HMCharacteristicPropertyWritable)
-            }
-            guard !allReadOnly else { return ("sensor", [:], nil) }
-
-            let caps: [String: Any] = ["on": "accendi/attiva", "off": "spegni/disattiva"]
-            var state: [String: Any] = [:]
-            if let v = charValue(HMCharacteristicTypePowerState) as? Bool { state["on"] = v }
-            else if let v = charValue(HMCharacteristicTypeActive) as? Int { state["active"] = v }
-
-            // Distingui la categoria tramite HMAccessoryCategory (String costante)
-            let catName: String
-            switch accessory.category.categoryType {
-            case HMAccessoryCategoryTypeFan:            catName = "fan"
-            case HMAccessoryCategoryTypeOutlet:         catName = "outlet"
-            case HMAccessoryCategoryTypeSwitch:         catName = "switch"
-            case HMAccessoryCategoryTypeAirConditioner: catName = "airConditioner"
-            default:                                    catName = "onOff"
-            }
-            return (catName, caps, state.isEmpty ? nil : state)
-        }
-
-        // Read-only puro: nessuna capability → verrà escluso dal payload
-        return ("sensor", [:], nil)
-    }
-
     // MARK: - Response Parser
 
-    private func parseInsight(response: String, roomName: String) -> AmbientalAIInsight? {
-        // Cerca il JSON nella risposta (può esserci testo prima/dopo)
+    /// Parses the LLM JSON response.
+    /// Applica severity clamping e intent filtering deterministici (Sprint 4).
+    private func parseInsight(
+        response: String,
+        roomName: String,
+        preResult: PreProcessorResult
+    ) -> AmbientalAIInsight? {
         let cleaned = extractJSON(from: response)
-        guard let data = cleaned.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+
+        // Parse JSON once so we can trace both success and failure paths
+        let parsedJSON = cleaned.data(using: .utf8)
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+
+        guard let json = parsedJSON,
               let hasInsight = json["hasInsight"] as? Bool,
               hasInsight,
               let message = json["message"] as? String,
               !message.isEmpty,
               let severityRaw = json["severity"] as? String,
-              let severity = InsightSeverity(rawValue: severityRaw)
-        else { return nil }
-
-        // Parsing nextActions (opzionali)
-        var nextActions: [AINextAction] = []
-        if let actionsArray = json["nextActions"] as? [[String: Any]] {
-            for item in actionsArray.prefix(3) {
-                guard let label = item["label"] as? String,
-                      let actionType = item["actionType"] as? String
-                else { continue }
-                let action = AINextAction(
-                    label: label,
-                    actionType: actionType,
-                    accessoryID: item["accessoryID"] as? String,
-                    accessoryActionType: item["accessoryActionType"] as? String,
-                    accessoryValue: item["accessoryValue"] as? Double,
-                    ruleJSON: item["ruleJSON"] as? String
-                )
-                nextActions.append(action)
-            }
+              let llmSeverity = InsightSeverity(rawValue: severityRaw)
+        else {
+            // Phase 4 trace: AI returned no insight (parse failure or hasInsight=false)
+            #if DEBUG
+            AITraceLogger.shared.logAIResponse(
+                roomName: roomName,
+                hasInsight: (parsedJSON?["hasInsight"] as? Bool) ?? false,
+                message: parsedJSON?["message"] as? String,
+                severity: parsedJSON?["severity"] as? String,
+                intents: parsedJSON?["intents"] as? [String] ?? []
+            )
+            #endif
+            return nil
         }
 
-        // Filtro hard-coded: rimuovi azioni "open" su window covering di sera/notte (19:00-07:00)
-        let currentHour = Calendar.current.component(.hour, from: Date())
-        let isEveningOrNight = currentHour >= 19 || currentHour < 7
-        if isEveningOrNight {
-            nextActions.removeAll {
-                $0.accessoryActionType == "open" || $0.accessoryActionType == "close"
-            }
-        }
+        let intentStrings = json["intents"] as? [String] ?? []
+
+        // Phase 4 trace: AI response parsed successfully
+        #if DEBUG
+        AITraceLogger.shared.logAIResponse(
+            roomName: roomName,
+            hasInsight: true,
+            message: message,
+            severity: severityRaw,
+            intents: intentStrings
+        )
+        #endif
+
+        // Clamp severity al ceiling deterministico
+        let clampedSeverity = EnvironmentPreProcessor.clampSeverity(
+            llmSeverity, ceiling: preResult.severityCeiling
+        )
+
+        // Parse intent strings dal LLM
+        let rawIntents = intentStrings.compactMap { ActionIntent(rawValue: $0) }
+
+        // Filtra intent per tipo di stanza
+        let filteredIntents = EnvironmentPreProcessor.filterIntents(rawIntents, for: preResult.roomType)
+
+        // Phase 5 trace: validator (severity clamping + intent filtering)
+        #if DEBUG
+        AITraceLogger.shared.logValidator(
+            roomName: roomName,
+            llmSeverity: severityRaw,
+            clampedSeverity: clampedSeverity.rawValue,
+            rawIntents: intentStrings,
+            filteredIntents: filteredIntents.map(\.rawValue)
+        )
+        #endif
+
+        // Delegare la selezione dispositivi al resolver deterministico
+        let nextActions = filteredIntents.isEmpty
+            ? []
+            : resolver.resolve(intents: filteredIntents, roomName: roomName, roomType: preResult.roomType)
 
         return AmbientalAIInsight(
             roomName: roomName,
             message: message,
-            severity: severity,
-            nextActions: nextActions
+            severity: clampedSeverity,
+            nextActions: nextActions,
+            resolvedIntents: filteredIntents.map(\.rawValue)
         )
     }
 
     private func extractJSON(from string: String) -> String {
-        // Trova il primo { e l'ultimo }
         guard let start = string.firstIndex(of: "{"),
               let end = string.lastIndex(of: "}")
         else { return string }

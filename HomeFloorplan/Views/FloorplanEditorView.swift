@@ -55,10 +55,50 @@ struct FloorplanEditorView: View {
     
     @Environment(HomeKitScenesService.self) private var scenesService
     @State private var showScenesPanel = false
-    
+
+    /// Overlay layer view model — scoped to this editor instance, keyed to the floorplan UUID.
+    @State private var overlayVM: FloorplanOverlayViewModel?
+    /// Shared environment view model used by both the overlay layer and the context panel.
+    @StateObject private var overlayEnvVM = EnvironmentViewModel()
+
+    /// Cached floorplan image — loaded once on appear and when imageFilename changes.
+    /// Avoids repeated disk I/O on every body re-evaluation.
+    @State private var cachedFloorplanImage: UIImage?
+    @State private var cachedFloorplanImageFilename: String = ""
+
+    /// Cached overlay context — recomputed only when HomeKit accessories change.
+    @State private var cachedOverlayContext: FloorplanOverlayContext = .none
+
+    /// Timestamp (seconds since epoch) when the security mode was last observed to change.
+    @AppStorage("securityModeActivationDate") private var securityModeActivationDate: Double = 0
+
+    /// Last known security mode raw value — used to detect mode changes.
+    @State private var lastKnownSecurityModeRaw: Int = -1
+
+    /// Altezza misurata della top bar (incluse pills secondarie).
+    /// Usata per tenere l'immagine al di sotto della barra.
+    @State private var topBarHeight: CGFloat = 0
+
     private var selectedMarker: PlacedAccessory? {
         guard let id = selectedMarkerID else { return nil }
         return floorplan.accessories.first { $0.id == id }
+    }
+
+    private func buildOverlayContext() -> FloorplanOverlayContext {
+        let hasEnv = !floorplan.linkedRooms.isEmpty
+        let hasSecure = homeKit.allAccessories.contains { acc in
+            acc.services.contains { svc in
+                svc.serviceType == HMServiceTypeLockMechanism
+                    || svc.serviceType == HMServiceTypeSecuritySystem
+                    || svc.serviceType == HMServiceTypeGarageDoorOpener
+                    || svc.serviceType == HMServiceTypeDoorbell
+            }
+        }
+        return FloorplanOverlayContext(
+            hasEnvironmentData: hasEnv,
+            hasSecurityDevices: hasSecure,
+            hasAIService: false           // Phase 6 will set this
+        )
     }
     
     private var effectiveScale: CGFloat {
@@ -79,11 +119,16 @@ struct FloorplanEditorView: View {
             ZStack {
                 Color.white
                     .ignoresSafeArea()
-                
-                if let image = ImageStorageService.load(filename: floorplan.imageFilename) {
+
+                if let image = cachedFloorplanImage {
                     imageWithMarkers(image: image, container: proxy.size)
                         .scaleEffect(effectiveScale, anchor: .center)
-                        .offset(effectiveOffset)
+                        // Sposta l'immagine verso il basso di metà dell'altezza della top bar,
+                        // così risulta centrata nello spazio libero sotto la barra.
+                        .offset(CGSize(
+                            width:  effectiveOffset.width,
+                            height: effectiveOffset.height + topBarHeight / 2
+                        ))
                         .gesture(zoomPanGesture(in: proxy.size))
                 } else {
                     ContentUnavailableView(
@@ -92,9 +137,16 @@ struct FloorplanEditorView: View {
                     )
                 }
                 
-                floatingControls(in: proxy.size)
+                // Top bar: sempre visibile
+                topBar(in: proxy.size)
+
+                // Controlli secondari (zoom, toolbar marker): soggetti ad auto-hide
+                secondaryControls(in: proxy.size)
                     .opacity(shouldShowControls ? 1 : 0)
                     .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
+
+                // Pulsante apri-pannello — sempre visibile (non soggetto ad auto-hide)
+                openPanelButton
 
                 // Right-side scenes panel overlay
                 if showScenesPanel {
@@ -116,6 +168,11 @@ struct FloorplanEditorView: View {
                         .animation(.spring(response: 0.38, dampingFraction: 0.88), value: showScenesPanel)
                 }
                 .ignoresSafeArea(edges: .vertical)
+
+                // Z+4: overlay context panel
+                if let vm = overlayVM {
+                    overlayContextPanel(vm: vm, containerSize: proxy.size)
+                }
             }
             .contentShape(Rectangle())
             .onTapGesture { location in
@@ -168,6 +225,12 @@ struct FloorplanEditorView: View {
             Text("L'accessorio verrà rimosso dalla planimetria ma resterà attivo in HomeKit.")
         }
         .onAppear {
+            // Initialise the overlay VM once so it's keyed to the real floorplan UUID.
+            if overlayVM == nil {
+                overlayVM = FloorplanOverlayViewModel(floorplanID: floorplan.id)
+            }
+            overlayEnvVM.configure(modelContainer: modelContext.container)
+            overlayEnvVM.loadFromCoreData()
             subscribeToAccessories()
             restoreZoom()
             if startInEditMode {
@@ -177,11 +240,26 @@ struct FloorplanEditorView: View {
             } else {
                 scheduleAutoHide()
             }
+            // Warm up caches
+            refreshFloorplanImageCache()
+            cachedOverlayContext = buildOverlayContext()
         }
         .onChange(of: homeKit.isReady) { _, isReady in
             if isReady {
                 subscribeToAccessories()
+                cachedOverlayContext = buildOverlayContext()
             }
+        }
+        .onChange(of: homeKit.allAccessories.count) { _, _ in
+            cachedOverlayContext = buildOverlayContext()
+        }
+        .onChange(of: floorplan.linkedRooms.count) { _, _ in
+            // Ricalcola il contesto quando le stanze linkate cambiano,
+            // così la pill "Ambiente" appare non appena si collega la prima stanza.
+            cachedOverlayContext = buildOverlayContext()
+        }
+        .onChange(of: floorplan.imageFilename) { _, _ in
+            refreshFloorplanImageCache()
         }
         .onDisappear {
             unsubscribeFromAccessories()
@@ -198,17 +276,51 @@ struct FloorplanEditorView: View {
                 scheduleAutoHide()
             }
         }
+        .onChange(of: homeKit.allAccessories) { _, _ in
+            trackSecurityModeChange()
+        }
+        .onAppear {
+            trackSecurityModeChange()
+        }
+    }
+
+    /// Checks if the security system mode has changed and records the activation timestamp.
+    private func trackSecurityModeChange() {
+        guard let home = homeKit.currentHome else { return }
+        for acc in home.accessories {
+            if let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit) as? SecuritySystemAdapter {
+                let raw = adapter.currentMode.rawValue
+                if raw != lastKnownSecurityModeRaw {
+                    lastKnownSecurityModeRaw = raw
+                    securityModeActivationDate = Date().timeIntervalSince1970
+                }
+                break
+            }
+        }
+    }
+
+    /// Returns the first SecuritySystemAdapter in the current home, if any.
+    private func findSecurityAdapter() -> SecuritySystemAdapter? {
+        guard let home = homeKit.currentHome else { return nil }
+        for acc in home.accessories {
+            if let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit) as? SecuritySystemAdapter {
+                return adapter
+            }
+        }
+        return nil
     }
     
-    // MARK: - Floating controls
-    
+    // MARK: - Top bar (sempre visibile)
+
     @ViewBuilder
-    private func floatingControls(in size: CGSize) -> some View {
-        // Top: name pill (con bottone sidebar se sidebar nascosta) + actions
-        VStack {
+    private func topBar(in size: CGSize) -> some View {
+        // VStack senza Spacer: si restringe all'altezza reale del contenuto.
+        // Il Spacer esterno (nello ZStack) non è necessario perché la top bar
+        // è allineata al top dello ZStack per natura.
+        VStack(spacing: 0) {
             HStack {
+                // Sinistra: sidebar / dismiss + nome floorplan
                 HStack(spacing: 10) {
-                    // Bottone "Sidebar": appare solo quando la sidebar è nascosta
                     switch presentationStyle {
                     case .splitView:
                         if columnVisibility == .detailOnly {
@@ -238,8 +350,8 @@ struct FloorplanEditorView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    
-                    GlassPill {
+
+                    GlassTitlePill {
                         Text(floorplan.name)
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -247,53 +359,132 @@ struct FloorplanEditorView: View {
                             .padding(.vertical, 10)
                     }
                 }
+
                 Spacer()
+
+                // Centro: mode pill (nascosta in edit mode)
+                if !isEditing, let vm = overlayVM {
+                    FloorplanModePill(overlayVM: vm, context: cachedOverlayContext)
+                }
+
+                Spacer()
+
+                // Destra: azioni (+ / scene / modifica)
                 topRightActions
             }
             .animation(.spring(response: 0.4), value: columnVisibility)
+            .animation(.spring(response: 0.35), value: isEditing)
             .padding(.horizontal, 20)
             .padding(.top, 12)
-            Spacer()
+
+            // Sub-filter bar: visible only in Environment mode (not in edit mode)
+            if !isEditing, let vm = overlayVM, vm.activeMode == .environment {
+                EnvironmentFilterBar(
+                    overlayVM: vm,
+                    availableTypes: overlayEnvVM.availableSensorTypes
+                )
+                .padding(.top, 4)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            // Security alarm status pill: visible only in Security mode (not in edit mode)
+            if !isEditing, let vm = overlayVM, vm.activeMode == .security,
+               let adapter = findSecurityAdapter() {
+                AlarmStatusPill(
+                    adapter: adapter,
+                    activationDate: securityModeActivationDate > 0
+                        ? Date(timeIntervalSince1970: securityModeActivationDate)
+                        : nil
+                )
+                .padding(.top, 6)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            // Hint banner: stanze non collegate → layer Ambiente non disponibile
+            if !isEditing && floorplan.linkedRooms.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "leaf.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                    Text(String(localized: "floorplan.editor.banner.noRooms",
+                                defaultValue: "Nessuna stanza collegata — apri l'editor 2D (✏️) per disegnare le aree e sbloccare il layer Ambiente."))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.top, 6)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            // Padding inferiore per separare visivamente la barra dal canvas
+            Spacer().frame(height: 8)
         }
-        
-        // Bottom-right: zoom indicator (solo se zoom != 1)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .animation(.spring(response: 0.35), value: overlayVM?.activeMode)
+        .animation(.spring(response: 0.35), value: floorplan.linkedRooms.isEmpty)
+        // Misura l'altezza reale della top bar (senza Spacer espanso)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: TopBarHeightKey.self,
+                    value: geo.size.height
+                )
+            }
+        )
+        .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    // MARK: - Controlli secondari (auto-hide)
+
+    @ViewBuilder
+    private func secondaryControls(in size: CGSize) -> some View {
+        // Bottom-right: zoom indicator
         VStack {
             Spacer()
-            HStack {
+            HStack(alignment: .bottom) {
                 Spacer()
-                if effectiveScale > 1.01 {
-                    GlassPill {
-                        HStack(spacing: 8) {
-                            Text(String(format: "%.1f×", effectiveScale))
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .monospacedDigit()
-                            Divider().frame(height: 20)
-                            Button {
-                                resetZoom()
-                            } label: {
-                                Image(systemName: "1.magnifyingglass")
+                VStack(spacing: 10) {
+                    // Zoom indicator (only when zoomed in)
+                    if effectiveScale > 1.01 {
+                        GlassTitlePill {
+                            HStack(spacing: 8) {
+                                Text(String(format: "%.1f×", effectiveScale))
                                     .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .monospacedDigit()
+                                Divider().frame(height: 20)
+                                Button {
+                                    resetZoom()
+                                } label: {
+                                    Image(systemName: "1.magnifyingglass")
+                                        .font(.subheadline)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .transition(.scale.combined(with: .opacity))
                     }
-                    .transition(.scale.combined(with: .opacity))
                 }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
         }
-        
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: overlayVM?.isPanelVisible)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: overlayVM?.activeMode)
+
         // Bottom-center: toolbar contestuale per marker selezionato (solo Edit)
         if isEditing, let placed = selectedMarker {
             let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID)
             let displayName = placed.customLabel?.isEmpty == false
                 ? placed.customLabel!
                 : (accessory?.name ?? "(rimosso)")
-            
+
             VStack {
                 Spacer()
                 MarkerActionToolbar(
@@ -316,7 +507,7 @@ struct FloorplanEditorView: View {
                             selectedMarkerID = nil
                         }
                     },
-                    onChangeIcon: {                         // 👈 NUOVO
+                    onChangeIcon: {
                         iconPickerTarget = placed
                     }
                 )
@@ -327,8 +518,40 @@ struct FloorplanEditorView: View {
         }
     }
     
+    // MARK: - Pulsante apri pannello (sempre visibile, non soggetto ad auto-hide)
+
+    /// Bottone bottom-right che apre il pannello contestuale.
+    /// Vive in un proprio layer ZStack così non scompare con l'auto-hide dei controlli secondari.
+    @ViewBuilder
+    private var openPanelButton: some View {
+        if !isEditing, let vm = overlayVM,
+           vm.activeMode != .controls, !vm.isPanelVisible {
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    OverlayPanelMarkerButton(mode: vm.activeMode) {
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+                            vm.isPanelVisible = true
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+            .transition(.scale(scale: 0.7).combined(with: .opacity))
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: vm.isPanelVisible)
+        }
+    }
+
+    @ViewBuilder
     private var topRightActions: some View {
-        GlassPill {
+        // Nascondi la pill quando si è in un overlay non-Controlli (Ambiente / Sicurezza / …)
+        // a meno che non si stia già modificando (uscire dall'edit deve essere sempre possibile).
+        let inOverlayMode = (overlayVM?.activeMode ?? .controls) != .controls
+        let hideEditButton = inOverlayMode && !isEditing
+
+        GlassTitlePill {
             HStack(spacing: 0) {
                 // Bottone + solo in edit mode
                 if isEditing {
@@ -350,40 +573,48 @@ struct FloorplanEditorView: View {
                         .transition(.opacity)
                 }
 
-                // Scene: sempre visibile
-                Button {
-                    showScenesPanel = true
-                } label: {
-                    Image(systemName: "wand.and.sparkles")
+                // Scene: visibile solo in modalità Controlli o in editing
+                if !hideEditButton {
+                    Button {
+                        showScenesPanel = true
+                    } label: {
+                        Image(systemName: "wand.and.sparkles")
+                            .font(.subheadline)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider().frame(height: 20)
+                }
+
+                // Bottone Modifica/Fine: nascosto negli overlay non-Controlli
+                if !hideEditButton {
+                    Button {
+                        withAnimation(.spring(response: 0.3)) {
+                            isEditing.toggle()
+                            if !isEditing { selectedMarkerID = nil }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isEditing ? "checkmark" : "pencil")
+                            Text(isEditing ? "Fine" : "Modifica")
+                        }
                         .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(isEditing ? BrandColor.primary : .primary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                Divider().frame(height: 20)
-
-                Button {
-                    withAnimation(.spring(response: 0.3)) {
-                        isEditing.toggle()
-                        if !isEditing { selectedMarkerID = nil }
                     }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: isEditing ? "checkmark" : "pencil")
-                        Text(isEditing ? "Fine" : "Modifica")
-                    }
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(isEditing ? Color.accentColor : .primary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
+        .opacity(hideEditButton ? 0 : 1)
+        .allowsHitTesting(!hideEditButton)
+        .animation(.easeInOut(duration: 0.2), value: hideEditButton)
     }
     
     // MARK: - Auto-hide
@@ -541,6 +772,13 @@ struct FloorplanEditorView: View {
         ud.set(Double(zoomOffset.height),forKey: zoomOffsetYKey)
     }
 
+    private func refreshFloorplanImageCache() {
+        guard floorplan.imageFilename != cachedFloorplanImageFilename
+                || cachedFloorplanImage == nil else { return }
+        cachedFloorplanImage = ImageStorageService.load(filename: floorplan.imageFilename)
+        cachedFloorplanImageFilename = floorplan.imageFilename
+    }
+
     private func restoreZoom() {
         let ud = UserDefaults.standard
         guard ud.object(forKey: zoomScaleKey) != nil else { return }
@@ -580,17 +818,106 @@ struct FloorplanEditorView: View {
                 .frame(width: rect.width, height: rect.height)
                 .position(x: rect.midX, y: rect.midY)
 
-            ForEach(floorplan.accessories) { placed in
-                markerView(for: placed, in: rect)
+            // Z+2: overlay layer (environment / security / intelligence)
+            if let vm = overlayVM, !isEditing {
+                overlayLayer(vm: vm, container: container)
             }
 
-            // Hint flottante per planimetria vuota
-            if floorplan.accessories.isEmpty {
-                emptyMarkersHint
-                    .position(x: rect.midX, y: rect.midY)
+            // Marker accessori: visibili solo in modalità Controlli (o in modifica).
+            // Transizione opacity per evitare un salto brusco al cambio modalità.
+            let showMarkers = isEditing || (overlayVM?.activeMode == .controls)
+            Group {
+                if showMarkers {
+                    ForEach(floorplan.accessories) { placed in
+                        markerView(for: placed, in: rect)
+                    }
+                    if floorplan.accessories.isEmpty {
+                        emptyMarkersHint
+                            .position(x: rect.midX, y: rect.midY)
+                    }
+                }
             }
+            .animation(.easeInOut(duration: 0.25), value: showMarkers)
         }
         .frame(width: container.width, height: container.height)
+    }
+
+    // MARK: - Overlay context panel
+
+    @ViewBuilder
+    private func overlayContextPanel(vm: FloorplanOverlayViewModel, containerSize: CGSize) -> some View {
+        let mode = vm.activeMode
+
+        FloorplanContextPanelContainer(
+            overlayVM: vm,
+            containerWidth: containerSize.width,
+            title: panelTitle(for: mode),
+            accentColor: mode.accentColor
+        ) {
+            switch mode {
+            case .controls:
+                EmptyView()
+            case .environment:
+                EnvironmentContextDashboard(
+                    envVM: overlayEnvVM,
+                    overlayVM: vm,
+                    highlightedRoomID: vm.highlightedRoomID,
+                    linkedRooms: floorplan.linkedRooms
+                )
+            case .security:
+                SecurityContextDashboard(
+                    highlightedRoomID: vm.highlightedRoomID,
+                    linkedRooms: floorplan.linkedRooms
+                )
+            case .intelligence:
+                IntelligenceContextDashboard(
+                    highlightedRoomID: vm.highlightedRoomID,
+                    linkedRooms: floorplan.linkedRooms
+                )
+            }
+        }
+    }
+
+    private func panelTitle(for mode: FloorplanOverlayMode) -> String {
+        switch mode {
+        case .controls:     return ""
+        case .environment:  return "Ambiente"
+        case .security:     return "Sicurezza"
+        case .intelligence: return "Intelligenza"
+        }
+    }
+
+    @ViewBuilder
+    private func overlayLayer(vm: FloorplanOverlayViewModel, container: CGSize) -> some View {
+        switch vm.activeMode {
+        case .controls:
+            EmptyView()
+        case .environment:
+            EnvironmentOverlayView(
+                floorplan: floorplan,
+                overlayVM: vm,
+                containerSize: container,
+                effectiveScale: effectiveScale,
+                effectiveOffset: effectiveOffset,
+                envVM: overlayEnvVM
+            )
+        case .security:
+            SecurityOverlayView(
+                floorplan: floorplan,
+                overlayVM: vm,
+                containerSize: container,
+                effectiveScale: effectiveScale,
+                effectiveOffset: effectiveOffset
+            )
+        case .intelligence:
+            IntelligenceOverlayView(
+                floorplan: floorplan,
+                overlayVM: vm,
+                containerSize: container,
+                effectiveScale: effectiveScale,
+                effectiveOffset: effectiveOffset
+            )
+        }
     }
 
     private var emptyMarkersHint: some View {
@@ -615,6 +942,26 @@ struct FloorplanEditorView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
+
+                // Hint: stanze linkate abilitano il layer Ambiente
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "leaf.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                        .padding(.top, 1)
+                    Text(String(localized: "floorplan.editor.hint.ambiente",
+                                defaultValue: "Disegna le aree stanza (matita → Area Stanza) e collegale a HomeKit per sbloccare il layer **Ambiente**."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.green.opacity(0.08))
+                )
+                .padding(.horizontal, 4)
 
                 Button {
                     pickerRoomFilter = nil
@@ -842,8 +1189,10 @@ struct FloorplanEditorView: View {
         try? modelContext.save()
     }
     
+    // MARK: - Top Bar Height PreferenceKey
+
     // MARK: - HomeKit subscriptions
-    
+
     private func subscribeToAccessories() {
         let uuids = Set(floorplan.accessories.map(\.homeKitAccessoryUUID))
         homeKit.startObserving(accessoryUUIDs: uuids)
@@ -852,5 +1201,17 @@ struct FloorplanEditorView: View {
     private func unsubscribeFromAccessories() {
         let uuids = Set(floorplan.accessories.map(\.homeKitAccessoryUUID))
         homeKit.stopObserving(accessoryUUIDs: uuids)
+    }
+}
+
+// MARK: - TopBarHeightKey
+
+/// Propaga l'altezza misurata della top bar dallo strato della barra
+/// allo ZStack principale, così l'immagine può essere centrata nel
+/// rettangolo libero sotto la barra.
+private struct TopBarHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

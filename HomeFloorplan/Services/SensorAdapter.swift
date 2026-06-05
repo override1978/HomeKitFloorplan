@@ -43,6 +43,9 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable {
     // MARK: - AccessoryAdapter
     
     var supportsFloorplanPlacement: Bool { true }
+
+    /// Espone il tipo di sensore primario per uso esterno (es. filtri nelle impostazioni).
+    var primarySensorKind: SensorKind { primaryKind }
     
     var iconName: String {
         let triggered = isTriggered

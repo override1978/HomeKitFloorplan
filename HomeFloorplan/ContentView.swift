@@ -135,9 +135,7 @@ struct ContentView: View {
             FloorplanListView(columnVisibility: $columnVisibility)
                 .toolbar(removing: .sidebarToggle)
         case .allAccessories:
-            NavigationStack {
-                AllAccessoriesView()
-            }
+            AccessoriesTabView()
         case .scenes:
             ScenesView()
         case .automations:

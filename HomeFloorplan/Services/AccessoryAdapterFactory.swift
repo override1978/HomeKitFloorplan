@@ -16,7 +16,13 @@ enum AccessoryAdapterFactory {
             if let matter = MatterDeviceAdapter(accessory: accessory) {
                 return matter
             }
-        
+
+        // 0.3 Telecamere HomeKit (PRIMA del sistema di sicurezza e dei sensori,
+        //     per evitare che il motion sensor della camera venga catturato da SensorAdapter)
+        if let camera = CameraAdapter(accessory: accessory, homeKit: homeKit) {
+            return camera
+        }
+
         // 0.5 Sistema di sicurezza (DEVE precedere sensori e on/off,
         //     perché alcuni hub espongono anche altri servizi che potrebbero "rubarlo")
         if let security = SecuritySystemAdapter(accessory: accessory, homeKit: homeKit) {

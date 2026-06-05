@@ -117,6 +117,50 @@ struct RoomEnvironmentData: Identifiable {
     var worstUrgency: SensorUrgency {
         sensors.map(\.urgency).max() ?? .normal
     }
+
+    /// Quality score 0.0–1.0 using the same weighted algorithm as `EnvironmentViewModel.globalScore`
+    /// but scoped to this room's sensors.
+    var qualityScore: Double {
+        guard !sensors.isEmpty else { return 1.0 }
+        var weightedScore = 0.0
+        var totalWeight   = 0.0
+        for sensor in sensors {
+            let weight = sensor.serviceType.qualityWeight
+            let score: Double
+            switch sensor.urgency {
+            case .normal:  score = 1.0
+            case .warning: score = 0.4
+            case .danger:  score = 0.0
+            }
+            weightedScore += weight * score
+            totalWeight   += weight
+        }
+        return totalWeight > 0 ? weightedScore / totalWeight : 1.0
+    }
+
+    var qualityLabel: String {
+        switch qualityScore {
+        case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Ottima")
+        case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Discreta")
+        case 0.35..<0.60: return String(localized: "quality.warning",   defaultValue: "Attenzione")
+        default:          return String(localized: "quality.critical",  defaultValue: "Critica")
+        }
+    }
+
+    var qualityColor: Color {
+        switch qualityScore {
+        case 0.85...1.0:  return .green
+        case 0.60..<0.85: return .yellow
+        case 0.35..<0.60: return .orange
+        default:          return .red
+        }
+    }
+
+    /// Classifica la stanza usando RoomClassifier.
+    /// - Parameter outdoorRoomName: Nome stanza outdoor da AppStorage "outdoorRoomName".
+    func roomType(outdoorRoomName: String = "") -> RoomType {
+        RoomClassifier.classify(roomName: roomName, outdoorRoomName: outdoorRoomName)
+    }
 }
 
 // MARK: - EnvironmentViewModel
@@ -131,6 +175,22 @@ final class EnvironmentViewModel: ObservableObject {
     @Published var lastRefresh: Date?
 
     private var modelContainer: ModelContainer?
+
+    // MARK: - Ordinamento custom
+
+    private static let orderKey = "environmentRoomOrder"
+
+    /// Ordine personalizzato: array di roomName nell'ordine desiderato dall'utente.
+    /// Vuoto = nessun ordine personalizzato (usa il default per urgency).
+    private var customOrderNames: [String] {
+        get { UserDefaults.standard.stringArray(forKey: Self.orderKey) ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: Self.orderKey) }
+    }
+
+    /// Persiste l'ordine corrente. Passa un array vuoto per ripristinare il default.
+    func saveOrder(_ orderedRooms: [RoomEnvironmentData]) {
+        customOrderNames = orderedRooms.map(\.roomName)
+    }
 
     func configure(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
@@ -188,6 +248,13 @@ final class EnvironmentViewModel: ObservableObject {
         case 0.35..<0.60: return .orange
         default:          return .red
         }
+    }
+
+    /// Distinct sensor types present in the current data, sorted by qualityWeight descending
+    /// (highest-impact types first: smoke, CO, CO₂, air quality, temperature, humidity).
+    var availableSensorTypes: [SensorServiceType] {
+        let allTypes = Set(rooms.flatMap { $0.sensors.map(\.serviceType) })
+        return allTypes.sorted { $0.qualityWeight > $1.qualityWeight }
     }
 
     // MARK: - Caricamento da SwiftData
@@ -282,7 +349,19 @@ final class EnvironmentViewModel: ObservableObject {
         }
         .sorted { $0.worstUrgency > $1.worstUrgency }
 
-        rooms = roomData
+        // 7. Applica ordinamento utente (se presente), altrimenti usa il default per urgency
+        let orderNames = customOrderNames
+        if orderNames.isEmpty {
+            rooms = roomData
+        } else {
+            let orderMap = Dictionary(uniqueKeysWithValues: orderNames.enumerated().map { ($1, $0) })
+            let ordered = roomData.sorted { a, b in
+                let ia = orderMap[a.roomName] ?? Int.max
+                let ib = orderMap[b.roomName] ?? Int.max
+                return ia < ib
+            }
+            rooms = ordered
+        }
         lastRefresh = Date()
         isLoading = false
     }

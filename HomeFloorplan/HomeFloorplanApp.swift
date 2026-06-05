@@ -18,6 +18,7 @@ struct HomeFloorplanApp: App {
     @State private var accessoryEventStore: AccessoryEventStore
     @State private var habitAnalysisService: HabitAnalysisService
     @State private var ruleEngineService: RuleEngineService
+    @State private var actionExecutionService: ActionExecutionService
 
     @AppStorage("securityMonitoredUUIDs") private var securityMonitoredUUIDsRaw: String = ""
 
@@ -36,6 +37,7 @@ struct HomeFloorplanApp: App {
             SensorAlertThreshold.self,
             AccessoryEvent.self,
             Rule.self,
+            ActionEffectivenessEvent.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -64,6 +66,7 @@ struct HomeFloorplanApp: App {
             SensorAlertThreshold.self,
             AccessoryEvent.self,
             Rule.self,
+            ActionEffectivenessEvent.self,
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         let container = (try? ModelContainer(for: schema, configurations: [config]))
@@ -80,6 +83,10 @@ struct HomeFloorplanApp: App {
         let aiSettings = AISettings()
         self._habitAnalysisService = State(initialValue: HabitAnalysisService(aiSettings: aiSettings, modelContainer: container))
         self._ruleEngineService = State(initialValue: RuleEngineService(modelContainer: container))
+        // Tracker condiviso tra AmbientalAIService (per dismiss/expiration) e ActionExecutionService
+        // (per trackExecution). Una sola istanza garantisce coerenza del dataset di efficacia.
+        let sharedTracker = ActionEffectivenessTracker(modelContainer: container)
+        self._actionExecutionService = State(initialValue: ActionExecutionService(tracker: sharedTracker, modelContainer: container))
 
         // Apply persisted idle timeout so the screensaver respects the user's setting from launch.
         let savedTimeout = UserDefaults.standard.double(forKey: "idleTimeout")
@@ -112,8 +119,12 @@ struct HomeFloorplanApp: App {
                 .environment(automationsService)
                 .environment(habitAnalysisService)
                 .environment(ruleEngineService)
+                .environment(actionExecutionService)
                 .task {
                     securityNotifier.start(monitoredUUIDsRaw: securityMonitoredUUIDsRaw)
+                    // Sprint 5B: collega il tracker condiviso a SensorLogger
+                    // così ogni campionamento chiude automaticamente le misurazioni pending.
+                    SensorLogger.shared.effectivenessTracker = actionExecutionService.tracker
                 }
                 .onChange(of: securityMonitoredUUIDsRaw) { _, newValue in
                     securityNotifier.updateMonitored(uuidsRaw: newValue)
