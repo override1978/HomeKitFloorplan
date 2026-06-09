@@ -43,11 +43,11 @@ struct AccessoriesHeroView: View {
 
     private var summaryText: String {
         let accUnit = totalAccessories == 1
-            ? String(localized: "accessories.room.accessory.singular", defaultValue: "1 accessorio")
-            : "\(totalAccessories) \(String(localized: "accessories.room.accessories.unit", defaultValue: "accessori"))"
+            ? String(localized: "accessories.room.accessory.singular", defaultValue: "1 accessory")
+            : "\(totalAccessories) \(String(localized: "accessories.room.accessories.unit", defaultValue: "accessories"))"
         let roomUnit = totalRooms == 1
-            ? "1 \(String(localized: "accessories.hero.room.singular", defaultValue: "stanza"))"
-            : "\(totalRooms) \(String(localized: "accessories.hero.room.plural", defaultValue: "stanze"))"
+            ? "1 \(String(localized: "accessories.hero.room.singular", defaultValue: "room"))"
+            : "\(totalRooms) \(String(localized: "accessories.hero.room.plural", defaultValue: "rooms"))"
         return "\(accUnit) • \(roomUnit)"
     }
 
@@ -55,13 +55,13 @@ struct AccessoriesHeroView: View {
 
     private var alertText: String? {
         if offlineCount > 0 && lowBatteryCount > 0 {
-            return "\(offlineCount) offline • \(lowBatteryCount) \(String(localized: "accessories.hero.lowBattery.short", defaultValue: "batteria"))"
+            return "\(offlineCount) offline • \(lowBatteryCount) \(String(localized: "accessories.hero.lowBattery.short", defaultValue: "low battery"))"
         }
         if offlineCount > 0 {
             return String(format: String(localized: "accessories.hero.offline", defaultValue: "%lld offline"), offlineCount)
         }
         if lowBatteryCount > 0 {
-            return String(format: String(localized: "accessories.hero.lowBattery", defaultValue: "%lld batteria scarica"), lowBatteryCount)
+            return String(format: String(localized: "accessories.hero.lowBattery", defaultValue: "%lld low battery"), lowBatteryCount)
         }
         return nil
     }
@@ -77,7 +77,7 @@ struct AccessoriesHeroView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(level.color)
 
-                Text(String(localized: "accessories.hero.title", defaultValue: "ACCESSORI"))
+                Text(String(localized: "accessories.hero.title", defaultValue: "ACCESSORIES"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -131,7 +131,7 @@ struct AccessoriesHeroView: View {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 11, weight: .medium))
                             Text(String(localized: "accessories.hero.allHealthy",
-                                        defaultValue: "Tutti i dispositivi funzionano correttamente"))
+                                        defaultValue: "All devices working correctly"))
                                 .font(.caption.weight(.medium))
                                 .lineLimit(1)
                         }

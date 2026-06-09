@@ -129,19 +129,19 @@ enum EnvironmentalAlertBuilder {
         let room = signal.roomName
         switch signal.sensorType {
         case .temperature:
-            return String(format: String(localized: "notif.env.temp.headline",     defaultValue: "Temperatura elevata in %@"),   room)
+            return String(format: String(localized: "notif.env.temp.headline",     defaultValue: "High temperature in %@"),   room)
         case .humidity:
-            return String(format: String(localized: "notif.env.humidity.headline", defaultValue: "Umidità elevata in %@"),       room)
+            return String(format: String(localized: "notif.env.humidity.headline", defaultValue: "High humidity in %@"),       room)
         case .carbonDioxide:
-            return String(format: String(localized: "notif.env.co2.headline",      defaultValue: "CO₂ elevato in %@"),           room)
+            return String(format: String(localized: "notif.env.co2.headline",      defaultValue: "High CO₂ in %@"),           room)
         case .vocDensity:
-            return String(format: String(localized: "notif.env.voc.headline",      defaultValue: "VOC elevato in %@"),           room)
+            return String(format: String(localized: "notif.env.voc.headline",      defaultValue: "High VOC in %@"),           room)
         case .airQuality:
-            return String(format: String(localized: "notif.env.air.headline",      defaultValue: "Qualità aria in calo in %@"), room)
+            return String(format: String(localized: "notif.env.air.headline",      defaultValue: "Air quality dropping in %@"), room)
         case .carbonMonoxide:
-            return String(format: String(localized: "notif.env.co.headline",       defaultValue: "CO rilevato in %@"),           room)
+            return String(format: String(localized: "notif.env.co.headline",       defaultValue: "CO detected in %@"),           room)
         case .smoke:
-            return String(format: String(localized: "notif.env.smoke.headline",    defaultValue: "Fumo rilevato in %@"),         room)
+            return String(format: String(localized: "notif.env.smoke.headline",    defaultValue: "Smoke detected in %@"),         room)
         }
     }
 
@@ -157,42 +157,42 @@ enum EnvironmentalAlertBuilder {
         switch signal.sensorType {
         case .carbonDioxide:
             return String(localized: "notif.env.co2.why",
-                          defaultValue: "Sopra i 1.000 ppm il CO₂ riduce la concentrazione cognitiva e la qualità del sonno.")
+                          defaultValue: "Above 1,000 ppm, CO₂ reduces cognitive focus and sleep quality.")
         case .humidity:
             return String(localized: "notif.env.humidity.why",
-                          defaultValue: "L'umidità prolungata sopra il 65% favorisce la formazione di muffa e acari.")
+                          defaultValue: "Sustained humidity above 65% promotes mould and mites.")
         case .temperature:
             return String(localized: "notif.env.temp.why",
-                          defaultValue: "Temperature sopra i 26°C di notte peggiorano la qualità del sonno.")
+                          defaultValue: "Temperatures above 26°C at night degrade sleep quality.")
         case .vocDensity:
             return String(localized: "notif.env.voc.why",
-                          defaultValue: "I composti organici volatili possono irritare le vie respiratorie.")
+                          defaultValue: "Volatile organic compounds can irritate the airways.")
         case .airQuality:
             return String(localized: "notif.env.air.why",
-                          defaultValue: "La qualità dell'aria influisce su benessere e concentrazione.")
+                          defaultValue: "Air quality affects wellbeing and concentration.")
         case .carbonMonoxide:
             return String(localized: "notif.env.co.why",
-                          defaultValue: "Il monossido di carbonio è inodore e potenzialmente pericoloso per la salute.")
+                          defaultValue: "Carbon monoxide is odourless and potentially dangerous.")
         case .smoke:
             return String(localized: "notif.env.smoke.why",
-                          defaultValue: "La presenza di fumo richiede attenzione immediata.")
+                          defaultValue: "Smoke presence requires immediate attention.")
         }
     }
 
     static func recommendation(for signal: EnvironmentalSignal) -> String? {
         switch signal.sensorType {
         case .carbonDioxide:
-            return String(localized: "notif.env.co2.rec",     defaultValue: "Apri una finestra per abbassare il CO₂.")
+            return String(localized: "notif.env.co2.rec",     defaultValue: "Open a window to lower CO₂.")
         case .humidity:
-            return String(localized: "notif.env.humidity.rec", defaultValue: "Attiva un deumidificatore o ventila la stanza.")
+            return String(localized: "notif.env.humidity.rec", defaultValue: "Run a dehumidifier or ventilate the room.")
         case .temperature:
-            return String(localized: "notif.env.temp.rec",    defaultValue: "Considera di abbassare la temperatura del climatizzatore.")
+            return String(localized: "notif.env.temp.rec",    defaultValue: "Consider lowering the AC temperature.")
         case .vocDensity:
-            return String(localized: "notif.env.voc.rec",     defaultValue: "Ventila la stanza e rimuovi possibili fonti di VOC.")
+            return String(localized: "notif.env.voc.rec",     defaultValue: "Ventilate the room and remove possible VOC sources.")
         case .airQuality:
-            return String(localized: "notif.env.air.rec",     defaultValue: "Attiva il purificatore d'aria o apri le finestre.")
+            return String(localized: "notif.env.air.rec",     defaultValue: "Run the air purifier or open windows.")
         case .carbonMonoxide:
-            return String(localized: "notif.env.co.rec",      defaultValue: "Aerare immediatamente l'ambiente e controllare le fonti di combustione.")
+            return String(localized: "notif.env.co.rec",      defaultValue: "Ventilate immediately and check combustion sources.")
         case .smoke:
             return nil
         }
@@ -204,7 +204,7 @@ enum EnvironmentalAlertBuilder {
 
     static func formattedPeakValue(for signal: EnvironmentalSignal) -> String {
         let value = String(format: "%.1f%@", signal.peakValue, signal.sensorType.unit)
-        let peakLabel = String(localized: "sensor.peak.label", defaultValue: "picco")
+        let peakLabel = String(localized: "sensor.peak.label", defaultValue: "peak")
         return "\(value) (\(peakLabel))"
     }
 
@@ -213,36 +213,36 @@ enum EnvironmentalAlertBuilder {
     static func headline(forSensorType type: SensorServiceType, room: String) -> String {
         switch type {
         case .temperature:
-            return String(format: String(localized: "notif.env.temp.headline",     defaultValue: "Temperatura elevata in %@"),   room)
+            return String(format: String(localized: "notif.env.temp.headline",     defaultValue: "High temperature in %@"),   room)
         case .humidity:
-            return String(format: String(localized: "notif.env.humidity.headline", defaultValue: "Umidità elevata in %@"),       room)
+            return String(format: String(localized: "notif.env.humidity.headline", defaultValue: "High humidity in %@"),       room)
         case .carbonDioxide:
-            return String(format: String(localized: "notif.env.co2.headline",      defaultValue: "CO₂ elevato in %@"),           room)
+            return String(format: String(localized: "notif.env.co2.headline",      defaultValue: "Elevated CO₂ in %@"),           room)
         case .vocDensity:
-            return String(format: String(localized: "notif.env.voc.headline",      defaultValue: "VOC elevato in %@"),           room)
+            return String(format: String(localized: "notif.env.voc.headline",      defaultValue: "Elevated VOC in %@"),           room)
         case .airQuality:
-            return String(format: String(localized: "notif.env.air.headline",      defaultValue: "Qualità aria in calo in %@"), room)
+            return String(format: String(localized: "notif.env.air.headline",      defaultValue: "Air quality declining in %@"), room)
         case .carbonMonoxide:
-            return String(format: String(localized: "notif.env.co.headline",       defaultValue: "CO rilevato in %@"),           room)
+            return String(format: String(localized: "notif.env.co.headline",       defaultValue: "CO detected in %@"),           room)
         case .smoke:
-            return String(format: String(localized: "notif.env.smoke.headline",    defaultValue: "Fumo rilevato in %@"),         room)
+            return String(format: String(localized: "notif.env.smoke.headline",    defaultValue: "Smoke detected in %@"),         room)
         }
     }
 
     static func recommendation(forSensorType type: SensorServiceType) -> String? {
         switch type {
         case .carbonDioxide:
-            return String(localized: "notif.env.co2.rec",      defaultValue: "Apri una finestra per abbassare il CO₂.")
+            return String(localized: "notif.env.co2.rec",      defaultValue: "Open a window to lower CO₂.")
         case .humidity:
-            return String(localized: "notif.env.humidity.rec", defaultValue: "Attiva un deumidificatore o ventila la stanza.")
+            return String(localized: "notif.env.humidity.rec", defaultValue: "Run a dehumidifier or ventilate the room.")
         case .temperature:
-            return String(localized: "notif.env.temp.rec",     defaultValue: "Considera di abbassare la temperatura del climatizzatore.")
+            return String(localized: "notif.env.temp.rec",     defaultValue: "Consider lowering the AC temperature.")
         case .vocDensity:
-            return String(localized: "notif.env.voc.rec",      defaultValue: "Ventila la stanza e rimuovi possibili fonti di VOC.")
+            return String(localized: "notif.env.voc.rec",      defaultValue: "Ventilate the room and remove possible VOC sources.")
         case .airQuality:
-            return String(localized: "notif.env.air.rec",      defaultValue: "Attiva il purificatore d'aria o apri le finestre.")
+            return String(localized: "notif.env.air.rec",      defaultValue: "Run the air purifier or open windows.")
         case .carbonMonoxide:
-            return String(localized: "notif.env.co.rec",       defaultValue: "Aerare immediatamente l'ambiente e controllare le fonti di combustione.")
+            return String(localized: "notif.env.co.rec",       defaultValue: "Ventilate immediately and check combustion sources.")
         case .smoke:
             return nil
         }
@@ -252,25 +252,25 @@ enum EnvironmentalAlertBuilder {
         switch type {
         case .carbonDioxide:
             return String(localized: "notif.env.co2.why",
-                          defaultValue: "Sopra i 1.000 ppm il CO₂ riduce la concentrazione cognitiva e la qualità del sonno.")
+                          defaultValue: "Above 1,000 ppm, CO₂ reduces cognitive focus and sleep quality.")
         case .humidity:
             return String(localized: "notif.env.humidity.why",
-                          defaultValue: "L'umidità prolungata sopra il 65% favorisce la formazione di muffa e acari.")
+                          defaultValue: "Sustained humidity above 65% promotes mould and mites.")
         case .temperature:
             return String(localized: "notif.env.temp.why",
-                          defaultValue: "Temperature sopra i 26°C di notte peggiorano la qualità del sonno.")
+                          defaultValue: "Temperatures above 26°C at night degrade sleep quality.")
         case .vocDensity:
             return String(localized: "notif.env.voc.why",
-                          defaultValue: "I composti organici volatili possono irritare le vie respiratorie.")
+                          defaultValue: "Volatile organic compounds can irritate the airways.")
         case .airQuality:
             return String(localized: "notif.env.air.why",
-                          defaultValue: "La qualità dell'aria influisce su benessere e concentrazione.")
+                          defaultValue: "Air quality affects wellbeing and concentration.")
         case .carbonMonoxide:
             return String(localized: "notif.env.co.why",
-                          defaultValue: "Il monossido di carbonio è inodore e potenzialmente pericoloso per la salute.")
+                          defaultValue: "Carbon monoxide is odourless and potentially dangerous.")
         case .smoke:
             return String(localized: "notif.env.smoke.why",
-                          defaultValue: "La presenza di fumo richiede attenzione immediata.")
+                          defaultValue: "Smoke presence requires immediate attention.")
         }
     }
 }

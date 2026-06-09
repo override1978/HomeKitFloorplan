@@ -74,20 +74,20 @@ enum NotificationCategory: String, Codable, CaseIterable {
 
     var localizedTitle: String {
         switch self {
-        case .environment:           return String(localized: "notif.cat.environment",    defaultValue: "Ambiente")
+        case .environment:           return String(localized: "notif.cat.environment",    defaultValue: "Environment")
         case .comfort:               return String(localized: "notif.cat.comfort",        defaultValue: "Comfort")
-        case .security:              return String(localized: "notif.cat.security",       defaultValue: "Sicurezza")
-        case .energy:                return String(localized: "notif.cat.energy",         defaultValue: "Energia")
-        case .lighting:              return String(localized: "notif.cat.lighting",       defaultValue: "Illuminazione")
-        case .presence:              return String(localized: "notif.cat.presence",       defaultValue: "Presenza")
-        case .hvac:                  return String(localized: "notif.cat.hvac",           defaultValue: "Clima")
-        case .scenes:                return String(localized: "notif.cat.scenes",         defaultValue: "Scene")
-        case .learning:              return String(localized: "notif.cat.learning",       defaultValue: "Apprendimento")
-        case .behavioralAI:          return String(localized: "notif.cat.behavioral",     defaultValue: "AI Comportamentale")
-        case .automationOpportunity: return String(localized: "notif.cat.automation",     defaultValue: "Automazione")
-        case .maintenance:           return String(localized: "notif.cat.maintenance",    defaultValue: "Manutenzione")
-        case .deviceHealth:          return String(localized: "notif.cat.deviceHealth",   defaultValue: "Dispositivi")
-        case .aiDiscovery:           return String(localized: "notif.cat.aiDiscovery",    defaultValue: "Scoperta AI")
+        case .security:              return String(localized: "notif.cat.security",       defaultValue: "Security")
+        case .energy:                return String(localized: "notif.cat.energy",         defaultValue: "Energy")
+        case .lighting:              return String(localized: "notif.cat.lighting",       defaultValue: "Lighting")
+        case .presence:              return String(localized: "notif.cat.presence",       defaultValue: "Presence")
+        case .hvac:                  return String(localized: "notif.cat.hvac",           defaultValue: "Climate")
+        case .scenes:                return String(localized: "notif.cat.scenes",         defaultValue: "Scenes")
+        case .learning:              return String(localized: "notif.cat.learning",       defaultValue: "Learning")
+        case .behavioralAI:          return String(localized: "notif.cat.behavioral",     defaultValue: "Behavioral AI")
+        case .automationOpportunity: return String(localized: "notif.cat.automation",     defaultValue: "Automation")
+        case .maintenance:           return String(localized: "notif.cat.maintenance",    defaultValue: "Maintenance")
+        case .deviceHealth:          return String(localized: "notif.cat.deviceHealth",   defaultValue: "Devices")
+        case .aiDiscovery:           return String(localized: "notif.cat.aiDiscovery",    defaultValue: "AI Discovery")
         case .weather:               return String(localized: "notif.cat.weather",        defaultValue: "Weather")
         }
     }
@@ -134,16 +134,16 @@ enum ProactiveNotificationStatus: String, Codable {
 
     var localizedLabel: String {
         switch self {
-        case .pending:      return String(localized: "notif.status.pending",      defaultValue: "In attesa")
-        case .live:         return String(localized: "notif.status.live",         defaultValue: "Attivo")
-        case .updated:      return String(localized: "notif.status.updated",      defaultValue: "Aggiornato")
-        case .acknowledged: return String(localized: "notif.status.acknowledged", defaultValue: "Visto")
-        case .actedOn:      return String(localized: "notif.status.actedOn",      defaultValue: "Eseguito")
-        case .snoozed:      return String(localized: "notif.status.snoozed",      defaultValue: "Rimandato")
-        case .dismissed:    return String(localized: "notif.status.dismissed",    defaultValue: "Ignorato")
-        case .resolved:     return String(localized: "notif.status.resolved",     defaultValue: "Risolto")
-        case .archived:     return String(localized: "notif.status.archived",     defaultValue: "Archiviato")
-        case .expired:      return String(localized: "notif.status.expired",      defaultValue: "Scaduto")
+        case .pending:      return String(localized: "notif.status.pending",      defaultValue: "Pending")
+        case .live:         return String(localized: "notif.status.live",         defaultValue: "Active")
+        case .updated:      return String(localized: "notif.status.updated",      defaultValue: "Updated")
+        case .acknowledged: return String(localized: "notif.status.acknowledged", defaultValue: "Seen")
+        case .actedOn:      return String(localized: "notif.status.actedOn",      defaultValue: "Done")
+        case .snoozed:      return String(localized: "notif.status.snoozed",      defaultValue: "Snoozed")
+        case .dismissed:    return String(localized: "notif.status.dismissed",    defaultValue: "Dismissed")
+        case .resolved:     return String(localized: "notif.status.resolved",     defaultValue: "Resolved")
+        case .archived:     return String(localized: "notif.status.archived",     defaultValue: "Archived")
+        case .expired:      return String(localized: "notif.status.expired",      defaultValue: "Expired")
         }
     }
 }
@@ -163,9 +163,9 @@ enum NotificationTrend: String, Codable {
 
     var localizedLabel: String {
         switch self {
-        case .rising:  return String(localized: "notif.trend.rising",  defaultValue: "In aumento")
-        case .stable:  return String(localized: "notif.trend.stable",  defaultValue: "Stabile")
-        case .falling: return String(localized: "notif.trend.falling", defaultValue: "In calo")
+        case .rising:  return String(localized: "notif.trend.rising",  defaultValue: "Rising")
+        case .stable:  return String(localized: "notif.trend.stable",  defaultValue: "Stable")
+        case .falling: return String(localized: "notif.trend.falling", defaultValue: "Falling")
         }
     }
 }

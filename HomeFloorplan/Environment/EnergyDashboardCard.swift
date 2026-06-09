@@ -20,7 +20,7 @@ struct EnergyDashboardCard: View {
         var byRoom: [String: (hours: Double, topName: String, topHours: Double)] = [:]
         for r in records where r.totalHoursToday > 0 {
             let room = r.roomName.isEmpty
-                ? String(localized: "energy.room.unknown", defaultValue: "Stanza sconosciuta")
+                ? String(localized: "energy.room.unknown", defaultValue: "Unknown Room")
                 : r.roomName
             var entry = byRoom[room] ?? (hours: 0, topName: r.accessoryName, topHours: 0)
             entry.hours += r.totalHoursToday
@@ -70,21 +70,21 @@ struct EnergyDashboardCard: View {
             Image(systemName: "bolt.fill")
                 .foregroundStyle(.yellow)
                 .font(.subheadline.weight(.semibold))
-            Text(String(localized: "energy.card.title", defaultValue: "Consumo Energetico"))
+            Text(String(localized: "energy.card.title", defaultValue: "Energy Consumption"))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
             Spacer()
             if !isLoading {
                 if anomalyCount > 0 {
                     Label(
-                        String(format: String(localized: "energy.card.anomalies", defaultValue: "%d anomali"), anomalyCount),
+                        String(format: String(localized: "energy.card.anomalies", defaultValue: "%d anomalies"), anomalyCount),
                         systemImage: "exclamationmark.circle.fill"
                     )
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.orange)
                 } else {
                     let hours = String(format: "%.1fh", totalHoursToday)
-                    Text(String(format: String(localized: "energy.card.totalToday", defaultValue: "%@ oggi"), hours))
+                    Text(String(format: String(localized: "energy.card.totalToday", defaultValue: "%@ today"), hours))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -98,7 +98,7 @@ struct EnergyDashboardCard: View {
         HStack {
             ProgressView()
                 .scaleEffect(0.8)
-            Text(String(localized: "energy.card.loading", defaultValue: "Analisi consumi…"))
+            Text(String(localized: "energy.card.loading", defaultValue: "Analysing usage…"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -108,7 +108,7 @@ struct EnergyDashboardCard: View {
     }
 
     private var emptyRow: some View {
-        Text(String(localized: "energy.card.empty", defaultValue: "Dati non ancora disponibili. Verranno calcolati dopo alcuni giorni di utilizzo."))
+        Text(String(localized: "energy.card.empty", defaultValue: "No data yet. Usage will be calculated after a few days of use."))
             .font(.caption)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)

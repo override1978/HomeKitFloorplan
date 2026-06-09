@@ -21,10 +21,10 @@ struct AutomationsView: View {
 
         var label: String {
             switch self {
-            case .all:      return String(localized: "filter.all",      defaultValue: "Tutte")
+            case .all:      return String(localized: "filter.all",      defaultValue: "All")
             case .timer:    return String(localized: "filter.timer",    defaultValue: "Timer")
-            case .event:    return String(localized: "filter.event",    defaultValue: "Evento")
-            case .location: return String(localized: "filter.location", defaultValue: "Posizione")
+            case .event:    return String(localized: "filter.event",    defaultValue: "Event")
+            case .location: return String(localized: "filter.location", defaultValue: "Location")
             }
         }
 
@@ -54,7 +54,7 @@ struct AutomationsView: View {
                 automationsList
             }
         }
-        .navigationTitle(String(localized: "automations.navigationTitle", defaultValue: "Automazioni"))
+        .navigationTitle(String(localized: "automations.navigationTitle", defaultValue: "Automations"))
         .navigationBarTitleDisplayMode(.large)
         .onAppear {
             automationsService.refresh()
@@ -62,7 +62,7 @@ struct AutomationsView: View {
         .refreshable {
             automationsService.refresh()
         }
-        .alert(String(localized: "alert.error.title", defaultValue: "Errore"),
+        .alert(String(localized: "alert.error.title", defaultValue: "Error"),
                isPresented: Binding(
                 get: { toggleError != nil },
                 set: { if !$0 { toggleError = nil } }
@@ -78,9 +78,9 @@ struct AutomationsView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label(String(localized: "automations.empty.title", defaultValue: "Nessuna automazione"), systemImage: "gearshape.2")
+            Label(String(localized: "automations.empty.title", defaultValue: "No Automations"), systemImage: "gearshape.2")
         } description: {
-            Text(String(localized: "automations.empty.description", defaultValue: "Non hai configurato automazioni in HomeKit. Puoi crearle dall'app Casa di Apple."))
+            Text(String(localized: "automations.empty.description", defaultValue: "No automations configured in HomeKit. Create them from the Apple Home app."))
         }
     }
 
@@ -107,7 +107,7 @@ struct AutomationsView: View {
                     automationRow(item)
                 }
             } footer: {
-                Text("\(filtered.count) \(String(localized: "automations.footer.count", defaultValue: "automazioni"))")
+                Text("\(filtered.count) \(String(localized: "automations.footer.count", defaultValue: "automations"))")
                     .font(.caption)
             }
         }
@@ -159,7 +159,7 @@ struct AutomationsView: View {
                     .lineLimit(2)
 
                 if item.actionCount > 0 {
-                    Text("\(item.actionCount) \(item.actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "azione") : String(localized: "count.action.plural", defaultValue: "azioni"))")
+                    Text("\(item.actionCount) \(item.actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "action") : String(localized: "count.action.plural", defaultValue: "actions"))")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -182,7 +182,7 @@ struct AutomationsView: View {
                             do {
                                 try await automationsService.setEnabled(newValue, for: item)
                             } catch {
-                                toggleError = "\(String(localized: "automations.toggleError.prefix", defaultValue: "Impossibile modificare l'automazione:")): \(error.localizedDescription)"
+                                toggleError = "\(String(localized: "automations.toggleError.prefix", defaultValue: "Cannot change automation:")): \(error.localizedDescription)"
                             }
                         }
                     }

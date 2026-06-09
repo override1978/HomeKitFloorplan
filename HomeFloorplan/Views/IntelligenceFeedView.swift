@@ -15,13 +15,13 @@ private enum FeedFilter: String, CaseIterable, Identifiable {
 
     var localizedLabel: String {
         switch self {
-        case .all:         return String(localized: "feed.filter.all",         defaultValue: "Tutti")
-        case .live:        return String(localized: "feed.filter.live",        defaultValue: "Attivi")
+        case .all:         return String(localized: "feed.filter.all",         defaultValue: "All")
+        case .live:        return String(localized: "feed.filter.live",        defaultValue: "Active")
         case .aiLearning:  return String(localized: "feed.filter.ai",          defaultValue: "AI")
-        case .environment: return String(localized: "feed.filter.environment", defaultValue: "Ambiente")
-        case .security:    return String(localized: "feed.filter.security",    defaultValue: "Sicurezza")
-        case .automation:  return String(localized: "feed.filter.automation",  defaultValue: "Automazioni")
-        case .energy:      return String(localized: "feed.filter.energy",      defaultValue: "Energia")
+        case .environment: return String(localized: "feed.filter.environment", defaultValue: "Environment")
+        case .security:    return String(localized: "feed.filter.security",    defaultValue: "Security")
+        case .automation:  return String(localized: "feed.filter.automation",  defaultValue: "Automations")
+        case .energy:      return String(localized: "feed.filter.energy",      defaultValue: "Energy")
         }
     }
 
@@ -57,10 +57,10 @@ private enum FeedDateSection: String, CaseIterable {
 
     var localizedLabel: String {
         switch self {
-        case .today:     return String(localized: "feed.section.today",     defaultValue: "Oggi")
-        case .yesterday: return String(localized: "feed.section.yesterday", defaultValue: "Ieri")
-        case .thisWeek:  return String(localized: "feed.section.thisWeek",  defaultValue: "Questa settimana")
-        case .earlier:   return String(localized: "feed.section.earlier",   defaultValue: "In precedenza")
+        case .today:     return String(localized: "feed.section.today",     defaultValue: "Today")
+        case .yesterday: return String(localized: "feed.section.yesterday", defaultValue: "Yesterday")
+        case .thisWeek:  return String(localized: "feed.section.thisWeek",  defaultValue: "This Week")
+        case .earlier:   return String(localized: "feed.section.earlier",   defaultValue: "Earlier")
         }
     }
 
@@ -120,7 +120,7 @@ struct IntelligenceFeedView: View {
             }
             .padding(.bottom, 40)
         }
-        .navigationTitle(String(localized: "feed.nav.title", defaultValue: "Diario di Casa"))
+        .navigationTitle(String(localized: "feed.nav.title", defaultValue: "Home Diary"))
         .navigationBarTitleDisplayMode(.large)
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
@@ -214,11 +214,11 @@ struct IntelligenceFeedView: View {
             Image(systemName: "clock.badge.questionmark")
                 .font(.system(size: 44))
                 .foregroundStyle(.secondary.opacity(0.5))
-            Text(String(localized: "feed.empty.title", defaultValue: "Nessun evento"))
+            Text(String(localized: "feed.empty.title", defaultValue: "No Events"))
                 .font(.headline)
                 .foregroundStyle(.primary)
             Text(String(localized: "feed.empty.subtitle",
-                        defaultValue: "Il diario si popolerà man mano che l'AI osserva la tua casa."))
+                        defaultValue: "The diary will fill up as the AI observes your home."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -395,7 +395,7 @@ private struct TimelineEventRow: View {
                 .font(.caption2)
                 .foregroundStyle(color)
             Text(String(format: String(localized: "feed.confidence.pct",
-                                       defaultValue: "Confidenza %d%%"), pct))
+                                       defaultValue: "Confidence %d%%"), pct))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -433,13 +433,13 @@ private struct TimelineEventRow: View {
                 HStack(spacing: 24) {
                     if let cur = notification.currentValue {
                         valueChip(
-                            label: String(localized: "feed.row.current", defaultValue: "Attuale"),
+                            label: String(localized: "feed.row.current", defaultValue: "Current"),
                             value: cur
                         )
                     }
                     if let peak = notification.peakValue {
                         valueChip(
-                            label: String(localized: "feed.row.peak", defaultValue: "Picco"),
+                            label: String(localized: "feed.row.peak", defaultValue: "Peak"),
                             value: peak
                         )
                     }
@@ -477,7 +477,7 @@ private struct TimelineEventRow: View {
     private var explainabilityPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(
-                String(localized: "feed.why.title", defaultValue: "Perché questo evento?"),
+                String(localized: "feed.why.title", defaultValue: "Why this event?"),
                 systemImage: "questionmark.circle"
             )
             .font(.caption.weight(.semibold))
@@ -492,7 +492,7 @@ private struct TimelineEventRow: View {
 
             if let score = notification.score {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "feed.why.aiScore", defaultValue: "Valutazione AI"))
+                    Text(String(localized: "feed.why.aiScore", defaultValue: "AI Score"))
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
@@ -511,11 +511,11 @@ private struct TimelineEventRow: View {
 
     private func scoreBreakdown(_ score: IntelligenceScore) -> some View {
         VStack(spacing: 5) {
-            scoreBar(label: String(localized: "feed.score.confidence",    defaultValue: "Confidenza"),   value: score.confidence)
-            scoreBar(label: String(localized: "feed.score.relevance",     defaultValue: "Rilevanza"),    value: score.relevance)
-            scoreBar(label: String(localized: "feed.score.urgency",       defaultValue: "Urgenza"),      value: score.urgency)
-            scoreBar(label: String(localized: "feed.score.actionability", defaultValue: "Azionabilità"), value: score.actionability)
-            scoreBar(label: String(localized: "feed.score.novelty",       defaultValue: "Novità"),       value: score.novelty)
+            scoreBar(label: String(localized: "feed.score.confidence",    defaultValue: "Confidence"),    value: score.confidence)
+            scoreBar(label: String(localized: "feed.score.relevance",     defaultValue: "Relevance"),     value: score.relevance)
+            scoreBar(label: String(localized: "feed.score.urgency",       defaultValue: "Urgency"),       value: score.urgency)
+            scoreBar(label: String(localized: "feed.score.actionability", defaultValue: "Actionability"), value: score.actionability)
+            scoreBar(label: String(localized: "feed.score.novelty",       defaultValue: "Novelty"),       value: score.novelty)
         }
     }
 
@@ -558,7 +558,7 @@ private struct TimelineEventRow: View {
         HStack(spacing: 8) {
             Button(action: onActedOn) {
                 Label(
-                    String(localized: "feed.action.done", defaultValue: "Fatto"),
+                    String(localized: "feed.action.done", defaultValue: "Done"),
                     systemImage: "checkmark"
                 )
                 .font(.subheadline.weight(.medium))
@@ -569,7 +569,7 @@ private struct TimelineEventRow: View {
             .controlSize(.small)
 
             Button(action: onSnooze) {
-                Text(String(localized: "feed.action.later", defaultValue: "Più tardi"))
+                Text(String(localized: "feed.action.later", defaultValue: "Later"))
                     .font(.subheadline)
             }
             .buttonStyle(.bordered)
@@ -577,7 +577,7 @@ private struct TimelineEventRow: View {
             .controlSize(.small)
 
             Button(action: onDismiss) {
-                Text(String(localized: "feed.action.dismiss", defaultValue: "Ignora"))
+                Text(String(localized: "feed.action.dismiss", defaultValue: "Dismiss"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }

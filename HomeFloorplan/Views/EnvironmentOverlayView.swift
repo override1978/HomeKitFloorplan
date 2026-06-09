@@ -251,13 +251,13 @@ struct EnvironmentContextDashboard: View {
             if envVM.isLoading {
                 HStack(spacing: 8) {
                     ProgressView().scaleEffect(0.8)
-                    Text(String(localized: "environment.panel.loading", defaultValue: "Caricamento dati…"))
+                    Text(String(localized: "environment.panel.loading", defaultValue: "Loading data…"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .panelCard(accentColor: accent)
             } else if envVM.rooms.isEmpty {
-                Label(String(localized: "environment.panel.noData", defaultValue: "Nessun dato ambientale disponibile"), systemImage: "thermometer")
+                Label(String(localized: "environment.panel.noData", defaultValue: "No environmental data available"), systemImage: "thermometer")
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .panelCard(accentColor: .secondary)
@@ -304,7 +304,7 @@ struct EnvironmentContextDashboard: View {
                 Image(systemName: heroIcon)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(envVM.globalColor)
-                Text(String(localized: "environment.panel.healthTitle", defaultValue: "Salute Casa"))
+                Text(String(localized: "environment.panel.healthTitle", defaultValue: "Home Health"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -341,8 +341,8 @@ struct EnvironmentContextDashboard: View {
                     let alertCount = envVM.rooms.filter { $0.worstUrgency != .normal }.count
                     if alertCount > 0 {
                         Label(alertCount == 1
-                              ? String(localized: "environment.panel.roomsToCheck.one",  defaultValue: "1 stanza da controllare")
-                              : String(format: String(localized: "environment.panel.roomsToCheck.many", defaultValue: "%lld stanze da controllare"), alertCount),
+                              ? String(localized: "environment.panel.roomsToCheck.one",  defaultValue: "1 room to check")
+                              : String(format: String(localized: "environment.panel.roomsToCheck.many", defaultValue: "%lld rooms to check"), alertCount),
                               systemImage: "bell.badge.fill")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(Color.orange)
@@ -350,7 +350,7 @@ struct EnvironmentContextDashboard: View {
                             .padding(.vertical, 5)
                             .background(Color.orange.opacity(0.10), in: Capsule())
                     } else {
-                        Label(String(localized: "environment.panel.allNormal", defaultValue: "Tutto nella norma"), systemImage: "checkmark.circle.fill")
+                        Label(String(localized: "environment.panel.allNormal", defaultValue: "All Normal"), systemImage: "checkmark.circle.fill")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(accent)
                             .padding(.horizontal, 10)
@@ -413,13 +413,13 @@ struct EnvironmentContextDashboard: View {
         return VStack(alignment: .leading, spacing: 10) {
             cardSectionLabel(
                 rows.isEmpty
-                    ? String(localized: "environment.panel.noWarnings", defaultValue: "NESSUN AVVISO")
-                    : String(localized: "environment.panel.warnings",   defaultValue: "AVVISI"),
+                    ? String(localized: "environment.panel.noWarnings", defaultValue: "NO ALERTS")
+                    : String(localized: "environment.panel.warnings",   defaultValue: "ALERTS"),
                 icon: rows.isEmpty ? "checkmark.shield.fill" : "exclamationmark.triangle.fill"
             )
 
             if rows.isEmpty {
-                Label(String(localized: "environment.panel.allSensorsNormal", defaultValue: "Tutti i sensori nella norma"), systemImage: "checkmark.circle.fill")
+                Label(String(localized: "environment.panel.allSensorsNormal", defaultValue: "All sensors normal"), systemImage: "checkmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(accent)
             } else {
@@ -486,7 +486,7 @@ struct EnvironmentContextDashboard: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(room.roomName)
                         .font(.caption.weight(.semibold))
-                    Text(String(localized: "environment.sensor.normal", defaultValue: "Nella norma"))
+                    Text(String(localized: "environment.sensor.normal", defaultValue: "Normal"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -512,11 +512,11 @@ struct EnvironmentContextDashboard: View {
         let isHighlightedRoom = sensor.roomName == highlightedRoomName
         let cardAccent: Color = sensor.urgency == .danger ? .red : .orange
         let actionVerb = sensor.urgency == .danger
-            ? String(localized: "environment.action.checkNow", defaultValue: "Controlla subito")
-            : String(localized: "environment.action.verify",   defaultValue: "Verifica")
+            ? String(localized: "environment.action.checkNow", defaultValue: "Check Now")
+            : String(localized: "environment.action.verify",   defaultValue: "Verify")
 
         return VStack(alignment: .leading, spacing: 12) {
-            cardSectionLabel(String(localized: "environment.panel.suggestedAction", defaultValue: "AZIONE CONSIGLIATA"), icon: "arrow.right.circle.fill")
+            cardSectionLabel(String(localized: "environment.panel.suggestedAction", defaultValue: "SUGGESTED ACTION"), icon: "arrow.right.circle.fill")
 
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
@@ -532,7 +532,7 @@ struct EnvironmentContextDashboard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(actionVerb) \(sensor.serviceType.displayName)")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
-                    Text("\(sensor.formattedValue) in \(sensor.roomName)" + (isHighlightedRoom ? " · " + String(localized: "environment.panel.selectedRoom", defaultValue: "stanza selezionata") : ""))
+                    Text("\(sensor.formattedValue) in \(sensor.roomName)" + (isHighlightedRoom ? " · " + String(localized: "environment.panel.selectedRoom", defaultValue: "selected room") : ""))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -542,7 +542,7 @@ struct EnvironmentContextDashboard: View {
         .panelCard(accentColor: cardAccent)
     }
 
-    // MARK: Card 3b — AI Azioni Consigliate
+    // MARK: Card 3b — AI Recommended Actions
 
     /// Card shown when AI has produced insights with executable next-actions.
     /// Shows up to 3 insights (one per row) with their action chips.
@@ -562,7 +562,7 @@ struct EnvironmentContextDashboard: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.blue)
-                Text(String(localized: "environment.panel.aiActions", defaultValue: "AI AZIONI CONSIGLIATE"))
+                Text(String(localized: "environment.panel.aiActions", defaultValue: "AI SUGGESTED ACTIONS"))
                     .font(.system(size: 9, weight: .semibold))
                     .tracking(0.5)
                     .foregroundStyle(.secondary)
@@ -627,28 +627,28 @@ struct EnvironmentContextDashboard: View {
         let summaryText: String = {
             if dangerCount > 0 {
                 return dangerCount == 1
-                    ? String(localized: "environment.summary.oneCritical",  defaultValue: "1 sensore critico — attenzione immediata")
-                    : String(format: String(localized: "environment.summary.manyCritical", defaultValue: "%lld sensori critici — attenzione immediata"), dangerCount)
+                    ? String(localized: "environment.summary.oneCritical",  defaultValue: "1 critical sensor — immediate attention")
+                    : String(format: String(localized: "environment.summary.manyCritical", defaultValue: "%lld critical sensors — immediate attention"), dangerCount)
             } else if warningCount > 0 {
                 return warningCount == 1
-                    ? String(localized: "environment.summary.oneWarning",   defaultValue: "1 sensore in attenzione")
-                    : String(format: String(localized: "environment.summary.manyWarning",  defaultValue: "%lld sensori in attenzione"), warningCount)
+                    ? String(localized: "environment.summary.oneWarning",   defaultValue: "1 sensor needs attention")
+                    : String(format: String(localized: "environment.summary.manyWarning",  defaultValue: "%lld sensors need attention"), warningCount)
             } else if total > 0 {
-                return String(format: String(localized: "environment.summary.allNormal",  defaultValue: "Tutti i %lld sensori nella norma"), total)
+                return String(format: String(localized: "environment.summary.allNormal",  defaultValue: "All %lld sensors normal"), total)
             } else {
-                return String(localized: "environment.summary.noSensors",   defaultValue: "Nessun sensore rilevato")
+                return String(localized: "environment.summary.noSensors",   defaultValue: "No sensors detected")
             }
         }()
 
         return VStack(alignment: .leading, spacing: 10) {
-            cardSectionLabel(String(localized: "environment.panel.sensorSummary", defaultValue: "RIEPILOGO SENSORI"), icon: "sensor.fill")
+            cardSectionLabel(String(localized: "environment.panel.sensorSummary", defaultValue: "SENSOR SUMMARY"), icon: "sensor.fill")
 
             HStack(spacing: 0) {
-                summaryCount(dangerCount,  color: .red,    label: String(localized: "environment.summary.label.critical",  defaultValue: "critico"))
+                summaryCount(dangerCount,  color: .red,    label: String(localized: "environment.summary.label.critical",  defaultValue: "critical"))
                 Divider().frame(height: 36)
-                summaryCount(warningCount, color: .orange, label: String(localized: "environment.summary.label.warning",   defaultValue: "attenzione"))
+                summaryCount(warningCount, color: .orange, label: String(localized: "environment.summary.label.warning",   defaultValue: "warning"))
                 Divider().frame(height: 36)
-                summaryCount(normalCount,  color: accent,  label: String(localized: "environment.summary.label.normal",    defaultValue: "normale"))
+                summaryCount(normalCount,  color: accent,  label: String(localized: "environment.summary.label.normal",    defaultValue: "normal"))
             }
 
             Text(summaryText)
@@ -809,7 +809,7 @@ private struct AIActionChip: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(color)
                     }
-                    Text(state == .done ? "Fatto" : state == .error ? "Errore" : action.label)
+                    Text(state == .done ? "Done" : state == .error ? "Error" : action.label)
                         .font(.caption.weight(.medium))
                         .lineLimit(1)
                         .foregroundStyle(state == .done ? .green : state == .error ? .red : color)

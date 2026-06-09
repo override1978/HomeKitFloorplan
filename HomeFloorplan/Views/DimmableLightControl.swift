@@ -93,7 +93,7 @@ struct DimmableLightControl: View {
     
     private var slider: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(String(localized: "light.label.brightness", defaultValue: "Luminosità"))
+            Text(String(localized: "light.label.brightness", defaultValue: "Brightness"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             

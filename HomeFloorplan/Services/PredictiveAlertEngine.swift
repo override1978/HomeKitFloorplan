@@ -76,17 +76,17 @@ enum PredictiveAlertEngine {
         if hoursUntil > 0 {
             let h        = max(1, Int(hoursUntil.rounded()))
             let hourUnit = h == 1
-                ? String(localized: "predictive.hour",  defaultValue: "ora")
-                : String(localized: "predictive.hours", defaultValue: "ore")
+                ? String(localized: "predictive.hour",  defaultValue: "hour")
+                : String(localized: "predictive.hours", defaultValue: "hours")
             return String(
                 format: String(localized: "predictive.alert.upcoming",
-                               defaultValue: "Tra circa %lld %@ è probabile che %@ superi i valori normali di %@ (come ogni %@)."),
+                               defaultValue: "In about %lld %@ it is likely that %@ will exceed normal levels of %@ (as every %@)."),
                 Int64(h), hourUnit, pattern.roomName, sensorName, weekdayName
             )
         } else {
             return String(
                 format: String(localized: "predictive.alert.inProgress",
-                               defaultValue: "%@ tende ad avere %@ elevato in questo momento ogni %@."),
+                               defaultValue: "%@ tends to have high %@ at this time every %@."),
                 pattern.roomName, sensorName, weekdayName
             )
         }
@@ -94,10 +94,10 @@ enum PredictiveAlertEngine {
 
     private static func localizedSensorName(_ raw: String) -> String {
         switch raw {
-        case "temperature":   return String(localized: "sensor.name.temperature",   defaultValue: "temperatura")
-        case "humidity":      return String(localized: "sensor.name.humidity",       defaultValue: "umidità")
+        case "temperature":   return String(localized: "sensor.name.temperature",   defaultValue: "temperature")
+        case "humidity":      return String(localized: "sensor.name.humidity",       defaultValue: "humidity")
         case "carbonDioxide": return String(localized: "sensor.name.carbonDioxide",  defaultValue: "CO\u{2082}")
-        case "airQuality":    return String(localized: "sensor.name.airQuality",     defaultValue: "qualità dell'aria")
+        case "airQuality":    return String(localized: "sensor.name.airQuality",     defaultValue: "air quality")
         case "vocDensity":    return String(localized: "sensor.name.vocDensity",     defaultValue: "VOC")
         default:              return raw
         }

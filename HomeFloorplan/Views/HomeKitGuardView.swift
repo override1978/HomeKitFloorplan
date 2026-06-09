@@ -71,7 +71,7 @@ struct HomeKitGuardView<Content: View>: View {
                     }
                     
                     if loadingTooLong {
-                        Text(String(localized: "homekit.loading.slow", defaultValue: "Sta richiedendo più del solito. Verifica che HomeKit sia attivo nelle Impostazioni iOS."))
+                        Text(String(localized: "homekit.loading.slow", defaultValue: "Taking longer than usual. Make sure HomeKit is enabled in iOS Settings."))
                             .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.9))
                             .multilineTextAlignment(.center)
@@ -83,7 +83,7 @@ struct HomeKitGuardView<Content: View>: View {
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "gearshape.fill")
-                                Text(String(localized: "homekit.action.openSettings", defaultValue: "Apri Impostazioni"))
+                                Text(String(localized: "homekit.action.openSettings", defaultValue: "Open Settings"))
                             }
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Color(red: 0.95, green: 0.30, blue: 0.25))
@@ -109,10 +109,10 @@ struct HomeKitGuardView<Content: View>: View {
                 .foregroundStyle(BrandColor.primary)
             
             VStack(spacing: 12) {
-                Text(String(localized: "homekit.denied.title", defaultValue: "Accesso a HomeKit non concesso"))
+                Text(String(localized: "homekit.denied.title", defaultValue: "HomeKit access not granted"))
                     .font(.title2.weight(.semibold))
 
-                Text(String(localized: "homekit.denied.message", defaultValue: "Per visualizzare e controllare i tuoi accessori, HomeFloorplan ha bisogno dell'accesso a HomeKit. Puoi concederlo dalle Impostazioni iOS in qualsiasi momento."))
+                Text(String(localized: "homekit.denied.message", defaultValue: "To view and control your accessories, HomeFloorplan needs access to HomeKit. You can grant it from iOS Settings at any time."))
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -124,7 +124,7 @@ struct HomeKitGuardView<Content: View>: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "gearshape.fill")
-                    Text(String(localized: "homekit.action.openSettings", defaultValue: "Apri Impostazioni"))
+                    Text(String(localized: "homekit.action.openSettings", defaultValue: "Open Settings"))
                 }
                 .font(.body.weight(.semibold))
                 .padding(.horizontal, 24)

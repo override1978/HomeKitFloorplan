@@ -101,24 +101,24 @@ struct SidebarView: View {
                     Button {
                         showingNewFloorplan = true
                     } label: {
-                        Label(String(localized: "sidebar.newFloorplan", defaultValue: "Nuova planimetria"), systemImage: "plus.rectangle.on.rectangle")
+                        Label(String(localized: "sidebar.newFloorplan", defaultValue: "New Floorplan"), systemImage: "plus.rectangle.on.rectangle")
                             .foregroundStyle(.tint)
                     }
                     .buttonStyle(.plain)
                     NavigationLink(value: SidebarSelection.allFloorplans) {
-                        Label(String(localized: "sidebar.allFloorplans", defaultValue: "Tutte le planimetrie"), systemImage: "rectangle.stack")
+                        Label(String(localized: "sidebar.allFloorplans", defaultValue: "All Floorplans"), systemImage: "rectangle.stack")
                     }
                     ForEach(pinnedFloorplans) { floorplan in
                         pinnedRow(floorplan)
                     }
                 } label: {
-                    Text(String(localized: "sidebar.section.floorplans", defaultValue: "Planimetrie"))
+                    Text(String(localized: "sidebar.section.floorplans", defaultValue: "Floorplans"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
             } footer: {
                 if pinnedFloorplans.isEmpty && floorplansExpanded {
-                    Text(String(localized: "sidebar.pinned.empty.hint", defaultValue: "Vai in \"Tutte le planimetrie\", tieni premuto su una e scegli \"Aggiungi ad Accesso rapido\"."))
+                    Text(String(localized: "sidebar.pinned.empty.hint", defaultValue: "Go to \"All Floorplans\", long-press one and choose \"Add to Quick Access\"."))
                 }
             }
 
@@ -126,18 +126,18 @@ struct SidebarView: View {
             Section {
                 DisclosureGroup(isExpanded: $analysisExpanded) {
                     NavigationLink(value: SidebarSelection.environment) {
-                        Label(String(localized: "sidebar.environment", defaultValue: "Ambiente"), systemImage: "leaf.fill")
+                        Label(String(localized: "sidebar.environment", defaultValue: "Environment"), systemImage: "leaf.fill")
                     }
                     NavigationLink(value: SidebarSelection.security) {
-                        Label(String(localized: "sidebar.security", defaultValue: "Sicurezza"), systemImage: "shield.lefthalf.filled")
+                        Label(String(localized: "sidebar.security", defaultValue: "Security"), systemImage: "shield.lefthalf.filled")
                     }
                     if isAIEnabled {
                         NavigationLink(value: SidebarSelection.homeIntelligence) {
-                            Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligenza"), systemImage: "sparkles.rectangle.stack")
+                            Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligence"), systemImage: "sparkles.rectangle.stack")
                         }
                     }
                 } label: {
-                    Text(String(localized: "sidebar.section.analysis", defaultValue: "Analisi"))
+                    Text(String(localized: "sidebar.section.analysis", defaultValue: "Analysis"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
@@ -147,19 +147,19 @@ struct SidebarView: View {
             Section {
                 DisclosureGroup(isExpanded: $scenesExpanded) {
                     NavigationLink(value: SidebarSelection.allAccessories) {
-                        Label(String(localized: "sidebar.accessories", defaultValue: "Accessori"), systemImage: "square.grid.2x2")
+                        Label(String(localized: "sidebar.accessories", defaultValue: "Accessories"), systemImage: "square.grid.2x2")
                     }
                     NavigationLink(value: SidebarSelection.scenes) {
-                        Label(String(localized: "sidebar.scenes", defaultValue: "Scene"), systemImage: "wand.and.sparkles")
+                        Label(String(localized: "sidebar.scenes", defaultValue: "Scenes"), systemImage: "wand.and.sparkles")
                     }
                     NavigationLink(value: SidebarSelection.automations) {
-                        Label(String(localized: "sidebar.automations", defaultValue: "Automazioni"), systemImage: "gearshape.2")
+                        Label(String(localized: "sidebar.automations", defaultValue: "Automations"), systemImage: "gearshape.2")
                     }
                     NavigationLink(value: SidebarSelection.activityLog) {
-                        Label(String(localized: "sidebar.activityLog", defaultValue: "Log Attività"), systemImage: "clock.arrow.circlepath")
+                        Label(String(localized: "sidebar.activityLog", defaultValue: "Activity Log"), systemImage: "clock.arrow.circlepath")
                     }
                 } label: {
-                    Text(String(localized: "sidebar.section.scenesAndAutomations", defaultValue: "Scene & Automazioni"))
+                    Text(String(localized: "sidebar.section.scenesAndAutomations", defaultValue: "Scenes & Automations"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
@@ -169,13 +169,13 @@ struct SidebarView: View {
             Section {
                 DisclosureGroup(isExpanded: $settingsExpanded) {
                     NavigationLink(value: SidebarSelection.settings) {
-                        Label(String(localized: "sidebar.settings", defaultValue: "Impostazioni"), systemImage: "gearshape")
+                        Label(String(localized: "sidebar.settings", defaultValue: "Settings"), systemImage: "gearshape")
                     }
                     NavigationLink(value: SidebarSelection.debugHomeKit) {
                         Label("Debug HomeKit", systemImage: "stethoscope")
                     }
                 } label: {
-                    Text(String(localized: "sidebar.section.settings", defaultValue: "Impostazioni"))
+                    Text(String(localized: "sidebar.section.settings", defaultValue: "Settings"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
@@ -203,18 +203,18 @@ struct SidebarView: View {
                 }
             })
         }
-        .alert(String(localized: "sidebar.alert.deleteFloorplan.title", defaultValue: "Eliminare la planimetria?"),
+        .alert(String(localized: "sidebar.alert.deleteFloorplan.title", defaultValue: "Delete Floorplan?"),
                isPresented: Binding(
                 get: { pendingDeleteFloorplan != nil },
                 set: { if !$0 { pendingDeleteFloorplan = nil } }
                ),
                presenting: pendingDeleteFloorplan) { floorplan in
-            Button(String(localized: "sidebar.alert.deleteFloorplan.confirm", defaultValue: "Elimina"), role: .destructive) {
+            Button(String(localized: "sidebar.alert.deleteFloorplan.confirm", defaultValue: "Delete"), role: .destructive) {
                 deleteFloorplan(floorplan)
             }
-            Button(String(localized: "sidebar.alert.cancel", defaultValue: "Annulla"), role: .cancel) {}
+            Button(String(localized: "sidebar.alert.cancel", defaultValue: "Cancel"), role: .cancel) {}
         } message: { _ in
-            Text(String(localized: "sidebar.alert.deleteFloorplan.message", defaultValue: "L'immagine e tutti i marker piazzati saranno persi. Gli accessori restano in HomeKit."))
+            Text(String(localized: "sidebar.alert.deleteFloorplan.message", defaultValue: "The image and all placed markers will be lost. Accessories remain in HomeKit."))
         }
     }
 
@@ -232,7 +232,7 @@ struct SidebarView: View {
                 Text("Home Floorplan")
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.primary)
-                Text(String(localized: "splash.tagline", defaultValue: "La tua casa, a colpo d'occhio"))
+                Text(String(localized: "splash.tagline", defaultValue: "Your home, at a glance"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -259,7 +259,7 @@ struct SidebarView: View {
                             .font(.subheadline)
 
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(String(localized: "settings.homekit.activeHome", defaultValue: "Casa attiva"))
+                            Text(String(localized: "settings.homekit.activeHome", defaultValue: "Active Home"))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                             Text(home.name)
@@ -315,25 +315,25 @@ struct SidebarView: View {
                 Button {
                     setPrimary(floorplan)
                 } label: {
-                    Label(String(localized: "sidebar.pinned.setMain", defaultValue: "Imposta come principale"), systemImage: "star.fill")
+                    Label(String(localized: "sidebar.pinned.setMain", defaultValue: "Set as Primary"), systemImage: "star.fill")
                 }
             } else {
                 Button {
                     primaryFloorplanID = ""
                 } label: {
-                    Label(String(localized: "sidebar.pinned.removeMain", defaultValue: "Rimuovi da principale"), systemImage: "star.slash")
+                    Label(String(localized: "sidebar.pinned.removeMain", defaultValue: "Remove as Primary"), systemImage: "star.slash")
                 }
             }
             Button {
                 unpinFloorplan(floorplan)
             } label: {
-                Label(String(localized: "sidebar.pinned.remove", defaultValue: "Rimuovi da Accesso rapido"), systemImage: "pin.slash")
+                Label(String(localized: "sidebar.pinned.remove", defaultValue: "Remove from Quick Access"), systemImage: "pin.slash")
             }
             Divider()
             Button(role: .destructive) {
                 pendingDeleteFloorplan = floorplan
             } label: {
-                Label(String(localized: "sidebar.action.delete", defaultValue: "Elimina"), systemImage: "trash")
+                Label(String(localized: "sidebar.action.delete", defaultValue: "Delete"), systemImage: "trash")
             }
         }
     }

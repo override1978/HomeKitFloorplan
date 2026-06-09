@@ -92,11 +92,11 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable {
         let airQualityUUID = "00000095-0000-1000-8000-0026BB765291"
         guard let level = findInt(byUUID: airQualityUUID), level > 0 else { return nil }
         switch level {
-        case 1: return String(localized: "sensor.airQuality.excellent", defaultValue: "Ottima")
-        case 2: return String(localized: "sensor.airQuality.good",      defaultValue: "Buona")
-        case 3: return String(localized: "sensor.airQuality.fair",      defaultValue: "Media")
-        case 4: return String(localized: "sensor.airQuality.inferior",  defaultValue: "Scarsa")
-        case 5: return String(localized: "sensor.airQuality.poor",      defaultValue: "Pessima")
+        case 1: return String(localized: "sensor.airQuality.excellent", defaultValue: "Excellent")
+        case 2: return String(localized: "sensor.airQuality.good",      defaultValue: "Good")
+        case 3: return String(localized: "sensor.airQuality.fair",      defaultValue: "Fair")
+        case 4: return String(localized: "sensor.airQuality.inferior",  defaultValue: "Inferior")
+        case 5: return String(localized: "sensor.airQuality.poor",      defaultValue: "Poor")
         default: return nil
         }
     }
@@ -329,18 +329,18 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable {
                 if let v = Self.intValueStatic(raw) {
                     // 0=unknown, 1=excellent, 2=good, 3=fair, 4=inferior, 5=poor
                     switch v {
-                    case 1: return String(localized: "sensor.airQuality.excellent", defaultValue: "Ottima")
-                    case 2: return String(localized: "sensor.airQuality.good",      defaultValue: "Buona")
-                    case 3: return String(localized: "sensor.airQuality.fair",      defaultValue: "Media")
-                    case 4: return String(localized: "sensor.airQuality.inferior",  defaultValue: "Scarsa")
-                    case 5: return String(localized: "sensor.airQuality.poor",      defaultValue: "Pessima")
+                    case 1: return String(localized: "sensor.airQuality.excellent", defaultValue: "Excellent")
+                    case 2: return String(localized: "sensor.airQuality.good",      defaultValue: "Good")
+                    case 3: return String(localized: "sensor.airQuality.fair",      defaultValue: "Fair")
+                    case 4: return String(localized: "sensor.airQuality.inferior",  defaultValue: "Inferior")
+                    case 5: return String(localized: "sensor.airQuality.poor",      defaultValue: "Poor")
                     default: return nil
                     }
                 }
             case .lightLevel:
                 if let v = Self.doubleValueStatic(raw) {
-                    if v < 10   { return String(localized: "sensor.lightLevel.dark",   defaultValue: "buio") }
-                    if v > 5000 { return String(localized: "sensor.lightLevel.bright", defaultValue: "sole") }
+                    if v < 10   { return String(localized: "sensor.lightLevel.dark",   defaultValue: "dark") }
+                    if v > 5000 { return String(localized: "sensor.lightLevel.bright", defaultValue: "bright") }
                     return "\(Int(v.rounded()))lx"
                 }
             case .smoke, .carbonMonoxide, .leak, .contact, .motion, .occupancy:

@@ -362,17 +362,17 @@ final class ProactiveIntelligenceService {
             semanticKey: key,
             headline:    String(format:
                 String(localized: "notif.predictive.headline",
-                       defaultValue: "Picco di %@ atteso in %@"),
+                       defaultValue: "Expected %@ peak in %@"),
                 typeName, signal.pattern.roomName),
             body:        String(format:
                 String(localized: "notif.predictive.body",
-                       defaultValue: "Tende a superare la soglia tra ~%d min. Ventila ora per prevenirlo."),
+                       defaultValue: "Tends to exceed threshold in ~%d min. Ventilate now to prevent it."),
                 signal.expectedInMinutes),
             recommendation: String(localized: "notif.predictive.rec",
-                defaultValue: "Apri le finestre o attiva la ventilazione in anticipo."),
+                defaultValue: "Open windows or activate ventilation in advance."),
             whyExplanation: String(format:
                 String(localized: "notif.predictive.why",
-                       defaultValue: "Rilevato nel %.0f%% dei %d giorni simili osservati."),
+                       defaultValue: "Detected in %.0f%% of %d similar days observed."),
                 signal.pattern.exceedanceRate * 100, signal.pattern.sampleCount),
             score: signal.score
         )
@@ -398,12 +398,12 @@ final class ProactiveIntelligenceService {
             semanticKey:  key,
             headline:     String(format:
                 String(localized: "notif.anomaly.headline",
-                       defaultValue: "%@ anomalo in %@"),
+                       defaultValue: "Anomalous %@ in %@"),
                 signal.sensorType.displayName, signal.roomName),
             body:         signal.description,
             currentValue: detailStr,
             recommendation: String(localized: "notif.anomaly.rec",
-                defaultValue: "Controlla il sensore e verifica che sia posizionato correttamente."),
+                defaultValue: "Check the sensor and verify it is correctly positioned."),
             score: signal.score
         )
         notif.statusRaw = ProactiveNotificationStatus.live.rawValue
@@ -429,12 +429,12 @@ final class ProactiveIntelligenceService {
             semanticKey: key,
             headline:    String(format:
                 String(localized: "notif.maintenance.headline",
-                       defaultValue: "Controlla %@"), signal.accessoryName),
+                       defaultValue: "Check %@"), signal.accessoryName),
             body:        signal.detail,
             recommendation: String(localized: "notif.maintenance.rec",
-                defaultValue: "Verifica che il dispositivo funzioni correttamente."),
+                defaultValue: "Verify that the device is working correctly."),
             whyExplanation: String(localized: "notif.maintenance.why",
-                defaultValue: "Anomalia rilevata confrontando lo storico di utilizzo."),
+                defaultValue: "Anomaly detected by comparing usage history."),
             score: signal.score
         )
         notif.statusRaw = ProactiveNotificationStatus.live.rawValue
@@ -469,16 +469,16 @@ final class ProactiveIntelligenceService {
             priority:    .medium,
             semanticKey: key,
             headline:    String(localized: "notif.occupancy.headline",
-                                defaultValue: "Arrivo previsto tra poco"),
+                                defaultValue: "Arrival Expected Soon"),
             body:        String(format:
                 String(localized: "notif.occupancy.body",
-                       defaultValue: "Arrivo stimato %@ (tra ~%d min). Vuoi pre-riscaldare la casa?"),
+                       defaultValue: "Estimated arrival %@ (in ~%d min). Pre-heat your home?"),
                 arrivalStr, minutes),
             recommendation: String(localized: "notif.occupancy.rec",
-                defaultValue: "Attiva il riscaldamento/raffrescamento ora per trovare la casa alla temperatura giusta."),
+                defaultValue: "Turn on heating/cooling now to arrive home at the right temperature."),
             whyExplanation: String(format:
                 String(localized: "notif.occupancy.why",
-                       defaultValue: "Basato sui tuoi pattern di rientro. Confidenza: %@."),
+                       defaultValue: "Based on your return patterns. Confidence: %@."),
                 pred.confidenceLabel),
             score: score
         )
@@ -517,14 +517,14 @@ final class ProactiveIntelligenceService {
             priority:    .low,
             semanticKey: key,
             headline:    String(localized: "notif.arrivalAuto.headline",
-                                defaultValue: "Automazione arrivo suggerita"),
+                                defaultValue: "Suggested Arrival Automation"),
             body: String(format:
                 String(localized: "notif.arrivalAuto.body",
-                       defaultValue: "Di solito arrivi il %1$@ alle %2$@. Vuoi che le luci si accendano automaticamente al tuo arrivo?"),
+                       defaultValue: "You usually arrive on %1$@ at %2$@. Would you like the lights to turn on automatically when you get home?"),
                 dayName, pattern.formattedMeanTime),
             whyExplanation: String(format:
                 String(localized: "notif.arrivalAuto.why",
-                       defaultValue: "Pattern rilevato in %1$d arrivi, confidenza %2$@."),
+                       defaultValue: "Pattern detected in %1$d arrivals, confidence %2$@."),
                 pattern.sampleCount, confidencePct),
             score: score
         )
@@ -679,12 +679,12 @@ final class ProactiveIntelligenceService {
                 priority:    .info,
                 semanticKey: key,
                 headline:    String(localized: "notif.learning.headline",
-                                   defaultValue: "Nuovo comportamento appreso"),
+                                   defaultValue: "New Behavior Learned"),
                 body:        pattern.naturalLanguageDescription,
                 sourceID:    pattern.id.uuidString,
                 whyExplanation: String(format:
                     String(localized: "notif.learning.why",
-                           defaultValue: "Rilevato in %d sessioni con %@ di confidenza."),
+                           defaultValue: "Detected in %d sessions with %@ confidence."),
                     pattern.observations, pattern.confidenceLabel),
                 score:    score
             )
@@ -857,13 +857,13 @@ final class ProactiveIntelligenceService {
     // MARK: - Opportunity helpers
 
     private func opportunityHeadline(_ opp: AutomationOpportunity) -> String {
-        String(localized: "notif.opportunity.headline", defaultValue: "Automazione suggerita")
+        String(localized: "notif.opportunity.headline", defaultValue: "Suggested Automation")
     }
 
     private func opportunityBody(_ opp: AutomationOpportunity) -> String {
         String(format:
             String(localized: "notif.opportunity.body",
-                   defaultValue: "%@ · %d osservazioni · %@"),
+                   defaultValue: "%@ · %d observations · %@"),
             opp.naturalLanguage,
             opp.observations,
             opp.confidenceLabel
@@ -873,7 +873,7 @@ final class ProactiveIntelligenceService {
     private func opportunityWhy(_ opp: AutomationOpportunity) -> String {
         String(format:
             String(localized: "notif.opportunity.why",
-                   defaultValue: "Hai ripetuto questa azione %d volte con una confidenza del %@."),
+                   defaultValue: "You have repeated this action %d times with %@ confidence."),
             opp.observations,
             opp.confidenceLabel
         )

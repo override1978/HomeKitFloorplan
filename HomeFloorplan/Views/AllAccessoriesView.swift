@@ -20,7 +20,7 @@ struct AllAccessoriesView: View {
         }
 
         return Dictionary(grouping: filtered) { accessory in
-            accessory.room?.name ?? String(localized: "accessories.noRoom", defaultValue: "Nessuna stanza")
+            accessory.room?.name ?? String(localized: "accessories.noRoom", defaultValue: "No Room")
         }
     }
 
@@ -33,11 +33,11 @@ struct AllAccessoriesView: View {
                     if homeKit.allAccessories.isEmpty {
                         // Caso A: casa HomeKit vuota
                         ContentUnavailableView {
-                            Label(String(localized: "accessories.empty.title", defaultValue: "Nessun accessorio"), systemImage: "house")
+                            Label(String(localized: "accessories.empty.title", defaultValue: "No Accessories"), systemImage: "house")
                         } description: {
                             VStack(spacing: 8) {
-                                Text(String(localized: "accessories.empty.description", defaultValue: "La casa attiva non ha accessori configurati."))
-                                Text(String(localized: "accessories.empty.hint", defaultValue: "Aggiungi accessori dall'app Casa di Apple per gestirli qui."))
+                                Text(String(localized: "accessories.empty.description", defaultValue: "The active home has no configured accessories."))
+                                Text(String(localized: "accessories.empty.hint", defaultValue: "Add accessories from the Apple Home app to manage them here."))
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -46,7 +46,7 @@ struct AllAccessoriesView: View {
                                 Button {
                                     UIApplication.shared.open(url)
                                 } label: {
-                                    Label(String(localized: "accessories.empty.openHome", defaultValue: "Apri Casa"), systemImage: "arrow.up.right.square")
+                                    Label(String(localized: "accessories.empty.openHome", defaultValue: "Open Home"), systemImage: "arrow.up.right.square")
                                 }
                                 .buttonStyle(.bordered)
                             }
@@ -54,11 +54,11 @@ struct AllAccessoriesView: View {
                     } else if filteredGroups.isEmpty {
                         // Caso B: ci sono accessori ma i filtri/search non trovano niente
                         ContentUnavailableView(
-                            String(localized: "accessories.noResults.title", defaultValue: "Nessun risultato"),
+                            String(localized: "accessories.noResults.title", defaultValue: "No Results"),
                             systemImage: "magnifyingglass",
                             description: Text(searchText.isEmpty
-                                              ? String(localized: "accessories.noResults.filterHint", defaultValue: "Modifica i filtri per vedere accessori.")
-                                              : String(localized: "accessories.noResults.searchHint", defaultValue: "Modifica la ricerca o i filtri."))
+                                              ? String(localized: "accessories.noResults.filterHint", defaultValue: "Adjust the filters to see accessories.")
+                                              : String(localized: "accessories.noResults.searchHint", defaultValue: "Adjust your search or filters."))
                         )
                     } else {
                         // Caso C: normale - renderizza le sezioni stanze
@@ -78,7 +78,7 @@ struct AllAccessoriesView: View {
                             placement: .navigationBarDrawer(displayMode: .always))
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle(String(localized: "accessories.navigationTitle", defaultValue: "Accessori"))
+            .navigationTitle(String(localized: "accessories.navigationTitle", defaultValue: "Accessories"))
         }
     }
 
@@ -184,7 +184,7 @@ struct AllAccessoriesView: View {
         
         var summaryText: String {
             if onCount > 0 {
-                return "\(accessories.count) • \(onCount) \(String(localized: "accessories.summary.active", defaultValue: "attivi"))"
+                return "\(accessories.count) • \(onCount) \(String(localized: "accessories.summary.active", defaultValue: "active"))"
             }
             return "\(accessories.count)"
         }
@@ -222,7 +222,7 @@ struct AllAccessoriesView: View {
         // 3. Costruisci RoomGroup con count "attivi"
         let groups: [RoomGroup] = grouped.map { (roomID, accessories) -> RoomGroup in
             let roomName: String = {
-                if roomID == UUID.zero { return String(localized: "accessories.noRoomGroup", defaultValue: "Senza stanza") }
+                if roomID == UUID.zero { return String(localized: "accessories.noRoomGroup", defaultValue: "No Room") }
                 return accessories.first?.room?.name ?? "—"
             }()
             let sortedAccessories = accessories.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -402,9 +402,9 @@ struct AllAccessoriesView: View {
         // Fallback: power state + brightness se è una luce dimmerabile
         if let on = boolCharacteristic(type: HMCharacteristicTypePowerState, in: accessory) {
             if let brightness = intCharacteristic(type: HMCharacteristicTypeBrightness, in: accessory) {
-                return on ? "\(String(localized: "accessory.state.on", defaultValue: "Acceso")) • \(brightness)%" : String(localized: "accessory.state.off", defaultValue: "Spento")
+                return on ? "\(String(localized: "accessory.state.on", defaultValue: "On")) • \(brightness)%" : String(localized: "accessory.state.off", defaultValue: "Off")
             }
-            return on ? String(localized: "accessory.state.on", defaultValue: "Acceso") : String(localized: "accessory.state.off", defaultValue: "Spento")
+            return on ? String(localized: "accessory.state.on", defaultValue: "On") : String(localized: "accessory.state.off", defaultValue: "Off")
         }
         return ""
     }
@@ -460,8 +460,8 @@ extension UUID {
 #if !canImport(RoomPlan)
 private struct RoomPlanCaptureFallbackView: View {
     var body: some View {
-        ContentUnavailableView(String(localized: "roomplan.unavailable.title", defaultValue: "RoomPlan non disponibile"), systemImage: "exclamationmark.triangle", description: Text(String(localized: "roomplan.unavailable.description", defaultValue: "Questa funzione richiede un dispositivo con LiDAR.")))
-            .navigationTitle(String(localized: "roomplan.scan.navigationTitle", defaultValue: "Scansione stanza"))
+        ContentUnavailableView(String(localized: "roomplan.unavailable.title", defaultValue: "RoomPlan Unavailable"), systemImage: "exclamationmark.triangle", description: Text(String(localized: "roomplan.unavailable.description", defaultValue: "This feature requires a device with LiDAR.")))
+            .navigationTitle(String(localized: "roomplan.scan.navigationTitle", defaultValue: "Room Scan"))
     }
 }
 #endif

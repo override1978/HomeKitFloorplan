@@ -37,8 +37,8 @@ enum InsightSeverity: String, Codable, Comparable {
 
     var localizedLabel: String {
         switch self {
-        case .anomaly: return String(localized: "insight.severity.anomaly", defaultValue: "Anomalia")
-        case .warning: return String(localized: "insight.severity.warning", defaultValue: "Attenzione")
+        case .anomaly: return String(localized: "insight.severity.anomaly", defaultValue: "Anomaly")
+        case .warning: return String(localized: "insight.severity.warning", defaultValue: "Warning")
         case .info:    return String(localized: "insight.severity.info",    defaultValue: "Info")
         }
     }
@@ -65,10 +65,10 @@ enum IntelligenceLevel: String, Codable, CaseIterable {
 
     var localizedLabel: String {
         switch self {
-        case .observation:    return String(localized: "intelligence.level.observation",    defaultValue: "Osservazione")
+        case .observation:    return String(localized: "intelligence.level.observation",    defaultValue: "Observation")
         case .pattern:        return String(localized: "intelligence.level.pattern",        defaultValue: "Pattern")
-        case .prediction:     return String(localized: "intelligence.level.prediction",     defaultValue: "Previsione")
-        case .recommendation: return String(localized: "intelligence.level.recommendation", defaultValue: "Raccomandazione")
+        case .prediction:     return String(localized: "intelligence.level.prediction",     defaultValue: "Prediction")
+        case .recommendation: return String(localized: "intelligence.level.recommendation", defaultValue: "Recommendation")
         }
     }
 

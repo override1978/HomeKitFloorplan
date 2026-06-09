@@ -149,49 +149,49 @@ extension AutomationOpportunity {
         case .on:
             return String(
                 format: String(localized: "behavioral.opportunity.title.on",
-                               defaultValue: "Accendi %@"),
+                               defaultValue: "Turn on %@"),
                 pattern.accessoryName
             )
         case .off:
             return String(
                 format: String(localized: "behavioral.opportunity.title.off",
-                               defaultValue: "Spegni %@"),
+                               defaultValue: "Turn off %@"),
                 pattern.accessoryName
             )
         case .dim:
             return String(
                 format: String(localized: "behavioral.opportunity.title.dim",
-                               defaultValue: "Abbassa %@"),
+                               defaultValue: "Dim %@"),
                 pattern.accessoryName
             )
         case .activate:
             return String(
                 format: String(localized: "behavioral.opportunity.title.activate",
-                               defaultValue: "Attiva %@"),
+                               defaultValue: "Activate %@"),
                 pattern.accessoryName
             )
         case .lock:
             return String(
                 format: String(localized: "behavioral.opportunity.title.lock",
-                               defaultValue: "Blocca %@"),
+                               defaultValue: "Lock %@"),
                 pattern.accessoryName
             )
         case .unlock:
             return String(
                 format: String(localized: "behavioral.opportunity.title.unlock",
-                               defaultValue: "Sblocca %@"),
+                               defaultValue: "Unlock %@"),
                 pattern.accessoryName
             )
         case .open:
             return String(
                 format: String(localized: "behavioral.opportunity.title.open",
-                               defaultValue: "Apri %@"),
+                               defaultValue: "Open %@"),
                 pattern.accessoryName
             )
         case .close:
             return String(
                 format: String(localized: "behavioral.opportunity.title.close",
-                               defaultValue: "Chiudi %@"),
+                               defaultValue: "Close %@"),
                 pattern.accessoryName
             )
         }

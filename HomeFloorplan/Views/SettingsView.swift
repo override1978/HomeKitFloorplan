@@ -40,9 +40,9 @@ struct SettingsView: View {
                 Text("HomeKit")
             } footer: {
                 if homeKit.availableHomes.count > 1 {
-                    Text(String(localized: "settings.homekit.footer.multi", defaultValue: "Puoi avere più case configurate in Apple Home. Scegli quale gestire con HomeFloorplan."))
+                    Text(String(localized: "settings.homekit.footer.multi", defaultValue: "You can have multiple homes configured in Apple Home. Choose which one to manage with HomeFloorplan."))
                 } else {
-                    Text(String(localized: "settings.homekit.footer.single", defaultValue: "La casa attiva determina quali accessori e planimetrie sono visibili."))
+                    Text(String(localized: "settings.homekit.footer.single", defaultValue: "The active home determines which accessories and floorplans are visible."))
                 }
             }
             
@@ -53,35 +53,35 @@ struct SettingsView: View {
                     .animation(.spring(response: 0.35, dampingFraction: 0.85),
                                value: markerSizeRaw)
                 
-                Picker(String(localized: "settings.marker.size.picker", defaultValue: "Dimensione"), selection: $markerSizeRaw) {
+                Picker(String(localized: "settings.marker.size.picker", defaultValue: "Size"), selection: $markerSizeRaw) {
                     ForEach(MarkerSize.allCases) { size in
                         Text(size.localized).tag(size.rawValue)
                     }
                 }
                 .pickerStyle(.segmented)
             } header: {
-                Text(String(localized: "settings.marker.size.header", defaultValue: "Dimensione marker"))
+                Text(String(localized: "settings.marker.size.header", defaultValue: "Marker size"))
             } footer: {
-                Text(String(localized: "settings.marker.size.footer", defaultValue: "La dimensione dei marker si applica a tutte le planimetrie."))
+                Text(String(localized: "settings.marker.size.footer", defaultValue: "The marker size applies to all floorplans."))
             }
             
             // MARK: - Screensaver
 
             Section {
-                Picker(String(localized: "settings.screensaver.picker", defaultValue: "Attiva dopo"), selection: $idleTimeoutSeconds) {
-                    Text(String(localized: "settings.screensaver.30s",    defaultValue: "30 secondi")).tag(30.0)
-                    Text(String(localized: "settings.screensaver.1m",     defaultValue: "1 minuto")).tag(60.0)
+                Picker(String(localized: "settings.screensaver.picker", defaultValue: "Activate after"), selection: $idleTimeoutSeconds) {
+                    Text(String(localized: "settings.screensaver.30s",    defaultValue: "30 seconds")).tag(30.0)
+                    Text(String(localized: "settings.screensaver.1m",     defaultValue: "1 minute")).tag(60.0)
                     Text(String(localized: "settings.screensaver.1m30s",  defaultValue: "1 min 30 sec")).tag(90.0)
-                    Text(String(localized: "settings.screensaver.2m",     defaultValue: "2 minuti")).tag(120.0)
-                    Text(String(localized: "settings.screensaver.5m",     defaultValue: "5 minuti")).tag(300.0)
-                    Text(String(localized: "settings.screensaver.10m",    defaultValue: "10 minuti")).tag(600.0)
-                    Text(String(localized: "settings.screensaver.never",  defaultValue: "Mai")).tag(0.0)
+                    Text(String(localized: "settings.screensaver.2m",     defaultValue: "2 minutes")).tag(120.0)
+                    Text(String(localized: "settings.screensaver.5m",     defaultValue: "5 minutes")).tag(300.0)
+                    Text(String(localized: "settings.screensaver.10m",    defaultValue: "10 minutes")).tag(600.0)
+                    Text(String(localized: "settings.screensaver.never",  defaultValue: "Never")).tag(0.0)
                 }
                 .pickerStyle(.menu)
             } header: {
-                Text(String(localized: "settings.screensaver.header", defaultValue: "Screensaver"))
+                Text(String(localized: "settings.screensaver.header", defaultValue: "Screen Saver"))
             } footer: {
-                Text(String(localized: "settings.screensaver.footer", defaultValue: "Lo screensaver si attiva dopo il periodo di inattività scelto. Seleziona \"Mai\" per disabilitarlo."))
+                Text(String(localized: "settings.screensaver.footer", defaultValue: "The screen saver activates after the chosen idle period. Select \"Never\" to disable it."))
             }
             .onChange(of: idleTimeoutSeconds) { _, newValue in
                 if newValue == 0 {
@@ -101,7 +101,7 @@ struct SettingsView: View {
                     Text("°C – Celsius").tag(TemperatureUnit.celsius.rawValue)
                     Text("°F – Fahrenheit").tag(TemperatureUnit.fahrenheit.rawValue)
                 } label: {
-                    Label(String(localized: "settings.environment.temperature", defaultValue: "Temperatura"), systemImage: "thermometer.medium")
+                    Label(String(localized: "settings.environment.temperature", defaultValue: "Temperature"), systemImage: "thermometer.medium")
                 }
                 .pickerStyle(.menu)
 
@@ -110,24 +110,24 @@ struct SettingsView: View {
                     HStack(spacing: 10) {
                         Image(systemName: "exclamationmark.triangle")
                             .foregroundStyle(.secondary)
-                        Text(String(localized: "settings.environment.noReadings", defaultValue: "Nessuna lettura disponibile. Vai nella Dashboard Ambiente per campionare i sensori."))
+                        Text(String(localized: "settings.environment.noReadings", defaultValue: "No readings available. Go to the Environment Dashboard to sample sensors."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 } else {
                     Picker(selection: $outdoorRoomName) {
-                        Text(String(localized: "settings.environment.outdoorRoom.none", defaultValue: "Nessuna")).tag("")
+                        Text(String(localized: "settings.environment.outdoorRoom.none", defaultValue: "None")).tag("")
                         ForEach(availableRooms, id: \.self) { room in
                             Text(room).tag(room)
                         }
                     } label: {
-                        Label(String(localized: "settings.environment.outdoorRoom", defaultValue: "Stanza esterna"), systemImage: "cloud.sun")
+                        Label(String(localized: "settings.environment.outdoorRoom", defaultValue: "Outdoor room"), systemImage: "cloud.sun")
                     }
                 }
             } header: {
-                Text(String(localized: "settings.environment.header", defaultValue: "Ambiente"))
+                Text(String(localized: "settings.environment.header", defaultValue: "Environment"))
             } footer: {
-                Text(String(localized: "settings.environment.footer", defaultValue: "Seleziona la stanza HomeKit del sensore outdoor (es. modulo Netatmo esterno). Usata dal banner meteo nella Dashboard Ambientale."))
+                Text(String(localized: "settings.environment.footer", defaultValue: "Select the HomeKit room for the outdoor sensor (e.g. external Netatmo module). Used by the weather banner in the Environment Dashboard."))
             }
 
             // MARK: - Notifiche
@@ -137,7 +137,7 @@ struct SettingsView: View {
                     EnvironmentNotificationsSettingsView()
                 } label: {
                     Label(String(localized: "settings.notifications.environment.link",
-                                 defaultValue: "Notifiche Ambiente"),
+                                 defaultValue: "Environment Notifications"),
                           systemImage: "leaf")
                 }
 
@@ -145,14 +145,14 @@ struct SettingsView: View {
                     SecurityNotificationsSettingsView()
                 } label: {
                     Label(String(localized: "settings.notifications.security.link",
-                                 defaultValue: "Notifiche Sicurezza"),
+                                 defaultValue: "Security Notifications"),
                           systemImage: "lock.shield.fill")
                 }
             } header: {
-                Text(String(localized: "settings.notifications.header", defaultValue: "Notifiche"))
+                Text(String(localized: "settings.notifications.header", defaultValue: "Notifications"))
             } footer: {
                 Text(String(localized: "settings.notifications.footer",
-                            defaultValue: "Configura separatamente gli alert ambientali (soglie temperatura, umidità, aria) e le notifiche di sicurezza (antifurto, fumo, CO, acqua)."))
+                            defaultValue: "Configure environmental alerts (temperature, humidity, air thresholds) and security notifications (alarm, smoke, CO, water) separately."))
             }
 
             // MARK: - Intelligenza Artificiale
@@ -161,25 +161,25 @@ struct SettingsView: View {
                 NavigationLink {
                     AISettingsView()
                 } label: {
-                    Label(String(localized: "settings.ai.link", defaultValue: "Intelligenza Artificiale"), systemImage: "brain")
+                    Label(String(localized: "settings.ai.link", defaultValue: "Artificial Intelligence"), systemImage: "brain")
                 }
             } header: {
                 Text(String(localized: "settings.ai.header", defaultValue: "AI"))
             } footer: {
-                Text(String(localized: "settings.ai.footer", defaultValue: "Configura il provider AI e le API key per abilitare suggerimenti, anomalie e regole predittive."))
+                Text(String(localized: "settings.ai.footer", defaultValue: "Configure the AI provider and API keys to enable suggestions, anomalies, and predictive rules."))
             }
 
             Section {
                 Button {
                     onboarding.resetForDebug()
                 } label: {
-                    Label(String(localized: "settings.developer.showOnboarding", defaultValue: "Mostra onboarding al prossimo lancio"), systemImage: "arrow.clockwise.circle")
+                    Label(String(localized: "settings.developer.showOnboarding", defaultValue: "Show onboarding on next launch"), systemImage: "arrow.clockwise.circle")
                         .foregroundStyle(.tint)
                 }
                 NavigationLink {
                     HabitsView()
                 } label: {
-                    Label(String(localized: "settings.developer.habits", defaultValue: "Abitudini"), systemImage: "brain.head.profile")
+                    Label(String(localized: "settings.developer.habits", defaultValue: "Habits"), systemImage: "brain.head.profile")
                 }
                 #if DEBUG
                 NavigationLink {
@@ -189,25 +189,25 @@ struct SettingsView: View {
                 }
                 #endif
             } header: {
-                Text(String(localized: "settings.developer.header", defaultValue: "Sviluppatore"))
+                Text(String(localized: "settings.developer.header", defaultValue: "Developer"))
             } footer: {
-                Text(String(localized: "settings.developer.footer", defaultValue: "Ripristina la prima esperienza. Chiudi e riapri l'app per vedere l'onboarding."))
+                Text(String(localized: "settings.developer.footer", defaultValue: "Reset the first-run experience. Close and reopen the app to see the onboarding."))
             }
             
             // MARK: - Info
             
             Section {
                 HStack {
-                    Text(String(localized: "settings.info.version", defaultValue: "Versione"))
+                    Text(String(localized: "settings.info.version", defaultValue: "Version"))
                     Spacer()
                     Text(Bundle.main.appVersion)
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                Text(String(localized: "settings.info.header", defaultValue: "Info"))
+                Text(String(localized: "settings.info.header", defaultValue: "About"))
             }
         }
-        .navigationTitle(String(localized: "settings.title", defaultValue: "Impostazioni"))
+        .navigationTitle(String(localized: "settings.title", defaultValue: "Settings"))
         .navigationBarTitleDisplayMode(.large)
         .onAppear { loadAvailableRooms() }
     }
@@ -230,9 +230,9 @@ struct SettingsView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "settings.homekit.noHome", defaultValue: "Nessuna casa configurata"))
+                    Text(String(localized: "settings.homekit.noHome", defaultValue: "No home configured"))
                         .font(.body)
-                    Text(String(localized: "settings.homekit.noHome.hint", defaultValue: "Configura una casa dall'app Casa di Apple per iniziare."))
+                    Text(String(localized: "settings.homekit.noHome.hint", defaultValue: "Set up a home in the Apple Home app to get started."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -242,7 +242,7 @@ struct SettingsView: View {
                 Image(systemName: "house.fill")
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "settings.homekit.activeHome", defaultValue: "Casa attiva"))
+                    Text(String(localized: "settings.homekit.activeHome", defaultValue: "Active home"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(only.name)
@@ -269,7 +269,7 @@ struct SettingsView: View {
                             return false
                         }) {
                             Spacer()
-                            Text(String(localized: "settings.homekit.primary", defaultValue: "Primaria"))
+                            Text(String(localized: "settings.homekit.primary", defaultValue: "Primary"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -280,7 +280,7 @@ struct SettingsView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "house.fill")
                         .foregroundStyle(.tint)
-                    Text(String(localized: "settings.homekit.activeHome", defaultValue: "Casa attiva"))
+                    Text(String(localized: "settings.homekit.activeHome", defaultValue: "Active home"))
                 }
             }
             .pickerStyle(.menu)

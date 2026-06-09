@@ -67,7 +67,7 @@ struct HomeIntelligenceDashboardView: View {
                 }
             }
             .navigationTitle(
-                String(localized: "intelligence.nav.title", defaultValue: "Intelligenza")
+                String(localized: "intelligence.nav.title", defaultValue: "Intelligence")
             )
             .navigationBarTitleDisplayMode(.large)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -94,7 +94,7 @@ struct HomeIntelligenceDashboardView: View {
                 // ── Sezione 1: Cosa sta succedendo ora ───────────────
                 IntelligenceSectionGroup(
                     title: String(localized: "intelligence.section.now",
-                                  defaultValue: "Cosa sta succedendo"),
+                                  defaultValue: "What's happening now"),
                     icon: "eye.fill"
                 )
                 feedSection()
@@ -105,7 +105,7 @@ struct HomeIntelligenceDashboardView: View {
                 // ── Sezione 2: Cosa ho imparato ──────────────────────
                 IntelligenceSectionGroup(
                     title: String(localized: "intelligence.section.learned",
-                                  defaultValue: "Cosa ho imparato"),
+                                  defaultValue: "What I've learned"),
                     icon: "brain.fill"
                 )
                 PhaseHeroCard(svc: svc)
@@ -116,7 +116,7 @@ struct HomeIntelligenceDashboardView: View {
                 // ── Sezione 3: Cosa fare ──────────────────────────────
                 IntelligenceSectionGroup(
                     title: String(localized: "intelligence.section.todo",
-                                  defaultValue: "Cosa fare"),
+                                  defaultValue: "What to do"),
                     icon: "bolt.fill"
                 )
                 aiSuggestionsSection()
@@ -142,7 +142,7 @@ struct HomeIntelligenceDashboardView: View {
             sectionHeader(
                 icon: "brain.head.profile",
                 title: String(localized: "behavioral.section.opportunities",
-                              defaultValue: "Comportamenti rilevati")
+                              defaultValue: "Detected behaviors")
             )
             behavioralOpportunitiesContent()
         }
@@ -157,7 +157,7 @@ struct HomeIntelligenceDashboardView: View {
             HStack(spacing: 12) {
                 ProgressView().scaleEffect(0.85)
                 Text(String(localized: "behavioral.analyzing",
-                            defaultValue: "Analisi comportamenti in corso…"))
+                            defaultValue: "Analyzing behaviors…"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -199,14 +199,14 @@ struct HomeIntelligenceDashboardView: View {
                     Text(
                         String(
                             format: String(localized: "behavioral.forming.title",
-                                           defaultValue: "%d comportamenti in apprendimento"),
+                                           defaultValue: "%d behaviors being learned"),
                             count
                         )
                     )
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                     Text(String(localized: "behavioral.forming.subtitle",
-                                defaultValue: "Quando la confidenza sarà sufficiente, proporrò un'automazione."))
+                                defaultValue: "When confidence is sufficient, I'll suggest an automation."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -236,11 +236,11 @@ struct HomeIntelligenceDashboardView: View {
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(String(localized: "behavioral.observing.title",
-                                defaultValue: "Sto osservando le tue abitudini"))
+                                defaultValue: "Observing your habits"))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                     Text(String(localized: "behavioral.observing.subtitle",
-                                defaultValue: "Dopo qualche giorno di utilizzo apparirà qui il primo suggerimento."))
+                                defaultValue: "After a few days of use, the first suggestion will appear here."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -270,7 +270,7 @@ struct HomeIntelligenceDashboardView: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                 Spacer(minLength: 0)
-                Text(String(localized: "profile.owner.label", defaultValue: "Proprietario"))
+                Text(String(localized: "profile.owner.label", defaultValue: "Owner"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -307,7 +307,7 @@ struct HomeIntelligenceDashboardView: View {
                 sectionHeader(
                     icon: "clock.arrow.2.circlepath",
                     title: String(localized: "intelligence.predictive.header",
-                                  defaultValue: "Cosa probabilmente succederà")
+                                  defaultValue: "What will likely happen")
                 )
                 VStack(spacing: 0) {
                     ForEach(Array(svc.predictiveAlerts.enumerated()), id: \.element.id) { idx, alert in
@@ -337,7 +337,7 @@ struct HomeIntelligenceDashboardView: View {
                 sectionHeader(
                     icon: "figure.walk.arrival",
                     title: String(localized: "intelligence.occupancy.header",
-                                  defaultValue: "Prossimo Rientro")
+                                  defaultValue: "Next Arrival")
                 )
                 HStack(spacing: 16) {
                     VStack(spacing: 2) {
@@ -357,14 +357,14 @@ struct HomeIntelligenceDashboardView: View {
                         if minutesUntil <= 60 {
                             Label(
                                 String(format: String(localized: "occupancy.inMinutes",
-                                                      defaultValue: "Tra %d min"), minutesUntil),
+                                                      defaultValue: "In %d min"), minutesUntil),
                                 systemImage: "clock.fill"
                             )
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(BrandColor.primary)
                         } else {
                             Text(String(format: String(localized: "occupancy.inHours",
-                                                       defaultValue: "Tra ~%.0f ore"),
+                                                       defaultValue: "In ~%.0f hours"),
                                         Double(minutesUntil) / 60.0))
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(.secondary)
@@ -393,7 +393,7 @@ struct HomeIntelligenceDashboardView: View {
                                 .font(.title3)
                                 .foregroundStyle(.orange)
                                 .symbolEffect(.pulse)
-                            Text(String(localized: "occupancy.warmup", defaultValue: "Preriscalda"))
+                            Text(String(localized: "occupancy.warmup", defaultValue: "Pre-heat"))
                                 .font(.caption2)
                                 .foregroundStyle(.orange)
                         }
@@ -409,15 +409,15 @@ struct HomeIntelligenceDashboardView: View {
 
     private func arrivalDayLabel(_ date: Date) -> String {
         let cal = Calendar.current
-        if cal.isDateInToday(date)    { return String(localized: "day.today",    defaultValue: "Oggi") }
-        if cal.isDateInTomorrow(date) { return String(localized: "day.tomorrow", defaultValue: "Domani") }
+        if cal.isDateInToday(date)    { return String(localized: "day.today",    defaultValue: "Today") }
+        if cal.isDateInTomorrow(date) { return String(localized: "day.tomorrow", defaultValue: "Tomorrow") }
         return Self.arrivalDayFormatter.string(from: date).capitalized
     }
 
     private func arrivalConfidenceColor(_ label: String) -> Color {
         switch label {
-        case String(localized: "occupancy.confidence.high",   defaultValue: "Alta"):   return .green
-        case String(localized: "occupancy.confidence.medium", defaultValue: "Media"):  return .orange
+        case String(localized: "occupancy.confidence.high",   defaultValue: "High"):   return .green
+        case String(localized: "occupancy.confidence.medium", defaultValue: "Medium"):  return .orange
         default:                                                                         return .secondary
         }
     }
@@ -432,7 +432,7 @@ struct HomeIntelligenceDashboardView: View {
                 sectionHeader(
                     icon: "clock.badge",
                     title: String(localized: "intelligence.feed.header",
-                                  defaultValue: "Diario di Casa")
+                                  defaultValue: "Home Diary")
                 )
                 if proactiveService.unreadCount > 0 {
                     Text("\(proactiveService.unreadCount)")
@@ -444,7 +444,7 @@ struct HomeIntelligenceDashboardView: View {
                 }
                 Spacer()
                 NavigationLink(destination: IntelligenceFeedView()) {
-                    Text(String(localized: "intelligence.feed.viewAll", defaultValue: "Vedi tutto"))
+                    Text(String(localized: "intelligence.feed.viewAll", defaultValue: "View all"))
                         .font(.subheadline)
                         .foregroundStyle(BrandColor.primary)
                 }
@@ -455,7 +455,7 @@ struct HomeIntelligenceDashboardView: View {
                         .font(.title3)
                         .foregroundStyle(.secondary.opacity(0.5))
                     Text(String(localized: "feed.dashboard.empty",
-                                defaultValue: "Nessun evento ancora. L'AI inizierà a popolare il diario dopo qualche ora di utilizzo."))
+                                defaultValue: "No events yet. The AI will start populating the diary after a few hours of use."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -531,7 +531,7 @@ struct HomeIntelligenceDashboardView: View {
                 sectionHeader(
                     icon: "sparkles",
                     title: String(localized: "intelligence.suggestions.header",
-                                  defaultValue: "Suggerimenti AI")
+                                  defaultValue: "AI Suggestions")
                 )
                 VStack(spacing: 10) {
                     ForEach(Array(pending.prefix(3))) { pattern in
@@ -558,7 +558,7 @@ struct HomeIntelligenceDashboardView: View {
                 sectionHeader(
                     icon: "waveform.path.ecg",
                     title: String(localized: "intelligence.insights.header",
-                                  defaultValue: "Insight ambientali")
+                                  defaultValue: "Environmental Insights")
                 )
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(active.enumerated()), id: \.element.id) { idx, insight in
@@ -584,7 +584,7 @@ struct HomeIntelligenceDashboardView: View {
                 sectionHeader(
                     icon: "thermometer.medium",
                     title: String(localized: "intelligence.trends.header",
-                                  defaultValue: "Trend ambientali (7g)")
+                                  defaultValue: "Environmental Trends (7d)")
                 )
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -615,7 +615,7 @@ struct HomeIntelligenceDashboardView: View {
                 sectionHeader(
                     icon: "brain",
                     title: String(localized: "intelligence.habits.header",
-                                  defaultValue: "Abitudini apprese")
+                                  defaultValue: "Learned Habits")
                 )
                 let capped = Array(visible.prefix(6))
                 VStack(alignment: .leading, spacing: 0) {
@@ -641,7 +641,7 @@ struct HomeIntelligenceDashboardView: View {
             sectionHeader(
                 icon: "chart.bar.fill",
                 title: String(localized: "intelligence.domains.header",
-                              defaultValue: "Conoscenza casa")
+                              defaultValue: "Home Knowledge")
             )
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(svc.domainMaturities) { domain in
@@ -659,7 +659,7 @@ struct HomeIntelligenceDashboardView: View {
             sectionHeader(
                 icon: "chart.line.uptrend.xyaxis",
                 title: String(localized: "intelligence.effectiveness.header",
-                              defaultValue: "Efficacia AI")
+                              defaultValue: "AI Effectiveness")
             )
             if svc.totalExecuted == 0 {
                 if !isAIEnabled {
@@ -668,7 +668,7 @@ struct HomeIntelligenceDashboardView: View {
                     emptyCard(
                         icon: "sparkle",
                         text: String(localized: "intelligence.ai.noData",
-                                     defaultValue: "Raccolta dati in corso")
+                                     defaultValue: "Collecting data")
                     )
                 }
             } else {
@@ -680,13 +680,13 @@ struct HomeIntelligenceDashboardView: View {
                         AIStatTile(
                             value: svc.totalExecuted,
                             label: String(localized: "intelligence.ai.executed.label",
-                                          defaultValue: "Eseguiti"),
+                                          defaultValue: "Executed"),
                             color: BrandColor.primary
                         )
                         AIStatTile(
                             value: svc.totalHelpful,
                             label: String(localized: "intelligence.ai.helpful.label",
-                                          defaultValue: "Utili"),
+                                          defaultValue: "Helpful"),
                             color: .green
                         )
                     }
@@ -735,14 +735,14 @@ struct HomeIntelligenceDashboardView: View {
             VStack(spacing: 8) {
                 Text(
                     String(localized: "intelligence.empty.title",
-                           defaultValue: "La tua casa sta iniziando a raccontare le sue abitudini.")
+                           defaultValue: "Your home is starting to reveal its habits.")
                 )
                 .font(.headline.weight(.semibold))
                 .multilineTextAlignment(.center)
 
                 Text(
                     String(localized: "intelligence.empty.subtitle",
-                           defaultValue: "Usa l'app per qualche giorno e questo pannello si animerà.")
+                           defaultValue: "Use the app for a few days and this panel will come alive.")
                 )
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -760,7 +760,7 @@ struct HomeIntelligenceDashboardView: View {
         VStack(spacing: 16) {
             ProgressView().scaleEffect(1.1)
             Text(
-                String(localized: "intelligence.loading", defaultValue: "Analisi in corso…")
+                String(localized: "intelligence.loading", defaultValue: "Loading…")
             )
             .font(.subheadline)
             .foregroundStyle(.secondary)
@@ -843,11 +843,11 @@ struct HomeIntelligenceDashboardView: View {
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 3) {
                 Text(String(localized: "intelligence.ai.disabled.title",
-                            defaultValue: "AI non attiva"))
+                            defaultValue: "AI not active"))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                 Text(String(localized: "intelligence.ai.disabled.detail",
-                            defaultValue: "Attiva AI nelle Impostazioni per ricevere suggerimenti contestuali."))
+                            defaultValue: "Enable AI in Settings to receive contextual suggestions."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -855,7 +855,7 @@ struct HomeIntelligenceDashboardView: View {
             Spacer(minLength: 8)
             NavigationLink(destination: AISettingsView()) {
                 Text(String(localized: "intelligence.ai.disabled.action",
-                            defaultValue: "Impostazioni"))
+                            defaultValue: "Settings"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(BrandColor.primary)
                     .padding(.horizontal, 10)
@@ -904,28 +904,28 @@ struct HomeIntelligenceDashboardView: View {
     private func intentLabel(for raw: String) -> String {
         switch raw {
         // Environmental
-        case "coolRoom":          return String(localized: "intelligence.intent.coolRoom",          defaultValue: "Raffrescamento")
-        case "heatRoom":          return String(localized: "intelligence.intent.heatRoom",          defaultValue: "Riscaldamento")
-        case "reduceHumidity":    return String(localized: "intelligence.intent.reduceHumidity",    defaultValue: "Riduzione umidità")
-        case "increaseHumidity":  return String(localized: "intelligence.intent.increaseHumidity",  defaultValue: "Aumento umidità")
-        case "improveAirQuality": return String(localized: "intelligence.intent.improveAirQuality", defaultValue: "Qualità aria")
-        case "ventilateRoom":     return String(localized: "intelligence.intent.ventilateRoom",     defaultValue: "Ventilazione")
-        case "reduceCO2":         return String(localized: "intelligence.intent.reduceCO2",         defaultValue: "Riduzione CO₂")
-        case "reduceVOC":         return String(localized: "intelligence.intent.reduceVOC",         defaultValue: "Riduzione VOC")
-        case "respondToSmoke":    return String(localized: "intelligence.intent.respondToSmoke",    defaultValue: "Allarme fumo")
-        case "respondToCO":       return String(localized: "intelligence.intent.respondToCO",       defaultValue: "Allarme CO")
+        case "coolRoom":          return String(localized: "intelligence.intent.coolRoom",          defaultValue: "Cooling")
+        case "heatRoom":          return String(localized: "intelligence.intent.heatRoom",          defaultValue: "Heating")
+        case "reduceHumidity":    return String(localized: "intelligence.intent.reduceHumidity",    defaultValue: "Humidity Reduction")
+        case "increaseHumidity":  return String(localized: "intelligence.intent.increaseHumidity",  defaultValue: "Humidity Increase")
+        case "improveAirQuality": return String(localized: "intelligence.intent.improveAirQuality", defaultValue: "Air Quality")
+        case "ventilateRoom":     return String(localized: "intelligence.intent.ventilateRoom",     defaultValue: "Ventilation")
+        case "reduceCO2":         return String(localized: "intelligence.intent.reduceCO2",         defaultValue: "CO₂ Reduction")
+        case "reduceVOC":         return String(localized: "intelligence.intent.reduceVOC",         defaultValue: "VOC Reduction")
+        case "respondToSmoke":    return String(localized: "intelligence.intent.respondToSmoke",    defaultValue: "Smoke Alert")
+        case "respondToCO":       return String(localized: "intelligence.intent.respondToCO",       defaultValue: "CO Alert")
         // Sprint 28 — Lighting
-        case "brightenRoom":      return String(localized: "intelligence.intent.brightenRoom",      defaultValue: "Illuminazione")
-        case "dimRoom":           return String(localized: "intelligence.intent.dimRoom",           defaultValue: "Attenuazione luce")
-        case "setCircadianLight": return String(localized: "intelligence.intent.setCircadianLight", defaultValue: "Luce circadiana")
-        case "setScene":          return String(localized: "intelligence.intent.setScene",          defaultValue: "Scena")
+        case "brightenRoom":      return String(localized: "intelligence.intent.brightenRoom",      defaultValue: "Brightness")
+        case "dimRoom":           return String(localized: "intelligence.intent.dimRoom",           defaultValue: "Dim Light")
+        case "setCircadianLight": return String(localized: "intelligence.intent.setCircadianLight", defaultValue: "Circadian Light")
+        case "setScene":          return String(localized: "intelligence.intent.setScene",          defaultValue: "Scene")
         // Sprint 29 — Presence
-        case "prepareForArrival": return String(localized: "intelligence.intent.prepareForArrival", defaultValue: "Prepara arrivo")
-        case "secureForDeparture":return String(localized: "intelligence.intent.secureDeparture",   defaultValue: "Sicurezza partenza")
+        case "prepareForArrival": return String(localized: "intelligence.intent.prepareForArrival", defaultValue: "Prepare Arrival")
+        case "secureForDeparture":return String(localized: "intelligence.intent.secureDeparture",   defaultValue: "Secure Departure")
         // Sprint 30 — Energy
-        case "reduceConsumption": return String(localized: "intelligence.intent.reduceConsumption", defaultValue: "Riduzione consumi")
+        case "reduceConsumption": return String(localized: "intelligence.intent.reduceConsumption", defaultValue: "Reduce Consumption")
         case "enableEcoMode":     return String(localized: "intelligence.intent.enableEcoMode",     defaultValue: "Eco Mode")
-        case "schedulePeakHours": return String(localized: "intelligence.intent.schedulePeakHours", defaultValue: "Ore di picco")
+        case "schedulePeakHours": return String(localized: "intelligence.intent.schedulePeakHours", defaultValue: "Peak Hours")
         // Sprint 32 — Security
         case "lockAll":           return String(localized: "intelligence.intent.lockAll",           defaultValue: "Lock Doors")
         case "closeGarage":       return String(localized: "intelligence.intent.closeGarage",       defaultValue: "Close Garage")
@@ -955,7 +955,7 @@ private struct PhaseHeroCard: View {
                 Text(
                     String(
                         format: String(localized: "intelligence.hero.phase",
-                                       defaultValue: "Fase %d di 5"),
+                                       defaultValue: "Phase %d of 5"),
                         svc.learningPhase.phaseNumber
                     )
                 )
@@ -1028,14 +1028,14 @@ private struct PhaseHeroCard: View {
                 statChip(
                     icon: "calendar",
                     value: svc.daysSinceLearningStarted == 1
-                        ? String(localized: "intelligence.hero.day.one", defaultValue: "1 giorno")
+                        ? String(localized: "intelligence.hero.day.one", defaultValue: "1 day")
                         : String(
                             format: String(localized: "intelligence.hero.days",
-                                           defaultValue: "%lld giorni"),
+                                           defaultValue: "%lld days"),
                             Int64(svc.daysSinceLearningStarted)
                           ),
                     label: String(localized: "intelligence.hero.learningSince",
-                                  defaultValue: "Apprendo da")
+                                  defaultValue: "Learning for")
                 )
                 Divider()
                     .frame(width: 1, height: 36)
@@ -1045,7 +1045,7 @@ private struct PhaseHeroCard: View {
                     icon: "chart.bar",
                     value: svc.totalEventsCount.formatted(),
                     label: String(localized: "intelligence.hero.eventsAnalyzed",
-                                  defaultValue: "Dati raccolti")
+                                  defaultValue: "Data collected")
                 )
                 Divider()
                     .frame(width: 1, height: 36)
@@ -1055,7 +1055,7 @@ private struct PhaseHeroCard: View {
                     icon: "star.fill",
                     value: "\(svc.stableHabitsCount)",
                     label: String(localized: "intelligence.hero.stableHabits",
-                                  defaultValue: "Stabili")
+                                  defaultValue: "Stable")
                 )
                 Spacer()
             }
@@ -1123,17 +1123,17 @@ private struct TrustScoreCard: View {
 
     private var qualityLabel: String {
         score >= 75
-            ? String(localized: "intelligence.trust.high",   defaultValue: "Alta")
+            ? String(localized: "intelligence.trust.high",   defaultValue: "High")
             : score >= 50
-            ? String(localized: "intelligence.trust.medium", defaultValue: "Buona")
-            : String(localized: "intelligence.trust.low",    defaultValue: "In crescita")
+            ? String(localized: "intelligence.trust.medium", defaultValue: "Good")
+            : String(localized: "intelligence.trust.low",    defaultValue: "Growing")
     }
 
     var body: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(String(localized: "intelligence.trust.label",
-                            defaultValue: "Affidabilità AI"))
+                            defaultValue: "AI Reliability"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -1215,7 +1215,7 @@ private struct AISuggestionCard: View {
                 Button(action: onApprove) {
                     Label(
                         String(localized: "intelligence.suggestions.approve",
-                               defaultValue: "Crea regola"),
+                               defaultValue: "Create rule"),
                         systemImage: "plus.circle.fill"
                     )
                     .font(.subheadline.weight(.medium))
@@ -1227,7 +1227,7 @@ private struct AISuggestionCard: View {
 
                 Button(action: onDismiss) {
                     Text(String(localized: "intelligence.suggestions.dismiss",
-                                defaultValue: "Ignora"))
+                                defaultValue: "Dismiss"))
                         .font(.subheadline)
                         .frame(maxWidth: .infinity)
                 }
@@ -1314,7 +1314,7 @@ private struct BehavioralOpportunityCard: View {
                         Text(
                             String(
                                 format: String(localized: "behavioral.card.observations",
-                                               defaultValue: "%d osservazioni"),
+                                               defaultValue: "%d observations"),
                                 opportunity.observations
                             )
                         )
@@ -1330,7 +1330,7 @@ private struct BehavioralOpportunityCard: View {
                 Button(action: onApprove) {
                     Label(
                         String(localized: "behavioral.opportunity.approve",
-                               defaultValue: "Crea automazione"),
+                               defaultValue: "Create automation"),
                         systemImage: "plus.circle.fill"
                     )
                     .font(.subheadline.weight(.medium))
@@ -1342,7 +1342,7 @@ private struct BehavioralOpportunityCard: View {
 
                 Button(action: onSnooze) {
                     Text(String(localized: "behavioral.opportunity.snooze",
-                                defaultValue: "Più tardi"))
+                                defaultValue: "Later"))
                         .font(.subheadline)
                 }
                 .buttonStyle(.bordered)
@@ -1468,7 +1468,7 @@ private struct HabitConfidenceRow: View {
                     if pattern.status == .approved {
                         Text(
                             String(localized: "intelligence.habits.approved",
-                                   defaultValue: "Approvato")
+                                   defaultValue: "Approved")
                         )
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.green)
@@ -1559,7 +1559,7 @@ private struct IntentEffectivenessRow: View {
             Text(
                 String(
                     format: String(localized: "intelligence.effectiveness.samples",
-                                   defaultValue: "%lld campioni"),
+                                   defaultValue: "%lld samples"),
                     Int64(item.sampleCount)
                 )
             )
@@ -1594,13 +1594,13 @@ private struct RoomTrendCard: View {
     private var trendLabel: String {
         switch trend.sensorTypeRaw {
         case "temperature":
-            return String(localized: "intelligence.trends.hottest",     defaultValue: "Stanza più calda")
+            return String(localized: "intelligence.trends.hottest",     defaultValue: "Hottest room")
         case "humidity":
-            return String(localized: "intelligence.trends.mostHumid",   defaultValue: "Più umida")
+            return String(localized: "intelligence.trends.mostHumid",   defaultValue: "Most humid")
         case "carbonDioxide":
-            return String(localized: "intelligence.trends.highestCO2",  defaultValue: "CO₂ più alto")
+            return String(localized: "intelligence.trends.highestCO2",  defaultValue: "Highest CO₂")
         default:
-            return String(localized: "intelligence.trends.worstAir",    defaultValue: "Qualità aria")
+            return String(localized: "intelligence.trends.worstAir",    defaultValue: "Air Quality")
         }
     }
 
@@ -1634,7 +1634,7 @@ private struct RoomTrendCard: View {
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(accentColor)
                 Text(
-                    String(localized: "intelligence.trends.avgLabel", defaultValue: "media 7g")
+                    String(localized: "intelligence.trends.avgLabel", defaultValue: "7d avg")
                 )
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -1808,7 +1808,7 @@ private struct PredictiveAlertRow: View {
                     Text(
                         String(
                             format: String(localized: "predictive.confidence.label",
-                                           defaultValue: "%lld%% confidenza"),
+                                           defaultValue: "%lld%% confidence"),
                             Int64(alert.confidence * 100)
                         )
                     )

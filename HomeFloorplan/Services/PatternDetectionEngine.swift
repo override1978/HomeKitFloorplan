@@ -275,40 +275,40 @@ enum PatternDetectionEngine {
         let m = minuteOfDay % 60
         let timeStr  = String(format: "%02d:%02d", h, m)
         let dayLabel = dayType?.localizedLabel
-            ?? String(localized: "behavioral.dayType.daily", defaultValue: "ogni giorno")
+            ?? String(localized: "behavioral.dayType.daily", defaultValue: "every day")
 
         switch action {
         case .on:
             return String(format: String(localized: "behavioral.pattern.temporal.on",
-                                          defaultValue: "%1$@ viene acceso %2$@ alle %3$@"),
+                                          defaultValue: "%1$@ turns on %2$@ at %3$@"),
                           accessoryName, dayLabel, timeStr)
         case .off:
             return String(format: String(localized: "behavioral.pattern.temporal.off",
-                                          defaultValue: "%1$@ viene spento %2$@ alle %3$@"),
+                                          defaultValue: "%1$@ turns off %2$@ at %3$@"),
                           accessoryName, dayLabel, timeStr)
         case .dim:
             return String(format: String(localized: "behavioral.pattern.temporal.dim",
-                                          defaultValue: "%1$@ viene abbassato %2$@ alle %3$@"),
+                                          defaultValue: "%1$@ dims %2$@ at %3$@"),
                           accessoryName, dayLabel, timeStr)
         case .activate:
             return String(format: String(localized: "behavioral.pattern.temporal.activate",
-                                          defaultValue: "%1$@ viene attivato %2$@ alle %3$@"),
+                                          defaultValue: "%1$@ activates %2$@ at %3$@"),
                           accessoryName, dayLabel, timeStr)
         case .lock:
             return String(format: String(localized: "behavioral.pattern.temporal.lock",
-                                          defaultValue: "%1$@ viene bloccato %2$@ alle %3$@"),
+                                          defaultValue: "%1$@ locks %2$@ at %3$@"),
                           accessoryName, dayLabel, timeStr)
         case .unlock:
             return String(format: String(localized: "behavioral.pattern.temporal.unlock",
-                                          defaultValue: "%1$@ viene sbloccato %2$@ alle %3$@"),
+                                          defaultValue: "%1$@ unlocks %2$@ at %3$@"),
                           accessoryName, dayLabel, timeStr)
         case .open:
             return String(format: String(localized: "behavioral.pattern.temporal.open",
-                                          defaultValue: "%1$@ viene aperto %2$@ alle %3$@"),
+                                          defaultValue: "%1$@ opens %2$@ at %3$@"),
                           accessoryName, dayLabel, timeStr)
         case .close:
             return String(format: String(localized: "behavioral.pattern.temporal.close",
-                                          defaultValue: "%1$@ viene chiuso %2$@ alle %3$@"),
+                                          defaultValue: "%1$@ closes %2$@ at %3$@"),
                           accessoryName, dayLabel, timeStr)
         }
     }
@@ -323,23 +323,23 @@ enum PatternDetectionEngine {
         switch effectAction {
         case .on:
             return String(format: String(localized: "behavioral.pattern.sequential.on",
-                                          defaultValue: "Dopo %1$@, %2$@ viene acceso entro %3$d min"),
+                                          defaultValue: "After %1$@, %2$@ turns on within %3$d min"),
                           causeName, effectName, gapMinutes)
         case .off:
             return String(format: String(localized: "behavioral.pattern.sequential.off",
-                                          defaultValue: "Dopo %1$@, %2$@ viene spento entro %3$d min"),
+                                          defaultValue: "After %1$@, %2$@ turns off within %3$d min"),
                           causeName, effectName, gapMinutes)
         case .dim:
             return String(format: String(localized: "behavioral.pattern.sequential.dim",
-                                          defaultValue: "Dopo %1$@, %2$@ viene abbassato entro %3$d min"),
+                                          defaultValue: "After %1$@, %2$@ dims within %3$d min"),
                           causeName, effectName, gapMinutes)
         case .activate:
             return String(format: String(localized: "behavioral.pattern.sequential.activate",
-                                          defaultValue: "Dopo %1$@, %2$@ viene attivato entro %3$d min"),
+                                          defaultValue: "After %1$@, %2$@ activates within %3$d min"),
                           causeName, effectName, gapMinutes)
         default:
             return String(format: String(localized: "behavioral.pattern.sequential.default",
-                                          defaultValue: "Quando %1$@ viene usato, %2$@ cambia entro %3$d min"),
+                                          defaultValue: "When %1$@ is used, %2$@ changes within %3$d min"),
                           causeName, effectName, gapMinutes)
         }
     }

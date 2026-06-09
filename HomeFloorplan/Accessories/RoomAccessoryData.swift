@@ -13,10 +13,10 @@ enum AccessoryHealthLevel {
 
     var label: String {
         switch self {
-        case .excellent: return String(localized: "accessories.room.health.excellent", defaultValue: "Ottima")
-        case .good:      return String(localized: "accessories.room.health.good",      defaultValue: "Buona")
-        case .warning:   return String(localized: "accessories.room.health.warning",   defaultValue: "Attenzione")
-        case .critical:  return String(localized: "accessories.room.health.critical",  defaultValue: "Critica")
+        case .excellent: return String(localized: "accessories.room.health.excellent", defaultValue: "Excellent")
+        case .good:      return String(localized: "accessories.room.health.good",      defaultValue: "Good")
+        case .warning:   return String(localized: "accessories.room.health.warning",   defaultValue: "Warning")
+        case .critical:  return String(localized: "accessories.room.health.critical",  defaultValue: "Critical")
         }
     }
 
@@ -111,8 +111,8 @@ extension RoomAccessoryData {
     /// Stringa di sottotitolo: "18 accessori • 100 Ottima"
     var subtitleText: String {
         let countStr = totalCount == 1
-            ? String(localized: "accessories.room.accessory.singular", defaultValue: "1 accessorio")
-            : "\(totalCount) \(String(localized: "accessories.room.accessories.unit", defaultValue: "accessori"))"
+            ? String(localized: "accessories.room.accessory.singular", defaultValue: "1 accessory")
+            : "\(totalCount) \(String(localized: "accessories.room.accessories.unit", defaultValue: "accessories"))"
         return "\(countStr) • \(healthScore) \(healthLevel.label)"
     }
 
@@ -120,16 +120,16 @@ extension RoomAccessoryData {
     var primaryIssue: String? {
         if offlineCount > 0 {
             if offlineCount == 1 {
-                return String(localized: "accessories.room.issue.offline.singular", defaultValue: "1 dispositivo offline")
+                return String(localized: "accessories.room.issue.offline.singular", defaultValue: "1 device offline")
             }
-            let unit = String(localized: "accessories.room.issue.offline.unit", defaultValue: "dispositivi offline")
+            let unit = String(localized: "accessories.room.issue.offline.unit", defaultValue: "devices offline")
             return "\(offlineCount) \(unit)"
         }
         if lowBatteryCount > 0 {
             if lowBatteryCount == 1 {
-                return String(localized: "accessories.room.issue.battery.singular", defaultValue: "Batteria scarica su 1 dispositivo")
+                return String(localized: "accessories.room.issue.battery.singular", defaultValue: "Low battery on 1 device")
             }
-            let unit = String(localized: "accessories.room.issue.battery.unit", defaultValue: "dispositivi con batteria scarica")
+            let unit = String(localized: "accessories.room.issue.battery.unit", defaultValue: "devices with low battery")
             return "Batteria scarica su \(lowBatteryCount) \(unit)"
         }
         return nil

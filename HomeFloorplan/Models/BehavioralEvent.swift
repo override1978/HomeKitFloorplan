@@ -21,11 +21,11 @@ enum TimeOfDay: String, Codable, CaseIterable {
 
     var localizedLabel: String {
         switch self {
-        case .earlyMorning: return String(localized: "behavioral.timeOfDay.earlyMorning", defaultValue: "Mattino presto")
-        case .morning:      return String(localized: "behavioral.timeOfDay.morning",      defaultValue: "Mattina")
-        case .afternoon:    return String(localized: "behavioral.timeOfDay.afternoon",    defaultValue: "Pomeriggio")
-        case .evening:      return String(localized: "behavioral.timeOfDay.evening",      defaultValue: "Sera")
-        case .night:        return String(localized: "behavioral.timeOfDay.night",        defaultValue: "Notte")
+        case .earlyMorning: return String(localized: "behavioral.timeOfDay.earlyMorning", defaultValue: "Early Morning")
+        case .morning:      return String(localized: "behavioral.timeOfDay.morning",      defaultValue: "Morning")
+        case .afternoon:    return String(localized: "behavioral.timeOfDay.afternoon",    defaultValue: "Afternoon")
+        case .evening:      return String(localized: "behavioral.timeOfDay.evening",      defaultValue: "Evening")
+        case .night:        return String(localized: "behavioral.timeOfDay.night",        defaultValue: "Night")
         }
     }
 }
@@ -43,8 +43,8 @@ enum DayType: String, Codable {
 
     var localizedLabel: String {
         switch self {
-        case .weekday: return String(localized: "behavioral.dayType.weekday", defaultValue: "nei giorni feriali")
-        case .weekend: return String(localized: "behavioral.dayType.weekend", defaultValue: "nel weekend")
+        case .weekday: return String(localized: "behavioral.dayType.weekday", defaultValue: "on weekdays")
+        case .weekend: return String(localized: "behavioral.dayType.weekend", defaultValue: "on weekends")
         }
     }
 }

@@ -122,10 +122,10 @@ enum EnergyInsightBuilder {
         switch signal.type {
         case .alwaysOn:
             return String(localized: "energy.signal.alwaysOn.headline",
-                          defaultValue: "Dispositivo rimasto acceso")
+                          defaultValue: "Device left on")
         case .anomalousRuntime:
             return String(localized: "energy.signal.runtime.headline",
-                          defaultValue: "Consumo anomalo rilevato")
+                          defaultValue: "Anomalous usage detected")
         }
     }
 
@@ -136,12 +136,12 @@ enum EnergyInsightBuilder {
         case .alwaysOn:
             return String(format:
                 String(localized: "energy.signal.alwaysOn.body",
-                       defaultValue: "%1$@ (%2$@) è acceso da %3$@ ore. Di solito si spegne entro %4$@ ore."),
+                       defaultValue: "%1$@ (%2$@) has been on for %3$@ hours. It usually turns off within %4$@ hours."),
                 signal.accessoryName, signal.roomName, current, baseline)
         case .anomalousRuntime:
             return String(format:
                 String(localized: "energy.signal.runtime.body",
-                       defaultValue: "%1$@ (%2$@) ha accumulato %3$@ ore oggi. Media giornaliera: %4$@ ore."),
+                       defaultValue: "%1$@ (%2$@) has accumulated %3$@ hours today. Daily average: %4$@ hours."),
                 signal.accessoryName, signal.roomName, current, baseline)
         }
     }
@@ -149,7 +149,7 @@ enum EnergyInsightBuilder {
     static func recommendation(for signal: EnergySignal) -> String {
         String(format:
             String(localized: "energy.signal.recommendation",
-                   defaultValue: "Verifica se %@ è necessario e considera di spegnerlo per ridurre i consumi."),
+                   defaultValue: "Check if %@ is needed and consider turning it off to reduce usage."),
             signal.accessoryName)
     }
 
@@ -159,12 +159,12 @@ enum EnergyInsightBuilder {
         case .alwaysOn:
             return String(format:
                 String(localized: "energy.signal.alwaysOn.why",
-                       defaultValue: "Basato sullo storico: media di %@ ore di sessione al giorno."),
+                       defaultValue: "Based on history: average session of %@ hours per day."),
                 baseline)
         case .anomalousRuntime:
             return String(format:
                 String(localized: "energy.signal.runtime.why",
-                       defaultValue: "L'utilizzo odierno supera del doppio la media storica di %@ ore/giorno."),
+                       defaultValue: "Today's usage is double the historical average of %@ hours/day."),
                 baseline)
         }
     }

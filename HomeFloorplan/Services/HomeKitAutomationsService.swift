@@ -66,7 +66,7 @@ struct AutomationItem: Identifiable {
         if let event = trigger as? HMEventTrigger {
             return describeEventTrigger(event)
         }
-        return String(localized: "automation.description.custom", defaultValue: "Automazione personalizzata")
+        return String(localized: "automation.description.custom", defaultValue: "Custom Automation")
     }
 
     private static func describeTimerTrigger(_ timer: HMTimerTrigger) -> String {
@@ -79,32 +79,32 @@ struct AutomationItem: Identifiable {
             var components: [String] = []
             // Controlla i giorni della settimana
             if recurrence.weekOfYear != nil {
-                components.append(String(localized: "automation.recurrence.weekly", defaultValue: "Settimanale"))
+                components.append(String(localized: "automation.recurrence.weekly", defaultValue: "Weekly"))
             } else if let _ = recurrence.value(for: .day) {
-                components.append(String(localized: "automation.recurrence.daily", defaultValue: "Giornaliero"))
+                components.append(String(localized: "automation.recurrence.daily", defaultValue: "Daily"))
             }
             if components.isEmpty {
                 // Riprova con weekday
                 let days = [
-                    String(localized: "weekday.sun", defaultValue: "Dom"),
-                    String(localized: "weekday.mon", defaultValue: "Lun"),
-                    String(localized: "weekday.tue", defaultValue: "Mar"),
-                    String(localized: "weekday.wed", defaultValue: "Mer"),
-                    String(localized: "weekday.thu", defaultValue: "Gio"),
-                    String(localized: "weekday.fri", defaultValue: "Ven"),
-                    String(localized: "weekday.sat", defaultValue: "Sab")
+                    String(localized: "weekday.sun", defaultValue: "Sun"),
+                    String(localized: "weekday.mon", defaultValue: "Mon"),
+                    String(localized: "weekday.tue", defaultValue: "Tue"),
+                    String(localized: "weekday.wed", defaultValue: "Wed"),
+                    String(localized: "weekday.thu", defaultValue: "Thu"),
+                    String(localized: "weekday.fri", defaultValue: "Fri"),
+                    String(localized: "weekday.sat", defaultValue: "Sat")
                 ]
                 if let wd = recurrence.weekday, wd >= 1, wd <= 7 {
                     components.append(days[wd - 1])
                 }
             }
             let recStr = components.isEmpty
-                ? String(localized: "automation.recurrence.recurring", defaultValue: "Ricorrente")
+                ? String(localized: "automation.recurrence.recurring", defaultValue: "Recurring")
                 : components.joined(separator: ", ")
-            let atStr = String(localized: "automation.timer.at", defaultValue: "alle")
+            let atStr = String(localized: "automation.timer.at", defaultValue: "at")
             return "\(recStr) \(atStr) \(timeStr)"
         }
-        let onceStr = String(localized: "automation.timer.once", defaultValue: "Una volta alle")
+        let onceStr = String(localized: "automation.timer.once", defaultValue: "Once at")
         return "\(onceStr) \(timeStr)"
     }
 
@@ -112,30 +112,30 @@ struct AutomationItem: Identifiable {
         var parts: [String] = []
         for event in trigger.events {
             if event is HMSignificantTimeEvent {
-                parts.append(String(localized: "automation.event.sunsetSunrise", defaultValue: "Tramonto / Alba"))
+                parts.append(String(localized: "automation.event.sunsetSunrise", defaultValue: "Sunset / Sunrise"))
             } else if let cal = event as? HMCalendarEvent {
                 let formatter = DateFormatter()
                 formatter.dateStyle = .short
                 formatter.timeStyle = .short
                 parts.append(formatter.string(from: cal.fireDateComponents.date ?? Date()))
             } else if event is HMLocationEvent {
-                parts.append(String(localized: "automation.event.location", defaultValue: "Posizione"))
+                parts.append(String(localized: "automation.event.location", defaultValue: "Location"))
             } else if let pres = event as? HMPresenceEvent {
                 switch pres.presenceEventType {
-                case .everyEntry: parts.append(String(localized: "automation.event.presence.everyEntry", defaultValue: "Ogni arrivo a casa"))
-                case .everyExit:  parts.append(String(localized: "automation.event.presence.everyExit", defaultValue: "Ogni uscita da casa"))
-                case .firstEntry: parts.append(String(localized: "automation.event.presence.firstEntry", defaultValue: "Primo arrivo a casa"))
-                case .lastExit:   parts.append(String(localized: "automation.event.presence.lastExit", defaultValue: "Ultima uscita da casa"))
-                @unknown default: parts.append(String(localized: "automation.event.presence.other", defaultValue: "Presenza"))
+                case .everyEntry: parts.append(String(localized: "automation.event.presence.everyEntry", defaultValue: "Every arrival home"))
+                case .everyExit:  parts.append(String(localized: "automation.event.presence.everyExit", defaultValue: "Every departure home"))
+                case .firstEntry: parts.append(String(localized: "automation.event.presence.firstEntry", defaultValue: "First arrival home"))
+                case .lastExit:   parts.append(String(localized: "automation.event.presence.lastExit", defaultValue: "Last departure home"))
+                @unknown default: parts.append(String(localized: "automation.event.presence.other", defaultValue: "Presence"))
                 }
             } else if let charEvent = event as? HMCharacteristicEvent<NSCopying> {
-                let accName = charEvent.characteristic.service?.accessory?.name ?? String(localized: "automation.event.accessory.fallback", defaultValue: "Accessorio")
-                let eventPrefix = String(localized: "automation.event.characteristic.prefix", defaultValue: "Evento su")
+                let accName = charEvent.characteristic.service?.accessory?.name ?? String(localized: "automation.event.accessory.fallback", defaultValue: "Accessory")
+                let eventPrefix = String(localized: "automation.event.characteristic.prefix", defaultValue: "Event on")
                 parts.append("\(eventPrefix) \(accName)")
             }
         }
         return parts.isEmpty
-            ? String(localized: "automation.event.description.fallback", defaultValue: "Automazione basata su eventi")
+            ? String(localized: "automation.event.description.fallback", defaultValue: "Event-based Automation")
             : parts.joined(separator: " • ")
     }
 }

@@ -7,10 +7,10 @@ enum PresenceState: String, Codable {
 
     var localizedLabel: String {
         switch self {
-        case .home:     return String(localized: "context.presence.home",     defaultValue: "A casa")
-        case .away:     return String(localized: "context.presence.away",     defaultValue: "Fuori casa")
-        case .sleeping: return String(localized: "context.presence.sleeping", defaultValue: "In casa (notte)")
-        case .vacation: return String(localized: "context.presence.vacation", defaultValue: "In vacanza")
+        case .home:     return String(localized: "context.presence.home",     defaultValue: "Home")
+        case .away:     return String(localized: "context.presence.away",     defaultValue: "Away")
+        case .sleeping: return String(localized: "context.presence.sleeping", defaultValue: "Home (night)")
+        case .vacation: return String(localized: "context.presence.vacation", defaultValue: "On vacation")
         }
     }
 }
@@ -32,10 +32,10 @@ enum CalendarSeason: String, Codable {
 
     var localizedLabel: String {
         switch self {
-        case .spring: return String(localized: "context.season.spring", defaultValue: "Primavera")
-        case .summer: return String(localized: "context.season.summer", defaultValue: "Estate")
-        case .autumn: return String(localized: "context.season.autumn", defaultValue: "Autunno")
-        case .winter: return String(localized: "context.season.winter", defaultValue: "Inverno")
+        case .spring: return String(localized: "context.season.spring", defaultValue: "Spring")
+        case .summer: return String(localized: "context.season.summer", defaultValue: "Summer")
+        case .autumn: return String(localized: "context.season.autumn", defaultValue: "Autumn")
+        case .winter: return String(localized: "context.season.winter", defaultValue: "Winter")
         }
     }
 }

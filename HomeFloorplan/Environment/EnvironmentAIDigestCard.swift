@@ -196,7 +196,7 @@ private struct InsightPageView: View {
                 Button {
                     showDismissDialog = true
                 } label: {
-                    Text(String(localized: "insight.action.dismiss", defaultValue: "Ignora"))
+                    Text(String(localized: "insight.action.dismiss", defaultValue: "Dismiss"))
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 10)
@@ -208,14 +208,14 @@ private struct InsightPageView: View {
                 }
                 .buttonStyle(.plain)
                 .confirmationDialog(
-                    String(localized: "insight.dismiss.dialog.title", defaultValue: "Perché vuoi ignorare questo insight?"),
+                    String(localized: "insight.dismiss.dialog.title", defaultValue: "Why dismiss this insight?"),
                     isPresented: $showDismissDialog,
                     titleVisibility: .visible
                 ) {
                     Button(DismissalReason.userActedManually.localizedLabel) { onDismiss(.userActedManually) }
                     Button(DismissalReason.irrelevant.localizedLabel)        { onDismiss(.irrelevant) }
                     Button(DismissalReason.unclear.localizedLabel)           { onDismiss(.unclear) }
-                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Annulla"), role: .cancel) {}
+                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Cancel"), role: .cancel) {}
                 }
             }
 
@@ -370,8 +370,8 @@ private struct DigestActionButton: View {
 
     private var buttonLabel: String {
         switch state {
-        case .completed: return String(localized: "insight.action.done",  defaultValue: "Fatto")
-        case .error:     return String(localized: "insight.action.error", defaultValue: "Errore")
+        case .completed: return String(localized: "insight.action.done",  defaultValue: "Done")
+        case .error:     return String(localized: "insight.action.error", defaultValue: "Error")
         default:         return action.label
         }
     }

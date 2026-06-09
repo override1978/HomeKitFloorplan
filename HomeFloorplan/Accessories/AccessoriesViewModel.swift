@@ -90,7 +90,7 @@ final class AccessoriesViewModel {
             // Stanza senza UUID reale: la includiamo con nome placeholder
             let roomName: String = {
                 if roomID == UUID.zero {
-                    return String(localized: "accessories.noRoomGroup", defaultValue: "Senza stanza")
+                    return String(localized: "accessories.noRoomGroup", defaultValue: "No Room")
                 }
                 return accessories.first?.room?.name ?? "—"
             }()

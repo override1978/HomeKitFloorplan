@@ -44,7 +44,7 @@ struct AccessoriesTabView: View {
                     loadingState
                 }
             }
-            .navigationTitle(String(localized: "accessories.navigationTitle", defaultValue: "Accessori"))
+            .navigationTitle(String(localized: "accessories.navigationTitle", defaultValue: "Accessories"))
             .navigationBarTitleDisplayMode(.large)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .toolbar { toolbarContent }
@@ -122,7 +122,7 @@ struct AccessoriesTabView: View {
                     if count > 0 {
                         HStack {
                             Text(String(localized: "accessories.section.accessories",
-                                        defaultValue: "Accessori"))
+                                        defaultValue: "Accessories"))
                                 .font(.title3.weight(.bold))
                                 .foregroundStyle(.primary)
                             Spacer()
@@ -137,7 +137,7 @@ struct AccessoriesTabView: View {
                     let filtered = vm.filteredRooms
                     if !filtered.isEmpty {
                         HStack {
-                            Text(String(localized: "accessories.section.rooms", defaultValue: "Stanze"))
+                            Text(String(localized: "accessories.section.rooms", defaultValue: "Rooms"))
                                 .font(.title3.weight(.bold))
                                 .foregroundStyle(.primary)
                             Spacer()
@@ -212,7 +212,7 @@ struct AccessoriesTabView: View {
     private var loadingState: some View {
         VStack(spacing: 16) {
             ProgressView().scaleEffect(1.2)
-            Text(String(localized: "accessories.loading", defaultValue: "Lettura accessori HomeKit…"))
+            Text(String(localized: "accessories.loading", defaultValue: "Loading HomeKit accessories…"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -222,15 +222,15 @@ struct AccessoriesTabView: View {
     private var emptyState: some View {
         ContentUnavailableView {
             Label(
-                String(localized: "accessories.empty.title", defaultValue: "Nessun accessorio"),
+                String(localized: "accessories.empty.title", defaultValue: "No Accessories"),
                 systemImage: "house"
             )
         } description: {
             VStack(spacing: 8) {
                 Text(String(localized: "accessories.empty.description",
-                            defaultValue: "La casa attiva non ha accessori configurati."))
+                            defaultValue: "The active home has no configured accessories."))
                 Text(String(localized: "accessories.empty.hint",
-                            defaultValue: "Aggiungi accessori dall'app Casa di Apple per gestirli qui."))
+                            defaultValue: "Add accessories from the Apple Home app to manage them here."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -240,7 +240,7 @@ struct AccessoriesTabView: View {
                     UIApplication.shared.open(url)
                 } label: {
                     Label(
-                        String(localized: "accessories.empty.openHome", defaultValue: "Apri Casa"),
+                        String(localized: "accessories.empty.openHome", defaultValue: "Open Home"),
                         systemImage: "arrow.up.right.square"
                     )
                 }
@@ -251,14 +251,14 @@ struct AccessoriesTabView: View {
 
     private var noResultsState: some View {
         ContentUnavailableView(
-            String(localized: "accessories.noResults.title", defaultValue: "Nessun risultato"),
+            String(localized: "accessories.noResults.title", defaultValue: "No Results"),
             systemImage: "magnifyingglass",
             description: Text(
                 vm?.searchText.isEmpty == false
                     ? String(localized: "accessories.noResults.searchHint",
-                             defaultValue: "Modifica la ricerca o i filtri.")
+                             defaultValue: "Adjust your search or filters.")
                     : String(localized: "accessories.noResults.filterHint",
-                             defaultValue: "Modifica i filtri per vedere accessori.")
+                             defaultValue: "Adjust filters to see accessories.")
             )
         )
         .padding(.top, 40)
@@ -339,7 +339,7 @@ private struct AccessoryFlatRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                             Text(String(localized: "accessories.row.offline",
-                                        defaultValue: "Non raggiungibile"))
+                                        defaultValue: "Unreachable"))
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         } else if let status = adapter?.primaryStatusText {
@@ -487,18 +487,18 @@ private struct RoomReorderSheet: View {
             }
             .listStyle(.insetGrouped)
             .environment(\.editMode, .constant(.active))
-            .navigationTitle(String(localized: "accessories.reorder.title", defaultValue: "Riordina stanze"))
+            .navigationTitle(String(localized: "accessories.reorder.title", defaultValue: "Reorder Rooms"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(String(localized: "accessories.reorder.reset", defaultValue: "Ripristina")) {
+                    Button(String(localized: "accessories.reorder.reset", defaultValue: "Reset")) {
                         vm.saveOrder([])   // ordine vuoto = torna ad alfabetico
                         vm.refresh()
                         dismiss()
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(String(localized: "accessories.reorder.done", defaultValue: "Fine")) {
+                    Button(String(localized: "accessories.reorder.done", defaultValue: "Done")) {
                         vm.saveOrder(localRooms)
                         vm.refresh()
                         dismiss()

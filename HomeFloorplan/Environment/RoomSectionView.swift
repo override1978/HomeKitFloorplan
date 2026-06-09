@@ -462,14 +462,14 @@ private struct AIInsightRow: View {
                 }
                 .buttonStyle(.plain)
                 .confirmationDialog(
-                    String(localized: "insight.dismiss.dialog.title", defaultValue: "Perché vuoi ignorare questo insight?"),
+                    String(localized: "insight.dismiss.dialog.title", defaultValue: "Why dismiss this insight?"),
                     isPresented: $showDismissDialog,
                     titleVisibility: .visible
                 ) {
                     Button(DismissalReason.userActedManually.localizedLabel) { onDismiss(.userActedManually) }
                     Button(DismissalReason.irrelevant.localizedLabel)        { onDismiss(.irrelevant) }
                     Button(DismissalReason.unclear.localizedLabel)           { onDismiss(.unclear) }
-                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Annulla"), role: .cancel) {}
+                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Cancel"), role: .cancel) {}
                 }
             }
 

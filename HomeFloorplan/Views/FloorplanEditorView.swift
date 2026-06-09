@@ -409,7 +409,7 @@ struct FloorplanEditorView: View {
                         .font(.caption2)
                         .foregroundStyle(.green)
                     Text(String(localized: "floorplan.editor.banner.noRooms",
-                                defaultValue: "Nessuna stanza collegata — apri l'editor 2D (✏️) per disegnare le aree e sbloccare il layer Ambiente."))
+                                defaultValue: "No rooms linked — open the 2D editor (✏️) to draw the areas and unlock the Environment layer."))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -965,7 +965,7 @@ struct FloorplanEditorView: View {
                         .foregroundStyle(.green)
                         .padding(.top, 1)
                     Text(String(localized: "floorplan.editor.hint.ambiente",
-                                defaultValue: "Disegna le aree stanza (matita → Area Stanza) e collegale a HomeKit per sbloccare il layer **Ambiente**."))
+                                defaultValue: "Draw room areas (pencil → Room Area) and link them to HomeKit to unlock the **Environment** layer."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)

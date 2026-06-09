@@ -36,7 +36,7 @@ struct DrawingTopBar: View {
 
             // Done
             Button(action: onDone) {
-                Text(String(localized: "drawing.topbar.done", defaultValue: "Fatto"))
+                Text(String(localized: "drawing.topbar.done", defaultValue: "Done"))
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
@@ -78,8 +78,8 @@ struct OpeningInspectorPanel: View {
 
                 // Label
                 Text(opening.kind == .door
-                     ? String(localized: "drawing.inspector.opening.door", defaultValue: "Porta")
-                     : String(localized: "drawing.inspector.opening.window", defaultValue: "Finestra"))
+                     ? String(localized: "drawing.inspector.opening.door", defaultValue: "Door")
+                     : String(localized: "drawing.inspector.opening.window", defaultValue: "Window"))
                     .font(.subheadline.weight(.semibold))
 
                 Spacer()
@@ -93,7 +93,7 @@ struct OpeningInspectorPanel: View {
                 if opening.kind == .door {
                     Button(action: onFlip) {
                         Label(
-                            String(localized: "drawing.inspector.opening.flip", defaultValue: "Inverti"),
+                            String(localized: "drawing.inspector.opening.flip", defaultValue: "Flip"),
                             systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right"
                         )
                         .labelStyle(.iconOnly)
@@ -159,8 +159,8 @@ struct PlaceOpeningBanner: View {
                 .foregroundStyle(BrandColor.primary)
 
             Text(kind == .door
-                 ? String(localized: "drawing.banner.door",   defaultValue: "Tocca un muro per aggiungere una porta")
-                 : String(localized: "drawing.banner.window", defaultValue: "Tocca un muro per aggiungere una finestra"))
+                 ? String(localized: "drawing.banner.door",   defaultValue: "Tap a wall to add a door")
+                 : String(localized: "drawing.banner.window", defaultValue: "Tap a wall to add a window"))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
 
@@ -202,12 +202,12 @@ struct DrawingToolbar: View {
             // ── Left: mode toggle (Muro / Seleziona) ──────────────────────────
             HStack(spacing: 0) {
                 modeButton(icon: "pencil.tip",
-                           label: String(localized: "drawing.toolbar.mode.draw",   defaultValue: "Muro"),
+                           label: String(localized: "drawing.toolbar.mode.draw",   defaultValue: "Wall"),
                            active: mode == .draw) {
                     mode = .draw
                 }
                 modeButton(icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
-                           label: String(localized: "drawing.toolbar.mode.select", defaultValue: "Seleziona"),
+                           label: String(localized: "drawing.toolbar.mode.select", defaultValue: "Select"),
                            active: mode == .select) {
                     mode = .select
                 }
@@ -224,9 +224,9 @@ struct DrawingToolbar: View {
                     wallKindButton(kind: .exterior, icon: "square.on.square",
                                    label: String(localized: "drawing.toolbar.wall.exterior", defaultValue: "Perim."))
                     wallKindButton(kind: .interior, icon: "square.dashed",
-                                   label: String(localized: "drawing.toolbar.wall.interior", defaultValue: "Interno"))
+                                   label: String(localized: "drawing.toolbar.wall.interior", defaultValue: "Interior"))
                     wallKindButton(kind: .balcony,  icon: "line.diagonal",
-                                   label: String(localized: "drawing.toolbar.wall.balcony",  defaultValue: "Balcone"))
+                                   label: String(localized: "drawing.toolbar.wall.balcony",  defaultValue: "Balcony"))
                 }
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
@@ -262,10 +262,10 @@ struct DrawingToolbar: View {
             HStack(spacing: 8) {
                 openingButton(kind: .door,
                               icon: "door.left.hand.open",
-                              label: String(localized: "drawing.toolbar.door",      defaultValue: "Porta"))
+                              label: String(localized: "drawing.toolbar.door",      defaultValue: "Door"))
                 openingButton(kind: .window,
                               icon: "rectangle.split.2x1",
-                              label: String(localized: "drawing.toolbar.window",    defaultValue: "Finestra"))
+                              label: String(localized: "drawing.toolbar.window",    defaultValue: "Window"))
                 roomLabelButton()
                 roomAreaButton()
                 furnitureButton()
@@ -372,7 +372,7 @@ struct DrawingToolbar: View {
             VStack(spacing: 3) {
                 Image(systemName: "text.badge.plus")
                     .font(.system(size: 18, weight: isActive ? .semibold : .regular))
-                Text(String(localized: "drawing.toolbar.room", defaultValue: "Stanza"))
+                Text(String(localized: "drawing.toolbar.room", defaultValue: "Room"))
                     .font(.system(size: 10, weight: isActive ? .semibold : .regular))
             }
             .foregroundStyle(isActive ? BrandColor.primary : .primary)
@@ -430,7 +430,7 @@ struct DrawingToolbar: View {
             VStack(spacing: 3) {
                 Image(systemName: "sofa.fill")
                     .font(.system(size: 18, weight: isActive ? .semibold : .regular))
-                Text(String(localized: "drawing.toolbar.furniture", defaultValue: "Arredo"))
+                Text(String(localized: "drawing.toolbar.furniture", defaultValue: "Furniture"))
                     .font(.system(size: 10, weight: isActive ? .semibold : .regular))
             }
             .foregroundStyle(isActive ? BrandColor.primary : .primary)
@@ -464,7 +464,7 @@ struct PlaceRoomLabelBanner: View {
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(BrandColor.primary)
 
-            Text(String(localized: "drawing.banner.roomLabel", defaultValue: "Tocca per posizionare l'etichetta"))
+            Text(String(localized: "drawing.banner.roomLabel", defaultValue: "Tap to place the label"))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
 
@@ -501,7 +501,7 @@ struct RoomLabelInspectorPanel: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.name)
                     .font(.subheadline.weight(.semibold))
-                Text(String(localized: "drawing.inspector.roomLabel.subtitle", defaultValue: "Stanza HomeKit"))
+                Text(String(localized: "drawing.inspector.roomLabel.subtitle", defaultValue: "HomeKit Room"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -531,11 +531,11 @@ struct DrawRoomAreaBanner: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(localized: "drawing.banner.roomArea.title",
-                            defaultValue: "Trascina per disegnare l'area della stanza"))
+                            defaultValue: "Drag to draw the room area"))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                 Text(String(localized: "drawing.banner.roomArea.subtitle",
-                            defaultValue: "Collega a HomeKit per abilitare il layer Ambiente"))
+                            defaultValue: "Link to HomeKit to enable the Environment layer"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -609,7 +609,7 @@ struct PlaceFurnitureBanner: View {
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(BrandColor.primary)
 
-            Text(String(localized: "drawing.banner.furniture", defaultValue: "Tocca per posizionare il mobile"))
+            Text(String(localized: "drawing.banner.furniture", defaultValue: "Tap to place the furniture item"))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
 
@@ -649,7 +649,7 @@ struct FurnitureInspectorPanel: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 TextField(
-                    String(localized: "drawing.inspector.furniture.namePlaceholder", defaultValue: "Nome mobile"),
+                    String(localized: "drawing.inspector.furniture.namePlaceholder", defaultValue: "Furniture name"),
                     text: $editingName
                 )
                 .font(.subheadline.weight(.semibold))
@@ -698,10 +698,10 @@ struct RoomPickerSheet: View {
             Group {
                 if rooms.isEmpty {
                     ContentUnavailableView(
-                        String(localized: "drawing.picker.room.empty.title",       defaultValue: "Nessuna stanza"),
+                        String(localized: "drawing.picker.room.empty.title",       defaultValue: "No Rooms"),
                         systemImage: "rectangle.split.3x3",
                         description: Text(String(localized: "drawing.picker.room.empty.description",
-                                                 defaultValue: "Configura le stanze nell'app Casa di iOS."))
+                                                 defaultValue: "Set up rooms in the iOS Home app."))
                     )
                 } else {
                     List(rooms) { room in
@@ -723,11 +723,11 @@ struct RoomPickerSheet: View {
                     }
                 }
             }
-            .navigationTitle(String(localized: "drawing.picker.room.title", defaultValue: "Scegli stanza"))
+            .navigationTitle(String(localized: "drawing.picker.room.title", defaultValue: "Choose Room"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "drawing.picker.cancel", defaultValue: "Annulla")) {
+                    Button(String(localized: "drawing.picker.cancel", defaultValue: "Cancel")) {
                         onCancel()
                         dismiss()
                     }

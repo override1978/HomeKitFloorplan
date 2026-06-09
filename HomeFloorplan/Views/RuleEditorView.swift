@@ -96,22 +96,22 @@ struct RuleEditorView: View {
                 // ── 1. Nome ──────────────────────────────────────────────
                 Section {
                     HStack {
-                        Text(String(localized: "rule.editor.name", defaultValue: "Nome"))
+                        Text(String(localized: "rule.editor.name", defaultValue: "Name"))
                             .foregroundStyle(.secondary)
                         TextField(
-                            String(localized: "rule.editor.name.placeholder", defaultValue: "Nome della regola"),
+                            String(localized: "rule.editor.name.placeholder", defaultValue: "Rule name"),
                             text: $name
                         )
                         .multilineTextAlignment(.trailing)
                     }
                 } header: {
-                    Text(String(localized: "rule.editor.name.header", defaultValue: "Regola"))
+                    Text(String(localized: "rule.editor.name.header", defaultValue: "Rule"))
                 }
 
                 // ── 2. Trigger (tipo esecuzione) ─────────────────────────
                 Section {
                     Picker(
-                        String(localized: "rule.editor.trigger.type", defaultValue: "Esecuzione"),
+                        String(localized: "rule.editor.trigger.type", defaultValue: "Execution"),
                         selection: $triggerType
                     ) {
                         Label(
@@ -119,7 +119,7 @@ struct RuleEditorView: View {
                             systemImage: "bolt"
                         ).tag("inApp")
                         Label(
-                            String(localized: "rule.trigger.scheduled", defaultValue: "Schedulata"),
+                            String(localized: "rule.trigger.scheduled", defaultValue: "Scheduled"),
                             systemImage: "calendar.clock"
                         ).tag("calendar")
                     }
@@ -128,22 +128,22 @@ struct RuleEditorView: View {
 
                     if triggerType == "calendar" {
                         DatePicker(
-                            String(localized: "rule.editor.time", defaultValue: "Orario"),
+                            String(localized: "rule.editor.time", defaultValue: "Time"),
                             selection: $scheduledTime,
                             displayedComponents: .hourAndMinute
                         )
                         weekdayPicker
                     }
                 } header: {
-                    Text(String(localized: "rule.editor.trigger.header", defaultValue: "Quando"))
+                    Text(String(localized: "rule.editor.trigger.header", defaultValue: "When"))
                 } footer: {
                     if triggerType == "inApp" {
                         Text(String(localized: "rule.editor.inapp.footer",
-                                    defaultValue: "On-demand: la regola si attiva ad ogni aggiornamento sensori. Aggiungi un orario per limitarla a una fascia specifica."))
+                                    defaultValue: "On-demand: the rule triggers on every sensor update. Add a time to limit it to a specific window."))
                             .font(.caption)
                     } else {
                         Text(String(localized: "rule.editor.calendar.footer",
-                                    defaultValue: "La regola verrà eseguita da HomeKit all'orario indicato, anche con l'app chiusa."))
+                                    defaultValue: "The rule will be executed by HomeKit at the scheduled time, even when the app is closed."))
                             .font(.caption)
                     }
                 }
@@ -205,7 +205,7 @@ struct RuleEditorView: View {
 
                     // Picker tipo azione — filtra in base all'accessorio reale
                     Picker(
-                        String(localized: "rule.editor.action.type", defaultValue: "Azione"),
+                        String(localized: "rule.editor.action.type", defaultValue: "Action"),
                         selection: $actionType
                     ) {
                         ForEach(availableActionTypes, id: \.self) { type in
@@ -276,7 +276,7 @@ struct RuleEditorView: View {
                                 Image(systemName: setModeIcon(for: Int(actionValue)))
                                     .foregroundStyle(setModeColor(for: Int(actionValue)))
                                     .frame(width: 20)
-                                Text(String(localized: "rule.editor.mode", defaultValue: "Modalità"))
+                                Text(String(localized: "rule.editor.mode", defaultValue: "Mode"))
                                     .foregroundStyle(.secondary)
                                 Spacer()
                                 Text(modeLabel(for: Int(actionValue)))
@@ -303,16 +303,16 @@ struct RuleEditorView: View {
 
                     // Toggle includi/escludi
                     Toggle(
-                        String(localized: "rule.editor.include", defaultValue: "Includi questa regola"),
+                        String(localized: "rule.editor.include", defaultValue: "Include this rule"),
                         isOn: $includeRule
                     )
                     .tint(.accentColor)
                 } header: {
-                    Text(String(localized: "rule.editor.action.header", defaultValue: "Cosa farà"))
+                    Text(String(localized: "rule.editor.action.header", defaultValue: "What it will do"))
                 } footer: {
                     if !includeRule {
                         Text(String(localized: "rule.editor.excluded.hint",
-                                    defaultValue: "La regola non verrà salvata."))
+                                    defaultValue: "The rule will not be saved."))
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
@@ -327,15 +327,15 @@ struct RuleEditorView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(triggerType == "calendar"
                                  ? String(localized: "rule.editor.homekit.badge",
-                                          defaultValue: "Verrà eseguita da HomeKit")
+                                          defaultValue: "Will be executed by HomeKit")
                                  : String(localized: "rule.editor.inapp.badge",
-                                          defaultValue: "Verrà eseguita dall'app"))
+                                          defaultValue: "Will be executed by the app"))
                                 .font(.subheadline.weight(.medium))
                             Text(triggerType == "calendar"
                                  ? String(localized: "rule.editor.homekit.hint",
-                                          defaultValue: "Funziona anche con l'app chiusa.")
+                                          defaultValue: "Works even when the app is closed.")
                                  : String(localized: "rule.editor.inapp.hint",
-                                          defaultValue: "Richiede l'app aperta o in background."))
+                                          defaultValue: "Requires the app open or in background."))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -344,21 +344,21 @@ struct RuleEditorView: View {
 
                     if confidenceScore > 0 {
                         HStack {
-                            Text(String(localized: "rule.editor.confidence", defaultValue: "Confidenza AI"))
+                            Text(String(localized: "rule.editor.confidence", defaultValue: "AI Confidence"))
                             Spacer()
                             Text("\(Int(confidenceScore * 100))%")
                                 .foregroundStyle(.secondary)
                         }
                     }
                 } header: {
-                    Text(String(localized: "rule.editor.execution.header", defaultValue: "Esecuzione"))
+                    Text(String(localized: "rule.editor.execution.header", defaultValue: "Execution"))
                 }
             }
-            .navigationTitle(String(localized: "rule.editor.title", defaultValue: "Regola automatica"))
+            .navigationTitle(String(localized: "rule.editor.title", defaultValue: "Automatic Rule"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "rule.editor.cancel", defaultValue: "Annulla")) {
+                    Button(String(localized: "rule.editor.cancel", defaultValue: "Cancel")) {
                         onSave(nil)
                         dismiss()
                     }
@@ -372,7 +372,7 @@ struct RuleEditorView: View {
                             executeNow(draft)
                         } label: {
                             Label(
-                                String(localized: "rule.editor.execute", defaultValue: "Esegui ora"),
+                                String(localized: "rule.editor.execute", defaultValue: "Run now"),
                                 systemImage: "bolt.fill"
                             )
                         }
@@ -381,7 +381,7 @@ struct RuleEditorView: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "rule.editor.save", defaultValue: "Salva regola")) {
+                    Button(String(localized: "rule.editor.save", defaultValue: "Save rule")) {
                         saveAndDismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -463,8 +463,8 @@ struct RuleEditorView: View {
 
     private var includeBadge: some View {
         Text(includeRule
-             ? String(localized: "rule.editor.included", defaultValue: "Inclusa")
-             : String(localized: "rule.editor.excluded", defaultValue: "Esclusa"))
+             ? String(localized: "rule.editor.included", defaultValue: "Included")
+             : String(localized: "rule.editor.excluded", defaultValue: "Excluded"))
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -543,14 +543,14 @@ struct RuleEditorView: View {
     @ViewBuilder
     private func actionPickerLabel(for type: String) -> some View {
         switch type {
-        case "on":       Label(String(localized: "rule.action.on",       defaultValue: "Accendi"),          systemImage: "lightbulb.fill")
-        case "off":      Label(String(localized: "rule.action.off",      defaultValue: "Spegni"),           systemImage: "lightbulb.slash.fill")
-        case "dim":      Label(String(localized: "rule.action.dim",      defaultValue: "Dimmerizza"),       systemImage: "sun.min.fill")
-        case "open":     Label(String(localized: "rule.action.open",     defaultValue: "Apri"),             systemImage: "arrow.up.square.fill")
-        case "close":    Label(String(localized: "rule.action.close",    defaultValue: "Chiudi"),           systemImage: "arrow.down.square.fill")
-        case "setSpeed": Label(String(localized: "rule.action.setSpeed", defaultValue: "Velocità"),         systemImage: "wind")
-        case "setMode":  Label(String(localized: "rule.action.setMode",  defaultValue: "Modalità"),         systemImage: "slider.horizontal.3")
-        case "setTemp":  Label(String(localized: "rule.action.setTemp",  defaultValue: "Temperatura"),      systemImage: "thermometer.medium")
+        case "on":       Label(String(localized: "rule.action.on",       defaultValue: "Turn On"),          systemImage: "lightbulb.fill")
+        case "off":      Label(String(localized: "rule.action.off",      defaultValue: "Turn Off"),           systemImage: "lightbulb.slash.fill")
+        case "dim":      Label(String(localized: "rule.action.dim",      defaultValue: "Dim"),       systemImage: "sun.min.fill")
+        case "open":     Label(String(localized: "rule.action.open",     defaultValue: "Open"),             systemImage: "arrow.up.square.fill")
+        case "close":    Label(String(localized: "rule.action.close",    defaultValue: "Close"),           systemImage: "arrow.down.square.fill")
+        case "setSpeed": Label(String(localized: "rule.action.setSpeed", defaultValue: "Speed"),         systemImage: "wind")
+        case "setMode":  Label(String(localized: "rule.action.setMode",  defaultValue: "Mode"),         systemImage: "slider.horizontal.3")
+        case "setTemp":  Label(String(localized: "rule.action.setTemp",  defaultValue: "Temperature"),      systemImage: "thermometer.medium")
         default:         Label(type, systemImage: "bolt.fill")
         }
     }
@@ -642,31 +642,31 @@ struct RuleEditorView: View {
 
     private var actionLabel: String {
         switch actionType {
-        case "on":       return String(localized: "rule.action.on",    defaultValue: "Accendi")
-        case "off":      return String(localized: "rule.action.off",   defaultValue: "Spegni")
-        case "open":     return String(localized: "rule.action.open",  defaultValue: "Apri")
-        case "close":    return String(localized: "rule.action.close", defaultValue: "Chiudi")
-        case "dim":      return String(format: String(localized: "rule.action.dim.value", defaultValue: "Luminosità %d%%"), Int(actionValue * 100))
-        case "setSpeed": return String(format: String(localized: "rule.action.speed.value", defaultValue: "Velocità %d%%"), Int(actionValue * 100))
-        case "setTemp":  return String(format: String(localized: "rule.action.temp.value", defaultValue: "Temperatura %.1f°C"), actionValue * 30 + 10)
+        case "on":       return String(localized: "rule.action.on",    defaultValue: "Turn On")
+        case "off":      return String(localized: "rule.action.off",   defaultValue: "Turn Off")
+        case "open":     return String(localized: "rule.action.open",  defaultValue: "Open")
+        case "close":    return String(localized: "rule.action.close", defaultValue: "Close")
+        case "dim":      return String(format: String(localized: "rule.action.dim.value", defaultValue: "Brightness %d%%"), Int(actionValue * 100))
+        case "setSpeed": return String(format: String(localized: "rule.action.speed.value", defaultValue: "Speed %d%%"), Int(actionValue * 100))
+        case "setTemp":  return String(format: String(localized: "rule.action.temp.value", defaultValue: "Temperature %.1f°C"), actionValue * 30 + 10)
         case "setMode":
             let base = modeLabel(for: Int(actionValue))
             if isThermostatAccessory {
                 return "\(base) · \(String(format: "%.0f°C", actionValue2))"
             }
             return base
-        default:         return String(localized: "rule.action.other", defaultValue: "Esegui azione")
+        default:         return String(localized: "rule.action.other", defaultValue: "Run action")
         }
     }
 
     private func modeLabel(for mode: Int) -> String {
         switch mode {
-        case 0: return String(localized: "rule.mode.auto",    defaultValue: "Automatico")
-        case 1: return String(localized: "rule.mode.heat",    defaultValue: "Caldo")
-        case 2: return String(localized: "rule.mode.cool",    defaultValue: "Freddo")
-        case 3: return String(localized: "rule.mode.dry",     defaultValue: "Asciuga")
-        case 4: return String(localized: "rule.mode.fan",     defaultValue: "Solo ventola")
-        case 5: return String(localized: "rule.mode.sleep",   defaultValue: "Notte")
+        case 0: return String(localized: "rule.mode.auto",    defaultValue: "Auto")
+        case 1: return String(localized: "rule.mode.heat",    defaultValue: "Heat")
+        case 2: return String(localized: "rule.mode.cool",    defaultValue: "Cool")
+        case 3: return String(localized: "rule.mode.dry",     defaultValue: "Dry")
+        case 4: return String(localized: "rule.mode.fan",     defaultValue: "Fan only")
+        case 5: return String(localized: "rule.mode.sleep",   defaultValue: "Night")
         default: return "\(mode)"
         }
     }
@@ -680,7 +680,7 @@ struct RuleEditorView: View {
     @ViewBuilder
     private var weekdayPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "rule.editor.weekdays", defaultValue: "Giorni"))
+            Text(String(localized: "rule.editor.weekdays", defaultValue: "Days"))
                 .font(.subheadline)
             HStack(spacing: 6) {
                 ForEach(weekdayItems, id: \.day) { item in

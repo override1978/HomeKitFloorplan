@@ -108,7 +108,7 @@ struct SecurityView: View {
     private var navigationContent: some View {
         NavigationStack {
             securityContent
-                .navigationTitle(String(localized: "security.title", defaultValue: "Sicurezza"))
+                .navigationTitle(String(localized: "security.title", defaultValue: "Security"))
                 .navigationBarTitleDisplayMode(.large)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -213,12 +213,12 @@ struct SecurityView: View {
     private var emptyStateNoDevices: some View {
         ContentUnavailableView {
             Label(
-                String(localized: "security.empty.noDevices.title", defaultValue: "Nessun dispositivo di sicurezza"),
+                String(localized: "security.empty.noDevices.title", defaultValue: "No security devices"),
                 systemImage: "shield.slash"
             )
         } description: {
             Text(String(localized: "security.empty.noDevices.description",
-                        defaultValue: "Aggiungi sensori di contatto, fumo, CO, perdita acqua, serrature o un sistema di allarme in HomeKit."))
+                        defaultValue: "Add contact sensors, smoke, CO, water leak, locks or an alarm system in HomeKit."))
         }
     }
 
@@ -227,16 +227,16 @@ struct SecurityView: View {
             Image(systemName: "plus.circle.dashed")
                 .font(.system(size: 40))
                 .foregroundStyle(.secondary)
-            Text(String(localized: "security.empty.noMonitored.title", defaultValue: "Nessun sensore monitorato"))
+            Text(String(localized: "security.empty.noMonitored.title", defaultValue: "No monitored sensors"))
                 .font(.headline)
             Text(String(localized: "security.empty.noMonitored.description",
-                        defaultValue: "Configura i sensori da monitorare per vedere lo stato di sicurezza della tua casa."))
+                        defaultValue: "Configure the sensors to monitor to view your home's security status."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
             Button { showConfigSheet = true } label: {
-                Label(String(localized: "security.configureSensors", defaultValue: "Configura sensori"),
+                Label(String(localized: "security.configureSensors", defaultValue: "Configure sensors"),
                       systemImage: "slider.horizontal.3")
             }
             .buttonStyle(.borderedProminent)
@@ -283,10 +283,10 @@ private struct SecurityHealthHeroView: View {
 
     private var statusLabel: String {
         switch state {
-        case .ok:        return String(localized: "security.hero.status.protected", defaultValue: "Buona protezione")
-        case .warning:   return String(localized: "security.hero.status.warning",   defaultValue: "Attenzione richiesta")
-        case .alarm:     return String(localized: "security.hero.status.alarm",     defaultValue: "ALLARME ATTIVO")
-        case .noSensors: return String(localized: "security.hero.status.noSensors", defaultValue: "Nessun sensore")
+        case .ok:        return String(localized: "security.hero.status.protected", defaultValue: "Good protection")
+        case .warning:   return String(localized: "security.hero.status.warning",   defaultValue: "Attention required")
+        case .alarm:     return String(localized: "security.hero.status.alarm",     defaultValue: "ALARM ACTIVE")
+        case .noSensors: return String(localized: "security.hero.status.noSensors", defaultValue: "No sensors")
         }
     }
 
@@ -303,7 +303,7 @@ private struct SecurityHealthHeroView: View {
 
                 // Testo stato
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "security.hero.title", defaultValue: "Sicurezza Casa"))
+                    Text(String(localized: "security.hero.title", defaultValue: "Home Security"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -320,7 +320,7 @@ private struct SecurityHealthHeroView: View {
                             SecurityMetaStat(
                                 value: warningCount,
                                 label: String(localized: "security.hero.warnings",
-                                              defaultValue: "avvisi"),
+                                              defaultValue: "warnings"),
                                 color: warningCount > 0 ? stateColor : .secondary,
                                 symbol: "exclamationmark.triangle.fill"
                             )
@@ -328,7 +328,7 @@ private struct SecurityHealthHeroView: View {
                         SecurityMetaStat(
                             value: monitoredCount,
                             label: String(localized: "security.hero.sensors",
-                                          defaultValue: "sensori"),
+                                          defaultValue: "sensors"),
                             color: .secondary,
                             symbol: "sensor.tag.radiowaves.forward.fill"
                         )
@@ -501,7 +501,7 @@ private struct SecurityInsightsSection: View {
             } label: {
                 HStack {
                     Label(
-                        String(localized: "security.insights.title", defaultValue: "Analisi sicurezza"),
+                        String(localized: "security.insights.title", defaultValue: "Security analysis"),
                         systemImage: "sparkles"
                     )
                     .font(.headline)
@@ -629,7 +629,7 @@ private struct SecurityQuickActionsRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "security.actions.title", defaultValue: "Azioni rapide"))
+            Text(String(localized: "security.actions.title", defaultValue: "Quick Actions"))
                 .font(.headline)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -649,13 +649,13 @@ private struct SecurityQuickActionsRow: View {
             }
         }
         .alert(
-            String(localized: "security.actions.confirm.disarm", defaultValue: "Confermi di voler disinserire l'allarme?"),
+            String(localized: "security.actions.confirm.disarm", defaultValue: "Are you sure you want to disarm the alarm?"),
             isPresented: $showDisarmConfirm
         ) {
-            Button(String(localized: "security.actions.disarm", defaultValue: "Disinserisci"), role: .destructive) {
+            Button(String(localized: "security.actions.disarm", defaultValue: "Disarm"), role: .destructive) {
                 Task { await activateModeConfirmed(.disarm) }
             }
-            Button(String(localized: "button.cancel", defaultValue: "Annulla"), role: .cancel) {}
+            Button(String(localized: "button.cancel", defaultValue: "Cancel"), role: .cancel) {}
         }
         .alert(
             errorMessage ?? "",
@@ -755,14 +755,14 @@ private struct SecuritySensorsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(String(localized: "security.sensors.title", defaultValue: "Sensori monitorati"))
+            Text(String(localized: "security.sensors.title", defaultValue: "Monitored sensors"))
                 .font(.headline)
 
             VStack(spacing: 12) {
                 // Alarm group
                 if !alarmSensors.isEmpty {
                     SecuritySensorGroup(
-                        title: String(localized: "security.sensors.group.critical", defaultValue: "In allarme"),
+                        title: String(localized: "security.sensors.group.critical", defaultValue: "In alarm"),
                         color: .red,
                         sensors: alarmSensors,
                         isExpanded: .constant(true),
@@ -774,7 +774,7 @@ private struct SecuritySensorsSection: View {
                 // Warning group
                 if !warningSensors.isEmpty {
                     SecuritySensorGroup(
-                        title: String(localized: "security.sensors.group.warning", defaultValue: "Richiede attenzione"),
+                        title: String(localized: "security.sensors.group.warning", defaultValue: "Requires attention"),
                         color: .orange,
                         sensors: warningSensors,
                         isExpanded: .constant(true),
@@ -786,7 +786,7 @@ private struct SecuritySensorsSection: View {
                 // OK group (collassabile di default)
                 if !okSensors.isEmpty {
                     SecuritySensorGroup(
-                        title: String(localized: "security.sensors.group.ok", defaultValue: "Operativi"),
+                        title: String(localized: "security.sensors.group.ok", defaultValue: "Operational"),
                         color: .green,
                         sensors: okSensors,
                         isExpanded: $okGroupExpanded,
@@ -877,9 +877,9 @@ private struct SecuritySensorCard: View {
     private var stateText: String {
         if let text = adapter.primaryStatusText, !text.isEmpty { return text }
         switch adapter.visualUrgency {
-        case .alarm:   return String(localized: "security.state.alarm",   defaultValue: "Allarme")
-        case .warning: return String(localized: "security.state.warning", defaultValue: "Attenzione")
-        default:       return String(localized: "security.state.ok",      defaultValue: "Operativo")
+        case .alarm:   return String(localized: "security.state.alarm",   defaultValue: "Alarm")
+        case .warning: return String(localized: "security.state.warning", defaultValue: "Warning")
+        default:       return String(localized: "security.state.ok",      defaultValue: "Operational")
         }
     }
 
@@ -964,10 +964,10 @@ private struct SecurityFloorplanBanner: View {
                 )
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(String(localized: "security.floorplan.banner.title", defaultValue: "Mappa di sicurezza"))
+                Text(String(localized: "security.floorplan.banner.title", defaultValue: "Security map"))
                     .font(.subheadline.weight(.semibold))
                 Text(String(localized: "security.floorplan.banner.subtitle",
-                            defaultValue: "Visualizza sensori e allarmi sulla piantina"))
+                            defaultValue: "View sensors and alarms on the floorplan"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -989,7 +989,7 @@ private struct SecurityFloorplanBanner: View {
         )
         // TODO: navigazione futura verso FloorplanEditorView in modalità sicurezza
         .accessibilityLabel(
-            String(localized: "security.floorplan.banner.title", defaultValue: "Mappa di sicurezza")
+            String(localized: "security.floorplan.banner.title", defaultValue: "Security map")
         )
     }
 }
@@ -1008,7 +1008,7 @@ private struct SecurityConfigSheet: View {
     private var byRoom: [(roomName: String, items: [(accessory: HMAccessory, adapter: any AccessoryAdapter)])] {
         let grouped = Dictionary(
             grouping: adapters,
-            by: { $0.accessory.room?.name ?? String(localized: "room.noRoom", defaultValue: "Senza stanza") }
+            by: { $0.accessory.room?.name ?? String(localized: "room.noRoom", defaultValue: "No room") }
         )
         return grouped.map { (roomName: $0.key, items: $0.value) }.sorted { $0.roomName < $1.roomName }
     }
@@ -1018,7 +1018,7 @@ private struct SecurityConfigSheet: View {
             List {
                 Section {
                     Text(String(localized: "security.config.description",
-                                defaultValue: "Scegli quali sensori e serrature vuoi monitorare. Appariranno nella vista Sicurezza e contribuiranno allo stato aggregato."))
+                                defaultValue: "Choose which sensors and locks to monitor. They'll appear in the Security view and contribute to the aggregated status."))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -1051,14 +1051,14 @@ private struct SecurityConfigSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle(String(localized: "security.config.title", defaultValue: "Sensori da monitorare"))
+            .navigationTitle(String(localized: "security.config.title", defaultValue: "Sensors to monitor"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(String(localized: "button.done", defaultValue: "Fine")) { dismiss() }
+                    Button(String(localized: "button.done", defaultValue: "Done")) { dismiss() }
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(String(localized: "button.all", defaultValue: "Tutti")) {
+                    Button(String(localized: "button.all", defaultValue: "All")) {
                         monitoredUUIDsRaw = adapters
                             .map { $0.accessory.uniqueIdentifier.uuidString }
                             .joined(separator: ",")
@@ -1071,17 +1071,17 @@ private struct SecurityConfigSheet: View {
 
     private func adapterTypeLabel(_ adapter: any AccessoryAdapter) -> String {
         if adapter is DoorLockAdapter {
-            return String(localized: "security.type.lock", defaultValue: "Serratura")
+            return String(localized: "security.type.lock", defaultValue: "Door lock")
         }
         if let sensor = adapter as? SensorAdapter {
-            if sensor.smokeDetected != nil        { return String(localized: "security.type.smoke",     defaultValue: "Rilevatore fumo") }
-            if sensor.carbonMonoxideDetected != nil { return String(localized: "security.type.co",      defaultValue: "Rilevatore CO") }
-            if sensor.leakDetected != nil          { return String(localized: "security.type.leak",     defaultValue: "Sensore perdita acqua") }
-            if sensor.contactDetected != nil       { return String(localized: "security.type.contact",  defaultValue: "Sensore contatto") }
-            if sensor.motionDetected != nil        { return String(localized: "security.type.motion",   defaultValue: "Sensore movimento") }
-            if sensor.occupancyDetected != nil     { return String(localized: "security.type.occupancy", defaultValue: "Sensore occupazione") }
+            if sensor.smokeDetected != nil        { return String(localized: "security.type.smoke",     defaultValue: "Smoke detector") }
+            if sensor.carbonMonoxideDetected != nil { return String(localized: "security.type.co",      defaultValue: "CO detector") }
+            if sensor.leakDetected != nil          { return String(localized: "security.type.leak",     defaultValue: "Water leak sensor") }
+            if sensor.contactDetected != nil       { return String(localized: "security.type.contact",  defaultValue: "Contact sensor") }
+            if sensor.motionDetected != nil        { return String(localized: "security.type.motion",   defaultValue: "Motion sensor") }
+            if sensor.occupancyDetected != nil     { return String(localized: "security.type.occupancy", defaultValue: "Occupancy sensor") }
         }
-        return String(localized: "security.type.sensor", defaultValue: "Sensore")
+        return String(localized: "security.type.sensor", defaultValue: "Sensor")
     }
 
     private func toggle(uuid: String, on: Bool) {
@@ -1119,10 +1119,10 @@ enum AggregatedSecurityState {
 
     var label: String {
         switch self {
-        case .ok:        return String(localized: "security.aggregate.ok",        defaultValue: "Tutto OK")
-        case .warning:   return String(localized: "security.aggregate.warning",   defaultValue: "Attenzione")
-        case .alarm:     return String(localized: "security.aggregate.alarm",     defaultValue: "ALLARME")
-        case .noSensors: return String(localized: "security.aggregate.noSensors", defaultValue: "Nessun sensore configurato")
+        case .ok:        return String(localized: "security.aggregate.ok",        defaultValue: "All OK")
+        case .warning:   return String(localized: "security.aggregate.warning",   defaultValue: "Warning")
+        case .alarm:     return String(localized: "security.aggregate.alarm",     defaultValue: "ALARM")
+        case .noSensors: return String(localized: "security.aggregate.noSensors", defaultValue: "No sensors configured")
         }
     }
 

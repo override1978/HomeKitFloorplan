@@ -26,20 +26,20 @@ enum SeasonalBaselineProvider {
             switch season {
             case .summer:
                 return String(localized: "seasonal.humidity.summer",
-                              defaultValue: "Soglia estiva: la tolleranza all'umidità è leggermente più alta.")
+                              defaultValue: "Summer threshold: humidity tolerance is slightly higher.")
             case .winter:
                 return String(localized: "seasonal.humidity.winter",
-                              defaultValue: "Soglia invernale: rischio condensa sulle superfici fredde più elevato.")
+                              defaultValue: "Winter threshold: higher condensation risk on cold surfaces.")
             default: return nil
             }
         case .temperature:
             switch season {
             case .summer:
                 return String(localized: "seasonal.temp.summer",
-                              defaultValue: "Soglia estiva: temperature più alte sono attese in questa stagione.")
+                              defaultValue: "Summer threshold: higher temperatures are expected this season.")
             case .winter:
                 return String(localized: "seasonal.temp.winter",
-                              defaultValue: "Soglia invernale: il surriscaldamento interno è più impattante in inverno.")
+                              defaultValue: "Winter threshold: indoor overheating has greater impact in winter.")
             default: return nil
             }
         default: return nil

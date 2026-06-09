@@ -13,32 +13,32 @@ enum NotificationDeliveryOrchestrator {
     static func registerCategories() {
         let open       = UNNotificationAction(
             identifier: "OPEN",
-            title: String(localized: "notif.action.open",       defaultValue: "Apri"),
+            title: String(localized: "notif.action.open",       defaultValue: "Open"),
             options: .foreground
         )
         let dismiss    = UNNotificationAction(
             identifier: "DISMISS",
-            title: String(localized: "notif.action.dismiss",    defaultValue: "Ignora"),
+            title: String(localized: "notif.action.dismiss",    defaultValue: "Dismiss"),
             options: []
         )
         let doNow      = UNNotificationAction(
             identifier: "DO_NOW",
-            title: String(localized: "notif.action.doNow",      defaultValue: "Fallo ora"),
+            title: String(localized: "notif.action.doNow",      defaultValue: "Do it now"),
             options: .foreground
         )
         let createRule = UNNotificationAction(
             identifier: "CREATE_RULE",
-            title: String(localized: "notif.action.createRule", defaultValue: "Crea automazione"),
+            title: String(localized: "notif.action.createRule", defaultValue: "Create Automation"),
             options: .foreground
         )
         let later      = UNNotificationAction(
             identifier: "LATER",
-            title: String(localized: "notif.action.later",      defaultValue: "Più tardi"),
+            title: String(localized: "notif.action.later",      defaultValue: "Later"),
             options: []
         )
         let viewFeed   = UNNotificationAction(
             identifier: "VIEW_FEED",
-            title: String(localized: "notif.action.viewFeed",   defaultValue: "Vedi feed"),
+            title: String(localized: "notif.action.viewFeed",   defaultValue: "View Feed"),
             options: .foreground
         )
 

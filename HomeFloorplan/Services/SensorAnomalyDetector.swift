@@ -90,7 +90,7 @@ enum SensorAnomalyDetector {
                     roomName:      roomName,
                     description:   String(format:
                         String(localized: "anomaly.oscillating.detail",
-                               defaultValue: "Letture instabili ±%.1f%@ nelle ultime 2h. Il sensore potrebbe essere in avaria."),
+                               defaultValue: "Unstable readings ±%.1f%@ in the last 2h. The sensor may be faulty."),
                         stddev, sensorType.unit),
                     semanticKey:   "\(base)|oscillating",
                     score:         score,
@@ -113,7 +113,7 @@ enum SensorAnomalyDetector {
                         roomName:      roomName,
                         description:   String(format:
                             String(localized: "anomaly.stuck.detail",
-                                   defaultValue: "Valore invariato (%.1f%@) per oltre 30 minuti. Il sensore potrebbe essere bloccato."),
+                                   defaultValue: "Value unchanged (%.1f%@) for over 30 minutes. The sensor may be stuck."),
                             values[0], sensorType.unit),
                         semanticKey:   "\(base)|stuck",
                         score:         score,
@@ -134,7 +134,7 @@ enum SensorAnomalyDetector {
                     roomName:      roomName,
                     description:   String(format:
                         String(localized: "anomaly.outofrange.detail",
-                               defaultValue: "Valore anomalo rilevato (%.1f%@) — impossibile in condizioni normali."),
+                               defaultValue: "Anomalous value detected (%.1f%@) — impossible under normal conditions."),
                         implausible, sensorType.unit),
                     semanticKey:   "\(base)|outofrange",
                     score:         score,

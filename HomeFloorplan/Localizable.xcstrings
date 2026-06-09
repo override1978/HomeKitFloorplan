@@ -959,7 +959,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "La sezione \"Altro\" è sempre visualizzata per ultima."
+            "value" : "The \"Other\" section is always shown last."
           }
         },
         "it" : {
@@ -978,7 +978,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Riordina sezioni"
+            "value" : "Reorder Sections"
           }
         },
         "it" : {
@@ -1243,7 +1243,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Pulsanti"
+            "value" : "Buttons"
           }
         },
         "it" : {
@@ -1326,7 +1326,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Prese"
+            "value" : "Outlets"
           }
         },
         "it" : {
@@ -1689,7 +1689,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Attiva Scena"
+            "value" : "Activate Scene"
           }
         },
         "it" : {
@@ -1708,7 +1708,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ricambio Aria"
+            "value" : "Air Exchange"
           }
         },
         "it" : {
@@ -1759,7 +1759,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Illumina"
+            "value" : "Brighten"
           }
         },
         "it" : {
@@ -1776,7 +1776,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Luce Serale"
+            "value" : "Evening Light"
           }
         },
         "it" : {
@@ -1795,7 +1795,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Chiudi Tenda"
+            "value" : "Close Blinds"
           }
         },
         "it" : {
@@ -1831,7 +1831,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Raffredda"
+            "value" : "Cool"
           }
         },
         "it" : {
@@ -1850,7 +1850,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Deumidifica"
+            "value" : "Dehumidify"
           }
         },
         "it" : {
@@ -1867,7 +1867,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Attenua"
+            "value" : "Dim"
           }
         },
         "it" : {
@@ -1903,7 +1903,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ventila"
+            "value" : "Fan"
           }
         },
         "it" : {
@@ -1922,7 +1922,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Riscalda"
+            "value" : "Heat"
           }
         },
         "it" : {
@@ -1941,7 +1941,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Umidifica"
+            "value" : "Humidify"
           }
         },
         "it" : {
@@ -1977,7 +1977,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Abbassa CO₂"
+            "value" : "Lower CO₂"
           }
         },
         "it" : {
@@ -1996,7 +1996,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Apri Valvola"
+            "value" : "Open Valve"
           }
         },
         "it" : {
@@ -2013,7 +2013,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Prepara Casa"
+            "value" : "Prepare Home"
           }
         },
         "it" : {
@@ -2032,7 +2032,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Purifica Aria"
+            "value" : "Purify Air"
           }
         },
         "it" : {
@@ -2049,7 +2049,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Riduci Consumi"
+            "value" : "Reduce Consumption"
           }
         },
         "it" : {
@@ -2066,7 +2066,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Spegni Tutto"
+            "value" : "Turn Off All"
           }
         },
         "it" : {
@@ -2119,7 +2119,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Chiudi porte e finestre"
+            "value" : "Close doors and windows"
           }
         },
         "it" : {
@@ -2157,7 +2157,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Abbassa la luminosità"
+            "value" : "Lower the brightness"
           }
         },
         "it" : {
@@ -2176,7 +2176,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Imposta una temperatura di comfort ridotta"
+            "value" : "Set a reduced comfort temperature"
           }
         },
         "it" : {
@@ -2193,7 +2193,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Evacua e chiama i soccorsi"
+            "value" : "Evacuate and call emergency services"
           }
         },
         "it" : {
@@ -2212,7 +2212,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Apri tutto e esci"
+            "value" : "Open everything and exit"
           }
         },
         "it" : {
@@ -2231,7 +2231,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Rientra in casa"
+            "value" : "Go inside"
           }
         },
         "it" : {
@@ -2269,7 +2269,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Apri le tende"
+            "value" : "Open the blinds"
           }
         },
         "it" : {
@@ -2288,7 +2288,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Apri le finestre"
+            "value" : "Open the windows"
           }
         },
         "it" : {
@@ -2307,7 +2307,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Usa i dispositivi fuori dalle ore di picco (20–22)"
+            "value" : "Use devices outside peak hours (20–22)"
           }
         },
         "it" : {
@@ -2326,7 +2326,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Prepara la casa per il tuo arrivo"
+            "value" : "Prepare the home for your arrival"
           }
         },
         "it" : {
@@ -2345,7 +2345,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Spegni i dispositivi inutilizzati"
+            "value" : "Turn off unused devices"
           }
         },
         "it" : {
@@ -2364,7 +2364,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Spegni luci e dispositivi prima di uscire"
+            "value" : "Turn off lights and devices before leaving"
           }
         },
         "it" : {
@@ -2383,7 +2383,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Attiva la tenda da sole"
+            "value" : "Activate the awning"
           }
         },
         "it" : {
@@ -2402,7 +2402,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Usa un umidificatore"
+            "value" : "Use a humidifier"
           }
         },
         "it" : {
@@ -2419,7 +2419,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Arieggia la stanza"
+            "value" : "Ventilate the room"
           }
         },
         "it" : {
@@ -2438,7 +2438,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Imposta luce calda"
+            "value" : "Set warm light"
           }
         },
         "it" : {
@@ -2737,7 +2737,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Accetto e abilita AI"
+            "value" : "Accept and enable AI"
           }
         },
         "it" : {
@@ -2756,7 +2756,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Non accetto"
+            "value" : "Decline"
           }
         },
         "it" : {
@@ -2775,7 +2775,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Come vengono usati i tuoi dati"
+            "value" : "How your data is used"
           }
         },
         "it" : {
@@ -2794,7 +2794,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Per generare insight ambientali intelligenti, l'app invia alcuni dati delle stanze a %@. Leggi cosa viene trasmesso prima di procedere."
+            "value" : "To generate smart environmental insights, the app sends some room data to %@. Review what is transmitted before proceeding."
           }
         },
         "it" : {
@@ -2813,7 +2813,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Consenso dati AI"
+            "value" : "AI Data Consent"
           }
         },
         "it" : {
@@ -2832,7 +2832,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Cosa NON viene mai inviato"
+            "value" : "What is NEVER sent"
           }
         },
         "it" : {
@@ -2851,7 +2851,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Identità degli utenti"
+            "value" : "User identities"
           }
         },
         "it" : {
@@ -2870,7 +2870,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Nessun nome, Apple ID, email o profilo familiare viene trasmesso al provider AI."
+            "value" : "No name, Apple ID, email or family profile is transmitted to the AI provider."
           }
         },
         "it" : {
@@ -2889,7 +2889,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Posizione GPS"
+            "value" : "GPS Location"
           }
         },
         "it" : {
@@ -2908,7 +2908,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Nessuna informazione geografica o di localizzazione viene inclusa nelle richieste AI."
+            "value" : "No geographic or location information is included in AI requests."
           }
         },
         "it" : {
@@ -2927,7 +2927,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Video, audio e immagini"
+            "value" : "Video, audio and images"
           }
         },
         "it" : {
@@ -2946,7 +2946,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Nessun dato proveniente da videocamere, microfoni o sensori multimediali."
+            "value" : "No data from cameras, microphones or multimedia sensors."
           }
         },
         "it" : {
@@ -2984,7 +2984,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Statistiche baseline"
+            "value" : "Baseline statistics"
           }
         },
         "it" : {
@@ -3003,7 +3003,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Medie e deviazioni standard storiche (fino a 30 giorni) per contestualizzare le anomalie."
+            "value" : "Historical averages and standard deviations (up to 30 days) to contextualise anomalies."
           }
         },
         "it" : {
@@ -3022,7 +3022,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Cosa viene inviato"
+            "value" : "What is sent"
           }
         },
         "it" : {
@@ -3041,7 +3041,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Nomi delle stanze"
+            "value" : "Room names"
           }
         },
         "it" : {
@@ -3060,7 +3060,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "I nomi che hai assegnato alle stanze HomeKit (es. \"Cucina\", \"Camera da letto\")."
+            "value" : "The names you assigned to HomeKit rooms (e.g. \"Kitchen\", \"Bedroom\")."
           }
         },
         "it" : {
@@ -3079,7 +3079,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Valori ambientali"
+            "value" : "Environmental values"
           }
         },
         "it" : {
@@ -3098,7 +3098,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Letture numeriche di temperatura, umidità, CO₂ e qualità dell'aria delle ultime 24–48 ore."
+            "value" : "Numeric readings of temperature, humidity, CO₂ and air quality from the last 24–48 hours."
           }
         },
         "it" : {
@@ -3387,7 +3387,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Mostra informativa dati AI"
+            "value" : "Show AI Data Notice"
           }
         },
         "it" : {
@@ -3568,7 +3568,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Revoca consenso dati AI"
+            "value" : "Revoke AI Data Consent"
           }
         },
         "it" : {
@@ -5288,7 +5288,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Dopo %1$@, %2$@ viene attivato entro %3$d min"
+            "value" : "After %1$@, %2$@ activates within %3$d min"
           }
         },
         "it" : {
@@ -5307,7 +5307,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Quando %1$@ viene usato, %2$@ cambia entro %3$d min"
+            "value" : "When %1$@ is used, %2$@ changes within %3$d min"
           }
         },
         "it" : {
@@ -5326,7 +5326,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Dopo %1$@, %2$@ viene abbassato entro %3$d min"
+            "value" : "After %1$@, %2$@ dims within %3$d min"
           }
         },
         "it" : {
@@ -5345,7 +5345,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Dopo %1$@, %2$@ viene spento entro %3$d min"
+            "value" : "After %1$@, %2$@ turns off within %3$d min"
           }
         },
         "it" : {
@@ -5364,7 +5364,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Dopo %1$@, %2$@ viene acceso entro %3$d min"
+            "value" : "After %1$@, %2$@ turns on within %3$d min"
           }
         },
         "it" : {
@@ -5383,7 +5383,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ viene attivato %2$@ alle %3$@"
+            "value" : "%1$@ activates %2$@ at %3$@"
           }
         },
         "it" : {
@@ -5402,7 +5402,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ viene chiuso %2$@ alle %3$@"
+            "value" : "%1$@ closes %2$@ at %3$@"
           }
         },
         "it" : {
@@ -5419,7 +5419,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ viene abbassato %2$@ alle %3$@"
+            "value" : "%1$@ dims %2$@ at %3$@"
           }
         },
         "it" : {
@@ -5438,7 +5438,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ viene bloccato %2$@ alle %3$@"
+            "value" : "%1$@ locks %2$@ at %3$@"
           }
         },
         "it" : {
@@ -5455,7 +5455,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ viene spento %2$@ alle %3$@"
+            "value" : "%1$@ turns off %2$@ at %3$@"
           }
         },
         "it" : {
@@ -5474,7 +5474,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ viene acceso %2$@ alle %3$@"
+            "value" : "%1$@ turns on %2$@ at %3$@"
           }
         },
         "it" : {
@@ -5493,7 +5493,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ viene aperto %2$@ alle %3$@"
+            "value" : "%1$@ opens %2$@ at %3$@"
           }
         },
         "it" : {
@@ -5512,7 +5512,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ viene sbloccato %2$@ alle %3$@"
+            "value" : "%1$@ unlocks %2$@ at %3$@"
           }
         },
         "it" : {
@@ -5669,7 +5669,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Annulla"
+            "value" : "Cancel"
           }
         },
         "it" : {
@@ -5725,7 +5725,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Controlli"
+            "value" : "Controls"
           }
         },
         "it" : {
@@ -5763,7 +5763,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Sensori integrati"
+            "value" : "Built-in Sensors"
           }
         },
         "it" : {
@@ -5782,7 +5782,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Indicatore LED"
+            "value" : "LED Indicator"
           }
         },
         "it" : {
@@ -5820,7 +5820,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Visione notturna"
+            "value" : "Night Vision"
           }
         },
         "it" : {
@@ -5839,7 +5839,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Notte"
+            "value" : "Night"
           }
         },
         "it" : {
@@ -5858,7 +5858,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Rilevata"
+            "value" : "Detected"
           }
         },
         "it" : {
@@ -5877,7 +5877,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Movimento"
+            "value" : "Motion"
           }
         },
         "it" : {
@@ -5896,7 +5896,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Nessuna"
+            "value" : "None"
           }
         },
         "it" : {
@@ -5915,7 +5915,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Presenza"
+            "value" : "Occupancy"
           }
         },
         "it" : {
@@ -5934,7 +5934,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Stato"
+            "value" : "Status"
           }
         },
         "it" : {
@@ -6048,7 +6048,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Connessione in corso…"
+            "value" : "Connecting…"
           }
         },
         "it" : {
@@ -6086,7 +6086,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Avvio…"
+            "value" : "Starting…"
           }
         },
         "it" : {
@@ -6105,7 +6105,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Inattivo"
+            "value" : "Inactive"
           }
         },
         "it" : {
@@ -6124,7 +6124,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Chiusura…"
+            "value" : "Stopping…"
           }
         },
         "it" : {
@@ -6143,7 +6143,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Stream terminato"
+            "value" : "Stream ended"
           }
         },
         "it" : {
@@ -6609,7 +6609,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Fuori casa"
+            "value" : "Away"
           }
         },
         "it" : {
@@ -6628,7 +6628,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "A casa"
+            "value" : "Home"
           }
         },
         "it" : {
@@ -6647,7 +6647,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "In casa (notte)"
+            "value" : "Home (night)"
           }
         },
         "it" : {
@@ -6666,7 +6666,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "In vacanza"
+            "value" : "On vacation"
           }
         },
         "it" : {
@@ -6685,7 +6685,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Autunno"
+            "value" : "Autumn"
           }
         },
         "it" : {
@@ -6704,7 +6704,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Primavera"
+            "value" : "Spring"
           }
         },
         "it" : {
@@ -6723,7 +6723,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Estate"
+            "value" : "Summer"
           }
         },
         "it" : {
@@ -6742,7 +6742,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Inverno"
+            "value" : "Winter"
           }
         },
         "it" : {
@@ -7170,7 +7170,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ho già risolto"
+            "value" : "Already resolved"
           }
         },
         "it" : {
@@ -7189,7 +7189,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Non rilevante"
+            "value" : "Not relevant"
           }
         },
         "it" : {
@@ -7208,7 +7208,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Chiudi"
+            "value" : "Close"
           }
         },
         "it" : {
@@ -7227,7 +7227,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ancora %1$lld %2$@ per raggiungere il livello %3$@."
+            "value" : "%1$lld more %2$@ to reach the %3$@ level."
           }
         },
         "it" : {
@@ -7246,7 +7246,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "rilevazioni"
+            "value" : "readings"
           }
         },
         "it" : {
@@ -7265,7 +7265,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "eventi luce"
+            "value" : "light events"
           }
         },
         "it" : {
@@ -7284,7 +7284,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "rilevazioni presenza"
+            "value" : "presence readings"
           }
         },
         "it" : {
@@ -7303,7 +7303,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "attivazioni scena"
+            "value" : "scene activations"
           }
         },
         "it" : {
@@ -7322,7 +7322,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "eventi sicurezza"
+            "value" : "security events"
           }
         },
         "it" : {
@@ -7986,7 +7986,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%d anomali"
+            "value" : "%d anomalies"
           }
         },
         "it" : {
@@ -8005,7 +8005,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Dati non ancora disponibili. Verranno calcolati dopo alcuni giorni di utilizzo."
+            "value" : "No data yet. Usage will be calculated after a few days of use."
           }
         },
         "it" : {
@@ -8024,7 +8024,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Analisi consumi…"
+            "value" : "Analysing usage…"
           }
         },
         "it" : {
@@ -8043,7 +8043,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Consumo Energetico"
+            "value" : "Energy Consumption"
           }
         },
         "it" : {
@@ -8062,7 +8062,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%@ oggi"
+            "value" : "%@ today"
           }
         },
         "it" : {
@@ -8081,7 +8081,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Stanza sconosciuta"
+            "value" : "Unknown Room"
           }
         },
         "it" : {
@@ -8100,7 +8100,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ (%2$@) è acceso da %3$@ ore. Di solito si spegne entro %4$@ ore."
+            "value" : "%1$@ (%2$@) has been on for %3$@ hours. It usually turns off within %4$@ hours."
           }
         },
         "it" : {
@@ -8119,7 +8119,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Dispositivo rimasto acceso"
+            "value" : "Device left on"
           }
         },
         "it" : {
@@ -8138,7 +8138,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Basato sullo storico: media di %@ ore di sessione al giorno."
+            "value" : "Based on history: average session of %@ hours per day."
           }
         },
         "it" : {
@@ -8157,7 +8157,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Verifica se %@ è necessario e considera di spegnerlo per ridurre i consumi."
+            "value" : "Check if %@ is needed and consider turning it off to reduce usage."
           }
         },
         "it" : {
@@ -8176,7 +8176,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ (%2$@) ha accumulato %3$@ ore oggi. Media giornaliera: %4$@ ore."
+            "value" : "%1$@ (%2$@) has accumulated %3$@ hours today. Daily average: %4$@ hours."
           }
         },
         "it" : {
@@ -8195,7 +8195,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Consumo anomalo rilevato"
+            "value" : "Anomalous usage detected"
           }
         },
         "it" : {
@@ -8214,7 +8214,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "L'utilizzo odierno supera del doppio la media storica di %@ ore/giorno."
+            "value" : "Today's usage is double the historical average of %@ hours/day."
           }
         },
         "it" : {
@@ -9315,7 +9315,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Pulsanti"
+            "value" : "Buttons"
           }
         },
         "it" : {
@@ -10451,7 +10451,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ignora"
+            "value" : "Dismiss"
           }
         },
         "it" : {
@@ -10470,7 +10470,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Fatto"
+            "value" : "Done"
           }
         },
         "it" : {
@@ -10489,7 +10489,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Errore"
+            "value" : "Error"
           }
         },
         "it" : {
@@ -10508,7 +10508,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Annulla"
+            "value" : "Cancel"
           }
         },
         "it" : {
@@ -10527,7 +10527,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Perché vuoi ignorare questo insight?"
+            "value" : "Why dismiss this insight?"
           }
         },
         "it" : {
@@ -10546,7 +10546,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Anomalia"
+            "value" : "Anomaly"
           }
         },
         "it" : {
@@ -10584,7 +10584,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Attenzione"
+            "value" : "Warning"
           }
         },
         "it" : {
@@ -10620,7 +10620,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Impostazioni"
+            "value" : "Settings"
           }
         },
         "it" : {
@@ -10639,7 +10639,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Attiva AI nelle Impostazioni per ricevere suggerimenti contestuali."
+            "value" : "Enable AI in Settings to receive contextual suggestions."
           }
         },
         "it" : {
@@ -10658,7 +10658,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "AI non attiva"
+            "value" : "AI not active"
           }
         },
         "it" : {
@@ -11359,7 +11359,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Illuminazione"
+            "value" : "Brightness"
           }
         },
         "it" : {
@@ -11413,7 +11413,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Attenuazione luce"
+            "value" : "Dim Light"
           }
         },
         "it" : {
@@ -11518,7 +11518,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Prepara arrivo"
+            "value" : "Prepare Arrival"
           }
         },
         "it" : {
@@ -11553,7 +11553,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Riduzione consumi"
+            "value" : "Reduce Consumption"
           }
         },
         "it" : {
@@ -11604,7 +11604,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Allarme CO"
+            "value" : "CO Alert"
           }
         },
         "it" : {
@@ -11623,7 +11623,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Allarme fumo"
+            "value" : "Smoke Alert"
           }
         },
         "it" : {
@@ -11642,7 +11642,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ore di picco"
+            "value" : "Peak Hours"
           }
         },
         "it" : {
@@ -11661,7 +11661,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Sicurezza partenza"
+            "value" : "Secure Departure"
           }
         },
         "it" : {
@@ -11680,7 +11680,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Luce circadiana"
+            "value" : "Circadian Light"
           }
         },
         "it" : {
@@ -11699,7 +11699,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Scena"
+            "value" : "Scene"
           }
         },
         "it" : {
@@ -11734,7 +11734,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Osservazione"
+            "value" : "Observation"
           }
         },
         "it" : {
@@ -11772,7 +11772,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Previsione"
+            "value" : "Prediction"
           }
         },
         "it" : {
@@ -11791,7 +11791,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Raccomandazione"
+            "value" : "Recommendation"
           }
         },
         "it" : {
@@ -12072,7 +12072,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Cosa probabilmente succederà"
+            "value" : "What will likely happen"
           }
         },
         "it" : {
@@ -12091,7 +12091,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Cosa ho imparato"
+            "value" : "What I've learned"
           }
         },
         "it" : {
@@ -12110,7 +12110,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Cosa sta succedendo"
+            "value" : "What's happening now"
           }
         },
         "it" : {
@@ -12129,7 +12129,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Cosa fare"
+            "value" : "What to do"
           }
         },
         "it" : {
@@ -12642,7 +12642,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Illumina"
+            "value" : "Brighten"
           }
         },
         "it" : {
@@ -12661,7 +12661,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Luce Serale"
+            "value" : "Evening Light"
           }
         },
         "it" : {
@@ -12680,7 +12680,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Attenua"
+            "value" : "Dim"
           }
         },
         "it" : {
@@ -12699,7 +12699,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Spegni"
+            "value" : "Turn Off"
           }
         },
         "it" : {
@@ -12718,7 +12718,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Luce pomeridiana"
+            "value" : "Afternoon light"
           }
         },
         "it" : {
@@ -12737,7 +12737,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Luce mattutina moderata"
+            "value" : "Moderate morning light"
           }
         },
         "it" : {
@@ -12756,7 +12756,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Luce serale calda e soffusa"
+            "value" : "Warm and dim evening light"
           }
         },
         "it" : {
@@ -12775,7 +12775,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Piena luminosità diurna"
+            "value" : "Full daytime brightness"
           }
         },
         "it" : {
@@ -12794,7 +12794,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Luce notturna soffusa"
+            "value" : "Dim night light"
           }
         },
         "it" : {
@@ -12952,7 +12952,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%d cicli on/off questa settimana — consumo elevato."
+            "value" : "%d on/off cycles this week — high usage."
           }
         },
         "it" : {
@@ -12971,7 +12971,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Media storica: %1$d att./settimana. Ultime 2 settimane: ~%2$d att."
+            "value" : "Historical average: %1$d activations/week. Last 2 weeks: ~%2$d."
           }
         },
         "it" : {
@@ -13216,7 +13216,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ho iniziato a riconoscere i primi schemi di comportamento."
+            "value" : "I have started recognizing the first behavioral patterns."
           }
         },
         "it" : {
@@ -13235,7 +13235,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Conosco la tua casa da %1$lld giorni, con %2$lld abit%3$@ stabili rilevate."
+            "value" : "I have known your home for %1$lld days, with %2$lld stable habit%3$@ detected."
           }
         },
         "it" : {
@@ -13254,7 +13254,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Sto raccogliendo le prime osservazioni sulla tua casa."
+            "value" : "I am collecting the first observations about your home."
           }
         },
         "it" : {
@@ -13273,7 +13273,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Sto riconoscendo le tue abitudini principali."
+            "value" : "I am recognizing your main habits."
           }
         },
         "it" : {
@@ -13292,7 +13292,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ho imparato %1$lld abit%2$@ stabili nella tua casa."
+            "value" : "I have learned %1$lld stable habit%2$@ in your home."
           }
         },
         "it" : {
@@ -13311,7 +13311,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ho una visione chiara delle routine della tua casa."
+            "value" : "I have a clear view of your home's routines."
           }
         },
         "it" : {
@@ -13328,7 +13328,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Hai eseguito %1$lld suggerimenti AI. %2$lld hanno migliorato l'ambiente."
+            "value" : "You have run %1$lld AI suggestions. %2$lld have improved your environment."
           }
         },
         "it" : {
@@ -13900,7 +13900,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Di solito arrivi il %1$@ alle %2$@. Vuoi che le luci si accendano automaticamente al tuo arrivo?"
+            "value" : "You usually arrive on %1$@ at %2$@. Would you like the lights to turn on automatically when you get home?"
           }
         },
         "it" : {
@@ -13919,7 +13919,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Automazione arrivo suggerita"
+            "value" : "Suggested Arrival Automation"
           }
         },
         "it" : {
@@ -13938,7 +13938,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Pattern rilevato in %1$d arrivi, confidenza %2$@."
+            "value" : "Pattern detected in %1$d arrivals, confidence %2$@."
           }
         },
         "it" : {
@@ -15960,7 +15960,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ tende ad avere %2$@ elevato in questo momento ogni %3$@."
+            "value" : "%1$@ tends to have high %2$@ at this time every %3$@."
           }
         },
         "it" : {
@@ -15979,7 +15979,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Tra circa %1$lld %2$@ è probabile che %3$@ superi i valori normali di %4$@ (come ogni %5$@)."
+            "value" : "In about %1$lld %2$@ it is likely that %3$@ will exceed normal levels of %4$@ (as every %5$@)."
           }
         },
         "it" : {
@@ -15998,7 +15998,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%lld%% confidenza"
+            "value" : "%lld%% confidence"
           }
         },
         "it" : {
@@ -16017,7 +16017,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "ora"
+            "value" : "hour"
           }
         },
         "it" : {
@@ -16036,7 +16036,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "ore"
+            "value" : "hours"
           }
         },
         "it" : {
@@ -16425,7 +16425,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Chiudi"
+            "value" : "Close"
           }
         },
         "it" : {
@@ -16444,7 +16444,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Dimmerizza"
+            "value" : "Dim"
           }
         },
         "it" : {
@@ -16463,7 +16463,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Luminosità %d%%"
+            "value" : "Brightness %d%%"
           }
         },
         "it" : {
@@ -16482,7 +16482,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Spegni"
+            "value" : "Turn Off"
           }
         },
         "it" : {
@@ -16501,7 +16501,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Accendi"
+            "value" : "Turn On"
           }
         },
         "it" : {
@@ -16520,7 +16520,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Apri"
+            "value" : "Open"
           }
         },
         "it" : {
@@ -16539,7 +16539,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Esegui azione"
+            "value" : "Run action"
           }
         },
         "it" : {
@@ -16556,7 +16556,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Modalità"
+            "value" : "Mode"
           }
         },
         "it" : {
@@ -16573,7 +16573,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Velocità"
+            "value" : "Speed"
           }
         },
         "it" : {
@@ -16590,7 +16590,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Temperatura"
+            "value" : "Temperature"
           }
         },
         "it" : {
@@ -16607,7 +16607,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Velocità %d%%"
+            "value" : "Speed %d%%"
           }
         },
         "it" : {
@@ -16624,7 +16624,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Temperatura %.1f°C"
+            "value" : "Temperature %.1f°C"
           }
         },
         "it" : {
@@ -16643,7 +16643,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Cosa farà"
+            "value" : "What it will do"
           }
         },
         "it" : {
@@ -16660,7 +16660,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Azione"
+            "value" : "Action"
           }
         },
         "it" : {
@@ -16677,7 +16677,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "La regola verrà eseguita da HomeKit all'orario indicato, anche con l'app chiusa."
+            "value" : "The rule will be executed by HomeKit at the scheduled time, even when the app is closed."
           }
         },
         "it" : {
@@ -16696,7 +16696,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Annulla"
+            "value" : "Cancel"
           }
         },
         "it" : {
@@ -16715,7 +16715,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Confidenza AI"
+            "value" : "AI Confidence"
           }
         },
         "it" : {
@@ -16734,7 +16734,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Esclusa"
+            "value" : "Excluded"
           }
         },
         "it" : {
@@ -16751,7 +16751,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "La regola non verrà salvata."
+            "value" : "The rule will not be saved."
           }
         },
         "it" : {
@@ -16768,7 +16768,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Esegui ora"
+            "value" : "Run now"
           }
         },
         "it" : {
@@ -16787,7 +16787,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Esecuzione"
+            "value" : "Execution"
           }
         },
         "it" : {
@@ -16806,7 +16806,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Verrà eseguita da HomeKit"
+            "value" : "Will be executed by HomeKit"
           }
         },
         "it" : {
@@ -16825,7 +16825,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Funziona anche con l'app chiusa."
+            "value" : "Works even when the app is closed."
           }
         },
         "it" : {
@@ -16844,7 +16844,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Verrà eseguita dall'app"
+            "value" : "Will be executed by the app"
           }
         },
         "it" : {
@@ -16861,7 +16861,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "On-demand: la regola si attiva ad ogni aggiornamento sensori. Aggiungi un orario per limitarla a una fascia specifica."
+            "value" : "On-demand: the rule triggers on every sensor update. Add a time to limit it to a specific window."
           }
         },
         "it" : {
@@ -16880,7 +16880,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Richiede l'app aperta o in background."
+            "value" : "Requires the app open or in background."
           }
         },
         "it" : {
@@ -16897,7 +16897,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Includi questa regola"
+            "value" : "Include this rule"
           }
         },
         "it" : {
@@ -16916,7 +16916,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Inclusa"
+            "value" : "Included"
           }
         },
         "it" : {
@@ -16933,7 +16933,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Modalità"
+            "value" : "Mode"
           }
         },
         "it" : {
@@ -16950,7 +16950,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Nome"
+            "value" : "Name"
           }
         },
         "it" : {
@@ -16967,7 +16967,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Regola"
+            "value" : "Rule"
           }
         },
         "it" : {
@@ -16984,7 +16984,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Nome della regola"
+            "value" : "Rule name"
           }
         },
         "it" : {
@@ -17003,7 +17003,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Salva regola"
+            "value" : "Save rule"
           }
         },
         "it" : {
@@ -17022,7 +17022,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Orario"
+            "value" : "Time"
           }
         },
         "it" : {
@@ -17041,7 +17041,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Regola automatica"
+            "value" : "Automatic Rule"
           }
         },
         "it" : {
@@ -17060,7 +17060,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Quando"
+            "value" : "When"
           }
         },
         "it" : {
@@ -17077,7 +17077,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Esecuzione"
+            "value" : "Execution"
           }
         },
         "it" : {
@@ -17096,7 +17096,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Giorni"
+            "value" : "Days"
           }
         },
         "it" : {
@@ -17115,7 +17115,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Automatico"
+            "value" : "Auto"
           }
         },
         "it" : {
@@ -17134,7 +17134,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Freddo"
+            "value" : "Cool"
           }
         },
         "it" : {
@@ -17153,7 +17153,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Asciuga"
+            "value" : "Dry"
           }
         },
         "it" : {
@@ -17172,7 +17172,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Solo ventola"
+            "value" : "Fan only"
           }
         },
         "it" : {
@@ -17191,7 +17191,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Caldo"
+            "value" : "Heat"
           }
         },
         "it" : {
@@ -17286,7 +17286,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Notte"
+            "value" : "Night"
           }
         },
         "it" : {
@@ -17320,7 +17320,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Schedulata"
+            "value" : "Scheduled"
           }
         },
         "it" : {
@@ -17761,7 +17761,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Mai eseguita"
+            "value" : "Never run"
           }
         },
         "it" : {
@@ -17844,7 +17844,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "LE TUE SCENE"
+            "value" : "YOUR SCENES"
           }
         },
         "it" : {
@@ -17863,7 +17863,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Ultima"
+            "value" : "Last"
           }
         },
         "it" : {
@@ -17882,7 +17882,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Più usata"
+            "value" : "Most Used"
           }
         },
         "it" : {
@@ -17901,7 +17901,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "scene"
+            "value" : "scenes"
           }
         },
         "it" : {
@@ -17920,7 +17920,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "scena"
+            "value" : "scene"
           }
         },
         "it" : {
@@ -17971,7 +17971,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Consigliata per la stagione"
+            "value" : "Recommended for the season"
           }
         },
         "it" : {
@@ -17990,7 +17990,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Adatta all'ora attuale"
+            "value" : "Suits the current time"
           }
         },
         "it" : {
@@ -18009,7 +18009,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Orario abituale di utilizzo"
+            "value" : "Usual usage time"
           }
         },
         "it" : {
@@ -18028,7 +18028,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Fa parte della tua routine"
+            "value" : "Part of your routine"
           }
         },
         "it" : {
@@ -18094,7 +18094,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Soglia estiva: la tolleranza all'umidità è leggermente più alta."
+            "value" : "Summer threshold: humidity tolerance is slightly higher."
           }
         },
         "it" : {
@@ -18113,7 +18113,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Soglia invernale: rischio condensa sulle superfici fredde più elevato."
+            "value" : "Winter threshold: higher condensation risk on cold surfaces."
           }
         },
         "it" : {
@@ -18132,7 +18132,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Soglia estiva: temperature più alte sono attese in questa stagione."
+            "value" : "Summer threshold: higher temperatures are expected this season."
           }
         },
         "it" : {
@@ -18151,7 +18151,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Soglia invernale: il surriscaldamento interno è più impattante in inverno."
+            "value" : "Winter threshold: indoor overheating has greater impact in winter."
           }
         },
         "it" : {
@@ -18186,7 +18186,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Confermi di voler disinserire l'allarme?"
+            "value" : "Are you sure you want to disarm the alarm?"
           }
         },
         "it" : {
@@ -18205,7 +18205,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Disinserisci"
+            "value" : "Disarm"
           }
         },
         "it" : {
@@ -18224,7 +18224,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Azioni rapide"
+            "value" : "Quick Actions"
           }
         },
         "it" : {
@@ -18497,7 +18497,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Configura i sensori da monitorare per vedere lo stato di sicurezza della tua casa."
+            "value" : "Configure the sensors to monitor to view your home's security status."
           }
         },
         "it" : {
@@ -18534,7 +18534,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Visualizza sensori e allarmi sulla piantina"
+            "value" : "View sensors and alarms on the floorplan"
           }
         },
         "it" : {
@@ -18553,7 +18553,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Mappa di sicurezza"
+            "value" : "Security map"
           }
         },
         "it" : {
@@ -18572,7 +18572,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "sensori"
+            "value" : "sensors"
           }
         },
         "it" : {
@@ -18591,7 +18591,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "ALLARME ATTIVO"
+            "value" : "ALARM ACTIVE"
           }
         },
         "it" : {
@@ -18610,7 +18610,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Nessun sensore"
+            "value" : "No sensors"
           }
         },
         "it" : {
@@ -18629,7 +18629,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Buona protezione"
+            "value" : "Good protection"
           }
         },
         "it" : {
@@ -18648,7 +18648,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Attenzione richiesta"
+            "value" : "Attention required"
           }
         },
         "it" : {
@@ -18667,7 +18667,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Sicurezza Casa"
+            "value" : "Home Security"
           }
         },
         "it" : {
@@ -18686,7 +18686,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "avvisi"
+            "value" : "warnings"
           }
         },
         "it" : {
@@ -18703,7 +18703,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Attiva modalità Notte"
+            "value" : "Enable Night Mode"
           }
         },
         "it" : {
@@ -18722,7 +18722,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Verifica la zona"
+            "value" : "Check the area"
           }
         },
         "it" : {
@@ -18741,7 +18741,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Verifica la serratura"
+            "value" : "Check the lock"
           }
         },
         "it" : {
@@ -18760,7 +18760,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Verifica gli impianti"
+            "value" : "Check the plumbing"
           }
         },
         "it" : {
@@ -18779,7 +18779,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Verifica e chiudi"
+            "value" : "Check and close"
           }
         },
         "it" : {
@@ -18796,7 +18796,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Disinserisci il sistema"
+            "value" : "Disarm the system"
           }
         },
         "it" : {
@@ -18815,7 +18815,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Aerare e verificare"
+            "value" : "Ventilate and verify"
           }
         },
         "it" : {
@@ -18834,7 +18834,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Blocca la serratura"
+            "value" : "Lock the door"
           }
         },
         "it" : {
@@ -18853,7 +18853,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Sistema di allarme attivato"
+            "value" : "Alarm system triggered"
           }
         },
         "it" : {
@@ -18872,7 +18872,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Il sistema è disinserito durante le ore notturne"
+            "value" : "The alarm is disarmed during night hours"
           }
         },
         "it" : {
@@ -18891,7 +18891,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Critico"
+            "value" : "Critical"
           }
         },
         "it" : {
@@ -18929,7 +18929,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Attenzione"
+            "value" : "Warning"
           }
         },
         "it" : {
@@ -18948,7 +18948,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Analisi sicurezza"
+            "value" : "Security analysis"
           }
         },
         "it" : {
@@ -19206,7 +19206,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "In allarme"
+            "value" : "In alarm"
           }
         },
         "it" : {
@@ -19225,7 +19225,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Operativi"
+            "value" : "Operational"
           }
         },
         "it" : {
@@ -19244,7 +19244,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Richiede attenzione"
+            "value" : "Requires attention"
           }
         },
         "it" : {
@@ -19311,7 +19311,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Sensori monitorati"
+            "value" : "Monitored sensors"
           }
         },
         "it" : {
@@ -20034,7 +20034,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "qualità dell'aria"
+            "value" : "air quality"
           }
         },
         "it" : {
@@ -20070,7 +20070,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "umidità"
+            "value" : "humidity"
           }
         },
         "it" : {
@@ -20089,7 +20089,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "temperatura"
+            "value" : "temperature"
           }
         },
         "it" : {
@@ -20159,7 +20159,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "picco"
+            "value" : "peak"
           }
         },
         "it" : {
@@ -20395,7 +20395,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Abitudini"
+            "value" : "Habits"
           }
         },
         "it" : {
@@ -21693,7 +21693,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Analisi"
+            "value" : "Analysis"
           }
         },
         "it" : {
@@ -21760,7 +21760,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Scene & Automazioni"
+            "value" : "Scenes & Automations"
           }
         },
         "it" : {

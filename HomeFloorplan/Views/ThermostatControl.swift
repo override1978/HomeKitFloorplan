@@ -67,7 +67,7 @@ struct ThermostatControl: View {
                 .contentTransition(.numericText())
                 .foregroundStyle(targetColor)
             
-            Text("\(String(localized: "thermostat.now", defaultValue: "Ora")) \(formatted(adapter.celsiusToDisplay(adapter.currentTemperature)))")
+            Text("\(String(localized: "thermostat.now", defaultValue: "Now")) \(formatted(adapter.celsiusToDisplay(adapter.currentTemperature)))")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .contentTransition(.numericText())
@@ -132,7 +132,7 @@ struct ThermostatControl: View {
             HStack {
                 Image(systemName: "fan.fill")
                     .foregroundStyle(.secondary)
-                Text(String(localized: "thermostat.fan", defaultValue: "Ventola"))
+                Text(String(localized: "thermostat.fan", defaultValue: "Fan"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -199,7 +199,7 @@ struct ThermostatControl: View {
         if level == adapter.rotationSpeedRange.lowerBound {
             return String(localized: "thermostat.mode.auto", defaultValue: "Auto")
         }
-        return String(format: String(localized: "thermostat.fan.level", defaultValue: "Livello %d"), level)
+        return String(format: String(localized: "thermostat.fan.level", defaultValue: "Level %d"), level)
     }
 
     private func fanShortLabel(for level: Int) -> String {
@@ -263,7 +263,7 @@ struct ThermostatControl: View {
             if adapter.hasLowBattery {
                 HStack(spacing: 4) {
                     Image(systemName: "battery.25percent")
-                    Text(String(localized: "accessory.battery.low", defaultValue: "Batteria"))
+                    Text(String(localized: "accessory.battery.low", defaultValue: "Low Battery"))
                 }
                 .font(.subheadline)
                 .foregroundStyle(.red)
@@ -272,12 +272,12 @@ struct ThermostatControl: View {
     }
     
     private var statusText: String {
-        if !isReachable { return String(localized: "accessory.unreachable",       defaultValue: "Non raggiungibile") }
-        if mode == .off  { return String(localized: "thermostat.mode.off",        defaultValue: "Spento") }
+        if !isReachable { return String(localized: "accessory.unreachable",       defaultValue: "Unreachable") }
+        if mode == .off  { return String(localized: "thermostat.mode.off",        defaultValue: "Off") }
         switch adapter.heaterCoolerState {
-        case 2: return String(localized: "thermostat.status.heating", defaultValue: "Sta riscaldando")
-        case 3: return String(localized: "thermostat.status.cooling", defaultValue: "Sta raffreddando")
-        default: return String(localized: "thermostat.status.idle",   defaultValue: "Temperatura raggiunta")
+        case 2: return String(localized: "thermostat.status.heating", defaultValue: "Heating")
+        case 3: return String(localized: "thermostat.status.cooling", defaultValue: "Cooling")
+        default: return String(localized: "thermostat.status.idle",   defaultValue: "Target reached")
         }
     }
     

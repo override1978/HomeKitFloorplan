@@ -12,12 +12,12 @@ enum ConfidenceTier: String, Codable {
 
     var localizedLabel: String {
         switch self {
-        case .emerging:       return String(localized: "behavioral.confidence.emerging",       defaultValue: "In osservazione")
-        case .forming:        return String(localized: "behavioral.confidence.forming",        defaultValue: "In formazione")
-        case .stable:         return String(localized: "behavioral.confidence.stable",         defaultValue: "Stabile")
-        case .highConfidence: return String(localized: "behavioral.confidence.highConfidence", defaultValue: "Alta confidenza")
-        case .decaying:       return String(localized: "behavioral.confidence.decaying",       defaultValue: "In diminuzione")
-        case .dormant:        return String(localized: "behavioral.confidence.dormant",        defaultValue: "Dormiente")
+        case .emerging:       return String(localized: "behavioral.confidence.emerging",       defaultValue: "Observing")
+        case .forming:        return String(localized: "behavioral.confidence.forming",        defaultValue: "Forming")
+        case .stable:         return String(localized: "behavioral.confidence.stable",         defaultValue: "Stable")
+        case .highConfidence: return String(localized: "behavioral.confidence.highConfidence", defaultValue: "High Confidence")
+        case .decaying:       return String(localized: "behavioral.confidence.decaying",       defaultValue: "Decaying")
+        case .dormant:        return String(localized: "behavioral.confidence.dormant",        defaultValue: "Dormant")
         }
     }
 

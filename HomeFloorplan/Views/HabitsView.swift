@@ -22,7 +22,7 @@ struct HabitsView: View {
                     content
                 }
             }
-            .navigationTitle(String(localized: "habits.title", defaultValue: "Abitudini"))
+            .navigationTitle(String(localized: "habits.title", defaultValue: "Habits"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar { toolbarContent }
             .sheet(isPresented: $showAISettings) {
@@ -50,11 +50,11 @@ struct HabitsView: View {
 
             VStack(spacing: 8) {
                 Text(String(localized: "habits.noAI.title",
-                            defaultValue: "Configura l'AI per iniziare"))
+                            defaultValue: "Set up AI to get started"))
                     .font(.title3.weight(.semibold))
 
                 Text(String(localized: "habits.noAI.subtitle",
-                            defaultValue: "Abilita l'AI e i suggerimenti abitudini nelle Impostazioni per rilevare i tuoi pattern di utilizzo."))
+                            defaultValue: "Enable AI and habit suggestions in Settings to detect your usage patterns."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -65,7 +65,7 @@ struct HabitsView: View {
                 showAISettings = true
             } label: {
                 Label(String(localized: "habits.noAI.action",
-                             defaultValue: "Vai alle impostazioni AI"),
+                             defaultValue: "Go to AI Settings"),
                       systemImage: "gearshape")
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
@@ -87,7 +87,7 @@ struct HabitsView: View {
                     HStack(spacing: 12) {
                         ProgressView().scaleEffect(0.85)
                         Text(String(localized: "habits.analyzing",
-                                    defaultValue: "Analisi abitudini in corso…"))
+                                    defaultValue: "Analyzing habits…"))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -104,10 +104,10 @@ struct HabitsView: View {
                     }
                 } header: {
                     Text(String(localized: "habits.patterns.header",
-                                defaultValue: "Pattern rilevati"))
+                                defaultValue: "Detected Patterns"))
                 } footer: {
                     Text(String(localized: "habits.patterns.footer",
-                                defaultValue: "Basati sugli ultimi 14 giorni di attività. Approva un pattern per creare una regola automatica."))
+                                defaultValue: "Based on the last 14 days of activity. Approve a pattern to create an automatic rule."))
                 }
             } else if !habitService.isAnalyzing {
                 Section {
@@ -121,10 +121,10 @@ struct HabitsView: View {
                     ActiveRulesView()
                 } header: {
                     Text(String(localized: "habits.rules.header",
-                                defaultValue: "Regole attive"))
+                                defaultValue: "Active Rules"))
                 } footer: {
                     Text(String(localized: "habits.rules.footer",
-                                defaultValue: "Tocca una regola per modificarne i parametri."))
+                                defaultValue: "Tap a rule to edit its parameters."))
                 }
             }
         }
@@ -140,10 +140,10 @@ struct HabitsView: View {
                 .font(.title)
                 .foregroundStyle(.secondary)
             Text(String(localized: "habits.empty.title",
-                        defaultValue: "L'app sta imparando le tue abitudini"))
+                        defaultValue: "The app is learning your habits"))
                 .font(.subheadline.weight(.medium))
             Text(String(localized: "habits.empty.subtitle",
-                        defaultValue: "Torna tra qualche giorno. Servono almeno 7 giorni di dati per rilevare pattern affidabili."))
+                        defaultValue: "Check back in a few days. At least 7 days of data are needed to detect reliable patterns."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -193,7 +193,7 @@ struct HabitsView: View {
                     approvePattern(pattern)
                 } label: {
                     Text(String(localized: "habits.pattern.approve",
-                                defaultValue: "Crea regola automatica"))
+                                defaultValue: "Create Automatic Rule"))
                         .font(.subheadline.weight(.medium))
                         .frame(maxWidth: .infinity)
                 }
@@ -202,7 +202,7 @@ struct HabitsView: View {
                 Button(role: .destructive) {
                     habitService.dismiss(pattern)
                 } label: {
-                    Text(String(localized: "habits.pattern.dismiss", defaultValue: "Ignora"))
+                    Text(String(localized: "habits.pattern.dismiss", defaultValue: "Dismiss"))
                         .font(.subheadline)
                         .frame(maxWidth: .infinity)
                 }

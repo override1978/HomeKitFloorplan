@@ -331,16 +331,16 @@ enum SceneSuggestionReason {
         switch self {
         case .timeOfDay:
             return String(localized: "scenes.suggestion.reason.timeOfDay",
-                          defaultValue: "Adatta all'ora attuale")
+                          defaultValue: "Suits the current time")
         case .weeklyRoutine:
             return String(localized: "scenes.suggestion.reason.weeklyRoutine",
-                          defaultValue: "Fa parte della tua routine")
+                          defaultValue: "Part of your routine")
         case .season:
             return String(localized: "scenes.suggestion.reason.season",
-                          defaultValue: "Consigliata per la stagione")
+                          defaultValue: "Recommended for the season")
         case .usualTime:
             return String(localized: "scenes.suggestion.reason.usualTime",
-                          defaultValue: "Orario abituale di utilizzo")
+                          defaultValue: "Usual usage time")
         }
     }
 }

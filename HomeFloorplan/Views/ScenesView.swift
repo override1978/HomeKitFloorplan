@@ -79,14 +79,14 @@ struct ScenesView: View {
                 }
             }
             .navigationTitle(String(localized: "scenes.navigationTitle",
-                                    defaultValue: "Scene"))
+                                    defaultValue: "Scenes"))
             .navigationBarTitleDisplayMode(.large)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .toolbar { toolbarContent }
             .searchable(text: $searchText,
                         placement: .navigationBarDrawer(displayMode: .always),
                         prompt: String(localized: "scenes.search.prompt",
-                                       defaultValue: "Cerca scena"))
+                                       defaultValue: "Search scenes"))
             .sheet(item: $sceneDetailTarget) { scene in
                 SceneDetailSheet(scene: scene)
                     .presentationDetents([.large])
@@ -179,14 +179,14 @@ struct ScenesView: View {
     private var emptyState: some View {
         ContentUnavailableView {
             Label(String(localized: "scenes.empty.title",
-                         defaultValue: "Nessuna scena"),
+                         defaultValue: "No Scenes"),
                   systemImage: "wand.and.sparkles")
         } description: {
             VStack(spacing: 8) {
                 Text(String(localized: "scenes.empty.description1",
-                            defaultValue: "Non hai ancora scene configurate."))
+                            defaultValue: "You haven't set up any scenes yet."))
                 Text(String(localized: "scenes.empty.description2",
-                            defaultValue: "Le scene combinano più accessori in un comando: una scena \"Buonanotte\" può spegnere tutte le luci e abbassare il termostato."))
+                            defaultValue: "Scenes combine multiple accessories into one command: a \"Goodnight\" scene can turn off all lights and lower the thermostat."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -199,7 +199,7 @@ struct ScenesView: View {
                     UIApplication.shared.open(url)
                 } label: {
                     Label(String(localized: "scenes.empty.openHome",
-                                 defaultValue: "Crea da Apple Casa"),
+                                 defaultValue: "Create in Apple Home"),
                           systemImage: "arrow.up.right.square")
                 }
                 .buttonStyle(.borderedProminent)
@@ -215,7 +215,7 @@ struct ScenesView: View {
         if presentedAsSheet {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(String(localized: "scenes.toolbar.done",
-                              defaultValue: "Fine")) { dismiss() }
+                              defaultValue: "Done")) { dismiss() }
                     .fontWeight(.semibold)
             }
         }
@@ -278,7 +278,7 @@ private struct ScenesHeroView: View {
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Color.orange)
                         Text(String(localized: "scenes.hero.label",
-                                    defaultValue: "LE TUE SCENE"))
+                                    defaultValue: "YOUR SCENES"))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
@@ -293,9 +293,9 @@ private struct ScenesHeroView: View {
 
                         Text(totalCount == 1
                              ? String(localized: "scenes.hero.sceneSingular",
-                                      defaultValue: "scena")
+                                      defaultValue: "scene")
                              : String(localized: "scenes.hero.scenePlural",
-                                      defaultValue: "scene"))
+                                      defaultValue: "scenes"))
                             .font(.title3.weight(.medium))
                             .foregroundStyle(.secondary)
                             .padding(.bottom, 6)
@@ -337,7 +337,7 @@ private struct ScenesHeroView: View {
                     icon: "star.fill",
                     iconColor: .orange,
                     title: String(localized: "scenes.hero.mostUsed",
-                                  defaultValue: "Più usata"),
+                                  defaultValue: "Most Used"),
                     value: mostUsedName ?? "—"
                 )
 
@@ -347,7 +347,7 @@ private struct ScenesHeroView: View {
                     icon: "clock.arrow.circlepath",
                     iconColor: Color.orange.opacity(0.65),
                     title: String(localized: "scenes.hero.lastExecuted",
-                                  defaultValue: "Ultima"),
+                                  defaultValue: "Last"),
                     value: {
                         guard let s = lastExecutedScene,
                               let d = s.lastExecutedAt else { return "—" }
@@ -655,7 +655,7 @@ private struct SceneFeaturedCard: View {
     private var lastExecutedText: String {
         guard let d = usage?.lastExecutedAt else {
             return String(localized: "scenes.card.neverExecuted",
-                          defaultValue: "Mai eseguita")
+                          defaultValue: "Never run")
         }
         let fmt = RelativeDateTimeFormatter()
         fmt.unitsStyle = .abbreviated
@@ -718,7 +718,7 @@ private struct SceneFeaturedCard: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
 
-                Text("\(scene.actionCount) \(scene.actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "azione") : String(localized: "count.action.plural", defaultValue: "azioni"))")
+                Text("\(scene.actionCount) \(scene.actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "action") : String(localized: "count.action.plural", defaultValue: "actions"))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -872,7 +872,7 @@ private struct SceneListRow: View {
                         .lineLimit(1)
 
                     HStack(spacing: 6) {
-                        Text("\(scene.actionCount) \(scene.actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "azione") : String(localized: "count.action.plural", defaultValue: "azioni"))")
+                        Text("\(scene.actionCount) \(scene.actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "action") : String(localized: "count.action.plural", defaultValue: "actions"))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 

@@ -10,8 +10,8 @@ private enum ChartMode: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .average:   return String(localized: "chart.mode.average",    defaultValue: "Media")
-        case .perSensor: return String(localized: "chart.mode.perSensor",  defaultValue: "Per sensore")
+        case .average:   return String(localized: "chart.mode.average",    defaultValue: "Average")
+        case .perSensor: return String(localized: "chart.mode.perSensor",  defaultValue: "Per Sensor")
         }
     }
 }
@@ -344,7 +344,7 @@ struct SensorDetailSheet: View {
         case .carbonDioxide:  return String(format: "%.0f ppm", value)
         case .smoke:
             return value >= 1
-                ? String(localized: "smoke.detected",    defaultValue: "Sì")
+                ? String(localized: "smoke.detected",    defaultValue: "Yes")
                 : String(localized: "smoke.notDetected", defaultValue: "No")
         case .vocDensity:     return String(format: "%.0f µg/m³", value)
         }

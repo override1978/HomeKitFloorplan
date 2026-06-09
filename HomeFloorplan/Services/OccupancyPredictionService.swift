@@ -241,9 +241,9 @@ final class OccupancyPredictionService {
 
     private func confidenceLabel(_ confidence: Double) -> String {
         switch confidence {
-        case 0.80...: return String(localized: "occupancy.confidence.high",   defaultValue: "Alta")
-        case 0.50...: return String(localized: "occupancy.confidence.medium", defaultValue: "Media")
-        default:      return String(localized: "occupancy.confidence.low",    defaultValue: "Bassa")
+        case 0.80...: return String(localized: "occupancy.confidence.high",   defaultValue: "High")
+        case 0.50...: return String(localized: "occupancy.confidence.medium", defaultValue: "Medium")
+        default:      return String(localized: "occupancy.confidence.low",    defaultValue: "Low")
         }
     }
 }

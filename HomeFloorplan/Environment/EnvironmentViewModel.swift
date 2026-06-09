@@ -50,9 +50,9 @@ enum SensorUrgency: Int, Comparable {
 
     var label: String {
         switch self {
-        case .normal:  return String(localized: "urgency.normal",  defaultValue: "Normale")
-        case .warning: return String(localized: "urgency.warning", defaultValue: "Attenzione")
-        case .danger:  return String(localized: "urgency.danger",  defaultValue: "Critico")
+        case .normal:  return String(localized: "urgency.normal",  defaultValue: "Normal")
+        case .warning: return String(localized: "urgency.warning", defaultValue: "Warning")
+        case .danger:  return String(localized: "urgency.danger",  defaultValue: "Critical")
         }
     }
 
@@ -102,11 +102,11 @@ struct SensorData: Identifiable {
             return String(format: "%.0f%%", currentValue)
         case .airQuality:
             switch Int(currentValue) {
-            case 1: return String(localized: "airquality.excellent",  defaultValue: "Ottima")
-            case 2: return String(localized: "airquality.good",       defaultValue: "Buona")
-            case 3: return String(localized: "airquality.fair",       defaultValue: "Media")
-            case 4: return String(localized: "airquality.poor",       defaultValue: "Scarsa")
-            case 5: return String(localized: "airquality.veryPoor",   defaultValue: "Pessima")
+            case 1: return String(localized: "airquality.excellent",  defaultValue: "Excellent")
+            case 2: return String(localized: "airquality.good",       defaultValue: "Good")
+            case 3: return String(localized: "airquality.fair",       defaultValue: "Fair")
+            case 4: return String(localized: "airquality.poor",       defaultValue: "Poor")
+            case 5: return String(localized: "airquality.veryPoor",   defaultValue: "Very Poor")
             default: return "—"
             }
         case .carbonMonoxide:
@@ -115,8 +115,8 @@ struct SensorData: Identifiable {
             return String(format: "%.0f ppm", currentValue)
         case .smoke:
             return currentValue >= 1
-                ? String(localized: "smoke.detected",     defaultValue: "Rilevato")
-                : String(localized: "smoke.notDetected",  defaultValue: "Assente")
+                ? String(localized: "smoke.detected",     defaultValue: "Detected")
+                : String(localized: "smoke.notDetected",  defaultValue: "Clear")
         case .vocDensity:
             return String(format: "%.0f µg/m³", currentValue)
         }
@@ -157,10 +157,10 @@ struct RoomEnvironmentData: Identifiable {
 
     var qualityLabel: String {
         switch qualityScore {
-        case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Ottima")
-        case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Discreta")
-        case 0.35..<0.60: return String(localized: "quality.warning",   defaultValue: "Attenzione")
-        default:          return String(localized: "quality.critical",  defaultValue: "Critica")
+        case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Excellent")
+        case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Fair")
+        case 0.35..<0.60: return String(localized: "quality.warning",   defaultValue: "Warning")
+        default:          return String(localized: "quality.critical",  defaultValue: "Critical")
         }
     }
 
@@ -253,10 +253,10 @@ final class EnvironmentViewModel {
 
     var globalLabel: String {
         switch globalScore {
-        case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Ottima")
-        case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Discreta")
-        case 0.35..<0.60: return String(localized: "quality.warning",   defaultValue: "Attenzione")
-        default:          return String(localized: "quality.critical",  defaultValue: "Critica")
+        case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Excellent")
+        case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Fair")
+        case 0.35..<0.60: return String(localized: "quality.warning",   defaultValue: "Warning")
+        default:          return String(localized: "quality.critical",  defaultValue: "Critical")
         }
     }
 

@@ -22,20 +22,20 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .all:             return String(localized: "filter.category.all",            defaultValue: "Tutti")
-        case .lights:          return String(localized: "filter.category.lights",         defaultValue: "Luci")
-        case .outlets:         return String(localized: "filter.category.outlets",        defaultValue: "Prese")
-        case .climate:         return String(localized: "filter.category.climate",        defaultValue: "Clima")
-        case .windowCoverings: return String(localized: "filter.category.windowCoverings",defaultValue: "Tende")
-        case .sensors:         return String(localized: "filter.category.sensors",        defaultValue: "Sensori")
-        case .security:        return String(localized: "filter.category.security",       defaultValue: "Sicurezza")
-        case .cameras:         return String(localized: "filter.category.cameras",        defaultValue: "Telecamere")
-        case .air:             return String(localized: "filter.category.air",            defaultValue: "Aria")
+        case .all:             return String(localized: "filter.category.all",            defaultValue: "All")
+        case .lights:          return String(localized: "filter.category.lights",         defaultValue: "Lights")
+        case .outlets:         return String(localized: "filter.category.outlets",        defaultValue: "Outlets")
+        case .climate:         return String(localized: "filter.category.climate",        defaultValue: "Climate")
+        case .windowCoverings: return String(localized: "filter.category.windowCoverings",defaultValue: "Blinds")
+        case .sensors:         return String(localized: "filter.category.sensors",        defaultValue: "Sensors")
+        case .security:        return String(localized: "filter.category.security",       defaultValue: "Security")
+        case .cameras:         return String(localized: "filter.category.cameras",        defaultValue: "Cameras")
+        case .air:             return String(localized: "filter.category.air",            defaultValue: "Air")
         case .hubs:            return String(localized: "filter.category.hubs",           defaultValue: "Hub")
         case .television:      return String(localized: "filter.category.television",     defaultValue: "TV")
         case .switches:        return String(localized: "filter.category.switches",       defaultValue: "Switch")
-        case .buttons:         return String(localized: "filter.category.buttons",        defaultValue: "Pulsanti")
-        case .others:          return String(localized: "filter.category.others",         defaultValue: "Altri")
+        case .buttons:         return String(localized: "filter.category.buttons",        defaultValue: "Buttons")
+        case .others:          return String(localized: "filter.category.others",         defaultValue: "Other")
         }
     }
 
@@ -131,11 +131,11 @@ enum AccessoryStateFilter: String, CaseIterable, Identifiable {
     
     var displayName: String {
         switch self {
-        case .all:        return String(localized: "filter.state.all",        defaultValue: "Tutti")
-        case .on:         return String(localized: "filter.state.on",         defaultValue: "Accesi")
+        case .all:        return String(localized: "filter.state.all",        defaultValue: "All")
+        case .on:         return String(localized: "filter.state.on",         defaultValue: "On")
         case .offline:    return String(localized: "filter.state.offline",    defaultValue: "Offline")
-        case .lowBattery: return String(localized: "filter.state.lowBattery", defaultValue: "Batt. scarica")
-        case .alarm:      return String(localized: "filter.state.alarm",      defaultValue: "Allarme")
+        case .lowBattery: return String(localized: "filter.state.lowBattery", defaultValue: "Low Battery")
+        case .alarm:      return String(localized: "filter.state.alarm",      defaultValue: "Alarm")
         }
     }
     

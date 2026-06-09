@@ -33,7 +33,7 @@ enum LightingContextAnalyzer {
                 recommendedBrightness: 0.55,
                 preferredIntents:      [.brightenRoom],
                 description:           String(localized: "lighting.profile.earlyMorning",
-                                              defaultValue: "Luce mattutina moderata")
+                                              defaultValue: "Moderate morning light")
             )
         case .morning:
             return LightingProfile(
@@ -41,7 +41,7 @@ enum LightingContextAnalyzer {
                 recommendedBrightness: 0.85,
                 preferredIntents:      [.brightenRoom],
                 description:           String(localized: "lighting.profile.morning",
-                                              defaultValue: "Piena luminosità diurna")
+                                              defaultValue: "Full daytime brightness")
             )
         case .afternoon:
             return LightingProfile(
@@ -49,7 +49,7 @@ enum LightingContextAnalyzer {
                 recommendedBrightness: 0.75,
                 preferredIntents:      [.brightenRoom],
                 description:           String(localized: "lighting.profile.afternoon",
-                                              defaultValue: "Luce pomeridiana")
+                                              defaultValue: "Afternoon light")
             )
         case .evening:
             return LightingProfile(
@@ -57,7 +57,7 @@ enum LightingContextAnalyzer {
                 recommendedBrightness: 0.35,
                 preferredIntents:      [.setCircadianLight, .dimRoom],
                 description:           String(localized: "lighting.profile.evening",
-                                              defaultValue: "Luce serale calda e soffusa")
+                                              defaultValue: "Warm and dim evening light")
             )
         case .night:
             return LightingProfile(
@@ -65,7 +65,7 @@ enum LightingContextAnalyzer {
                 recommendedBrightness: 0.12,
                 preferredIntents:      [.dimRoom],
                 description:           String(localized: "lighting.profile.night",
-                                              defaultValue: "Luce notturna soffusa")
+                                              defaultValue: "Dim night light")
             )
         }
     }

@@ -106,19 +106,19 @@ enum BehavioralDeviationDetector {
         switch signal.pattern.action {
         case .off:
             return String(format: String(localized: "notif.deviation.off.headline",
-                                         defaultValue: "%@ è ancora acceso"),
+                                         defaultValue: "%@ is still on"),
                           name)
         case .on:
             return String(format: String(localized: "notif.deviation.on.headline",
-                                         defaultValue: "%@ non è ancora acceso"),
+                                         defaultValue: "%@ is not on yet"),
                           name)
         case .activate:
             return String(format: String(localized: "notif.deviation.activate.headline",
-                                         defaultValue: "%@ non è ancora attivo"),
+                                         defaultValue: "%@ is not active yet"),
                           name)
         default:
             return String(format: String(localized: "notif.deviation.generic.headline",
-                                         defaultValue: "Abitudine non ancora eseguita: %@"),
+                                         defaultValue: "Habit not yet performed: %@"),
                           name)
         }
     }
@@ -129,19 +129,19 @@ enum BehavioralDeviationDetector {
         switch pattern.action {
         case .off:
             return String(format: String(localized: "notif.deviation.off.body",
-                                         defaultValue: "Di solito lo spegni intorno alle %@. Vuoi farlo ora?"),
+                                         defaultValue: "You usually turn it off around %@. Do it now?"),
                           timeStr)
         case .on:
             return String(format: String(localized: "notif.deviation.on.body",
-                                         defaultValue: "Di solito lo accendi intorno alle %@. Vuoi farlo ora?"),
+                                         defaultValue: "You usually turn it on around %@. Do it now?"),
                           timeStr)
         case .activate:
             return String(format: String(localized: "notif.deviation.activate.body",
-                                         defaultValue: "Di solito è attivo intorno alle %@. Vuoi attivarlo?"),
+                                         defaultValue: "It's usually active around %@. Activate it now?"),
                           timeStr)
         default:
             return String(format: String(localized: "notif.deviation.generic.body",
-                                         defaultValue: "Solitamente succede verso le %@."),
+                                         defaultValue: "This usually happens around %@."),
                           timeStr)
         }
     }
@@ -150,7 +150,7 @@ enum BehavioralDeviationDetector {
         let pattern = signal.pattern
         return String(format:
             String(localized: "notif.deviation.why",
-                   defaultValue: "Rilevato in %d osservazioni con una deviazione di ±%d minuti. Confidenza: %@."),
+                   defaultValue: "Detected in %d observations with a deviation of ±%d minutes. Confidence: %@."),
             pattern.observations,
             pattern.timeDeviationMinutes,
             pattern.confidenceLabel

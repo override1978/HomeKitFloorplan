@@ -40,7 +40,7 @@ struct AISettingsView: View {
             }
             infoSection
         }
-        .navigationTitle(String(localized: "ai.settings.title", defaultValue: "Intelligenza Artificiale"))
+        .navigationTitle(String(localized: "ai.settings.title", defaultValue: "Artificial Intelligence"))
         .navigationBarTitleDisplayMode(.large)
         .onAppear { loadAPIKeyDraft() }
         .sheet(isPresented: $showConsentSheet) {
@@ -56,7 +56,7 @@ struct AISettingsView: View {
             // Master switch — intercetta la prima attivazione per mostrare il consent screen
             Toggle(isOn: $settings.isAIEnabled) {
                 Label(
-                    String(localized: "ai.settings.masterToggle", defaultValue: "Abilita AI"),
+                    String(localized: "ai.settings.masterToggle", defaultValue: "Enable AI"),
                     systemImage: "brain"
                 )
             }
@@ -95,7 +95,7 @@ struct AISettingsView: View {
             Text(String(localized: "ai.settings.provider.header", defaultValue: "Provider"))
         } footer: {
             Text(String(localized: "ai.settings.provider.footer",
-                        defaultValue: "Seleziona il provider AI e inserisci la tua API key per abilitare le funzioni intelligenti."))
+                        defaultValue: "Select an AI provider and enter your API key to enable smart features."))
         }
     }
 
@@ -106,7 +106,7 @@ struct AISettingsView: View {
         HStack {
             if isKeyVisible {
                 TextField(
-                    String(localized: "ai.settings.apiKey.placeholder", defaultValue: "Incolla qui la API key"),
+                    String(localized: "ai.settings.apiKey.placeholder", defaultValue: "Paste your API key here"),
                     text: $apiKeyDraft
                 )
                 .autocorrectionDisabled()
@@ -114,7 +114,7 @@ struct AISettingsView: View {
                 .onSubmit { saveAPIKey() }
             } else {
                 SecureField(
-                    String(localized: "ai.settings.apiKey.placeholder", defaultValue: "Incolla qui la API key"),
+                    String(localized: "ai.settings.apiKey.placeholder", defaultValue: "Paste your API key here"),
                     text: $apiKeyDraft
                 )
                 .autocorrectionDisabled()
@@ -138,7 +138,7 @@ struct AISettingsView: View {
                 Button {
                     saveAPIKey()
                 } label: {
-                    Text(String(localized: "ai.settings.apiKey.save", defaultValue: "Salva"))
+                    Text(String(localized: "ai.settings.apiKey.save", defaultValue: "Save"))
                         .font(.callout)
                         .foregroundStyle(.tint)
                 }
@@ -164,7 +164,7 @@ struct AISettingsView: View {
                         .foregroundStyle(.tint)
                         .frame(width: 20)
                 }
-                Text(String(localized: "ai.settings.testConnection", defaultValue: "Testa connessione"))
+                Text(String(localized: "ai.settings.testConnection", defaultValue: "Test Connection"))
                     .foregroundStyle(settings.hasAPIKey ? .primary : .secondary)
 
                 Spacer()
@@ -182,7 +182,7 @@ struct AISettingsView: View {
         // Ultimo test timestamp
         if let lastTest = settings.lastConnectionTest {
             HStack {
-                Text(String(localized: "ai.settings.lastTest", defaultValue: "Ultimo test"))
+                Text(String(localized: "ai.settings.lastTest", defaultValue: "Last Test"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -211,7 +211,7 @@ struct AISettingsView: View {
         Section {
             Toggle(isOn: $settings.suggestionsEnabled) {
                 Label(
-                    String(localized: "ai.settings.suggestions", defaultValue: "Suggerimenti abitudini"),
+                    String(localized: "ai.settings.suggestions", defaultValue: "Habit Suggestions"),
                     systemImage: "lightbulb"
                 )
             }
@@ -219,7 +219,7 @@ struct AISettingsView: View {
 
             Toggle(isOn: $settings.anomalyDetectionEnabled) {
                 Label(
-                    String(localized: "ai.settings.anomaly", defaultValue: "Rilevamento anomalie"),
+                    String(localized: "ai.settings.anomaly", defaultValue: "Anomaly Detection"),
                     systemImage: "exclamationmark.triangle"
                 )
             }
@@ -227,18 +227,18 @@ struct AISettingsView: View {
 
             Toggle(isOn: $settings.ruleEngineEnabled) {
                 Label(
-                    String(localized: "ai.settings.ruleEngine", defaultValue: "Regole predittive"),
+                    String(localized: "ai.settings.ruleEngine", defaultValue: "Predictive Rules"),
                     systemImage: "gearshape.2"
                 )
             }
             .disabled(!settings.isOperational)
 
         } header: {
-            Text(String(localized: "ai.settings.features.header", defaultValue: "Funzioni AI"))
+            Text(String(localized: "ai.settings.features.header", defaultValue: "AI Features"))
         } footer: {
             if !settings.isOperational {
                 Text(String(localized: "ai.settings.features.noKey",
-                            defaultValue: "Configura una API key valida per abilitare le funzioni AI."))
+                            defaultValue: "Set up a valid API key to enable AI features."))
             }
         }
     }
@@ -251,7 +251,7 @@ struct AISettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label(
                     String(localized: "ai.settings.privacy.keychain",
-                           defaultValue: "La tua API key è salvata in modo sicuro nel Keychain del dispositivo."),
+                           defaultValue: "Your API key is stored securely in the device Keychain."),
                     systemImage: "lock.shield"
                 )
                 .font(.footnote)
@@ -259,7 +259,7 @@ struct AISettingsView: View {
 
                 Label(
                     String(localized: "ai.settings.privacy.data",
-                           defaultValue: "I dati inviati sono solo valori numerici aggregati, mai dati personali."),
+                           defaultValue: "Only aggregated numeric values are sent — never personal data."),
                     systemImage: "chart.bar"
                 )
                 .font(.footnote)
@@ -270,7 +270,7 @@ struct AISettingsView: View {
             Link(destination: settings.selectedProvider.pricingURL) {
                 Label(
                     String(localized: "ai.settings.pricing",
-                           defaultValue: "Prezzi e piani \(settings.selectedProvider.localizedName)"),
+                           defaultValue: "Pricing & Plans \(settings.selectedProvider.localizedName)"),
                     systemImage: "arrow.up.right.square"
                 )
                 .foregroundStyle(.tint)
@@ -282,7 +282,7 @@ struct AISettingsView: View {
                 } label: {
                     Label(
                         String(localized: "ai.settings.revokeConsent",
-                               defaultValue: "Revoca consenso dati AI"),
+                               defaultValue: "Revoke AI Data Consent"),
                         systemImage: "hand.raised.slash"
                     )
                 }
@@ -292,7 +292,7 @@ struct AISettingsView: View {
                 } label: {
                     Label(
                         String(localized: "ai.settings.grantConsent",
-                               defaultValue: "Mostra informativa dati AI"),
+                               defaultValue: "Show AI Data Notice"),
                         systemImage: "hand.raised"
                     )
                     .foregroundStyle(.tint)
@@ -300,7 +300,7 @@ struct AISettingsView: View {
             }
 
         } header: {
-            Text(String(localized: "ai.settings.info.header", defaultValue: "Privacy e costi"))
+            Text(String(localized: "ai.settings.info.header", defaultValue: "Privacy & Costs"))
         }
     }
 
@@ -333,7 +333,7 @@ struct AISettingsView: View {
         if !success {
             testError = settings.lastConnectionSuccess == false
                 ? String(localized: "ai.settings.testFailed",
-                         defaultValue: "Test fallito. Verifica la API key e la connessione.")
+                         defaultValue: "Test failed. Check your API key and connection.")
                 : nil
         }
     }
@@ -354,18 +354,18 @@ struct AISettingsBannerView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(localized: "ai.banner.title",
-                            defaultValue: "API key AI non configurata"))
+                            defaultValue: "AI API Key Not Configured"))
                 .font(.subheadline).bold()
 
                 Text(String(localized: "ai.banner.subtitle",
-                            defaultValue: "Configura la chiave in Impostazioni per usare le funzioni AI."))
+                            defaultValue: "Configure your key in Settings to use AI features."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            Button(String(localized: "ai.banner.action", defaultValue: "Configura")) {
+            Button(String(localized: "ai.banner.action", defaultValue: "Configure")) {
                 showSettings = true
             }
             .buttonStyle(.bordered)

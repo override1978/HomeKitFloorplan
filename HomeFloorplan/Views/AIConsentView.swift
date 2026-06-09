@@ -29,11 +29,11 @@ struct AIConsentView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 120)
             }
-            .navigationTitle(String(localized: "ai.consent.nav.title", defaultValue: "Consenso dati AI"))
+            .navigationTitle(String(localized: "ai.consent.nav.title", defaultValue: "AI Data Consent"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(String(localized: "ai.consent.decline", defaultValue: "Non accetto")) {
+                    Button(String(localized: "ai.consent.decline", defaultValue: "Decline")) {
                         dismiss()
                     }
                     .foregroundStyle(.secondary)
@@ -60,7 +60,7 @@ struct AIConsentView: View {
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(String(localized: "ai.consent.headline",
-                                defaultValue: "Come vengono usati i tuoi dati"))
+                                defaultValue: "How your data is used"))
                         .font(.title3.weight(.bold))
                     Text(String(format: String(localized: "ai.consent.provider",
                                               defaultValue: "Provider: %@"),
@@ -71,7 +71,7 @@ struct AIConsentView: View {
             }
 
             Text(String(format: String(localized: "ai.consent.intro",
-                                       defaultValue: "Per generare insight ambientali intelligenti, l'app invia alcuni dati delle stanze a %@. Leggi cosa viene trasmesso prima di procedere."),
+                                       defaultValue: "To generate smart environmental insights, the app sends some room data to %@. Review what is transmitted before proceeding."),
                         settings.selectedProvider.localizedName))
                 .font(.body)
                 .foregroundStyle(.secondary)
@@ -82,7 +82,7 @@ struct AIConsentView: View {
 
     private var sentDataSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label(String(localized: "ai.consent.sent.header", defaultValue: "Cosa viene inviato"),
+            Label(String(localized: "ai.consent.sent.header", defaultValue: "What is sent"),
                   systemImage: "arrow.up.circle.fill")
                 .font(.headline)
                 .foregroundStyle(.blue)
@@ -91,27 +91,27 @@ struct AIConsentView: View {
                 icon: "house.fill",
                 color: .blue,
                 title: String(localized: "ai.consent.sent.roomNames",
-                              defaultValue: "Nomi delle stanze"),
+                              defaultValue: "Room names"),
                 detail: String(localized: "ai.consent.sent.roomNames.detail",
-                               defaultValue: "I nomi che hai assegnato alle stanze HomeKit (es. \"Cucina\", \"Camera da letto\").")
+                               defaultValue: "The names you assigned to HomeKit rooms (e.g. \"Kitchen\", \"Bedroom\").")
             )
 
             ConsentDataRow(
                 icon: "thermometer.medium",
                 color: .orange,
                 title: String(localized: "ai.consent.sent.sensorData",
-                              defaultValue: "Valori ambientali"),
+                              defaultValue: "Environmental values"),
                 detail: String(localized: "ai.consent.sent.sensorData.detail",
-                               defaultValue: "Letture numeriche di temperatura, umidità, CO₂ e qualità dell'aria delle ultime 24–48 ore.")
+                               defaultValue: "Numeric readings of temperature, humidity, CO₂ and air quality from the last 24–48 hours.")
             )
 
             ConsentDataRow(
                 icon: "chart.xyaxis.line",
                 color: .indigo,
                 title: String(localized: "ai.consent.sent.baseline",
-                              defaultValue: "Statistiche baseline"),
+                              defaultValue: "Baseline statistics"),
                 detail: String(localized: "ai.consent.sent.baseline.detail",
-                               defaultValue: "Medie e deviazioni standard storiche (fino a 30 giorni) per contestualizzare le anomalie.")
+                               defaultValue: "Historical averages and standard deviations (up to 30 days) to contextualise anomalies.")
             )
         }
         .padding(16)
@@ -127,7 +127,7 @@ struct AIConsentView: View {
 
     private var notSentSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label(String(localized: "ai.consent.notSent.header", defaultValue: "Cosa NON viene mai inviato"),
+            Label(String(localized: "ai.consent.notSent.header", defaultValue: "What is NEVER sent"),
                   systemImage: "checkmark.shield.fill")
                 .font(.headline)
                 .foregroundStyle(.green)
@@ -136,27 +136,27 @@ struct AIConsentView: View {
                 icon: "person.crop.circle.badge.xmark",
                 color: .green,
                 title: String(localized: "ai.consent.notSent.identity",
-                              defaultValue: "Identità degli utenti"),
+                              defaultValue: "User identities"),
                 detail: String(localized: "ai.consent.notSent.identity.detail",
-                               defaultValue: "Nessun nome, Apple ID, email o profilo familiare viene trasmesso al provider AI.")
+                               defaultValue: "No name, Apple ID, email or family profile is transmitted to the AI provider.")
             )
 
             ConsentDataRow(
                 icon: "location.slash.fill",
                 color: .green,
                 title: String(localized: "ai.consent.notSent.location",
-                              defaultValue: "Posizione GPS"),
+                              defaultValue: "GPS Location"),
                 detail: String(localized: "ai.consent.notSent.location.detail",
-                               defaultValue: "Nessuna informazione geografica o di localizzazione viene inclusa nelle richieste AI.")
+                               defaultValue: "No geographic or location information is included in AI requests.")
             )
 
             ConsentDataRow(
                 icon: "camera.slash.fill",
                 color: .green,
                 title: String(localized: "ai.consent.notSent.media",
-                              defaultValue: "Video, audio e immagini"),
+                              defaultValue: "Video, audio and images"),
                 detail: String(localized: "ai.consent.notSent.media.detail",
-                               defaultValue: "Nessun dato proveniente da videocamere, microfoni o sensori multimediali.")
+                               defaultValue: "No data from cameras, microphones or multimedia sensors.")
             )
         }
         .padding(16)
@@ -181,7 +181,7 @@ struct AIConsentView: View {
                 dismiss()
             } label: {
                 Text(String(localized: "ai.consent.accept",
-                            defaultValue: "Accetto e abilita AI"))
+                            defaultValue: "Accept and enable AI"))
                     .font(.body.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }

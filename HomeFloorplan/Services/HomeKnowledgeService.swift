@@ -326,7 +326,7 @@ final class HomeKnowledgeService {
             let needed = max(1, Int(ceil(nextTierProgress * Double(threshold))) - count)
             return String(
                 format: String(localized: "domain.hint.format",
-                               defaultValue: "Ancora %lld %@ per raggiungere il livello %@."),
+                               defaultValue: "%lld more %@ to reach the %@ level."),
                 Int64(needed), unit, nextTierLabel
             )
         }
@@ -337,35 +337,35 @@ final class HomeKnowledgeService {
                 titleKey: "intelligence.domain.environment",
                 progress: min(1.0, Double(totalCount) / Double(totalThreshold)),
                 contextualHint: hint(count: totalCount, threshold: totalThreshold,
-                                     unit: String(localized: "domain.hint.unit.events", defaultValue: "rilevazioni"))
+                                     unit: String(localized: "domain.hint.unit.events", defaultValue: "readings"))
             ),
             DomainMaturity(
                 icon:     "lightbulb.fill",
                 titleKey: "intelligence.domain.lighting",
                 progress: min(1.0, Double(lightCount) / Double(lightThreshold)),
                 contextualHint: hint(count: lightCount, threshold: lightThreshold,
-                                     unit: String(localized: "domain.hint.unit.lightEvents", defaultValue: "eventi luce"))
+                                     unit: String(localized: "domain.hint.unit.lightEvents", defaultValue: "light events"))
             ),
             DomainMaturity(
                 icon:     "figure.walk",
                 titleKey: "intelligence.domain.presence",
                 progress: min(1.0, Double(motionCount) / Double(motionThreshold)),
                 contextualHint: hint(count: motionCount, threshold: motionThreshold,
-                                     unit: String(localized: "domain.hint.unit.motionEvents", defaultValue: "rilevazioni presenza"))
+                                     unit: String(localized: "domain.hint.unit.motionEvents", defaultValue: "presence readings"))
             ),
             DomainMaturity(
                 icon:     "wand.and.sparkles",
                 titleKey: "intelligence.domain.scenes",
                 progress: min(1.0, Double(sceneCount14) / Double(sceneThreshold)),
                 contextualHint: hint(count: sceneCount14, threshold: sceneThreshold,
-                                     unit: String(localized: "domain.hint.unit.scenes", defaultValue: "attivazioni scena"))
+                                     unit: String(localized: "domain.hint.unit.scenes", defaultValue: "scene activations"))
             ),
             DomainMaturity(
                 icon:     "shield.lefthalf.filled",
                 titleKey: "intelligence.domain.security",
                 progress: min(1.0, Double(contactCount + blindCount) / Double(contactThreshold)),
                 contextualHint: hint(count: contactCount + blindCount, threshold: contactThreshold,
-                                     unit: String(localized: "domain.hint.unit.securityEvents", defaultValue: "eventi sicurezza"))
+                                     unit: String(localized: "domain.hint.unit.securityEvents", defaultValue: "security events"))
             ),
         ]
     }
@@ -382,38 +382,38 @@ final class HomeKnowledgeService {
         switch phase {
         case .observing:
             return String(localized: "narrative.observing",
-                          defaultValue: "Sto raccogliendo le prime osservazioni sulla tua casa.")
+                          defaultValue: "I am collecting the first observations about your home.")
         case .building:
             return String(localized: "narrative.building",
-                          defaultValue: "Ho iniziato a riconoscere i primi schemi di comportamento.")
+                          defaultValue: "I have started recognizing the first behavioral patterns.")
         case .recognizing:
             if stableHabitsCount > 0 {
                 return String(
                     format: String(localized: "narrative.recognizing.habits",
-                                   defaultValue: "Ho imparato %lld abit%@ stabili nella tua casa."),
+                                   defaultValue: "I have learned %lld stable habit%@ in your home."),
                     Int64(stableHabitsCount),
-                    stableHabitsCount == 1 ? "udine" : "udini"
+                    stableHabitsCount == 1 ? "" : "s"
                 )
             }
             return String(localized: "narrative.recognizing",
-                          defaultValue: "Sto riconoscendo le tue abitudini principali.")
+                          defaultValue: "I am recognizing your main habits.")
         case .understanding:
             if totalExecuted > 0 && totalHelpful > 0 {
                 return String(
                     format: String(localized: "narrative.understanding.stats",
-                                   defaultValue: "Hai eseguito %lld suggerimenti AI. %lld hanno migliorato l'ambiente."),
+                                   defaultValue: "You have run %lld AI suggestions. %lld have improved your environment."),
                     Int64(totalExecuted), Int64(totalHelpful)
                 )
             }
             return String(localized: "narrative.understanding",
-                          defaultValue: "Ho una visione chiara delle routine della tua casa.")
+                          defaultValue: "I have a clear view of your home's routines.")
         case .mature:
             return String(
                 format: String(localized: "narrative.mature",
-                               defaultValue: "Conosco la tua casa da %lld giorni, con %lld abit%@ stabili rilevate."),
+                               defaultValue: "I have known your home for %lld days, with %lld stable habit%@ detected."),
                 Int64(daysSinceLearningStarted),
                 Int64(stableHabitsCount),
-                stableHabitsCount == 1 ? "udine" : "udini"
+                stableHabitsCount == 1 ? "" : "s"
             )
         }
     }
@@ -476,16 +476,16 @@ enum DomainStatus {
         switch self {
         case .notEnoughData:
             return String(localized: "intelligence.domain.status.notEnoughData",
-                          defaultValue: "Dati insufficienti")
+                          defaultValue: "Not Enough Data")
         case .learning:
             return String(localized: "intelligence.domain.status.learning",
-                          defaultValue: "Apprendimento")
+                          defaultValue: "Learning")
         case .growing:
             return String(localized: "intelligence.domain.status.growing",
-                          defaultValue: "In crescita")
+                          defaultValue: "Growing")
         case .stable:
             return String(localized: "intelligence.domain.status.stable",
-                          defaultValue: "Stabile")
+                          defaultValue: "Stable")
         }
     }
 }
@@ -555,11 +555,11 @@ enum LearningPhase {
 
     var localizedTitle: String {
         switch self {
-        case .observing:     return String(localized: "intelligence.phase.observing",     defaultValue: "Osservazione")
-        case .building:      return String(localized: "intelligence.phase.building",      defaultValue: "In costruzione")
-        case .recognizing:   return String(localized: "intelligence.phase.recognizing",   defaultValue: "Riconoscimento")
-        case .understanding: return String(localized: "intelligence.phase.understanding", defaultValue: "Comprensione")
-        case .mature:        return String(localized: "intelligence.phase.mature",        defaultValue: "Maturo")
+        case .observing:     return String(localized: "intelligence.phase.observing",     defaultValue: "Observing")
+        case .building:      return String(localized: "intelligence.phase.building",      defaultValue: "Building")
+        case .recognizing:   return String(localized: "intelligence.phase.recognizing",   defaultValue: "Recognizing")
+        case .understanding: return String(localized: "intelligence.phase.understanding", defaultValue: "Understanding")
+        case .mature:        return String(localized: "intelligence.phase.mature",        defaultValue: "Mature")
         }
     }
 
@@ -567,19 +567,19 @@ enum LearningPhase {
         switch self {
         case .observing:
             return String(localized: "intelligence.phase.observing.desc",
-                          defaultValue: "Sto raccogliendo le prime osservazioni sulla tua casa.")
+                          defaultValue: "Collecting the first observations about your home.")
         case .building:
             return String(localized: "intelligence.phase.building.desc",
-                          defaultValue: "Sto identificando i primi schemi di comportamento.")
+                          defaultValue: "Identifying the first behavioral patterns.")
         case .recognizing:
             return String(localized: "intelligence.phase.recognizing.desc",
-                          defaultValue: "Riconosco le tue abitudini principali.")
+                          defaultValue: "Recognizing your main habits.")
         case .understanding:
             return String(localized: "intelligence.phase.understanding.desc",
-                          defaultValue: "Ho una visione chiara delle routine della tua casa.")
+                          defaultValue: "I have a clear view of your home's routines.")
         case .mature:
             return String(localized: "intelligence.phase.mature.desc",
-                          defaultValue: "Conosco bene la tua casa e le sue routine.")
+                          defaultValue: "I know your home and its routines well.")
         }
     }
 }

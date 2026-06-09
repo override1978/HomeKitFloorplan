@@ -16,11 +16,11 @@ enum DismissalReason: String, CaseIterable {
     var localizedLabel: String {
         switch self {
         case .userActedManually:
-            return String(localized: "dismiss.reason.acted",    defaultValue: "Ho già risolto")
+            return String(localized: "dismiss.reason.acted",    defaultValue: "Already resolved")
         case .irrelevant:
-            return String(localized: "dismiss.reason.irrelevant", defaultValue: "Non rilevante")
+            return String(localized: "dismiss.reason.irrelevant", defaultValue: "Not relevant")
         case .unclear:
-            return String(localized: "dismiss.reason.unclear",  defaultValue: "Chiudi")
+            return String(localized: "dismiss.reason.unclear",  defaultValue: "Close")
         }
     }
 }

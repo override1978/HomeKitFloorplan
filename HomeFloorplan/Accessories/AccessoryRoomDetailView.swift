@@ -115,7 +115,7 @@ struct AccessoryRoomDetailView: View {
                 let others = accessoriesNotInDedicatedSection
                 if !others.isEmpty {
                     DetailSectionCard(
-                        title: String(localized: "accessories.section.other", defaultValue: "Altro"),
+                        title: String(localized: "accessories.section.other", defaultValue: "Other"),
                         symbol: "ellipsis.circle",
                         symbolColor: .secondary
                     ) {
@@ -260,15 +260,15 @@ struct AccessoryRoomDetailView: View {
 
 private func roomSectionTitle(_ category: AccessoryCategory) -> String {
     switch category {
-    case .lights:     return String(localized: "accessories.section.lights",     defaultValue: "Luci")
-    case .outlets:    return String(localized: "accessories.section.outlets",    defaultValue: "Prese")
-    case .climate:    return String(localized: "accessories.section.climate",    defaultValue: "Clima")
+    case .lights:     return String(localized: "accessories.section.lights",     defaultValue: "Lights")
+    case .outlets:    return String(localized: "accessories.section.outlets",    defaultValue: "Outlets")
+    case .climate:    return String(localized: "accessories.section.climate",    defaultValue: "Climate")
     case .television: return String(localized: "accessories.section.television", defaultValue: "TV")
-    case .sensors:    return String(localized: "accessories.section.sensors",    defaultValue: "Sensori")
-    case .security:   return String(localized: "accessories.section.security",   defaultValue: "Sicurezza")
-    case .cameras:    return String(localized: "accessories.section.cameras",    defaultValue: "Telecamere")
+    case .sensors:    return String(localized: "accessories.section.sensors",    defaultValue: "Sensors")
+    case .security:   return String(localized: "accessories.section.security",   defaultValue: "Security")
+    case .cameras:    return String(localized: "accessories.section.cameras",    defaultValue: "Cameras")
     case .switches:   return String(localized: "accessories.section.switches",   defaultValue: "Switch")
-    case .buttons:    return String(localized: "accessories.section.buttons",    defaultValue: "Pulsanti")
+    case .buttons:    return String(localized: "accessories.section.buttons",    defaultValue: "Buttons")
     default:          return category.displayName
     }
 }
@@ -334,7 +334,7 @@ private struct SectionReorderSheet: View {
                 } footer: {
                     Text(String(
                         localized: "accessories.reorder.sections.footer",
-                        defaultValue: "La sezione \"Altro\" è sempre visualizzata per ultima."
+                        defaultValue: "The \"Other\" section is always shown last."
                     ))
                 }
             }
@@ -342,18 +342,18 @@ private struct SectionReorderSheet: View {
             .environment(\.editMode, .constant(.active))
             .navigationTitle(String(
                 localized: "accessories.reorder.sections.title",
-                defaultValue: "Riordina sezioni"
+                defaultValue: "Reorder Sections"
             ))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(String(localized: "accessories.reorder.reset", defaultValue: "Ripristina")) {
+                    Button(String(localized: "accessories.reorder.reset", defaultValue: "Reset")) {
                         sectionOrderRaw = ""
                         dismiss()
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(String(localized: "accessories.reorder.done", defaultValue: "Fine")) {
+                    Button(String(localized: "accessories.reorder.done", defaultValue: "Done")) {
                         sectionOrderRaw = localSections.map(\.rawValue).joined(separator: ",")
                         dismiss()
                     }
@@ -507,8 +507,8 @@ private struct SceneRoomCard: View {
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 Text(scene.actionCount == 1
-                     ? String(localized: "count.action.singular", defaultValue: "1 azione")
-                     : String(localized: "count.action.plural", defaultValue: "\(scene.actionCount) azioni"))
+                     ? String(localized: "count.action.singular", defaultValue: "1 action")
+                     : String(localized: "count.action.plural", defaultValue: "\(scene.actionCount) actions"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -631,19 +631,19 @@ private struct LightingChipsStrip: View {
             case .brightenRoom:
                 result.append(LightingChip(
                     key: "brighten",
-                    label: String(localized: "lighting.chip.brighten", defaultValue: "Illumina"),
+                    label: String(localized: "lighting.chip.brighten", defaultValue: "Brighten"),
                     icon: "sun.max.fill", actionType: "dim", value: 0.8
                 ))
             case .dimRoom:
                 result.append(LightingChip(
                     key: "dim",
-                    label: String(localized: "lighting.chip.dim", defaultValue: "Attenua"),
+                    label: String(localized: "lighting.chip.dim", defaultValue: "Dim"),
                     icon: "light.min", actionType: "dim", value: 0.25
                 ))
             case .setCircadianLight where bestColorLight != nil:
                 result.append(LightingChip(
                     key: "circadian",
-                    label: String(localized: "lighting.chip.circadian", defaultValue: "Luce Serale"),
+                    label: String(localized: "lighting.chip.circadian", defaultValue: "Evening Light"),
                     icon: "sun.min.fill", actionType: "dim", value: 0.35
                 ))
             default:
@@ -652,7 +652,7 @@ private struct LightingChipsStrip: View {
         }
         result.append(LightingChip(
             key: "off",
-            label: String(localized: "lighting.chip.off", defaultValue: "Spegni"),
+            label: String(localized: "lighting.chip.off", defaultValue: "Turn Off"),
             icon: "moon.fill", actionType: "off", value: nil
         ))
         return result
@@ -742,7 +742,7 @@ private struct AccessoryDetailRow: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else if !homeKit.isReachable(accessory) {
-                        Text(String(localized: "accessories.row.offline", defaultValue: "Non raggiungibile"))
+                        Text(String(localized: "accessories.row.offline", defaultValue: "Unreachable"))
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }

@@ -264,11 +264,11 @@ enum RoomSecurityStatus {
     var label: String {
         switch self {
         case .none:      return ""
-        case .locked:    return String(localized: "security.status.locked",   defaultValue: "Chiuso")
-        case .unlocked:  return String(localized: "security.status.unlocked", defaultValue: "Aperto")
-        case .disarmed:  return String(localized: "security.status.disarmed", defaultValue: "Disattivato")
-        case .armed:     return String(localized: "security.status.armed",    defaultValue: "Armato")
-        case .alarmed:   return String(localized: "security.status.alarmed",  defaultValue: "ALLARME")
+        case .locked:    return String(localized: "security.status.locked",   defaultValue: "Locked")
+        case .unlocked:  return String(localized: "security.status.unlocked", defaultValue: "Unlocked")
+        case .disarmed:  return String(localized: "security.status.disarmed", defaultValue: "Disarmed")
+        case .armed:     return String(localized: "security.status.armed",    defaultValue: "Armed")
+        case .alarmed:   return String(localized: "security.status.alarmed",  defaultValue: "ALARM")
         }
     }
 }
@@ -361,7 +361,7 @@ struct SecurityContextDashboard: View {
         let byRoom: [(roomName: String, accessories: [HMAccessory])] = {
             var dict: [String: [HMAccessory]] = [:]
             for item in allAdapters {
-                let name = item.accessory.room?.name ?? String(localized: "room.other", defaultValue: "Altra stanza")
+                let name = item.accessory.room?.name ?? String(localized: "room.other", defaultValue: "Other Room")
                 dict[name, default: []].append(item.accessory)
             }
             return dict.map { (roomName: $0.key, accessories: $0.value) }.sorted { $0.roomName < $1.roomName }
@@ -418,7 +418,7 @@ struct SecurityContextDashboard: View {
                 Image(systemName: "lock.shield.fill")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(scoreColor)
-                Text(String(localized: "security.panel.header", defaultValue: "SICUREZZA CASA"))
+                Text(String(localized: "security.panel.header", defaultValue: "HOME SECURITY"))
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
                     .tracking(0.5)
@@ -456,7 +456,7 @@ struct SecurityContextDashboard: View {
                         if !criticals.isEmpty {
                             SecurityPanelStat(
                                 value: criticals.count,
-                                label: String(localized: "security.stat.critical", defaultValue: "critici"),
+                                label: String(localized: "security.stat.critical", defaultValue: "critical"),
                                 color: .red,
                                 symbol: "exclamationmark.shield.fill"
                             )
@@ -464,14 +464,14 @@ struct SecurityContextDashboard: View {
                         if !warnings.isEmpty {
                             SecurityPanelStat(
                                 value: warnings.count,
-                                label: String(localized: "security.stat.warnings", defaultValue: "avvisi"),
+                                label: String(localized: "security.stat.warnings", defaultValue: "warnings"),
                                 color: .orange,
                                 symbol: "exclamationmark.triangle.fill"
                             )
                         }
                         SecurityPanelStat(
                             value: allAdapters.count,
-                            label: String(localized: "security.stat.devices", defaultValue: "dispositivi"),
+                            label: String(localized: "security.stat.devices", defaultValue: "devices"),
                             color: .secondary,
                             symbol: "sensor.tag.radiowaves.forward.fill"
                         )
@@ -532,7 +532,7 @@ struct SecurityContextDashboard: View {
                 Image(systemName: "bell.badge.fill")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(criticals.isEmpty ? Color.orange : Color.red)
-                Text(String(localized: "security.panel.activeAlerts", defaultValue: "AVVISI ATTIVI"))
+                Text(String(localized: "security.panel.activeAlerts", defaultValue: "ACTIVE ALERTS"))
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
                     .tracking(0.5)
@@ -560,7 +560,7 @@ struct SecurityContextDashboard: View {
                     Image(systemName: "checkmark.shield.fill")
                         .font(.caption)
                         .foregroundStyle(.green)
-                    Text(String(localized: "security.panel.noAlarms", defaultValue: "Nessun allarme attivo"))
+                    Text(String(localized: "security.panel.noAlarms", defaultValue: "No active alarms"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -623,7 +623,7 @@ struct SecurityContextDashboard: View {
                 Image(systemName: "sensor.tag.radiowaves.forward.fill")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(cardAccent)
-                Text(String(localized: "security.panel.monitoredSensors", defaultValue: "SENSORI MONITORATI"))
+                Text(String(localized: "security.panel.monitoredSensors", defaultValue: "MONITORED SENSORS"))
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
                     .tracking(0.5)
@@ -638,19 +638,19 @@ struct SecurityContextDashboard: View {
 
             // Alarm group
             if !alarm.isEmpty {
-                sensorGroupSection(title: String(localized: "security.sensors.inAlarm",     defaultValue: "In allarme"),          color: .red,    sensors: alarm,   highlightName: highlightName)
+                sensorGroupSection(title: String(localized: "security.sensors.inAlarm",     defaultValue: "In alarm"),             color: .red,    sensors: alarm,   highlightName: highlightName)
             }
 
             // Warning group
             if !warning.isEmpty {
                 if !alarm.isEmpty { Divider() }
-                sensorGroupSection(title: String(localized: "security.sensors.needsAttention", defaultValue: "Richiede attenzione"), color: .orange, sensors: warning, highlightName: highlightName)
+                sensorGroupSection(title: String(localized: "security.sensors.needsAttention", defaultValue: "Needs attention"),     color: .orange, sensors: warning, highlightName: highlightName)
             }
 
             // OK group
             if !ok.isEmpty {
                 if !alarm.isEmpty || !warning.isEmpty { Divider() }
-                sensorGroupSection(title: String(localized: "security.sensors.operational",    defaultValue: "Operativi"),           color: .green,  sensors: ok,      highlightName: highlightName)
+                sensorGroupSection(title: String(localized: "security.sensors.operational",    defaultValue: "Operational"),          color: .green,  sensors: ok,      highlightName: highlightName)
             }
         }
         .modifier(PanelCardModifier(accentColor: cardAccent))
@@ -742,7 +742,7 @@ struct SecurityContextDashboard: View {
                 Image(systemName: "lock.rectangle.stack.fill")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(accent)
-                Text(String(localized: "security.panel.devicesByRoom", defaultValue: "DISPOSITIVI PER STANZA"))
+                Text(String(localized: "security.panel.devicesByRoom", defaultValue: "DEVICES BY ROOM"))
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
                     .tracking(0.5)
@@ -812,7 +812,7 @@ struct SecurityContextDashboard: View {
                 Image(systemName: "hand.tap.fill")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(action.priority.color)
-                Text(String(localized: "security.panel.suggestedAction", defaultValue: "AZIONE CONSIGLIATA"))
+                Text(String(localized: "security.panel.suggestedAction", defaultValue: "SUGGESTED ACTION"))
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
                     .tracking(0.5)

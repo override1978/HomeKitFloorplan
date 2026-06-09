@@ -24,10 +24,10 @@ struct ActivityLogView: View {
 
         var label: String {
             switch self {
-            case .all:      return String(localized: "log.filter.all",      defaultValue: "Tutti")
-            case .scenes:   return String(localized: "log.filter.scenes",   defaultValue: "Scene")
+            case .all:      return String(localized: "log.filter.all",      defaultValue: "All")
+            case .scenes:   return String(localized: "log.filter.scenes",   defaultValue: "Scenes")
             case .writes:   return String(localized: "log.filter.writes",   defaultValue: "Toggle")
-            case .external: return String(localized: "log.filter.external", defaultValue: "Esterni")
+            case .external: return String(localized: "log.filter.external", defaultValue: "External")
             }
         }
 
@@ -75,7 +75,7 @@ struct ActivityLogView: View {
                     eventList
                 }
             }
-            .navigationTitle(String(localized: "activityLog.navigationTitle", defaultValue: "Log Attività"))
+            .navigationTitle(String(localized: "activityLog.navigationTitle", defaultValue: "Activity Log"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -89,14 +89,14 @@ struct ActivityLogView: View {
                 }
             }
             .confirmationDialog(
-                String(localized: "activityLog.clearConfirm.title", defaultValue: "Cancella tutto il log?"),
+                String(localized: "activityLog.clearConfirm.title", defaultValue: "Clear entire log?"),
                 isPresented: $showClearConfirm,
                 titleVisibility: .visible
             ) {
-                Button(String(localized: "activityLog.clearConfirm.action", defaultValue: "Cancella log"), role: .destructive) {
+                Button(String(localized: "activityLog.clearConfirm.action", defaultValue: "Clear Log"), role: .destructive) {
                     logger.clearAll()
                 }
-                Button(String(localized: "activityLog.clearConfirm.cancel", defaultValue: "Annulla"), role: .cancel) {}
+                Button(String(localized: "activityLog.clearConfirm.cancel", defaultValue: "Cancel"), role: .cancel) {}
             }
         }
     }
@@ -105,9 +105,9 @@ struct ActivityLogView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label(String(localized: "activityLog.empty.title", defaultValue: "Nessuna attività"), systemImage: "clock.arrow.circlepath")
+            Label(String(localized: "activityLog.empty.title", defaultValue: "No Activity"), systemImage: "clock.arrow.circlepath")
         } description: {
-            Text(String(localized: "activityLog.empty.description", defaultValue: "Le azioni che esegui sull'app appariranno qui: scene avviate, toggle e cambiamenti ricevuti da HomeKit."))
+            Text(String(localized: "activityLog.empty.description", defaultValue: "Actions you perform in the app will appear here: scenes triggered, toggles, and changes received from HomeKit."))
         }
     }
 

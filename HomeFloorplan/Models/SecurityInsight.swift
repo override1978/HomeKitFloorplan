@@ -38,8 +38,8 @@ enum SecurityInsightPriority: String, Codable, Comparable {
 
     var label: String {
         switch self {
-        case .critical: return String(localized: "security.insights.priority.critical", defaultValue: "Critico")
-        case .warning:  return String(localized: "security.insights.priority.warning",  defaultValue: "Attenzione")
+        case .critical: return String(localized: "security.insights.priority.critical", defaultValue: "Critical")
+        case .warning:  return String(localized: "security.insights.priority.warning",  defaultValue: "Warning")
         case .info:     return String(localized: "security.insights.priority.info",     defaultValue: "Info")
         }
     }

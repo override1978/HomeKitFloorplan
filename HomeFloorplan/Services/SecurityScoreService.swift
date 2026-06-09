@@ -56,9 +56,9 @@ enum SecurityScoreService {
                 priority: .critical,
                 room: nil,
                 message: String(localized: "security.insight.alarmTriggered",
-                                defaultValue: "Sistema di allarme attivato"),
+                                defaultValue: "Alarm system triggered"),
                 suggestedAction: String(localized: "security.insight.action.disarm",
-                                        defaultValue: "Disinserisci il sistema"),
+                                        defaultValue: "Disarm the system"),
                 sfSymbol: "exclamationmark.shield.fill",
                 accessoryID: sys.accessory.uniqueIdentifier
             ))
@@ -103,9 +103,9 @@ enum SecurityScoreService {
                     priority: .info,
                     room: nil,
                     message: String(localized: "security.insight.disarmedAtNight",
-                                    defaultValue: "Il sistema è disinserito durante le ore notturne"),
+                                    defaultValue: "The alarm is disarmed during night hours"),
                     suggestedAction: String(localized: "security.insight.action.armNight",
-                                            defaultValue: "Attiva modalità Notte"),
+                                            defaultValue: "Enable Night Mode"),
                     sfSymbol: "moon.stars.fill",
                     accessoryID: sys.accessory.uniqueIdentifier
                 ))
@@ -128,21 +128,21 @@ enum SecurityScoreService {
             if sensor.smokeDetected == true {
                 return (
                     "Fumo rilevato: \(name)\(roomSuffix)",
-                    String(localized: "security.insight.action.checkArea", defaultValue: "Verifica la zona"),
+                    String(localized: "security.insight.action.checkArea", defaultValue: "Check the area"),
                     "smoke.fill"
                 )
             }
             if sensor.carbonMonoxideDetected == true {
                 return (
                     "CO rilevato: \(name)\(roomSuffix)",
-                    String(localized: "security.insight.action.evacuate", defaultValue: "Aerare e verificare"),
+                    String(localized: "security.insight.action.evacuate", defaultValue: "Ventilate and verify"),
                     "aqi.high"
                 )
             }
             if sensor.leakDetected == true {
                 return (
                     "Perdita d'acqua: \(name)\(roomSuffix)",
-                    String(localized: "security.insight.action.checkPipes", defaultValue: "Verifica gli impianti"),
+                    String(localized: "security.insight.action.checkPipes", defaultValue: "Check the plumbing"),
                     "drop.fill"
                 )
             }
@@ -151,7 +151,7 @@ enum SecurityScoreService {
         if adapter is DoorLockAdapter {
             return (
                 "Serratura bloccata: \(name)\(roomSuffix)",
-                String(localized: "security.insight.action.checkLock", defaultValue: "Verifica la serratura"),
+                String(localized: "security.insight.action.checkLock", defaultValue: "Check the lock"),
                 "lock.trianglebadge.exclamationmark.fill"
             )
         }
@@ -170,7 +170,7 @@ enum SecurityScoreService {
             if sensor.contactDetected != nil {
                 return (
                     "\(name)\(roomSuffix) è aperto",
-                    String(localized: "security.insight.action.closeContact", defaultValue: "Verifica e chiudi"),
+                    String(localized: "security.insight.action.closeContact", defaultValue: "Check and close"),
                     "door.left.hand.open"
                 )
             }
@@ -185,7 +185,7 @@ enum SecurityScoreService {
         if adapter is DoorLockAdapter {
             return (
                 "\(name)\(roomSuffix) è sbloccata",
-                String(localized: "security.insight.action.lockDoor", defaultValue: "Blocca la serratura"),
+                String(localized: "security.insight.action.lockDoor", defaultValue: "Lock the door"),
                 "lock.open.fill"
             )
         }

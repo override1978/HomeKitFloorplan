@@ -74,7 +74,7 @@ struct CameraControlSection: View {
                 if streamState == .starting && !showFullscreen {
                     VStack(spacing: 8) {
                         ProgressView().tint(.white)
-                        Text(String(localized: "camera.stream.connecting", defaultValue: "Connessione in corso…"))
+                        Text(String(localized: "camera.stream.connecting", defaultValue: "Connecting…"))
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.7))
                     }
@@ -86,7 +86,7 @@ struct CameraControlSection: View {
                         Image(systemName: "video.slash.fill")
                             .font(.title2)
                             .foregroundStyle(.white.opacity(0.5))
-                        Text(String(localized: "camera.stream.stopped", defaultValue: "Stream terminato"))
+                        Text(String(localized: "camera.stream.stopped", defaultValue: "Stream ended"))
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.6))
                     }
@@ -118,10 +118,10 @@ struct CameraControlSection: View {
 
     private var streamStateLabel: String {
         switch streamState {
-        case .starting:     return String(localized: "camera.stream.state.starting",  defaultValue: "Avvio…")
+        case .starting:     return String(localized: "camera.stream.state.starting",  defaultValue: "Starting…")
         case .streaming:    return String(localized: "camera.stream.state.live",       defaultValue: "LIVE")
-        case .stopping:     return String(localized: "camera.stream.state.stopping",  defaultValue: "Chiusura…")
-        case .notStreaming: return String(localized: "camera.stream.state.stopped",   defaultValue: "Inattivo")
+        case .stopping:     return String(localized: "camera.stream.state.stopping",  defaultValue: "Stopping…")
+        case .notStreaming: return String(localized: "camera.stream.state.stopped",   defaultValue: "Inactive")
         @unknown default:   return ""
         }
     }
@@ -130,17 +130,17 @@ struct CameraControlSection: View {
 
     private var sensorsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "camera.card.sensors.title", defaultValue: "Sensori integrati"))
+            Text(String(localized: "camera.card.sensors.title", defaultValue: "Built-in Sensors"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
             if adapter.hasMotionSensor {
                 sensorRow(
                     icon: adapter.motionDetected ? "figure.walk.motion" : "figure.stand",
-                    label: String(localized: "camera.sensor.motion", defaultValue: "Movimento"),
+                    label: String(localized: "camera.sensor.motion", defaultValue: "Motion"),
                     value: adapter.motionDetected
-                        ? String(localized: "camera.sensor.detected", defaultValue: "Rilevato")
-                        : String(localized: "camera.sensor.none", defaultValue: "Nessuno"),
+                        ? String(localized: "camera.sensor.detected", defaultValue: "Detected")
+                        : String(localized: "camera.sensor.none", defaultValue: "None"),
                     active: adapter.motionDetected
                 )
             }
@@ -148,10 +148,10 @@ struct CameraControlSection: View {
             if adapter.hasOccupancySensor {
                 sensorRow(
                     icon: adapter.occupancyDetected ? "person.fill" : "person",
-                    label: String(localized: "camera.sensor.occupancy", defaultValue: "Presenza"),
+                    label: String(localized: "camera.sensor.occupancy", defaultValue: "Occupancy"),
                     value: adapter.occupancyDetected
-                        ? String(localized: "camera.sensor.detected", defaultValue: "Rilevata")
-                        : String(localized: "camera.sensor.none", defaultValue: "Nessuna"),
+                        ? String(localized: "camera.sensor.detected", defaultValue: "Detected")
+                        : String(localized: "camera.sensor.none", defaultValue: "None"),
                     active: adapter.occupancyDetected
                 )
             }
@@ -160,7 +160,7 @@ struct CameraControlSection: View {
                 let isOffline = !homeKit.isReachable(adapter.accessory)
                 sensorRow(
                     icon: isOffline ? "video.slash.fill" : "video.fill",
-                    label: String(localized: "camera.sensor.status", defaultValue: "Stato"),
+                    label: String(localized: "camera.sensor.status", defaultValue: "Status"),
                     value: isOffline
                         ? String(localized: "camera.status.offline", defaultValue: "Offline")
                         : String(localized: "camera.status.idle", defaultValue: "Online"),
@@ -180,7 +180,7 @@ struct CameraControlSection: View {
 
     private var controlsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "camera.card.controls.title", defaultValue: "Controlli"))
+            Text(String(localized: "camera.card.controls.title", defaultValue: "Controls"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
@@ -188,7 +188,7 @@ struct CameraControlSection: View {
                 if adapter.hasNightVision {
                     controlTile(
                         icon: adapter.nightVisionOn ? "moon.fill" : "moon",
-                        label: String(localized: "camera.control.nightvision", defaultValue: "Visione notturna"),
+                        label: String(localized: "camera.control.nightvision", defaultValue: "Night Vision"),
                         isOn: adapter.nightVisionOn,
                         tint: .indigo
                     ) {
@@ -198,7 +198,7 @@ struct CameraControlSection: View {
                 if adapter.hasLedIndicator {
                     controlTile(
                         icon: adapter.ledIndicatorOn ? "light.beacon.max.fill" : "light.beacon.max",
-                        label: String(localized: "camera.control.led", defaultValue: "Indicatore LED"),
+                        label: String(localized: "camera.control.led", defaultValue: "LED Indicator"),
                         isOn: adapter.ledIndicatorOn,
                         tint: .yellow
                     ) {
@@ -279,7 +279,7 @@ struct FullscreenCameraOverlay: View {
             if streamState == .starting {
                 VStack(spacing: 12) {
                     ProgressView().tint(.white)
-                    Text(String(localized: "camera.stream.connecting", defaultValue: "Connessione in corso…"))
+                    Text(String(localized: "camera.stream.connecting", defaultValue: "Connecting…"))
                         .font(.callout)
                         .foregroundStyle(.white.opacity(0.7))
                 }
@@ -320,7 +320,7 @@ struct FullscreenCameraOverlay: View {
                         if adapter.hasNightVision {
                             fullscreenControlButton(
                                 icon: adapter.nightVisionOn ? "moon.fill" : "moon",
-                                label: String(localized: "camera.control.nightvision.short", defaultValue: "Notte"),
+                                label: String(localized: "camera.control.nightvision.short", defaultValue: "Night"),
                                 active: adapter.nightVisionOn
                             ) {
                                 Task { await adapter.setNightVision(!adapter.nightVisionOn) }

@@ -95,12 +95,12 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
     /// Label leggibile del tipo di sensore.
     var displayName: String {
         switch self {
-        case .temperature:    return String(localized: "sensor.temperature",    defaultValue: "Temperatura")
-        case .humidity:       return String(localized: "sensor.humidity",       defaultValue: "Umidità")
-        case .airQuality:     return String(localized: "sensor.airQuality",     defaultValue: "Qualità aria")
-        case .carbonMonoxide: return String(localized: "sensor.carbonMonoxide", defaultValue: "Monossido di carbonio")
-        case .carbonDioxide:  return String(localized: "sensor.carbonDioxide",  defaultValue: "Anidride carbonica")
-        case .smoke:          return String(localized: "sensor.smoke",          defaultValue: "Fumo")
+        case .temperature:    return String(localized: "sensor.temperature",    defaultValue: "Temperature")
+        case .humidity:       return String(localized: "sensor.humidity",       defaultValue: "Humidity")
+        case .airQuality:     return String(localized: "sensor.airQuality",     defaultValue: "Air Quality")
+        case .carbonMonoxide: return String(localized: "sensor.carbonMonoxide", defaultValue: "Carbon Monoxide")
+        case .carbonDioxide:  return String(localized: "sensor.carbonDioxide",  defaultValue: "Carbon Dioxide")
+        case .smoke:          return String(localized: "sensor.smoke",          defaultValue: "Smoke")
         case .vocDensity:     return String(localized: "sensor.vocDensity",     defaultValue: "VOC")
         }
     }

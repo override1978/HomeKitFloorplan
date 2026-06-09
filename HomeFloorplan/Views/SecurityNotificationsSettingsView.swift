@@ -22,7 +22,7 @@ struct SecurityNotificationsSettingsView: View {
                 Toggle(isOn: $securityNotificationsEnabled) {
                     Label(
                         String(localized: "settings.security.notifications.toggle",
-                               defaultValue: "Notifiche di sicurezza"),
+                               defaultValue: "Security Notifications"),
                         systemImage: "bell.badge.shield.half.filled"
                     )
                 }
@@ -34,9 +34,9 @@ struct SecurityNotificationsSettingsView: View {
             } footer: {
                 Text(securityNotificationsEnabled
                      ? String(localized: "settings.security.notifications.footer.on",
-                              defaultValue: "Riceverai una notifica critica quando scatta l'antifurto o viene rilevato fumo, CO o perdita d'acqua. Le notifiche vengono inviate anche con l'app in background.")
+                              defaultValue: "You'll receive a critical notification when the alarm is triggered or smoke, CO, or water leak is detected. Notifications are sent even when the app is in the background.")
                      : String(localized: "settings.security.notifications.footer.off",
-                              defaultValue: "Nessuna notifica di sicurezza sarà inviata."))
+                              defaultValue: "No security notifications will be sent."))
             }
 
             // MARK: Accessori monitorati (solo se abilitato)
@@ -51,52 +51,52 @@ struct SecurityNotificationsSettingsView: View {
                         icon: "shield.lefthalf.filled",
                         color: .red,
                         title: String(localized: "settings.security.notifications.info.alarm.title",
-                                      defaultValue: "Antifurto scattato"),
+                                      defaultValue: "Alarm Triggered"),
                         subtitle: String(localized: "settings.security.notifications.info.alarm.subtitle",
-                                          defaultValue: "Notifica critica immediata")
+                                          defaultValue: "Immediate critical notification")
                     )
                     infoRow(
                         icon: "smoke.fill",
                         color: .orange,
                         title: String(localized: "settings.security.notifications.info.smoke.title",
-                                      defaultValue: "Fumo rilevato"),
+                                      defaultValue: "Smoke Detected"),
                         subtitle: String(localized: "settings.security.notifications.info.smoke.subtitle",
-                                          defaultValue: "Notifica critica immediata")
+                                          defaultValue: "Immediate critical notification")
                     )
                     infoRow(
                         icon: "aqi.high",
                         color: .orange,
                         title: String(localized: "settings.security.notifications.info.co.title",
-                                      defaultValue: "Monossido di carbonio"),
+                                      defaultValue: "Carbon Monoxide"),
                         subtitle: String(localized: "settings.security.notifications.info.co.subtitle",
-                                          defaultValue: "Notifica critica immediata")
+                                          defaultValue: "Immediate critical notification")
                     )
                     infoRow(
                         icon: "drop.fill",
                         color: .blue,
                         title: String(localized: "settings.security.notifications.info.leak.title",
-                                      defaultValue: "Perdita d'acqua"),
+                                      defaultValue: "Water Leak"),
                         subtitle: String(localized: "settings.security.notifications.info.leak.subtitle",
-                                          defaultValue: "Notifica critica immediata")
+                                          defaultValue: "Immediate critical notification")
                     )
                     Divider()
                     infoRow(
                         icon: "door.left.hand.open",
                         color: .secondary,
                         title: String(localized: "settings.security.notifications.info.contact.title",
-                                      defaultValue: "Porte/finestre, movimento, presenza"),
+                                      defaultValue: "Doors/windows, motion, presence"),
                         subtitle: String(localized: "settings.security.notifications.info.contact.subtitle",
-                                          defaultValue: "Nessuna notifica — aggiornano solo l'UI")
+                                          defaultValue: "No notification — UI only")
                     )
                 }
                 .padding(.vertical, 4)
             } header: {
                 Text(String(localized: "settings.security.notifications.info.header",
-                            defaultValue: "Cosa genera una notifica"))
+                            defaultValue: "What Triggers a Notification"))
             }
         }
         .navigationTitle(String(localized: "settings.security.notifications.title",
-                                defaultValue: "Notifiche Sicurezza"))
+                                defaultValue: "Security Notifications"))
         .navigationBarTitleDisplayMode(.large)
     }
 
@@ -111,13 +111,13 @@ struct SecurityNotificationsSettingsView: View {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.secondary)
                     Text(String(localized: "settings.security.notifications.noAccessories",
-                                defaultValue: "Nessun sensore di sicurezza trovato in HomeKit."))
+                                defaultValue: "No security sensors found in HomeKit."))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
             } header: {
                 Text(String(localized: "settings.security.notifications.monitored.header",
-                            defaultValue: "Sensori monitorati"))
+                            defaultValue: "Monitored Sensors"))
             }
         } else {
             Section {
@@ -129,10 +129,10 @@ struct SecurityNotificationsSettingsView: View {
                 }
             } header: {
                 Text(String(localized: "settings.security.notifications.monitored.header",
-                            defaultValue: "Sensori monitorati"))
+                            defaultValue: "Monitored Sensors"))
             } footer: {
                 Text(String(localized: "settings.security.notifications.monitored.footer",
-                            defaultValue: "L'antifurto è sempre monitorato. I sensori di fumo, CO e acqua vengono inclusi automaticamente se presenti."))
+                            defaultValue: "The alarm is always monitored. Smoke, CO and water sensors are automatically included when present."))
             }
         }
     }
@@ -209,7 +209,7 @@ private struct SecurityAccessoryRow: View {
             Spacer()
 
             Text(String(localized: "settings.security.notifications.alwaysOn",
-                        defaultValue: "Sempre attivo"))
+                        defaultValue: "Always On"))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)

@@ -45,7 +45,7 @@ final class ActivityLoggerService {
 
     /// Logga l'esecuzione di una scena HomeKit.
     func logSceneExecution(sceneName: String, actionCount: Int) {
-        let subtitle = "\(actionCount) \(actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "azione") : String(localized: "count.action.plural", defaultValue: "azioni"))"
+        let subtitle = "\(actionCount) \(actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "action") : String(localized: "count.action.plural", defaultValue: "actions"))"
         insert(ActivityEvent(
             category: .sceneExecution,
             title: sceneName,
@@ -186,18 +186,18 @@ extension ActivityLoggerService {
 
     private static func humanReadableName(for characteristic: HMCharacteristic) -> String {
         switch normalizedType(characteristic) {
-        case onUUID:             return String(localized: "char.name.power",       defaultValue: "Alimentazione")
-        case activeUUID:         return String(localized: "char.name.active",      defaultValue: "Attivo")
-        case brightnessUUID:     return String(localized: "char.name.brightness",  defaultValue: "Luminosità")
-        case targetTempUUID:     return String(localized: "char.name.targetTemp",  defaultValue: "Temperatura")
-        case currentTempUUID:    return String(localized: "char.name.currentTemp", defaultValue: "Temperatura attuale")
-        case targetPositionUUID: return String(localized: "char.name.position",    defaultValue: "Posizione")
-        case humidityUUID:       return String(localized: "char.name.humidity",    defaultValue: "Umidità")
-        case lockTargetUUID:     return String(localized: "char.name.lock",        defaultValue: "Serratura")
-        case heatingCoolingUUID: return String(localized: "char.name.mode",        defaultValue: "Modalità")
-        case hueUUID:            return String(localized: "char.name.hue",         defaultValue: "Tonalità")
-        case saturationUUID:     return String(localized: "char.name.saturation",  defaultValue: "Saturazione")
-        case colorTempUUID:      return String(localized: "char.name.colorTemp",   defaultValue: "Temperatura colore")
+        case onUUID:             return String(localized: "char.name.power",       defaultValue: "Power")
+        case activeUUID:         return String(localized: "char.name.active",      defaultValue: "Active")
+        case brightnessUUID:     return String(localized: "char.name.brightness",  defaultValue: "Brightness")
+        case targetTempUUID:     return String(localized: "char.name.targetTemp",  defaultValue: "Temperature")
+        case currentTempUUID:    return String(localized: "char.name.currentTemp", defaultValue: "Current Temperature")
+        case targetPositionUUID: return String(localized: "char.name.position",    defaultValue: "Position")
+        case humidityUUID:       return String(localized: "char.name.humidity",    defaultValue: "Humidity")
+        case lockTargetUUID:     return String(localized: "char.name.lock",        defaultValue: "Lock")
+        case heatingCoolingUUID: return String(localized: "char.name.mode",        defaultValue: "Mode")
+        case hueUUID:            return String(localized: "char.name.hue",         defaultValue: "Hue")
+        case saturationUUID:     return String(localized: "char.name.saturation",  defaultValue: "Saturation")
+        case colorTempUUID:      return String(localized: "char.name.colorTemp",   defaultValue: "Color Temperature")
         default:
             return characteristic.localizedDescription
         }
@@ -221,8 +221,8 @@ extension ActivityLoggerService {
         switch normalizedType(characteristic) {
         case onUUID, activeUUID:
             return intVal(value) == 1
-                ? String(localized: "accessory.state.on",  defaultValue: "Acceso")
-                : String(localized: "accessory.state.off", defaultValue: "Spento")
+                ? String(localized: "accessory.state.on",  defaultValue: "On")
+                : String(localized: "accessory.state.off", defaultValue: "Off")
         case brightnessUUID:
             if let v = intVal(value) { return "\(v)%" }
         case targetTempUUID, currentTempUUID:
@@ -232,13 +232,13 @@ extension ActivityLoggerService {
         case targetPositionUUID:
             if let v = intVal(value) {
                 return v == 0
-                    ? String(localized: "accessory.position.closed", defaultValue: "Chiuso")
-                    : (v == 100 ? String(localized: "accessory.position.open", defaultValue: "Aperto") : "\(v)%")
+                    ? String(localized: "accessory.position.closed", defaultValue: "Closed")
+                    : (v == 100 ? String(localized: "accessory.position.open", defaultValue: "Open") : "\(v)%")
             }
         case lockTargetUUID:
             return intVal(value) == 1
-                ? String(localized: "accessory.position.closed", defaultValue: "Chiuso")
-                : String(localized: "accessory.position.open",   defaultValue: "Aperto")
+                ? String(localized: "accessory.position.closed", defaultValue: "Closed")
+                : String(localized: "accessory.position.open",   defaultValue: "Open")
         case hueUUID:
             if let v = doubleVal(value) { return "\(Int(v))°" }
         case saturationUUID:

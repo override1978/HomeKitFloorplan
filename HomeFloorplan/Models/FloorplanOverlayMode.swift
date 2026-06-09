@@ -68,10 +68,10 @@ extension FloorplanOverlayMode {
     /// Short localized label shown in the pill.
     var label: String {
         switch self {
-        case .controls:     return String(localized: "overlay.mode.controls",     defaultValue: "Controlli")
-        case .environment:  return String(localized: "overlay.mode.environment",  defaultValue: "Ambiente")
-        case .security:     return String(localized: "overlay.mode.security",     defaultValue: "Sicurezza")
-        case .intelligence: return String(localized: "overlay.mode.intelligence", defaultValue: "Intelligenza")
+        case .controls:     return String(localized: "overlay.mode.controls",     defaultValue: "Controls")
+        case .environment:  return String(localized: "overlay.mode.environment",  defaultValue: "Environment")
+        case .security:     return String(localized: "overlay.mode.security",     defaultValue: "Security")
+        case .intelligence: return String(localized: "overlay.mode.intelligence", defaultValue: "Intelligence")
         }
     }
 }

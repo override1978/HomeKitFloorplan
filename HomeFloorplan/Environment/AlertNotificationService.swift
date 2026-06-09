@@ -112,23 +112,23 @@ final class AlertNotificationService {
 
     private func alertTitle(for type: SensorServiceType, level: AlertLevel) -> String {
         let prefix = level == .danger
-            ? String(localized: "alert.prefix.alarm",   defaultValue: "⚠️ ALLARME")
-            : String(localized: "alert.prefix.warning", defaultValue: "⚠️ Attenzione")
+            ? String(localized: "alert.prefix.alarm",   defaultValue: "⚠️ ALARM")
+            : String(localized: "alert.prefix.warning", defaultValue: "⚠️ Warning")
         switch type {
         case .temperature:
-            return "\(prefix): \(String(localized: "alert.title.temperature",    defaultValue: "Temperatura elevata"))"
+            return "\(prefix): \(String(localized: "alert.title.temperature",    defaultValue: "High Temperature"))"
         case .humidity:
-            return "\(prefix): \(String(localized: "alert.title.humidity",       defaultValue: "Umidità fuori soglia"))"
+            return "\(prefix): \(String(localized: "alert.title.humidity",       defaultValue: "Humidity Out of Range"))"
         case .airQuality:
-            return "\(prefix): \(String(localized: "alert.title.airQuality",     defaultValue: "Qualità aria degradata"))"
+            return "\(prefix): \(String(localized: "alert.title.airQuality",     defaultValue: "Poor Air Quality"))"
         case .carbonMonoxide:
-            return "\(prefix): \(String(localized: "alert.title.carbonMonoxide", defaultValue: "Monossido di carbonio"))"
+            return "\(prefix): \(String(localized: "alert.title.carbonMonoxide", defaultValue: "Carbon Monoxide"))"
         case .carbonDioxide:
-            return "\(prefix): \(String(localized: "alert.title.carbonDioxide",  defaultValue: "Anidride carbonica elevata"))"
+            return "\(prefix): \(String(localized: "alert.title.carbonDioxide",  defaultValue: "High CO₂ Level"))"
         case .smoke:
-            return "\(prefix): \(String(localized: "alert.title.smoke",          defaultValue: "Fumo rilevato"))"
+            return "\(prefix): \(String(localized: "alert.title.smoke",          defaultValue: "Smoke Detected"))"
         case .vocDensity:
-            return "\(prefix): \(String(localized: "alert.title.vocDensity",     defaultValue: "VOC elevati"))"
+            return "\(prefix): \(String(localized: "alert.title.vocDensity",     defaultValue: "High VOC Levels"))"
         }
     }
 
@@ -140,39 +140,39 @@ final class AlertNotificationService {
     ) -> String {
         let formattedValue = formatValue(value, for: type)
         let levelText = level == .danger
-            ? String(localized: "alert.level.danger",  defaultValue: "livello critico")
-            : String(localized: "alert.level.warning", defaultValue: "livello di attenzione")
+            ? String(localized: "alert.level.danger",  defaultValue: "critical level")
+            : String(localized: "alert.level.warning", defaultValue: "warning level")
 
         // Build body using localized template strings.
         // Each key maps to a sentence with %1$@ = room, %2$@ = value, %3$@ = level.
         switch type {
         case .temperature:
             let tmpl = String(localized: "alert.body.temperature",
-                              defaultValue: "In %1$@ la temperatura ha raggiunto %2$@ (%3$@).")
+                              defaultValue: "In %1$@ the temperature reached %2$@ (%3$@).")
             return String(format: tmpl, roomName, formattedValue, levelText)
         case .humidity:
             let tmpl = String(localized: "alert.body.humidity",
-                              defaultValue: "In %1$@ l'umidità è al %2$@ (%3$@).")
+                              defaultValue: "In %1$@ the humidity is at %2$@ (%3$@).")
             return String(format: tmpl, roomName, formattedValue, levelText)
         case .airQuality:
             let tmpl = String(localized: "alert.body.airQuality",
-                              defaultValue: "In %1$@ la qualità dell'aria ha raggiunto %2$@ (%3$@).")
+                              defaultValue: "In %1$@ the air quality reached %2$@ (%3$@).")
             return String(format: tmpl, roomName, formattedValue, levelText)
         case .carbonMonoxide:
             let tmpl = String(localized: "alert.body.carbonMonoxide",
-                              defaultValue: "In %1$@ il livello di CO è %2$@ (%3$@). Arieggiare immediatamente.")
+                              defaultValue: "In %1$@ the CO level is %2$@ (%3$@). Ventilate immediately.")
             return String(format: tmpl, roomName, formattedValue, levelText)
         case .carbonDioxide:
             let tmpl = String(localized: "alert.body.carbonDioxide",
-                              defaultValue: "In %1$@ la CO₂ ha raggiunto %2$@ (%3$@). Arieggiare l'ambiente.")
+                              defaultValue: "In %1$@ CO₂ reached %2$@ (%3$@). Ventilate the room.")
             return String(format: tmpl, roomName, formattedValue, levelText)
         case .smoke:
             let tmpl = String(localized: "alert.body.smoke",
-                              defaultValue: "In %1$@ è stato rilevato del fumo. Verificare la situazione.")
+                              defaultValue: "Smoke detected in %1$@. Please check the area.")
             return String(format: tmpl, roomName)
         case .vocDensity:
             let tmpl = String(localized: "alert.body.vocDensity",
-                              defaultValue: "In %1$@ la concentrazione di VOC è %2$@ (%3$@).")
+                              defaultValue: "In %1$@ the VOC concentration is %2$@ (%3$@).")
             return String(format: tmpl, roomName, formattedValue, levelText)
         }
     }
@@ -189,8 +189,8 @@ final class AlertNotificationService {
         case .carbonDioxide:  return String(format: "%.0f ppm", value)
         case .smoke:
             return value >= 1
-                ? String(localized: "smoke.detected",    defaultValue: "rilevato")
-                : String(localized: "smoke.notDetected", defaultValue: "assente")
+                ? String(localized: "smoke.detected",    defaultValue: "detected")
+                : String(localized: "smoke.notDetected", defaultValue: "not detected")
         case .vocDensity:     return String(format: "%.0f µg/m³", value)
         }
     }

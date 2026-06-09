@@ -16,7 +16,7 @@ struct EnvironmentNotificationsSettingsView: View {
                 Toggle(isOn: $alertNotificationsEnabled) {
                     Label(
                         String(localized: "settings.notifications.toggle",
-                               defaultValue: "Notifiche ambientali"),
+                               defaultValue: "Environmental notifications"),
                         systemImage: "bell.badge"
                     )
                 }
@@ -32,7 +32,7 @@ struct EnvironmentNotificationsSettingsView: View {
                     } label: {
                         Label(
                             String(localized: "settings.notifications.thresholds",
-                                   defaultValue: "Configura soglie"),
+                                   defaultValue: "Configure thresholds"),
                             systemImage: "slider.horizontal.3"
                         )
                     }
@@ -40,13 +40,13 @@ struct EnvironmentNotificationsSettingsView: View {
             } footer: {
                 Text(alertNotificationsEnabled
                      ? String(localized: "settings.notifications.footer.on",
-                              defaultValue: "Le notifiche vengono inviate al massimo ogni 30 minuti per sensore.")
+                              defaultValue: "Notifications are sent at most every 30 minutes per sensor.")
                      : String(localized: "settings.notifications.footer.off",
-                              defaultValue: "Nessun alert sarà inviato finché le notifiche sono disabilitate."))
+                              defaultValue: "No alerts will be sent while notifications are disabled."))
             }
         }
         .navigationTitle(String(localized: "settings.notifications.environment.title",
-                                defaultValue: "Notifiche Ambiente"))
+                                defaultValue: "Environment Notifications"))
         .navigationBarTitleDisplayMode(.large)
     }
 }

@@ -95,7 +95,7 @@ final class MaintenancePredictionService {
                     roomName:      latest.roomName,
                     detail:        String(format:
                         String(localized: "maintenance.dropout.detail",
-                               defaultValue: "Media storica: %d att./settimana. Ultime 2 settimane: ~%d att."),
+                               defaultValue: "Historical average: %d activations/week. Last 2 weeks: ~%d."),
                         avgOnCount, recentAvgOn),
                     semanticKey: "maintenance|dropout|\(accID.uuidString)",
                     score: score
@@ -116,7 +116,7 @@ final class MaintenancePredictionService {
                     roomName:      latest.roomName,
                     detail:        String(format:
                         String(localized: "maintenance.churn.detail",
-                               defaultValue: "%d cicli on/off questa settimana — consumo elevato."),
+                               defaultValue: "%d on/off cycles this week — high usage."),
                         latestCycles),
                     semanticKey: "maintenance|churn|\(accID.uuidString)",
                     score: score
