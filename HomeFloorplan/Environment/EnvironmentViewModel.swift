@@ -1,7 +1,24 @@
 import Foundation
 import SwiftUI
 import SwiftData
-import Combine
+import Observation
+
+// MARK: - Raw transfer types (Sendable, safe across actor boundaries)
+
+private struct RawSensorReading: Sendable {
+    let accessoryUUID: String
+    let serviceTypeRaw: String
+    let roomName: String
+    let value: Double
+    let timestamp: Date
+}
+
+private struct RawSensorThreshold: Sendable {
+    let serviceTypeRaw: String
+    let roomName: String?
+    let warningValue: Double
+    let dangerValue: Double
+}
 
 // MARK: - SensorUrgency
 
@@ -167,18 +184,20 @@ struct RoomEnvironmentData: Identifiable {
 
 /// ViewModel della Dashboard Ambientale.
 /// Carica i dati da SwiftData e li prepara per la UI.
+@Observable
 @MainActor
-final class EnvironmentViewModel: ObservableObject {
+final class EnvironmentViewModel {
 
-    @Published var rooms: [RoomEnvironmentData] = []
-    @Published var isLoading: Bool = false
-    @Published var lastRefresh: Date?
+    var rooms: [RoomEnvironmentData] = []
+    var isLoading: Bool = false
+    var lastRefresh: Date?
 
     private var modelContainer: ModelContainer?
+    private var currentLoadTask: Task<Void, Never>?
 
     // MARK: - Ordinamento custom
 
-    private static let orderKey = "environmentRoomOrder"
+    static let orderKey = "environmentRoomOrder"
 
     /// Ordine personalizzato: array di roomName nell'ordine desiderato dall'utente.
     /// Vuoto = nessun ordine personalizzato (usa il default per urgency).
@@ -262,108 +281,108 @@ final class EnvironmentViewModel: ObservableObject {
     /// Legge le ultime letture per ogni accessoryUUID+serviceType, aggrega i sensori dello
     /// stesso tipo nella stessa stanza (media per numerici, worst-case per booleani/qualità aria),
     /// poi ordina per worstUrgency decrescente (stanze critiche prima).
+    ///
+    /// Fase 1 (background): SwiftData fetch — lento, I/O-bound.
+    /// Fase 2 (main actor): elaborazione — veloce, in-memory.
     func loadFromCoreData() {
+        currentLoadTask?.cancel()
         guard let container = modelContainer else { return }
         isLoading = true
 
-        let context = ModelContext(container)
+        currentLoadTask = Task {
+            #if DEBUG
+            let _loadStart = ContinuousClock.now
+            #endif
+            // ── Fase 1: fetch off main thread ───────────────────────────────
+            let (rawReadings, rawThresholds) = await Task.detached(priority: .userInitiated) {
+                let context = ModelContext(container)
 
-        // 1. Tutte le letture, più recenti prima
-        let allReadings = (try? context.fetch(FetchDescriptor<SensorReading>(
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-        ))) ?? []
+                // Limita alle 500 letture più recenti: copre tutti i dispositivi attivi
+                // evitando di scansionare l'intera storia (fino a 30 giorni × N sensori).
+                var desc = FetchDescriptor<SensorReading>(
+                    sortBy: [SortDescriptor(\SensorReading.timestamp, order: .reverse)]
+                )
+                desc.fetchLimit = 500
 
-        // 2. Threshold attivi
-        let allThresholds = (try? context.fetch(FetchDescriptor<SensorAlertThreshold>())) ?? []
+                let fetchedReadings    = (try? context.fetch(desc)) ?? []
+                let fetchedThresholds  = (try? context.fetch(FetchDescriptor<SensorAlertThreshold>())) ?? []
 
-        // 3. Ultima lettura per ogni coppia accessoryUUID+serviceType
-        var latestByDevice: [String: SensorReading] = [:]
-        for reading in allReadings {
-            let key = "\(reading.accessoryUUID)-\(reading.serviceTypeRaw)"
-            if latestByDevice[key] == nil {
-                latestByDevice[key] = reading
+                // Estraiamo subito value-type Sendable per evitare di passare @Model tra attori
+                let r = fetchedReadings.map { RawSensorReading(accessoryUUID: $0.accessoryUUID, serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, value: $0.value, timestamp: $0.timestamp) }
+                let t = fetchedThresholds.map { RawSensorThreshold(serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, warningValue: $0.warningValue, dangerValue: $0.dangerValue) }
+                return (r, t)
+            }.value
+
+            // ── Fase 2: elaborazione su main actor (veloce, in-memory) ──────
+
+            // 1. Ultima lettura per ogni coppia accessoryUUID+serviceType
+            var latestByDevice: [String: RawSensorReading] = [:]
+            for r in rawReadings {
+                let key = "\(r.accessoryUUID)-\(r.serviceTypeRaw)"
+                if latestByDevice[key] == nil { latestByDevice[key] = r }
             }
-        }
 
-        // 4. Raggruppa per (roomName, serviceType) — chiave di aggregazione
-        var byRoomType: [String: [SensorReading]] = [:]
-        for reading in latestByDevice.values {
-            let key = "\(reading.roomName)|\(reading.serviceTypeRaw)"
-            byRoomType[key, default: []].append(reading)
-        }
+            // 2. Raggruppa per (roomName, serviceType)
+            var byRoomType: [String: [RawSensorReading]] = [:]
+            for r in latestByDevice.values {
+                byRoomType["\(r.roomName)|\(r.serviceTypeRaw)", default: []].append(r)
+            }
 
-        // 5. Costruisce SensorData aggregati per ogni gruppo
-        var byRoom: [String: [SensorData]] = [:]
-        for (_, groupReadings) in byRoomType {
-            guard let first = groupReadings.first,
-                  let serviceType = SensorServiceType(rawValue: first.serviceTypeRaw) else { continue }
+            // 3. Costruisce SensorData aggregati
+            var byRoom: [String: [SensorData]] = [:]
+            for (_, group) in byRoomType {
+                guard let first = group.first,
+                      let serviceType = SensorServiceType(rawValue: first.serviceTypeRaw) else { continue }
+                let roomName = first.roomName
 
-            let roomName = first.roomName
+                let threshold = rawThresholds.first(where: { $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == roomName })
+                    ?? rawThresholds.first(where: { $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == nil })
 
-            // Threshold: stanza specifica ha priorità sul globale
-            let threshold = allThresholds.first(where: {
-                $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == roomName
-            }) ?? allThresholds.first(where: {
-                $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == nil
-            })
-            let warning = threshold?.warningValue ?? serviceType.defaultWarning
-            let danger  = threshold?.dangerValue  ?? serviceType.defaultDanger
+                let aggregatedValue: Double
+                if serviceType.isBooleanAlert || serviceType == .airQuality {
+                    aggregatedValue = group.map(\.value).max() ?? first.value
+                } else {
+                    aggregatedValue = group.reduce(0.0) { $0 + $1.value } / Double(group.count)
+                }
 
-            // Aggregazione del valore
-            let aggregatedValue: Double
-            if serviceType.isBooleanAlert || serviceType == .airQuality {
-                // Worst-case: qualsiasi sensore triggered / livello peggiore vince
-                aggregatedValue = groupReadings.map(\.value).max() ?? first.value
+                let syntheticID = UUID(uuidString: stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
+
+                byRoom[roomName, default: []].append(SensorData(
+                    id: syntheticID,
+                    accessoryUUIDs: group.map(\.accessoryUUID),
+                    serviceType: serviceType,
+                    roomName: roomName,
+                    currentValue: aggregatedValue,
+                    lastUpdated: group.map(\.timestamp).max() ?? first.timestamp,
+                    warningThreshold: threshold?.warningValue ?? serviceType.defaultWarning,
+                    dangerThreshold:  threshold?.dangerValue  ?? serviceType.defaultDanger,
+                    sourceCount: group.count
+                ))
+            }
+
+            // 4. Costruisce RoomEnvironmentData e ordina
+            let roomData = byRoom.map { roomName, sensors -> RoomEnvironmentData in
+                RoomEnvironmentData(id: UUID(), roomName: roomName, sensors: sensors.sorted { $0.urgency > $1.urgency })
+            }
+            .sorted { $0.worstUrgency > $1.worstUrgency }
+
+            // 5. Applica ordinamento utente
+            let orderNames = customOrderNames
+            if orderNames.isEmpty {
+                rooms = roomData
             } else {
-                // Media per sensori numerici (temperatura, umidità, CO, VOC)
-                let sum = groupReadings.reduce(0.0) { $0 + $1.value }
-                aggregatedValue = sum / Double(groupReadings.count)
+                let orderMap = Dictionary(uniqueKeysWithValues: orderNames.enumerated().map { ($1, $0) })
+                rooms = roomData.sorted { a, b in
+                    (orderMap[a.roomName] ?? Int.max) < (orderMap[b.roomName] ?? Int.max)
+                }
             }
-
-            // Timestamp più recente del gruppo
-            let latestDate = groupReadings.map(\.timestamp).max() ?? first.timestamp
-            // UUID sintetico stabile: deterministico su roomName+serviceType
-            let syntheticID = UUID(uuidString: stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
-
-            let sensor = SensorData(
-                id: syntheticID,
-                accessoryUUIDs: groupReadings.map(\.accessoryUUID),
-                serviceType: serviceType,
-                roomName: roomName,
-                currentValue: aggregatedValue,
-                lastUpdated: latestDate,
-                warningThreshold: warning,
-                dangerThreshold: danger,
-                sourceCount: groupReadings.count
-            )
-            byRoom[roomName, default: []].append(sensor)
+            guard !Task.isCancelled else { return }
+            lastRefresh = Date()
+            isLoading   = false
+            #if DEBUG
+            dprint("⏱ [loadFromCoreData] \(ContinuousClock.now - _loadStart) | readings=\(rawReadings.count) rooms=\(rooms.count)")
+            #endif
         }
-
-        // 6. Costruisce RoomEnvironmentData e ordina
-        let roomData = byRoom.map { roomName, sensors -> RoomEnvironmentData in
-            RoomEnvironmentData(
-                id: UUID(),
-                roomName: roomName,
-                sensors: sensors.sorted { $0.urgency > $1.urgency }
-            )
-        }
-        .sorted { $0.worstUrgency > $1.worstUrgency }
-
-        // 7. Applica ordinamento utente (se presente), altrimenti usa il default per urgency
-        let orderNames = customOrderNames
-        if orderNames.isEmpty {
-            rooms = roomData
-        } else {
-            let orderMap = Dictionary(uniqueKeysWithValues: orderNames.enumerated().map { ($1, $0) })
-            let ordered = roomData.sorted { a, b in
-                let ia = orderMap[a.roomName] ?? Int.max
-                let ib = orderMap[b.roomName] ?? Int.max
-                return ia < ib
-            }
-            rooms = ordered
-        }
-        lastRefresh = Date()
-        isLoading = false
     }
 
     /// Genera un UUID v5-like deterministico da una stringa composta.

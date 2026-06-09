@@ -55,19 +55,19 @@ final class HabitAnalysisService {
         guard !events.isEmpty || !sceneEvents.isEmpty else { return }
 
         let payload = buildPayload(events: events, sceneEvents: sceneEvents)
+        let lang = AILocale.outputLanguage
 
         let systemPrompt = """
-        Sei un assistente per la domotica domestica. Analizza i pattern di utilizzo degli accessori \
-        e delle scene HomeKit, e identifica le abitudini significative (confidenza > 0.75, \
-        frequenza > 5 giorni su 7). Per ogni abitudine trovata, genera anche la regola corrispondente \
-        in formato strutturato. \
-        Rispondi SOLO con un JSON array (nessun testo aggiuntivo, nessun markdown). \
-        Ogni elemento può essere di tipo "accessory" (comportamento su un singolo accessorio) \
-        o "scene" (attivazione di una scena HomeKit). \
-        Formato per tipo accessory: \
-        {"patternType":"accessory","accessoryName":"...","accessoryID":"...","roomName":"...","description":"testo breve in italiano (max 1 frase)","confidence":0.87,"rule":{"triggerType":"calendar","time":"22:18","weekdays":[1,2,3,4,5,6,7],"action":"on"|"off"|"dim","value":30}} \
-        Formato per tipo scene: \
-        {"patternType":"scene","sceneName":"...","accessoryName":"...","accessoryID":"","roomName":"","description":"testo breve in italiano (max 1 frase)","confidence":0.87,"rule":{"triggerType":"calendar","time":"21:00","weekdays":[1,2,3,4,5,6,7],"action":"scene"}}
+        You are a smart home automation assistant. RESPOND IN \(lang.uppercased()).
+        Analyze accessory and HomeKit scene usage patterns from the last 14 days.
+        Identify significant habits (confidence > 0.75, frequency > 5 days out of 7).
+        For each habit found, also generate the corresponding rule in structured format.
+        Respond ONLY with a valid JSON array (no extra text, no markdown).
+        Each element can be of type "accessory" (behavior on a single accessory) or "scene" (HomeKit scene activation).
+        Format for accessory type:
+        {"patternType":"accessory","accessoryName":"...","accessoryID":"...","roomName":"...","description":"brief text in \(lang) (max 1 sentence)","confidence":0.87,"rule":{"triggerType":"calendar","time":"22:18","weekdays":[1,2,3,4,5,6,7],"action":"on"|"off"|"dim","value":30}}
+        Format for scene type:
+        {"patternType":"scene","sceneName":"...","accessoryName":"...","accessoryID":"","roomName":"","description":"brief text in \(lang) (max 1 sentence)","confidence":0.87,"rule":{"triggerType":"calendar","time":"21:00","weekdays":[1,2,3,4,5,6,7],"action":"scene"}}
         """
 
         do {
@@ -327,6 +327,31 @@ final class HabitAnalysisService {
         patterns = saved
     }
 
+    // MARK: - Stale Pattern Cleanup
+
+    /// Removes patterns that are no longer actionable. Called by DataLifecycleService BGTask.
+    ///
+    /// Removes:
+    /// - Dismissed patterns older than 60 days (user already decided; safe to discard)
+    /// - Pending patterns older than 90 days (orphaned; AI stopped detecting the behaviour)
+    ///
+    /// Approved patterns are never removed — they represent explicit user decisions.
+    func cleanupStalePatterns() {
+        let now             = Date()
+        let dismissedCutoff = now.addingTimeInterval(-60 * 24 * 3600)
+        let pendingCutoff   = now.addingTimeInterval(-90 * 24 * 3600)
+        let before = patterns.count
+        patterns.removeAll {
+            ($0.status == .dismissed && $0.detectedAt < dismissedCutoff)
+            || ($0.status == .pending  && $0.detectedAt < pendingCutoff)
+        }
+        let removed = before - patterns.count
+        if removed > 0 {
+            persistPatterns()
+            dprint("🗂 HabitAnalysis: removed \(removed) stale pattern(s)")
+        }
+    }
+
     // MARK: - Data Loading
 
     private func loadRecentEvents(days: Int) -> [AccessoryEvent] {
@@ -358,11 +383,18 @@ final class HabitAnalysisService {
     private func averageTimeString(from dates: [Date]) -> String? {
         guard !dates.isEmpty else { return nil }
         let cal = Calendar.current
-        var totalMinutes = 0
+        var sinSum = 0.0
+        var cosSum = 0.0
         for date in dates {
-            totalMinutes += cal.component(.hour, from: date) * 60 + cal.component(.minute, from: date)
+            let h = cal.component(.hour,   from: date)
+            let m = cal.component(.minute, from: date)
+            let radians = (Double(h * 60 + m) / 1440.0) * 2 * .pi
+            sinSum += sin(radians)
+            cosSum += cos(radians)
         }
-        let avg = totalMinutes / dates.count
-        return String(format: "%02d:%02d", avg / 60, avg % 60)
+        let avgAngle = atan2(sinSum, cosSum)
+        let normalized = avgAngle < 0 ? avgAngle + 2 * .pi : avgAngle
+        let avgMinutes = Int((normalized / (2 * .pi)) * 1440) % 1440
+        return String(format: "%02d:%02d", avgMinutes / 60, avgMinutes % 60)
     }
 }

@@ -8,17 +8,26 @@ import HomeKit
 /// to guarantee identical category detection logic in both places.
 ///
 /// Category priority chain (mirrors original AmbientalAIService.describeAccessory()):
-///   camera > airPurifier > thermostat > valve > dimmableLight > windowCovering
+///   camera > television > airPurifier > thermostat > valve > windowCovering(category)
+///   > colorLight > dimmableLight > sceneController > windowCovering(chars)
 ///   > fan | outlet | switch | airConditioner | onOff > sensor
 enum AccessoryCategorizer {
 
     // MARK: - HAP Service UUIDs
 
-    private static let cameraServiceType    = "00000111-0000-1000-8000-0026BB765291"
-    private static let purifierServiceType  = "000000BB-0000-1000-8000-0026BB765291"
-    private static let heaterCoolerType     = "000000BC-0000-1000-8000-0026BB765291"
-    private static let thermostatType       = "0000004A-0000-1000-8000-0026BB765291"
-    private static let valveType            = "00000081-0000-1000-8000-0026BB765291"
+    private static let cameraServiceType         = "00000111-0000-1000-8000-0026BB765291"
+    private static let purifierServiceType       = "000000BB-0000-1000-8000-0026BB765291"
+    private static let heaterCoolerType          = "000000BC-0000-1000-8000-0026BB765291"
+    private static let thermostatType            = "0000004A-0000-1000-8000-0026BB765291"
+    private static let valveType                 = "00000081-0000-1000-8000-0026BB765291"
+    private static let windowCoveringServiceType     = "0000008C-0000-1000-8000-0026BB765291"
+    private static let televisionServiceType         = TelevisionAdapter.televisionServiceUUID
+    /// HAP UUID for the Programmable Switch Event characteristic (stateless button presses).
+    private static let programmableSwitchEventType   = "00000073-0000-1000-8000-0026BB765291"
+    /// HAP LockMechanism service UUID.
+    private static let lockMechanismServiceType      = "00000045-0000-1000-8000-0026BB765291"
+    /// HAP GarageDoorOpener service UUID.
+    private static let garageDoorServiceType         = "00000041-0000-1000-8000-0026BB765291"
 
     // MARK: - Public API
 
@@ -37,6 +46,11 @@ enum AccessoryCategorizer {
             return "camera"
         }
 
+        // Television
+        if services.contains(where: { $0.serviceType == televisionServiceType }) {
+            return "television"
+        }
+
         // Air Purifier
         if services.contains(where: { $0.serviceType == purifierServiceType }) {
             return "airPurifier"
@@ -52,14 +66,46 @@ enum AccessoryCategorizer {
             return "valve"
         }
 
+        // Window Covering — category type or HAP service UUID, whichever fires first
+        if accessory.category.categoryType == HMAccessoryCategoryTypeWindowCovering
+            || services.contains(where: { $0.serviceType == windowCoveringServiceType }) {
+            return "windowCovering"
+        }
+
+        // Color Light — dimmable + a color channel (hue, saturation, or color temperature)
+        if hasChar(HMCharacteristicTypeBrightness) &&
+           (hasChar(HMCharacteristicTypeHue) ||
+            hasChar(HMCharacteristicTypeSaturation) ||
+            hasChar(HMCharacteristicTypeColorTemperature)) {
+            return "colorLight"
+        }
+
         // Dimmable Light
         if hasChar(HMCharacteristicTypeBrightness) {
             return "dimmableLight"
         }
 
-        // Window Covering / Blind
+        // Window Covering / Blind — characteristic-based fallback
         if hasChar(HMCharacteristicTypeCurrentPosition) && hasChar(HMCharacteristicTypeTargetPosition) {
             return "windowCovering"
+        }
+        if hasChar(HMCharacteristicTypeTargetPosition) {
+            return "windowCovering"
+        }
+
+        // Scene Controller (programmable button with multi-press events)
+        if hasChar(Self.programmableSwitchEventType) {
+            return "sceneController"
+        }
+
+        // Door Lock
+        if services.contains(where: { $0.serviceType == lockMechanismServiceType }) {
+            return "doorLock"
+        }
+
+        // Garage Door
+        if services.contains(where: { $0.serviceType == garageDoorServiceType }) {
+            return "garageDoor"
         }
 
         // Generic On/Off — distinguish by HMAccessoryCategory

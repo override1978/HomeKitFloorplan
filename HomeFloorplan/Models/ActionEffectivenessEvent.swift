@@ -1,6 +1,30 @@
 import Foundation
 import SwiftData
 
+// MARK: - DismissalReason
+
+/// Reason the user dismissed an AI insight without executing any suggested action.
+/// Collected via a 3-option confirmation dialog (Sprint 24.C).
+enum DismissalReason: String, CaseIterable {
+    /// User already resolved the situation manually before reading the insight.
+    case userActedManually = "userActedManually"
+    /// The insight was not relevant to the user's current context.
+    case irrelevant        = "irrelevant"
+    /// Default — user closed without providing specific feedback.
+    case unclear           = "unclear"
+
+    var localizedLabel: String {
+        switch self {
+        case .userActedManually:
+            return String(localized: "dismiss.reason.acted",    defaultValue: "Ho già risolto")
+        case .irrelevant:
+            return String(localized: "dismiss.reason.irrelevant", defaultValue: "Non rilevante")
+        case .unclear:
+            return String(localized: "dismiss.reason.unclear",  defaultValue: "Chiudi")
+        }
+    }
+}
+
 // MARK: - ActionEffectivenessEvent
 
 /// Registra l'esito di un chip suggerito dall'AI in risposta a un insight ambientale.
@@ -15,6 +39,7 @@ import SwiftData
 /// per intent e categoria di accessorio.
 @Model
 final class ActionEffectivenessEvent {
+    #Index<ActionEffectivenessEvent>([\.suggestedAt], [\.intentRaw], [\.measurementState])
 
     // MARK: - Identity
 
@@ -39,6 +64,8 @@ final class ActionEffectivenessEvent {
 
     /// "executed" | "dismissed" | "expired"
     var outcome: String
+    /// DismissalReason.rawValue — nil for non-dismissed outcomes (Sprint 24.C).
+    var dismissalReasonRaw: String?
 
     // MARK: - Timestamps
 
@@ -91,6 +118,7 @@ final class ActionEffectivenessEvent {
         accessoryID: String? = nil,
         accessoryActionType: String? = nil,
         outcome: String,
+        dismissalReasonRaw: String? = nil,
         suggestedAt: Date = Date(),
         interactedAt: Date? = nil,
         severityRaw: String,
@@ -105,6 +133,7 @@ final class ActionEffectivenessEvent {
         self.accessoryID = accessoryID
         self.accessoryActionType = accessoryActionType
         self.outcome = outcome
+        self.dismissalReasonRaw = dismissalReasonRaw
         self.suggestedAt = suggestedAt
         self.interactedAt = interactedAt
         self.severityRaw = severityRaw

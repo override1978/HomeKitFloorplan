@@ -28,7 +28,7 @@ struct ImageStorageService {
     
     /// Directory dedicata: Application Support/floorplans/
     /// Creata on-demand al primo accesso.
-    private static var floorplansDirectory: URL {
+    nonisolated private static var floorplansDirectory: URL {
         get throws {
             let fm = FileManager.default
             guard let base = fm.urls(for: .applicationSupportDirectory,
@@ -61,7 +61,8 @@ struct ImageStorageService {
     }
     
     /// Carica un'immagine dato il suo filename. Restituisce nil se non esiste.
-    static func load(filename: String) -> UIImage? {
+    /// `nonisolated` — solo I/O + UIImage(data:), sicuro fuori dal main actor.
+    nonisolated static func load(filename: String) -> UIImage? {
         guard let url = try? floorplansDirectory.appendingPathComponent(filename),
               let data = try? Data(contentsOf: url) else {
             return nil

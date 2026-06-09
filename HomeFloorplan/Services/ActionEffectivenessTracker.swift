@@ -18,12 +18,14 @@ final class ActionEffectivenessTracker {
 
     // MARK: - Private
 
-    private let modelContainer: ModelContainer
+    private let context: ModelContext
+    /// Minimum number of complete outcome measurements required before returning a meaningful average.
+    private let minimumSamplesRequired = 3
 
     // MARK: - Init
 
     init(modelContainer: ModelContainer) {
-        self.modelContainer = modelContainer
+        self.context = ModelContext(modelContainer)
     }
 
     // MARK: - Track API
@@ -67,7 +69,8 @@ final class ActionEffectivenessTracker {
         intents: [String],
         roomName: String,
         severityRaw: String,
-        suggestedAt: Date
+        suggestedAt: Date,
+        reason: DismissalReason = .unclear
     ) {
         for intentRaw in intents {
             let event = ActionEffectivenessEvent(
@@ -77,13 +80,14 @@ final class ActionEffectivenessTracker {
                 accessoryID: nil,
                 accessoryActionType: nil,
                 outcome: "dismissed",
+                dismissalReasonRaw: reason.rawValue,
                 suggestedAt: suggestedAt,
                 interactedAt: Date(),
                 severityRaw: severityRaw
             )
             persist(event)
         }
-        dprint("📊 [Tracker] dismissed — intents:\(intents) room:\(roomName)")
+        dprint("📊 [Tracker] dismissed — intents:\(intents) room:\(roomName) reason:\(reason.rawValue)")
     }
 
     /// Registra che un insight è scaduto senza alcuna interazione.
@@ -204,7 +208,6 @@ final class ActionEffectivenessTracker {
         followUpValue: Double,
         readAt: Date
     ) {
-        let context = ModelContext(modelContainer)
         let descriptor = FetchDescriptor<ActionEffectivenessEvent>(
             predicate: #Predicate { $0.measurementState == "pending" && $0.roomName == roomName && $0.sensorTypeRaw == sensorTypeRaw }
         )
@@ -280,19 +283,19 @@ final class ActionEffectivenessTracker {
         }.sorted { $0.intentRaw < $1.intentRaw }
     }
 
-    /// Efficacia media (0–1) per un intent specifico. 0 se nessuna misurazione disponibile.
+    /// Efficacia media (0–1) per un intent specifico. 0 se meno di `minimumSamplesRequired` misurazioni.
     func averageEffectiveness(for intentRaw: String, days: Int = 30) -> Double {
         let scores = fetchEvents(days: days)
             .filter { $0.intentRaw == intentRaw && $0.measurementState == "complete" }
             .compactMap(\.effectivenessScore)
-        guard !scores.isEmpty else { return 0 }
+        guard scores.count >= minimumSamplesRequired else { return 0 }
         return scores.reduce(0, +) / Double(scores.count)
     }
 
     /// Efficacia media (0–1) per un accessorio specifico in un dato intent.
     /// Usato da ActionResolver (Sprint 6) per ordinare i candidati per accessory.
-    /// Restituisce 0.5 (neutro) se non ci sono ancora misurazioni — evita di penalizzare
-    /// accessori nuovi rispetto a quelli con storico.
+    /// Restituisce 0.5 (neutro) se meno di `minimumSamplesRequired` misurazioni — evita di
+    /// promuovere accessori con un singolo campione di successo.
     func averageEffectiveness(for intentRaw: String, accessoryID: String, days: Int = 30) -> Double {
         let scores = fetchEvents(days: days)
             .filter {
@@ -301,7 +304,7 @@ final class ActionEffectivenessTracker {
                 $0.measurementState == "complete"
             }
             .compactMap(\.effectivenessScore)
-        guard !scores.isEmpty else { return 0.5 }   // neutral prior for unseen accessories
+        guard scores.count >= minimumSamplesRequired else { return 0.5 }   // neutral prior: insufficient data
         return scores.reduce(0, +) / Double(scores.count)
     }
 
@@ -309,7 +312,6 @@ final class ActionEffectivenessTracker {
 
     /// Elimina eventi più vecchi di `days` giorni per contenere la dimensione del DB.
     func cleanup(olderThan days: Int = 90) {
-        let context = ModelContext(modelContainer)
         let cutoff = Date().addingTimeInterval(-Double(days) * 24 * 3600)
         let descriptor = FetchDescriptor<ActionEffectivenessEvent>(
             predicate: #Predicate { $0.suggestedAt < cutoff }
@@ -323,13 +325,11 @@ final class ActionEffectivenessTracker {
     // MARK: - Private
 
     private func persist(_ event: ActionEffectivenessEvent) {
-        let context = ModelContext(modelContainer)
         context.insert(event)
         try? context.save()
     }
 
     private func fetchEvents(days: Int) -> [ActionEffectivenessEvent] {
-        let context = ModelContext(modelContainer)
         let cutoff = Date().addingTimeInterval(-Double(days) * 24 * 3600)
         let descriptor = FetchDescriptor<ActionEffectivenessEvent>(
             predicate: #Predicate { $0.suggestedAt >= cutoff },

@@ -152,6 +152,8 @@ struct ContentView: View {
             EnvironmentDashboardView()
         case .habits:
             HabitsView()
+        case .homeIntelligence:
+            HomeIntelligenceDashboardView()
         case .debugHomeKit:
             NavigationStack {
                 HomeKitDebugView()

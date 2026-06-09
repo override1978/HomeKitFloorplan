@@ -101,6 +101,9 @@ final class HomeKitService: NSObject {
 
     /// Store eventi accessori per lo storico AI. Iniettato dall'app dopo l'init.
     var accessoryEventStore: AccessoryEventStore?
+
+    /// Routes sensor value changes to AlertNotificationService. Iniettato dall'app dopo l'init.
+    var sensorEventRouter: SensorEventRouter?
     
     private var observedAccessoryUUIDs: Set<UUID> = []
     
@@ -490,6 +493,9 @@ extension HomeKitService: HMAccessoryDelegate {
                    from: characteristic, value: value, accessory: accessory) {
                 store.saveEvent(dto)
             }
+
+            // Instrada letture sensore verso AlertNotificationService (Sprint 23.A)
+            sensorEventRouter?.route(characteristic: characteristic, value: value, accessory: accessory)
         }
     }
     

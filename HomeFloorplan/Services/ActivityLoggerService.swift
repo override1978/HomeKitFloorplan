@@ -142,12 +142,15 @@ final class ActivityLoggerService {
         }
 
         // Elimina per conteggio (mantieni solo i più recenti)
-        var countDescriptor = FetchDescriptor<ActivityEvent>(
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-        )
-        countDescriptor.fetchLimit = maxEvents + 1
-        if let all = try? context.fetch(countDescriptor), all.count > maxEvents {
-            all.dropFirst(maxEvents).forEach { context.delete($0) }
+        // fetchCount is a cheap COUNT(*) — skip the expensive sort unless we're actually over cap.
+        if (try? context.fetchCount(FetchDescriptor<ActivityEvent>())) ?? 0 > maxEvents {
+            var countDescriptor = FetchDescriptor<ActivityEvent>(
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+            countDescriptor.fetchLimit = maxEvents + 1
+            if let all = try? context.fetch(countDescriptor), all.count > maxEvents {
+                all.dropFirst(maxEvents).forEach { context.delete($0) }
+            }
         }
     }
 }

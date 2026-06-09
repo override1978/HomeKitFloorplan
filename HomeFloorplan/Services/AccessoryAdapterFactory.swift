@@ -43,7 +43,12 @@ enum AccessoryAdapterFactory {
         if let purifier = AirPurifierAdapter(accessory: accessory, homeKit: homeKit) {
             return purifier
         }
-        
+
+        // 0.9 Televisori (DEVE precedere OnOffAdapter: usa la caratteristica Active)
+        if let tv = TelevisionAdapter(accessory: accessory, homeKit: homeKit) {
+            return tv
+        }
+
         // 4. Termostati / Valvole TRV (DEVE precedere OnOffAdapter)
         if let thermo = ThermostatAdapter(accessory: accessory, homeKit: homeKit) {
             return thermo

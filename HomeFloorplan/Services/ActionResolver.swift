@@ -37,7 +37,7 @@ final class ActionResolver {
     func resolve(intents: [ActionIntent], roomName: String, roomType: RoomType = .indoor) -> [AINextAction] {
         let accessories = homeKit.allAccessories.filter { $0.room?.name == roomName }
         let hour = Calendar.current.component(.hour, from: Date())
-        let season = Season.current
+        let season = CalendarSeason.current
         let isNight = hour >= 19 || hour < 7
 
         var results: [AINextAction] = []
@@ -49,6 +49,7 @@ final class ActionResolver {
             if intent.nightRestricted && isNight { continue }
 
             var resolved = false
+            var hasEligibleCandidate = false  // true if ≥1 accessory matched category rules
 
             // Sprint 6: sort candidates by historical effectiveness for this intent (desc).
             // Accessories without history get a neutral prior of 0.5 — not penalised.
@@ -88,32 +89,31 @@ final class ActionResolver {
                 guard intent.allowedCategories.contains(category) else { continue }
                 guard !intent.forbiddenCategories.contains(category) else { continue }
 
+                hasEligibleCandidate = true
                 if isAlreadyActive(accessory: accessory, for: intent) { continue }
 
                 guard let action = intent.resolveAction(for: category, season: season, hour: hour)
                 else { continue }
 
-                // Tronca il nome accessorio a 12 caratteri per label leggibili.
-                // Es. "Purifica con Mansarda Purificatore" → "Purifica con Mansarda P."
-                let shortName = accessory.name.count > 12
-                    ? String(accessory.name.prefix(11)) + "."
-                    : accessory.name
-                let rawLabel = String(format: action.labelKey, shortName)
+                let rawLabel = action.labelKey
                 results.append(AINextAction(
                     label: rawLabel,
                     actionType: "suggest",
                     accessoryID: accessory.uniqueIdentifier.uuidString,
                     accessoryActionType: action.actionType,
                     accessoryValue: action.value,
-                    accessoryValue2: action.value2
+                    accessoryValue2: action.value2,
+                    accessoryName: accessory.name
                 ))
                 usedAccessoryIDs.insert(accessory.uniqueIdentifier)
                 resolved = true
                 if selectedAccessoryName == nil { selectedAccessoryName = accessory.name }
             }
 
-            // No suitable accessory found — emit a room-type-aware manual tip (nil = suppress)
-            if !resolved && results.count < 3 {
+            // No suitable accessory found — emit a room-type-aware manual tip (nil = suppress).
+            // Exception: if eligible accessories exist but are all already active, suppress the tip
+            // too — they're already doing their job, no manual advice needed.
+            if !resolved && !hasEligibleCandidate && results.count < 3 {
                 if let tip = intent.fallbackTip(for: roomType) {
                     results.append(tip)
                     // Phase 6 trace: fallback tip emitted
@@ -172,17 +172,104 @@ final class ActionResolver {
             allChars.first { $0.characteristicType.lowercased() == uuidLower }?.value as? T
         }
 
-        let activeUUID = "000000b0-0000-1000-8000-0026bb765291"
-        let onUUID     = "00000025-0000-1000-8000-0026bb765291"
+        let activeUUID         = HMCharacteristicTypeActive.lowercased()
+        let onUUID             = HMCharacteristicTypePowerState.lowercased()
+        let targetPositionUUID = HMCharacteristicTypeTargetPosition.lowercased()
+        let brightnessUUID     = HMCharacteristicTypeBrightness.lowercased()
 
         switch intent {
-        case .coolRoom, .heatRoom, .reduceHumidity, .increaseHumidity,
+        case .coolRoom:
+            let isBlind = categorize(accessory) == "windowCovering"
+            if isBlind {
+                // For blinds, only TargetPosition == 0 means "already closed".
+                // Active/PowerState on blind controllers means "device powered", not "blind closed".
+                if let pos: Int = typedValue(targetPositionUUID), pos == 0 { return true }
+                if let pos: Double = typedValue(targetPositionUUID), pos == 0 { return true }
+                return false
+            }
+            if let active: Int = typedValue(activeUUID), active == 1 { return true }
+            if let on: Bool = typedValue(onUUID), on { return true }
+            return false
+
+        case .heatRoom, .reduceHumidity, .increaseHumidity,
              .improveAirQuality, .ventilateRoom, .reduceCO2:
             if let active: Int = typedValue(activeUUID), active == 1 { return true }
             if let on: Bool = typedValue(onUUID), on { return true }
             return false
 
         case .respondToSmoke, .respondToCO:
+            return false
+
+        case .brightenRoom:
+            // Skip if brightness is already ≥ 70%
+            if let bVal: Int = typedValue(brightnessUUID), bVal >= 70 { return true }
+            if let bVal: Double = typedValue(brightnessUUID), bVal >= 70 { return true }
+            return false
+
+        case .dimRoom, .setCircadianLight:
+            // Skip if brightness is already ≤ 35%
+            if let bVal: Int = typedValue(brightnessUUID), bVal <= 35 { return true }
+            if let bVal: Double = typedValue(brightnessUUID), bVal <= 35 { return true }
+            return false
+
+        case .setScene:
+            return false
+
+        case .prepareForArrival:
+            return false  // always suggest — arriving home benefits from preparation
+
+        case .secureForDeparture:
+            let secCategory = categorize(accessory)
+            if secCategory == "doorLock" {
+                let lockTargetUUID = "0000001e-0000-1000-8000-0026bb765291"
+                if let v: Int = typedValue(lockTargetUUID), v == 1 { return true }
+            }
+            if secCategory == "garageDoor" {
+                let garageDoorTargetUUID = "00000032-0000-1000-8000-0026bb765291"
+                if let v: Int = typedValue(garageDoorTargetUUID), v == 1 { return true }
+            }
+            if let active: Int = typedValue(activeUUID), active == 0 { return true }
+            if let on: Bool = typedValue(onUUID), !on { return true }
+            if let bVal: Int = typedValue(brightnessUUID), bVal == 0 { return true }
+            return false
+
+        case .reduceConsumption:
+            // Skip if device is already off
+            if let active: Int = typedValue(activeUUID), active == 0 { return true }
+            if let on: Bool = typedValue(onUUID), !on { return true }
+            if let bVal: Int = typedValue(brightnessUUID), bVal == 0 { return true }
+            return false
+
+        case .enableEcoMode:
+            return false  // always offer eco mode — setpoint may differ
+
+        case .schedulePeakHours:
+            return false  // tip-only
+
+        case .lockAll:
+            let lockTargetUUID   = "0000001e-0000-1000-8000-0026bb765291"
+            let lockCurrentUUID  = "0000001d-0000-1000-8000-0026bb765291"
+            if let v: Int = typedValue(lockTargetUUID),  v == 1 { return true }
+            if let v: Int = typedValue(lockCurrentUUID), v == 1 { return true }
+            return false
+
+        case .closeGarage:
+            let garageTargetUUID  = "00000032-0000-1000-8000-0026bb765291"
+            let garageCurrentUUID = "0000000e-0000-1000-8000-0026bb765291"
+            if let v: Int = typedValue(garageTargetUUID),  v == 1 { return true }
+            if let v: Int = typedValue(garageCurrentUUID), v == 1 { return true }
+            return false
+
+        case .armNightSecurity, .armAwaySecurity:
+            let armCategory = categorize(accessory)
+            if armCategory == "doorLock" {
+                let lockTargetUUID = "0000001e-0000-1000-8000-0026bb765291"
+                if let v: Int = typedValue(lockTargetUUID), v == 1 { return true }
+            }
+            if armCategory == "garageDoor" {
+                let garageTargetUUID = "00000032-0000-1000-8000-0026bb765291"
+                if let v: Int = typedValue(garageTargetUUID), v == 1 { return true }
+            }
             return false
         }
     }

@@ -20,6 +20,8 @@ final class NextActionExecutor {
     private static let targetTempUUID          = "00000035-0000-1000-8000-0026bb765291"
     private static let heatingThresholdUUID    = "00000012-0000-1000-8000-0026bb765291"
     private static let coolingThresholdUUID    = "0000000d-0000-1000-8000-0026bb765291"
+    private static let lockTargetStateUUID     = "0000001e-0000-1000-8000-0026bb765291"
+    private static let garageDoorTargetUUID    = "00000032-0000-1000-8000-0026bb765291"
 
     // MARK: - Execute
 
@@ -89,6 +91,10 @@ final class NextActionExecutor {
             return find(Self.targetHeaterCoolerUUID) ?? find(Self.targetAirPurifierUUID)
         case "setTemp":
             return find(Self.targetTempUUID)
+        case "lock":
+            return find(Self.lockTargetStateUUID)
+        case "closeGarage":
+            return find(Self.garageDoorTargetUUID)
         default:
             return nil
         }
@@ -103,9 +109,11 @@ final class NextActionExecutor {
         case "open":     return 100
         case "close":    return 0
         case "setSpeed": return Int((accessoryValue ?? 0.5) * 100)
-        case "setMode":  return Int(accessoryValue ?? 0)   // intero modalità (0=Auto, 1=Caldo, 2=Freddo, ecc.)
-        case "setTemp":  return accessoryValue ?? 22.0
-        default:         return 1
+        case "setMode":       return Int(accessoryValue ?? 0)   // intero modalità (0=Auto, 1=Caldo, 2=Freddo, ecc.)
+        case "setTemp":       return accessoryValue ?? 22.0
+        case "lock":          return 1   // LockTargetState: 1 = secured
+        case "closeGarage":   return 1   // GarageTargetDoorState: 1 = closed
+        default:              return 1
         }
     }
 }

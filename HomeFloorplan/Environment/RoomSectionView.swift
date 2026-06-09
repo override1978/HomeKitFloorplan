@@ -27,7 +27,7 @@ struct RoomSectionView: View {
     let room: RoomEnvironmentData
     let onSensorTap: (SensorData) -> Void
     var aiInsights: [AmbientalAIInsight] = []
-    var onDismissInsight: ((AmbientalAIInsight) -> Void)? = nil
+    var onDismissInsight: ((AmbientalAIInsight, DismissalReason) -> Void)? = nil
     var onExecuteAction: ((AINextAction, AmbientalAIInsight) -> Void)? = nil
     var onCreateRule: ((RuleDraft, AmbientalAIInsight) -> Void)? = nil
 
@@ -213,7 +213,7 @@ struct RoomSectionView: View {
                     AIInsightRow(
                         insight: insight,
                         fallbackAccessoryID: room.sensors.first?.accessoryUUIDs.first,
-                        onDismiss: { onDismissInsight?(insight) },
+                        onDismiss: { reason in onDismissInsight?(insight, reason) },
                         onExecuteAction: { action in onExecuteAction?(action, insight) },
                         onCreateRule: { draft in onCreateRule?(draft, insight) }
                     )
@@ -416,9 +416,11 @@ private struct AIInsightRow: View {
 
     let insight: AmbientalAIInsight
     let fallbackAccessoryID: String?
-    let onDismiss: () -> Void
+    let onDismiss: (DismissalReason) -> Void
     let onExecuteAction: (AINextAction) -> Void
     let onCreateRule: (RuleDraft) -> Void
+
+    @State private var showDismissDialog = false
 
     private var insightColor: Color {
         switch insight.severity {
@@ -449,7 +451,9 @@ private struct AIInsightRow: View {
 
                 Spacer()
 
-                Button(action: onDismiss) {
+                Button {
+                    showDismissDialog = true
+                } label: {
                     Image(systemName: "xmark")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -457,6 +461,16 @@ private struct AIInsightRow: View {
                         .background(Color(.tertiarySystemGroupedBackground), in: Circle())
                 }
                 .buttonStyle(.plain)
+                .confirmationDialog(
+                    String(localized: "insight.dismiss.dialog.title", defaultValue: "Perché vuoi ignorare questo insight?"),
+                    isPresented: $showDismissDialog,
+                    titleVisibility: .visible
+                ) {
+                    Button(DismissalReason.userActedManually.localizedLabel) { onDismiss(.userActedManually) }
+                    Button(DismissalReason.irrelevant.localizedLabel)        { onDismiss(.irrelevant) }
+                    Button(DismissalReason.unclear.localizedLabel)           { onDismiss(.unclear) }
+                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Annulla"), role: .cancel) {}
+                }
             }
 
             // Azioni rapide
@@ -508,7 +522,7 @@ private struct NextActionButtonView: View {
     // Chip informativo per i tip manuali — non interattivo, stile "nota"
     private var tipChip: some View {
         HStack(spacing: 5) {
-            Image(systemName: "lightbulb.fill")
+            Image(systemName: action.iconName ?? "lightbulb.fill")
                 .font(.system(size: 10, weight: .medium))
             Text(action.label)
                 .font(.caption.weight(.medium))
@@ -566,6 +580,18 @@ private struct NextActionButtonView: View {
     }
 
     private func handleTap() {
+        // "suggest" actions execute immediately via HomeKit — no rule panel
+        if action.actionType == "suggest" {
+            state = .executing
+            onExecuteAction(action)
+            Task {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                state = .completed
+            }
+            return
+        }
+
+        // "createRule" / legacy path
         let resolvedID = action.accessoryID ?? fallbackAccessoryID
         let rawType = action.accessoryActionType ?? "on"
         let resolvedActionType: String

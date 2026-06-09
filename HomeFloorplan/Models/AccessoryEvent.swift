@@ -8,6 +8,8 @@ import SwiftData
 /// I sensori ambientali (temperatura, umidità, CO2) NON vanno qui — hanno SensorReading.
 @Model
 final class AccessoryEvent {
+    #Index<AccessoryEvent>([\.timestamp], [\.accessoryID])
+
     @Attribute(.unique) var id: UUID
     var accessoryID: UUID
     var accessoryName: String
@@ -23,6 +25,8 @@ final class AccessoryEvent {
     var weekday: Int
     /// Tipo dispositivo: "light", "blind", "switch", "contact", "motion".
     var eventType: String
+    /// Family profile active when this event was recorded. Nil = global / no profile.
+    var profileID: UUID?
 
     init(
         id: UUID = UUID(),
@@ -33,7 +37,8 @@ final class AccessoryEvent {
         state: Bool,
         brightness: Double? = nil,
         timestamp: Date = Date(),
-        eventType: String
+        eventType: String,
+        profileID: UUID? = nil
     ) {
         self.id = id
         self.accessoryID = accessoryID
@@ -43,8 +48,9 @@ final class AccessoryEvent {
         self.state = state
         self.brightness = brightness
         self.timestamp = timestamp
-        self.weekday = Calendar.current.component(.weekday, from: timestamp)
+        self.weekday   = Calendar.current.component(.weekday, from: timestamp)
         self.eventType = eventType
+        self.profileID = profileID
     }
 }
 

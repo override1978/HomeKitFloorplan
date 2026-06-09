@@ -20,7 +20,7 @@ struct EnvironmentDashboardView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ActionExecutionService.self) private var executionService
 
-    @StateObject private var vm = EnvironmentViewModel()
+    @State private var vm = EnvironmentViewModel()
     @Environment(RuleEngineService.self) private var ruleEngine
 
     @State private var selectedSensor: SensorData?
@@ -28,10 +28,11 @@ struct EnvironmentDashboardView: View {
     @State private var isRefreshing = false
     @State private var isReordering = false
     @AppStorage("outdoorRoomName") private var outdoorRoomName: String = ""
+    @AppStorage("ai.isEnabled")   private var isAIEnabled: Bool = false
     @State private var outdoorRefreshID = UUID()
 
-    /// Servizio AI per gli insight ambientali (lazy init in onAppear).
-    @State private var aiService: AmbientalAIService?
+    /// Servizio AI per gli insight ambientali (app-scoped, iniettato dall'ambiente).
+    @Environment(AmbientalAIService.self) private var aiService
     /// Sheet per la creazione di una nuova regola da un RuleDraft AI.
     @State private var pendingRuleDraft: RuleDraft?
 
@@ -47,7 +48,7 @@ struct EnvironmentDashboardView: View {
 
     // Tutti gli insight visibili da tutte le stanze (per il Digest globale)
     private var allVisibleInsights: [AmbientalAIInsight] {
-        vm.rooms.flatMap { aiService?.visibleInsights(for: $0.roomName) ?? [] }
+        vm.rooms.flatMap { aiService.visibleInsights(for: $0.roomName) }
     }
 
     // Numero di stanze con almeno un sensore in warning o danger
@@ -84,17 +85,7 @@ struct EnvironmentDashboardView: View {
                 vm.loadFromCoreData()
                 sampleIfNeeded()
                 AlertNotificationService.shared.clearBadge()
-                if aiService == nil {
-                    // Inietta il tracker condiviso così dismiss/expiration e execution
-                    // finiscono nello stesso dataset di efficacia.
-                    aiService = AmbientalAIService(
-                        aiSettings: AISettings(),
-                        modelContainer: modelContext.container,
-                        homeKit: homeKit,
-                        tracker: executionService.tracker
-                    )
-                }
-                Task { await aiService?.analyzeRooms(vm.rooms) }
+                Task { await aiService.analyzeRooms(vm.rooms) }
             }
         }
         // Sheet regola — sul NavigationStack per evitare conflitti con gli altri sheet.
@@ -141,23 +132,28 @@ struct EnvironmentDashboardView: View {
                     .id(outdoorRefreshID)
                 }
 
-                // ── 3. AI Digest: insight aggregati (visibile solo se ci sono insight) ──
-                let insights = allVisibleInsights
-                if !insights.isEmpty {
-                    EnvironmentAIDigestCard(
-                        insights: insights,
-                        onDismissInsight: { insight in
-                            aiService?.dismiss(insight)
-                        },
-                        onExecuteAction: { action, insight in
-                            guard let home = homeKit.currentHome else { return }
-                            Task { await executionService.execute(action, insight: insight, in: home) }
-                        },
-                        onCreateRule: { draft, _ in
-                            openRuleEditor(draft: draft)
-                        }
-                    )
+                // ── 3. AI Digest: insight aggregati (visibile solo se AI abilitata e ci sono insight) ──
+                if isAIEnabled {
+                    let insights = allVisibleInsights
+                    if !insights.isEmpty {
+                        EnvironmentAIDigestCard(
+                            insights: insights,
+                            onDismissInsight: { insight, reason in
+                                aiService.dismiss(insight, reason: reason)
+                            },
+                            onExecuteAction: { action, insight in
+                                guard let home = homeKit.currentHome else { return }
+                                Task { await executionService.execute(action, insight: insight, in: home) }
+                            },
+                            onCreateRule: { draft, _ in
+                                openRuleEditor(draft: draft)
+                            }
+                        )
+                    }
                 }
+
+                // ── 3.5. Energy Dashboard ─────────────────────────────
+                EnergyDashboardCard(modelContainer: modelContext.container)
 
                 // ── 4. Header sezione stanze ───────────────────────────
                 HStack {
@@ -178,8 +174,8 @@ struct EnvironmentDashboardView: View {
                         RoomSectionView(
                             room: room,
                             onSensorTap: { sensor in selectedSensor = sensor },
-                            aiInsights: aiService?.visibleInsights(for: room.roomName) ?? [],
-                            onDismissInsight: { insight in aiService?.dismiss(insight) },
+                            aiInsights: isAIEnabled ? aiService.visibleInsights(for: room.roomName) : [],
+                            onDismissInsight: { insight, reason in aiService.dismiss(insight, reason: reason) },
                             onExecuteAction: { action, insight in
                                 guard let home = homeKit.currentHome else { return }
                                 Task { await executionService.execute(action, insight: insight, in: home) }
@@ -283,7 +279,7 @@ struct EnvironmentDashboardView: View {
             await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: modelContext.container)
             vm.loadFromCoreData()
             outdoorRefreshID = UUID()
-            await aiService?.analyzeRooms(vm.rooms)
+            await aiService.analyzeRooms(vm.rooms)
             isRefreshing = false
         }
     }
@@ -292,7 +288,7 @@ struct EnvironmentDashboardView: View {
 // MARK: - EnvironmentRoomReorderSheet
 
 private struct EnvironmentRoomReorderSheet: View {
-    @ObservedObject var vm: EnvironmentViewModel
+    var vm: EnvironmentViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var localRooms: [RoomEnvironmentData] = []
@@ -374,7 +370,7 @@ private struct EnvironmentRoomReorderSheet: View {
                             ]
                         )
                     ],
-                    onDismissInsight: { _ in },
+                    onDismissInsight: { _, _ in },
                     onExecuteAction: { _, _ in },
                     onCreateRule: { _, _ in }
                 )

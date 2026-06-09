@@ -4,4 +4,17 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <Group
+      location = "group:HomeFloorplanTests"
+      name = "HomeFloorplanTests">
+      <FileRef
+         location = "group:EnvironmentPreProcessorTests.swift">
+      </FileRef>
+      <FileRef
+         location = "group:BehavioralPatternTests.swift">
+      </FileRef>
+      <FileRef
+         location = "group:CircularMeanTests.swift">
+      </FileRef>
+   </Group>
 </Workspace>

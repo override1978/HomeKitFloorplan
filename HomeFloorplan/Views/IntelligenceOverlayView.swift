@@ -9,6 +9,8 @@ struct IntelligenceOverlayView: View {
     let floorplan: Floorplan
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let containerSize: CGSize
+    /// Pre-computed from the parent — avoids reloading the image just to get its size.
+    let imageRect: CGRect
     let effectiveScale: CGFloat
     let effectiveOffset: CGSize
 
@@ -16,40 +18,38 @@ struct IntelligenceOverlayView: View {
 
     // MARK: Derived
 
-    private var helper: FloorplanCoordinateHelper? {
-        guard let image = ImageStorageService.load(filename: floorplan.imageFilename) else { return nil }
-        return FloorplanCoordinateHelper.make(imageSize: image.size, container: containerSize)
+    private var helper: FloorplanCoordinateHelper {
+        FloorplanCoordinateHelper(imageRect: imageRect)
     }
 
     var body: some View {
+        let h = helper
         ZStack(alignment: .topLeading) {
-            if let h = helper {
-                Canvas { ctx, _ in
-                    for room in floorplan.linkedRooms {
-                        let path = h.overlayPath(for: room)
-                        let count = pendingCount(for: room)
-                        ctx.fill(path, with: .color(fillColor(count: count)))
-                        ctx.stroke(path, with: .color(borderColor(count: count).opacity(0.6)),
-                                   lineWidth: 1.5 / effectiveScale)
-                    }
-                }
-                .frame(width: containerSize.width, height: containerSize.height)
-                .allowsHitTesting(false)
-
-                ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+            Canvas { ctx, _ in
+                for room in floorplan.linkedRooms {
+                    let path = h.overlayPath(for: room)
                     let count = pendingCount(for: room)
-                    let center = h.centroid(for: room)
-                    let inverseScale = 1.0 / effectiveScale
-
-                    Button {
-                        overlayVM.selectRoom(room.hmRoomUUID)
-                    } label: {
-                        intelligenceBadge(room: room, count: count)
-                            .scaleEffect(inverseScale)
-                    }
-                    .buttonStyle(.plain)
-                    .position(center)
+                    ctx.fill(path, with: .color(fillColor(count: count)))
+                    ctx.stroke(path, with: .color(borderColor(count: count).opacity(0.6)),
+                               lineWidth: 1.5 / effectiveScale)
                 }
+            }
+            .frame(width: containerSize.width, height: containerSize.height)
+            .allowsHitTesting(false)
+
+            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+                let count = pendingCount(for: room)
+                let center = h.centroid(for: room)
+                let inverseScale = 1.0 / effectiveScale
+
+                Button {
+                    overlayVM.selectRoom(room.hmRoomUUID)
+                } label: {
+                    intelligenceBadge(room: room, count: count)
+                        .scaleEffect(inverseScale)
+                }
+                .buttonStyle(.plain)
+                .position(center)
             }
         }
     }

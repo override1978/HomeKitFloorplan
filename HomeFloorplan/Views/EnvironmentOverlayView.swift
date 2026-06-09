@@ -11,80 +11,90 @@ struct EnvironmentOverlayView: View {
     let floorplan: Floorplan
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let containerSize: CGSize
+    /// Pre-computed from the parent — avoids reloading the image just to get its size.
+    let imageRect: CGRect
     let effectiveScale: CGFloat
     let effectiveOffset: CGSize
 
     /// Shared instance managed by the parent (FloorplanEditorView).
-    @ObservedObject var envVM: EnvironmentViewModel
+    var envVM: EnvironmentViewModel
 
     // MARK: Derived
 
-    /// Cached helper — rebuilt only when containerSize or floorplan.imageFilename changes.
-    @State private var cachedHelper: FloorplanCoordinateHelper?
-    @State private var cachedImageFilename: String = ""
-    @State private var cachedContainerSize: CGSize = .zero
+    private var helper: FloorplanCoordinateHelper {
+        FloorplanCoordinateHelper(imageRect: imageRect)
+    }
 
     var body: some View {
-        // Build per-room urgency dict once (avoids 2x lookup per room per render).
-        let h = cachedHelper
+        let h            = helper
+        let isLoading    = envVM.isLoading && envVM.rooms.isEmpty
+        let inverseScale = 1.0 / effectiveScale
+
+        // Per-room urgency — all .normal during initial load (rooms is empty)
         let urgencyByRoom: [String: SensorUrgency] = {
+            guard !isLoading else { return [:] }
             var dict: [String: SensorUrgency] = [:]
             let filter = overlayVM.selectedSensorFilter
             for room in floorplan.linkedRooms {
                 guard let roomData = envVM.rooms.first(where: { $0.roomName == room.name }) else {
                     dict[room.name] = .normal; continue
                 }
-                if let f = filter {
-                    dict[room.name] = roomData.sensors.first(where: { $0.serviceType == f })?.urgency ?? .normal
-                } else {
-                    dict[room.name] = roomData.worstUrgency
-                }
+                dict[room.name] = filter.flatMap { f in
+                    roomData.sensors.first(where: { $0.serviceType == f })?.urgency
+                } ?? roomData.worstUrgency
             }
             return dict
         }()
-        let inverseScale = 1.0 / effectiveScale
 
         return ZStack(alignment: .topLeading) {
-            // Room fill canvas
-            if let h {
-                Canvas { ctx, _ in
-                    for room in floorplan.linkedRooms {
-                        let path = h.overlayPath(for: room)
-                        let u = urgencyByRoom[room.name] ?? .normal
-                        let fillColor = urgencyFillColor(u)
-                        ctx.fill(path, with: .color(fillColor))
-                        ctx.stroke(path, with: .color(fillColor.opacity(0.6)), lineWidth: 1.5 / effectiveScale)
-                    }
-                }
-                .frame(width: containerSize.width, height: containerSize.height)
-                .allowsHitTesting(false)    // tap handled by invisible buttons below
-
-                // Invisible tap targets + badges
-                ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
-                    let urgency = urgencyByRoom[room.name] ?? .normal
-                    let center  = h.centroid(for: room)
-
-                    Button {
-                        overlayVM.selectRoom(room.hmRoomUUID)
-                    } label: {
-                        environmentBadge(room: room, urgency: urgency)
-                            .scaleEffect(inverseScale)
-                    }
-                    .buttonStyle(.plain)
-                    .position(center)
+            // Canvas: fill colour transitions smoothly via parent animation
+            Canvas { ctx, _ in
+                for room in floorplan.linkedRooms {
+                    let path = h.overlayPath(for: room)
+                    let u = urgencyByRoom[room.name] ?? .normal
+                    let fill = isLoading
+                        ? Color(.systemGreen).opacity(0.08)
+                        : urgencyFillColor(u)
+                    ctx.fill(path, with: .color(fill))
+                    ctx.stroke(path, with: .color(fill.opacity(0.6)), lineWidth: 1.5 / effectiveScale)
                 }
             }
-        }
-        .onAppear { updateHelperCache() }
-        .onChange(of: containerSize) { _, _ in updateHelperCache() }
-        .onChange(of: floorplan.imageFilename) { _, _ in updateHelperCache() }
-    }
+            .frame(width: containerSize.width, height: containerSize.height)
+            .allowsHitTesting(false)
 
-    private func updateHelperCache() {
-        guard let image = ImageStorageService.load(filename: floorplan.imageFilename) else { return }
-        cachedHelper = FloorplanCoordinateHelper.make(imageSize: image.size, container: containerSize)
-        cachedImageFilename = floorplan.imageFilename
-        cachedContainerSize = containerSize
+            // Badges: stesso ForEach, contenuto condizionale in base allo stato
+            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+                let center  = h.centroid(for: room)
+                let urgency = urgencyByRoom[room.name] ?? .normal
+
+                Group {
+                    if isLoading {
+                        HStack(spacing: 5) {
+                            ProgressView().scaleEffect(0.65)
+                            Text(room.name)
+                                .font(.caption2.weight(.semibold))
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(.regularMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .foregroundStyle(.secondary)
+                    } else {
+                        Button {
+                            overlayVM.selectRoom(room.hmRoomUUID)
+                        } label: {
+                            environmentBadge(room: room, urgency: urgency)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .scaleEffect(inverseScale)
+                .position(center)
+            }
+        }
+        // Un singolo modificatore anima sia il canvas sia i badge
+        .animation(.easeInOut(duration: 0.4), value: isLoading)
     }
 
     // MARK: Badge
@@ -175,7 +185,7 @@ struct EnvironmentOverlayView: View {
 /// inside each card — the card set itself never changes.
 struct EnvironmentContextDashboard: View {
 
-    @ObservedObject var envVM: EnvironmentViewModel
+    var envVM: EnvironmentViewModel
     @Bindable var overlayVM: FloorplanOverlayViewModel
     /// UUID of the room the user last tapped on the floorplan.
     let highlightedRoomID: UUID?
@@ -188,6 +198,7 @@ struct EnvironmentContextDashboard: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ActionExecutionService.self) private var executionService
     @State private var aiService: AmbientalAIService?
+    @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
 
     // MARK: Private helpers
 
@@ -256,7 +267,7 @@ struct EnvironmentContextDashboard: View {
 
                 // ── Card 3: AI Azioni Consigliate ──────────────────────────
                 // Prefer real AI next-actions; fall back to basic sensor alert if none.
-                if !aiInsights.isEmpty {
+                if isAIEnabled && !aiInsights.isEmpty {
                     aiActionsCard(insights: aiInsights)
                 } else if let sensor = topAlert {
                     actionCard(sensor: sensor)
@@ -737,8 +748,7 @@ private struct AIActionChip: View {
     enum ChipState { case idle, executing, done, error }
     @State private var state: ChipState = .idle
 
-    private var icon: String {
-        if action.isTip { return "lightbulb.fill" }
+    private var actionIcon: String {
         switch action.accessoryActionType {
         case "on":       return "power"
         case "off":      return "power"
@@ -752,59 +762,82 @@ private struct AIActionChip: View {
         }
     }
 
+    private func chipBackground(opacity: Double, borderOpacity: Double) -> some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(color.opacity(opacity))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(color.opacity(borderOpacity), lineWidth: 1)
+            )
+    }
+
     var body: some View {
-        Button {
-            guard !action.isTip, state == .idle else { return }
-            execute()
-        } label: {
+        if action.isTip {
+            // Tip: plain non-interactive chip — no disabled-button visual artefact
             HStack(spacing: 5) {
-                switch state {
-                case .executing:
-                    ProgressView().scaleEffect(0.65).frame(width: 12, height: 12)
-                case .done:
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.green)
-                case .error:
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.red)
-                case .idle:
-                    Image(systemName: icon)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(action.isTip ? color.opacity(0.7) : color)
-                }
-                Text(state == .done ? "Fatto" : state == .error ? "Errore" : action.label)
+                Image(systemName: action.iconName ?? "lightbulb.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(color.opacity(0.7))
+                Text(action.label)
                     .font(.caption.weight(.medium))
                     .lineLimit(1)
-                    .foregroundStyle(
-                        state == .done ? .green : state == .error ? .red
-                        : action.isTip ? color.opacity(0.75) : color
-                    )
+                    .foregroundStyle(color.opacity(0.75))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(
-                        state == .done ? Color.green.opacity(0.10)
-                        : state == .error ? Color.red.opacity(0.10)
-                        : color.opacity(action.isTip ? 0.06 : 0.09)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(
-                                state == .done ? Color.green.opacity(0.35)
-                                : state == .error ? Color.red.opacity(0.35)
-                                : color.opacity(action.isTip ? 0.18 : 0.30),
-                                lineWidth: 1
-                            )
-                    )
-            )
+            .background(chipBackground(opacity: 0.06, borderOpacity: 0.18))
+        } else {
+            // Suggest: interactive button with executing/done/error states
+            Button {
+                guard state == .idle else { return }
+                execute()
+            } label: {
+                HStack(spacing: 5) {
+                    switch state {
+                    case .executing:
+                        ProgressView().scaleEffect(0.65).frame(width: 12, height: 12)
+                    case .done:
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.green)
+                    case .error:
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.red)
+                    case .idle:
+                        Image(systemName: actionIcon)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(color)
+                    }
+                    Text(state == .done ? "Fatto" : state == .error ? "Errore" : action.label)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                        .foregroundStyle(state == .done ? .green : state == .error ? .red : color)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(
+                            state == .done ? Color.green.opacity(0.10)
+                            : state == .error ? Color.red.opacity(0.10)
+                            : color.opacity(0.09)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(
+                                    state == .done ? Color.green.opacity(0.35)
+                                    : state == .error ? Color.red.opacity(0.35)
+                                    : color.opacity(0.30),
+                                    lineWidth: 1
+                                )
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(state == .executing || state == .done)
+            .animation(.spring(response: 0.25), value: state)
         }
-        .buttonStyle(.plain)
-        .disabled(action.isTip || state == .executing || state == .done)
-        .animation(.spring(response: 0.25), value: state)
     }
 
     private func execute() {

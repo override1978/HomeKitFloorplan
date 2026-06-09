@@ -61,6 +61,7 @@ final class RuleEngineService {
             actionType: parsedAction,
             actionValue: parsedValue,
             executionMode: shouldDelegateToHomeKit(triggerType: triggerType) ? "homeKit" : "inApp",
+            isEnabled: false,
             confidenceScore: pattern.confidence,
             generatedByAI: true
         )
@@ -415,10 +416,20 @@ final class RuleEngineService {
             actionAccessoryID: pattern.accessoryID.uuidString,
             actionType: "on",
             executionMode: "inApp",
+            isEnabled: false,
             confidenceScore: pattern.confidence,
             generatedByAI: true
         )
         let context = modelContainer.mainContext
+        context.insert(rule)
+        try? context.save()
+        rules.append(rule)
+    }
+
+    /// Inserts an already-built Rule into SwiftData and the in-memory list.
+    /// Used when BehavioralAnalysisService approves an AutomationOpportunity.
+    func insertRule(_ rule: Rule) {
+        let context = ModelContext(modelContainer)
         context.insert(rule)
         try? context.save()
         rules.append(rule)

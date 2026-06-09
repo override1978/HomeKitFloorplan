@@ -59,7 +59,7 @@ struct FloorplanEditorView: View {
     /// Overlay layer view model — scoped to this editor instance, keyed to the floorplan UUID.
     @State private var overlayVM: FloorplanOverlayViewModel?
     /// Shared environment view model used by both the overlay layer and the context panel.
-    @StateObject private var overlayEnvVM = EnvironmentViewModel()
+    @State private var overlayEnvVM = EnvironmentViewModel()
 
     /// Cached floorplan image — loaded once on appear and when imageFilename changes.
     /// Avoids repeated disk I/O on every body re-evaluation.
@@ -318,59 +318,61 @@ struct FloorplanEditorView: View {
         // Il Spacer esterno (nello ZStack) non è necessario perché la top bar
         // è allineata al top dello ZStack per natura.
         VStack(spacing: 0) {
-            HStack {
-                // Sinistra: sidebar / dismiss + nome floorplan
-                HStack(spacing: 10) {
-                    switch presentationStyle {
-                    case .splitView:
-                        if columnVisibility == .detailOnly {
-                            Button {
-                                withAnimation(.spring(response: 0.4)) {
-                                    columnVisibility = .all
-                                }
-                            } label: {
-                                GlassCircle(size: 40) {
-                                    Image(systemName: "sidebar.left")
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundStyle(.primary)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .transition(.scale.combined(with: .opacity))
-                        }
-                    case .pushed:
-                        Button {
-                            dismiss()
-                        } label: {
-                            GlassCircle(size: 40) {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(Color.red)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    GlassTitlePill {
-                        Text(floorplan.name)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                    }
-                }
-
-                Spacer()
-
-                // Centro: mode pill (nascosta in edit mode)
+            ZStack {
+                // Pill — centrata rispetto alla larghezza totale della barra,
+                // indipendente dai pesi dei gruppi laterali.
                 if !isEditing, let vm = overlayVM {
                     FloorplanModePill(overlayVM: vm, context: cachedOverlayContext)
                 }
 
-                Spacer()
+                // Sinistra e destra sovrapposti: non influenzano il centro della pill.
+                HStack {
+                    // Sinistra: sidebar / dismiss + nome floorplan
+                    HStack(spacing: 10) {
+                        switch presentationStyle {
+                        case .splitView:
+                            if columnVisibility == .detailOnly {
+                                Button {
+                                    withAnimation(.spring(response: 0.4)) {
+                                        columnVisibility = .all
+                                    }
+                                } label: {
+                                    GlassCircle(size: 40) {
+                                        Image(systemName: "sidebar.left")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundStyle(.primary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .transition(.scale.combined(with: .opacity))
+                            }
+                        case .pushed:
+                            Button {
+                                dismiss()
+                            } label: {
+                                GlassCircle(size: 40) {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(Color.red)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
 
-                // Destra: azioni (+ / scene / modifica)
-                topRightActions
+                        GlassTitlePill {
+                            Text(floorplan.name)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                        }
+                    }
+
+                    Spacer()
+
+                    // Destra: azioni (+ / scene / modifica)
+                    topRightActions
+                }
             }
             .animation(.spring(response: 0.4), value: columnVisibility)
             .animation(.spring(response: 0.35), value: isEditing)
@@ -775,18 +777,28 @@ struct FloorplanEditorView: View {
     private func refreshFloorplanImageCache() {
         guard floorplan.imageFilename != cachedFloorplanImageFilename
                 || cachedFloorplanImage == nil else { return }
-        cachedFloorplanImage = ImageStorageService.load(filename: floorplan.imageFilename)
-        cachedFloorplanImageFilename = floorplan.imageFilename
+        let filename = floorplan.imageFilename
+        cachedFloorplanImageFilename = filename
+        Task {
+            let image = await Task.detached(priority: .userInitiated) {
+                ImageStorageService.load(filename: filename)
+            }.value
+            cachedFloorplanImage = image
+        }
     }
 
     private func restoreZoom() {
         let ud = UserDefaults.standard
         guard ud.object(forKey: zoomScaleKey) != nil else { return }
-        zoomScale  = CGFloat(ud.double(forKey: zoomScaleKey))
-        zoomOffset = CGSize(
-            width:  CGFloat(ud.double(forKey: zoomOffsetXKey)),
-            height: CGFloat(ud.double(forKey: zoomOffsetYKey))
-        )
+        // Disable animations so the zoom/offset snap to the saved state without animating
+        // from the default values (scale 1.0, offset .zero).
+        withTransaction(Transaction(animation: nil)) {
+            zoomScale  = CGFloat(ud.double(forKey: zoomScaleKey))
+            zoomOffset = CGSize(
+                width:  CGFloat(ud.double(forKey: zoomOffsetXKey)),
+                height: CGFloat(ud.double(forKey: zoomOffsetYKey))
+            )
+        }
     }
     
     // MARK: - Image rect
@@ -820,7 +832,7 @@ struct FloorplanEditorView: View {
 
             // Z+2: overlay layer (environment / security / intelligence)
             if let vm = overlayVM, !isEditing {
-                overlayLayer(vm: vm, container: container)
+                overlayLayer(vm: vm, container: container, imageRect: rect)
             }
 
             // Marker accessori: visibili solo in modalità Controlli (o in modifica).
@@ -888,7 +900,7 @@ struct FloorplanEditorView: View {
     }
 
     @ViewBuilder
-    private func overlayLayer(vm: FloorplanOverlayViewModel, container: CGSize) -> some View {
+    private func overlayLayer(vm: FloorplanOverlayViewModel, container: CGSize, imageRect: CGRect) -> some View {
         switch vm.activeMode {
         case .controls:
             EmptyView()
@@ -897,6 +909,7 @@ struct FloorplanEditorView: View {
                 floorplan: floorplan,
                 overlayVM: vm,
                 containerSize: container,
+                imageRect: imageRect,
                 effectiveScale: effectiveScale,
                 effectiveOffset: effectiveOffset,
                 envVM: overlayEnvVM
@@ -906,6 +919,7 @@ struct FloorplanEditorView: View {
                 floorplan: floorplan,
                 overlayVM: vm,
                 containerSize: container,
+                imageRect: imageRect,
                 effectiveScale: effectiveScale,
                 effectiveOffset: effectiveOffset
             )
@@ -914,6 +928,7 @@ struct FloorplanEditorView: View {
                 floorplan: floorplan,
                 overlayVM: vm,
                 containerSize: container,
+                imageRect: imageRect,
                 effectiveScale: effectiveScale,
                 effectiveOffset: effectiveOffset
             )

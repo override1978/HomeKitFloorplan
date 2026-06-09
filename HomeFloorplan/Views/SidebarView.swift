@@ -22,10 +22,11 @@ struct SidebarView: View {
     @AppStorage("pinnedFloorplanIDs")  private var pinnedFloorplanIDsRaw: String = "[]"
 
     // Stato espansione sezioni (persiste tra sessioni)
-    @AppStorage("sidebar.section.overview.expanded")   private var overviewExpanded:   Bool = true
     @AppStorage("sidebar.section.floorplans.expanded") private var floorplansExpanded: Bool = true
-    @AppStorage("sidebar.section.pinned.expanded")     private var pinnedExpanded:     Bool = true
+    @AppStorage("sidebar.section.analysis.expanded")   private var analysisExpanded:   Bool = true
+    @AppStorage("sidebar.section.scenes.expanded")     private var scenesExpanded:     Bool = true
     @AppStorage("sidebar.section.settings.expanded")   private var settingsExpanded:   Bool = true
+    @AppStorage("ai.isEnabled")                        private var isAIEnabled:        Bool = false
 
     @State private var showingNewFloorplan = false
     @State private var pendingDeleteFloorplan: Floorplan?
@@ -94,9 +95,57 @@ struct SidebarView: View {
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
 
-            // MARK: Panoramica
+            // MARK: Planimetrie — Nuova + pinnate
             Section {
-                DisclosureGroup(isExpanded: $overviewExpanded) {
+                DisclosureGroup(isExpanded: $floorplansExpanded) {
+                    Button {
+                        showingNewFloorplan = true
+                    } label: {
+                        Label(String(localized: "sidebar.newFloorplan", defaultValue: "Nuova planimetria"), systemImage: "plus.rectangle.on.rectangle")
+                            .foregroundStyle(.tint)
+                    }
+                    .buttonStyle(.plain)
+                    NavigationLink(value: SidebarSelection.allFloorplans) {
+                        Label(String(localized: "sidebar.allFloorplans", defaultValue: "Tutte le planimetrie"), systemImage: "rectangle.stack")
+                    }
+                    ForEach(pinnedFloorplans) { floorplan in
+                        pinnedRow(floorplan)
+                    }
+                } label: {
+                    Text(String(localized: "sidebar.section.floorplans", defaultValue: "Planimetrie"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            } footer: {
+                if pinnedFloorplans.isEmpty && floorplansExpanded {
+                    Text(String(localized: "sidebar.pinned.empty.hint", defaultValue: "Vai in \"Tutte le planimetrie\", tieni premuto su una e scegli \"Aggiungi ad Accesso rapido\"."))
+                }
+            }
+
+            // MARK: Analisi — Ambiente, Sicurezza, Abitudini, Intelligenza
+            Section {
+                DisclosureGroup(isExpanded: $analysisExpanded) {
+                    NavigationLink(value: SidebarSelection.environment) {
+                        Label(String(localized: "sidebar.environment", defaultValue: "Ambiente"), systemImage: "leaf.fill")
+                    }
+                    NavigationLink(value: SidebarSelection.security) {
+                        Label(String(localized: "sidebar.security", defaultValue: "Sicurezza"), systemImage: "shield.lefthalf.filled")
+                    }
+                    if isAIEnabled {
+                        NavigationLink(value: SidebarSelection.homeIntelligence) {
+                            Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligenza"), systemImage: "sparkles.rectangle.stack")
+                        }
+                    }
+                } label: {
+                    Text(String(localized: "sidebar.section.analysis", defaultValue: "Analisi"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // MARK: Scene & Automazioni — con Accessori e Log
+            Section {
+                DisclosureGroup(isExpanded: $scenesExpanded) {
                     NavigationLink(value: SidebarSelection.allAccessories) {
                         Label(String(localized: "sidebar.accessories", defaultValue: "Accessori"), systemImage: "square.grid.2x2")
                     }
@@ -109,62 +158,10 @@ struct SidebarView: View {
                     NavigationLink(value: SidebarSelection.activityLog) {
                         Label(String(localized: "sidebar.activityLog", defaultValue: "Log Attività"), systemImage: "clock.arrow.circlepath")
                     }
-                    NavigationLink(value: SidebarSelection.security) {
-                        Label(String(localized: "sidebar.security", defaultValue: "Sicurezza"), systemImage: "shield.lefthalf.filled")
-                    }
-                    NavigationLink(value: SidebarSelection.environment) {
-                        Label(String(localized: "sidebar.environment", defaultValue: "Ambiente"), systemImage: "leaf.fill")
-                    }
-                    NavigationLink(value: SidebarSelection.habits) {
-                        Label(String(localized: "sidebar.habits", defaultValue: "Abitudini"), systemImage: "brain.head.profile")
-                    }
                 } label: {
-                    Text(String(localized: "sidebar.section.overview", defaultValue: "Panoramica"))
+                    Text(String(localized: "sidebar.section.scenesAndAutomations", defaultValue: "Scene & Automazioni"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
-                }
-            }
-
-            // MARK: Planimetrie
-            Section {
-                DisclosureGroup(isExpanded: $floorplansExpanded) {
-                    NavigationLink(value: SidebarSelection.allFloorplans) {
-                        Label(String(localized: "sidebar.allFloorplans", defaultValue: "Tutte le planimetrie"), systemImage: "rectangle.stack")
-                    }
-                    Button {
-                        showingNewFloorplan = true
-                    } label: {
-                        Label(String(localized: "sidebar.newFloorplan", defaultValue: "Nuova planimetria"), systemImage: "plus.rectangle.on.rectangle")
-                            .foregroundStyle(.tint)
-                    }
-                    .buttonStyle(.plain)
-                } label: {
-                    Text(String(localized: "sidebar.section.floorplans", defaultValue: "Planimetrie"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            // MARK: Accesso rapido (planimetrie pinnate)
-            Section {
-                DisclosureGroup(isExpanded: $pinnedExpanded) {
-                    if pinnedFloorplans.isEmpty {
-                        Label(String(localized: "sidebar.pinned.empty", defaultValue: "Nessuna pinnata"), systemImage: "pin.slash")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(pinnedFloorplans) { floorplan in
-                            pinnedRow(floorplan)
-                        }
-                    }
-                } label: {
-                    Text(String(localized: "sidebar.section.pinned", defaultValue: "Accesso rapido"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-            } footer: {
-                if pinnedFloorplans.isEmpty && pinnedExpanded {
-                    Text(String(localized: "sidebar.pinned.empty.hint", defaultValue: "Vai in \"Tutte le planimetrie\", tieni premuto su una e scegli \"Aggiungi ad Accesso rapido\"."))
                 }
             }
 
@@ -258,7 +255,7 @@ struct SidebarView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "house.fill")
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(BrandColor.primary)
                             .font(.subheadline)
 
                         VStack(alignment: .leading, spacing: 1) {
@@ -276,7 +273,7 @@ struct SidebarView: View {
                         if homeKit.availableHomes.count > 1 {
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.tint)
+                                .foregroundStyle(BrandColor.primary)
                         }
                     }
                     .padding(.horizontal, 14)
@@ -366,6 +363,7 @@ enum SidebarSelection: Hashable {
     case security
     case environment
     case habits
+    case homeIntelligence
     case debugHomeKit
     case settings
 }

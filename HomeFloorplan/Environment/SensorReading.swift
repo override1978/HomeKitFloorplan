@@ -7,6 +7,8 @@ import SwiftData
 /// Persiste ogni campionamento eseguito da SensorLogger.
 @Model
 final class SensorReading {
+    #Index<SensorReading>([\.timestamp], [\.roomName], [\.serviceTypeRaw], [\.roomName, \.serviceTypeRaw])
+
     @Attribute(.unique) var id: UUID
     var accessoryUUID: String
     var serviceTypeRaw: String

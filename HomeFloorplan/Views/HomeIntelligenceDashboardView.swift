@@ -1,0 +1,1856 @@
+import SwiftUI
+import SwiftData
+
+// MARK: - LearningPhase view extension
+
+private extension LearningPhase {
+    var accentColor: Color {
+        switch self {
+        case .observing:      return .gray
+        case .building:       return .orange
+        case .recognizing:    return Color(red: 0.7, green: 0.6, blue: 0.0)
+        case .understanding:  return BrandColor.primary
+        case .mature:         return .green
+        }
+    }
+}
+
+// MARK: - HomeIntelligenceDashboardView
+
+/// Home Intelligence Dashboard — Sprint 12.
+///
+/// Layout (scrollable):
+///   1. PhaseHeroCard        — 5-phase learning system + House Knowledge Score
+///   2. AI Suggestions       — pending habit patterns with approve / dismiss actions
+///   3. AI Insights          — active environmental insights (last 7 days)
+///   4. Environmental Trends — top room per sensor type (horizontal scroll)
+///   5. Learned Habits       — detected patterns with confidence bars
+///   6. Home Knowledge       — per-domain maturity grid
+///   7. AI Effectiveness     — trust score + per-intent breakdown
+struct HomeIntelligenceDashboardView: View {
+
+    @Environment(HabitAnalysisService.self)          private var habitService
+    @Environment(BehavioralAnalysisService.self)     private var behavioralService
+    @Environment(RuleEngineService.self)             private var ruleEngine
+    @Environment(ActionExecutionService.self)        private var executionService
+    @Environment(ProactiveIntelligenceService.self)  private var proactiveService
+    @Environment(OccupancyPredictionService.self)    private var occupancyService
+    @Environment(LocationPresenceService.self)       private var locationService
+    @Environment(MaintenancePredictionService.self)  private var maintenanceService
+    @Environment(FamilyPresenceService.self)         private var familyPresenceService
+    @Environment(\.modelContext)                     private var modelContext
+
+    @State private var service: HomeKnowledgeService?
+    @State private var isRefreshing: Bool = false
+    @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
+
+    private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+
+    // Static formatters — created once, reused on every render.
+    private static let feedTimeFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
+    }()
+    private static let arrivalTimeFormatter: DateFormatter = {
+        let f = DateFormatter(); f.timeStyle = .short; return f
+    }()
+    private static let arrivalDayFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEEE"; return f
+    }()
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let svc = service {
+                    scrollContent(svc: svc)
+                } else {
+                    loadingState
+                }
+            }
+            .navigationTitle(
+                String(localized: "intelligence.nav.title", defaultValue: "Intelligenza")
+            )
+            .navigationBarTitleDisplayMode(.large)
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .toolbar { toolbarContent }
+        }
+        .onAppear {
+            // Create service synchronously on first appear so the view never
+            // shows a blank loading screen — behavioral + feed sections render immediately.
+            if service == nil {
+                service = HomeKnowledgeService(modelContainer: modelContext.container)
+            }
+        }
+        .task { await performRefresh() }
+    }
+
+    // MARK: - Scroll content
+
+    @ViewBuilder
+    private func scrollContent(svc: HomeKnowledgeService) -> some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                profileRow
+
+                // ── Sezione 1: Cosa sta succedendo ora ───────────────
+                IntelligenceSectionGroup(
+                    title: String(localized: "intelligence.section.now",
+                                  defaultValue: "Cosa sta succedendo"),
+                    icon: "eye.fill"
+                )
+                feedSection()
+                occupancySection()
+                aiInsightsSection(svc: svc)
+                predictiveAlertsSection(svc: svc)
+
+                // ── Sezione 2: Cosa ho imparato ──────────────────────
+                IntelligenceSectionGroup(
+                    title: String(localized: "intelligence.section.learned",
+                                  defaultValue: "Cosa ho imparato"),
+                    icon: "brain.fill"
+                )
+                PhaseHeroCard(svc: svc)
+                behavioralOpportunitiesSection()
+                habitsSection()
+                trendsSection(svc: svc)
+
+                // ── Sezione 3: Cosa fare ──────────────────────────────
+                IntelligenceSectionGroup(
+                    title: String(localized: "intelligence.section.todo",
+                                  defaultValue: "Cosa fare"),
+                    icon: "bolt.fill"
+                )
+                aiSuggestionsSection()
+                domainsSection(svc: svc)
+                effectivenessSection(svc: svc)
+
+                if !svc.hasAnyData {
+                    if svc.isLoading { loadingCard } else { emptyStateCard }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
+        }
+        .refreshable { await performRefresh() }
+    }
+
+    // MARK: - Section: Behavioral Opportunities (on-device detected patterns)
+
+    @ViewBuilder
+    private func behavioralOpportunitiesSection() -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(
+                icon: "brain.head.profile",
+                title: String(localized: "behavioral.section.opportunities",
+                              defaultValue: "Comportamenti rilevati")
+            )
+            behavioralOpportunitiesContent()
+        }
+    }
+
+    @ViewBuilder
+    private func behavioralOpportunitiesContent() -> some View {
+        let pending = behavioralService.pendingOpportunities
+
+        if behavioralService.isAnalyzing {
+            // Analysis running
+            HStack(spacing: 12) {
+                ProgressView().scaleEffect(0.85)
+                Text(String(localized: "behavioral.analyzing",
+                            defaultValue: "Analisi comportamenti in corso…"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+            )
+
+        } else if !pending.isEmpty {
+            // Surfaceable opportunities
+            VStack(spacing: 10) {
+                ForEach(Array(pending.prefix(3))) { opp in
+                    BehavioralOpportunityCard(
+                        opportunity: opp,
+                        onApprove: {
+                            let rule = behavioralService.approve(opp)
+                            ruleEngine.insertRule(rule)
+                        },
+                        onSnooze:  { behavioralService.snooze(opp) },
+                        onDismiss: { behavioralService.dismiss(opp) }
+                    )
+                }
+            }
+
+        } else if behavioralService.visiblePatternCount > 0 {
+            // Patterns detected but not yet at stable confidence
+            let count = behavioralService.visiblePatternCount
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(BrandColor.primary.opacity(0.10))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "brain")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(BrandColor.primary)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(
+                        String(
+                            format: String(localized: "behavioral.forming.title",
+                                           defaultValue: "%d comportamenti in apprendimento"),
+                            count
+                        )
+                    )
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    Text(String(localized: "behavioral.forming.subtitle",
+                                defaultValue: "Quando la confidenza sarà sufficiente, proporrò un'automazione."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.regularMaterial)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(BrandColor.primary.opacity(0.12), lineWidth: 1)
+                    )
+            )
+
+        } else {
+            // No patterns yet — observing phase
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(Color.secondary.opacity(0.10))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "eye")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(String(localized: "behavioral.observing.title",
+                                defaultValue: "Sto osservando le tue abitudini"))
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(String(localized: "behavioral.observing.subtitle",
+                                defaultValue: "Dopo qualche giorno di utilizzo apparirà qui il primo suggerimento."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+            )
+        }
+    }
+
+    // MARK: - Owner Indicator
+
+    /// Shows a subtle read-only pill with the home owner's name when a profile
+    /// has been auto-detected. Hidden in global (no-profile) mode.
+    @ViewBuilder
+    private var profileRow: some View {
+        if let profile = familyPresenceService.activeProfile {
+            let accent = profileAccent(profile.colorToken)
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(accent)
+                    .frame(width: 8, height: 8)
+                Text(profile.name)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                Text(String(localized: "profile.owner.label", defaultValue: "Proprietario"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(accent.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(accent.opacity(0.20), lineWidth: 1)
+                    )
+            )
+        }
+    }
+
+    private func profileAccent(_ token: String?) -> Color {
+        switch token {
+        case "green":  return .green
+        case "orange": return .orange
+        case "purple": return .purple
+        case "red":    return .red
+        case "teal":   return .teal
+        default:       return BrandColor.primary
+        }
+    }
+
+    // MARK: - Section: Predictive Alerts (Sprint 25.C)
+
+    @ViewBuilder
+    private func predictiveAlertsSection(svc: HomeKnowledgeService) -> some View {
+        if !svc.predictiveAlerts.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader(
+                    icon: "clock.arrow.2.circlepath",
+                    title: String(localized: "intelligence.predictive.header",
+                                  defaultValue: "Cosa probabilmente succederà")
+                )
+                VStack(spacing: 0) {
+                    ForEach(Array(svc.predictiveAlerts.enumerated()), id: \.element.id) { idx, alert in
+                        PredictiveAlertRow(alert: alert)
+                        if idx < svc.predictiveAlerts.count - 1 {
+                            Divider().padding(.leading, 62)
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+                )
+            }
+        }
+    }
+
+    // MARK: - Section: Occupancy Prediction
+
+    @ViewBuilder
+    private func occupancySection() -> some View {
+        if let pred = occupancyService.nextArrival, pred.meanMinuteOfDay > 0 {
+            let minutesUntil = Int(pred.estimatedArrival.timeIntervalSinceNow / 60)
+            let warmUp = occupancyService.shouldSuggestHVACWarmUp(
+                presenceState: locationService.presenceState ?? ContextResolver.resolve().presenceState
+            )
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader(
+                    icon: "figure.walk.arrival",
+                    title: String(localized: "intelligence.occupancy.header",
+                                  defaultValue: "Prossimo Rientro")
+                )
+                HStack(spacing: 16) {
+                    VStack(spacing: 2) {
+                        Text(Self.arrivalTimeFormatter.string(from: pred.estimatedArrival))
+                            .font(.title2.weight(.bold))
+                            .monospacedDigit()
+                            .foregroundStyle(.primary)
+                        Text(arrivalDayLabel(pred.estimatedArrival))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(minWidth: 54, alignment: .center)
+
+                    Divider().frame(height: 36)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        if minutesUntil <= 60 {
+                            Label(
+                                String(format: String(localized: "occupancy.inMinutes",
+                                                      defaultValue: "Tra %d min"), minutesUntil),
+                                systemImage: "clock.fill"
+                            )
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(BrandColor.primary)
+                        } else {
+                            Text(String(format: String(localized: "occupancy.inHours",
+                                                       defaultValue: "Tra ~%.0f ore"),
+                                        Double(minutesUntil) / 60.0))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.caption2)
+                                .foregroundStyle(arrivalConfidenceColor(pred.confidenceLabel))
+                            Text(pred.confidenceLabel)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if pred.stdDevMinutes > 0 {
+                                Text("·")
+                                    .font(.caption).foregroundStyle(.tertiary)
+                                Text(String(format: "±%.0f min", pred.stdDevMinutes))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if warmUp {
+                        VStack(spacing: 3) {
+                            Image(systemName: "thermometer.and.liquid.waves")
+                                .font(.title3)
+                                .foregroundStyle(.orange)
+                                .symbolEffect(.pulse)
+                            Text(String(localized: "occupancy.warmup", defaultValue: "Preriscalda"))
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+                )
+            }
+        }
+    }
+
+    private func arrivalDayLabel(_ date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date)    { return String(localized: "day.today",    defaultValue: "Oggi") }
+        if cal.isDateInTomorrow(date) { return String(localized: "day.tomorrow", defaultValue: "Domani") }
+        return Self.arrivalDayFormatter.string(from: date).capitalized
+    }
+
+    private func arrivalConfidenceColor(_ label: String) -> Color {
+        switch label {
+        case String(localized: "occupancy.confidence.high",   defaultValue: "Alta"):   return .green
+        case String(localized: "occupancy.confidence.medium", defaultValue: "Media"):  return .orange
+        default:                                                                         return .secondary
+        }
+    }
+
+    // MARK: - Section: Intelligence Feed (recent notifications, always visible)
+
+    @ViewBuilder
+    private func feedSection() -> some View {
+        let recent = Array(proactiveService.feedNotifications.prefix(3))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                sectionHeader(
+                    icon: "clock.badge",
+                    title: String(localized: "intelligence.feed.header",
+                                  defaultValue: "Diario di Casa")
+                )
+                if proactiveService.unreadCount > 0 {
+                    Text("\(proactiveService.unreadCount)")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(BrandColor.primary, in: Capsule())
+                }
+                Spacer()
+                NavigationLink(destination: IntelligenceFeedView()) {
+                    Text(String(localized: "intelligence.feed.viewAll", defaultValue: "Vedi tutto"))
+                        .font(.subheadline)
+                        .foregroundStyle(BrandColor.primary)
+                }
+            }
+            if recent.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "clock.badge.questionmark")
+                        .font(.title3)
+                        .foregroundStyle(.secondary.opacity(0.5))
+                    Text(String(localized: "feed.dashboard.empty",
+                                defaultValue: "Nessun evento ancora. L'AI inizierà a popolare il diario dopo qualche ora di utilizzo."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+                )
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(recent.enumerated()), id: \.element.id) { idx, notif in
+                        compactFeedRow(notif)
+                        if idx < recent.count - 1 {
+                            Divider().padding(.leading, 76)
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+                )
+            }
+        }
+    }
+
+    private func compactFeedRow(_ notif: ProactiveNotification) -> some View {
+        let color   = notificationColor(for: notif.category)
+        let timeStr = Self.feedTimeFormatter.string(from: notif.lastUpdatedAt)
+        return HStack(alignment: .top, spacing: 10) {
+            Text(timeStr)
+                .font(.caption2.weight(.medium).monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .frame(width: 36, alignment: .trailing)
+                .padding(.top, 4)
+            ZStack {
+                Circle()
+                    .fill(color.opacity(notif.status.isLive ? 0.16 : 0.10))
+                    .frame(width: 28, height: 28)
+                Image(systemName: notif.category.sfSymbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(color)
+            }
+            .overlay {
+                if notif.status.isLive {
+                    Circle()
+                        .strokeBorder(color.opacity(0.5), lineWidth: 1)
+                        .frame(width: 28, height: 28)
+                }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(notif.displayHeadline)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(notif.displayBody)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: - Section: AI Suggestions (pending patterns with actions)
+
+    @ViewBuilder
+    private func aiSuggestionsSection() -> some View {
+        let pending = habitService.pendingPatterns
+        if !pending.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader(
+                    icon: "sparkles",
+                    title: String(localized: "intelligence.suggestions.header",
+                                  defaultValue: "Suggerimenti AI")
+                )
+                VStack(spacing: 10) {
+                    ForEach(Array(pending.prefix(3))) { pattern in
+                        AISuggestionCard(
+                            pattern: pattern,
+                            onApprove: { habitService.approve(pattern) },
+                            onDismiss:  { habitService.dismiss(pattern) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Section: AI Insights (active only)
+
+    @ViewBuilder
+    private func aiInsightsSection(svc: HomeKnowledgeService) -> some View {
+        let active = svc.recentInsights.filter {
+            $0.statusRaw == InsightPersistedStatus.active.rawValue
+        }
+        if !active.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader(
+                    icon: "waveform.path.ecg",
+                    title: String(localized: "intelligence.insights.header",
+                                  defaultValue: "Insight ambientali")
+                )
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(active.enumerated()), id: \.element.id) { idx, insight in
+                        AIInsightTimelineRow(insight: insight)
+                        if idx < active.count - 1 {
+                            Divider().padding(.leading, 48)
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+                )
+            }
+        }
+    }
+
+    // MARK: - Section: Environmental Trends (horizontal scroll)
+
+    @ViewBuilder
+    private func trendsSection(svc: HomeKnowledgeService) -> some View {
+        if !svc.environmentalTrends.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader(
+                    icon: "thermometer.medium",
+                    title: String(localized: "intelligence.trends.header",
+                                  defaultValue: "Trend ambientali (7g)")
+                )
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(svc.environmentalTrends) { trend in
+                            RoomTrendCard(trend: trend)
+                                .frame(width: 160)
+                        }
+                    }
+                    .padding(.horizontal, 1)
+                }
+            }
+        }
+    }
+
+    // MARK: - Section: Learned Habits (approved first, then by confidence)
+
+    @ViewBuilder
+    private func habitsSection() -> some View {
+        let visible = habitService.patterns
+            .filter { $0.status != .dismissed }
+            .sorted { lhs, rhs in
+                if lhs.status == .approved && rhs.status != .approved { return true }
+                if rhs.status == .approved && lhs.status != .approved { return false }
+                return lhs.confidence > rhs.confidence
+            }
+        if !visible.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader(
+                    icon: "brain",
+                    title: String(localized: "intelligence.habits.header",
+                                  defaultValue: "Abitudini apprese")
+                )
+                let capped = Array(visible.prefix(6))
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(capped.enumerated()), id: \.element.id) { idx, pattern in
+                        HabitConfidenceRow(pattern: pattern)
+                        if idx < capped.count - 1 {
+                            Divider().padding(.leading, 48)
+                        }
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+                )
+            }
+        }
+    }
+
+    // MARK: - Section: Home Knowledge (domain maturities)
+
+    @ViewBuilder
+    private func domainsSection(svc: HomeKnowledgeService) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(
+                icon: "chart.bar.fill",
+                title: String(localized: "intelligence.domains.header",
+                              defaultValue: "Conoscenza casa")
+            )
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(svc.domainMaturities) { domain in
+                    DomainCard(domain: domain)
+                }
+            }
+        }
+    }
+
+    // MARK: - Section: AI Effectiveness & Trust
+
+    @ViewBuilder
+    private func effectivenessSection(svc: HomeKnowledgeService) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(
+                icon: "chart.line.uptrend.xyaxis",
+                title: String(localized: "intelligence.effectiveness.header",
+                              defaultValue: "Efficacia AI")
+            )
+            if svc.totalExecuted == 0 {
+                if !isAIEnabled {
+                    aiDisabledCard
+                } else {
+                    emptyCard(
+                        icon: "sparkle",
+                        text: String(localized: "intelligence.ai.noData",
+                                     defaultValue: "Raccolta dati in corso")
+                    )
+                }
+            } else {
+                VStack(spacing: 10) {
+                    if svc.aiTrustScore > 0 {
+                        TrustScoreCard(score: svc.aiTrustScore)
+                    }
+                    HStack(spacing: 10) {
+                        AIStatTile(
+                            value: svc.totalExecuted,
+                            label: String(localized: "intelligence.ai.executed.label",
+                                          defaultValue: "Eseguiti"),
+                            color: BrandColor.primary
+                        )
+                        AIStatTile(
+                            value: svc.totalHelpful,
+                            label: String(localized: "intelligence.ai.helpful.label",
+                                          defaultValue: "Utili"),
+                            color: .green
+                        )
+                    }
+                    if !svc.effectivenessBreakdown.isEmpty {
+                        let capped = Array(svc.effectivenessBreakdown.prefix(5))
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(capped.enumerated()), id: \.element.id) { idx, item in
+                                IntentEffectivenessRow(
+                                    item: item,
+                                    intentLabel: intentLabel(for: item.intentRaw)
+                                )
+                                if idx < capped.count - 1 {
+                                    Divider().padding(.leading, 16)
+                                }
+                            }
+                        }
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Empty / Loading
+
+    private var emptyState: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                behavioralOpportunitiesSection()
+                emptyStateCard
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
+        }
+    }
+
+    private var emptyStateCard: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 48))
+                .foregroundStyle(BrandColor.primary.opacity(0.6))
+
+            VStack(spacing: 8) {
+                Text(
+                    String(localized: "intelligence.empty.title",
+                           defaultValue: "La tua casa sta iniziando a raccontare le sue abitudini.")
+                )
+                .font(.headline.weight(.semibold))
+                .multilineTextAlignment(.center)
+
+                Text(
+                    String(localized: "intelligence.empty.subtitle",
+                           defaultValue: "Usa l'app per qualche giorno e questo pannello si animerà.")
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+        )
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 16) {
+            ProgressView().scaleEffect(1.1)
+            Text(
+                String(localized: "intelligence.loading", defaultValue: "Analisi in corso…")
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var loadingCard: some View {
+        HStack(spacing: 12) {
+            ProgressView().scaleEffect(0.85)
+            Text(String(localized: "intelligence.loading", defaultValue: "Analisi in corso…"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+        )
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                Task { await performRefresh() }
+            } label: {
+                if isRefreshing {
+                    ProgressView().frame(width: 20, height: 20)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
+            }
+            .disabled(isRefreshing)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func sectionHeader(icon: String, title: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(BrandColor.primary)
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.4)
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private func emptyCard(icon: String, text: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+                .frame(width: 26)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .italic()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+        )
+    }
+
+    // Shown in effectivenessSection when AI is disabled and there's no data yet.
+    private var aiDisabledCard: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "brain.slash")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(String(localized: "intelligence.ai.disabled.title",
+                            defaultValue: "AI non attiva"))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text(String(localized: "intelligence.ai.disabled.detail",
+                            defaultValue: "Attiva AI nelle Impostazioni per ricevere suggerimenti contestuali."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            NavigationLink(destination: AISettingsView()) {
+                Text(String(localized: "intelligence.ai.disabled.action",
+                            defaultValue: "Impostazioni"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandColor.primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(BrandColor.primary.opacity(0.10), in: Capsule())
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.secondary.opacity(0.10), lineWidth: 1)
+                )
+        )
+    }
+
+    private func performRefresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        if service == nil {
+            service = HomeKnowledgeService(modelContainer: modelContext.container)
+        }
+        await service?.refresh(
+            habitPatterns: habitService.patterns,
+            rules: ruleEngine.rules,
+            tracker: executionService.tracker,
+            aiIsOperational: AISettings().isOperational
+        )
+        await behavioralService.analyzeIfNeeded()
+        await proactiveService.runCycleIfNeeded(
+            behavioralService:  behavioralService,
+            habitService:       habitService,
+            occupancyService:   occupancyService,
+            maintenanceService: maintenanceService,
+            presenceOverride:   locationService.presenceState
+        )
+    }
+
+    // MARK: - Intent label mapping
+
+    private func intentLabel(for raw: String) -> String {
+        switch raw {
+        // Environmental
+        case "coolRoom":          return String(localized: "intelligence.intent.coolRoom",          defaultValue: "Raffrescamento")
+        case "heatRoom":          return String(localized: "intelligence.intent.heatRoom",          defaultValue: "Riscaldamento")
+        case "reduceHumidity":    return String(localized: "intelligence.intent.reduceHumidity",    defaultValue: "Riduzione umidità")
+        case "increaseHumidity":  return String(localized: "intelligence.intent.increaseHumidity",  defaultValue: "Aumento umidità")
+        case "improveAirQuality": return String(localized: "intelligence.intent.improveAirQuality", defaultValue: "Qualità aria")
+        case "ventilateRoom":     return String(localized: "intelligence.intent.ventilateRoom",     defaultValue: "Ventilazione")
+        case "reduceCO2":         return String(localized: "intelligence.intent.reduceCO2",         defaultValue: "Riduzione CO₂")
+        case "reduceVOC":         return String(localized: "intelligence.intent.reduceVOC",         defaultValue: "Riduzione VOC")
+        case "respondToSmoke":    return String(localized: "intelligence.intent.respondToSmoke",    defaultValue: "Allarme fumo")
+        case "respondToCO":       return String(localized: "intelligence.intent.respondToCO",       defaultValue: "Allarme CO")
+        // Sprint 28 — Lighting
+        case "brightenRoom":      return String(localized: "intelligence.intent.brightenRoom",      defaultValue: "Illuminazione")
+        case "dimRoom":           return String(localized: "intelligence.intent.dimRoom",           defaultValue: "Attenuazione luce")
+        case "setCircadianLight": return String(localized: "intelligence.intent.setCircadianLight", defaultValue: "Luce circadiana")
+        case "setScene":          return String(localized: "intelligence.intent.setScene",          defaultValue: "Scena")
+        // Sprint 29 — Presence
+        case "prepareForArrival": return String(localized: "intelligence.intent.prepareForArrival", defaultValue: "Prepara arrivo")
+        case "secureForDeparture":return String(localized: "intelligence.intent.secureDeparture",   defaultValue: "Sicurezza partenza")
+        // Sprint 30 — Energy
+        case "reduceConsumption": return String(localized: "intelligence.intent.reduceConsumption", defaultValue: "Riduzione consumi")
+        case "enableEcoMode":     return String(localized: "intelligence.intent.enableEcoMode",     defaultValue: "Eco Mode")
+        case "schedulePeakHours": return String(localized: "intelligence.intent.schedulePeakHours", defaultValue: "Ore di picco")
+        // Sprint 32 — Security
+        case "lockAll":           return String(localized: "intelligence.intent.lockAll",           defaultValue: "Lock Doors")
+        case "closeGarage":       return String(localized: "intelligence.intent.closeGarage",       defaultValue: "Close Garage")
+        case "armNightSecurity":  return String(localized: "intelligence.intent.armNightSecurity",  defaultValue: "Night Security")
+        case "armAwaySecurity":   return String(localized: "intelligence.intent.armAwaySecurity",   defaultValue: "Away Security")
+        default: return raw
+        }
+    }
+}
+
+// MARK: - PhaseHeroCard
+
+private struct PhaseHeroCard: View {
+
+    let svc: HomeKnowledgeService
+    @State private var animatedProgress: Double = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+
+            // Row 1: phase label + pill
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: svc.learningPhase.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(svc.learningPhase.accentColor)
+
+                Text(
+                    String(
+                        format: String(localized: "intelligence.hero.phase",
+                                       defaultValue: "Fase %d di 5"),
+                        svc.learningPhase.phaseNumber
+                    )
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.6)
+
+                Spacer()
+
+                Text(svc.learningPhase.localizedTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(svc.learningPhase.accentColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(svc.learningPhase.accentColor.opacity(0.12), in: Capsule())
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
+
+            // Row 2: phase description
+            HStack {
+                Text(svc.learningPhase.localizedDescription)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 14)
+
+            // Row 3: learning narrative — replaces opaque numeric score (Sprint 25.B)
+            HStack {
+                Text(svc.learningNarrative)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 14)
+
+            // Row 4: progress bar
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(svc.learningPhase.accentColor.opacity(0.12))
+                        .frame(height: 5)
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [svc.learningPhase.accentColor.opacity(0.6),
+                                         svc.learningPhase.accentColor],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(8, geo.size.width * animatedProgress), height: 5)
+                        .animation(.spring(response: 1.0, dampingFraction: 0.75),
+                                   value: animatedProgress)
+                }
+            }
+            .frame(height: 5)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 18)
+
+            // Row 5: stats
+            HStack(spacing: 0) {
+                statChip(
+                    icon: "calendar",
+                    value: svc.daysSinceLearningStarted == 1
+                        ? String(localized: "intelligence.hero.day.one", defaultValue: "1 giorno")
+                        : String(
+                            format: String(localized: "intelligence.hero.days",
+                                           defaultValue: "%lld giorni"),
+                            Int64(svc.daysSinceLearningStarted)
+                          ),
+                    label: String(localized: "intelligence.hero.learningSince",
+                                  defaultValue: "Apprendo da")
+                )
+                Divider()
+                    .frame(width: 1, height: 36)
+                    .padding(.horizontal, 14)
+                    .opacity(0.4)
+                statChip(
+                    icon: "chart.bar",
+                    value: svc.totalEventsCount.formatted(),
+                    label: String(localized: "intelligence.hero.eventsAnalyzed",
+                                  defaultValue: "Dati raccolti")
+                )
+                Divider()
+                    .frame(width: 1, height: 36)
+                    .padding(.horizontal, 14)
+                    .opacity(0.4)
+                statChip(
+                    icon: "star.fill",
+                    value: "\(svc.stableHabitsCount)",
+                    label: String(localized: "intelligence.hero.stableHabits",
+                                  defaultValue: "Stabili")
+                )
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 18)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(svc.learningPhase.accentColor.opacity(0.5))
+                        .frame(height: 3)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        )
+        .shadow(color: svc.learningPhase.accentColor.opacity(0.10), radius: 12, x: 0, y: 4)
+        .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
+        .onAppear {
+            withAnimation(.spring(response: 0.9, dampingFraction: 0.7)) {
+                animatedProgress = svc.learningProgress
+            }
+        }
+        .onChange(of: svc.learningProgress) { _, v in
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                animatedProgress = v
+            }
+        }
+    }
+
+    private func statChip(icon: String, value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Text(value)
+                .font(.system(.body, design: .rounded).weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+    }
+}
+
+// MARK: - TrustScoreCard
+
+private struct TrustScoreCard: View {
+
+    let score: Int
+
+    private var color: Color {
+        switch score {
+        case 75...100: return .green
+        case 50..<75:  return Color(red: 0.7, green: 0.6, blue: 0.0)
+        default:       return .orange
+        }
+    }
+
+    private var shieldIcon: String {
+        score >= 75 ? "checkmark.shield.fill" : score >= 50 ? "shield.fill" : "shield"
+    }
+
+    private var qualityLabel: String {
+        score >= 75
+            ? String(localized: "intelligence.trust.high",   defaultValue: "Alta")
+            : score >= 50
+            ? String(localized: "intelligence.trust.medium", defaultValue: "Buona")
+            : String(localized: "intelligence.trust.low",    defaultValue: "In crescita")
+    }
+
+    var body: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(localized: "intelligence.trust.label",
+                            defaultValue: "Affidabilità AI"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+                HStack(alignment: .lastTextBaseline, spacing: 3) {
+                    Text("\(score)")
+                        .font(.system(size: 40, weight: .bold, design: .rounded))
+                        .foregroundStyle(color)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                    Text("/ 100")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(color.opacity(0.6))
+                        .padding(.bottom, 4)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 6) {
+                Image(systemName: shieldIcon)
+                    .font(.system(size: 30))
+                    .foregroundStyle(color)
+                Text(qualityLabel)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(color)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(color.opacity(0.20), lineWidth: 1)
+                )
+        )
+    }
+}
+
+// MARK: - AISuggestionCard
+
+private struct AISuggestionCard: View {
+
+    let pattern: HabitPattern
+    let onApprove: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: pattern.sfSymbol)
+                    .font(.system(size: 20))
+                    .foregroundStyle(BrandColor.primary)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(pattern.description)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 6) {
+                        if !pattern.roomName.isEmpty {
+                            Text(pattern.roomName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("·")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Text(pattern.confidenceLabel)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(confidenceColor)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 10) {
+                Button(action: onApprove) {
+                    Label(
+                        String(localized: "intelligence.suggestions.approve",
+                               defaultValue: "Crea regola"),
+                        systemImage: "plus.circle.fill"
+                    )
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandColor.primary)
+                .controlSize(.small)
+
+                Button(action: onDismiss) {
+                    Text(String(localized: "intelligence.suggestions.dismiss",
+                                defaultValue: "Ignora"))
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.secondary)
+                .controlSize(.small)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(BrandColor.primary.opacity(0.15), lineWidth: 1)
+                )
+        )
+    }
+
+    private var confidenceColor: Color {
+        switch pattern.confidence {
+        case 0.80...1.0:  return .green
+        case 0.60..<0.80: return Color(red: 0.7, green: 0.6, blue: 0.0)
+        default:          return .orange
+        }
+    }
+}
+
+// MARK: - BehavioralOpportunityCard
+
+private struct BehavioralOpportunityCard: View {
+
+    let opportunity: AutomationOpportunity
+    let onApprove:   () -> Void
+    let onSnooze:    () -> Void
+    let onDismiss:   () -> Void
+
+    private var confidenceColor: Color {
+        switch opportunity.confidence {
+        case 0.90...1.0:  return .green
+        case 0.75..<0.90: return BrandColor.primary
+        default:          return Color(red: 0.7, green: 0.6, blue: 0.0)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header row: icon + description
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "brain.head.profile")
+                    .font(.system(size: 20))
+                    .foregroundStyle(BrandColor.primary)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(opportunity.naturalLanguage)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 6) {
+                        if !opportunity.roomName.isEmpty {
+                            Text(opportunity.roomName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("·")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        if let timeStr = opportunity.avgTimeString {
+                            Text(timeStr)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text("·")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Text(opportunity.confidenceLabel)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(confidenceColor)
+                        Text("·")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                        Text(
+                            String(
+                                format: String(localized: "behavioral.card.observations",
+                                               defaultValue: "%d osservazioni"),
+                                opportunity.observations
+                            )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+
+            // Action buttons
+            HStack(spacing: 8) {
+                Button(action: onApprove) {
+                    Label(
+                        String(localized: "behavioral.opportunity.approve",
+                               defaultValue: "Crea automazione"),
+                        systemImage: "plus.circle.fill"
+                    )
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandColor.primary)
+                .controlSize(.small)
+
+                Button(action: onSnooze) {
+                    Text(String(localized: "behavioral.opportunity.snooze",
+                                defaultValue: "Più tardi"))
+                        .font(.subheadline)
+                }
+                .buttonStyle(.bordered)
+                .tint(.secondary)
+                .controlSize(.small)
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .tint(.secondary)
+                .controlSize(.small)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(BrandColor.primary.opacity(0.12), lineWidth: 1)
+                )
+        )
+    }
+}
+
+// MARK: - AIInsightTimelineRow
+
+private struct AIInsightTimelineRow: View {
+
+    let insight: PersistedInsightSummary
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .short
+        return f
+    }()
+
+    private var severityColor: Color {
+        switch insight.severity {
+        case .info:    return .blue
+        case .warning: return .orange
+        case .anomaly: return .red
+        }
+    }
+
+    private var severityIcon: String {
+        switch insight.severity {
+        case .info:    return "info.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .anomaly: return "exclamationmark.octagon.fill"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: severityIcon)
+                .font(.system(size: 20))
+                .foregroundStyle(severityColor)
+                .frame(width: 28)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(insight.message)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 5) {
+                    Text(insight.roomName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text(Self.relativeFormatter.localizedString(
+                        for: insight.generatedAt, relativeTo: Date()))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 4)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+}
+
+// MARK: - HabitConfidenceRow
+
+private struct HabitConfidenceRow: View {
+
+    let pattern: HabitPattern
+    @State private var animatedConfidence: Double = 0
+
+    private var confidenceColor: Color {
+        switch pattern.confidence {
+        case 0.80...1.0:  return .green
+        case 0.60..<0.80: return Color(red: 0.7, green: 0.6, blue: 0.0)
+        default:          return .orange
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: pattern.sfSymbol)
+                .font(.system(size: 18))
+                .foregroundStyle(BrandColor.primary)
+                .frame(width: 28)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .top) {
+                    Text(pattern.description)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 6)
+                    if pattern.status == .approved {
+                        Text(
+                            String(localized: "intelligence.habits.approved",
+                                   defaultValue: "Approvato")
+                        )
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.green.opacity(0.12), in: Capsule())
+                    }
+                }
+                Text(pattern.roomName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(confidenceColor.opacity(0.12))
+                            .frame(height: 3)
+                        Capsule()
+                            .fill(confidenceColor)
+                            .frame(width: max(4, geo.size.width * animatedConfidence), height: 3)
+                            .animation(.spring(response: 0.8, dampingFraction: 0.75),
+                                       value: animatedConfidence)
+                    }
+                }
+                .frame(height: 3)
+
+                HStack {
+                    Spacer()
+                    Text(pattern.confidenceLabel)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(confidenceColor)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .onAppear {
+            withAnimation(.spring(response: 0.8, dampingFraction: 0.75).delay(0.1)) {
+                animatedConfidence = pattern.confidence
+            }
+        }
+    }
+}
+
+// MARK: - IntentEffectivenessRow
+
+private struct IntentEffectivenessRow: View {
+
+    let item: IntentEffectiveness
+    let intentLabel: String
+
+    @State private var animatedScore: Double = 0
+
+    private var scoreColor: Color {
+        switch item.averageScore {
+        case 0.75...1.0:  return .green
+        case 0.50..<0.75: return Color(red: 0.7, green: 0.6, blue: 0.0)
+        default:          return .orange
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(intentLabel)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text("\(Int(item.averageScore * 100))%")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(scoreColor)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(scoreColor.opacity(0.12))
+                        .frame(height: 4)
+                    Capsule()
+                        .fill(scoreColor)
+                        .frame(width: max(4, geo.size.width * animatedScore), height: 4)
+                        .animation(.spring(response: 0.8, dampingFraction: 0.75),
+                                   value: animatedScore)
+                }
+            }
+            .frame(height: 4)
+            Text(
+                String(
+                    format: String(localized: "intelligence.effectiveness.samples",
+                                   defaultValue: "%lld campioni"),
+                    Int64(item.sampleCount)
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .onAppear {
+            withAnimation(.spring(response: 0.8, dampingFraction: 0.75).delay(0.15)) {
+                animatedScore = item.averageScore
+            }
+        }
+    }
+}
+
+// MARK: - RoomTrendCard
+
+private struct RoomTrendCard: View {
+
+    let trend: RoomTrend
+
+    private var icon: String {
+        switch trend.sensorTypeRaw {
+        case "temperature":   return "thermometer.medium"
+        case "humidity":      return "humidity.fill"
+        case "carbonDioxide": return "aqi.medium"
+        default:              return "aqi.low"
+        }
+    }
+
+    private var trendLabel: String {
+        switch trend.sensorTypeRaw {
+        case "temperature":
+            return String(localized: "intelligence.trends.hottest",     defaultValue: "Stanza più calda")
+        case "humidity":
+            return String(localized: "intelligence.trends.mostHumid",   defaultValue: "Più umida")
+        case "carbonDioxide":
+            return String(localized: "intelligence.trends.highestCO2",  defaultValue: "CO₂ più alto")
+        default:
+            return String(localized: "intelligence.trends.worstAir",    defaultValue: "Qualità aria")
+        }
+    }
+
+    private var accentColor: Color {
+        switch trend.sensorTypeRaw {
+        case "temperature":   return .red
+        case "humidity":      return .blue
+        case "carbonDioxide": return .orange
+        default:              return .purple
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(accentColor)
+                Text(trendLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            Text(trend.roomName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
+                Text(trend.formattedAvg)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(accentColor)
+                Text(
+                    String(localized: "intelligence.trends.avgLabel", defaultValue: "media 7g")
+                )
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(accentColor.opacity(0.20), lineWidth: 1)
+                )
+        )
+    }
+}
+
+// MARK: - DomainCard
+
+private struct DomainCard: View {
+
+    let domain: DomainMaturity
+    @State private var animatedProgress: Double = 0
+
+    private var statusColor: Color {
+        switch domain.status {
+        case .notEnoughData: return .gray
+        case .learning:      return .orange
+        case .growing:       return Color(red: 0.7, green: 0.6, blue: 0.0)
+        case .stable:        return .green
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: domain.icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(BrandColor.primary)
+                    .frame(width: 22)
+                Text(domain.localizedTitle)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(statusColor.opacity(0.12))
+                        .frame(height: 4)
+                    Capsule()
+                        .fill(statusColor)
+                        .frame(width: max(4, geo.size.width * animatedProgress), height: 4)
+                        .animation(.spring(response: 0.8, dampingFraction: 0.75),
+                                   value: animatedProgress)
+                }
+            }
+            .frame(height: 4)
+
+            Text(domain.status.localizedLabel)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(statusColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(statusColor.opacity(0.10), in: Capsule())
+
+            // Contextual hint pointing to next tier (Sprint 25.D)
+            if let hint = domain.contextualHint {
+                Text(hint)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(statusColor.opacity(0.20), lineWidth: 1)
+                )
+        )
+        .onAppear {
+            withAnimation(.spring(response: 0.8, dampingFraction: 0.75).delay(0.1)) {
+                animatedProgress = domain.progress
+            }
+        }
+        .onChange(of: domain.progress) { _, v in
+            withAnimation(.spring(response: 0.6)) {
+                animatedProgress = v
+            }
+        }
+    }
+}
+
+// MARK: - IntelligenceSectionGroup (Sprint 25.A)
+
+/// Visual separator / group header for the 3 macro-sections of the Intelligence Dashboard.
+private struct IntelligenceSectionGroup: View {
+
+    let title: String
+    let icon:  String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(BrandColor.primary)
+            Text(title)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.primary)
+            Spacer()
+        }
+        .padding(.top, 8)
+        .padding(.bottom, -4)
+    }
+}
+
+// MARK: - PredictiveAlertRow (Sprint 25.C)
+
+private struct PredictiveAlertRow: View {
+
+    let alert: PredictiveEnvironmentAlert
+
+    private var sensorColor: Color {
+        switch alert.sensorTypeRaw {
+        case "temperature":   return .red
+        case "humidity":      return .blue
+        case "carbonDioxide": return .orange
+        case "airQuality":    return .purple
+        default:              return BrandColor.primary
+        }
+    }
+
+    private var sensorIcon: String {
+        switch alert.sensorTypeRaw {
+        case "temperature":   return "thermometer.medium"
+        case "humidity":      return "humidity.fill"
+        case "carbonDioxide": return "aqi.medium"
+        case "airQuality":    return "aqi.low"
+        default:              return "waveform.path.ecg"
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(sensorColor.opacity(0.12))
+                    .frame(width: 38, height: 38)
+                Image(systemName: sensorIcon)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(sensorColor)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(alert.message)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 4) {
+                    Text(alert.roomName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text(
+                        String(
+                            format: String(localized: "predictive.confidence.label",
+                                           defaultValue: "%lld%% confidenza"),
+                            Int64(alert.confidence * 100)
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+}
+
+// MARK: - AIStatTile
+
+private struct AIStatTile: View {
+    let value: Int
+    let label: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("\(value)")
+                .font(.system(size: 36, weight: .bold, design: .rounded))
+                .foregroundStyle(color)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(color.opacity(0.20), lineWidth: 1)
+                )
+        )
+    }
+}
+

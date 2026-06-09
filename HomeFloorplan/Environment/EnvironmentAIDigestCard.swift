@@ -23,7 +23,7 @@ import SwiftUI
 struct EnvironmentAIDigestCard: View {
 
     let insights: [AmbientalAIInsight]
-    let onDismissInsight: (AmbientalAIInsight) -> Void
+    let onDismissInsight: (AmbientalAIInsight, DismissalReason) -> Void
     let onExecuteAction: (AINextAction, AmbientalAIInsight) -> Void
     let onCreateRule: (RuleDraft, AmbientalAIInsight) -> Void
 
@@ -41,14 +41,14 @@ struct EnvironmentAIDigestCard: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.blue)
-                Text("AI Insights")
+                Text(String(localized: "digest.header.title", defaultValue: "AI Insights"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .tracking(0.6)
                 Spacer()
                 if sorted.count > 1 {
-                    Text("\(currentPage + 1) di \(sorted.count)")
+                    Text(String(format: String(localized: "digest.header.pageOf", defaultValue: "%1$d of %2$d"), currentPage + 1, sorted.count))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .monospacedDigit()
@@ -66,8 +66,8 @@ struct EnvironmentAIDigestCard: View {
                 ForEach(Array(sorted.enumerated()), id: \.element.id) { idx, insight in
                     InsightPageView(
                         insight: insight,
-                        onDismiss: {
-                            onDismissInsight(insight)
+                        onDismiss: { reason in
+                            onDismissInsight(insight, reason)
                             // Torna alla pagina precedente se siamo all'ultima
                             if currentPage >= sorted.count - 1 && currentPage > 0 {
                                 withAnimation { currentPage -= 1 }
@@ -122,11 +122,22 @@ struct EnvironmentAIDigestCard: View {
 private struct InsightPageView: View {
 
     let insight: AmbientalAIInsight
-    let onDismiss: () -> Void
+    let onDismiss: (DismissalReason) -> Void
     let onExecuteAction: (AINextAction) -> Void
     let onCreateRule: (RuleDraft) -> Void
 
+    @State private var showDismissDialog = false
+
     private var severityColor: Color { insight.severity.uiColor }
+
+    private var intelligenceLevelColor: Color {
+        switch insight.intelligenceLevel {
+        case .observation:    return .blue
+        case .pattern:        return .indigo
+        case .prediction:     return .purple
+        case .recommendation: return .green
+        }
+    }
 
     private var severitySymbol: String {
         switch insight.severity {
@@ -152,22 +163,40 @@ private struct InsightPageView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    // Nome stanza in capsule
                     Text(insight.roomName)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
 
-                    // Etichetta severità
-                    Text(insight.severity.label)
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(severityColor)
+                    if let deviceName = insight.sourceAccessoryName {
+                        Text(deviceName)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+
+                    HStack(spacing: 5) {
+                        Text(insight.severity.localizedLabel)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(severityColor)
+
+                        Text("·")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+
+                        Label(insight.intelligenceLevel.localizedLabel,
+                              systemImage: insight.intelligenceLevel.sfSymbol)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(intelligenceLevelColor)
+                    }
                 }
 
                 Spacer()
 
                 // Pulsante Ignora
-                Button(action: onDismiss) {
-                    Text("Ignora")
+                Button {
+                    showDismissDialog = true
+                } label: {
+                    Text(String(localized: "insight.action.dismiss", defaultValue: "Ignora"))
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 10)
@@ -178,6 +207,16 @@ private struct InsightPageView: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .confirmationDialog(
+                    String(localized: "insight.dismiss.dialog.title", defaultValue: "Perché vuoi ignorare questo insight?"),
+                    isPresented: $showDismissDialog,
+                    titleVisibility: .visible
+                ) {
+                    Button(DismissalReason.userActedManually.localizedLabel) { onDismiss(.userActedManually) }
+                    Button(DismissalReason.irrelevant.localizedLabel)        { onDismiss(.irrelevant) }
+                    Button(DismissalReason.unclear.localizedLabel)           { onDismiss(.unclear) }
+                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Annulla"), role: .cancel) {}
+                }
             }
 
             // ── Messaggio insight ──────────────────────────────────────
@@ -251,7 +290,7 @@ private struct DigestActionButton: View {
     // Chip statico per i tip manuali — stile nota/suggerimento
     private var tipChip: some View {
         HStack(spacing: 6) {
-            Image(systemName: "lightbulb.fill")
+            Image(systemName: action.iconName ?? "lightbulb.fill")
                 .font(.system(size: 12, weight: .medium))
             Text(action.label)
                 .font(.subheadline.weight(.medium))
@@ -331,13 +370,25 @@ private struct DigestActionButton: View {
 
     private var buttonLabel: String {
         switch state {
-        case .completed: return "Fatto"
-        case .error:     return "Errore"
+        case .completed: return String(localized: "insight.action.done",  defaultValue: "Fatto")
+        case .error:     return String(localized: "insight.action.error", defaultValue: "Errore")
         default:         return action.label
         }
     }
 
     private func handleTap() {
+        // "suggest" actions execute immediately via HomeKit — no rule panel
+        if action.actionType == "suggest" {
+            state = .executing
+            onExecuteAction(action)
+            Task {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                state = .completed
+            }
+            return
+        }
+
+        // "createRule" / legacy path
         let resolvedID = action.accessoryID ?? fallbackAccessoryID
         let rawType    = action.accessoryActionType ?? "on"
         let resolvedActionType: String
@@ -390,14 +441,6 @@ private extension InsightSeverity {
         case .info:    return .blue
         }
     }
-
-    var label: String {
-        switch self {
-        case .anomaly: return "Anomalia"
-        case .warning: return "Attenzione"
-        case .info:    return "Info"
-        }
-    }
 }
 
 // MARK: - Preview
@@ -430,7 +473,7 @@ private extension InsightSeverity {
     ScrollView {
         EnvironmentAIDigestCard(
             insights: insights,
-            onDismissInsight: { _ in },
+            onDismissInsight: { _, _ in },
             onExecuteAction: { _, _ in },
             onCreateRule: { _, _ in }
         )

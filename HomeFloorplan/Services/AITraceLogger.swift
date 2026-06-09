@@ -4,7 +4,15 @@ import Foundation
 // MARK: - AITraceLogger
 //
 // Observability layer for the Environmental AI pipeline — DEBUG builds only.
-// Zero production impact: the entire file is compiled out in Release.
+// Zero production impact: the entire file is compiled out in Release (#if DEBUG, line 1).
+//
+// ── Privacy Audit (Sprint 26.E) ─────────────────────────────────────
+// This file contains two raw print() calls:
+//   • log()               — private helper, prints timestamped pipeline trace
+//   • printDailySummary() — prints daily aggregate counters
+// Both are unreachable in Release because the #if DEBUG guard at line 1
+// prevents the entire file from being compiled into App Store / TestFlight builds.
+// No sensor data, room names, or AI payloads ever reach the console in Release.
 //
 // Covers 8 pipeline phases for every room analysis:
 //   Phase 1 — Raw sensor snapshot

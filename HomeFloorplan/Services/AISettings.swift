@@ -59,6 +59,7 @@ private enum AISettingsKeys {
     static let ruleEngineEnabled     = "ai.ruleEngineEnabled"
     static let lastTestDate          = "ai.lastConnectionTestDate"
     static let lastTestSuccess       = "ai.lastConnectionTestSuccess"
+    static let dataConsent           = "ai.dataConsent.v1"
 }
 
 /// Impostazioni AI persistite in UserDefaults (solo dati NON sensibili).
@@ -119,6 +120,24 @@ final class AISettings {
         }
     }
 
+    // MARK: - Consent
+
+    /// True se l'utente ha esplicitamente accettato la trasmissione dati ambientali al provider AI.
+    var hasAIDataConsent: Bool {
+        didSet { UserDefaults.standard.set(hasAIDataConsent, forKey: AISettingsKeys.dataConsent) }
+    }
+
+    /// Registra il consenso esplicito dell'utente.
+    func grantConsent() {
+        hasAIDataConsent = true
+    }
+
+    /// Revoca il consenso e disabilita l'AI.
+    func revokeConsent() {
+        hasAIDataConsent = false
+        isAIEnabled = false
+    }
+
     // MARK: - Computed
 
     /// True se è presente una API key nel Keychain per il provider corrente.
@@ -126,9 +145,9 @@ final class AISettings {
         KeychainHelper.load(key: selectedProvider.keychainKey) != nil
     }
 
-    /// True se l'AI è operativa (abilitata + API key presente).
+    /// True se l'AI è operativa (abilitata + API key presente + consenso dati concesso).
     var isOperational: Bool {
-        isAIEnabled && hasAPIKey
+        isAIEnabled && hasAPIKey && hasAIDataConsent
     }
 
     // MARK: - Init
@@ -143,11 +162,12 @@ final class AISettings {
             self.selectedProvider = .claude
         }
 
-        self.isAIEnabled            = ud.bool(forKey: AISettingsKeys.isAIEnabled)
-        self.suggestionsEnabled     = ud.bool(forKey: AISettingsKeys.suggestionsEnabled)
+        self.isAIEnabled             = ud.bool(forKey: AISettingsKeys.isAIEnabled)
+        self.suggestionsEnabled      = ud.bool(forKey: AISettingsKeys.suggestionsEnabled)
         self.anomalyDetectionEnabled = ud.bool(forKey: AISettingsKeys.anomalyEnabled)
-        self.ruleEngineEnabled      = ud.bool(forKey: AISettingsKeys.ruleEngineEnabled)
-        self.lastConnectionTest     = ud.object(forKey: AISettingsKeys.lastTestDate) as? Date
-        self.lastConnectionSuccess  = ud.object(forKey: AISettingsKeys.lastTestSuccess) as? Bool
+        self.ruleEngineEnabled       = ud.bool(forKey: AISettingsKeys.ruleEngineEnabled)
+        self.lastConnectionTest      = ud.object(forKey: AISettingsKeys.lastTestDate) as? Date
+        self.lastConnectionSuccess   = ud.object(forKey: AISettingsKeys.lastTestSuccess) as? Bool
+        self.hasAIDataConsent        = ud.bool(forKey: AISettingsKeys.dataConsent)
     }
 }

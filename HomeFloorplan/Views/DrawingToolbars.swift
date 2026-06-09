@@ -36,7 +36,7 @@ struct DrawingTopBar: View {
 
             // Done
             Button(action: onDone) {
-                Text("Fatto")
+                Text(String(localized: "drawing.topbar.done", defaultValue: "Fatto"))
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
@@ -77,7 +77,9 @@ struct OpeningInspectorPanel: View {
                     .frame(width: 28)
 
                 // Label
-                Text(opening.kind == .door ? "Porta" : "Finestra")
+                Text(opening.kind == .door
+                     ? String(localized: "drawing.inspector.opening.door", defaultValue: "Porta")
+                     : String(localized: "drawing.inspector.opening.window", defaultValue: "Finestra"))
                     .font(.subheadline.weight(.semibold))
 
                 Spacer()
@@ -90,13 +92,16 @@ struct OpeningInspectorPanel: View {
                 // Flip button (doors only)
                 if opening.kind == .door {
                     Button(action: onFlip) {
-                        Label("Inverti", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right")
-                            .labelStyle(.iconOnly)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(BrandColor.primary)
-                            .frame(width: 36, height: 36)
-                            .background(BrandColor.primary.opacity(0.12),
-                                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        Label(
+                            String(localized: "drawing.inspector.opening.flip", defaultValue: "Inverti"),
+                            systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right"
+                        )
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(BrandColor.primary)
+                        .frame(width: 36, height: 36)
+                        .background(BrandColor.primary.opacity(0.12),
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
@@ -154,8 +159,8 @@ struct PlaceOpeningBanner: View {
                 .foregroundStyle(BrandColor.primary)
 
             Text(kind == .door
-                 ? "Tocca un muro per aggiungere una porta"
-                 : "Tocca un muro per aggiungere una finestra")
+                 ? String(localized: "drawing.banner.door",   defaultValue: "Tocca un muro per aggiungere una porta")
+                 : String(localized: "drawing.banner.window", defaultValue: "Tocca un muro per aggiungere una finestra"))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
 
@@ -197,12 +202,12 @@ struct DrawingToolbar: View {
             // ── Left: mode toggle (Muro / Seleziona) ──────────────────────────
             HStack(spacing: 0) {
                 modeButton(icon: "pencil.tip",
-                           label: "Muro",
+                           label: String(localized: "drawing.toolbar.mode.draw",   defaultValue: "Muro"),
                            active: mode == .draw) {
                     mode = .draw
                 }
                 modeButton(icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
-                           label: "Seleziona",
+                           label: String(localized: "drawing.toolbar.mode.select", defaultValue: "Seleziona"),
                            active: mode == .select) {
                     mode = .select
                 }
@@ -216,9 +221,12 @@ struct DrawingToolbar: View {
             // ── Wall kind toggle (visible only in draw mode) ────────────────
             if mode == .draw {
                 HStack(spacing: 0) {
-                    wallKindButton(kind: .exterior, icon: "square.on.square", label: "Perim.")
-                    wallKindButton(kind: .interior, icon: "square.dashed", label: "Interno")
-                    wallKindButton(kind: .balcony,  icon: "line.diagonal",   label: "Balcone")
+                    wallKindButton(kind: .exterior, icon: "square.on.square",
+                                   label: String(localized: "drawing.toolbar.wall.exterior", defaultValue: "Perim."))
+                    wallKindButton(kind: .interior, icon: "square.dashed",
+                                   label: String(localized: "drawing.toolbar.wall.interior", defaultValue: "Interno"))
+                    wallKindButton(kind: .balcony,  icon: "line.diagonal",
+                                   label: String(localized: "drawing.toolbar.wall.balcony",  defaultValue: "Balcone"))
                 }
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
@@ -236,7 +244,7 @@ struct DrawingToolbar: View {
                     VStack(spacing: 3) {
                         Image(systemName: vertexSnapEnabled ? "magnet.fill" : "magnet")
                             .font(.system(size: 16, weight: vertexSnapEnabled ? .semibold : .regular))
-                        Text("Snap")
+                        Text(String(localized: "drawing.toolbar.snap", defaultValue: "Snap"))
                             .font(.system(size: 10, weight: vertexSnapEnabled ? .semibold : .regular))
                     }
                     .foregroundStyle(vertexSnapEnabled ? BrandColor.primary : .secondary)
@@ -250,14 +258,14 @@ struct DrawingToolbar: View {
 
             Spacer()
 
-            // ── Centre: Porta, Finestra, Stanza, Area ────────────────────────
+            // ── Centre: Porta, Finestra, Stanza, Area, Arredo ────────────────
             HStack(spacing: 8) {
                 openingButton(kind: .door,
                               icon: "door.left.hand.open",
-                              label: "Porta")
+                              label: String(localized: "drawing.toolbar.door",      defaultValue: "Porta"))
                 openingButton(kind: .window,
                               icon: "rectangle.split.2x1",
-                              label: "Finestra")
+                              label: String(localized: "drawing.toolbar.window",    defaultValue: "Finestra"))
                 roomLabelButton()
                 roomAreaButton()
                 furnitureButton()
@@ -327,7 +335,6 @@ struct DrawingToolbar: View {
 
         return Button {
             if isActive {
-                // Tap again → cancel placement mode
                 mode = .select
             } else {
                 mode = .placeOpening(kind)
@@ -365,7 +372,7 @@ struct DrawingToolbar: View {
             VStack(spacing: 3) {
                 Image(systemName: "text.badge.plus")
                     .font(.system(size: 18, weight: isActive ? .semibold : .regular))
-                Text("Stanza")
+                Text(String(localized: "drawing.toolbar.room", defaultValue: "Stanza"))
                     .font(.system(size: 10, weight: isActive ? .semibold : .regular))
             }
             .foregroundStyle(isActive ? BrandColor.primary : .primary)
@@ -394,7 +401,7 @@ struct DrawingToolbar: View {
             VStack(spacing: 3) {
                 Image(systemName: "rectangle.dashed.badge.plus")
                     .font(.system(size: 18, weight: isActive ? .semibold : .regular))
-                Text("Area")
+                Text(String(localized: "drawing.toolbar.area", defaultValue: "Area"))
                     .font(.system(size: 10, weight: isActive ? .semibold : .regular))
             }
             .foregroundStyle(isActive ? BrandColor.primary : .primary)
@@ -423,7 +430,7 @@ struct DrawingToolbar: View {
             VStack(spacing: 3) {
                 Image(systemName: "sofa.fill")
                     .font(.system(size: 18, weight: isActive ? .semibold : .regular))
-                Text("Arredo")
+                Text(String(localized: "drawing.toolbar.furniture", defaultValue: "Arredo"))
                     .font(.system(size: 10, weight: isActive ? .semibold : .regular))
             }
             .foregroundStyle(isActive ? BrandColor.primary : .primary)
@@ -457,7 +464,7 @@ struct PlaceRoomLabelBanner: View {
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(BrandColor.primary)
 
-            Text("Tocca per posizionare l'etichetta")
+            Text(String(localized: "drawing.banner.roomLabel", defaultValue: "Tocca per posizionare l'etichetta"))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
 
@@ -494,7 +501,7 @@ struct RoomLabelInspectorPanel: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.name)
                     .font(.subheadline.weight(.semibold))
-                Text("Stanza HomeKit")
+                Text(String(localized: "drawing.inspector.roomLabel.subtitle", defaultValue: "Stanza HomeKit"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -567,13 +574,11 @@ struct RoomAreaInspectorPanel: View {
                 Text(area.name)
                     .font(.subheadline.weight(.semibold))
                 if let pts = area.points {
-                    // Polygon mode: show vertex count and approximate area
                     let sqPt = Int(area.polygonArea)
                     Text("\(pts.count) vertici • ~\(sqPt) pt²")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    // Rect mode: show dimensions
                     let w = Int(area.rect.width), h = Int(area.rect.height)
                     Text("\(w) × \(h) pt")
                         .font(.caption)
@@ -604,7 +609,7 @@ struct PlaceFurnitureBanner: View {
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(BrandColor.primary)
 
-            Text("Tocca per posizionare il mobile")
+            Text(String(localized: "drawing.banner.furniture", defaultValue: "Tocca per posizionare il mobile"))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
 
@@ -643,13 +648,16 @@ struct FurnitureInspectorPanel: View {
                 .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 2) {
-                TextField("Nome mobile", text: $editingName)
-                    .font(.subheadline.weight(.semibold))
-                    .textFieldStyle(.plain)
-                    .onSubmit {
-                        let trimmed = editingName.trimmingCharacters(in: .whitespaces)
-                        if !trimmed.isEmpty { onNameChange(trimmed) }
-                    }
+                TextField(
+                    String(localized: "drawing.inspector.furniture.namePlaceholder", defaultValue: "Nome mobile"),
+                    text: $editingName
+                )
+                .font(.subheadline.weight(.semibold))
+                .textFieldStyle(.plain)
+                .onSubmit {
+                    let trimmed = editingName.trimmingCharacters(in: .whitespaces)
+                    if !trimmed.isEmpty { onNameChange(trimmed) }
+                }
                 let w = Int(item.rect.width), h = Int(item.rect.height)
                 Text("\(w) × \(h) pt")
                     .font(.caption)
@@ -690,9 +698,10 @@ struct RoomPickerSheet: View {
             Group {
                 if rooms.isEmpty {
                     ContentUnavailableView(
-                        "Nessuna stanza",
+                        String(localized: "drawing.picker.room.empty.title",       defaultValue: "Nessuna stanza"),
                         systemImage: "rectangle.split.3x3",
-                        description: Text("Configura le stanze nell'app Casa di iOS.")
+                        description: Text(String(localized: "drawing.picker.room.empty.description",
+                                                 defaultValue: "Configura le stanze nell'app Casa di iOS."))
                     )
                 } else {
                     List(rooms) { room in
@@ -714,11 +723,11 @@ struct RoomPickerSheet: View {
                     }
                 }
             }
-            .navigationTitle("Scegli stanza")
+            .navigationTitle(String(localized: "drawing.picker.room.title", defaultValue: "Scegli stanza"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annulla") {
+                    Button(String(localized: "drawing.picker.cancel", defaultValue: "Annulla")) {
                         onCancel()
                         dismiss()
                     }

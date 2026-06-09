@@ -176,6 +176,11 @@ struct SettingsView: View {
                     Label(String(localized: "settings.developer.showOnboarding", defaultValue: "Mostra onboarding al prossimo lancio"), systemImage: "arrow.clockwise.circle")
                         .foregroundStyle(.tint)
                 }
+                NavigationLink {
+                    HabitsView()
+                } label: {
+                    Label(String(localized: "settings.developer.habits", defaultValue: "Abitudini"), systemImage: "brain.head.profile")
+                }
                 #if DEBUG
                 NavigationLink {
                     AITraceView()

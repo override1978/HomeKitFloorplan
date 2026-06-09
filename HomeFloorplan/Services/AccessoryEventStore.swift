@@ -31,14 +31,17 @@ final class AccessoryEventStore {
     func saveEvent(_ dto: AccessoryEventDTO) {
         let context = modelContainer.mainContext
 
+        let activeProfileIDStr = UserDefaults.standard.string(forKey: FamilyPresenceService.activeKey)
+        let activeProfileID    = activeProfileIDStr.flatMap { UUID(uuidString: $0) }
         let event = AccessoryEvent(
-            accessoryID: dto.accessoryID,
+            accessoryID:   dto.accessoryID,
             accessoryName: dto.accessoryName,
-            roomID: dto.roomID,
-            roomName: dto.roomName,
-            state: dto.state,
-            brightness: dto.brightness,
-            eventType: dto.eventType
+            roomID:        dto.roomID,
+            roomName:      dto.roomName,
+            state:         dto.state,
+            brightness:    dto.brightness,
+            eventType:     dto.eventType,
+            profileID:     activeProfileID
         )
         context.insert(event)
 

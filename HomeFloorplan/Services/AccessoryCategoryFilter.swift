@@ -13,10 +13,13 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
     case cameras
     case air
     case hubs
+    case television
+    case switches
+    case buttons
     case others
-    
+
     var id: String { rawValue }
-    
+
     var displayName: String {
         switch self {
         case .all:             return String(localized: "filter.category.all",            defaultValue: "Tutti")
@@ -29,10 +32,13 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         case .cameras:         return String(localized: "filter.category.cameras",        defaultValue: "Telecamere")
         case .air:             return String(localized: "filter.category.air",            defaultValue: "Aria")
         case .hubs:            return String(localized: "filter.category.hubs",           defaultValue: "Hub")
+        case .television:      return String(localized: "filter.category.television",     defaultValue: "TV")
+        case .switches:        return String(localized: "filter.category.switches",       defaultValue: "Switch")
+        case .buttons:         return String(localized: "filter.category.buttons",        defaultValue: "Pulsanti")
         case .others:          return String(localized: "filter.category.others",         defaultValue: "Altri")
         }
     }
-    
+
     var symbolName: String {
         switch self {
         case .all:             return "square.grid.2x2"
@@ -45,6 +51,9 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         case .cameras:         return "camera.fill"
         case .air:             return "air.purifier"
         case .hubs:            return "wifi.router.fill"
+        case .television:      return "tv"
+        case .switches:        return "lightswitch.on"
+        case .buttons:         return "button.programmable"
         case .others:          return "questionmark.circle"
         }
     }
@@ -56,10 +65,15 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         switch adapter {
         case is DimmableLightAdapter: return .lights
         case let onOff as OnOffAdapter:
-            // Distinguere luci da prese in base al servizio principale
+            // Lightbulb → luci; Outlet reale → prese; Switch (NightMode ecc.) → switch
             let lightbulbUUID = "00000043-0000-1000-8000-0026BB765291"
-            return onOff.accessory.services.contains(where: { $0.serviceType == lightbulbUUID })
-                ? .lights : .outlets
+            let outletUUID    = "00000047-0000-1000-8000-0026BB765291"
+            let switchUUID    = "00000049-0000-1000-8000-0026BB765291"
+            let services = onOff.accessory.services
+            if services.contains(where: { $0.serviceType == lightbulbUUID }) { return .lights }
+            if services.contains(where: { $0.serviceType == outletUUID    }) { return .outlets }
+            if services.contains(where: { $0.serviceType == switchUUID    }) { return .switches }
+            return .others
         case is WindowCoveringAdapter:       return .windowCoverings
         case is ThermostatAdapter:           return .climate
         case is LegacyThermostatAdapter:     return .climate
@@ -68,8 +82,10 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         case is DoorLockAdapter:             return .security
         case is GarageDoorAdapter:           return .security
         case is CameraAdapter:               return .cameras
-        case is AirPurifierAdapter:          return .air
-        case is MatterDeviceAdapter:         return .others
+        case is AirPurifierAdapter:            return .air
+        case is TelevisionAdapter:             return .television
+        case is ProgrammableSwitchAdapter:     return .buttons
+        case is MatterDeviceAdapter:           return .others
         case is MultiOutletAdapter:          return .outlets
         default:
             // Fallback: usa la categoria HomeKit ufficiale
@@ -82,7 +98,7 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         switch accessory.category.categoryType {
         case HMAccessoryCategoryTypeBridge:           return .hubs
         case HMAccessoryCategoryTypeOutlet:           return .outlets
-        case HMAccessoryCategoryTypeSwitch:           return .outlets
+        case HMAccessoryCategoryTypeSwitch:           return .switches
         case HMAccessoryCategoryTypeLightbulb:        return .lights
         case HMAccessoryCategoryTypeThermostat:       return .climate
         case HMAccessoryCategoryTypeAirConditioner:   return .climate

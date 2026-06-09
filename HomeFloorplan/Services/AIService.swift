@@ -110,6 +110,7 @@ final class AIService {
         guard let url = URL(string: AIProvider.claude.apiEndpoint) else { throw AIError.invalidURL }
 
         var request = URLRequest(url: url)
+        request.timeoutInterval = 15.0
         request.httpMethod = "POST"
         request.setValue(apiKey,         forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01",   forHTTPHeaderField: "anthropic-version")
@@ -123,7 +124,7 @@ final class AIService {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await perform(request)
+        let (data, response) = try await performWithRetry(request)
         try checkHTTP(response)
 
         // Decodifica risposta Claude:
@@ -143,6 +144,7 @@ final class AIService {
         guard let url = URL(string: AIProvider.openai.apiEndpoint) else { throw AIError.invalidURL }
 
         var request = URLRequest(url: url)
+        request.timeoutInterval = 15.0
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
@@ -156,7 +158,7 @@ final class AIService {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await perform(request)
+        let (data, response) = try await performWithRetry(request)
         try checkHTTP(response)
 
         // Decodifica risposta OpenAI:
@@ -173,13 +175,42 @@ final class AIService {
 
     // MARK: - Helpers
 
-    /// Esegue la richiesta HTTP gestendo errori di rete.
-    private func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        do {
-            return try await session.data(for: request)
-        } catch let urlError as URLError {
-            throw AIError.networkUnavailable(underlying: urlError)
+    /// Esegue la richiesta con retry esponenziale (max 4 tentativi, backoff 1s/2s/4s ± 0.5s jitter).
+    /// Ritenta su: URLError (rete), HTTP 429 (rate limited), HTTP 503/504 (server transient).
+    /// Non ritenta: 401, missingAPIKey, invalidURL — quelli sono definitivi.
+    private func performWithRetry(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        var lastError: Error = AIError.unexpectedResponse
+        let baseDelays: [Double] = [1.0, 2.0, 4.0]   // delays between attempts 0→1, 1→2, 2→3
+
+        for attempt in 0..<4 {
+            do {
+                let (data, response) = try await session.data(for: request)
+                if let http = response as? HTTPURLResponse {
+                    switch http.statusCode {
+                    case 200...299:
+                        return (data, response)
+                    case 429:
+                        lastError = AIError.rateLimited
+                    case 503, 504:
+                        lastError = AIError.serverError(code: http.statusCode)
+                    default:
+                        // Non-transient HTTP error: return and let checkHTTP throw
+                        return (data, response)
+                    }
+                } else {
+                    return (data, response)
+                }
+            } catch let urlError as URLError {
+                lastError = AIError.networkUnavailable(underlying: urlError)
+            }
+
+            if attempt < baseDelays.count {
+                let jitter = Double.random(in: -0.5...0.5)
+                let ns = UInt64(max(0.1, baseDelays[attempt] + jitter) * 1_000_000_000)
+                try await Task.sleep(nanoseconds: ns)
+            }
         }
+        throw lastError
     }
 
     /// Controlla lo status code HTTP e lancia l'errore appropriato.

@@ -223,7 +223,7 @@ func renderDocument(_ doc: DrawingDocument, in cgContext: CGContext, canvasSize:
     cgContext.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
     cgContext.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
 
-    // Room areas (drawn first, behind everything)
+    // Room areas (behind walls and depth shadow)
     for area in doc.roomAreas {
         drawRoomAreaCG(area, context: cgContext)
     }
@@ -232,6 +232,10 @@ func renderDocument(_ doc: DrawingDocument, in cgContext: CGContext, canvasSize:
     for item in doc.furnitureItems {
         drawFurnitureItemCG(item, context: cgContext)
     }
+
+    // Wall depth shadow: inner shadow on the interior side of perimeter walls,
+    // drawn on top of room colors so it darkens the area near each wall.
+    drawWallDepthShadowCG(doc, context: cgContext)
 
     // Walls — draw order: balcony first, interior, exterior last.
     // Exterior walls paint over any overlapping balcony/interior segments.
@@ -464,6 +468,101 @@ private func drawRoomLabelCG(_ label: RoomLabel, context: CGContext) {
     )
     nsString.draw(at: drawPoint, withAttributes: attributes)
     UIGraphicsPopContext()
+}
+
+// MARK: - Wall depth shadow helpers (PNG export only)
+
+/// Builds a `UIBezierPath` from all room areas in the document.
+/// Falls back to the wall bounding box when no room areas exist.
+/// `effectivePoints` handles both rect-only and polygon rooms.
+private func buildFootprintPath(for doc: DrawingDocument) -> UIBezierPath {
+    let path = UIBezierPath()
+
+    if !doc.roomAreas.isEmpty {
+        for area in doc.roomAreas {
+            let pts = area.effectivePoints
+            guard pts.count >= 3 else { continue }
+            path.move(to: pts[0])
+            for pt in pts.dropFirst() { path.addLine(to: pt) }
+            path.close()
+        }
+    } else {
+        // Fallback: bounding box of all wall endpoints
+        let allPts = doc.walls.flatMap { [$0.start, $0.end] }
+        guard !allPts.isEmpty else { return path }
+        let minX = allPts.map(\.x).min()!
+        let maxX = allPts.map(\.x).max()!
+        let minY = allPts.map(\.y).min()!
+        let maxY = allPts.map(\.y).max()!
+        path.append(UIBezierPath(rect: CGRect(x: minX, y: minY,
+                                              width: maxX - minX,
+                                              height: maxY - minY)))
+    }
+
+    // Non-zero winding: adjacent rooms merge into a single solid shape.
+    path.usesEvenOddFillRule = false
+    return path
+}
+
+/// Renders an inner shadow on the interior side of the building perimeter.
+///
+/// Technique — "big rect with hole":
+///   1. Clip to the footprint so nothing draws outside the building.
+///   2. Fill a huge rect that has the footprint as an even-odd hole.
+///   3. The shadow of the hole edges bleeds inward from ALL sides equally,
+///      darkening the area near every perimeter wall while leaving the
+///      room centres bright.
+///
+/// Zero offset → shadow spreads uniformly inward (no directional bias).
+/// Parameters scale with the footprint so depth is proportional to building size.
+private func drawWallDepthShadowCG(_ doc: DrawingDocument, context: CGContext) {
+    let footprint = buildFootprintPath(for: doc)
+    let bounds = footprint.bounds
+    guard bounds.width > 0, bounds.height > 0 else { return }
+
+    let ref  = min(bounds.width, bounds.height)
+    // With a single bbox hole the blur must reach rooms that sit away from the edge.
+    // Two-pass: a sharp near-wall layer + a soft ambient layer.
+    let blurTight   = max(10, ref * 0.05)
+    let blurAmbient = max(20, ref * 0.10)
+
+    context.saveGState()
+    // Clip uses non-zero winding → correctly unions all room areas (including overlaps).
+    context.addPath(footprint.cgPath)
+    context.clip()
+
+    // Shadow source: big rect with a single rectangular hole (the footprint bbox).
+    // Using the bbox instead of individual room subpaths avoids spurious shadow at
+    // internal room boundaries where rooms touch or overlap.
+    // The clip above already constrains the shadow to the real building shape.
+    let expand: CGFloat = 2000
+    let bigRect = UIBezierPath(rect: CGRect(
+        x: bounds.minX - expand, y: bounds.minY - expand,
+        width: bounds.width + expand * 2, height: bounds.height + expand * 2
+    ))
+    bigRect.append(UIBezierPath(rect: bounds))   // single clean rectangular hole
+    bigRect.usesEvenOddFillRule = true
+
+    UIGraphicsPushContext(context)
+
+    // Pass 1 — sharp layer: strong, tight shadow right at the wall edge
+    context.saveGState()
+    context.setShadow(offset: .zero, blur: blurTight,
+                      color: UIColor.black.withAlphaComponent(0.88).cgColor)
+    UIColor.black.setFill()
+    bigRect.fill()
+    context.restoreGState()
+
+    // Pass 2 — ambient layer: softer, wider depth gradient
+    context.saveGState()
+    context.setShadow(offset: .zero, blur: blurAmbient,
+                      color: UIColor.black.withAlphaComponent(0.55).cgColor)
+    UIColor.black.setFill()
+    bigRect.fill()
+    context.restoreGState()
+
+    UIGraphicsPopContext()
+    context.restoreGState()
 }
 
 // MARK: - Shared helpers

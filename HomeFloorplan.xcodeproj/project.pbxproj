@@ -6,7 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		173EE2A82FD8AFBF0024A44B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 173EE2A72FD8AFBF0024A44B /* PrivacyInfo.xcprivacy */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
+		173EE2A72FD8AFBF0024A44B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		174C63AA2FBA5556004752B5 /* HomeFloorplan.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HomeFloorplan.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -47,6 +52,7 @@
 			children = (
 				174C63AC2FBA5556004752B5 /* HomeFloorplan */,
 				174C63AB2FBA5556004752B5 /* Products */,
+				173EE2A72FD8AFBF0024A44B /* PrivacyInfo.xcprivacy */,
 			);
 			sourceTree = "<group>";
 		};
@@ -123,6 +129,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				173EE2A82FD8AFBF0024A44B /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

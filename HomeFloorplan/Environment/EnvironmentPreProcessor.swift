@@ -66,16 +66,20 @@ struct SensorStatusEntry: Codable {
     /// True se |deviationSigma| > anomalyThreshold (1.5σ).
     let isAnomaly: Bool
     /// Direzione dell'anomalia statistica: "high" | "low" | "none".
-    /// "high" = valore significativamente sopra la media storica.
-    /// "low"  = valore significativamente sotto la media storica.
-    /// "none" = deviazione nella norma (|σ| ≤ anomalyThreshold).
     let anomalyDirection: String
     /// True se l'anomalia è actionable, cioè richiede attenzione reale.
-    /// Per anomalie "high": sempre true quando isAnomaly.
-    /// Per anomalie "low": solo se il valore è anche sotto la soglia bassa di comfort
-    ///   (es. humidity < 40%). Evita falsi positivi per valori statisticamente bassi
-    ///   ma ancora nel range di comfort (es. 52% con baseline 61%).
     let actionableAnomaly: Bool
+
+    // Sprint 16A — Device identity & health
+
+    /// UUID string of the primary contributing accessory (first UUID when aggregated).
+    let accessoryID: String?
+    /// Display name of the primary contributing accessory.
+    let accessoryName: String?
+    /// True if no reading has arrived in the last 60 minutes (device health signal).
+    let isStale: Bool
+    /// Minutes since last reading. Non-nil only when isStale is true.
+    let staleMinutes: Int?
 }
 
 // MARK: - PreProcessorResult
@@ -111,13 +115,18 @@ enum EnvironmentPreProcessor {
     ///   - room: Dati ambientali correnti della stanza.
     ///   - baselineByType: Baseline 7 giorni pre-calcolata: [serviceType.rawValue: (avg, stdDev)].
     ///   - outdoorRoomName: Nome stanza outdoor da UserDefaults (AppStorage "outdoorRoomName").
+    /// Stale threshold: sensors with no update in the last 60 minutes are flagged.
+    static let staleThresholdMinutes: Int = 60
+
     static func preProcess(
         room: RoomEnvironmentData,
         baselineByType: [String: (avg: Double, stdDev: Double)],
-        outdoorRoomName: String = ""
+        outdoorRoomName: String = "",
+        accessoryNameMap: [String: String] = [:]
     ) -> PreProcessorResult {
 
         let roomType = RoomClassifier.classify(roomName: room.roomName, outdoorRoomName: outdoorRoomName)
+        let now = Date()
 
         var sensorStatuses: [SensorStatusEntry] = []
         var worstUrgency: SensorUrgency = .normal
@@ -126,37 +135,40 @@ enum EnvironmentPreProcessor {
             let urgency = sensor.urgency
             if urgency > worstUrgency { worstUrgency = urgency }
 
+            // Stale detection: flag sensors with no update in the last 60 minutes
+            let minutesSinceUpdate = Int(-sensor.lastUpdated.timeIntervalSince(now) / 60)
+            let isStale = minutesSinceUpdate >= staleThresholdMinutes
+            let staleMinutes: Int? = isStale ? minutesSinceUpdate : nil
+
+            // Device identity — use first UUID as primary source
+            let primaryUUID = sensor.accessoryUUIDs.first
+            let accessoryName = primaryUUID.flatMap { accessoryNameMap[$0] }
+
             // Calcola deviazione dalla baseline se disponibile
             var sigma: Double? = nil
             var isAnomaly = false
             var anomalyDirection = "none"
             var actionableAnomaly = false
 
-            if let baseline = baselineByType[sensor.serviceType.rawValue],
+            // Skip statistical anomaly check for stale sensors — value is unreliable
+            if !isStale,
+               let baseline = baselineByType[sensor.serviceType.rawValue],
                baseline.stdDev > 0 {
                 let deviation = (sensor.currentValue - baseline.avg) / baseline.stdDev
-                sigma = Double(round(deviation * 100) / 100)   // 2 decimali per il trace
+                sigma = Double(round(deviation * 100) / 100)
                 isAnomaly = abs(deviation) > anomalyThreshold
 
                 if deviation > anomalyThreshold {
                     anomalyDirection = "high"
-                    // Anomalia alta: actionable se c'è già urgency oppure il valore
-                    // è sopra la soglia warning (duplice protezione per sensori senza urgency)
                     actionableAnomaly = true
                 } else if deviation < -anomalyThreshold {
                     anomalyDirection = "low"
-                    // Anomalia bassa: actionable SOLO se il valore è anche sotto
-                    // la soglia bassa di comfort del tipo di sensore.
-                    // Senza questo guard, valori come humidity=52% con baseline=61%
-                    // aprirebbero il gate AI anche quando 52% è perfettamente accettabile.
                     if let lowWarn = sensor.serviceType.defaultLowWarning {
                         actionableAnomaly = sensor.currentValue < lowWarn
                     } else {
-                        // Tipo senza soglia bassa (CO, fumo, VOC…): anomalia bassa non actionable
                         actionableAnomaly = false
                     }
                 }
-                // deviation in range [-threshold, +threshold]: anomalyDirection="none", actionableAnomaly=false
             }
 
             let entry = SensorStatusEntry(
@@ -166,16 +178,18 @@ enum EnvironmentPreProcessor {
                 deviationSigma: sigma,
                 isAnomaly: isAnomaly,
                 anomalyDirection: anomalyDirection,
-                actionableAnomaly: actionableAnomaly
+                actionableAnomaly: actionableAnomaly,
+                accessoryID: primaryUUID,
+                accessoryName: accessoryName,
+                isStale: isStale,
+                staleMinutes: staleMinutes
             )
             sensorStatuses.append(entry)
         }
 
-        // AI Call Gate: chiama l'AI solo se urgency è elevata OPPURE c'è
-        // un'anomalia actionable (cioè statisticamente anomala E fuori dal comfort range).
-        // Questo previene le chiamate AI per valori statisticamente bassi ma ancora
-        // nel range di comfort (es. humidity 52% con baseline 61%).
-        let hasAbnormal = sensorStatuses.contains { $0.urgency != "normal" || $0.actionableAnomaly }
+        // AI Call Gate: call AI when urgency is elevated, there is an actionable anomaly,
+        // or a sensor is stale (device health signal worth reporting).
+        let hasAbnormal = sensorStatuses.contains { $0.urgency != "normal" || $0.actionableAnomaly || $0.isStale }
         let shouldCallAI = hasAbnormal
 
         let ceiling = severityCeiling(for: worstUrgency)

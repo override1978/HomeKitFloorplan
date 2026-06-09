@@ -28,16 +28,33 @@ final class AmbientalAIService {
     var isAnalyzing: Bool = false
     var lastAnalyzed: Date?
 
+    /// Current presence state injected from LocationPresenceService when geofencing is active.
+    /// Falls back to ContextResolver heuristics inside buildPayload when nil.
+    var presenceOverride: PresenceState? = nil
+
+    /// Current outdoor weather snapshot, injected by HomeFloorplanApp from WeatherKitService.
+    /// When non-nil, the indoor temperature baseline is adjusted and weather context is added
+    /// to the LLM payload and system prompt.
+    var currentWeather: WeatherSnapshot? = nil
+
     // MARK: - Private
 
     private let aiSettings: AISettings
+    private let aiService: AIService
     private let modelContainer: ModelContainer
+    private let context: ModelContext
     private let homeKit: HomeKitService
     private let resolver: ActionResolver
+    private let baselineProvider = BaselineProvider()
     let effectivenessTracker: ActionEffectivenessTracker
     /// Intervallo minimo tra analisi per la stessa stanza (15 min).
     private var lastAnalysisByRoom: [String: Date] = [:]
     private let minInterval: TimeInterval = 15 * 60
+    /// Rate-limiter for event-driven immediate analysis requests (5 min per room).
+    private var lastImmediateByRoom: [String: Date] = [:]
+    private let immediateAnalysisInterval: TimeInterval = 5 * 60
+    /// True after the first restoreFromStorage() call — prevents re-loading on every analyzeRooms.
+    private var isRestored = false
 
     /// Nome stanza outdoor impostato dall'utente (AppStorage "outdoorRoomName").
     private var outdoorRoomName: String {
@@ -46,16 +63,21 @@ final class AmbientalAIService {
 
     // MARK: - Init
 
-    /// - Parameter tracker: Tracker condiviso. Se nil, ne viene creato uno autonomo
-    ///   (backward-compatible per le istanze locali nelle view come EnvironmentContextDashboard).
+    /// - Parameters:
+    ///   - tracker: Tracker condiviso. Se nil, ne viene creato uno autonomo
+    ///     (backward-compatible per le istanze locali nelle view come EnvironmentContextDashboard).
+    ///   - aiService: AIService condiviso. Se nil, ne viene creato uno dall'aiSettings (backward-compatible).
     init(
         aiSettings: AISettings,
         modelContainer: ModelContainer,
         homeKit: HomeKitService,
-        tracker: ActionEffectivenessTracker? = nil
+        tracker: ActionEffectivenessTracker? = nil,
+        aiService: AIService? = nil
     ) {
         self.aiSettings = aiSettings
+        self.aiService  = aiService ?? AIService(settings: aiSettings)
         self.modelContainer = modelContainer
+        self.context = ModelContext(modelContainer)
         self.homeKit = homeKit
         let resolvedTracker = tracker ?? ActionEffectivenessTracker(modelContainer: modelContainer)
         self.effectivenessTracker = resolvedTracker
@@ -69,7 +91,12 @@ final class AmbientalAIService {
     /// Analizza tutte le stanze fornite e aggiunge insight per quelle che ne hanno bisogno.
     /// Rispetta l'intervallo minimo di 15 minuti per stanza.
     func analyzeRooms(_ rooms: [RoomEnvironmentData]) async {
+        if !isRestored { restoreFromStorage() }
         guard aiSettings.isOperational, aiSettings.anomalyDetectionEnabled else { return }
+
+        // Re-resolve stale insights on every cycle so accessory state changes
+        // (e.g. blind opened between analysis cycles) are reflected immediately.
+        reResolveStaleInsights()
 
         isAnalyzing = true
         defer { isAnalyzing = false }
@@ -82,6 +109,7 @@ final class AmbientalAIService {
                 severityRaw: insight.severity.rawValue,
                 suggestedAt: insight.generatedAt
             )
+            updatePersistedStatus(for: insight.id, to: .expired)
         }
 
         // Rimuovi insight scaduti prima di procedere
@@ -102,15 +130,17 @@ final class AmbientalAIService {
         lastAnalyzed = Date()
     }
 
-    /// Dismette un insight specifico e registra il dismissal per il tracking.
-    func dismiss(_ insight: AmbientalAIInsight) {
+    /// Dismette un insight specifico e registra il dismissal con il motivo per il tracking.
+    func dismiss(_ insight: AmbientalAIInsight, reason: DismissalReason = .unclear) {
+        updatePersistedStatus(for: insight.id, to: .dismissed)
         if let idx = insights.firstIndex(where: { $0.id == insight.id }) {
             insights[idx].isDismissed = true
             effectivenessTracker.trackDismissal(
                 intents: insight.resolvedIntents,
                 roomName: insight.roomName,
                 severityRaw: insight.severity.rawValue,
-                suggestedAt: insight.generatedAt
+                suggestedAt: insight.generatedAt,
+                reason: reason
             )
             // Phase 7 trace: dismissal event
             #if DEBUG
@@ -132,11 +162,37 @@ final class AmbientalAIService {
         insights.contains { $0.roomName == roomName && $0.isVisible }
     }
 
+    /// Called by SensorEventRouter on high-priority sensor events.
+    /// Resets the 15-min gate for `roomName` so the next analyzeRooms call includes it immediately.
+    /// Rate-limited to once every 5 minutes per room to prevent alert storms.
+    func requestImmediateAnalysis(for roomName: String) {
+        let now = Date()
+        if let last = lastImmediateByRoom[roomName],
+           now.timeIntervalSince(last) < immediateAnalysisInterval { return }
+        lastImmediateByRoom[roomName] = now
+        lastAnalysisByRoom.removeValue(forKey: roomName)
+    }
+
     // MARK: - Room Analysis
 
     private func analyzeRoom(_ room: RoomEnvironmentData, readings: [SensorReading]) async {
-        // Step 1: calcola baseline 7 giorni
-        let baseline = computeBaseline(sensors: room.sensors, readings: readings)
+        // Step 1: baseline from DailySensorSummary (14-day window, seasonal fallback for new users)
+        let serviceTypes = room.sensors.map { $0.serviceType.rawValue }
+        let baselineResult = baselineProvider.baseline(for: room.roomName, serviceTypes: serviceTypes, context: context)
+        let baseline = baselineResult.byType
+
+        // Step 1.5 (Sprint 31): shift indoor temperature baseline when outdoor temp deviates
+        // from its seasonal norm, reducing false anomalies on unusually hot or cold days.
+        let effectiveBaseline: [String: (avg: Double, stdDev: Double)]
+        if let weather = currentWeather {
+            effectiveBaseline = WeatherContextProvider.applyWeatherCorrection(
+                to: baseline,
+                outdoorTemp: weather.outdoorTemperature,
+                season: CalendarSeason.current
+            )
+        } else {
+            effectiveBaseline = baseline
+        }
 
         // Phase 1 trace: raw sensor snapshot
         #if DEBUG
@@ -147,10 +203,12 @@ final class AmbientalAIService {
         #endif
 
         // Step 2: pre-processing deterministico
+        let nameMap = buildAccessoryNameMap()
         let preResult = EnvironmentPreProcessor.preProcess(
             room: room,
-            baselineByType: baseline,
-            outdoorRoomName: outdoorRoomName
+            baselineByType: effectiveBaseline,
+            outdoorRoomName: outdoorRoomName,
+            accessoryNameMap: nameMap
         )
 
         // Phase 2 trace: preprocessor evaluation with full baseline stats
@@ -169,9 +227,29 @@ final class AmbientalAIService {
             return
         }
 
+        // Step 3.5: Semantic fingerprint deduplication
+        let fingerprint = computeSemanticFingerprint(preResult: preResult)
+        let existingState = fetchRoomState(roomName: room.roomName, context: context)
+
+        if let state = existingState, state.semanticFingerprint == fingerprint {
+            dprint("⏭️ [Fingerprint] \(room.roomName): SKIP — semantic state unchanged")
+            dprint("   fingerprint=\(fingerprint)")
+            return
+        }
+        #if DEBUG
+        if let state = existingState {
+            dprint("🆕 [Fingerprint] \(room.roomName): state changed")
+            dprint("   prev=\(state.semanticFingerprint)")
+            dprint("   curr=\(fingerprint)")
+        } else {
+            dprint("🆕 [Fingerprint] \(room.roomName): first analysis (fp=\(fingerprint))")
+        }
+        #endif
+
         // Step 4: costruisce payload con stato pre-valutato (no raw values/thresholds)
-        let payload = buildPayload(room: room, readings: readings, baseline: baseline, preResult: preResult)
-        let systemPrompt = buildSystemPrompt(roomType: preResult.roomType)
+        let payload = buildPayload(room: room, readings: readings, baseline: effectiveBaseline, preResult: preResult)
+        let weatherNote = currentWeather.map { WeatherContextProvider.systemPromptNote(snapshot: $0) }
+        let systemPrompt = buildSystemPrompt(roomType: preResult.roomType, baselineLevel: baselineResult.level, weatherNote: weatherNote)
 
         // Phase 3 trace: payload summary with actionable breakdown
         #if DEBUG
@@ -193,149 +271,175 @@ final class AmbientalAIService {
         #endif
 
         do {
-            let service = AIService(settings: aiSettings)
-            let response = try await service.sendPrompt(
+            let response = try await aiService.sendPrompt(
                 systemPrompt: systemPrompt,
                 userPrompt: payload
             )
             if let insight = parseInsight(response: response, roomName: room.roomName, preResult: preResult) {
-                // Rimuovi eventuale insight precedente per la stessa stanza
-                insights.removeAll { $0.roomName == room.roomName }
-                insights.append(insight)
+                let sortedIntents = insight.resolvedIntents.sorted()
 
-                // Phase 7 trace: final insight delivered to UI
-                #if DEBUG
-                AITraceLogger.shared.logFinalInsight(
-                    roomName: insight.roomName,
-                    severity: insight.severity.rawValue,
-                    message: insight.message,
-                    actionsCount: insight.nextActions.count
+                // Task 4: intent deduplication — same intents + same severity means the situation
+                // hasn't changed from the user's perspective; suppress UI churn.
+                let intentsDuplicated = existingState.map {
+                    $0.lastIntentSet.sorted() == sortedIntents &&
+                    $0.lastSeverityRaw == insight.severity.rawValue
+                } ?? false
+
+                if intentsDuplicated {
+                    // Fingerprint changed (e.g. numeric oscillation around a threshold),
+                    // but the AI conclusion is identical → update state fingerprint only.
+                    if let state = existingState {
+                        state.semanticFingerprint = fingerprint
+                        state.lastAnalysisDate    = Date()
+                        try? context.save()
+                    }
+                    dprint("⏭️ [IntentDedup] \(room.roomName): same intents \(sortedIntents) — suppressing insight update")
+                } else {
+                    // New intents or severity change → full update
+                    insights.removeAll { $0.roomName == room.roomName }
+                    insights.append(insight)
+                    persistInsight(insight)
+                    upsertRoomState(
+                        roomName:      insight.roomName,
+                        fingerprint:   fingerprint,
+                        sortedIntents: sortedIntents,
+                        severityRaw:   insight.severity.rawValue,
+                        insightID:     insight.id,
+                        context:       context,
+                        existing:      existingState
+                    )
+
+                    // Phase 7 trace: final insight delivered to UI
+                    #if DEBUG
+                    AITraceLogger.shared.logFinalInsight(
+                        roomName: insight.roomName,
+                        severity: insight.severity.rawValue,
+                        message: insight.message,
+                        actionsCount: insight.nextActions.count
+                    )
+                    #endif
+                }
+            } else {
+                // LLM returned no insight — record the fingerprint so this exact state
+                // is not re-analysed until the environment changes again.
+                upsertRoomState(
+                    roomName:      room.roomName,
+                    fingerprint:   fingerprint,
+                    sortedIntents: [],
+                    severityRaw:   "none",
+                    insightID:     nil,
+                    context:       context,
+                    existing:      existingState
                 )
-                #endif
+                dprint("⏭️ [Fingerprint] \(room.roomName): LLM returned no insight — fingerprint recorded")
             }
         } catch {
             // Graceful degradation: non mostrare errori all'utente
         }
     }
 
-    // MARK: - Baseline Computation
-
-    /// Calcola la baseline 7 giorni per ogni tipo di sensore della stanza.
-    /// Estratto da buildPayload per riutilizzo nel pre-processor.
-    /// Richiede almeno 5 letture per tipo per includere il tipo nel risultato.
-    private func computeBaseline(
-        sensors: [SensorData],
-        readings: [SensorReading]
-    ) -> [String: (avg: Double, stdDev: Double)] {
-        var result: [String: (avg: Double, stdDev: Double)] = [:]
-        for sensor in sensors {
-            let forType = readings.filter { $0.serviceTypeRaw == sensor.serviceType.rawValue }
-            guard forType.count > 5 else { continue }
-            let values = forType.map(\.value)
-            let avg = values.reduce(0, +) / Double(values.count)
-            let variance = values.reduce(0) { $0 + pow($1 - avg, 2) } / Double(values.count)
-            result[sensor.serviceType.rawValue] = (avg: avg, stdDev: sqrt(variance))
-        }
-        return result
-    }
-
     // MARK: - System Prompt Builder
 
-    private func buildSystemPrompt(roomType: RoomType) -> String {
+    private func buildSystemPrompt(roomType: RoomType, baselineLevel: BaselineLevel = .personal, weatherNote: String? = nil) -> String {
         let cal = Calendar.current
         let now = Date()
-        let hour = cal.component(.hour, from: now)
+        let hour  = cal.component(.hour,  from: now)
         let month = cal.component(.month, from: now)
+        let lang  = AILocale.outputLanguage
 
-        // Fascia oraria
-        let timeOfDay: String
+        // Neutral English time slot label (prompt language is English)
+        let timeSlot: String
         switch hour {
-        case 6..<12:  timeOfDay = "mattina (\(hour):00)"
-        case 12..<14: timeOfDay = "mezzogiorno (\(hour):00)"
-        case 14..<19: timeOfDay = "pomeriggio (\(hour):00)"
-        case 19..<23: timeOfDay = "sera (\(hour):00)"
-        default:      timeOfDay = "notte (\(hour):00)"
+        case 6..<12:  timeSlot = "morning (\(hour):00)"
+        case 12..<14: timeSlot = "midday (\(hour):00)"
+        case 14..<19: timeSlot = "afternoon (\(hour):00)"
+        case 19..<23: timeSlot = "evening (\(hour):00)"
+        default:      timeSlot = "night (\(hour):00)"
         }
 
-        // Stagione (emisfero nord)
+        // Neutral English season
         let season: String
         switch month {
-        case 12, 1, 2: season = "inverno"
-        case 3, 4, 5:  season = "primavera"
-        case 6, 7, 8:  season = "estate"
-        default:        season = "autunno"
+        case 12, 1, 2: season = "winter"
+        case 3, 4, 5:  season = "spring"
+        case 6, 7, 8:  season = "summer"
+        default:        season = "autumn"
         }
 
-        // Contesto tipo stanza per il LLM
-        let roomTypeContext: String
+        // Room type context
+        let roomContext: String
         switch roomType {
         case .outdoor:
-            roomTypeContext = "TIPO STANZA: outdoor (balcone/terrazzo/giardino). " +
-                "NON suggerire HVAC, ventilazione o deumidificazione — " +
-                "stai già all'aperto. Usa intent coolRoom/heatRoom solo per comfort estremo."
+            roomContext = "outdoor (balcony/terrace/garden) — do NOT suggest HVAC, ventilation, or dehumidification. Use coolRoom/heatRoom only for extreme comfort."
         case .utility:
-            roomTypeContext = "TIPO STANZA: utility (garage/lavanderia/cantina)."
+            roomContext = "utility (garage/laundry/basement)"
         case .transit:
-            roomTypeContext = "TIPO STANZA: transit (ingresso/corridoio)."
+            roomContext = "transit (entrance/corridor)"
         case .indoor:
-            roomTypeContext = "TIPO STANZA: indoor."
+            roomContext = "indoor"
         }
 
+        let baselineNote: String
+        switch baselineLevel {
+        case .personal:  baselineNote = "deviation (σ) from 14-day personal baseline"
+        case .seasonal:  baselineNote = "deviation (σ) from seasonal typical values (personal data < 5 days)"
+        case .none:      baselineNote = "no baseline — treat deviationSigma as absent"
+        }
+
+        let weatherLine = weatherNote.map { "\n        \($0)" } ?? ""
+
         return """
-        Sei un assistente domotico integrato in un'app per la casa. \
-        Ora: \(timeOfDay), stagione: \(season). \
-        \(roomTypeContext) \
-        \
-        DATI CHE RICEVI: \
-        - `sensorStatus`: stato pre-valutato (urgency + deviazione dalla media in σ). \
-        - NON devi valutare soglie — sono già calcolate nel campo `urgency`. \
-        - Concentrati su sensori con `isAnomaly: true` che non sono già in urgency warning/danger. \
-        - Se tutto è `urgency: normal` e nessun `isAnomaly: true` → hasInsight=false. \
-        \
-        TONO DEL MESSAGGIO (fondamentale): \
-        - Scrivi UNA sola frase breve in italiano colloquiale, massimo 12 parole. \
-        - NON usare termini tecnici: niente "baseline", "normalizzare", "trend storico", "rilevato". \
-        - NON includere numeri né confronti espliciti (non scrivere "72% invece della media di 65%"). \
-        - NON aggiungere spiegazioni dopo la virgola ("...è rimasta su per tutta la sera" → troppo). \
-        - NON spiegare l'azione — ci sono già i pulsanti per quello. \
-        - Usa SEMPRE il nome della stanza nel messaggio (campo `room` del JSON). \
-        - Esempi di tono CORRETTO: \
-          "L'umidità in cucina è un po' alta." \
-          "Fa ancora un po' caldo in mansarda." \
-          "L'aria nel soggiorno è un po' pesante." \
-          "La CO₂ in camera è un po' alta." \
-          "Sul balcone fa davvero caldo." \
-          "L'aria in lavanderia è viziata." \
-        - Esempi di tono SBAGLIATO (da evitare): \
-          "L'umidità è al 72%, superiore alla media storica del 65%." \
-          "Fa un po' caldo in mansarda, la temperatura è rimasta alta tutta la sera." \
-          "Suggerirei di attivare la ventilazione per normalizzare." \
-          "L'ambiente ha raggiunto valori anomali." \
-        \
-        ARTICOLI E PREPOSIZIONI con i nomi delle stanze — regola italiana: \
-        - Stanze con articolo determinativo femminile: "in cucina", "in camera", "in mansarda", \
-          "in lavanderia", "sul balcone", "sul terrazzo", "in bagno". \
-        - Stanze con articolo maschile: "nel soggiorno", "nello studio", "nel garage", \
-          "nell'ingresso", "nel corridoio". \
-        - Se non sei sicuro → usa "nella stanza [nome]" come fallback sicuro. \
-        \
-        INTENT — indica SOLO il problema ambientale rilevato, senza scegliere dispositivi: \
-        Valori possibili (array di stringhe, max 2): \
-          "coolRoom"         — temperatura troppo alta \
-          "heatRoom"         — temperatura troppo bassa \
-          "reduceHumidity"   — umidità troppo alta \
-          "increaseHumidity" — umidità troppo bassa / aria troppo secca \
-          "improveAirQuality"— qualità aria scarsa, VOC alto \
-          "ventilateRoom"    — aria viziata, ricambio necessario \
-          "reduceCO2"        — CO₂ (anidride carbonica) alta (>1000 ppm) \
-          "respondToSmoke"   — rilevato fumo \
-          "respondToCO"      — rilevato monossido di carbonio \
-        Usa un array vuoto se nessun intent è applicabile. \
-        NON inventare valori diversi da quelli elencati. \
-        \
-        Rispondi SOLO con JSON valido (nessun testo, nessun markdown):
-        {"hasInsight":true,"message":"una frase breve colloquiale","severity":"info"|"warning"|"anomaly",\
-        "intents":["coolRoom"]}
+        You are a smart home AI assistant. RESPOND IN \(lang.uppercased()).
+        Context: \(timeSlot), season: \(season), room type: \(roomContext).\(weatherLine)
+
+        INPUT DATA:
+        - `sensorStatus`: pre-evaluated array — urgency (normal/warning/danger) + \(baselineNote).
+        - `presence`: "people_home" | "sleeping" | "home_empty" — current occupancy context.
+        - Do NOT evaluate thresholds — pre-computed in `urgency`.
+        - Focus on sensors with `isAnomaly: true`, `actionableAnomaly: true`, or `urgency` ≠ `normal`.
+        - If all urgency:normal and no anomalies → respond with hasInsight:false.
+        - Use `presence` for semantic reasoning: home_empty findings differ from people_home ones.
+
+        DATA QUALITY:
+        - If a sensor entry has `isStale: true`, its value may be unreliable — do not draw environmental conclusions from it alone.
+        - You may generate a generic data quality observation (e.g. "sensor data in this room may be outdated") but never reference physical devices, accessory names, manufacturers, or hardware identifiers.
+        - The payload contains no device identity — do not speculate about hardware.
+
+        SEMANTIC REASONING — go beyond describing sensor values:
+        - OBSERVE patterns: correlate sensor state with time, season, or usage context.
+        - EXPLAIN context: infer probable cause (shower, cooking, occupancy, solar exposure, closed windows).
+        - PREDICT: when trend is clear, state what is expected to happen.
+        - Use probabilistic language ("tends to", "usually", "likely") — never deterministic statements.
+
+        MESSAGE QUALITY:
+        - One concise sentence in \(lang), max 14 words.
+        - Colloquial tone — no technical jargon ("baseline", "deviation", "anomaly detected", "normalize").
+        - Always include the room name (from the `room` field in the input JSON).
+        - GOOD: "Kitchen humidity has been lingering after cooking."
+        - GOOD: "Studio tends to overheat during afternoon sun."
+        - GOOD: "Living room CO₂ usually rises during evening occupancy."
+        - BAD: "Humidity at 72%, above historical average of 65%."
+        - BAD: "An environmental anomaly has been detected."
+
+        INTELLIGENCE LEVEL — classify your observation as one of:
+        - "observation": current environment state worth noticing
+        - "pattern": repeated behavior inferred from context and time
+        - "prediction": expected future state based on observable trend
+        - "recommendation": a direct action suggestion
+
+        PATTERN KEY — stable English snake_case identifier for deduplication (null if one-off):
+        - Examples: "bathroom_post_shower_humidity", "studio_solar_overheating", "living_co2_evening_occupancy"
+
+        WHY EXPLANATION — one brief sentence in \(lang) explaining your reasoning (max 12 words):
+        - Mention the data signal: time of day, deviation direction, trend.
+        - Example: "Humidity above normal at this hour with a rising trend."
+
+        INTENTS — environmental problem only, max 2 values from:
+        coolRoom | heatRoom | reduceHumidity | increaseHumidity | improveAirQuality | ventilateRoom | reduceCO2 | respondToSmoke | respondToCO
+        Use empty array if no intent is applicable.
+
+        Respond ONLY with valid JSON (no text, no markdown):
+        {"hasInsight":true,"message":"...","severity":"info"|"warning"|"anomaly","intents":["coolRoom"],"intelligenceLevel":"observation"|"pattern"|"prediction"|"recommendation","patternKey":"snake_case_key_or_null","whyExplanation":"..."}
         """
     }
 
@@ -386,17 +490,21 @@ final class AmbientalAIService {
             baselineJSON["stdDev\(typeRaw.capitalized)"] = Double(round(stats.stdDev * 10) / 10)
         }
 
-        // Sensor status come array Codable
+        // Sensor status array — semantic fields only. No hardware identity reaches the LLM (Sprint 16B).
+        // accessoryID, accessoryName, staleMinutes are retained in SensorStatusEntry for the
+        // deterministic attribution pipeline (parseInsight → sourceAccessoryID/Name) but are
+        // intentionally excluded from the AI payload to preserve hardware-agnosticism.
         let sensorStatusArray: [[String: Any]] = preResult.sensorStatuses.map { entry in
             var dict: [String: Any] = [
-                "type":    entry.type,
-                "value":   entry.value,
-                "urgency": entry.urgency,
-                "isAnomaly": entry.isAnomaly,
+                "type":             entry.type,
+                "value":            entry.value,
+                "urgency":          entry.urgency,
+                "isAnomaly":        entry.isAnomaly,
+                "actionableAnomaly": entry.actionableAnomaly,
+                "anomalyDirection": entry.anomalyDirection,
+                "isStale":          entry.isStale,
             ]
-            if let sigma = entry.deviationSigma {
-                dict["deviationSigma"] = sigma
-            }
+            if let sigma = entry.deviationSigma { dict["deviationSigma"] = sigma }
             return dict
         }
 
@@ -406,14 +514,28 @@ final class AmbientalAIService {
         let nowMin  = cal.component(.minute, from: now)
         let localTime = String(format: "%02d:%02d", nowHour, nowMin)
 
-        let payloadDict: [String: Any] = [
+        // Presence context: geofence override → ContextResolver heuristics fallback
+        let resolvedPresence = presenceOverride ?? ContextResolver.resolve().presenceState
+        let presenceLabel: String
+        switch resolvedPresence {
+        case .home:              presenceLabel = "people_home"
+        case .sleeping:          presenceLabel = "sleeping"
+        case .away, .vacation:   presenceLabel = "home_empty"
+        }
+
+        var payloadDict: [String: Any] = [
             "room":         room.roomName,
             "roomType":     preResult.roomType.rawValue,
             "localTime":    localTime,
+            "presence":     presenceLabel,
             "sensorStatus": sensorStatusArray,
             "periods":      periods,
             "baseline7d":   baselineJSON,
         ]
+        // Sprint 31: inject outdoor weather when available
+        if let weather = currentWeather {
+            payloadDict["outdoor"] = WeatherContextProvider.payloadDict(snapshot: weather)
+        }
 
         guard let data = try? JSONSerialization.data(withJSONObject: payloadDict, options: [.sortedKeys]),
               let str = String(data: data, encoding: .utf8)
@@ -498,13 +620,80 @@ final class AmbientalAIService {
             ? []
             : resolver.resolve(intents: filteredIntents, roomName: roomName, roomType: preResult.roomType)
 
+        let intelligenceLevelRaw = json["intelligenceLevel"] as? String
+        let level = intelligenceLevelRaw.flatMap { IntelligenceLevel(rawValue: $0) } ?? .observation
+        let patternKey = json["patternKey"] as? String
+        let whyExplanation = json["whyExplanation"] as? String
+        // 24.B: confidence computed deterministically — not requested from LLM
+        let confidence = computeConfidence(preResult: preResult)
+
+        // 24.E: language quality flag — Italian insights should contain at least one non-ASCII char
+        let suspect = languageSuspect(message: message)
+        #if DEBUG
+        if suspect {
+            print("⚠️ [AI] Language suspect in \(roomName): message appears to be in English instead of Italian")
+        }
+        #endif
+
+        // Source accessory attribution: pick the most anomalous sensor that has device identity (Sprint 16A)
+        let urgencyOrder = ["normal": 0, "warning": 1, "danger": 2]
+        let sourceEntry = preResult.sensorStatuses
+            .filter { $0.accessoryID != nil }
+            .max {
+                let ls = (urgencyOrder[$0.urgency] ?? 0) * 4 + ($0.actionableAnomaly ? 2 : 0) + ($0.isAnomaly ? 1 : 0)
+                let rs = (urgencyOrder[$1.urgency] ?? 0) * 4 + ($1.actionableAnomaly ? 2 : 0) + ($1.isAnomaly ? 1 : 0)
+                return ls < rs
+            }
+
         return AmbientalAIInsight(
             roomName: roomName,
             message: message,
             severity: clampedSeverity,
+            intelligenceLevel: level,
+            patternKey: patternKey,
+            whyExplanation: whyExplanation,
+            confidence: confidence,
             nextActions: nextActions,
-            resolvedIntents: filteredIntents.map(\.rawValue)
+            resolvedIntents: filteredIntents.map(\.rawValue),
+            sourceAccessoryID: sourceEntry?.accessoryID,
+            sourceAccessoryName: sourceEntry?.accessoryName,
+            sourceServiceType: sourceEntry?.type,
+            promptVersion: AIPromptVersion.currentEnvironmental,
+            isLanguageSuspect: suspect
         )
+    }
+
+    // MARK: - Confidence Computation (24.B)
+
+    /// Computes insight confidence deterministically from pre-processor signals.
+    /// Replaces the LLM-generated confidence field (Sprint 24.B).
+    private func computeConfidence(preResult: PreProcessorResult) -> Double {
+        let statuses = preResult.sensorStatuses
+        guard !statuses.isEmpty else { return 0.5 }
+
+        // Signal intensity: max |deviationSigma| normalised to 3σ (0.40 weight)
+        let maxSigma = statuses.compactMap(\.deviationSigma).map(abs).max() ?? 0
+        let signalScore = min(maxSigma / 3.0, 1.0) * 0.40
+
+        // Data reliability: fraction of sensors with valid personal baseline (0.30 weight)
+        let withBaseline = Double(statuses.filter { $0.deviationSigma != nil }.count)
+        let sampleScore  = (withBaseline / Double(statuses.count)) * 0.30
+
+        // Urgency level (0.30 weight)
+        let urgencyMap: [String: Double] = ["normal": 0.0, "warning": 0.5, "danger": 1.0]
+        let maxUrgency = statuses.compactMap { urgencyMap[$0.urgency] }.max() ?? 0
+        let urgencyScore = maxUrgency * 0.30
+
+        return min(1.0, signalScore + sampleScore + urgencyScore)
+    }
+
+    // MARK: - Language Validation (24.E)
+
+    /// Returns true when the Italian device locale is expected but the message contains
+    /// only ASCII characters — a heuristic signal that the LLM responded in English.
+    private func languageSuspect(message: String) -> Bool {
+        guard AILocale.outputLanguage == "Italian", !message.isEmpty else { return false }
+        return message.unicodeScalars.allSatisfy { $0.value < 128 }
     }
 
     private func extractJSON(from string: String) -> String {
@@ -514,10 +703,243 @@ final class AmbientalAIService {
         return String(string[start...end])
     }
 
+    // MARK: - Persistence
+
+    /// Loads active non-expired insights from SwiftData into the in-memory array.
+    /// Called once per service session before the first analysis run.
+    /// Also triggers a 30-day cleanup of old records.
+    private func restoreFromStorage() {
+        isRestored = true
+        pruneOldInsights()
+        let now = Date()
+        let statusActive = InsightPersistedStatus.active.rawValue
+        let descriptor = FetchDescriptor<PersistedInsight>(
+            predicate: #Predicate { $0.statusRaw == statusActive && $0.expiresAt > now }
+        )
+        let records = (try? context.fetch(descriptor)) ?? []
+        insights = records.compactMap { record -> AmbientalAIInsight? in
+            guard let insight = record.toAmbientalAIInsight() else { return nil }
+            // Fast path: re-resolve in-memory (works when HomeKit is already loaded)
+            let updated = reResolveIfAllTips(insight, record: record)
+            // Slow path fallback: if HomeKit wasn't loaded yet, bust the fingerprint so the
+            // current analyzeRooms() cycle forces a fresh AI + resolver pass for this room.
+            let stillOnlyTips = !updated.nextActions.isEmpty && updated.nextActions.allSatisfy { $0.isTip }
+            if stillOnlyTips { invalidateFingerprint(for: insight.roomName) }
+            return updated
+        }
+        dprint("🔄 [Persistence] Restored \(insights.count) active insight(s) from storage")
+    }
+
+    /// Re-runs the resolver for an insight whose every action is a tip.
+    /// Uses ActionIntentInferrer as fallback when resolvedIntents is empty (old records).
+    /// Returns the original insight unchanged when no real accessory is found.
+    private func reResolveIfAllTips(_ insight: AmbientalAIInsight, record: PersistedInsight) -> AmbientalAIInsight {
+        guard !insight.nextActions.isEmpty, insight.nextActions.allSatisfy({ $0.isTip }) else { return insight }
+
+        var intents = insight.resolvedIntents.compactMap { ActionIntent(rawValue: $0) }
+        if intents.isEmpty { intents = ActionIntentInferrer.infer(from: insight) }
+        guard !intents.isEmpty else { return insight }
+
+        let roomType = RoomClassifier.classify(roomName: insight.roomName, outdoorRoomName: outdoorRoomName)
+        let freshActions = resolver.resolve(intents: intents, roomName: insight.roomName, roomType: roomType)
+        guard freshActions.contains(where: { !$0.isTip }) else { return insight }
+
+        let updated = AmbientalAIInsight(
+            id: insight.id,
+            roomName: insight.roomName,
+            message: insight.message,
+            severity: insight.severity,
+            intelligenceLevel: insight.intelligenceLevel,
+            patternKey: insight.patternKey,
+            whyExplanation: insight.whyExplanation,
+            confidence: insight.confidence,
+            generatedAt: insight.generatedAt,
+            isDismissed: insight.isDismissed,
+            nextActions: freshActions,
+            resolvedIntents: insight.resolvedIntents,
+            sourceAccessoryID: insight.sourceAccessoryID,
+            sourceAccessoryName: insight.sourceAccessoryName,
+            sourceServiceType: insight.sourceServiceType
+        )
+        if let data = try? JSONEncoder().encode(freshActions),
+           let json = String(data: data, encoding: .utf8) {
+            record.nextActionsJSON = json
+            try? context.save()
+        }
+        dprint("🔁 [Restore] \(insight.roomName): upgraded tip-only → \(freshActions.count) action(s)")
+        return updated
+    }
+
+    /// Re-resolves every visible insight that has no actionable suggests (empty or tip-only).
+    /// Called on every analyzeRooms() cycle so accessory state changes between cycles
+    /// (e.g. blind opened) are reflected without waiting for a full AI re-run.
+    ///
+    /// - If re-resolve finds real accessories: updates insight in-memory + SwiftData, no AI call.
+    /// - If re-resolve still finds nothing: invalidates the semantic fingerprint so the
+    ///   per-room analysis in the current cycle will call the AI fresh.
+    private func reResolveStaleInsights() {
+        let staleIndices = insights.indices.filter { i in
+            let a = insights[i].nextActions
+            return a.isEmpty || a.allSatisfy { $0.isTip }
+        }
+        guard !staleIndices.isEmpty else { return }
+
+        for i in staleIndices {
+            let insight = insights[i]
+            var intents = insight.resolvedIntents.compactMap { ActionIntent(rawValue: $0) }
+            if intents.isEmpty { intents = ActionIntentInferrer.infer(from: insight) }
+            guard !intents.isEmpty else { continue }
+
+            let roomType = RoomClassifier.classify(roomName: insight.roomName, outdoorRoomName: outdoorRoomName)
+            let freshActions = resolver.resolve(intents: intents, roomName: insight.roomName, roomType: roomType)
+
+            if freshActions.contains(where: { !$0.isTip }) {
+                // Found real accessories — upgrade in-memory insight
+                insights[i] = AmbientalAIInsight(
+                    id: insight.id,
+                    roomName: insight.roomName,
+                    message: insight.message,
+                    severity: insight.severity,
+                    intelligenceLevel: insight.intelligenceLevel,
+                    patternKey: insight.patternKey,
+                    whyExplanation: insight.whyExplanation,
+                    confidence: insight.confidence,
+                    generatedAt: insight.generatedAt,
+                    isDismissed: insight.isDismissed,
+                    nextActions: freshActions,
+                    resolvedIntents: insight.resolvedIntents,
+                    sourceAccessoryID: insight.sourceAccessoryID,
+                    sourceAccessoryName: insight.sourceAccessoryName,
+                    sourceServiceType: insight.sourceServiceType
+                )
+                // Persist updated actions
+                let insightID = insight.id
+                let descriptor = FetchDescriptor<PersistedInsight>(
+                    predicate: #Predicate { $0.id == insightID }
+                )
+                if let record = (try? context.fetch(descriptor))?.first,
+                   let data = try? JSONEncoder().encode(freshActions),
+                   let json = String(data: data, encoding: .utf8) {
+                    record.nextActionsJSON = json
+                    try? context.save()
+                }
+                dprint("🔁 [ReResolve] \(insight.roomName): stale insight upgraded to \(freshActions.count) action(s)")
+            } else {
+                // Still nothing — bust the fingerprint so AI re-runs for this room
+                invalidateFingerprint(for: insight.roomName)
+            }
+        }
+    }
+
+    /// Deletes the RoomAnalysisState for a room, forcing the fingerprint check to fail on
+    /// the current analyzeRooms() cycle and triggering a fresh AI + resolver pass.
+    private func invalidateFingerprint(for roomName: String) {
+        guard let state = fetchRoomState(roomName: roomName, context: context) else { return }
+        context.delete(state)
+        try? context.save()
+        dprint("🗑️ [Fingerprint] Invalidated '\(roomName)' — tip-only insight, will re-analyse")
+    }
+
+    /// Writes a new insight to SwiftData, invalidating any previous active record for the same room.
+    private func persistInsight(_ insight: AmbientalAIInsight) {
+        let roomName = insight.roomName
+        let statusActive = InsightPersistedStatus.active.rawValue
+        let existing = FetchDescriptor<PersistedInsight>(
+            predicate: #Predicate { $0.roomName == roomName && $0.statusRaw == statusActive }
+        )
+        if let records = try? context.fetch(existing) {
+            records.forEach { $0.statusRaw = InsightPersistedStatus.expired.rawValue }
+        }
+        let record = PersistedInsight.from(insight)
+        context.insert(record)
+        try? context.save()
+    }
+
+    /// Updates the persisted status of a single insight record.
+    private func updatePersistedStatus(for id: UUID, to status: InsightPersistedStatus) {
+        let descriptor = FetchDescriptor<PersistedInsight>(
+            predicate: #Predicate { $0.id == id }
+        )
+        guard let record = (try? context.fetch(descriptor))?.first else { return }
+        record.statusRaw = status.rawValue
+        try? context.save()
+    }
+
+    // MARK: - Semantic Fingerprint
+
+    /// Builds a deterministic semantic fingerprint from the preprocessor result.
+    /// Encodes only urgency/anomaly/direction per sensor type and the room classification.
+    /// Raw numeric values are intentionally excluded to ignore insignificant fluctuations.
+    private func computeSemanticFingerprint(preResult: PreProcessorResult) -> String {
+        let sensorParts = preResult.sensorStatuses
+            .sorted { $0.type < $1.type }
+            .map { "\($0.type):\($0.urgency):\($0.isAnomaly ? "1" : "0"):\($0.anomalyDirection)" }
+        return (sensorParts + ["rt:\(preResult.roomType.rawValue)"]).joined(separator: "|")
+    }
+
+    private func fetchRoomState(roomName: String, context: ModelContext) -> RoomAnalysisState? {
+        let descriptor = FetchDescriptor<RoomAnalysisState>(
+            predicate: #Predicate { $0.roomName == roomName }
+        )
+        return (try? context.fetch(descriptor))?.first
+    }
+
+    private func upsertRoomState(
+        roomName:      String,
+        fingerprint:   String,
+        sortedIntents: [String],
+        severityRaw:   String,
+        insightID:     UUID?,
+        context:       ModelContext,
+        existing:      RoomAnalysisState?
+    ) {
+        let now = Date()
+        if let state = existing {
+            state.semanticFingerprint = fingerprint
+            state.lastAnalysisDate    = now
+            state.lastIntentSet       = sortedIntents
+            state.lastSeverityRaw     = severityRaw
+            if let id = insightID { state.lastInsightID = id }
+        } else {
+            let state = RoomAnalysisState(
+                roomName:            roomName,
+                lastAnalysisDate:    now,
+                semanticFingerprint: fingerprint,
+                lastIntentSet:       sortedIntents,
+                lastSeverityRaw:     severityRaw,
+                lastInsightID:       insightID
+            )
+            context.insert(state)
+        }
+        try? context.save()
+    }
+
+    /// Deletes PersistedInsight records older than 30 days regardless of status.
+    func pruneOldInsights() {
+        let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
+        let descriptor = FetchDescriptor<PersistedInsight>(
+            predicate: #Predicate { $0.generatedAt < cutoff }
+        )
+        let old = (try? context.fetch(descriptor)) ?? []
+        guard !old.isEmpty else { return }
+        old.forEach { context.delete($0) }
+        try? context.save()
+        dprint("🗑️ [Persistence] Pruned \(old.count) expired insight record(s)")
+    }
+
+    // MARK: - Accessory Map
+
+    /// Builds a UUID→name map from all HomeKit accessories (Sprint 16A).
+    private func buildAccessoryNameMap() -> [String: String] {
+        Dictionary(
+            homeKit.allAccessories.map { ($0.uniqueIdentifier.uuidString, $0.name) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
     // MARK: - Data Loading
 
     private func loadHistory(for room: RoomEnvironmentData) -> [SensorReading] {
-        let context = ModelContext(modelContainer)
         let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
         let roomName = room.roomName
 

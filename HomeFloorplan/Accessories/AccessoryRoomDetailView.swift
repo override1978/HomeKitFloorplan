@@ -3,20 +3,6 @@ import HomeKit
 import SwiftData
 
 // MARK: - AccessoryRoomDetailView
-//
-// Schermata di dettaglio per una stanza nel modulo Accessori.
-// Sostituisce AccessoryRoomDetailPlaceholder (Sprint 3).
-//
-// Struttura verticale (scroll), organizzata per categoria funzionale:
-//   1. Header card         — nome stanza, subtitle (count + health)
-//   2. Sezione Luci        — LightsCard (se ci sono luci nella stanza)
-//   3. Sezione Clima       — ClimateCard (termostati/AC)
-//   4. Sezione Sensori     — SensorsCard (sensori read-only)
-//   5. Sezione Sicurezza   — SecurityCard (antifurti + serrature)
-//   6. Sezione Altro       — OtherCard (accessori non classificati)
-//
-// Navigazione:
-//   Tap su riga accessorio  →  sheet  →  AccessoryDetailView (esistente)
 
 struct AccessoryRoomDetailView: View {
 
@@ -25,15 +11,41 @@ struct AccessoryRoomDetailView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(IconOverrideStore.self) private var iconOverrides
     @Environment(HomeKitScenesService.self) private var scenesService
+    @Environment(ActionExecutionService.self) private var actionExecutionService
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedAccessory: HMAccessory?
     @State private var executingSceneID: UUID?
     @State private var recentlySucceededID: UUID?
     @State private var usageStore: SceneUsageStore?
+    @State private var isReorderingSections = false
 
-    /// Scene che coinvolgono questa stanza.
-    /// Ordine: suggerite contestualmente prima, poi per displayPriority.
+    /// Ordine sezioni persistito in UserDefaults (raw value CSV).
+    @AppStorage("roomDetailSectionOrder") private var sectionOrderRaw: String = ""
+
+    /// Tutte le sezioni riordinabili (ordine di default).
+    private let reorderableSections: [AccessoryCategory] = [
+        .lights, .outlets, .climate, .television, .sensors, .security, .cameras, .switches, .buttons
+    ]
+
+    /// Solo le sezioni che hanno almeno un accessorio in questa stanza.
+    @MainActor
+    private var presentSections: [AccessoryCategory] {
+        reorderableSections.filter { !accessories(in: $0).isEmpty }
+    }
+
+    /// Sezioni nell'ordine salvato; le nuove categorie vengono aggiunte in coda.
+    private var orderedSections: [AccessoryCategory] {
+        let stored = sectionOrderRaw
+            .split(separator: ",")
+            .compactMap { AccessoryCategory(rawValue: String($0)) }
+        let storedSet = Set(stored)
+        let missing = reorderableSections.filter { !storedSet.contains($0) }
+        return stored.filter { reorderableSections.contains($0) } + missing
+    }
+
+    // MARK: - Scene helpers
+
     private var roomScenes: [SceneItem] {
         let filtered = scenesService.scenes.filter { $0.affiliatedRoomIDs.contains(room.id) }
         guard let store = usageStore else {
@@ -48,11 +60,20 @@ struct AccessoryRoomDetailView: View {
         }
     }
 
-    /// ID delle scene suggerite contestualmente (per badge nelle card).
     private var suggestedSceneIDs: Set<UUID> {
         guard let store = usageStore else { return [] }
         return Set(store.suggestedScenes(from: roomScenes).map { $0.scene.id })
     }
+
+    /// Dimmable or color lights in this room, used to decide whether to show the lighting strip.
+    private var lightingAccessories: [HMAccessory] {
+        room.accessories.filter {
+            let cat = AccessoryCategorizer.categorize($0)
+            return cat == "colorLight" || cat == "dimmableLight"
+        }
+    }
+
+    // MARK: - Body
 
     var body: some View {
         ScrollView {
@@ -61,7 +82,16 @@ struct AccessoryRoomDetailView: View {
                 // ── 1. Header stanza ───────────────────────────────────
                 roomHeaderCard
 
-                // ── 1b. Scene della stanza ────────────────────────────
+                // ── 1b. Lighting quick-actions ─────────────────────────
+                if !lightingAccessories.isEmpty {
+                    LightingChipsStrip(
+                        room: room,
+                        homeKit: homeKit,
+                        actionExecutionService: actionExecutionService
+                    )
+                }
+
+                // ── 1c. Scene della stanza ────────────────────────────
                 if !roomScenes.isEmpty {
                     RoomScenesStrip(
                         scenes: roomScenes,
@@ -73,96 +103,16 @@ struct AccessoryRoomDetailView: View {
                     )
                 }
 
-                // ── 2. Luci ───────────────────────────────────────────
-                let lights = accessories(in: .lights)
-                if !lights.isEmpty {
-                    DetailSectionCard(
-                        title: String(localized: "accessories.section.lights", defaultValue: "Luci"),
-                        symbol: "lightbulb.fill",
-                        symbolColor: .yellow
-                    ) {
-                        ForEach(lights, id: \.uniqueIdentifier) { accessory in
-                            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
-                            AccessoryDetailRow(
-                                accessory: accessory,
-                                adapter: adapter,
-                                homeKit: homeKit,
-                                iconOverrides: iconOverrides
-                            ) {
-                                selectedAccessory = accessory
-                            }
-                        }
+                // ── 2…N. Sezioni riordinabili ─────────────────────────
+                ForEach(orderedSections) { category in
+                    let items = accessories(in: category)
+                    if !items.isEmpty {
+                        sectionCard(for: category, accessories: items)
                     }
                 }
 
-                // ── 3. Clima ──────────────────────────────────────────
-                let climate = accessories(in: .climate)
-                if !climate.isEmpty {
-                    DetailSectionCard(
-                        title: String(localized: "accessories.section.climate", defaultValue: "Clima"),
-                        symbol: "thermometer.medium",
-                        symbolColor: .cyan
-                    ) {
-                        ForEach(climate, id: \.uniqueIdentifier) { accessory in
-                            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
-                            AccessoryDetailRow(
-                                accessory: accessory,
-                                adapter: adapter,
-                                homeKit: homeKit,
-                                iconOverrides: iconOverrides
-                            ) {
-                                selectedAccessory = accessory
-                            }
-                        }
-                    }
-                }
-
-                // ── 4. Sensori ────────────────────────────────────────
-                let sensors = accessories(in: .sensors)
-                if !sensors.isEmpty {
-                    DetailSectionCard(
-                        title: String(localized: "accessories.section.sensors", defaultValue: "Sensori"),
-                        symbol: "sensor.tag.radiowaves.forward",
-                        symbolColor: .green
-                    ) {
-                        ForEach(sensors, id: \.uniqueIdentifier) { accessory in
-                            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
-                            AccessoryDetailRow(
-                                accessory: accessory,
-                                adapter: adapter,
-                                homeKit: homeKit,
-                                iconOverrides: iconOverrides
-                            ) {
-                                selectedAccessory = accessory
-                            }
-                        }
-                    }
-                }
-
-                // ── 5. Sicurezza ──────────────────────────────────────
-                let security = accessories(in: .security)
-                if !security.isEmpty {
-                    DetailSectionCard(
-                        title: String(localized: "accessories.section.security", defaultValue: "Sicurezza"),
-                        symbol: "lock.shield.fill",
-                        symbolColor: .red
-                    ) {
-                        ForEach(security, id: \.uniqueIdentifier) { accessory in
-                            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
-                            AccessoryDetailRow(
-                                accessory: accessory,
-                                adapter: adapter,
-                                homeKit: homeKit,
-                                iconOverrides: iconOverrides
-                            ) {
-                                selectedAccessory = accessory
-                            }
-                        }
-                    }
-                }
-
-                // ── 6. Altro ──────────────────────────────────────────
-                let others = accessories(in: .others)
+                // ── Ultimo. Altro — catch-all per categorie senza sezione
+                let others = accessoriesNotInDedicatedSection
                 if !others.isEmpty {
                     DetailSectionCard(
                         title: String(localized: "accessories.section.other", defaultValue: "Altro"),
@@ -190,6 +140,15 @@ struct AccessoryRoomDetailView: View {
         .navigationTitle(room.roomName)
         .navigationBarTitleDisplayMode(.large)
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isReorderingSections = true
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+            }
+        }
         .onAppear {
             if usageStore == nil {
                 let store = SceneUsageStore(modelContainer: modelContext.container)
@@ -200,13 +159,18 @@ struct AccessoryRoomDetailView: View {
         .sheet(item: $selectedAccessory) { accessory in
             AccessoryDetailView(accessory: accessory)
         }
+        .sheet(isPresented: $isReorderingSections) {
+            SectionReorderSheet(
+                sectionOrderRaw: $sectionOrderRaw,
+                reorderableSections: presentSections
+            )
+        }
     }
 
     // MARK: - Room header card
 
     private var roomHeaderCard: some View {
         HStack(spacing: 16) {
-            // Score ring
             ZStack {
                 Circle()
                     .stroke(room.healthLevel.color.opacity(0.18), lineWidth: 5)
@@ -237,7 +201,6 @@ struct AccessoryRoomDetailView: View {
 
             Spacer()
 
-            // Health level badge
             Label(room.healthLevel.label, systemImage: room.healthLevel.sfSymbol)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(room.healthLevel.color)
@@ -249,18 +212,168 @@ struct AccessoryRoomDetailView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
+    // MARK: - Section rendering
+
+    @ViewBuilder
+    private func sectionCard(for category: AccessoryCategory, accessories items: [HMAccessory]) -> some View {
+        DetailSectionCard(
+            title: roomSectionTitle(category),
+            symbol: roomSectionSymbol(category),
+            symbolColor: roomSectionColor(category)
+        ) {
+            ForEach(items, id: \.uniqueIdentifier) { accessory in
+                let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+                AccessoryDetailRow(
+                    accessory: accessory,
+                    adapter: adapter,
+                    homeKit: homeKit,
+                    iconOverrides: iconOverrides
+                ) {
+                    selectedAccessory = accessory
+                }
+            }
+        }
+    }
+
     // MARK: - Category filtering
 
     @MainActor
     private func accessories(in category: AccessoryCategory) -> [HMAccessory] {
         room.accessories(in: category, homeKit: homeKit)
     }
+
+    /// Accessori non catturati da nessuna sezione dedicata.
+    /// Cattura: tende, hub, aria, e qualsiasi categoria senza sezione propria.
+    @MainActor
+    private var accessoriesNotInDedicatedSection: [HMAccessory] {
+        let dedicated: Set<AccessoryCategory> = [
+            .lights, .outlets, .climate, .television, .sensors, .security, .cameras, .switches, .buttons
+        ]
+        return room.accessories.filter { accessory in
+            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+            return !dedicated.contains(AccessoryCategory.classify(adapter: adapter))
+        }
+    }
+}
+
+// MARK: - Section metadata (file-private helpers)
+
+private func roomSectionTitle(_ category: AccessoryCategory) -> String {
+    switch category {
+    case .lights:     return String(localized: "accessories.section.lights",     defaultValue: "Luci")
+    case .outlets:    return String(localized: "accessories.section.outlets",    defaultValue: "Prese")
+    case .climate:    return String(localized: "accessories.section.climate",    defaultValue: "Clima")
+    case .television: return String(localized: "accessories.section.television", defaultValue: "TV")
+    case .sensors:    return String(localized: "accessories.section.sensors",    defaultValue: "Sensori")
+    case .security:   return String(localized: "accessories.section.security",   defaultValue: "Sicurezza")
+    case .cameras:    return String(localized: "accessories.section.cameras",    defaultValue: "Telecamere")
+    case .switches:   return String(localized: "accessories.section.switches",   defaultValue: "Switch")
+    case .buttons:    return String(localized: "accessories.section.buttons",    defaultValue: "Pulsanti")
+    default:          return category.displayName
+    }
+}
+
+private func roomSectionSymbol(_ category: AccessoryCategory) -> String {
+    switch category {
+    case .lights:     return "lightbulb.fill"
+    case .outlets:    return "powerplug.fill"
+    case .climate:    return "thermometer.medium"
+    case .television: return "tv"
+    case .sensors:    return "sensor.tag.radiowaves.forward"
+    case .security:   return "lock.shield.fill"
+    case .cameras:    return "camera.fill"
+    case .switches:   return "lightswitch.on"
+    case .buttons:    return "button.programmable"
+    default:          return category.symbolName
+    }
+}
+
+private func roomSectionColor(_ category: AccessoryCategory) -> Color {
+    switch category {
+    case .lights:     return .yellow
+    case .outlets:    return .orange
+    case .climate:    return .cyan
+    case .television: return .indigo
+    case .sensors:    return .green
+    case .security:   return .red
+    case .cameras:    return .gray
+    case .switches:   return .teal
+    case .buttons:    return .purple
+    default:          return .secondary
+    }
+}
+
+// MARK: - SectionReorderSheet
+
+private struct SectionReorderSheet: View {
+
+    @Binding var sectionOrderRaw: String
+    let reorderableSections: [AccessoryCategory]
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var localSections: [AccessoryCategory] = []
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(localSections) { category in
+                        HStack(spacing: 12) {
+                            Image(systemName: roomSectionSymbol(category))
+                                .foregroundStyle(roomSectionColor(category))
+                                .frame(width: 22)
+                            Text(roomSectionTitle(category))
+                                .font(.body)
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .onMove { from, to in
+                        localSections.move(fromOffsets: from, toOffset: to)
+                    }
+                } footer: {
+                    Text(String(
+                        localized: "accessories.reorder.sections.footer",
+                        defaultValue: "La sezione \"Altro\" è sempre visualizzata per ultima."
+                    ))
+                }
+            }
+            .listStyle(.insetGrouped)
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle(String(
+                localized: "accessories.reorder.sections.title",
+                defaultValue: "Riordina sezioni"
+            ))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(String(localized: "accessories.reorder.reset", defaultValue: "Ripristina")) {
+                        sectionOrderRaw = ""
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(String(localized: "accessories.reorder.done", defaultValue: "Fine")) {
+                        sectionOrderRaw = localSections.map(\.rawValue).joined(separator: ",")
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                }
+            }
+        }
+        .onAppear {
+            let stored = sectionOrderRaw
+                .split(separator: ",")
+                .compactMap { AccessoryCategory(rawValue: String($0)) }
+            let storedSet = Set(stored)
+            let missing = reorderableSections.filter { !storedSet.contains($0) }
+            localSections = stored.filter { reorderableSections.contains($0) } + missing
+        }
+    }
 }
 
 // MARK: - RoomScenesStrip
 
-/// Strip orizzontale scorrevole con le scene che impattano questa stanza.
-/// Ogni card mostra: icona scena, nome, cosa fa nella stanza, tasto play.
 private struct RoomScenesStrip: View {
 
     let scenes: [SceneItem]
@@ -272,7 +385,6 @@ private struct RoomScenesStrip: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Header sezione
             HStack(spacing: 8) {
                 Image(systemName: "wand.and.sparkles")
                     .font(.subheadline.weight(.semibold))
@@ -334,8 +446,6 @@ private struct RoomScenesStrip: View {
 
 // MARK: - SceneRoomCard
 
-/// Singola card della strip: icona gradiente brand, nome, conteggio azioni, tasto play orange.
-/// Le card suggerite mostrano un badge "★" in alto a sinistra sull'icona.
 private struct SceneRoomCard: View {
 
     let scene: SceneItem
@@ -346,7 +456,6 @@ private struct SceneRoomCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // ── Riga superiore: icona + play ──────────────
             HStack(alignment: .top) {
                 ZStack(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -370,7 +479,6 @@ private struct SceneRoomCard: View {
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
                     }
-                    // Badge suggerita
                     if isSuggested && !isExecuting && !didSucceed {
                         Image(systemName: "star.fill")
                             .font(.system(size: 8, weight: .bold))
@@ -392,7 +500,6 @@ private struct SceneRoomCard: View {
                 .disabled(isExecuting || didSucceed)
             }
 
-            // ── Nome + conteggio azioni (occupa lo spazio rimanente) ──
             VStack(alignment: .leading, spacing: 3) {
                 Text(scene.name)
                     .font(.subheadline.weight(.semibold))
@@ -425,7 +532,6 @@ private struct SceneRoomCard: View {
 
 // MARK: - DetailSectionCard
 
-/// Card container con titolo e lista di righe accessorio.
 private struct DetailSectionCard<Content: View>: View {
     let title: String
     let symbol: String
@@ -434,7 +540,6 @@ private struct DetailSectionCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header sezione
             HStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.subheadline.weight(.semibold))
@@ -458,11 +563,151 @@ private struct DetailSectionCard<Content: View>: View {
     }
 }
 
+// MARK: - LightingChipsStrip
+
+private struct LightingChipsStrip: View {
+
+    let room: RoomAccessoryData
+    let homeKit: HomeKitService
+    let actionExecutionService: ActionExecutionService
+
+    @State private var executingKey: String?
+
+    private var bestColorLight: HMAccessory? {
+        room.accessories.first { AccessoryCategorizer.categorize($0) == "colorLight" }
+    }
+
+    private var bestLight: HMAccessory? {
+        bestColorLight
+            ?? room.accessories.first { AccessoryCategorizer.categorize($0) == "dimmableLight" }
+    }
+
+    private var currentProfile: LightingContextAnalyzer.LightingProfile {
+        LightingContextAnalyzer.profile(for: Calendar.current.component(.hour, from: Date()))
+    }
+
+    var body: some View {
+        let profile = currentProfile
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "lightbulb.2.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.yellow)
+                    .frame(width: 20)
+                Text(profile.description)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(chips(profile: profile), id: \.key) { chip in
+                        chipButton(chip)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+            }
+        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private struct LightingChip {
+        let key: String
+        let label: String
+        let icon: String
+        let actionType: String
+        let value: Double?
+    }
+
+    private func chips(profile: LightingContextAnalyzer.LightingProfile) -> [LightingChip] {
+        var result: [LightingChip] = []
+        for intent in profile.preferredIntents {
+            switch intent {
+            case .brightenRoom:
+                result.append(LightingChip(
+                    key: "brighten",
+                    label: String(localized: "lighting.chip.brighten", defaultValue: "Illumina"),
+                    icon: "sun.max.fill", actionType: "dim", value: 0.8
+                ))
+            case .dimRoom:
+                result.append(LightingChip(
+                    key: "dim",
+                    label: String(localized: "lighting.chip.dim", defaultValue: "Attenua"),
+                    icon: "light.min", actionType: "dim", value: 0.25
+                ))
+            case .setCircadianLight where bestColorLight != nil:
+                result.append(LightingChip(
+                    key: "circadian",
+                    label: String(localized: "lighting.chip.circadian", defaultValue: "Luce Serale"),
+                    icon: "sun.min.fill", actionType: "dim", value: 0.35
+                ))
+            default:
+                break
+            }
+        }
+        result.append(LightingChip(
+            key: "off",
+            label: String(localized: "lighting.chip.off", defaultValue: "Spegni"),
+            icon: "moon.fill", actionType: "off", value: nil
+        ))
+        return result
+    }
+
+    @ViewBuilder
+    private func chipButton(_ chip: LightingChip) -> some View {
+        let isExecuting = executingKey == chip.key
+        let isDisabled  = isExecuting || bestLight == nil || homeKit.currentHome == nil
+
+        Button {
+            guard let light = bestLight, let home = homeKit.currentHome else { return }
+            executingKey = chip.key
+            Task {
+                let action = AINextAction(
+                    label:               chip.label,
+                    actionType:          "executeNow",
+                    accessoryID:         light.uniqueIdentifier.uuidString,
+                    accessoryActionType: chip.actionType,
+                    accessoryValue:      chip.value
+                )
+                await actionExecutionService.executeRaw(action, in: home)
+                executingKey = nil
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if isExecuting {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: chip.icon)
+                        .font(.system(size: 13, weight: .medium))
+                }
+                Text(chip.label)
+                    .font(.subheadline.weight(.medium))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(
+                isExecuting
+                    ? Color.secondary.opacity(0.12)
+                    : Color.yellow.opacity(0.12),
+                in: Capsule()
+            )
+            .foregroundStyle(isDisabled ? .secondary : .primary)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .animation(.spring(response: 0.25), value: isExecuting)
+    }
+}
+
 // MARK: - AccessoryDetailRow
 
-/// Riga singola per un accessorio nella detail view.
-/// Mostra icona, nome, stato primario e — se non raggiungibile — un badge arancione.
-/// Il tap apre AccessoryDetailView via sheet (delegato al parent).
 private struct AccessoryDetailRow: View {
 
     let accessory: HMAccessory
@@ -475,7 +720,6 @@ private struct AccessoryDetailRow: View {
         Button(action: onTap) {
             HStack(spacing: 14) {
 
-                // Icona con sfondo colorato
                 let iconName = iconOverrides.effectiveIcon(for: accessory, adapter: adapter)
                 let appearance = AccessoryAppearance.from(adapter)
                 ZStack {
@@ -487,7 +731,6 @@ private struct AccessoryDetailRow: View {
                         .foregroundStyle(appearance.statusColor)
                 }
 
-                // Nome + stato
                 VStack(alignment: .leading, spacing: 2) {
                     Text(accessory.name)
                         .font(.body)
@@ -507,14 +750,12 @@ private struct AccessoryDetailRow: View {
 
                 Spacer()
 
-                // Badge non raggiungibile
                 if !homeKit.isReachable(accessory) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                         .font(.caption)
                 }
 
-                // Freccia navigazione
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
@@ -528,6 +769,3 @@ private struct AccessoryDetailRow: View {
             .padding(.horizontal, 16)
     }
 }
-
-// MARK: - HMAccessory + Identifiable (già in HMAccessory+Identifiable.swift)
-// Non serve riestendere qui.

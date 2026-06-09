@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        HomeFloorplan Privacy Manifest
+        Last updated: 2026-06-09
+        Sprint 26.A
+
+        Data sent to external AI services (Anthropic / OpenAI):
+          • Environmental sensor readings (temperature, humidity, CO₂, air quality, etc.)
+          • HomeKit room names (e.g. "Cucina", "Camera da letto")
+        These are sent ONLY when the user explicitly enables AI features and grants
+        data consent via AIConsentView. No GPS coordinates, user identity, or personal
+        information are included in AI requests.
+
+        All other processing is on-device.
+    -->
+
+    <!-- App does NOT engage in cross-app/cross-site tracking -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <!-- Required Reason API declarations -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+
+        <!-- UserDefaults — used for app preferences, AI settings, behavioral patterns,
+             sensor baselines and deviation counters. No data linked to user identity. -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- CA92.1: Read/write app configuration data accessible only to this app -->
+                <string>CA92.1</string>
+            </array>
+        </dict>
+
+        <!-- File timestamp — accessed when reading/writing the SwiftData store and
+             cached sensor baselines. Timestamps are not transmitted or shown to users. -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <!-- 3B52.1: Organise files/data stored by the app -->
+                <string>3B52.1</string>
+            </array>
+        </dict>
+
+    </array>
+
+    <!-- Collected data types -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array>
+
+        <!--
+            Environmental sensor data (temperature, humidity, CO₂, air quality, VOC,
+            smoke, carbon monoxide) and HomeKit room names.
+
+            Sent to: Anthropic Claude API / OpenAI API (user-selected provider)
+            Purpose: Generate contextual AI insights about home environment conditions.
+            Conditions: ONLY when user explicitly enables AI and grants data consent.
+            NOT linked to user identity. NOT used for advertising or tracking.
+        -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherDataTypes</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+    </array>
+
+</dict>
+</plist>

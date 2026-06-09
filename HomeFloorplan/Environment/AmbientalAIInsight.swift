@@ -34,6 +34,53 @@ enum InsightSeverity: String, Codable, Comparable {
         case .anomaly: return "red"
         }
     }
+
+    var localizedLabel: String {
+        switch self {
+        case .anomaly: return String(localized: "insight.severity.anomaly", defaultValue: "Anomalia")
+        case .warning: return String(localized: "insight.severity.warning", defaultValue: "Attenzione")
+        case .info:    return String(localized: "insight.severity.info",    defaultValue: "Info")
+        }
+    }
+}
+
+// MARK: - IntelligenceLevel
+
+/// Classifies the semantic nature of an AI insight.
+/// Drives icon and badge display in the feed and digest card.
+enum IntelligenceLevel: String, Codable, CaseIterable {
+    case observation    = "observation"
+    case pattern        = "pattern"
+    case prediction     = "prediction"
+    case recommendation = "recommendation"
+
+    var sfSymbol: String {
+        switch self {
+        case .observation:    return "eye"
+        case .pattern:        return "arrow.triangle.2.circlepath"
+        case .prediction:     return "wand.and.stars"
+        case .recommendation: return "lightbulb.fill"
+        }
+    }
+
+    var localizedLabel: String {
+        switch self {
+        case .observation:    return String(localized: "intelligence.level.observation",    defaultValue: "Osservazione")
+        case .pattern:        return String(localized: "intelligence.level.pattern",        defaultValue: "Pattern")
+        case .prediction:     return String(localized: "intelligence.level.prediction",     defaultValue: "Previsione")
+        case .recommendation: return String(localized: "intelligence.level.recommendation", defaultValue: "Raccomandazione")
+        }
+    }
+
+    /// Color token resolved in the view layer.
+    var colorToken: String {
+        switch self {
+        case .observation:    return "blue"
+        case .pattern:        return "indigo"
+        case .prediction:     return "purple"
+        case .recommendation: return "green"
+        }
+    }
 }
 
 // MARK: - AINextAction
@@ -45,7 +92,7 @@ enum InsightSeverity: String, Codable, Comparable {
 ///   "executeNow" / "createRule" — forme legacy ancora usate dal RuleEditor
 struct AINextAction: Identifiable, Codable {
     let id: UUID
-    /// Testo del pulsante/chip in italiano (max ~25 caratteri).
+    /// Testo del pulsante/chip localizzato (max ~25 caratteri).
     let label: String
     /// "suggest" | "tip" | "executeNow" | "createRule"
     let actionType: String
@@ -67,6 +114,12 @@ struct AINextAction: Identifiable, Codable {
     /// JSON della RuleDraft pre-compilata dall'AI.
     let ruleJSON: String?
 
+    /// SF Symbol override per le tip manuali. Nil → usa "lightbulb.fill" come fallback.
+    let iconName: String?
+    /// Display name of the target accessory (e.g. "Aqara Climate Sensor Bagno").
+    /// Populated by ActionResolver at resolution time; nil for manual tips.
+    let accessoryName: String?
+
     init(
         id: UUID = UUID(),
         label: String,
@@ -75,7 +128,9 @@ struct AINextAction: Identifiable, Codable {
         accessoryActionType: String? = nil,
         accessoryValue: Double? = nil,
         accessoryValue2: Double? = nil,
-        ruleJSON: String? = nil
+        ruleJSON: String? = nil,
+        iconName: String? = nil,
+        accessoryName: String? = nil
     ) {
         self.id = id
         self.label = label
@@ -85,6 +140,8 @@ struct AINextAction: Identifiable, Codable {
         self.accessoryValue = accessoryValue
         self.accessoryValue2 = accessoryValue2
         self.ruleJSON = ruleJSON
+        self.iconName = iconName
+        self.accessoryName = accessoryName
     }
 }
 
@@ -96,8 +153,17 @@ struct AINextAction: Identifiable, Codable {
 struct AmbientalAIInsight: Identifiable {
     let id: UUID
     let roomName: String
-    let message: String           // testo in linguaggio naturale (max 2 frasi)
+    /// Messaggio semantico in linguaggio naturale (max 2 frasi, lingua del dispositivo).
+    let message: String
     let severity: InsightSeverity
+    /// Classification of the insight's semantic nature (Part 12).
+    let intelligenceLevel: IntelligenceLevel
+    /// Stable English snake_case key for semantic deduplication across sessions (Part 8).
+    let patternKey: String?
+    /// Brief explanation of why this insight was generated (Part 11).
+    let whyExplanation: String?
+    /// AI confidence in this insight 0.0–1.0.
+    let confidence: Double
     let generatedAt: Date
     var isDismissed: Bool
     /// Azioni suggerite dall'AI (max 3). Possono essere vuote.
@@ -106,24 +172,60 @@ struct AmbientalAIInsight: Identifiable {
     /// Usati da ActionEffectivenessTracker per registrare dismissal ed expiration.
     let resolvedIntents: [String]
 
+    // MARK: Sprint 16A — Accessory attribution
+
+    /// UUID string of the primary accessory whose reading triggered this insight.
+    /// Nil when the insight is synthesised from multiple sensors or no accessory is known.
+    let sourceAccessoryID: String?
+    /// Display name of the primary triggering accessory (e.g. "Aqara Climate Sensor Bagno").
+    let sourceAccessoryName: String?
+    /// SensorServiceType.rawValue of the triggering sensor (e.g. "humidity", "carbonDioxide").
+    let sourceServiceType: String?
+
+    // MARK: Sprint 24A/E — Prompt versioning & language quality
+
+    /// AIPromptVersion used when generating this insight. Persisted for stale-version detection.
+    let promptVersion: String?
+    /// True when the response message appears to be in the wrong language (24.E quality flag).
+    /// Only meaningful at generation time; not stored in PersistedInsight.
+    let isLanguageSuspect: Bool
+
     init(
         id: UUID = UUID(),
         roomName: String,
         message: String,
         severity: InsightSeverity,
+        intelligenceLevel: IntelligenceLevel = .observation,
+        patternKey: String? = nil,
+        whyExplanation: String? = nil,
+        confidence: Double = 0.7,
         generatedAt: Date = Date(),
         isDismissed: Bool = false,
         nextActions: [AINextAction] = [],
-        resolvedIntents: [String] = []
+        resolvedIntents: [String] = [],
+        sourceAccessoryID: String? = nil,
+        sourceAccessoryName: String? = nil,
+        sourceServiceType: String? = nil,
+        promptVersion: String? = nil,
+        isLanguageSuspect: Bool = false
     ) {
         self.id = id
         self.roomName = roomName
         self.message = message
         self.severity = severity
+        self.intelligenceLevel = intelligenceLevel
+        self.patternKey = patternKey
+        self.whyExplanation = whyExplanation
+        self.confidence = confidence
         self.generatedAt = generatedAt
         self.isDismissed = isDismissed
         self.nextActions = nextActions
         self.resolvedIntents = resolvedIntents
+        self.sourceAccessoryID = sourceAccessoryID
+        self.sourceAccessoryName = sourceAccessoryName
+        self.sourceServiceType = sourceServiceType
+        self.promptVersion = promptVersion
+        self.isLanguageSuspect = isLanguageSuspect
     }
 
     /// True se l'insight è scaduto (più vecchio di 2 ore).

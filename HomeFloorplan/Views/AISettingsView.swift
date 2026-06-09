@@ -19,6 +19,8 @@ struct AISettingsView: View {
     @State private var isTesting: Bool = false
     /// Errore dell'ultimo test, se presente.
     @State private var testError: String?
+    /// True = mostra il consent sheet prima di attivare l'AI.
+    @State private var showConsentSheet = false
 
     // MARK: - Init
 
@@ -41,6 +43,9 @@ struct AISettingsView: View {
         .navigationTitle(String(localized: "ai.settings.title", defaultValue: "Intelligenza Artificiale"))
         .navigationBarTitleDisplayMode(.large)
         .onAppear { loadAPIKeyDraft() }
+        .sheet(isPresented: $showConsentSheet) {
+            AIConsentView(settings: settings)
+        }
     }
 
     // MARK: - Provider section
@@ -48,12 +53,18 @@ struct AISettingsView: View {
     @ViewBuilder
     private var providerSection: some View {
         Section {
-            // Master switch
+            // Master switch — intercetta la prima attivazione per mostrare il consent screen
             Toggle(isOn: $settings.isAIEnabled) {
                 Label(
                     String(localized: "ai.settings.masterToggle", defaultValue: "Abilita AI"),
                     systemImage: "brain"
                 )
+            }
+            .onChange(of: settings.isAIEnabled) { _, newValue in
+                if newValue && !settings.hasAIDataConsent {
+                    settings.isAIEnabled = false
+                    showConsentSheet = true
+                }
             }
 
             // Selezione provider
@@ -264,6 +275,30 @@ struct AISettingsView: View {
                 )
                 .foregroundStyle(.tint)
             }
+
+            if settings.hasAIDataConsent {
+                Button(role: .destructive) {
+                    settings.revokeConsent()
+                } label: {
+                    Label(
+                        String(localized: "ai.settings.revokeConsent",
+                               defaultValue: "Revoca consenso dati AI"),
+                        systemImage: "hand.raised.slash"
+                    )
+                }
+            } else {
+                Button {
+                    showConsentSheet = true
+                } label: {
+                    Label(
+                        String(localized: "ai.settings.grantConsent",
+                               defaultValue: "Mostra informativa dati AI"),
+                        systemImage: "hand.raised"
+                    )
+                    .foregroundStyle(.tint)
+                }
+            }
+
         } header: {
             Text(String(localized: "ai.settings.info.header", defaultValue: "Privacy e costi"))
         }

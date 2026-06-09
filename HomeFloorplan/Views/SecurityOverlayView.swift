@@ -11,34 +11,18 @@ struct SecurityOverlayView: View {
     let floorplan: Floorplan
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let containerSize: CGSize
+    /// Pre-computed from the parent — avoids reloading the image just to get its size.
+    let imageRect: CGRect
     let effectiveScale: CGFloat
     let effectiveOffset: CGSize
 
     @Environment(HomeKitService.self) private var homeKit
 
-    // MARK: Derived
-
-    /// Cached helper — rebuilt only when containerSize or floorplan.imageFilename changes.
-    @State private var cachedHelper: FloorplanCoordinateHelper?
-    @State private var cachedImageFilename: String = ""
-    @State private var cachedContainerSize: CGSize = .zero
-
     /// Telecamera selezionata dall'utente → apre AccessoryDetailView.
     @State private var selectedCamera: HMAccessory?
 
-    private func updatedHelper() -> FloorplanCoordinateHelper? {
-        if floorplan.imageFilename == cachedImageFilename,
-           containerSize == cachedContainerSize,
-           let h = cachedHelper {
-            return h
-        }
-        guard let image = ImageStorageService.load(filename: floorplan.imageFilename) else { return nil }
-        return FloorplanCoordinateHelper.make(imageSize: image.size, container: containerSize)
-    }
-
     var body: some View {
-        // Build all derived data once per render — avoids multiple redundant calls.
-        let h = updatedHelper()
+        let h = FloorplanCoordinateHelper(imageRect: imageRect)
         let statusByRoom: [UUID: RoomSecurityStatus] = {
             var dict: [UUID: RoomSecurityStatus] = [:]
             for room in floorplan.linkedRooms {
@@ -49,79 +33,64 @@ struct SecurityOverlayView: View {
         let inverseScale = 1.0 / effectiveScale
 
         return ZStack(alignment: .topLeading) {
-            if let h {
-                // Fill canvas
-                Canvas { ctx, _ in
-                    for room in floorplan.linkedRooms {
-                        let path = h.overlayPath(for: room)
-                        let status = statusByRoom[room.hmRoomUUID] ?? .none
-                        ctx.fill(path, with: .color(fillColor(status)))
-                        ctx.stroke(path, with: .color(borderColor(status).opacity(0.8)),
-                                   lineWidth: 1.5 / effectiveScale)
-                    }
-                }
-                .frame(width: containerSize.width, height: containerSize.height)
-                .allowsHitTesting(false)
-
-                // Tap targets + badges
-                ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+            // Fill canvas
+            Canvas { ctx, _ in
+                for room in floorplan.linkedRooms {
+                    let path = h.overlayPath(for: room)
                     let status = statusByRoom[room.hmRoomUUID] ?? .none
-                    let center = h.centroid(for: room)
+                    ctx.fill(path, with: .color(fillColor(status)))
+                    ctx.stroke(path, with: .color(borderColor(status).opacity(0.8)),
+                               lineWidth: 1.5 / effectiveScale)
+                }
+            }
+            .frame(width: containerSize.width, height: containerSize.height)
+            .allowsHitTesting(false)
 
+            // Tap targets + badges
+            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+                let status = statusByRoom[room.hmRoomUUID] ?? .none
+                let center = h.centroid(for: room)
+
+                Button {
+                    overlayVM.selectRoom(room.hmRoomUUID)
+                } label: {
+                    securityBadge(room: room, status: status)
+                        .scaleEffect(inverseScale)
+                }
+                .buttonStyle(.plain)
+                .position(center)
+            }
+
+            // Camera markers — auto-positioned near the room centroid.
+            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+                let cameras = cameraAdapters(for: room)
+                let center  = h.centroid(for: room)
+                ForEach(Array(cameras.enumerated()), id: \.element.accessory.uniqueIdentifier) { idx, adapter in
+                    let xOffset = CGFloat(idx) * (120 * inverseScale + 8 * inverseScale)
                     Button {
-                        overlayVM.selectRoom(room.hmRoomUUID)
+                        selectedCamera = adapter.accessory
                     } label: {
-                        securityBadge(room: room, status: status)
-                            .scaleEffect(inverseScale)
+                        CameraMarkerView(
+                            adapter: adapter,
+                            size: MarkerSize.regular.cameraMarkerSize,
+                            isEditing: false,
+                            isSelected: false,
+                            label: adapter.accessory.name,
+                            hasCustomLabel: false
+                        )
+                        .scaleEffect(inverseScale)
                     }
                     .buttonStyle(.plain)
-                    .position(center)
-                }
-
-                // Camera markers — auto-positioned near the room centroid.
-                // One marker per camera found in each linked room.
-                ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
-                    let cameras = cameraAdapters(for: room)
-                    let center  = h.centroid(for: room)
-                    // Stack cameras horizontally, spaced to the right of the badge.
-                    // The badge sits at `center`; cameras start 60 pt below it.
-                    ForEach(Array(cameras.enumerated()), id: \.element.accessory.uniqueIdentifier) { idx, adapter in
-                        let xOffset = CGFloat(idx) * (120 * inverseScale + 8 * inverseScale)
-                        Button {
-                            selectedCamera = adapter.accessory
-                        } label: {
-                            CameraMarkerView(
-                                adapter: adapter,
-                                size: MarkerSize.regular.cameraMarkerSize,
-                                isEditing: false,
-                                isSelected: false,
-                                label: adapter.accessory.name,
-                                hasCustomLabel: false
-                            )
-                            .scaleEffect(inverseScale)
-                        }
-                        .buttonStyle(.plain)
-                        .position(CGPoint(
-                            x: center.x + xOffset,
-                            y: center.y + 60 * inverseScale
-                        ))
-                    }
+                    .position(CGPoint(
+                        x: center.x + xOffset,
+                        y: center.y + 60 * inverseScale
+                    ))
                 }
             }
         }
-        .onAppear { updateHelperCache() }
-        .onChange(of: containerSize) { _, _ in updateHelperCache() }
-        .onChange(of: floorplan.imageFilename) { _, _ in updateHelperCache() }
         .sheet(item: $selectedCamera) { accessory in
             AccessoryDetailView(accessory: accessory)
         }
-    }
-
-    private func updateHelperCache() {
-        guard let image = ImageStorageService.load(filename: floorplan.imageFilename) else { return }
-        cachedHelper = FloorplanCoordinateHelper.make(imageSize: image.size, container: containerSize)
-        cachedImageFilename = floorplan.imageFilename
-        cachedContainerSize = containerSize
     }
 
     // MARK: Badge
