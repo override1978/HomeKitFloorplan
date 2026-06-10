@@ -157,9 +157,12 @@ final class ProactiveIntelligenceService {
             }
         }
 
-        // 10. Energy anomalies (Sprint 30)
+        // 10. Energy anomalies (Sprint 30) — user-ignored accessories are filtered out
         if !context.suppressNonCritical {
-            let energySignals = await EnergyInsightBuilder.buildFromStore(modelContainer: modelContainer)
+            let energySignals = await EnergyInsightBuilder.buildFromStore(
+                modelContainer: modelContainer,
+                ignoredIDs: EnergyIgnoreStore.ignoredIDs
+            )
             for sig in energySignals where sig.score.composite >= deliveryThreshold {
                 await processEnergyAnomaly(sig, context: context)
             }
@@ -543,6 +546,9 @@ final class ProactiveIntelligenceService {
             existing.lastUpdatedAt  = Date()
             existing.scoreData      = try? JSONEncoder().encode(signal.score)
         } else {
+            // Don't re-surface within 48h of a user dismiss — avoids spam for always-on devices
+            // that haven't been added to EnergyIgnoreStore yet.
+            guard !findRecentlyDismissed(semanticKey: key, withinHours: 48) else { return }
             let notif = ProactiveNotification(
                 category:       .energy,
                 priority:       signal.score.urgency >= 0.60 ? .medium : .low,
@@ -780,6 +786,34 @@ final class ProactiveIntelligenceService {
             }
         )
         return try? ctx.fetch(descriptor).first
+    }
+
+    /// True if a notification with this key was dismissed or snoozed within the given window.
+    /// Used to prevent re-creating energy alerts for always-on devices after the user dismisses them.
+    private func findRecentlyDismissed(semanticKey: String, withinHours: Double) -> Bool {
+        let ctx    = modelContainer.mainContext
+        let cutoff = Date().addingTimeInterval(-withinHours * 3600)
+        let descriptor = FetchDescriptor<ProactiveNotification>(
+            predicate: #Predicate {
+                $0.semanticKey == semanticKey &&
+                ($0.statusRaw == "dismissed" || $0.statusRaw == "snoozed") &&
+                $0.lastUpdatedAt >= cutoff
+            }
+        )
+        return (try? ctx.fetch(descriptor).isEmpty) == false
+    }
+
+    // MARK: - Energy Ignore
+
+    /// Permanently suppresses energy alerts for the device referenced by this notification,
+    /// then dismisses the notification. The accessory UUID is extracted from the semantic key
+    /// ("energy|alwaysOn|<UUID>" or "energy|runtime|<UUID>").
+    func ignoreEnergyDevice(_ notification: ProactiveNotification) {
+        let parts = notification.semanticKey.split(separator: "|")
+        if parts.count == 3, let id = UUID(uuidString: String(parts[2])) {
+            EnergyIgnoreStore.ignore(id)
+        }
+        dismiss(notification)
     }
 
     private func fetchRecentEventSignatures() async -> Set<String> {

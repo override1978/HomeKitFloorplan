@@ -49,11 +49,13 @@ enum EnergyInsightBuilder {
     // MARK: - Build
 
     /// Produces energy anomaly signals from pre-computed usage records.
+    /// Accessories in `ignoredIDs` are silently skipped.
     /// Results are sorted by composite score descending.
-    static func build(records: [EnergyUsageRecord]) -> [EnergySignal] {
+    static func build(records: [EnergyUsageRecord], ignoredIDs: Set<UUID> = []) -> [EnergySignal] {
         var signals: [EnergySignal] = []
 
         for record in records where energyEventTypes.contains(record.eventType) {
+            guard !ignoredIDs.contains(record.accessoryID) else { continue }
 
             // — Always-on signal ——————————————————————————————————————————
             if let sessionHours = record.currentSessionHours,
@@ -111,9 +113,9 @@ enum EnergyInsightBuilder {
     }
 
     /// Convenience: fetches events from the model container and runs build() in one step.
-    static func buildFromStore(modelContainer: ModelContainer) async -> [EnergySignal] {
+    static func buildFromStore(modelContainer: ModelContainer, ignoredIDs: Set<UUID> = []) async -> [EnergySignal] {
         let records = await EnergyUsageTracker.analyze(modelContainer: modelContainer)
-        return build(records: records)
+        return build(records: records, ignoredIDs: ignoredIDs)
     }
 
     // MARK: - Notification Content

@@ -199,9 +199,12 @@ struct IntelligenceFeedView: View {
                         }
                         if notif.status.isLive { service.acknowledge(notif) }
                     },
-                    onActedOn: { service.markActedOn(notif) },
-                    onSnooze:  { service.snooze(notif) },
-                    onDismiss: { service.dismiss(notif) }
+                    onActedOn:      { service.markActedOn(notif) },
+                    onSnooze:       { service.snooze(notif) },
+                    onDismiss:      { service.dismiss(notif) },
+                    onIgnoreDevice: notif.category == .energy
+                        ? { service.ignoreEnergyDevice(notif) }
+                        : nil
                 )
             }
         }
@@ -235,10 +238,11 @@ private struct TimelineEventRow: View {
     let notification: ProactiveNotification
     let isExpanded:   Bool
     let isLast:       Bool
-    let onExpand:  () -> Void
-    let onActedOn: () -> Void
-    let onSnooze:  () -> Void
-    let onDismiss: () -> Void
+    let onExpand:       () -> Void
+    let onActedOn:      () -> Void
+    let onSnooze:       () -> Void
+    let onDismiss:      () -> Void
+    let onIgnoreDevice: (() -> Void)?
 
     private var accentColor: Color { notificationColor(for: notification.category) }
 
@@ -583,6 +587,19 @@ private struct TimelineEventRow: View {
             }
             .buttonStyle(.plain)
             .controlSize(.small)
+
+            if let ignore = onIgnoreDevice {
+                Button(action: ignore) {
+                    Label(
+                        String(localized: "feed.action.alwaysOn", defaultValue: "Always on"),
+                        systemImage: "bolt.slash"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+                .controlSize(.small)
+            }
         }
     }
 }
