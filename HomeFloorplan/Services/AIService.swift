@@ -178,7 +178,7 @@ final class AIService {
     /// Esegue la richiesta con retry esponenziale (max 4 tentativi, backoff 1s/2s/4s ± 0.5s jitter).
     /// Ritenta su: URLError (rete), HTTP 429 (rate limited), HTTP 503/504 (server transient).
     /// Non ritenta: 401, missingAPIKey, invalidURL — quelli sono definitivi.
-    private func performWithRetry(_ request: URLRequest) async throws -> (Data, URLResponse) {
+    func performWithRetry(_ request: URLRequest) async throws -> (Data, URLResponse) {
         var lastError: Error = AIError.unexpectedResponse
         let baseDelays: [Double] = [1.0, 2.0, 4.0]   // delays between attempts 0→1, 1→2, 2→3
 

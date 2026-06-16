@@ -80,7 +80,7 @@ struct EnvironmentAIDigestCard: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(minHeight: 130)
+            .frame(minHeight: 170)
 
             // ── Page dots personalizzati ───────────────────────────────
             if sorted.count > 1 {
@@ -245,7 +245,8 @@ private struct InsightPageView: View {
             }
         }
         .padding(.horizontal, 18)
-        .padding(.vertical, 14)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
     }
 }
 

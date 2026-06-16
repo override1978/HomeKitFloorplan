@@ -346,7 +346,10 @@ struct SensorDetailSheet: View {
             return value >= 1
                 ? String(localized: "smoke.detected",    defaultValue: "Yes")
                 : String(localized: "smoke.notDetected", defaultValue: "No")
-        case .vocDensity:     return String(format: "%.0f µg/m³", value)
+        case .vocDensity:         return String(format: "%.0f µg/m³", value)
+        case .lightSensor:        return String(format: "%.0f lux", value)
+        case .outdoorTemperature: return unit.format(value)
+        case .outdoorHumidity:    return String(format: "%.0f%%", value)
         }
     }
 }

@@ -215,23 +215,13 @@ final class OccupancyPredictionService {
     // MARK: - Persistence
 
     private func persistPatterns() {
-        if let data = try? JSONEncoder().encode(patterns) {
-            UserDefaults.standard.set(data, forKey: patternsKey)
-        }
-        if let data = try? JSONEncoder().encode(departurePatterns) {
-            UserDefaults.standard.set(data, forKey: departurePatternsKey)
-        }
+        VersionedStore<[OccupancyPattern]>(key: patternsKey, version: 1).save(patterns)
+        VersionedStore<[OccupancyPattern]>(key: departurePatternsKey, version: 1).save(departurePatterns)
     }
 
     private func loadPersistedPatterns() {
-        if let data   = UserDefaults.standard.data(forKey: patternsKey),
-           let loaded = try? JSONDecoder().decode([OccupancyPattern].self, from: data) {
-            patterns = loaded
-        }
-        if let data   = UserDefaults.standard.data(forKey: departurePatternsKey),
-           let loaded = try? JSONDecoder().decode([OccupancyPattern].self, from: data) {
-            departurePatterns = loaded
-        }
+        patterns          = VersionedStore<[OccupancyPattern]>(key: patternsKey, version: 1).load()          ?? []
+        departurePatterns = VersionedStore<[OccupancyPattern]>(key: departurePatternsKey, version: 1).load() ?? []
         lastAnalyzedAt = UserDefaults.standard.object(forKey: lastAnalysisKey) as? Date
         lastSeenAt     = UserDefaults.standard.object(forKey: lastSeenKey) as? Date
         updateNextArrival()

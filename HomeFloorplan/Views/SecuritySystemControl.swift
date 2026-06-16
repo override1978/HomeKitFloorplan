@@ -12,6 +12,7 @@ struct SecuritySystemControl: View {
     
     @State private var pendingMode: SecurityMode?
     @State private var pulseAlarm: Bool = false
+    @State private var writeError = false
     
     private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
     private var currentMode: SecurityMode { adapter.currentMode }
@@ -23,6 +24,7 @@ struct SecuritySystemControl: View {
             } else {
                 normalView
             }
+            if writeError { WriteErrorBanner() }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
@@ -178,7 +180,16 @@ struct SecuritySystemControl: View {
     }
     
     // MARK: - Action
-    
+
+    private func triggerWriteError() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        withAnimation(.easeInOut(duration: 0.25)) { writeError = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation(.easeInOut(duration: 0.25)) { writeError = false }
+        }
+    }
+
     private func selectMode(_ m: SecurityMode) {
         guard m != currentMode else { return }
         pendingMode = m
@@ -189,8 +200,7 @@ struct SecuritySystemControl: View {
                 try await adapter.setMode(m)
             } catch {
                 pendingMode = nil
-                let notif = UINotificationFeedbackGenerator()
-                notif.notificationOccurred(.error)
+                triggerWriteError()
             }
         }
     }

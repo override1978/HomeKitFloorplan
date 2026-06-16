@@ -224,6 +224,7 @@ final class AmbientalAIService {
         // Step 3: AI Call Gate — salta se tutto è nella norma
         guard preResult.shouldCallAI else {
             dprint("🛑 [Gate] \(room.roomName): skip AI — tutto normale")
+            autoDismissNormalizedInsights(for: room.roomName)
             return
         }
 
@@ -232,9 +233,18 @@ final class AmbientalAIService {
         let existingState = fetchRoomState(roomName: room.roomName, context: context)
 
         if let state = existingState, state.semanticFingerprint == fingerprint {
-            dprint("⏭️ [Fingerprint] \(room.roomName): SKIP — semantic state unchanged")
-            dprint("   fingerprint=\(fingerprint)")
-            return
+            // Exception: previous LLM result was empty (hasInsight:false / intents:[]) for a
+            // danger-level state. The prompt may have changed or the model may now respond —
+            // force a retry instead of permanently suppressing the insight.
+            let prevWasEmpty = state.lastIntentSet.isEmpty && state.lastSeverityRaw == "none"
+            let hasDanger = preResult.sensorStatuses.contains { $0.urgency == "danger" }
+            if prevWasEmpty && hasDanger {
+                dprint("🔄 [Fingerprint] \(room.roomName): danger-state retry (prev=empty, curr=danger)")
+            } else {
+                dprint("⏭️ [Fingerprint] \(room.roomName): SKIP — semantic state unchanged")
+                dprint("   fingerprint=\(fingerprint)")
+                return
+            }
         }
         #if DEBUG
         if let state = existingState {
@@ -370,7 +380,9 @@ final class AmbientalAIService {
         let roomContext: String
         switch roomType {
         case .outdoor:
-            roomContext = "outdoor (balcony/terrace/garden) — do NOT suggest HVAC, ventilation, or dehumidification. Use coolRoom/heatRoom only for extreme comfort."
+            roomContext = "outdoor (balcony/terrace/garden) — do NOT suggest HVAC, ventilation, or dehumidification. " +
+                          "If temperature urgency is 'danger' or σ ≥ 2.0 high, use coolRoom (e.g. suggest closing awnings or seeking shade). " +
+                          "Do not use heatRoom or ventilateRoom."
         case .utility:
             roomContext = "utility (garage/laundry/basement)"
         case .transit:
@@ -698,7 +710,8 @@ final class AmbientalAIService {
 
     private func extractJSON(from string: String) -> String {
         guard let start = string.firstIndex(of: "{"),
-              let end = string.lastIndex(of: "}")
+              let end = string.lastIndex(of: "}"),
+              start <= end
         else { return string }
         return String(string[start...end])
     }
@@ -829,6 +842,32 @@ final class AmbientalAIService {
                 invalidateFingerprint(for: insight.roomName)
             }
         }
+    }
+
+    /// Auto-dismisses non-safety insights for a room when the PreProcessor determines
+    /// all sensors have returned to normal (shouldCallAI = false).
+    /// Safety-critical insights (respondToSmoke, respondToCO) are never auto-dismissed.
+    /// Also invalidates the stored fingerprint so that when conditions become dangerous
+    /// again, a fresh LLM analysis is triggered rather than hitting the cached result.
+    private func autoDismissNormalizedInsights(for roomName: String) {
+        let safetyIntents: Set<String> = [
+            ActionIntent.respondToSmoke.rawValue,
+            ActionIntent.respondToCO.rawValue
+        ]
+        let toAutoDismiss = insights.filter {
+            $0.roomName == roomName &&
+            $0.isVisible &&
+            !$0.resolvedIntents.contains(where: { safetyIntents.contains($0) })
+        }
+        guard !toAutoDismiss.isEmpty else { return }
+
+        for insight in toAutoDismiss {
+            dismiss(insight, reason: .conditionsNormalized)
+        }
+        // Bust the stored fingerprint so the next dangerous state runs a fresh LLM call
+        // instead of matching the now-stale cached result.
+        invalidateFingerprint(for: roomName)
+        dprint("✅ [AutoDismiss] \(roomName): \(toAutoDismiss.count) insight(s) dismissed — conditions normalized")
     }
 
     /// Deletes the RoomAnalysisState for a room, forcing the fingerprint check to fail on

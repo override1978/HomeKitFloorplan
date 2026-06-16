@@ -53,6 +53,18 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     /// ID of the most recently created floorplan — triggers auto-edit-mode on first display.
     @State private var newlyCreatedFloorplanID: UUID?
+    @AppStorage("floorplan_active_overlay_mode") private var floorplanActiveModeRaw: String = FloorplanOverlayMode.controls.rawValue
+
+    @State private var showAlarmOverlay    = false
+    @State private var showChatPanel      = false
+    @State private var chatKeyboardHeight: CGFloat = 0
+
+    /// FAB is allowed only when NOT inside a non-controls floorplan overlay.
+    /// (Environment and Security overlays already have their own panel buttons.)
+    private var floorplanFabAllowed: Bool {
+        guard case .floorplan = selection else { return true }
+        return (FloorplanOverlayMode(rawValue: floorplanActiveModeRaw) ?? .controls) == .controls
+    }
 
     var body: some View {
         Group {
@@ -88,8 +100,17 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.5), value: idleTimer.isIdle)
     }
     
-    // 👇 estrai NavigationSplitView in computed
-        private var mainContent: some View {
+    /// Panel height — collapses to fit above the docked keyboard; 500pt when keyboard hidden.
+    private var chatPanelHeight: CGFloat {
+        guard chatKeyboardHeight > 0 else { return 500 }
+        let window = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first
+        let screenH = window?.screen.bounds.height ?? 800
+        let safeTop = window?.safeAreaInsets.top ?? 20
+        // screenH - keyboardH - safeTop - 20(padding top) - 20(bottom gap)
+        return max(300, screenH - chatKeyboardHeight - safeTop - 40)
+    }
+
+    private var mainContent: some View {
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 SidebarView(selection: $selection, onFloorplanCreated: { id in
                     newlyCreatedFloorplanID = id
@@ -99,6 +120,43 @@ struct ContentView: View {
                 detailView
             }
             .navigationSplitViewStyle(.balanced)
+            // Chat panel — fixed top-trailing, completely isolated from keyboard repositioning
+            .overlay(alignment: .topTrailing) {
+                if showChatPanel {
+                    ChatBotView()
+                        .frame(width: 400, height: chatPanelHeight)
+                        .background(Color(.systemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: .black.opacity(0.22), radius: 20, x: -4, y: 8)
+                        .padding(.top, 20)
+                        .padding(.trailing, 20)
+                        .ignoresSafeArea(.keyboard)
+                        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: chatPanelHeight)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+                }
+            }
+            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: showChatPanel)
+            .overlay(alignment: .bottomTrailing) {
+                if floorplanFabAllowed && chatKeyboardHeight == 0 {
+                    ChatFABButtonView(showChat: $showChatPanel)
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 20)
+                        .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .bottomTrailing)))
+                }
+            }
+            .animation(.easeInOut(duration: 0.22), value: floorplanFabAllowed)
+            .animation(.easeInOut(duration: 0.18), value: chatKeyboardHeight > 0)
+            .task {
+                // Controlla lo stato iniziale: se l'allarme era già triggered prima
+                // che mainContent comparisse, .onChange non scatterebbe.
+                if homeKit.isAlarmSystemTriggered { showAlarmOverlay = true }
+            }
+            .onChange(of: homeKit.isAlarmSystemTriggered) { _, triggered in
+                if triggered { showAlarmOverlay = true }
+            }
+            .fullScreenCover(isPresented: $showAlarmOverlay) {
+                AlarmTriggeredView()
+            }
             .onAppear {
                 if selection == nil {
                     let homeUUID = homeKit.currentHome?.uniqueIdentifier
@@ -106,6 +164,30 @@ struct ContentView: View {
                     let primaryID = UUID(uuidString: primaryFloorplanID)
                     let target = homeFiltered.first(where: { $0.id == primaryID }) ?? homeFiltered.first
                     if let target { selection = .floorplan(target.id) }
+                }
+            }
+            .onChange(of: showChatPanel) { _, visible in
+                if !visible { chatKeyboardHeight = 0 }
+            }
+            // Track docked keyboard height so the chat panel shrinks above it.
+            .task {
+                for await notif in NotificationCenter.default.notifications(named: UIResponder.keyboardWillShowNotification) {
+                    guard showChatPanel else { continue }
+                    guard let frame = notif.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { continue }
+                    // Ignore floating keyboard (not anchored at screen bottom)
+                    let screenH = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
+                        .windows.first?.screen.bounds.height ?? 800
+                    guard frame.maxY >= screenH - 10 else { continue }
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                        chatKeyboardHeight = frame.height
+                    }
+                }
+            }
+            .task {
+                for await _ in NotificationCenter.default.notifications(named: UIResponder.keyboardWillHideNotification) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                        chatKeyboardHeight = 0
+                    }
                 }
             }
         }
@@ -173,6 +255,81 @@ struct ContentView: View {
             Label(text, systemImage: "square.dashed")
         } description: {
             Text("Scegli un elemento dalla sidebar per iniziare.")
+        }
+    }
+}
+
+// MARK: - ChatFABButtonView
+
+/// Floating action button that opens ChatBotView as a popover,
+/// styled to match the OverlayPanelMarkerButton in the floorplan overlay.
+/// The outer ring uses the same rotating rainbow gradient as the chat input field.
+private struct ChatFABButtonView: View {
+    @Binding var showChat: Bool
+    @State private var startDate = Date()
+
+    private static let gradientColors: [Color] = [
+        Color(hue: 0.76, saturation: 0.80, brightness: 0.90),
+        Color(hue: 0.62, saturation: 0.85, brightness: 0.95),
+        Color(hue: 0.52, saturation: 0.78, brightness: 0.92),
+        Color(hue: 0.42, saturation: 0.70, brightness: 0.88),
+        Color(hue: 0.14, saturation: 0.82, brightness: 0.97),
+        Color(hue: 0.06, saturation: 0.85, brightness: 0.92),
+        Color(hue: 0.93, saturation: 0.78, brightness: 0.92),
+        Color(hue: 0.76, saturation: 0.80, brightness: 0.90),
+    ]
+
+    var body: some View {
+        Button { showChat.toggle() } label: {
+            VStack(spacing: 5) {
+                if showChat {
+                    // Animated ring at 60 fps while chat panel is open.
+                    TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
+                        let phase = context.date.timeIntervalSince(startDate)
+                            .truncatingRemainder(dividingBy: 3.0) / 3.0
+                        ringContent(gradient: makeGradient(phase: phase))
+                    }
+                } else {
+                    // Static ring when chat is closed — zero GPU/CPU cost.
+                    ringContent(gradient: makeGradient(phase: 0))
+                }
+
+                // High-contrast label — readable on both dark and light floorplan backgrounds
+                Text(String(localized: "agent.fab.label", defaultValue: "Home AI"))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.black.opacity(0.50), in: Capsule())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "agent.fab.accessibility", defaultValue: "Home assistant"))
+    }
+
+    private func makeGradient(phase: Double) -> AngularGradient {
+        AngularGradient(
+            colors: Self.gradientColors,
+            center: .center,
+            startAngle: .degrees(phase * 360),
+            endAngle:   .degrees(phase * 360 + 360)
+        )
+    }
+
+    private func ringContent(gradient: AngularGradient) -> some View {
+        ZStack {
+            Circle()
+                .stroke(gradient, lineWidth: 2.5)
+                .frame(width: 62, height: 62)
+                .blur(radius: 0.8)
+            Circle()
+                .fill(.regularMaterial)
+                .overlay(Circle().strokeBorder(.white.opacity(0.12), lineWidth: 1))
+                .frame(width: 50, height: 50)
+                .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
+            Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(gradient)
         }
     }
 }

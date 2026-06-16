@@ -109,13 +109,22 @@ final class FloorplanOverlayViewModel {
 
     // MARK: Persistence
 
+    // Shared key read by ContentView via @AppStorage to show/hide the chat FAB.
+    static let sharedActiveModeKey = "floorplan_active_overlay_mode"
+
     private func persistMode() {
         UserDefaults.standard.set(activeMode.rawValue, forKey: modeKey)
+        UserDefaults.standard.set(activeMode.rawValue, forKey: Self.sharedActiveModeKey)
     }
 
     private func restoreMode() {
-        guard let raw = UserDefaults.standard.string(forKey: modeKey),
-              let mode = FloorplanOverlayMode(rawValue: raw) else { return }
-        activeMode = mode
+        if let raw = UserDefaults.standard.string(forKey: modeKey),
+           let mode = FloorplanOverlayMode(rawValue: raw) {
+            activeMode = mode
+            // persistMode() fires via didSet and updates the shared key too.
+        } else {
+            // No saved mode: reset shared key to controls so ContentView reflects defaults.
+            UserDefaults.standard.set(FloorplanOverlayMode.controls.rawValue, forKey: Self.sharedActiveModeKey)
+        }
     }
 }

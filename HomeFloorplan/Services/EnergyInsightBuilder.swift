@@ -42,9 +42,15 @@ enum EnergyInsightBuilder {
     private static let minBaselineHours: Double = 0.5
     /// Minimum absolute hours today for anomaly detection (avoids noise).
     private static let minAbsoluteHours: Double = 1.5
+    /// Minimum distinct calendar days with activity needed before declaring anomalous runtime.
+    /// Prevents false positives for newly-installed or rarely-used accessories.
+    private static let minActiveDays: Int = 3
 
     /// AccessoryEvent types that represent energy-consuming devices.
-    private static let energyEventTypes: Set<String> = ["light", "switch"]
+    private static let energyEventTypes: Set<String> = [
+        "light", "switch",
+        "thermostat", "fan", "airPurifier", "outlet"
+    ]
 
     // MARK: - Build
 
@@ -61,6 +67,8 @@ enum EnergyInsightBuilder {
             if let sessionHours = record.currentSessionHours,
                sessionHours >= alwaysOnThreshold {
                 let baseline = max(record.avgDailyHours, record.longestSessionHours * 0.5)
+                // Skip if this session length is normal for this device (e.g. fridge always on).
+                guard sessionHours > baseline else { continue }
                 let excess   = max(0, sessionHours - baseline)
                 let score = IntelligenceScore(
                     relevance:     min(1.0, 0.55 + excess / 8.0),
@@ -85,6 +93,7 @@ enum EnergyInsightBuilder {
             // — Anomalous runtime signal ———————————————————————————————————
             let baseline = record.avgDailyHours
             if baseline >= minBaselineHours,
+               record.activeDaysInWindow >= minActiveDays,
                record.totalHoursToday >= minAbsoluteHours,
                record.totalHoursToday > baseline * anomalyFactor {
                 let excess = record.totalHoursToday - baseline

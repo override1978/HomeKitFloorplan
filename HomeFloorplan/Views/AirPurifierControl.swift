@@ -12,7 +12,8 @@ struct AirPurifierControl: View {
     
     @State private var optimisticFan: Int?
     @State private var optimisticMode: AirPurifierMode?
-    
+    @State private var writeError = false
+
     private let buttonDiameter: CGFloat = 80
     
     private var iconName: String {
@@ -36,6 +37,7 @@ struct AirPurifierControl: View {
             }
             
             environmentSection
+            if writeError { WriteErrorBanner() }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 4)
@@ -251,15 +253,28 @@ struct AirPurifierControl: View {
     }
     
     // MARK: - Actions
-    
+
+    private func triggerWriteError() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        withAnimation(.easeInOut(duration: 0.25)) { writeError = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation(.easeInOut(duration: 0.25)) { writeError = false }
+        }
+    }
+
     private func handleToggleTap() {
         let haptic = UIImpactFeedbackGenerator(style: .medium)
         haptic.impactOccurred()
         Task {
-            try? await adapter.setActive(!isActive)
+            do {
+                try await adapter.setActive(!isActive)
+            } catch {
+                triggerWriteError()
+            }
         }
     }
-    
+
     private func selectMode(_ m: AirPurifierMode) {
         guard m != currentMode else { return }
         optimisticMode = m
@@ -270,11 +285,11 @@ struct AirPurifierControl: View {
                 try await adapter.setMode(m)
             } catch {
                 optimisticMode = nil
-                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                triggerWriteError()
             }
         }
     }
-    
+
     private func selectFan(_ level: Int) {
         guard level != displayedFan else { return }
         optimisticFan = level
@@ -285,7 +300,7 @@ struct AirPurifierControl: View {
                 try await adapter.setRotationSpeed(level)
             } catch {
                 optimisticFan = nil
-                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                triggerWriteError()
             }
         }
     }

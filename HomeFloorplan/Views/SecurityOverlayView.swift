@@ -20,6 +20,8 @@ struct SecurityOverlayView: View {
 
     /// Telecamera selezionata dall'utente → apre AccessoryDetailView.
     @State private var selectedCamera: HMAccessory?
+    /// Camera adapters per room UUID — rebuilt only when accessory count changes.
+    @State private var camerasPerRoom: [UUID: [CameraAdapter]] = [:]
 
     var body: some View {
         let h = FloorplanCoordinateHelper(imageRect: imageRect)
@@ -63,7 +65,7 @@ struct SecurityOverlayView: View {
 
             // Camera markers — auto-positioned near the room centroid.
             ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
-                let cameras = cameraAdapters(for: room)
+                let cameras = camerasPerRoom[room.hmRoomUUID] ?? []
                 let center  = h.centroid(for: room)
                 ForEach(Array(cameras.enumerated()), id: \.element.accessory.uniqueIdentifier) { idx, adapter in
                     let xOffset = CGFloat(idx) * (120 * inverseScale + 8 * inverseScale)
@@ -91,6 +93,18 @@ struct SecurityOverlayView: View {
         .sheet(item: $selectedCamera) { accessory in
             AccessoryDetailView(accessory: accessory)
         }
+        .onAppear { refreshCameraCache() }
+        .task(id: homeKit.allAccessories.count) { refreshCameraCache() }
+    }
+
+    private func refreshCameraCache() {
+        var result: [UUID: [CameraAdapter]] = [:]
+        for room in floorplan.linkedRooms {
+            result[room.hmRoomUUID] = homeKit.allAccessories
+                .filter { $0.room?.uniqueIdentifier == room.hmRoomUUID }
+                .compactMap { AccessoryAdapterFactory.adapter(for: $0, homeKit: homeKit) as? CameraAdapter }
+        }
+        camerasPerRoom = result
     }
 
     // MARK: Badge
@@ -286,6 +300,9 @@ struct SecurityContextDashboard: View {
     /// Mirrors SecurityView — same AppStorage key so monitored set is in sync.
     @AppStorage("securityMonitoredUUIDs") private var monitoredUUIDsRaw: String = ""
 
+    /// Cached adapter list — rebuilt only when accessory count changes, not on every render.
+    @State private var cachedAdapters: [(accessory: HMAccessory, adapter: any AccessoryAdapter)] = []
+
     private var accent: Color { Color(.systemPurple) }
 
     // MARK: Derived data helpers (called once per render in body)
@@ -337,7 +354,7 @@ struct SecurityContextDashboard: View {
 
     var body: some View {
         // ── Compute all expensive derived data ONCE per render ──────────
-        let allAdapters      = buildAllSecurityAdapters()
+        let allAdapters      = cachedAdapters
         let monitoredIDs     = Set(monitoredUUIDsRaw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
         let monitored        = monitoredIDs.isEmpty ? [] : allAdapters.filter { monitoredIDs.contains($0.accessory.uniqueIdentifier.uuidString) }
         let alarmSensors     = monitored.filter { $0.adapter.visualUrgency == .alarm }
@@ -399,6 +416,8 @@ struct SecurityContextDashboard: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .onAppear { cachedAdapters = buildAllSecurityAdapters() }
+        .task(id: homeKit.allAccessories.count) { cachedAdapters = buildAllSecurityAdapters() }
     }
 
     // MARK: Card 1 — Score hero

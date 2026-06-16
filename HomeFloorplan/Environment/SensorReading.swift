@@ -112,7 +112,7 @@ final class SensorAlertThreshold {
 
     /// Crea i threshold di default per tutti i tipi di sensore.
     static func defaultThresholds() -> [SensorAlertThreshold] {
-        SensorServiceType.allCases.map { type in
+        SensorServiceType.allCases.filter(\.hasAlertThreshold).map { type in
             SensorAlertThreshold(
                 serviceType: type,
                 warningValue: type.defaultWarning,

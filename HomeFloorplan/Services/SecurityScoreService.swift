@@ -6,16 +6,24 @@ import HomeKit
 /// Funzioni pure per calcolare il Security Score e gli insight di sicurezza.
 /// Senza stato — chiamato direttamente dalle computed properties della view,
 /// così il sistema @Observable di SwiftUI gestisce l'aggiornamento automatico.
+///
+/// Sprint Security-2: context-aware scoring e insight elevation.
+/// Quando la presenza è .away/.vacation, i warning valgono come alarm nello score
+/// e gli insight .warning vengono promossi a .critical.
 enum SecurityScoreService {
 
     // MARK: - Score
 
     /// Calcola il Security Score (0–100) in base allo stato corrente dei sensori.
+    /// - Parameter context: ContextSnapshot opzionale. Se presenza è .away/.vacation,
+    ///   i sensori in .warning pesano come .alarm nel calcolo del penalty.
     static func computeScore(
         monitoredSensors: [(accessory: HMAccessory, adapter: any AccessoryAdapter)],
-        securitySystem: (accessory: HMAccessory, adapter: SecuritySystemAdapter)?
+        securitySystem: (accessory: HMAccessory, adapter: SecuritySystemAdapter)?,
+        context: ContextSnapshot? = nil
     ) -> Int {
         var penalty = 0
+        let isAway = context.map { $0.presenceState == .away || $0.presenceState == .vacation } ?? false
 
         // Sistema di allarme triggered: -40 punti
         if let sys = securitySystem, sys.adapter.isTriggered {
@@ -26,9 +34,11 @@ enum SecurityScoreService {
         let alarmCount = monitoredSensors.filter { $0.adapter.visualUrgency == .alarm }.count
         penalty += min(alarmCount * 15, 60)
 
-        // Sensori in warning: -5 ciascuno (max -20)
+        // Sensori in warning: -5 ciascuno in home, -15 (come alarm) quando away/vacation
         let warningCount = monitoredSensors.filter { $0.adapter.visualUrgency == .warning }.count
-        penalty += min(warningCount * 5, 20)
+        let warningPenalty = isAway ? 15 : 5
+        let warningCap    = isAway ? 60 : 20
+        penalty += min(warningCount * warningPenalty, warningCap)
 
         // Sistema disarmato durante ore notturne (22:00–06:00): -10
         if let sys = securitySystem, sys.adapter.currentMode == .disarm {
@@ -44,9 +54,12 @@ enum SecurityScoreService {
     // MARK: - Insights
 
     /// Genera insight di sicurezza basati sullo stato corrente.
+    /// - Parameter context: ContextSnapshot opzionale.
+    ///   Quando presenza è .away/.vacation, ogni insight .warning viene promosso a .critical.
     static func buildInsights(
         sensors: [(accessory: HMAccessory, adapter: any AccessoryAdapter)],
-        system: (accessory: HMAccessory, adapter: SecuritySystemAdapter)?
+        system: (accessory: HMAccessory, adapter: SecuritySystemAdapter)?,
+        context: ContextSnapshot? = nil
     ) -> [SecurityInsight] {
         var result: [SecurityInsight] = []
 
@@ -112,6 +125,25 @@ enum SecurityScoreService {
             }
         }
 
+        // Context elevation: away/vacation → promuovi ogni .warning a .critical.
+        // La logica è: una porta aperta o un garage aperto quando nessuno è in casa
+        // è un rischio reale, non una semplice attenzione.
+        if let ctx = context, ctx.presenceState == .away || ctx.presenceState == .vacation {
+            result = result.map { insight in
+                guard insight.priority == .warning else { return insight }
+                return SecurityInsight(
+                    id: insight.id,
+                    priority: .critical,
+                    room: insight.room,
+                    message: insight.message,
+                    suggestedAction: insight.suggestedAction,
+                    sfSymbol: insight.sfSymbol,
+                    timestamp: insight.timestamp,
+                    accessoryID: insight.accessoryID
+                )
+            }
+        }
+
         return result
     }
 
@@ -156,6 +188,22 @@ enum SecurityScoreService {
             )
         }
 
+        if adapter is GarageDoorAdapter {
+            return (
+                "Garage bloccato: \(name)\(roomSuffix)",
+                String(localized: "security.insight.action.checkGarage", defaultValue: "Check the garage"),
+                "exclamationmark.triangle.fill"
+            )
+        }
+
+        if adapter is CameraAdapter {
+            return (
+                "Telecamera offline: \(name)\(roomSuffix)",
+                String(localized: "security.insight.action.checkDevice", defaultValue: "Check the device"),
+                "video.slash.fill"
+            )
+        }
+
         return ("Allarme: \(name)\(roomSuffix)", nil, "exclamationmark.triangle.fill")
     }
 
@@ -188,6 +236,18 @@ enum SecurityScoreService {
                 String(localized: "security.insight.action.lockDoor", defaultValue: "Lock the door"),
                 "lock.open.fill"
             )
+        }
+
+        if adapter is GarageDoorAdapter {
+            return (
+                "\(name)\(roomSuffix) è aperto",
+                String(localized: "security.insight.action.closeGarage", defaultValue: "Close the garage"),
+                "door.garage.open"
+            )
+        }
+
+        if adapter is CameraAdapter {
+            return ("Movimento rilevato: \(name)\(roomSuffix)", nil, "video.fill")
         }
 
         return ("Attenzione: \(name)\(roomSuffix)", nil, "exclamationmark.triangle.fill")

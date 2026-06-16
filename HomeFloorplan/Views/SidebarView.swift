@@ -132,6 +132,9 @@ struct SidebarView: View {
                         Label(String(localized: "sidebar.security", defaultValue: "Security"), systemImage: "shield.lefthalf.filled")
                     }
                     if isAIEnabled {
+                        NavigationLink(value: SidebarSelection.habits) {
+                            Label(String(localized: "sidebar.habits", defaultValue: "Habits"), systemImage: "brain.head.profile")
+                        }
                         NavigationLink(value: SidebarSelection.homeIntelligence) {
                             Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligence"), systemImage: "sparkles.rectangle.stack")
                         }

@@ -9,7 +9,9 @@ struct OnOffControlButton: View {
     
     @Environment(HomeKitService.self) private var homeKit
     @Environment(IconOverrideStore.self) private var iconOverrides
-    
+
+    @State private var writeError = false
+
     private let diameter: CGFloat = 80
     
     private var iconName: String {
@@ -46,6 +48,7 @@ struct OnOffControlButton: View {
                 .fontWeight(.medium)
                 .foregroundStyle(.secondary)
                 .contentTransition(.opacity)
+            if writeError { WriteErrorBanner() }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
@@ -75,7 +78,16 @@ struct OnOffControlButton: View {
     }
     
     // MARK: - Action
-    
+
+    private func triggerWriteError() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        withAnimation(.easeInOut(duration: 0.25)) { writeError = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation(.easeInOut(duration: 0.25)) { writeError = false }
+        }
+    }
+
     private func handleTap() {
         let haptic = UIImpactFeedbackGenerator(style: .medium)
         haptic.impactOccurred()
@@ -84,9 +96,7 @@ struct OnOffControlButton: View {
             do {
                 try await adapter.performQuickToggle(via: homeKit)
             } catch {
-                // Feedback aptico di errore
-                let notif = UINotificationFeedbackGenerator()
-                notif.notificationOccurred(.error)
+                triggerWriteError()
             }
         }
     }

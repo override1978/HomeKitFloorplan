@@ -46,34 +46,59 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
     case carbonDioxide
     case smoke
     case vocDensity
+    case lightSensor        // HomeKit HMServiceTypeLightSensor / CurrentAmbientLightLevel
+    case outdoorTemperature // WeatherKit source — persisted by SensorLogger.sampleOutdoor
+    case outdoorHumidity    // WeatherKit source — persisted by SensorLogger.sampleOutdoor
 
     var id: String { rawValue }
 
     // MARK: Mappatura HomeKit
 
+    /// True for types whose readings come from WeatherKit rather than HomeKit.
+    /// SensorLogger.sampleAllSensors skips these; use sampleOutdoor instead.
+    var isWeatherKitSource: Bool {
+        switch self {
+        case .outdoorTemperature, .outdoorHumidity: return true
+        default: return false
+        }
+    }
+
+    /// False for types that should not generate SensorAlertThreshold entries.
+    /// Outdoor weather types are read-only log data, not user-alertable.
+    var hasAlertThreshold: Bool {
+        switch self {
+        case .outdoorTemperature, .outdoorHumidity: return false
+        default: return true
+        }
+    }
+
     /// Tipo caratteristica HomeKit corrispondente.
     var hmCharacteristicType: String {
         switch self {
-        case .temperature:    return HMCharacteristicTypeCurrentTemperature
-        case .humidity:       return HMCharacteristicTypeCurrentRelativeHumidity
-        case .airQuality:     return HMCharacteristicTypeAirQuality
-        case .carbonMonoxide: return HMCharacteristicTypeCarbonMonoxideLevel
-        case .carbonDioxide:  return HMCharacteristicTypeCarbonDioxideLevel
-        case .smoke:          return HMCharacteristicTypeSmokeDetected
-        case .vocDensity:     return HMCharacteristicTypeVolatileOrganicCompoundDensity
+        case .temperature:        return HMCharacteristicTypeCurrentTemperature
+        case .humidity:           return HMCharacteristicTypeCurrentRelativeHumidity
+        case .airQuality:         return HMCharacteristicTypeAirQuality
+        case .carbonMonoxide:     return HMCharacteristicTypeCarbonMonoxideLevel
+        case .carbonDioxide:      return HMCharacteristicTypeCarbonDioxideLevel
+        case .smoke:              return HMCharacteristicTypeSmokeDetected
+        case .vocDensity:         return HMCharacteristicTypeVolatileOrganicCompoundDensity
+        case .lightSensor:        return HMCharacteristicTypeCurrentLightLevel
+        case .outdoorTemperature, .outdoorHumidity: return "" // WeatherKit — not read from HM
         }
     }
 
     /// Tipo servizio HomeKit principale per questo sensore.
     var hmServiceType: String {
         switch self {
-        case .temperature:    return HMServiceTypeTemperatureSensor
-        case .humidity:       return HMServiceTypeHumiditySensor
-        case .airQuality:     return HMServiceTypeAirQualitySensor
-        case .carbonMonoxide: return HMServiceTypeCarbonMonoxideSensor
-        case .carbonDioxide:  return HMServiceTypeCarbonDioxideSensor
-        case .smoke:          return HMServiceTypeSmokeSensor
-        case .vocDensity:     return HMServiceTypeAirQualitySensor
+        case .temperature:        return HMServiceTypeTemperatureSensor
+        case .humidity:           return HMServiceTypeHumiditySensor
+        case .airQuality:         return HMServiceTypeAirQualitySensor
+        case .carbonMonoxide:     return HMServiceTypeCarbonMonoxideSensor
+        case .carbonDioxide:      return HMServiceTypeCarbonDioxideSensor
+        case .smoke:              return HMServiceTypeSmokeSensor
+        case .vocDensity:         return HMServiceTypeAirQualitySensor
+        case .lightSensor:        return HMServiceTypeLightSensor
+        case .outdoorTemperature, .outdoorHumidity: return "" // WeatherKit — not read from HM
         }
     }
 
@@ -82,39 +107,48 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
     /// Unità di misura mostrata in UI.
     var unit: String {
         switch self {
-        case .temperature:    return "°C"
-        case .humidity:       return "%"
-        case .airQuality:     return ""
-        case .carbonMonoxide: return "ppm"
-        case .carbonDioxide:  return "ppm"
-        case .smoke:          return ""
-        case .vocDensity:     return "µg/m³"
+        case .temperature:        return "°C"
+        case .humidity:           return "%"
+        case .airQuality:         return ""
+        case .carbonMonoxide:     return "ppm"
+        case .carbonDioxide:      return "ppm"
+        case .smoke:              return ""
+        case .vocDensity:         return "µg/m³"
+        case .lightSensor:        return "lux"
+        case .outdoorTemperature: return "°C"
+        case .outdoorHumidity:    return "%"
         }
     }
 
     /// Label leggibile del tipo di sensore.
     var displayName: String {
         switch self {
-        case .temperature:    return String(localized: "sensor.temperature",    defaultValue: "Temperature")
-        case .humidity:       return String(localized: "sensor.humidity",       defaultValue: "Humidity")
-        case .airQuality:     return String(localized: "sensor.airQuality",     defaultValue: "Air Quality")
-        case .carbonMonoxide: return String(localized: "sensor.carbonMonoxide", defaultValue: "Carbon Monoxide")
-        case .carbonDioxide:  return String(localized: "sensor.carbonDioxide",  defaultValue: "Carbon Dioxide")
-        case .smoke:          return String(localized: "sensor.smoke",          defaultValue: "Smoke")
-        case .vocDensity:     return String(localized: "sensor.vocDensity",     defaultValue: "VOC")
+        case .temperature:        return String(localized: "sensor.temperature",        defaultValue: "Temperature")
+        case .humidity:           return String(localized: "sensor.humidity",           defaultValue: "Humidity")
+        case .airQuality:         return String(localized: "sensor.airQuality",         defaultValue: "Air Quality")
+        case .carbonMonoxide:     return String(localized: "sensor.carbonMonoxide",     defaultValue: "Carbon Monoxide")
+        case .carbonDioxide:      return String(localized: "sensor.carbonDioxide",      defaultValue: "Carbon Dioxide")
+        case .smoke:              return String(localized: "sensor.smoke",              defaultValue: "Smoke")
+        case .vocDensity:         return String(localized: "sensor.vocDensity",         defaultValue: "VOC")
+        case .lightSensor:        return String(localized: "sensor.lightSensor",        defaultValue: "Light Level")
+        case .outdoorTemperature: return String(localized: "sensor.outdoorTemperature", defaultValue: "Outdoor Temp")
+        case .outdoorHumidity:    return String(localized: "sensor.outdoorHumidity",    defaultValue: "Outdoor Humidity")
         }
     }
 
     /// Icona SF Symbol associata.
     var sfSymbol: String {
         switch self {
-        case .temperature:    return "thermometer.medium"
-        case .humidity:       return "humidity.fill"
-        case .airQuality:     return "aqi.medium"
-        case .carbonMonoxide: return "carbon.monoxide.cloud.fill"
-        case .carbonDioxide:  return "carbon.dioxide.cloud.fill"
-        case .smoke:          return "smoke.fill"
-        case .vocDensity:     return "flask.fill"
+        case .temperature:        return "thermometer.medium"
+        case .humidity:           return "humidity.fill"
+        case .airQuality:         return "aqi.medium"
+        case .carbonMonoxide:     return "carbon.monoxide.cloud.fill"
+        case .carbonDioxide:      return "carbon.dioxide.cloud.fill"
+        case .smoke:              return "smoke.fill"
+        case .vocDensity:         return "flask.fill"
+        case .lightSensor:        return "sun.max.fill"
+        case .outdoorTemperature: return "thermometer.sun.fill"
+        case .outdoorHumidity:    return "cloud.rain.fill"
         }
     }
 
@@ -122,10 +156,7 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
 
     /// True se il sensore restituisce un valore booleano (rilevato/non rilevato).
     var isBooleanAlert: Bool {
-        switch self {
-        case .smoke: return true
-        default:     return false
-        }
+        self == .smoke
     }
 
     // MARK: Categoria notifica
@@ -140,9 +171,10 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
 
     var notificationCategory: NotificationCategory {
         switch self {
-        case .smoke, .carbonMonoxide:            return .safety
-        case .carbonDioxide, .vocDensity, .airQuality: return .health
-        case .temperature, .humidity:            return .comfort
+        case .smoke, .carbonMonoxide:                        return .safety
+        case .carbonDioxide, .vocDensity, .airQuality:       return .health
+        case .temperature, .humidity,
+             .lightSensor, .outdoorTemperature, .outdoorHumidity: return .comfort
         }
     }
 
@@ -157,11 +189,12 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .smoke:          return 3.0
         case .carbonMonoxide: return 3.0
-        case .carbonDioxide:  return 2.0   // impatto salute (valori > 1000 ppm riducono concentrazione)
+        case .carbonDioxide:  return 2.0
         case .airQuality:     return 2.0
         case .vocDensity:     return 2.0
         case .temperature:    return 1.0
         case .humidity:       return 1.0
+        case .lightSensor, .outdoorTemperature, .outdoorHumidity: return 0.0
         }
     }
 
@@ -170,26 +203,32 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
     /// Soglia warning di default.
     var defaultWarning: Double {
         switch self {
-        case .temperature:    return 28.0
-        case .humidity:       return 65.0
-        case .airQuality:     return 3.0
-        case .carbonMonoxide: return 10.0
-        case .carbonDioxide:  return 1000.0  // OMS: >1000 ppm riduce concentrazione
-        case .smoke:          return 1.0
-        case .vocDensity:     return 500.0
+        case .temperature:        return 28.0
+        case .humidity:           return 65.0
+        case .airQuality:         return 3.0
+        case .carbonMonoxide:     return 10.0
+        case .carbonDioxide:      return 1000.0
+        case .smoke:              return 1.0
+        case .vocDensity:         return 500.0
+        case .lightSensor:        return 10_000.0  // 10 klux = very bright indoor
+        case .outdoorTemperature: return 100.0     // sentinel — outdoor types have no user alert
+        case .outdoorHumidity:    return 100.0
         }
     }
 
     /// Soglia danger di default.
     var defaultDanger: Double {
         switch self {
-        case .temperature:    return 32.0
-        case .humidity:       return 75.0
-        case .airQuality:     return 4.0
-        case .carbonMonoxide: return 25.0
-        case .carbonDioxide:  return 2000.0  // >2000 ppm: sintomi evidenti, aria malsana
-        case .smoke:          return 1.0
-        case .vocDensity:     return 1000.0
+        case .temperature:        return 32.0
+        case .humidity:           return 75.0
+        case .airQuality:         return 4.0
+        case .carbonMonoxide:     return 25.0
+        case .carbonDioxide:      return 2000.0
+        case .smoke:              return 1.0
+        case .vocDensity:         return 1000.0
+        case .lightSensor:        return 25_000.0
+        case .outdoorTemperature: return 200.0     // sentinel — outdoor types have no user alert
+        case .outdoorHumidity:    return 200.0
         }
     }
 
@@ -201,7 +240,7 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .humidity:     return 40.0  // WHO/ASHRAE: sotto 40% aria troppo secca
         case .temperature:  return 18.0  // sotto 18°C discomfort freddo
-        default:            return nil   // CO, fumo, VOC, CO₂, qualità aria: no soglia bassa
+        default:            return nil
         }
     }
 

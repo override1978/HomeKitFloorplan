@@ -24,16 +24,28 @@ struct SecurityView: View {
 
     // MARK: - Computed (score + insights — calcolati on-demand, aggiornati con @Observable tracking)
 
+    private var currentContext: ContextSnapshot {
+        ContextResolver.resolve()
+    }
+
     private var securityScore: Int {
-        SecurityScoreService.computeScore(monitoredSensors: monitoredSensors, securitySystem: securitySystem)
+        SecurityScoreService.computeScore(
+            monitoredSensors: monitoredSensors,
+            securitySystem: securitySystem,
+            context: currentContext
+        )
     }
 
     private var securityInsights: [SecurityInsight] {
-        SecurityScoreService.buildInsights(sensors: monitoredSensors, system: securitySystem)
-            .sorted {
-                if $0.priority != $1.priority { return $0.priority < $1.priority }
-                return $0.timestamp > $1.timestamp
-            }
+        SecurityScoreService.buildInsights(
+            sensors: monitoredSensors,
+            system: securitySystem,
+            context: currentContext
+        )
+        .sorted {
+            if $0.priority != $1.priority { return $0.priority < $1.priority }
+            return $0.timestamp > $1.timestamp
+        }
     }
 
     private var sensorAdapters: [(accessory: HMAccessory, adapter: any AccessoryAdapter)] {
@@ -45,6 +57,11 @@ struct SecurityView: View {
                 result.append((acc, sensor))
             } else if let lock = adapter as? DoorLockAdapter {
                 result.append((acc, lock))
+            } else if let garage = adapter as? GarageDoorAdapter {
+                result.append((acc, garage))
+            } else if let camera = adapter as? CameraAdapter,
+                      camera.hasMotionSensor || camera.hasOccupancySensor {
+                result.append((acc, camera))
             }
         }
         return result.sorted {
@@ -94,15 +111,25 @@ struct SecurityView: View {
         monitoredSensors.filter { $0.adapter.visualUrgency != .alarm && $0.adapter.visualUrgency != .warning }
     }
 
+    /// Tutte le telecamere HomeKit — mostrate sempre nella sezione streaming, senza configurazione.
+    private var cameraAdapters: [(accessory: HMAccessory, adapter: CameraAdapter)] {
+        guard let home = homeKit.currentHome else { return [] }
+        return home.accessories.compactMap { acc in
+            guard let cam = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit) as? CameraAdapter else { return nil }
+            return (acc, cam)
+        }.sorted { ($0.accessory.room?.name ?? "~") < ($1.accessory.room?.name ?? "~") }
+    }
+
     // MARK: - Body
 
     var body: some View {
         navigationContent
-            .task { startObserving() }
             // Non fermiamo l'osservazione su onDisappear: vogliamo che le notifiche
             // HomeKit sui sensori monitorati rimangano attive anche quando l'utente
-            // è su un'altra tab. Il sistema di allarme è già osservato globalmente
-            // da HomeKitService.startObservingSecuritySystems() al lancio.
+            // è su un'altra tab. Il sistema di allarme è osservato globalmente
+            // da HomeKitService.startObservingSecuritySystems() e il trigger
+            // dell'overlay è gestito a livello root in ContentView.
+            .task { startObserving() }
     }
 
     private var navigationContent: some View {
@@ -171,6 +198,12 @@ struct SecurityView: View {
                     if let sys = securitySystem { selectedAccessory = sys.accessory }
                 }
 
+                // 1b. Away/vacation context banner
+                let presence = currentContext.presenceState
+                if presence == .away || presence == .vacation {
+                    awayContextBanner(presence: presence)
+                }
+
                 // 2. AI Insights
                 if !securityInsights.isEmpty {
                     SecurityInsightsSection(
@@ -200,12 +233,46 @@ struct SecurityView: View {
                     )
                 }
 
-                // 5. Banner piantina — disabilitato, attivare in futuro
+                // 5. Streaming telecamere (sempre visibili, senza configurazione)
+                if !cameraAdapters.isEmpty {
+                    SecurityCameraSection(cameras: cameraAdapters)
+                }
+
+                // 6. Banner piantina — disabilitato, attivare in futuro
                 // SecurityFloorplanBanner()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
+    }
+
+    // MARK: - Context banner
+
+    @ViewBuilder
+    private func awayContextBanner(presence: PresenceState) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.slash.fill")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(presence == .vacation
+                     ? String(localized: "security.context.vacation", defaultValue: "Vacation mode active")
+                     : String(localized: "security.context.away",     defaultValue: "Away mode active"))
+                    .font(.subheadline.weight(.semibold))
+                Text(String(localized: "security.context.elevatedAlerts",
+                            defaultValue: "Warnings are treated as critical — alerts are escalated."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(.orange.opacity(0.25), lineWidth: 1)
+        )
     }
 
     // MARK: - Empty states
@@ -994,6 +1061,104 @@ private struct SecurityFloorplanBanner: View {
     }
 }
 
+// MARK: - SecurityCameraSection
+
+private struct SecurityCameraSection: View {
+    let cameras: [(accessory: HMAccessory, adapter: CameraAdapter)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(String(localized: "security.cameras.title", defaultValue: "Cameras"))
+                .font(.headline)
+
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible())],
+                spacing: 12
+            ) {
+                ForEach(cameras, id: \.accessory.uniqueIdentifier) { item in
+                    CameraFeedCard(accessory: item.accessory, adapter: item.adapter)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - CameraFeedCard
+
+private struct CameraFeedCard: View {
+    let accessory: HMAccessory
+    let adapter: CameraAdapter
+
+    @State private var streamState: HMCameraStreamState = .notStreaming
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Group {
+                if let streamControl = adapter.cameraProfile?.streamControl, adapter.supportsStream {
+                    CameraStreamView(streamControl: streamControl, streamState: $streamState)
+                } else {
+                    streamPlaceholder
+                }
+            }
+            .aspectRatio(16 / 9, contentMode: .fill)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(alignment: .bottomLeading) {
+                if adapter.motionDetected || adapter.occupancyDetected {
+                    Label(
+                        adapter.motionDetected
+                            ? String(localized: "camera.status.motion", defaultValue: "Motion")
+                            : String(localized: "camera.status.occupancy", defaultValue: "Presence"),
+                        systemImage: "figure.walk.motion"
+                    )
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(.orange.opacity(0.85), in: Capsule())
+                    .padding(6)
+                }
+            }
+
+            HStack(spacing: 4) {
+                Image(systemName: adapter.iconName)
+                    .font(.caption2)
+                    .foregroundStyle(adapter.motionDetected || adapter.occupancyDetected ? .orange : .secondary)
+                Text(accessory.name)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                if let room = accessory.room?.name {
+                    Text("· \(room)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 6)
+        }
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var streamPlaceholder: some View {
+        Rectangle()
+            .fill(Color.black.opacity(0.85))
+            .overlay {
+                VStack(spacing: 6) {
+                    Image(systemName: adapter.visualUrgency == .alarm ? "video.slash.fill" : "video")
+                        .font(.title3)
+                        .foregroundStyle(adapter.visualUrgency == .alarm ? .red.opacity(0.8) : .white.opacity(0.4))
+                    if let status = adapter.primaryStatusText {
+                        Text(status)
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                }
+            }
+    }
+}
+
 // MARK: - SecurityConfigSheet
 
 private struct SecurityConfigSheet: View {
@@ -1127,6 +1292,224 @@ enum AggregatedSecurityState {
     }
 
     var isAlarm: Bool { self == .alarm }
+}
+
+// MARK: - AlarmTriggeredView
+
+/// Overlay a schermo intero mostrato automaticamente quando il sistema di allarme si triggera.
+/// Mostra: header pulsante rosso, feed live delle telecamere, elenco dei trigger, bottone disarma.
+/// Auto-contenuta: legge HomeKitService dall'environment, nessun parametro richiesto.
+struct AlarmTriggeredView: View {
+
+    @Environment(HomeKitService.self) private var homeKit
+    @Environment(\.dismiss) private var dismiss
+    @State private var isPending = false
+    @State private var errorMessage: String?
+    @State private var pulse = false
+
+    // MARK: - Computed
+
+    private var securitySystem: (accessory: HMAccessory, adapter: SecuritySystemAdapter)? {
+        guard let home = homeKit.currentHome else { return nil }
+        for acc in home.accessories {
+            if let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit) as? SecuritySystemAdapter {
+                return (acc, adapter)
+            }
+        }
+        return nil
+    }
+
+    private var cameras: [(accessory: HMAccessory, adapter: CameraAdapter)] {
+        guard let home = homeKit.currentHome else { return [] }
+        return home.accessories.compactMap { acc -> (HMAccessory, CameraAdapter)? in
+            guard let cam = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit) as? CameraAdapter else { return nil }
+            return (acc, cam)
+        }.sorted { ($0.0.room?.name ?? "") < ($1.0.room?.name ?? "") }
+    }
+
+    private var insights: [SecurityInsight] {
+        guard let home = homeKit.currentHome else { return [] }
+        var allSensors: [(accessory: HMAccessory, adapter: any AccessoryAdapter)] = []
+        for acc in home.accessories {
+            let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit)
+            if adapter is SensorAdapter || adapter is DoorLockAdapter || adapter is GarageDoorAdapter {
+                allSensors.append((acc, adapter))
+            }
+        }
+        return SecurityScoreService.buildInsights(sensors: allSensors, system: securitySystem)
+            .filter { $0.priority == .critical }
+    }
+
+    var body: some View {
+        ZStack {
+            Color.red.opacity(pulse ? 0.08 : 0.03)
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulse)
+
+            VStack(spacing: 0) {
+                alarmHeader
+
+                ScrollView {
+                    VStack(spacing: 20) {
+                        if !cameras.isEmpty {
+                            cameraFeedsSection
+                        }
+                        if !insights.isEmpty {
+                            triggersSection
+                        }
+                    }
+                    .padding(16)
+                    .padding(.bottom, 90)
+                }
+
+                disarmFooter
+            }
+        }
+        .onAppear { pulse = true }
+        .alert(errorMessage ?? "", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button(String(localized: "button.ok", defaultValue: "OK"), role: .cancel) {}
+        }
+    }
+
+    // MARK: - Subviews
+
+    private var alarmHeader: some View {
+        ZStack(alignment: .topTrailing) {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding([.top, .trailing], 20)
+
+            VStack(spacing: 10) {
+                Spacer().frame(height: 16)
+                Image(systemName: "exclamationmark.shield.fill")
+                    .font(.system(size: 60))
+                    .foregroundStyle(.red)
+                    .symbolEffect(.pulse)
+                Text(String(localized: "alarm.triggered.title", defaultValue: "ALARM ACTIVE"))
+                    .font(.title.weight(.black))
+                    .foregroundStyle(.red)
+                Text(String(localized: "alarm.triggered.subtitle",
+                            defaultValue: "Check cameras and sensors below, then disarm if safe."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                Spacer().frame(height: 4)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.bottom, 8)
+    }
+
+    private var cameraFeedsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(String(localized: "alarm.cameras", defaultValue: "Live cameras"),
+                  systemImage: "video.fill")
+                .font(.headline)
+
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible())],
+                spacing: 12
+            ) {
+                ForEach(cameras, id: \.accessory.uniqueIdentifier) { item in
+                    CameraFeedCard(accessory: item.accessory, adapter: item.adapter)
+                }
+            }
+        }
+    }
+
+    private var triggersSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(String(localized: "alarm.triggers", defaultValue: "Alarm triggers"),
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.headline)
+                .foregroundStyle(.red)
+
+            ForEach(insights) { insight in
+                HStack(spacing: 12) {
+                    Image(systemName: insight.sfSymbol)
+                        .font(.title3)
+                        .foregroundStyle(.red)
+                        .frame(width: 36, alignment: .center)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(insight.message)
+                            .font(.subheadline.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let room = insight.room {
+                            Text(room)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.red.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(.red.opacity(0.2), lineWidth: 1)
+                        )
+                )
+            }
+        }
+    }
+
+    private var disarmFooter: some View {
+        VStack(spacing: 0) {
+            Divider()
+            Button {
+                Task { await disarm() }
+            } label: {
+                HStack(spacing: 10) {
+                    if isPending {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "lock.open.fill")
+                            .font(.title3)
+                    }
+                    Text(String(localized: "alarm.disarm.action", defaultValue: "Disarm Alarm"))
+                        .font(.title3.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+                .foregroundStyle(.white)
+                .background(
+                    Color.red.opacity(isPending ? 0.6 : 1.0),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+            .disabled(isPending || securitySystem == nil)
+        }
+        .background(.ultraThinMaterial)
+    }
+
+    // MARK: - Actions
+
+    private func disarm() async {
+        guard let sys = securitySystem, !isPending else { return }
+        isPending = true
+        defer { isPending = false }
+        do {
+            try await sys.adapter.setMode(.disarm)
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 // MARK: - Helpers

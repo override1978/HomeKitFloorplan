@@ -9,4 +9,10 @@ enum AILocale {
         let id = Locale.current.language.languageCode?.identifier ?? "it"
         return id == "en" ? "English" : "Italian"
     }
+
+    /// Short language code used for per-language cache keys ("en" or "it").
+    static var languageCode: String {
+        let id = Locale.current.language.languageCode?.identifier ?? "it"
+        return id == "en" ? "en" : "it"
+    }
 }

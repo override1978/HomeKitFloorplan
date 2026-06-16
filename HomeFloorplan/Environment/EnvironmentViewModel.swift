@@ -119,6 +119,12 @@ struct SensorData: Identifiable {
                 : String(localized: "smoke.notDetected",  defaultValue: "Clear")
         case .vocDensity:
             return String(format: "%.0f µg/m³", currentValue)
+        case .lightSensor:
+            return String(format: "%.0f lux", currentValue)
+        case .outdoorTemperature:
+            return unit.format(currentValue)
+        case .outdoorHumidity:
+            return String(format: "%.0f%%", currentValue)
         }
     }
 }
@@ -188,7 +194,9 @@ struct RoomEnvironmentData: Identifiable {
 @MainActor
 final class EnvironmentViewModel {
 
-    var rooms: [RoomEnvironmentData] = []
+    var rooms: [RoomEnvironmentData] = [] {
+        didSet { updateDerivedCache() }
+    }
     var isLoading: Bool = false
     var lastRefresh: Date?
 
@@ -215,26 +223,23 @@ final class EnvironmentViewModel {
         self.modelContainer = modelContainer
     }
 
-    // MARK: - Score globale
+    // MARK: - Score globale (cached — recomputed only when rooms changes)
 
-    /// Score qualità globale pesato da 0 a 1 (1 = tutto ottimo).
-    ///
-    /// Ogni sensore contribuisce con un punteggio moltiplicato per il suo peso:
-    ///   .normal  → 1.0  (nessuna penalità)
-    ///   .warning → 0.4  (penalità moderata)
-    ///   .danger  → 0.0  (azzerato)
-    ///
-    /// Pesi per tipo (riflettono l'impatto sulla salute/sicurezza):
-    ///   smoke, carbonMonoxide → 3.0  (pericolo vita)
-    ///   airQuality, vocDensity → 2.0  (impatto salute)
-    ///   temperature, humidity  → 1.0  (comfort)
-    var globalScore: Double {
+    /// Cached quality score 0–1. Updated via `rooms.didSet` → `updateDerivedCache()`.
+    private(set) var globalScore: Double = 1.0
+
+    /// Cached sensor type list, sorted by qualityWeight descending. Updated with globalScore.
+    private(set) var availableSensorTypes: [SensorServiceType] = []
+
+    private func updateDerivedCache() {
         let allSensors = rooms.flatMap(\.sensors)
-        guard !allSensors.isEmpty else { return 1.0 }
-
+        guard !allSensors.isEmpty else {
+            globalScore = 1.0
+            availableSensorTypes = []
+            return
+        }
         var weightedScore = 0.0
         var totalWeight   = 0.0
-
         for sensor in allSensors {
             let weight = sensor.serviceType.qualityWeight
             let score: Double
@@ -246,9 +251,9 @@ final class EnvironmentViewModel {
             weightedScore += weight * score
             totalWeight   += weight
         }
-
-        guard totalWeight > 0 else { return 1.0 }
-        return weightedScore / totalWeight
+        globalScore = totalWeight > 0 ? weightedScore / totalWeight : 1.0
+        let allTypes = Set(allSensors.map(\.serviceType))
+        availableSensorTypes = allTypes.sorted { $0.qualityWeight > $1.qualityWeight }
     }
 
     var globalLabel: String {
@@ -267,13 +272,6 @@ final class EnvironmentViewModel {
         case 0.35..<0.60: return .orange
         default:          return .red
         }
-    }
-
-    /// Distinct sensor types present in the current data, sorted by qualityWeight descending
-    /// (highest-impact types first: smoke, CO, CO₂, air quality, temperature, humidity).
-    var availableSensorTypes: [SensorServiceType] {
-        let allTypes = Set(rooms.flatMap { $0.sensors.map(\.serviceType) })
-        return allTypes.sorted { $0.qualityWeight > $1.qualityWeight }
     }
 
     // MARK: - Caricamento da SwiftData

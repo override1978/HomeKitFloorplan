@@ -91,11 +91,15 @@ struct BehavioralEvent: Identifiable, Codable {
     let accessoryID:   UUID?
     let accessoryName: String
     let roomName:      String
-    let eventTypeRaw:  String     // "light", "blind", "scene", …
+    let eventTypeRaw:  String     // "light", "blind", "scene", "burst", …
     let action:        BehavioralAction
     let numericValue:  Double?    // brightness 0–1, or other scalar
 
     let context: BehavioralEventContext
+
+    /// Stable cluster ID for burst synthetic events (set by PatternDetectionEngine).
+    /// Nil for raw accessory/scene events.
+    var groupingKey: String? = nil
 
     /// Stable key for correlation pairing and deduplication.
     var signature: String {

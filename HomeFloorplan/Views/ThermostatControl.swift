@@ -17,6 +17,7 @@ struct ThermostatControl: View {
     /// Target ottimistico durante l'interazione (per UI reattiva), in Celsius (come l'adapter).
     @State private var optimisticTarget: Double?
     @State private var optimisticFan: Int?
+    @State private var writeError = false
 
     /// Target in unità di display (°C o °F).
     private var displayTarget: Double {
@@ -40,6 +41,7 @@ struct ThermostatControl: View {
             EnvironmentInfoSection(
                         humidity: adapter.environmentHumidity
                     )
+            if writeError { WriteErrorBanner() }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
@@ -217,8 +219,7 @@ struct ThermostatControl: View {
                 try await adapter.setRotationSpeed(level)
             } catch {
                 optimisticFan = nil
-                let notif = UINotificationFeedbackGenerator()
-                notif.notificationOccurred(.error)
+                triggerWriteError()
             }
         }
     }
@@ -292,7 +293,16 @@ struct ThermostatControl: View {
     }
     
     // MARK: - Actions
-    
+
+    private func triggerWriteError() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        withAnimation(.easeInOut(duration: 0.25)) { writeError = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation(.easeInOut(duration: 0.25)) { writeError = false }
+        }
+    }
+
     private func adjustTarget(by delta: Double) {
         let step = adapter.temperatureStep
         let direction = delta > 0 ? 1.0 : -1.0
@@ -314,8 +324,7 @@ struct ThermostatControl: View {
                 try await adapter.setTargetTemperature(clampedCelsius)
             } catch {
                 optimisticTarget = nil
-                let notif = UINotificationFeedbackGenerator()
-                notif.notificationOccurred(.error)
+                triggerWriteError()
             }
         }
     }
@@ -325,7 +334,11 @@ struct ThermostatControl: View {
         let haptic = UIImpactFeedbackGenerator(style: .medium)
         haptic.impactOccurred()
         Task {
-            try? await adapter.setMode(m)
+            do {
+                try await adapter.setMode(m)
+            } catch {
+                triggerWriteError()
+            }
         }
     }
     

@@ -252,6 +252,7 @@ struct SceneActionSummary: Identifiable {
         let securityTargetStateUUID = "00000067-0000-1000-8000-0026BB765291"
         let targetAirPurifierStateUUID = "000000A8-0000-1000-8000-0026BB765291"
         let rotationSpeedUUID = "00000029-0000-1000-8000-0026BB765291"
+        let colorTemperatureUUID = "000000CE-0000-1000-8000-0026BB765291"
         let hueUUID = "00000013-0000-1000-8000-0026BB765291"
         let saturationUUID = "0000002F-0000-1000-8000-0026BB765291"
         
@@ -319,6 +320,12 @@ struct SceneActionSummary: Identifiable {
             case targetAirPurifierStateUUID:
                 if intVal(value) == 0 { parts.append(String(localized: "airpurifier.mode.manual", defaultValue: "Manual Mode")) }
                 else if intVal(value) == 1 { parts.append(String(localized: "airpurifier.mode.auto", defaultValue: "Auto Mode")) }
+            case colorTemperatureUUID:
+                // Mired → Kelvin per visualizzazione leggibile
+                if let mired = intVal(value), mired > 0 {
+                    let kelvin = 1_000_000 / mired
+                    parts.append("\(kelvin)K")
+                }
             case hueUUID:
                 if let v = doubleVal(value) {
                     let hueStr = String(localized: "light.hue", defaultValue: "Hue")

@@ -65,14 +65,6 @@ struct AccessoryRoomDetailView: View {
         return Set(store.suggestedScenes(from: roomScenes).map { $0.scene.id })
     }
 
-    /// Dimmable or color lights in this room, used to decide whether to show the lighting strip.
-    private var lightingAccessories: [HMAccessory] {
-        room.accessories.filter {
-            let cat = AccessoryCategorizer.categorize($0)
-            return cat == "colorLight" || cat == "dimmableLight"
-        }
-    }
-
     // MARK: - Body
 
     var body: some View {
@@ -82,16 +74,7 @@ struct AccessoryRoomDetailView: View {
                 // ── 1. Header stanza ───────────────────────────────────
                 roomHeaderCard
 
-                // ── 1b. Lighting quick-actions ─────────────────────────
-                if !lightingAccessories.isEmpty {
-                    LightingChipsStrip(
-                        room: room,
-                        homeKit: homeKit,
-                        actionExecutionService: actionExecutionService
-                    )
-                }
-
-                // ── 1c. Scene della stanza ────────────────────────────
+                // ── 1b. Scene della stanza ────────────────────────────
                 if !roomScenes.isEmpty {
                     RoomScenesStrip(
                         scenes: roomScenes,
@@ -560,149 +543,6 @@ private struct DetailSectionCard<Content: View>: View {
                 .padding(.vertical, 4)
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-}
-
-// MARK: - LightingChipsStrip
-
-private struct LightingChipsStrip: View {
-
-    let room: RoomAccessoryData
-    let homeKit: HomeKitService
-    let actionExecutionService: ActionExecutionService
-
-    @State private var executingKey: String?
-
-    private var bestColorLight: HMAccessory? {
-        room.accessories.first { AccessoryCategorizer.categorize($0) == "colorLight" }
-    }
-
-    private var bestLight: HMAccessory? {
-        bestColorLight
-            ?? room.accessories.first { AccessoryCategorizer.categorize($0) == "dimmableLight" }
-    }
-
-    private var currentProfile: LightingContextAnalyzer.LightingProfile {
-        LightingContextAnalyzer.profile(for: Calendar.current.component(.hour, from: Date()))
-    }
-
-    var body: some View {
-        let profile = currentProfile
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "lightbulb.2.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.yellow)
-                    .frame(width: 20)
-                Text(profile.description)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(chips(profile: profile), id: \.key) { chip in
-                        chipButton(chip)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 12)
-            }
-        }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    private struct LightingChip {
-        let key: String
-        let label: String
-        let icon: String
-        let actionType: String
-        let value: Double?
-    }
-
-    private func chips(profile: LightingContextAnalyzer.LightingProfile) -> [LightingChip] {
-        var result: [LightingChip] = []
-        for intent in profile.preferredIntents {
-            switch intent {
-            case .brightenRoom:
-                result.append(LightingChip(
-                    key: "brighten",
-                    label: String(localized: "lighting.chip.brighten", defaultValue: "Brighten"),
-                    icon: "sun.max.fill", actionType: "dim", value: 0.8
-                ))
-            case .dimRoom:
-                result.append(LightingChip(
-                    key: "dim",
-                    label: String(localized: "lighting.chip.dim", defaultValue: "Dim"),
-                    icon: "light.min", actionType: "dim", value: 0.25
-                ))
-            case .setCircadianLight where bestColorLight != nil:
-                result.append(LightingChip(
-                    key: "circadian",
-                    label: String(localized: "lighting.chip.circadian", defaultValue: "Evening Light"),
-                    icon: "sun.min.fill", actionType: "dim", value: 0.35
-                ))
-            default:
-                break
-            }
-        }
-        result.append(LightingChip(
-            key: "off",
-            label: String(localized: "lighting.chip.off", defaultValue: "Turn Off"),
-            icon: "moon.fill", actionType: "off", value: nil
-        ))
-        return result
-    }
-
-    @ViewBuilder
-    private func chipButton(_ chip: LightingChip) -> some View {
-        let isExecuting = executingKey == chip.key
-        let isDisabled  = isExecuting || bestLight == nil || homeKit.currentHome == nil
-
-        Button {
-            guard let light = bestLight, let home = homeKit.currentHome else { return }
-            executingKey = chip.key
-            Task {
-                let action = AINextAction(
-                    label:               chip.label,
-                    actionType:          "executeNow",
-                    accessoryID:         light.uniqueIdentifier.uuidString,
-                    accessoryActionType: chip.actionType,
-                    accessoryValue:      chip.value
-                )
-                await actionExecutionService.executeRaw(action, in: home)
-                executingKey = nil
-            }
-        } label: {
-            HStack(spacing: 6) {
-                if isExecuting {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                        .frame(width: 16, height: 16)
-                } else {
-                    Image(systemName: chip.icon)
-                        .font(.system(size: 13, weight: .medium))
-                }
-                Text(chip.label)
-                    .font(.subheadline.weight(.medium))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(
-                isExecuting
-                    ? Color.secondary.opacity(0.12)
-                    : Color.yellow.opacity(0.12),
-                in: Capsule()
-            )
-            .foregroundStyle(isDisabled ? .secondary : .primary)
-        }
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
-        .animation(.spring(response: 0.25), value: isExecuting)
     }
 }
 

@@ -28,6 +28,8 @@ final class Rule {
     var actionValue: Double?
     /// Valore secondario: temperatura target in °C quando actionType == "setMode".
     var actionValue2: Double?
+    /// Nome scena HomeKit da eseguire. Se impostato, actionAccessoryID/actionType vengono ignorati.
+    var actionSceneName: String?
     /// Modalità esecuzione: "homeKit" | "inApp".
     var executionMode: String
     /// UUID del HMEventTrigger se delegato a HomeKit.
@@ -51,6 +53,7 @@ final class Rule {
         actionType: String,
         actionValue: Double? = nil,
         actionValue2: Double? = nil,
+        actionSceneName: String? = nil,
         executionMode: String = "inApp",
         homeKitTriggerID: String? = nil,
         isEnabled: Bool = true,
@@ -71,6 +74,7 @@ final class Rule {
         self.actionType = actionType
         self.actionValue = actionValue
         self.actionValue2 = actionValue2
+        self.actionSceneName = actionSceneName
         self.executionMode = executionMode
         self.homeKitTriggerID = homeKitTriggerID
         self.isEnabled = isEnabled

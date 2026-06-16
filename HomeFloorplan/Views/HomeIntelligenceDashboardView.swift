@@ -32,6 +32,7 @@ struct HomeIntelligenceDashboardView: View {
     @Environment(HabitAnalysisService.self)          private var habitService
     @Environment(BehavioralAnalysisService.self)     private var behavioralService
     @Environment(RuleEngineService.self)             private var ruleEngine
+    @Environment(HomeKitService.self)                private var homeKit
     @Environment(ActionExecutionService.self)        private var executionService
     @Environment(ProactiveIntelligenceService.self)  private var proactiveService
     @Environment(OccupancyPredictionService.self)    private var occupancyService
@@ -109,8 +110,7 @@ struct HomeIntelligenceDashboardView: View {
                     icon: "brain.fill"
                 )
                 PhaseHeroCard(svc: svc)
-                behavioralOpportunitiesSection()
-                habitsSection()
+                abitudiniSection()
                 trendsSection(svc: svc)
 
                 // ── Sezione 3: Cosa fare ──────────────────────────────
@@ -119,7 +119,6 @@ struct HomeIntelligenceDashboardView: View {
                                   defaultValue: "What to do"),
                     icon: "bolt.fill"
                 )
-                aiSuggestionsSection()
                 domainsSection(svc: svc)
                 effectivenessSection(svc: svc)
 
@@ -134,123 +133,232 @@ struct HomeIntelligenceDashboardView: View {
         .refreshable { await performRefresh() }
     }
 
-    // MARK: - Section: Behavioral Opportunities (on-device detected patterns)
+    // MARK: - Section: Abitudini (unified 3-tier)
 
     @ViewBuilder
-    private func behavioralOpportunitiesSection() -> some View {
+    private func abitudiniSection() -> some View {
+        let pendingHabits     = Array(habitService.pendingPatterns.prefix(3))
+        let pendingBehavioral = Array(behavioralService.pendingOpportunities.prefix(3))
+        let visibleCount      = behavioralService.visiblePatternCount
+        let activeRules       = ruleEngine.rules
+        let isAnalyzing       = habitService.isAnalyzing || behavioralService.isAnalyzing
+        let hasContent        = !pendingHabits.isEmpty || !pendingBehavioral.isEmpty
+                             || visibleCount > 0 || !activeRules.isEmpty
+
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(
-                icon: "brain.head.profile",
-                title: String(localized: "behavioral.section.opportunities",
-                              defaultValue: "Detected behaviors")
-            )
-            behavioralOpportunitiesContent()
+            HStack(alignment: .center) {
+                sectionHeader(
+                    icon: "brain.head.profile",
+                    title: String(localized: "abitudini.section.header", defaultValue: "Habits")
+                )
+                Spacer(minLength: 8)
+                if isAnalyzing {
+                    ProgressView()
+                        .scaleEffect(0.75)
+                        .padding(.trailing, 4)
+                }
+                Button {
+                    Task { await habitService.analyzeHabits(knownPatterns: behavioralService.stablePatterns) }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandColor.primary)
+                }
+                .disabled(isAnalyzing)
+            }
+
+            if !hasContent && !isAnalyzing {
+                // Nothing yet — early observation phase
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.secondary.opacity(0.10))
+                            .frame(width: 40, height: 40)
+                        Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(String(localized: "abitudini.empty.title",
+                                    defaultValue: "Learning your habits"))
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                        Text(String(localized: "abitudini.empty.subtitle",
+                                    defaultValue: "After a few days of use, the first suggestion will appear here."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial))
+
+            } else {
+
+                // ── Tier 1: Suggerite ─────────────────────────────
+                if !pendingHabits.isEmpty || !pendingBehavioral.isEmpty {
+                    abitudiniTierLabel(
+                        title: String(localized: "abitudini.tier.suggerite", defaultValue: "Suggested"),
+                        icon: "sparkles"
+                    )
+                    ForEach(pendingBehavioral) { opp in
+                        BehavioralOpportunityCard(
+                            opportunity: opp,
+                            onApprove: {
+                                let rule = behavioralService.approve(opp)
+                                Task {
+                                   await ruleEngine.insertRule(rule, home: homeKit.currentHome)
+                                }
+                            },
+                            onSnooze:  { behavioralService.snooze(opp) },
+                            onDismiss: { behavioralService.dismiss(opp) }
+                        )
+                    }
+                    ForEach(pendingHabits) { pattern in
+                        AISuggestionCard(
+                            pattern: pattern,
+                            onApprove: {
+                                habitService.approve(pattern)
+                                Task {
+                                    if let home = homeKit.currentHome {
+                                        try? await ruleEngine.createRule(from: pattern, home: home)
+                                    }
+                                }
+                            },
+                            onDismiss: { habitService.dismiss(pattern) }
+                        )
+                    }
+                }
+
+                // ── Tier 2: In ascolto ────────────────────────────
+                if visibleCount > 0 {
+                    abitudiniTierLabel(
+                        title: String(localized: "abitudini.tier.inAscolto", defaultValue: "Listening"),
+                        icon: "antenna.radiowaves.left.and.right"
+                    )
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(BrandColor.primary.opacity(0.10))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "brain")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundStyle(BrandColor.primary)
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(
+                                String(
+                                    format: String(localized: "abitudini.inAscolto.title",
+                                                   defaultValue: "%d behaviors being learned"),
+                                    visibleCount
+                                )
+                            )
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            Text(String(localized: "abitudini.inAscolto.subtitle",
+                                        defaultValue: "When confidence is sufficient, a suggestion will appear."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.regularMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(BrandColor.primary.opacity(0.12), lineWidth: 1)
+                            )
+                    )
+                }
+
+                // ── Tier 3: Attive ────────────────────────────────
+                if !activeRules.isEmpty {
+                    abitudiniTierLabel(
+                        title: String(localized: "abitudini.tier.attive", defaultValue: "Active"),
+                        icon: "checkmark.seal.fill"
+                    )
+                    abitudiniActiveRulesCard(rules: activeRules)
+                }
+            }
         }
     }
 
+    private func abitudiniTierLabel(title: String, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .tracking(0.3)
+            .padding(.horizontal, 2)
+            .padding(.top, 4)
+    }
+
     @ViewBuilder
-    private func behavioralOpportunitiesContent() -> some View {
-        let pending = behavioralService.pendingOpportunities
-
-        if behavioralService.isAnalyzing {
-            // Analysis running
-            HStack(spacing: 12) {
-                ProgressView().scaleEffect(0.85)
-                Text(String(localized: "behavioral.analyzing",
-                            defaultValue: "Analyzing behaviors…"))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-            )
-
-        } else if !pending.isEmpty {
-            // Surfaceable opportunities
-            VStack(spacing: 10) {
-                ForEach(Array(pending.prefix(3))) { opp in
-                    BehavioralOpportunityCard(
-                        opportunity: opp,
-                        onApprove: {
-                            let rule = behavioralService.approve(opp)
-                            ruleEngine.insertRule(rule)
-                        },
-                        onSnooze:  { behavioralService.snooze(opp) },
-                        onDismiss: { behavioralService.dismiss(opp) }
-                    )
-                }
-            }
-
-        } else if behavioralService.visiblePatternCount > 0 {
-            // Patterns detected but not yet at stable confidence
-            let count = behavioralService.visiblePatternCount
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(BrandColor.primary.opacity(0.10))
-                        .frame(width: 40, height: 40)
-                    Image(systemName: "brain")
-                        .font(.system(size: 18, weight: .medium))
+    private func abitudiniActiveRulesCard(rules: [Rule]) -> some View {
+        let capped = Array(rules.prefix(3))
+        VStack(spacing: 0) {
+            ForEach(Array(capped.enumerated()), id: \.element.id) { idx, rule in
+                HStack(spacing: 12) {
+                    Image(systemName: abitudiniActionIcon(for: rule.actionType))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(BrandColor.primary)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(rule.name)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(rule.ruleDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    Toggle("", isOn: Binding(
+                        get: { rule.isEnabled },
+                        set: { _ in ruleEngine.toggleRule(rule, home: homeKit.currentHome) }
+                    ))
+                    .labelsHidden()
                 }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(
-                        String(
-                            format: String(localized: "behavioral.forming.title",
-                                           defaultValue: "%d behaviors being learned"),
-                            count
-                        )
-                    )
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                    Text(String(localized: "behavioral.forming.subtitle",
-                                defaultValue: "When confidence is sufficient, I'll suggest an automation."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                if idx < capped.count - 1 {
+                    Divider().padding(.leading, 50)
                 }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.regularMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(BrandColor.primary.opacity(0.12), lineWidth: 1)
+            if rules.count > 3 {
+                Divider()
+                Text(
+                    String(
+                        format: String(localized: "abitudini.rules.more",
+                                       defaultValue: "+ %d more"),
+                        rules.count - 3
                     )
-            )
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial))
+    }
 
-        } else {
-            // No patterns yet — observing phase
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(Color.secondary.opacity(0.10))
-                        .frame(width: 40, height: 40)
-                    Image(systemName: "eye")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(String(localized: "behavioral.observing.title",
-                                defaultValue: "Observing your habits"))
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                    Text(String(localized: "behavioral.observing.subtitle",
-                                defaultValue: "After a few days of use, the first suggestion will appear here."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-            )
+    private func abitudiniActionIcon(for actionType: String) -> String {
+        switch actionType {
+        case "on":       return "lightbulb.fill"
+        case "off":      return "lightbulb.slash"
+        case "dim":      return "sun.min.fill"
+        case "open":     return "arrow.up.square"
+        case "close":    return "arrow.down.square"
+        case "setMode":  return "slider.horizontal.3"
+        case "setTemp":  return "thermometer.medium"
+        case "setSpeed": return "wind"
+        default:         return "bolt.fill"
         }
     }
 
@@ -521,31 +629,6 @@ struct HomeIntelligenceDashboardView: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: - Section: AI Suggestions (pending patterns with actions)
-
-    @ViewBuilder
-    private func aiSuggestionsSection() -> some View {
-        let pending = habitService.pendingPatterns
-        if !pending.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader(
-                    icon: "sparkles",
-                    title: String(localized: "intelligence.suggestions.header",
-                                  defaultValue: "AI Suggestions")
-                )
-                VStack(spacing: 10) {
-                    ForEach(Array(pending.prefix(3))) { pattern in
-                        AISuggestionCard(
-                            pattern: pattern,
-                            onApprove: { habitService.approve(pattern) },
-                            onDismiss:  { habitService.dismiss(pattern) }
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     // MARK: - Section: AI Insights (active only)
 
     @ViewBuilder
@@ -595,40 +678,6 @@ struct HomeIntelligenceDashboardView: View {
                     }
                     .padding(.horizontal, 1)
                 }
-            }
-        }
-    }
-
-    // MARK: - Section: Learned Habits (approved first, then by confidence)
-
-    @ViewBuilder
-    private func habitsSection() -> some View {
-        let visible = habitService.patterns
-            .filter { $0.status != .dismissed }
-            .sorted { lhs, rhs in
-                if lhs.status == .approved && rhs.status != .approved { return true }
-                if rhs.status == .approved && lhs.status != .approved { return false }
-                return lhs.confidence > rhs.confidence
-            }
-        if !visible.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader(
-                    icon: "brain",
-                    title: String(localized: "intelligence.habits.header",
-                                  defaultValue: "Learned Habits")
-                )
-                let capped = Array(visible.prefix(6))
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(capped.enumerated()), id: \.element.id) { idx, pattern in
-                        HabitConfidenceRow(pattern: pattern)
-                        if idx < capped.count - 1 {
-                            Divider().padding(.leading, 48)
-                        }
-                    }
-                }
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-                )
             }
         }
     }
@@ -713,18 +762,6 @@ struct HomeIntelligenceDashboardView: View {
     }
 
     // MARK: - Empty / Loading
-
-    private var emptyState: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                behavioralOpportunitiesSection()
-                emptyStateCard
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
-        }
-    }
 
     private var emptyStateCard: some View {
         VStack(spacing: 20) {
@@ -1289,7 +1326,7 @@ private struct BehavioralOpportunityCard: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     HStack(spacing: 6) {
-                        if !opportunity.roomName.isEmpty {
+                        if !opportunity.roomName.isEmpty && opportunity.triggerType != "characteristic" {
                             Text(opportunity.roomName)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -1297,29 +1334,39 @@ private struct BehavioralOpportunityCard: View {
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                         }
-                        if let timeStr = opportunity.avgTimeString {
-                            Text(timeStr)
+                        if let schedule = opportunity.scheduleSummary {
+                            Image(systemName: opportunity.triggerIcon)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(schedule)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                             Text("·")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                         }
-                        Text(opportunity.confidenceLabel)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(confidenceColor)
-                        Text("·")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                        Text(
-                            String(
-                                format: String(localized: "behavioral.card.observations",
-                                               defaultValue: "%d observations"),
-                                opportunity.observations
+                        if opportunity.origin != .conversational {
+                            Text(opportunity.confidenceLabel)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(confidenceColor)
+                            Text("·")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            Text(
+                                String(
+                                    format: String(localized: "behavioral.card.observations",
+                                                   defaultValue: "%d observations"),
+                                    opportunity.observations
+                                )
                             )
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        } else {
+                            Text(String(localized: "behavioral.opportunity.conversational.badge",
+                                        defaultValue: "Requested by you"))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(BrandColor.secondary)
+                        }
                     }
                 }
                 Spacer(minLength: 0)
@@ -1431,85 +1478,6 @@ private struct AIInsightTimelineRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-    }
-}
-
-// MARK: - HabitConfidenceRow
-
-private struct HabitConfidenceRow: View {
-
-    let pattern: HabitPattern
-    @State private var animatedConfidence: Double = 0
-
-    private var confidenceColor: Color {
-        switch pattern.confidence {
-        case 0.80...1.0:  return .green
-        case 0.60..<0.80: return Color(red: 0.7, green: 0.6, blue: 0.0)
-        default:          return .orange
-        }
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: pattern.sfSymbol)
-                .font(.system(size: 18))
-                .foregroundStyle(BrandColor.primary)
-                .frame(width: 28)
-                .padding(.top, 2)
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(alignment: .top) {
-                    Text(pattern.description)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 6)
-                    if pattern.status == .approved {
-                        Text(
-                            String(localized: "intelligence.habits.approved",
-                                   defaultValue: "Approved")
-                        )
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.green)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(Color.green.opacity(0.12), in: Capsule())
-                    }
-                }
-                Text(pattern.roomName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(confidenceColor.opacity(0.12))
-                            .frame(height: 3)
-                        Capsule()
-                            .fill(confidenceColor)
-                            .frame(width: max(4, geo.size.width * animatedConfidence), height: 3)
-                            .animation(.spring(response: 0.8, dampingFraction: 0.75),
-                                       value: animatedConfidence)
-                    }
-                }
-                .frame(height: 3)
-
-                HStack {
-                    Spacer()
-                    Text(pattern.confidenceLabel)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(confidenceColor)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .onAppear {
-            withAnimation(.spring(response: 0.8, dampingFraction: 0.75).delay(0.1)) {
-                animatedConfidence = pattern.confidence
-            }
-        }
     }
 }
 

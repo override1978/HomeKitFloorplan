@@ -161,9 +161,7 @@ enum EnvironmentalPatternAnalyzer {
             ))
         }
 
-        if let data = try? JSONEncoder().encode(patterns) {
-            UserDefaults.standard.set(data, forKey: patternsKey)
-        }
+        VersionedStore<[EnvironmentalRecurrencePattern]>(key: Self.patternsKey, version: 1).save(patterns)
     }
 
     // MARK: - Load
@@ -171,9 +169,8 @@ enum EnvironmentalPatternAnalyzer {
     /// Loads persisted patterns, preferring those for the current season.
     /// Falls back to legacy patterns (seasonRaw == "") when no seasonal data exists yet.
     static func loadPatterns() -> [EnvironmentalRecurrencePattern] {
-        guard let data = UserDefaults.standard.data(forKey: patternsKey),
-              let decoded = try? JSONDecoder().decode([EnvironmentalRecurrencePattern].self, from: data)
-        else { return [] }
+        let decoded = VersionedStore<[EnvironmentalRecurrencePattern]>(key: patternsKey, version: 1).load() ?? []
+        guard !decoded.isEmpty else { return [] }
 
         let currentSeason = CalendarSeason.current.rawValue
         let seasonal = decoded.filter { $0.seasonRaw == currentSeason }

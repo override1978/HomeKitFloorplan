@@ -106,6 +106,14 @@ final class SensorEventRouter {
             if value >= sensorType.defaultDanger  { return (.medium, .danger) }
             if value >= sensorType.defaultWarning { return (.medium, .warning) }
             return nil
+
+        case .lightSensor:
+            if value >= sensorType.defaultDanger  { return (.medium, .danger) }
+            if value >= sensorType.defaultWarning { return (.medium, .warning) }
+            return nil
+
+        case .outdoorTemperature, .outdoorHumidity:
+            return nil  // outdoor weather types do not generate in-app priority alerts
         }
     }
 

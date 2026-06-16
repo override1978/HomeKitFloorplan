@@ -93,6 +93,13 @@ final class ProactiveIntelligenceService {
             occupancyIsAway:  occupancyService?.isLikelyAway ?? false
         )
 
+        // 0. Habit analysis — AI-powered, enriched with on-device behavioral patterns.
+        //    Passing visiblePatterns lets the AI use pre-validated scaffolding instead of
+        //    re-deriving habits from raw events, improving quality and reducing API payload.
+        //    analyzeHabits() is throttled internally (max once/hour).
+        let visiblePatterns = behavioralService.patterns.filter { $0.tier.isVisible }
+        await habitService.analyzeHabits(knownPatterns: visiblePatterns)
+
         // 1. Behavioral deviations
         if !context.suppressNonCritical {
             let sigs   = await fetchRecentEventSignatures()

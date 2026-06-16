@@ -7,20 +7,24 @@ import SwiftData
 /// Collected via a 3-option confirmation dialog (Sprint 24.C).
 enum DismissalReason: String, CaseIterable {
     /// User already resolved the situation manually before reading the insight.
-    case userActedManually = "userActedManually"
+    case userActedManually    = "userActedManually"
     /// The insight was not relevant to the user's current context.
-    case irrelevant        = "irrelevant"
+    case irrelevant           = "irrelevant"
     /// Default — user closed without providing specific feedback.
-    case unclear           = "unclear"
+    case unclear              = "unclear"
+    /// System auto-dismissed: the triggering condition normalised before the user acted.
+    /// Not shown in the user-facing dialog — internal use only.
+    case conditionsNormalized = "conditionsNormalized"
+
+    /// User-facing cases shown in the dismissal confirmation dialog.
+    static var userFacingCases: [DismissalReason] { [.userActedManually, .irrelevant, .unclear] }
 
     var localizedLabel: String {
         switch self {
-        case .userActedManually:
-            return String(localized: "dismiss.reason.acted",    defaultValue: "Already resolved")
-        case .irrelevant:
-            return String(localized: "dismiss.reason.irrelevant", defaultValue: "Not relevant")
-        case .unclear:
-            return String(localized: "dismiss.reason.unclear",  defaultValue: "Close")
+        case .userActedManually:    return String(localized: "dismiss.reason.acted",       defaultValue: "Already resolved")
+        case .irrelevant:           return String(localized: "dismiss.reason.irrelevant",  defaultValue: "Not relevant")
+        case .unclear:              return String(localized: "dismiss.reason.unclear",     defaultValue: "Close")
+        case .conditionsNormalized: return String(localized: "dismiss.reason.normalized",  defaultValue: "Conditions normalized")
         }
     }
 }

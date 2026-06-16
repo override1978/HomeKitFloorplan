@@ -69,6 +69,11 @@ final class HomeKitService: NSObject {
     /// non solo in conteggio). Le view osservano questo per reagire a tutti i cambi.
     var reachabilityVersion: Int = 0
 
+    /// True quando il SecuritySystem ha currentState == triggered (valore HAP 4).
+    /// Aggiornato direttamente nel delegate per una risposta UI immediata, senza
+    /// passare per la catena adapter → computed property.
+    var isAlarmSystemTriggered: Bool = false
+
     /// Diventa true dopo il secondo refresh differito (~12 s dal lancio).
     /// Finché è false, `isReachable(_:)` restituisce sempre true per evitare
     /// false-offline durante la fase di discovery iniziale di HomeKit.
@@ -106,7 +111,12 @@ final class HomeKitService: NSObject {
     var sensorEventRouter: SensorEventRouter?
     
     private var observedAccessoryUUIDs: Set<UUID> = []
-    
+
+    // Pending characteristic values waiting to be flushed into `characteristicValues`.
+    // Only accessed on MainActor (via Task { @MainActor in } in queueCharacteristicUpdate).
+    private var pendingValues: [UUID: Any] = [:]
+    private var flushScheduled = false
+
     // MARK: - Init
     
     override init() {
@@ -171,6 +181,27 @@ final class HomeKitService: NSObject {
         selectedHomeUUID = nil
     }
     
+    // MARK: - Batched characteristic updates
+
+    /// Coalesces multiple HomeKit pushes that arrive in the same RunLoop tick into a
+    /// single `characteristicValues` mutation — reducing SwiftUI re-renders from
+    /// O(events/second) to O(1/tick) across all observers (AccessoryMarkerView, etc.).
+    private func queueCharacteristicUpdate(_ uuid: UUID, value: Any) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.pendingValues[uuid] = value
+            guard !self.flushScheduled else { return }
+            self.flushScheduled = true
+            // Yield so other queued updates (same tick) accumulate in pendingValues first.
+            await Task.yield()
+            for (k, v) in self.pendingValues {
+                self.characteristicValues[k] = v
+            }
+            self.pendingValues.removeAll()
+            self.flushScheduled = false
+        }
+    }
+
     // MARK: - Subscription lifecycle
     
     /// Inizia a osservare un insieme di accessori. Tipicamente chiamato
@@ -207,10 +238,19 @@ final class HomeKitService: NSObject {
         }
     }
     
+    private static let securityCurrentStateTypeUUID = "00000066-0000-1000-8000-0026bb765291"
+
+    /// Aggiorna `isAlarmSystemTriggered` se la caratteristica è CurrentSecuritySystemState.
+    private func updateAlarmTriggeredIfNeeded(_ characteristic: HMCharacteristic, value: Any) {
+        guard characteristic.characteristicType.lowercased() == Self.securityCurrentStateTypeUUID else { return }
+        let raw = (value as? Int) ?? (value as? NSNumber)?.intValue ?? -1
+        isAlarmSystemTriggered = (raw == 4)
+    }
+
     private func subscribe(to characteristic: HMCharacteristic) {
         let supportsNotifications = characteristic.properties
             .contains(HMCharacteristicPropertySupportsEventNotification)
-        
+
         // 1) Lettura valore iniziale
         characteristic.readValue { [weak self] error in
             guard let self else { return }
@@ -219,7 +259,8 @@ final class HomeKitService: NSObject {
                 return
             }
             if let value = characteristic.value {
-                self.characteristicValues[characteristic.uniqueIdentifier] = value
+                self.queueCharacteristicUpdate(characteristic.uniqueIdentifier, value: value)
+                self.updateAlarmTriggeredIfNeeded(characteristic, value: value)
             }
         }
         
@@ -309,45 +350,58 @@ final class HomeKitService: NSObject {
             accessory.delegate = self
         }
         
-        await withTaskGroup(of: Void.self) { group in
+        // Raccoglie i risultati della poke: UUID → true se almeno una lettura è riuscita.
+        // Se la lettura riesce, l'accessorio è raggiungibile indipendentemente da isReachable.
+        var confirmedReachable: Set<UUID> = []
+        await withTaskGroup(of: (UUID, Bool).self) { group in
             for accessory in accessories {
+                let uuid = accessory.uniqueIdentifier
                 group.addTask { [weak self] in
-                    await self?.pokeAccessory(accessory)
+                    let reachable = await self?.pokeAccessory(accessory) ?? false
+                    return (uuid, reachable)
                 }
             }
+            for await (uuid, reachable) in group {
+                if reachable { confirmedReachable.insert(uuid) }
+            }
         }
-        
-        // Aggiorna reachability map per propagare a SwiftUI
+
+        // Aggiorna reachability map: usa il risultato della poke come fonte primaria.
+        // refreshAccessoriesList() prima per ottenere oggetti HMAccessory freschi
+        // (HomeKit può ricreare gli oggetti internamente, il delegate è weak).
         await MainActor.run {
+            refreshAccessoriesList()
             for accessory in allAccessories {
-                reachabilityMap[accessory.uniqueIdentifier] = accessory.isReachable
+                let uuid = accessory.uniqueIdentifier
+                reachabilityMap[uuid] = confirmedReachable.contains(uuid) || accessory.isReachable
             }
             reachabilityVersion += 1
-            refreshAccessoriesList()
         }
 
         dprint("✅ refreshReachability completato")
     }
 
     /// Tenta di leggere fino a 2 caratteristiche readable del primary service.
-    /// Questo "tocca" l'accessorio via HomeKit/HAP, scatena eventuali ri-connessioni
-    /// e aggiorna isReachable internamente.
-    private func pokeAccessory(_ accessory: HMAccessory) async {
+    /// Ritorna true se almeno una lettura riesce (prova diretta di raggiungibilità),
+    /// false se tutte falliscono o non ci sono caratteristiche leggibili.
+    private func pokeAccessory(_ accessory: HMAccessory) async -> Bool {
         let primaryService = accessory.services.first(where: { $0.isPrimaryService })
                           ?? accessory.services.first
-        guard let service = primaryService else { return }
-        
+        guard let service = primaryService else { return false }
+
         let readableChars = service.characteristics
             .filter { $0.properties.contains(HMCharacteristicPropertyReadable) }
             .prefix(2)
-        
+
         for ch in readableChars {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                ch.readValue { _ in
-                    continuation.resume()
+            let succeeded = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                ch.readValue { error in
+                    continuation.resume(returning: error == nil)
                 }
             }
+            if succeeded { return true }
         }
+        return false
     }
     
     // MARK: - Security system persistent observation
@@ -473,7 +527,17 @@ extension HomeKitService: HMAccessoryDelegate {
                    service: HMService,
                    didUpdateValueFor characteristic: HMCharacteristic) {
         if let value = characteristic.value {
-            characteristicValues[characteristic.uniqueIdentifier] = value
+            queueCharacteristicUpdate(characteristic.uniqueIdentifier, value: value)
+            updateAlarmTriggeredIfNeeded(characteristic, value: value)
+
+            // Se HomeKit ci sta consegnando aggiornamenti, l'accessorio è raggiungibile
+            // per definizione — indipendentemente da ciò che isReachable riporta.
+            // Questo corregge il falso-offline su device che HomeKit API segna come
+            // irraggiungibili ma che in realtà comunicano correttamente (Matter bridge, ecc.)
+            if reachabilitySettled && reachabilityMap[accessory.uniqueIdentifier] == false {
+                reachabilityMap[accessory.uniqueIdentifier] = true
+                reachabilityVersion += 1
+            }
 
             // Log cambiamento esterno (con echo-dedup e debounce interni al service)
             if let logger = activityLogger {
@@ -500,9 +564,10 @@ extension HomeKitService: HMAccessoryDelegate {
     }
     
     func accessoryDidUpdateReachability(_ accessory: HMAccessory) {
-        reachabilityMap[accessory.uniqueIdentifier] = accessory.isReachable
+        let newValue = accessory.isReachable
+        guard reachabilityMap[accessory.uniqueIdentifier] != newValue else { return }
+        reachabilityMap[accessory.uniqueIdentifier] = newValue
         reachabilityVersion += 1
-        refreshAccessoriesList()
     }
     
     func accessoryDidUpdateName(_ accessory: HMAccessory) {

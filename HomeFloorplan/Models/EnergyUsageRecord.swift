@@ -17,8 +17,11 @@ struct EnergyUsageRecord: Identifiable {
     let totalHoursToday:     Double
     /// Total ON-time in the last 7 days (hours).
     let totalHoursWeek:      Double
-    /// Average daily ON-time over the 7-day window.
-    var avgDailyHours:       Double { totalHoursWeek / 7.0 }
+    /// Number of distinct calendar days (within the 7-day window) in which the accessory was on.
+    let activeDaysInWindow:  Int
+    /// Average daily ON-time, computed over active days only (not calendar days).
+    /// Prevents dilution for accessories used only on some days of the week.
+    var avgDailyHours:       Double { totalHoursWeek / max(1.0, Double(activeDaysInWindow)) }
     /// Duration of the longest single continuous ON session in the 7-day window (hours).
     let longestSessionHours: Double
     /// Number of activation cycles (ON events) in the last 24 hours.

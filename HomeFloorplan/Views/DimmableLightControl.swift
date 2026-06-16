@@ -12,7 +12,8 @@ struct DimmableLightControl: View {
     
     @State private var sliderDraft: Double = 0
     @State private var isDragging: Bool = false
-    
+    @State private var writeError = false
+
     private let buttonDiameter: CGFloat = 80
     private let sliderHeight: CGFloat = 60
     
@@ -29,6 +30,7 @@ struct DimmableLightControl: View {
         VStack(spacing: 20) {
             toggleButton
             slider
+            if writeError { WriteErrorBanner() }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 4)
@@ -145,15 +147,28 @@ struct DimmableLightControl: View {
     }
     
     // MARK: - Actions
-    
+
+    private func triggerWriteError() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        withAnimation(.easeInOut(duration: 0.25)) { writeError = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation(.easeInOut(duration: 0.25)) { writeError = false }
+        }
+    }
+
     private func handleToggleTap() {
         let haptic = UIImpactFeedbackGenerator(style: .medium)
         haptic.impactOccurred()
         Task {
-            try? await adapter.performQuickToggle(via: homeKit)
+            do {
+                try await adapter.performQuickToggle(via: homeKit)
+            } catch {
+                triggerWriteError()
+            }
         }
     }
-    
+
     private func writeBrightness(_ value: Int) {
         let haptic = UIImpactFeedbackGenerator(style: .light)
         haptic.impactOccurred()
@@ -165,8 +180,7 @@ struct DimmableLightControl: View {
                 }
                 try await adapter.setBrightness(value)
             } catch {
-                let notif = UINotificationFeedbackGenerator()
-                notif.notificationOccurred(.error)
+                triggerWriteError()
             }
         }
     }

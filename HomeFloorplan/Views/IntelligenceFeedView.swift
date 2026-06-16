@@ -106,19 +106,29 @@ struct IntelligenceFeedView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                filterChips
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 12)
+            ScrollViewReader { proxy in
+                VStack(spacing: 0) {
+                    filterChips
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 12)
 
-                if filtered.isEmpty {
-                    emptyState
-                } else {
-                    timelineContent
+                    if filtered.isEmpty {
+                        emptyState
+                    } else {
+                        timelineContent
+                    }
+                }
+                .padding(.bottom, 40)
+                .onChange(of: expandedID) { _, id in
+                    guard let id else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        withAnimation(.spring(response: 0.35)) {
+                            proxy.scrollTo(id, anchor: .center)
+                        }
+                    }
                 }
             }
-            .padding(.bottom, 40)
         }
         .navigationTitle(String(localized: "feed.nav.title", defaultValue: "Home Diary"))
         .navigationBarTitleDisplayMode(.large)
@@ -206,6 +216,7 @@ struct IntelligenceFeedView: View {
                         ? { service.ignoreEnergyDevice(notif) }
                         : nil
                 )
+                .id(notif.id)
             }
         }
     }
@@ -244,6 +255,7 @@ private struct TimelineEventRow: View {
     let onDismiss:      () -> Void
     let onIgnoreDevice: (() -> Void)?
 
+    @State private var showLegend = false
     private var accentColor: Color { notificationColor(for: notification.category) }
 
     private var showsConfidence: Bool {
@@ -258,13 +270,13 @@ private struct TimelineEventRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            // Time column
+        HStack(alignment: .top, spacing: 6) {
+            // Time column — padding aligns text center with icon center (16pt connector + 15pt icon radius = 31pt)
             Text(timeString)
                 .font(.caption2.weight(.medium).monospacedDigit())
                 .foregroundStyle(.tertiary)
-                .frame(width: 42, alignment: .trailing)
-                .padding(.top, 18)
+                .frame(width: 38, alignment: .trailing)
+                .padding(.top, 26)
 
             // Vertical rail
             rail
@@ -358,7 +370,7 @@ private struct TimelineEventRow: View {
             // Expanded detail
             if isExpanded {
                 expandedContent
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                     .padding(.bottom, 14)
             }
         }
@@ -600,7 +612,88 @@ private struct TimelineEventRow: View {
                 .buttonStyle(.plain)
                 .controlSize(.small)
             }
+
+            Spacer()
+
+            Button { showLegend = true } label: {
+                Image(systemName: "questionmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
         }
+        .sheet(isPresented: $showLegend) {
+            ActionLegendSheet()
+        }
+    }
+}
+
+// MARK: - ActionLegendSheet
+
+private struct ActionLegendSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                legendItem(
+                    symbol: "checkmark",
+                    color: .green,
+                    title: String(localized: "feed.legend.done.title", defaultValue: "Done"),
+                    description: String(localized: "feed.legend.done.desc",
+                        defaultValue: "You have acted on this suggestion. The AI records the outcome and refines future recommendations.")
+                )
+                legendItem(
+                    symbol: "clock",
+                    color: .orange,
+                    title: String(localized: "feed.legend.later.title", defaultValue: "Later"),
+                    description: String(localized: "feed.legend.later.desc",
+                        defaultValue: "Snooze this alert for a few hours. It will reappear in the feed if the condition persists.")
+                )
+                legendItem(
+                    symbol: "xmark",
+                    color: .secondary,
+                    title: String(localized: "feed.legend.dismiss.title", defaultValue: "Dismiss"),
+                    description: String(localized: "feed.legend.dismiss.desc",
+                        defaultValue: "Dismiss this event. If the same anomaly recurs, the AI will surface it again.")
+                )
+                legendItem(
+                    symbol: "bolt.slash",
+                    color: .orange,
+                    title: String(localized: "feed.legend.alwaysOn.title", defaultValue: "Always On"),
+                    description: String(localized: "feed.legend.alwaysOn.desc",
+                        defaultValue: "Mark this device as intentionally always on (e.g. fridge, router). Energy alerts for it will be permanently suppressed.")
+                )
+            }
+            .navigationTitle(String(localized: "feed.legend.title", defaultValue: "Action Guide"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "feed.legend.close", defaultValue: "Close")) { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func legendItem(symbol: String, color: Color, title: String, description: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 30, height: 30)
+                .background(color.opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

@@ -31,6 +31,8 @@ struct RuleEditorView: View {
     @State private var actionValue2: Double         // temperatura °C secondaria (solo setMode su termostato)
     @State private var threshold: Double            // 0…100 per characteristic
     @State private var includeRule: Bool = true     // toggle per escludere la regola
+    @State private var conditionCurrentValue: Double? = nil
+    @State private var conditionAccessory: HMAccessory? = nil
 
     // Campi read-only (non modificabili dall'utente)
     private let accessoryName: String
@@ -38,6 +40,7 @@ struct RuleEditorView: View {
     private let confidenceScore: Double
     private let generatedByAI: Bool
     private let triggerCharacteristicID: String?
+    private let originalThreshold: Double?
 
     // MARK: - Init da RuleDraft
 
@@ -49,6 +52,7 @@ struct RuleEditorView: View {
         self.confidenceScore         = draft.confidenceScore
         self.generatedByAI           = draft.generatedByAI
         self.triggerCharacteristicID = draft.triggerCharacteristicID
+        self.originalThreshold       = draft.triggerThreshold
         _name             = State(initialValue: draft.name)
         // "characteristic" non è selezionabile dall'utente nel picker — lo mappiamo a inApp
         let tType = (draft.triggerType == "calendar") ? "calendar" : "inApp"
@@ -74,6 +78,7 @@ struct RuleEditorView: View {
         self.confidenceScore         = rule.confidenceScore
         self.generatedByAI           = rule.generatedByAI
         self.triggerCharacteristicID = rule.triggerCharacteristicID
+        self.originalThreshold       = rule.triggerThreshold
         _name             = State(initialValue: rule.name)
         let tType = (rule.triggerType == "calendar") ? "calendar" : "inApp"
         _triggerType      = State(initialValue: tType)
@@ -120,7 +125,7 @@ struct RuleEditorView: View {
                         ).tag("inApp")
                         Label(
                             String(localized: "rule.trigger.scheduled", defaultValue: "Scheduled"),
-                            systemImage: "calendar.clock"
+                            systemImage: "calendar.badge.clock"
                         ).tag("calendar")
                     }
                     .pickerStyle(.segmented)
@@ -144,6 +149,89 @@ struct RuleEditorView: View {
                     } else {
                         Text(String(localized: "rule.editor.calendar.footer",
                                     defaultValue: "The rule will be executed by HomeKit at the scheduled time, even when the app is closed."))
+                            .font(.caption)
+                    }
+                }
+
+                // ── 2b. Condizione sensore ──────────────────────────────
+                if triggerCharacteristicID != nil, let threshold = originalThreshold {
+                    Section {
+                        // Riga accessorio sensore (come editor di automazioni)
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.teal.opacity(0.12))
+                                    .frame(width: 44, height: 44)
+                                Image(systemName: conditionIcon)
+                                    .font(.system(size: 19, weight: .medium))
+                                    .foregroundStyle(.teal)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(conditionAccessoryDisplayName)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text(conditionSensorTypeName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if let acc = conditionAccessory {
+                                Circle()
+                                    .fill(acc.isReachable ? Color.green : Color.secondary)
+                                    .frame(width: 8, height: 8)
+                            }
+                        }
+                        .padding(.vertical, 2)
+
+                        // Valore attuale del sensore
+                        HStack {
+                            Text(String(localized: "rule.editor.condition.current",
+                                        defaultValue: "Current value"))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if let val = conditionCurrentValue {
+                                Text("\(String(format: "%.1f", val))\(conditionSensorUnit)")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(conditionMetNow ? .teal : .primary)
+                            } else {
+                                ProgressView().scaleEffect(0.75)
+                            }
+                        }
+
+                        // Soglia configurata
+                        HStack {
+                            Text(String(localized: "rule.editor.condition.threshold",
+                                        defaultValue: "Threshold"))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            let sym = conditionDirection == "above" ? ">" : "<"
+                            Text("\(sym) \(String(format: "%.1f", threshold))\(conditionSensorUnit)")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.teal)
+                        }
+
+                        // Stato live della condizione
+                        if conditionCurrentValue != nil {
+                            HStack(spacing: 6) {
+                                Image(systemName: conditionMetNow
+                                      ? "checkmark.circle.fill"
+                                      : "xmark.circle.fill")
+                                    .foregroundStyle(conditionMetNow ? .green : .secondary)
+                                Text(conditionMetNow
+                                     ? String(localized: "rule.editor.condition.met",
+                                              defaultValue: "Condition met right now")
+                                     : String(localized: "rule.editor.condition.notmet",
+                                              defaultValue: "Condition not met right now"))
+                                    .font(.caption)
+                                    .foregroundStyle(conditionMetNow ? .green : .secondary)
+                            }
+                        }
+                    } header: {
+                        Text(String(localized: "rule.editor.condition.header",
+                                    defaultValue: "Condition"))
+                    } footer: {
+                        Text(String(localized: "rule.editor.condition.footer",
+                                    defaultValue: "The scene runs only when this condition is met at trigger time."))
                             .font(.caption)
                     }
                 }
@@ -356,6 +444,7 @@ struct RuleEditorView: View {
             }
             .navigationTitle(String(localized: "rule.editor.title", defaultValue: "Automatic Rule"))
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { loadConditionValue() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(String(localized: "rule.editor.cancel", defaultValue: "Cancel")) {
@@ -423,7 +512,7 @@ struct RuleEditorView: View {
             triggerTime: resolvedTimeStr,
             triggerWeekdays: weekdays.isEmpty ? nil : weekdays,
             triggerCharacteristicID: triggerCharacteristicID,
-            triggerThreshold: resolvedTriggerType == "characteristic" ? threshold : nil,
+            triggerThreshold: resolvedTriggerType == "characteristic" ? threshold : originalThreshold,
             actionAccessoryID: accessoryID,
             actionAccessoryName: accessoryName,
             actionType: actionType,
@@ -673,6 +762,114 @@ struct RuleEditorView: View {
 
     private var executionModeIcon: String {
         triggerType == "calendar" ? "house.fill" : "iphone"
+    }
+
+    // MARK: - Condition helpers
+
+    private var conditionParts: [String] {
+        triggerCharacteristicID?.split(separator: "|").map(String.init) ?? []
+    }
+    private var conditionSensorTypeRaw: String  { conditionParts.first ?? "" }
+    private var conditionRoomName: String?       { conditionParts.count > 1 ? conditionParts[1] : nil }
+    private var conditionDirection: String       { conditionParts.count > 2 ? conditionParts[2] : "below" }
+
+    private var conditionSensorTypeName: String {
+        SensorServiceType(rawValue: conditionSensorTypeRaw)?.displayName ?? conditionSensorTypeRaw
+    }
+    private var conditionSensorUnit: String { conditionUnit(for: conditionSensorTypeRaw) }
+
+    private var conditionAccessoryDisplayName: String {
+        if let name = conditionAccessory?.name { return name }
+        if let room = conditionRoomName { return "\(conditionSensorTypeName) (\(room))" }
+        return conditionSensorTypeName
+    }
+
+    private var conditionMetNow: Bool {
+        guard let val = conditionCurrentValue, let threshold = originalThreshold else { return false }
+        return conditionDirection == "above" ? val > threshold : val < threshold
+    }
+
+    /// SF Symbol for the sensor type used in the condition.
+    private var conditionIcon: String {
+        switch conditionSensorTypeRaw {
+        case "lightSensor":    return "sun.max.fill"
+        case "temperature":    return "thermometer.medium"
+        case "humidity":       return "humidity.fill"
+        case "carbonDioxide":  return "carbon.dioxide.cloud.fill"
+        case "carbonMonoxide": return "aqi.medium"
+        case "airQuality":     return "aqi.low"
+        default:               return "sensor.tag.radiowaves.forward"
+        }
+    }
+
+    /// Finds the sensor accessory and reads the live characteristic value.
+    private func loadConditionValue() {
+        guard let charID = triggerCharacteristicID,
+              let home = homeKit.currentHome else { return }
+        let parts = charID.split(separator: "|").map(String.init)
+        guard let typeRaw = parts.first,
+              let hapUUID = sensorHAPUUID(for: typeRaw) else { return }
+        let room = parts.count > 1 ? parts[1] : nil
+
+        // Find accessory: room-filtered first, then all
+        func findInAccessories(_ list: [HMAccessory]) -> HMAccessory? {
+            list.first { acc in
+                acc.services.flatMap(\.characteristics).contains {
+                    $0.characteristicType.lowercased() == hapUUID
+                }
+            }
+        }
+        let roomAccessories: [HMAccessory] = room.map { r in
+            let needle = r.lowercased()
+            return home.rooms
+                .filter { $0.name.lowercased().contains(needle) }
+                .flatMap { $0.accessories }
+        } ?? []
+        let accessory = findInAccessories(roomAccessories) ?? findInAccessories(home.accessories)
+        conditionAccessory = accessory
+
+        guard let characteristic = accessory?.services.flatMap(\.characteristics).first(where: {
+            $0.characteristicType.lowercased() == hapUUID
+        }) else { return }
+
+        // Use cached value immediately, then refresh
+        func extractValue(_ v: Any?) -> Double? {
+            if let d = v as? Double { return d }
+            if let n = v as? NSNumber { return n.doubleValue }
+            return nil
+        }
+        if let cached = extractValue(characteristic.value) {
+            conditionCurrentValue = cached
+        }
+        characteristic.readValue { _ in
+            DispatchQueue.main.async {
+                if let fresh = extractValue(characteristic.value) {
+                    conditionCurrentValue = fresh
+                }
+            }
+        }
+    }
+
+    private func sensorHAPUUID(for typeRaw: String) -> String? {
+        switch typeRaw {
+        case "lightSensor":    return "0000006b-0000-1000-8000-0026bb765291"
+        case "temperature":    return "00000011-0000-1000-8000-0026bb765291"
+        case "humidity":       return "00000010-0000-1000-8000-0026bb765291"
+        case "carbonDioxide":  return "00000113-0000-1000-8000-0026bb765291"
+        case "carbonMonoxide": return "00000069-0000-1000-8000-0026bb765291"
+        case "airQuality":     return "00000095-0000-1000-8000-0026bb765291"
+        default:               return nil
+        }
+    }
+
+    private func conditionUnit(for typeRaw: String) -> String {
+        switch typeRaw {
+        case "lightSensor":   return " lux"
+        case "temperature":   return "°C"
+        case "humidity":      return "%"
+        case "carbonDioxide": return " ppm"
+        default:              return ""
+        }
     }
 
     // MARK: - Weekday Picker

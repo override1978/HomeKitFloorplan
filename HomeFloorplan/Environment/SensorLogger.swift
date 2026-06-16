@@ -24,6 +24,11 @@ final class SensorLogger {
     /// ad ActionEffectivenessTracker di chiudere le misurazioni "pending".
     weak var effectivenessTracker: ActionEffectivenessTracker?
 
+    // MARK: - Outdoor sampling rate-limit
+
+    private var lastOutdoorSampleAt: Date?
+    private let outdoorSampleInterval: TimeInterval = 3600  // 1 snapshot/hour
+
     // MARK: - Campionamento principale
 
     /// Campiona tutti i sensori ambientali della casa e salva le letture.
@@ -36,7 +41,7 @@ final class SensorLogger {
             let roomName = accessory.room?.name ?? "Senza stanza"
             let accessoryUUID = accessory.uniqueIdentifier.uuidString
 
-            for serviceType in SensorServiceType.allCases {
+            for serviceType in SensorServiceType.allCases where !serviceType.isWeatherKitSource {
                 if let value = await readValue(for: serviceType, from: accessory) {
                     readings.append((accessoryUUID, serviceType, roomName, value))
                 }
@@ -88,6 +93,65 @@ final class SensorLogger {
                     readAt: now
                 )
             }
+        }
+    }
+
+    // MARK: - Campionamento foreground lux (5 min)
+
+    /// Campiona solo i sensori di luminosità (HMCharacteristicTypeCurrentLightLevel).
+    /// Chiamato dalla foreground loop ogni ~5 min per ottenere campionamento denso.
+    /// Non esegue threshold-check né recordOutcome — scopo puramente data-collection.
+    func sampleLightSensors(home: HMHome, modelContainer: ModelContainer) async {
+        var count = 0
+        let ctx = ModelContext(modelContainer)
+        for accessory in home.accessories {
+            let roomName = accessory.room?.name ?? "Senza stanza"
+            if let value = await readValue(for: .lightSensor, from: accessory) {
+                ctx.insert(SensorReading(
+                    accessoryUUID: accessory.uniqueIdentifier.uuidString,
+                    serviceType:   .lightSensor,
+                    roomName:      roomName,
+                    value:         value
+                ))
+                count += 1
+            }
+        }
+        guard count > 0 else { return }
+        do {
+            try ctx.save()
+            dprint("💡 SensorLogger: lux salvati — \(count) sensore/i")
+        } catch {
+            dprint("❌ SensorLogger lux save error: \(error)")
+        }
+    }
+
+    // MARK: - Outdoor snapshot (WeatherKit)
+
+    /// Persists a WeatherKit snapshot as SensorReadings (outdoor temperature + humidity).
+    /// Rate-limited to one call per hour regardless of how often it is invoked.
+    func sampleOutdoor(snapshot: WeatherSnapshot, modelContainer: ModelContainer) async {
+        if let last = lastOutdoorSampleAt,
+           Date().timeIntervalSince(last) < outdoorSampleInterval { return }
+        lastOutdoorSampleAt = Date()
+
+        let ctx = ModelContext(modelContainer)
+        let pairs: [(SensorServiceType, Double)] = [
+            (.outdoorTemperature, snapshot.outdoorTemperature),
+            (.outdoorHumidity,    snapshot.outdoorHumidity * 100), // WeatherKit 0–1 → %
+        ]
+        for (type, value) in pairs {
+            ctx.insert(SensorReading(
+                accessoryUUID: "weather.outdoor",
+                serviceType:   type,
+                roomName:      String(localized: "outdoor.roomName", defaultValue: "Outdoor"),
+                value:         value
+            ))
+        }
+        do {
+            try ctx.save()
+            dprint("☁️ SensorLogger: outdoor saved — temp=\(String(format: "%.1f", snapshot.outdoorTemperature))°C hum=\(Int(snapshot.outdoorHumidity * 100))%")
+        } catch {
+            dprint("❌ SensorLogger outdoor save error: \(error)")
         }
     }
 

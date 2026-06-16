@@ -12,4 +12,7 @@ enum AIPromptVersion {
     static let currentEnvironmental = "env_v3"
     /// Current version of the habit-analysis prompt (future use).
     static let currentHabit = "habit_v1"
+    /// Current version of the agent loop system prompt.
+    /// v8: controlAccessory(room,type) used directly for explicit commands; listAccessories only for state queries/UUID needs.
+    static let currentAgentLoop = "agent_v8"
 }

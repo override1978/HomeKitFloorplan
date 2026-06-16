@@ -112,13 +112,11 @@ final class FamilyPresenceService {
     // MARK: - Persistence
 
     private func persistProfiles() {
-        guard let data = try? JSONEncoder().encode(profiles) else { return }
-        UserDefaults.standard.set(data, forKey: Self.profilesKey)
+        VersionedStore<[FamilyProfile]>(key: Self.profilesKey, version: 1).save(profiles)
     }
 
     private func loadPersisted() {
-        if let data   = UserDefaults.standard.data(forKey: Self.profilesKey),
-           let loaded = try? JSONDecoder().decode([FamilyProfile].self, from: data) {
+        if let loaded = VersionedStore<[FamilyProfile]>(key: Self.profilesKey, version: 1).load() {
             profiles = loaded
         }
         if let idStr = UserDefaults.standard.string(forKey: Self.activeKey),

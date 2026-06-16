@@ -111,7 +111,7 @@ private struct ThresholdRow: View {
                         color: .orange,
                         value: $threshold.warningValue,
                         step: stepSize,
-                        range: 0...threshold.dangerValue,
+                        range: 0...max(threshold.dangerValue, 0),
                         format: { formatValue($0) }
                     )
                     .onChange(of: threshold.warningValue) { _, _ in save() }
@@ -122,7 +122,7 @@ private struct ThresholdRow: View {
                         color: .red,
                         value: $threshold.dangerValue,
                         step: stepSize,
-                        range: threshold.warningValue...9999,
+                        range: min(threshold.warningValue, 9999)...9999,
                         format: { formatValue($0) }
                     )
                     .onChange(of: threshold.dangerValue) { _, _ in save() }
@@ -142,7 +142,10 @@ private struct ThresholdRow: View {
         case .carbonMonoxide: return 1.0
         case .carbonDioxide:  return 50.0
         case .smoke:          return 1.0
-        case .vocDensity:     return 50.0
+        case .vocDensity:         return 50.0
+        case .lightSensor:        return 100.0
+        case .outdoorTemperature: return 0.5
+        case .outdoorHumidity:    return 1.0
         }
     }
 
@@ -160,7 +163,10 @@ private struct ThresholdRow: View {
             return value >= 1
                 ? String(localized: "smoke.detected",    defaultValue: "Yes")
                 : String(localized: "smoke.notDetected", defaultValue: "No")
-        case .vocDensity:     return String(format: "%.0f µg/m³", value)
+        case .vocDensity:         return String(format: "%.0f µg/m³", value)
+        case .lightSensor:        return String(format: "%.0f lux", value)
+        case .outdoorTemperature: return unit.format(value)
+        case .outdoorHumidity:    return String(format: "%.0f%%", value)
         }
     }
 

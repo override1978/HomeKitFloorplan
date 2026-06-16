@@ -46,6 +46,8 @@ final class WeatherKitService {
     private(set) var tomorrowForecast: TomorrowForecast?
     private(set) var lastUpdated: Date?
     private(set) var isLoading = false
+    private(set) var todaySunrise: Date?
+    private(set) var todaySunset: Date?
 
     // MARK: - Private
 
@@ -90,6 +92,10 @@ final class WeatherKitService {
 
             // daily.forecast[0] = today, [1] = tomorrow
             let forecast = daily.forecast
+            if let today = forecast.first {
+                todaySunrise = today.sun.sunrise
+                todaySunset  = today.sun.sunset
+            }
             if forecast.count > 1 {
                 let tmr = forecast[1]
                 tomorrowForecast = TomorrowForecast(

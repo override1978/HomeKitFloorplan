@@ -68,7 +68,7 @@ final class RuleEngineService {
 
         // Tenta delega HomeKit
         if rule.executionMode == "homeKit" {
-            if let triggerID = await tryCreateHomeKitTrigger(rule: rule, home: home) {
+            if let triggerID = await tryCreateHomeKitTrigger(rule: rule, home: home, enabled: rule.isEnabled) {
                 rule.homeKitTriggerID = triggerID
             } else {
                 // Fallback a inApp se HomeKit non riesce
@@ -106,7 +106,7 @@ final class RuleEngineService {
 
         // Tenta delega HomeKit
         if rule.executionMode == "homeKit" {
-            if let triggerID = await tryCreateHomeKitTrigger(rule: rule, home: home) {
+            if let triggerID = await tryCreateHomeKitTrigger(rule: rule, home: home, enabled: rule.isEnabled) {
                 rule.homeKitTriggerID = triggerID
             } else {
                 rule.executionMode = "inApp"
@@ -119,92 +119,309 @@ final class RuleEngineService {
         rules.append(rule)
     }
 
-    // MARK: - HomeKit Trigger
+        /// Tenta di creare un HMEventTrigger su HomeKit.
+        /// Restituisce il triggerID stringa se riesce, nil altrimenti.
+        /// Il trigger viene creato con lo stato `enabled` specificato, in modo che
+        /// il suo stato su Apple Home rispecchi esattamente `rule.isEnabled`.
+        ///
+        /// Costruisce TUTTE le write action necessarie all'azione:
+        /// "on al 60%" → power on + brightness 60 (scrivere solo la brightness lascerebbe
+        /// la luce spenta). L'action set viene popolato in sequenza prima di creare il trigger.
+        /// Quando rule.actionSceneName è impostato, aggiunge invece l'HMActionSet esistente.
+        private func tryCreateHomeKitTrigger(rule: Rule, home: HMHome, enabled: Bool) async -> String? {
 
-    /// Tenta di creare un HMEventTrigger su HomeKit.
-    /// Restituisce il triggerID stringa se riesce, nil altrimenti.
-    private func tryCreateHomeKitTrigger(rule: Rule, home: HMHome) async -> String? {
-        guard rule.triggerType == "calendar",
-              let timeStr = rule.triggerTime,
-              let triggerTime = parseTimeComponents(timeStr)
-        else { return nil }
+            // ── Scene-based path: collega un HMActionSet esistente ──────────────────
+            if let sceneName = rule.actionSceneName {
+                return await tryAttachSceneToTrigger(sceneName: sceneName,
+                                                     rule: rule, home: home, enabled: enabled)
+            }
 
-        // Trova l'accessorio e la caratteristica target
-        guard let accessory = home.accessories.first(where: {
-            $0.uniqueIdentifier.uuidString == rule.actionAccessoryID
-        }) else { return nil }
+            // ── Trova accessorio target ────────────────────────────────────────────
+            guard let accessory = home.accessories.first(where: {
+                $0.uniqueIdentifier.uuidString == rule.actionAccessoryID
+            }) else {
+                print("[HK] ❌ accessorio non trovato: \(rule.actionAccessoryID)")
+                return nil
+            }
 
-        // Cerca la caratteristica on/off (UUID HAP standard)
-        let onUUID = "00000025-0000-1000-8000-0026bb765291"
-        let brightnessUUID = "00000008-0000-1000-8000-0026bb765291"
+            // HAP UUIDs
+            let onUUID         = "00000025-0000-1000-8000-0026bb765291"
+            let activeUUID     = "000000b0-0000-1000-8000-0026bb765291"
+            let brightnessUUID = "00000008-0000-1000-8000-0026bb765291"
+            let positionUUID   = "0000007c-0000-1000-8000-0026bb765291"
 
-        let targetCharUUID: String
-        if rule.actionType == "dim" {
-            targetCharUUID = brightnessUUID
-        } else {
-            targetCharUUID = onUUID
-        }
+            let allChars = accessory.services.flatMap(\.characteristics)
+            func char(_ uuid: String) -> HMCharacteristic? {
+                allChars.first { $0.characteristicType.lowercased() == uuid }
+            }
 
-        guard let service = accessory.services.first(where: {
-            $0.characteristics.contains { $0.characteristicType.lowercased() == targetCharUUID }
-        }),
-              let characteristic = service.characteristics.first(where: {
-                  $0.characteristicType.lowercased() == targetCharUUID
-              })
-        else { return nil }
+            // ── Costruisci write actions ───────────────────────────────────────────
+            var writeActions: [HMCharacteristicWriteAction<NSCopying & NSObjectProtocol>] = []
 
-        // Costruisci HMCharacteristicWriteAction
-        let actionValue: NSCopying & NSObjectProtocol
-        switch rule.actionType {
-        case "on":    actionValue = 1 as NSNumber
-        case "off":   actionValue = 0 as NSNumber
-        case "dim":
-            let pct = Int((rule.actionValue ?? 0.3) * 100)
-            actionValue = pct as NSNumber
-        default:      actionValue = 1 as NSNumber
-        }
-
-        let writeAction = HMCharacteristicWriteAction(
-            characteristic: characteristic,
-            targetValue: actionValue
-        )
-
-        // Crea calendario trigger
-        var components = DateComponents()
-        components.hour   = triggerTime.hour
-        components.minute = triggerTime.minute
-
-        // HMCalendarEvent non supporta weekday filtering nativo —
-        // i giorni vengono gestiti in-app (evaluateInAppRules).
-
-        return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
-            // HMActionSet deve essere creato tramite home.addActionSet(withName:)
-            home.addActionSet(withName: rule.name) { [weak home] actionSet, error in
-                guard error == nil, let actionSet, let home else {
-                    continuation.resume(returning: nil)
-                    return
+            switch rule.actionType {
+            case "on":
+                if let c = char(onUUID) ?? char(activeUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: c, targetValue: 1 as NSNumber))
                 }
-                actionSet.addAction(writeAction) { error in
-                    guard error == nil else {
+                if let v = rule.actionValue, let bChar = char(brightnessUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: bChar,
+                                                                    targetValue: Int(v * 100) as NSNumber))
+                }
+            case "dim":
+                if let c = char(onUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: c, targetValue: 1 as NSNumber))
+                }
+                if let bChar = char(brightnessUUID) {
+                    let pct = Int((rule.actionValue ?? 0.3) * 100)
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: bChar,
+                                                                    targetValue: pct as NSNumber))
+                }
+            case "off":
+                if let c = char(onUUID) ?? char(activeUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: c, targetValue: 0 as NSNumber))
+                }
+            case "open", "close":
+                if let posChar = char(positionUUID) {
+                    let pos = rule.actionType == "open" ? 100 : 0
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: posChar,
+                                                                    targetValue: pos as NSNumber))
+                }
+            default:
+                print("[HK] ❌ actionType non delegabile: \(rule.actionType)")
+                return nil
+            }
+
+            guard !writeActions.isEmpty else {
+                print("[HK] ❌ writeActions vuoto per \(accessory.name)")
+                return nil
+            }
+
+            // ── Costruisci HMEvent ─────────────────────────────────────────────────
+            let hmEvent: HMEvent
+            // Catturate dal caso "characteristic" per aggiungere il predicato dopo la creazione del trigger
+            var characteristicSensorChar: HMCharacteristic? = nil
+            var characteristicThreshold:  Double?            = nil
+            var characteristicDirection:  String             = "below"
+
+            switch rule.triggerType {
+
+            case "calendar":
+                guard let timeStr = rule.triggerTime,
+                      let t = parseTimeComponents(timeStr) else {
+                    print("[HK] ❌ calendar: triggerTime mancante o non parsabile")
+                    return nil
+                }
+                var components = DateComponents()
+                components.hour   = t.hour
+                components.minute = t.minute
+                hmEvent = HMCalendarEvent(fire: components)
+
+            case "characteristic":
+                // Trigger su soglia sensore HomeKit.
+                // Usa HMCharacteristicEvent(triggerValue:nil) per catturare qualsiasi cambiamento
+                // del valore, poi aggiunge un predicato con la soglia via updatePredicate.
+                // Questo approccio (identico al caso calendar+condizione) viene visualizzato
+                // correttamente da Apple Home come "> 28°C" invece di un range senza etichette.
+                guard let conditionStr = rule.triggerCharacteristicID,
+                      let threshold = rule.triggerThreshold else {
+                    print("[HK] ❌ characteristic: conditionStr o threshold mancante")
+                    return nil
+                }
+                let parts         = conditionStr.split(separator: "|").map(String.init)
+                let sensorTypeRaw = parts[0]
+                let sensorRoom    = parts.count > 1 ? String(parts[1]) : nil
+                let direction     = parts.count > 2 ? String(parts[2]) : "below"
+                guard let sensorChar = findSensorCharacteristic(typeRaw: sensorTypeRaw,
+                                                                 room: sensorRoom,
+                                                                 in: home) else {
+                    print("[HK] ❌ characteristic: nessun sensore HomeKit '\(sensorTypeRaw)' in room=\(sensorRoom ?? "any") → fallback inApp")
+                    return nil
+                }
+                hmEvent = HMCharacteristicEvent<NSNumber>(characteristic: sensorChar, triggerValue: nil)
+                characteristicSensorChar = sensorChar
+                characteristicThreshold  = threshold
+                characteristicDirection  = direction
+
+            default:
+                print("[HK] ❌ triggerType non supportato: \(rule.triggerType)")
+                return nil
+            }
+
+            // ── Crea ActionSet + Trigger in HomeKit ────────────────────────────────
+            return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+                let actionSetName = homeKitSafeName(for: rule)
+                print("[HK] addActionSet: '\(actionSetName)'")
+                home.addActionSet(withName: actionSetName) { [weak home] actionSet, error in
+                    guard error == nil, let actionSet, let home else {
+                        print("[HK] ❌ addActionSet fallito: \(error?.localizedDescription ?? "home nil")")
                         continuation.resume(returning: nil)
                         return
                     }
-                    let calEvent = HMCalendarEvent(fire: components)
-                    let trigger = HMEventTrigger(name: rule.name, events: [calEvent], end: nil, recurrences: nil, predicate: nil)
-                    home.addTrigger(trigger) { error in
-                        guard error == nil else {
-                            continuation.resume(returning: nil)
+
+                    func addActions(_ index: Int) {
+                        if index >= writeActions.count {
+                            let trigger = HMEventTrigger(name: actionSetName,
+                                                         events: [hmEvent],
+                                                         end: nil,
+                                                         recurrences: nil,
+                                                         predicate: nil)
+                            print("[HK] addTrigger: '\(actionSetName)'")
+                            home.addTrigger(trigger) { error in
+                                guard error == nil else {
+                                    print("[HK] ❌ addTrigger fallito: \(error!.localizedDescription)")
+                                    continuation.resume(returning: nil)
+                                    return
+                                }
+                                trigger.addActionSet(actionSet) { error in
+                                    guard error == nil else {
+                                        print("[HK] ❌ trigger.addActionSet fallito: \(error!.localizedDescription)")
+                                        continuation.resume(returning: nil)
+                                        return
+                                    }
+                                    let triggerID = trigger.uniqueIdentifier.uuidString
+
+                                    // Characteristic trigger: aggiungi predicato soglia
+                                    if let condChar = characteristicSensorChar,
+                                       let thr = characteristicThreshold {
+                                        let op: NSComparisonPredicate.Operator = characteristicDirection == "above" ? .greaterThan : .lessThan
+                                        let pred = HMEventTrigger.predicateForEvaluatingTrigger(
+                                            condChar, relatedBy: op, toValue: NSNumber(value: thr))
+                                        trigger.updatePredicate(pred) { _ in
+                                            trigger.enable(enabled) { _ in }
+                                            continuation.resume(returning: triggerID)
+                                        }
+                                        return
+                                    }
+
+                                    // Calendar + sensore aggiuntivo: aggiungi predicato HK
+                                    if rule.triggerType == "calendar",
+                                       let conditionStr = rule.triggerCharacteristicID,
+                                       let threshold = rule.triggerThreshold {
+                                        let parts = conditionStr.split(separator: "|").map(String.init)
+                                        let sensorTypeRaw = parts.first ?? ""
+                                        let sensorRoom    = parts.count > 1 ? String(parts[1]) : nil
+                                        let direction     = parts.count > 2 ? String(parts[2]) : "below"
+                                        if let condChar = self.findSensorCharacteristic(
+                                            typeRaw: sensorTypeRaw, room: sensorRoom, in: home) {
+                                            let op: NSComparisonPredicate.Operator = direction == "above"
+                                                ? .greaterThan : .lessThan
+                                            let predicate = HMEventTrigger.predicateForEvaluatingTrigger(
+                                                condChar, relatedBy: op, toValue: NSNumber(value: threshold))
+                                            trigger.updatePredicate(predicate) { _ in
+                                                trigger.enable(enabled) { _ in }
+                                                continuation.resume(returning: triggerID)
+                                            }
+                                            return
+                                        }
+                                    }
+                                    trigger.enable(enabled) { _ in }
+                                    continuation.resume(returning: triggerID)
+                                }
+                            }
                             return
                         }
-                        trigger.addActionSet(actionSet) { error in
+                        actionSet.addAction(writeActions[index]) { error in
                             guard error == nil else {
-                                continuation.resume(returning: nil)
-                                return
+                                continuation.resume(returning: nil); return
                             }
-                            trigger.enable(true) { _ in }
-                            continuation.resume(returning: trigger.uniqueIdentifier.uuidString)
+                            addActions(index + 1)
                         }
                     }
+                    addActions(0)
+                }
+            }
+        }
+
+    // MARK: - Scene-based trigger attachment
+
+    /// Attaches an existing HMActionSet (scene) to a new HMEventTrigger.
+    /// Used when rule.actionSceneName is set — the scene was created earlier via createScene.
+    private func tryAttachSceneToTrigger(sceneName: String, rule: Rule, home: HMHome, enabled: Bool) async -> String? {
+        guard let actionSet = home.actionSets.first(where: {
+            $0.name.lowercased() == sceneName.lowercased()
+        }) else {
+            print("[HK] ❌ scena '\(sceneName)' non trovata — fallback inApp")
+            return nil
+        }
+
+        // Build HMEvent (same logic as tryCreateHomeKitTrigger)
+        var characteristicSensorChar: HMCharacteristic? = nil
+        var characteristicThreshold:  Double?            = nil
+        var characteristicDirection:  String             = "below"
+
+        let hmEvent: HMEvent
+        switch rule.triggerType {
+        case "calendar":
+            guard let timeStr = rule.triggerTime, let t = parseTimeComponents(timeStr) else {
+                print("[HK] ❌ calendar: triggerTime mancante per scena")
+                return nil
+            }
+            var components = DateComponents()
+            components.hour   = t.hour
+            components.minute = t.minute
+            hmEvent = HMCalendarEvent(fire: components)
+
+        case "characteristic":
+            guard let conditionStr = rule.triggerCharacteristicID,
+                  let threshold = rule.triggerThreshold else {
+                print("[HK] ❌ characteristic: conditionStr o threshold mancante per scena")
+                return nil
+            }
+            let parts         = conditionStr.split(separator: "|").map(String.init)
+            let sensorTypeRaw = parts[0]
+            let sensorRoom    = parts.count > 1 ? String(parts[1]) : nil
+            let direction     = parts.count > 2 ? String(parts[2]) : "below"
+            guard let sensorChar = findSensorCharacteristic(typeRaw: sensorTypeRaw,
+                                                             room: sensorRoom,
+                                                             in: home) else {
+                print("[HK] ❌ sensore non trovato per scena '\(sceneName)'")
+                return nil
+            }
+            hmEvent = HMCharacteristicEvent<NSNumber>(characteristic: sensorChar, triggerValue: nil)
+            characteristicSensorChar = sensorChar
+            characteristicThreshold  = threshold
+            characteristicDirection  = direction
+
+        default:
+            print("[HK] ❌ triggerType non supportato per scena: \(rule.triggerType)")
+            return nil
+        }
+
+        let triggerName = homeKitSafeName(for: rule)
+        print("[HK] addTrigger (scene): '\(triggerName)' → scena '\(sceneName)'")
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            let trigger = HMEventTrigger(name: triggerName,
+                                         events: [hmEvent],
+                                         end: nil,
+                                         recurrences: nil,
+                                         predicate: nil)
+            home.addTrigger(trigger) { error in
+                guard error == nil else {
+                    print("[HK] ❌ addTrigger(scena) fallito: \(error!.localizedDescription)")
+                    continuation.resume(returning: nil)
+                    return
+                }
+                trigger.addActionSet(actionSet) { error in
+                    guard error == nil else {
+                        print("[HK] ❌ addActionSet(scena) fallito: \(error!.localizedDescription)")
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let triggerID = trigger.uniqueIdentifier.uuidString
+
+                    if let condChar = characteristicSensorChar, let thr = characteristicThreshold {
+                        let op: NSComparisonPredicate.Operator = characteristicDirection == "above" ? .greaterThan : .lessThan
+                        let pred = HMEventTrigger.predicateForEvaluatingTrigger(
+                            condChar, relatedBy: op, toValue: NSNumber(value: thr))
+                        trigger.updatePredicate(pred) { _ in
+                            trigger.enable(enabled) { _ in }
+                            continuation.resume(returning: triggerID)
+                        }
+                        return
+                    }
+                    trigger.enable(enabled) { _ in }
+                    continuation.resume(returning: triggerID)
                 }
             }
         }
@@ -219,6 +436,39 @@ final class RuleEngineService {
         let cal = Calendar.current
 
         for rule in rules where rule.isEnabled && rule.executionMode == "inApp" {
+
+            // ── Trigger characteristic: sensore supera/scende sotto soglia ──────────
+            if rule.triggerType == "characteristic" {
+                guard let conditionStr = rule.triggerCharacteristicID,
+                      let threshold = rule.triggerThreshold else { continue }
+
+                // Cooldown 2h: non ri-eseguire mentre la condizione è già attiva
+                if let last = rule.lastExecutedAt, now.timeIntervalSince(last) < 7200 { continue }
+
+                let parts     = conditionStr.split(separator: "|").map(String.init)
+                let sensorType = parts[0]
+                let sensorRoom = parts.count > 1 ? String(parts[1]) : nil
+                let direction  = parts.count > 2 ? String(parts[2]) : "below"
+
+                var desc = FetchDescriptor<SensorReading>(
+                    sortBy: [SortDescriptor(\SensorReading.timestamp, order: .reverse)]
+                )
+                desc.fetchLimit = 20
+                let ctx = ModelContext(modelContainer)
+                let allReadings = (try? ctx.fetch(desc)) ?? []
+                let matching = allReadings.filter {
+                    $0.serviceTypeRaw == sensorType &&
+                    (sensorRoom == nil || $0.roomName.lowercased().contains(sensorRoom!.lowercased()))
+                }
+                guard let latest = matching.first else { continue }
+                let conditionMet = direction == "above" ? latest.value > threshold : latest.value < threshold
+                guard conditionMet else { continue }
+
+                await executeRule(rule, home: home)
+                continue
+            }
+
+            // ── Trigger calendar: ora fissa ───────────────────────────────────────
             guard rule.triggerType == "calendar",
                   let timeStr = rule.triggerTime,
                   let t = parseTimeComponents(timeStr)
@@ -228,21 +478,53 @@ final class RuleEngineService {
             let currentMinute = cal.component(.minute,  from: now)
             let currentDay    = cal.component(.weekday, from: now)
 
-            // Triggera se siamo nell'ora/minuto corretti
             guard currentHour == t.hour && currentMinute == t.minute else { continue }
 
-            // Verifica giorni settimana
             if !rule.weekdaysArray.isEmpty && !rule.weekdaysArray.contains(currentDay) { continue }
 
-            // Evita doppia esecuzione nello stesso minuto
-            if let last = rule.lastExecutedAt,
-               abs(now.timeIntervalSince(last)) < 58 { continue }
+            // Evita doppia esecuzione nello stesso giorno
+            if let last = rule.lastExecutedAt, cal.isDateInToday(last) { continue }
+
+            // Condizione sensore opzionale (calendar + predicato)
+            if let conditionStr = rule.triggerCharacteristicID, let threshold = rule.triggerThreshold {
+                let parts = conditionStr.split(separator: "|").map(String.init)
+                let sensorType = parts[0]
+                let sensorRoom = parts.count > 1 ? String(parts[1]) : nil
+                let direction  = parts.count > 2 ? String(parts[2]) : "below"
+                var desc = FetchDescriptor<SensorReading>(
+                    sortBy: [SortDescriptor(\SensorReading.timestamp, order: .reverse)]
+                )
+                desc.fetchLimit = 20
+                let context = ModelContext(modelContainer)
+                let allReadings = (try? context.fetch(desc)) ?? []
+                let matching = allReadings.filter {
+                    $0.serviceTypeRaw == sensorType &&
+                    (sensorRoom == nil || $0.roomName.lowercased().contains(sensorRoom!.lowercased()))
+                }
+                guard let latest = matching.first else { continue }
+                let conditionMet = direction == "above" ? latest.value > threshold : latest.value < threshold
+                guard conditionMet else { continue }
+            }
 
             await executeRule(rule, home: home)
         }
     }
 
     private func executeRule(_ rule: Rule, home: HMHome) async {
+        // Scene-based: execute the existing HMActionSet directly
+        if let sceneName = rule.actionSceneName {
+            if let actionSet = home.actionSets.first(where: {
+                $0.name.lowercased() == sceneName.lowercased()
+            }) {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    home.executeActionSet(actionSet) { _ in continuation.resume() }
+                }
+            }
+            rule.lastExecutedAt = Date()
+            try? modelContainer.mainContext.save()
+            return
+        }
+
         guard let accessory = home.accessories.first(where: {
             $0.uniqueIdentifier.uuidString == rule.actionAccessoryID
         }) else { return }
@@ -365,9 +647,20 @@ final class RuleEngineService {
         try? context.save()
     }
 
-    func toggleRule(_ rule: Rule) {
+    func toggleRule(_ rule: Rule, home: HMHome? = nil) {
         rule.isEnabled.toggle()
         try? modelContainer.mainContext.save()
+
+        // Sincronizza lo stato dell'HMEventTrigger su Apple Home con il nuovo isEnabled.
+        // Senza questo, disabilitare una regola nell'app non ferma l'automazione HomeKit.
+        guard rule.executionMode == "homeKit",
+              let triggerIDStr = rule.homeKitTriggerID,
+              let triggerUUID  = UUID(uuidString: triggerIDStr),
+              let home,
+              let trigger = home.triggers.first(where: { $0.uniqueIdentifier == triggerUUID })
+        else { return }
+
+        trigger.enable(rule.isEnabled) { _ in }
     }
 
     func deleteRule(_ rule: Rule, home: HMHome?) async throws {
@@ -388,9 +681,61 @@ final class RuleEngineService {
 
     // MARK: - Helpers
 
+    /// Builds a HomeKit-safe unique name for a rule's action set / trigger.
+    /// HomeKit only accepts letters, digits, spaces, apostrophes, and hyphens;
+    /// the name must start and end with alphanumeric characters.
+    private func homeKitSafeName(for rule: Rule) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " '-"))
+        // Remove colons (e.g. "7:30" → "7 30") then strip all other invalid chars.
+        let preprocessed = rule.name.replacingOccurrences(of: ":", with: " ")
+        let filtered = String(preprocessed.unicodeScalars.filter { allowed.contains($0) })
+        // Collapse multiple spaces into one.
+        let collapsed = filtered
+            .components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let trimmed = collapsed.trimmingCharacters(in: CharacterSet(charactersIn: " '-"))
+        let base = String((trimmed.isEmpty ? "Rule" : trimmed).prefix(40))
+        let suffix = String(rule.id.uuidString.replacingOccurrences(of: "-", with: "").prefix(4))
+        return "\(base) \(suffix)"
+    }
+
     private func shouldDelegateToHomeKit(triggerType: String) -> Bool {
         // Delegabile: trigger a orario fisso e trigger per caratteristica semplice
         triggerType == "calendar" || triggerType == "characteristic"
+    }
+
+    /// Finds the first HMCharacteristic matching the given sensor type HAP UUID.
+    /// When `room` is provided, searches ONLY that room — returns nil if not found there.
+    /// When `room` is nil, searches all accessories (for characteristic triggers without a room).
+    private func findSensorCharacteristic(typeRaw: String, room: String?, in home: HMHome) -> HMCharacteristic? {
+        guard let hapUUID = sensorHAPUUID(for: typeRaw) else { return nil }
+        func char(in accessories: [HMAccessory]) -> HMCharacteristic? {
+            accessories
+                .flatMap { $0.services }
+                .flatMap { $0.characteristics }
+                .first { $0.characteristicType.lowercased() == hapUUID }
+        }
+        if let room {
+            let needle = room.lowercased()
+            let roomAccessories = home.rooms
+                .filter { $0.name.lowercased().contains(needle) }
+                .flatMap { $0.accessories }
+            return char(in: roomAccessories)  // nil if not found — no global fallback when room is specified
+        }
+        return char(in: home.accessories)
+    }
+
+    private func sensorHAPUUID(for typeRaw: String) -> String? {
+        switch typeRaw {
+        case "lightSensor":    return "0000006b-0000-1000-8000-0026bb765291"
+        case "temperature":    return "00000011-0000-1000-8000-0026bb765291"
+        case "humidity":       return "00000010-0000-1000-8000-0026bb765291"
+        case "carbonDioxide":  return "00000113-0000-1000-8000-0026bb765291"
+        case "carbonMonoxide": return "00000069-0000-1000-8000-0026bb765291"
+        case "airQuality":     return "00000095-0000-1000-8000-0026bb765291"
+        default:               return nil
+        }
     }
 
     private func parseAction(_ action: String, explicitValue: Double?) -> (String, Double?) {
@@ -428,8 +773,27 @@ final class RuleEngineService {
 
     /// Inserts an already-built Rule into SwiftData and the in-memory list.
     /// Used when BehavioralAnalysisService approves an AutomationOpportunity.
+    /*
     func insertRule(_ rule: Rule) {
         let context = ModelContext(modelContainer)
+        context.insert(rule)
+        try? context.save()
+        rules.append(rule)
+    }
+     */
+    /// Inserts an already-built Rule. If it's a calendar rule, delegates to HomeKit
+    /// like the draft/pattern paths do.
+    func insertRule(_ rule: Rule, home: HMHome?) async {
+        // Delega HomeKit se calendar (stessa logica degli altri percorsi)
+        if rule.executionMode == "homeKit", let home {
+            if let triggerID = await tryCreateHomeKitTrigger(rule: rule, home: home, enabled: rule.isEnabled) {
+                rule.homeKitTriggerID = triggerID
+            } else {
+                rule.executionMode = "inApp"   // fallback se HomeKit fallisce
+            }
+        }
+
+        let context = modelContainer.mainContext   // usa mainContext, non un context nuovo
         context.insert(rule)
         try? context.save()
         rules.append(rule)

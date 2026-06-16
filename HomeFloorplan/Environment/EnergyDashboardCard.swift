@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import HomeKit
 
 // MARK: - EnergyDashboardCard
 
@@ -9,16 +10,22 @@ struct EnergyDashboardCard: View {
 
     let modelContainer: ModelContainer
 
+    @Environment(HomeKitService.self) private var homeKit
+
     @State private var records: [EnergyUsageRecord] = []
     @State private var signals: [EnergySignal] = []
     @State private var isLoading = true
 
     // MARK: - Derived
 
+    private static let energyEventTypes: Set<String> = [
+        "light", "switch", "thermostat", "fan", "airPurifier", "outlet"
+    ]
+
     /// Per-room aggregates sorted by total hours today descending.
     private var roomGroups: [(room: String, totalHours: Double, topName: String, hasAnomaly: Bool)] {
         var byRoom: [String: (hours: Double, topName: String, topHours: Double)] = [:]
-        for r in records where r.totalHoursToday > 0 {
+        for r in records where r.totalHoursToday > 0 && Self.energyEventTypes.contains(r.eventType) {
             let room = r.roomName.isEmpty
                 ? String(localized: "energy.room.unknown", defaultValue: "Unknown Room")
                 : r.roomName
@@ -56,11 +63,57 @@ struct EnergyDashboardCard: View {
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .task {
-            let r = await EnergyUsageTracker.analyze(modelContainer: modelContainer)
-            records = r
-            signals = EnergyInsightBuilder.build(records: r)
-            isLoading = false
+            let ignored = EnergyIgnoreStore.ignoredIDs
+
+            // Legge lo stato corrente ON/OFF di ogni accessorio da HomeKit.
+            // Passato al tracker per riconciliare la storia degli eventi con la realtà:
+            // evita sessioni fantoma (evento OFF perso) e rileva accessori ON non registrati.
+            let currentStates = buildCurrentStates()
+
+            let r            = await EnergyUsageTracker.analyze(
+                                    modelContainer: modelContainer,
+                                    currentStates:  currentStates)
+            records          = r.filter { !ignored.contains($0.accessoryID) }
+            let allSignals   = EnergyInsightBuilder.build(records: records, ignoredIDs: ignored)
+            let dismissedKeys = fetchDismissedEnergyKeys()
+            signals          = allSignals.filter { !dismissedKeys.contains($0.semanticKey) }
+            isLoading        = false
         }
+    }
+
+    // MARK: - Helpers
+
+    /// Costruisce una mappa `accessoryID → isCurrentlyOn` leggendo i valori correnti da HomeKit.
+    /// Controlla sia PowerState (0x25 — luci/switch) che Active (0xB0 — termostati/fan/prese).
+    private func buildCurrentStates() -> [UUID: Bool] {
+        let powerStateUUID = "00000025-0000-1000-8000-0026bb765291"
+        let activeUUID     = "000000b0-0000-1000-8000-0026bb765291"
+        var states: [UUID: Bool] = [:]
+        for accessory in homeKit.allAccessories {
+            let allChars = accessory.services.flatMap(\.characteristics)
+            let char = allChars.first { $0.characteristicType.lowercased() == activeUUID }
+                    ?? allChars.first { $0.characteristicType.lowercased() == powerStateUUID }
+            guard let char, let val = homeKit.value(for: char) else { continue }
+            let raw = (val as? Int) ?? (val as? NSNumber)?.intValue ?? 0
+            states[accessory.uniqueIdentifier] = raw != 0
+        }
+        return states
+    }
+
+    /// Returns semantic keys of energy notifications dismissed or snoozed in the last 48 hours.
+    /// Used to suppress anomaly indicators that the user has already actioned in the feed.
+    private func fetchDismissedEnergyKeys() -> Set<String> {
+        let ctx    = ModelContext(modelContainer)
+        let cutoff = Date().addingTimeInterval(-48 * 3600)
+        let descriptor = FetchDescriptor<ProactiveNotification>(
+            predicate: #Predicate {
+                $0.categoryRaw == "energy" &&
+                ($0.statusRaw == "dismissed" || $0.statusRaw == "snoozed") &&
+                $0.lastUpdatedAt >= cutoff
+            }
+        )
+        let dismissed = (try? ctx.fetch(descriptor)) ?? []
+        return Set(dismissed.map(\.semanticKey))
     }
 
     // MARK: - Subviews

@@ -8,6 +8,10 @@
 	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>HomeFloorplan usa la fotocamera per scansionare le stanze con RoomPlan e generare planimetrie 3D.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>HomeFloorplan usa il microfono per trascrivere in testo le domande vocali all'assistente Home AI.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>HomeFloorplan usa il riconoscimento vocale per convertire la voce in testo nelle domande all'assistente Home AI.</string>
 	<key>NSHomeKitUsageDescription</key>
 	<string>HomeFloorplan accede ai tuoi dispositivi HomeKit per mostrarne lo stato sulla planimetria e permetterti di controllarli.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

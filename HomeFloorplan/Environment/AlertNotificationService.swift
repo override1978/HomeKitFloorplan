@@ -129,6 +129,10 @@ final class AlertNotificationService {
             return "\(prefix): \(String(localized: "alert.title.smoke",          defaultValue: "Smoke Detected"))"
         case .vocDensity:
             return "\(prefix): \(String(localized: "alert.title.vocDensity",     defaultValue: "High VOC Levels"))"
+        case .lightSensor:
+            return "\(prefix): \(String(localized: "alert.title.lightSensor",    defaultValue: "High Light Level"))"
+        case .outdoorTemperature, .outdoorHumidity:
+            return "\(prefix): \(type.displayName)"
         }
     }
 
@@ -174,6 +178,12 @@ final class AlertNotificationService {
             let tmpl = String(localized: "alert.body.vocDensity",
                               defaultValue: "In %1$@ the VOC concentration is %2$@ (%3$@).")
             return String(format: tmpl, roomName, formattedValue, levelText)
+        case .lightSensor:
+            let tmpl = String(localized: "alert.body.lightSensor",
+                              defaultValue: "In %1$@ the light level reached %2$@ (%3$@).")
+            return String(format: tmpl, roomName, formattedValue, levelText)
+        case .outdoorTemperature, .outdoorHumidity:
+            return "\(type.displayName) in \(roomName): \(formattedValue)"
         }
     }
 
@@ -192,6 +202,9 @@ final class AlertNotificationService {
                 ? String(localized: "smoke.detected",    defaultValue: "detected")
                 : String(localized: "smoke.notDetected", defaultValue: "not detected")
         case .vocDensity:     return String(format: "%.0f µg/m³", value)
+        case .lightSensor:    return String(format: "%.0f lux", value)
+        case .outdoorTemperature: return unit.format(value)
+        case .outdoorHumidity:    return String(format: "%.0f%%", value)
         }
     }
 }

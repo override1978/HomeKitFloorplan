@@ -1,10 +1,13 @@
 import SwiftUI
 import HomeKit
 import SwiftData
+import CoreLocation
 
 struct SettingsView: View {
-    @Environment(HomeKitService.self) private var homeKit
-    @Environment(OnboardingService.self) private var onboarding
+    @Environment(HomeKitService.self)       private var homeKit
+    @Environment(OnboardingService.self)    private var onboarding
+    @Environment(WeatherKitService.self)    private var weatherKit
+    @Environment(SmartLightingEngine.self)  private var smartLightingEngine
     @Environment(\.modelContext) private var modelContext
 
     @AppStorage(MarkerSize.appStorageKey)
@@ -29,7 +32,11 @@ struct SettingsView: View {
 
     /// Stanze distinte presenti in SwiftData, caricate all'apertura della view.
     @State private var availableRooms: [String] = []
-    
+
+    // MARK: - Home Location state
+    @State private var showsLocationPicker = false
+    @AppStorage("homeLocation.cityName") private var homeLocationCityName: String = ""
+
     var body: some View {
         Form {
             // MARK: - HomeKit
@@ -130,6 +137,46 @@ struct SettingsView: View {
                 Text(String(localized: "settings.environment.footer", defaultValue: "Select the HomeKit room for the outdoor sensor (e.g. external Netatmo module). Used by the weather banner in the Environment Dashboard."))
             }
 
+            // MARK: - Posizione casa (WeatherKit)
+
+            Section {
+                homeLocationSection
+            } header: {
+                Text(String(localized: "settings.homeLocation.header", defaultValue: "Home Location"))
+            } footer: {
+                Text(String(localized: "settings.homeLocation.footer", defaultValue: "Used by WeatherKit to record outdoor temperature and humidity. Type your city or address and tap Set."))
+            }
+
+            // MARK: - Automazioni
+
+            Section {
+                NavigationLink {
+                    SmartLightingSettingsView()
+                } label: {
+                    Label {
+                        HStack {
+                            Text(String(localized: "settings.smartlighting.link",
+                                        defaultValue: "Smart Lighting"))
+                            Spacer()
+                            if smartLightingEngine.isGloballyEnabled {
+                                Text(String(localized: "settings.smartlighting.on",
+                                            defaultValue: "On"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } icon: {
+                        Image(systemName: "lightbulb.2.fill")
+                    }
+                }
+            } header: {
+                Text(String(localized: "settings.automations.header",
+                            defaultValue: "Automations"))
+            } footer: {
+                Text(String(localized: "settings.automations.footer",
+                            defaultValue: "Automatic scene activation based on sunrise/sunset times and ambient light."))
+            }
+
             // MARK: - Notifiche
 
             Section {
@@ -176,16 +223,16 @@ struct SettingsView: View {
                     Label(String(localized: "settings.developer.showOnboarding", defaultValue: "Show onboarding on next launch"), systemImage: "arrow.clockwise.circle")
                         .foregroundStyle(.tint)
                 }
-                NavigationLink {
-                    HabitsView()
-                } label: {
-                    Label(String(localized: "settings.developer.habits", defaultValue: "Habits"), systemImage: "brain.head.profile")
-                }
-                #if DEBUG
+#if DEBUG
                 NavigationLink {
                     AITraceView()
                 } label: {
                     Label("AI Pipeline Trace", systemImage: "waveform.and.magnifyingglass")
+                }
+                NavigationLink {
+                    HabitsDiagnosticsView()
+                } label: {
+                    Label("Habits Diagnostics", systemImage: "brain.head.profile.fill")
                 }
                 #endif
             } header: {
@@ -210,6 +257,65 @@ struct SettingsView: View {
         .navigationTitle(String(localized: "settings.title", defaultValue: "Settings"))
         .navigationBarTitleDisplayMode(.large)
         .onAppear { loadAvailableRooms() }
+        .sheet(isPresented: $showsLocationPicker) {
+            let lat = UserDefaults.standard.double(forKey: LocationPresenceService.homeLatKey)
+            let lon = UserDefaults.standard.double(forKey: LocationPresenceService.homeLonKey)
+            let initial: CLLocationCoordinate2D? = (lat != 0 || lon != 0)
+                ? CLLocationCoordinate2D(latitude: lat, longitude: lon) : nil
+            HomeLocationPickerView(initialCoord: initial) { coord, cityName in
+                UserDefaults.standard.set(coord.latitude,  forKey: LocationPresenceService.homeLatKey)
+                UserDefaults.standard.set(coord.longitude, forKey: LocationPresenceService.homeLonKey)
+                homeLocationCityName = cityName ?? ""
+                Task { await weatherKit.refresh() }
+            }
+        }
+    }
+
+    // MARK: - Home Location
+
+    @ViewBuilder
+    private var homeLocationSection: some View {
+        let lat = UserDefaults.standard.double(forKey: LocationPresenceService.homeLatKey)
+        let lon = UserDefaults.standard.double(forKey: LocationPresenceService.homeLonKey)
+        let hasLocation = lat != 0 || lon != 0
+
+        Button { showsLocationPicker = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: hasLocation ? "location.fill" : "location.slash.fill")
+                    .foregroundStyle(hasLocation ? .green : .orange)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    if hasLocation {
+                        let display = homeLocationCityName.isEmpty
+                            ? String(format: "%.4f, %.4f", lat, lon)
+                            : homeLocationCityName
+                        Text(display)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                        Text(String(localized: "settings.homeLocation.configured",
+                                    defaultValue: "Location set — outdoor weather active"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(String(localized: "settings.homeLocation.notSet",
+                                    defaultValue: "Not set — outdoor weather unavailable"))
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                        Text(String(localized: "settings.homeLocation.tapToSet",
+                                    defaultValue: "Tap to set your home location"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Carica stanze da SwiftData

@@ -10,7 +10,8 @@ struct GarageDoorControl: View {
     @Environment(HomeKitService.self) private var homeKit
     
     @State private var pendingTarget: GarageDoorTargetState?
-    
+    @State private var writeError = false
+
     private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
     
     var body: some View {
@@ -25,6 +26,7 @@ struct GarageDoorControl: View {
             if adapter.hasLowBattery {
                 batteryWarning
             }
+            if writeError { WriteErrorBanner() }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
@@ -162,7 +164,16 @@ struct GarageDoorControl: View {
     }
 
     // MARK: - Action
-    
+
+    private func triggerWriteError() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        withAnimation(.easeInOut(duration: 0.25)) { writeError = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation(.easeInOut(duration: 0.25)) { writeError = false }
+        }
+    }
+
     private func performAction() {
         let wantsToClose = (adapter.currentState == .open || adapter.currentState == .opening)
         pendingTarget = wantsToClose ? .closed : .open
@@ -175,8 +186,7 @@ struct GarageDoorControl: View {
                 try await adapter.setOpen(!wantsToClose)
             } catch {
                 pendingTarget = nil
-                let notif = UINotificationFeedbackGenerator()
-                notif.notificationOccurred(.error)
+                triggerWriteError()
             }
         }
     }

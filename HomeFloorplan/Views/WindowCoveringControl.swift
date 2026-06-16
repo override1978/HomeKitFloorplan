@@ -12,7 +12,8 @@ struct WindowCoveringControl: View {
     
     @State private var sliderDraft: Double = 0
     @State private var isDragging: Bool = false
-    
+    @State private var writeError = false
+
     private let sliderHeight: CGFloat = 60
     
     private var currentValue: Int { adapter.currentPositionValue }
@@ -25,6 +26,7 @@ struct WindowCoveringControl: View {
             stateLabel
             slider
             quickActions
+            if writeError { WriteErrorBanner() }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 4)
@@ -142,7 +144,16 @@ struct WindowCoveringControl: View {
     }
     
     // MARK: - Write
-    
+
+    private func triggerWriteError() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        withAnimation(.easeInOut(duration: 0.25)) { writeError = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation(.easeInOut(duration: 0.25)) { writeError = false }
+        }
+    }
+
     private func writePosition(_ value: Int) {
         let haptic = UIImpactFeedbackGenerator(style: .light)
         haptic.impactOccurred()
@@ -150,8 +161,7 @@ struct WindowCoveringControl: View {
             do {
                 try await adapter.setPosition(value)
             } catch {
-                let notif = UINotificationFeedbackGenerator()
-                notif.notificationOccurred(.error)
+                triggerWriteError()
             }
         }
     }

@@ -2,28 +2,65 @@ import Foundation
 import SwiftData
 import Observation
 
+// MARK: - ClusterNamingInput
+
+struct ClusterNamingInput {
+    let clusterID:        String    // "burst_cluster:A|B|C|D"
+    let memberNames:      [String]  // parsed from clusterID (top-4 accessories)
+    let dominantRoom:     String?   // nil — burst clusters span multiple rooms
+    let typicalTime:      String    // e.g. "22:30" from matching BehavioralPattern
+    let matchedSceneName: String?   // HomeKit scene name if matched
+}
+
+// MARK: - HabitCallResult
+
+enum HabitCallResult {
+    case skipped(reason: String)
+    case success(namedCount: Int, cachedCount: Int)
+    case error(message: String)
+    case empty
+
+    var displayString: String {
+        switch self {
+        case .skipped(let reason):
+            return "Skipped — \(reason)"
+        case .success(let named, let cached):
+            return "✓ named \(named) clusters · \(cached) from cache"
+        case .error(let msg):
+            return "✗ \(msg)"
+        case .empty:
+            return "No unnamed clusters"
+        }
+    }
+}
+
 // MARK: - HabitAnalysisService
 
-/// Analizza gli ultimi 14 giorni di AccessoryEvent e rileva pattern comportamentali.
-/// I pattern vengono proposti all'utente, che può trasformarli in regole con 1 tap.
+/// Assigns human-readable names to burst-cluster routines using the on-device LLM.
 ///
-/// Frequenza: ogni ora (solo se app attiva).
-/// Graceful degradation: se AI non configurata o offline, `patterns` rimane invariato.
+/// Triggered by BehavioralAnalysisService at the end of each analyze() run.
+/// The naming call runs in an unstructured Task so it is never cancelled by a view lifecycle.
+/// Names are persisted via VersionedStore and only un-named clusters are sent to the LLM.
 @Observable
 @MainActor
 final class HabitAnalysisService {
 
     // MARK: - State
 
+    /// Legacy HabitPattern storage (approve/dismiss flows still work).
     var patterns: [HabitPattern] = []
     var isAnalyzing: Bool = false
     var lastAnalyzed: Date?
+    var lastCallResult: HabitCallResult?
+
+    /// clusterID → human-readable name assigned by the LLM.
+    private(set) var clusterNames: [String: String] = [:]
 
     // MARK: - Private
 
     private let aiSettings: AISettings
     private let modelContainer: ModelContainer
-    private let minIntervalBetweenAnalyses: TimeInterval = 60 * 60  // 1 ora
+    private let minIntervalBetweenNaming: TimeInterval = 60 * 60  // 1 hour
 
     // MARK: - Init
 
@@ -31,311 +68,79 @@ final class HabitAnalysisService {
         self.aiSettings = aiSettings
         self.modelContainer = modelContainer
         loadPersistedPatterns()
+        loadPersistedClusterNames()
     }
 
-    // MARK: - Public API
+    // MARK: - Cluster Naming (primary entry point)
 
-    /// Analizza gli eventi degli ultimi 14 giorni e aggiunge nuovi pattern non ancora noti.
-    func analyzeHabits() async {
-        guard aiSettings.isOperational, aiSettings.suggestionsEnabled else { return }
+    /// Called from BehavioralAnalysisService.analyze() and from HabitsView.task.
+    /// Spawns an unstructured Task so the LLM call is not bound to any view lifecycle.
+    /// When `reports` is empty (app just launched, analyze() not yet run this session),
+    /// falls back to deriving cluster inputs from persisted .scene patterns so unnamed
+    /// clusters are named without waiting for the next 12h analyze() cycle.
+    func scheduleNaming(reports: [BurstReport], patterns: [BehavioralPattern]) {
+        guard aiSettings.isOperational, aiSettings.suggestionsEnabled else {
+            lastCallResult = .skipped(reason: "AI not configured or suggestions disabled")
+            return
+        }
+        // Build inputs: prefer live BurstReport data; fall back to persisted .scene patterns
+        // when no analysis has run yet this session (lastBurstReport is empty on first launch).
+        let inputs: [ClusterNamingInput]
+        if !reports.isEmpty {
+            inputs = buildInputs(from: reports, patterns: patterns)
+        } else {
+            inputs = buildInputsFromPatterns(patterns)
+        }
+        guard !inputs.isEmpty else { return }
 
-        // Rispetta l'intervallo minimo
-        if let last = lastAnalyzed,
-           Date().timeIntervalSince(last) < minIntervalBetweenAnalyses { return }
-
-        isAnalyzing = true
-        defer {
-            isAnalyzing = false
-            lastAnalyzed = Date()
-            persistPatterns()
+        // Throttle: skip only when ALL clusters already have a name AND ran recently.
+        // If any cluster is unnamed, proceed regardless of the interval (covers first run and new clusters).
+        let hasUnnamed = inputs.contains { clusterNames[$0.clusterID] == nil }
+        if !hasUnnamed,
+           let last = lastAnalyzed,
+           Date().timeIntervalSince(last) < minIntervalBetweenNaming {
+            return
         }
 
-        let events = loadRecentEvents(days: 14)
-        let sceneEvents = loadRecentSceneEvents(days: 14)
-        guard !events.isEmpty || !sceneEvents.isEmpty else { return }
-
-        let payload = buildPayload(events: events, sceneEvents: sceneEvents)
-        let lang = AILocale.outputLanguage
-
-        let systemPrompt = """
-        You are a smart home automation assistant. RESPOND IN \(lang.uppercased()).
-        Analyze accessory and HomeKit scene usage patterns from the last 14 days.
-        Identify significant habits (confidence > 0.75, frequency > 5 days out of 7).
-        For each habit found, also generate the corresponding rule in structured format.
-        Respond ONLY with a valid JSON array (no extra text, no markdown).
-        Each element can be of type "accessory" (behavior on a single accessory) or "scene" (HomeKit scene activation).
-        Format for accessory type:
-        {"patternType":"accessory","accessoryName":"...","accessoryID":"...","roomName":"...","description":"brief text in \(lang) (max 1 sentence)","confidence":0.87,"rule":{"triggerType":"calendar","time":"22:18","weekdays":[1,2,3,4,5,6,7],"action":"on"|"off"|"dim","value":30}}
-        Format for scene type:
-        {"patternType":"scene","sceneName":"...","accessoryName":"...","accessoryID":"","roomName":"","description":"brief text in \(lang) (max 1 sentence)","confidence":0.87,"rule":{"triggerType":"calendar","time":"21:00","weekdays":[1,2,3,4,5,6,7],"action":"scene"}}
-        """
-
-        do {
-            let service = AIService(settings: aiSettings)
-            let response = try await service.sendPrompt(
-                systemPrompt: systemPrompt,
-                userPrompt: payload
-            )
-            let newPatterns = parsePatterns(from: response)
-            mergePatterns(newPatterns)
-        } catch {
-            // Graceful degradation
+        Task {
+            await nameClusters(inputs: inputs)
         }
     }
 
-    /// Approva un pattern: cambia lo stato a .approved.
-    /// Il chiamante (es. HabitsView) passerà il pattern a RuleEngineService.
+    // MARK: - Cluster name lookup
+
+    /// Returns the LLM-assigned name for a burst-cluster BehavioralPattern, or nil.
+    func name(for pattern: BehavioralPattern) -> String? {
+        guard pattern.patternType == .scene,
+              let sig = pattern.causeSignature,
+              sig.hasPrefix("burst_cluster:")
+        else { return nil }
+        return clusterNames[sig]
+    }
+
+    // MARK: - Approve / Dismiss (legacy HabitPattern card actions)
+
     func approve(_ pattern: HabitPattern) {
         updateStatus(id: pattern.id, status: .approved)
     }
 
-    /// Dismissal di un pattern.
     func dismiss(_ pattern: HabitPattern) {
         updateStatus(id: pattern.id, status: .dismissed)
     }
 
-    // MARK: - Computed
-
-    /// Pattern in attesa di decisione utente.
     var pendingPatterns: [HabitPattern] {
         patterns.filter { $0.status == .pending }
             .sorted { $0.confidence > $1.confidence }
     }
 
-    // MARK: - Payload Builder
+    // MARK: - Backward-compat stub (call sites in ProactiveIntelligenceService, HabitsView, App)
 
-    private func buildPayload(events: [AccessoryEvent], sceneEvents: [ActivityEvent]) -> String {
-        // ── Accessori ──────────────────────────────────────────────────────────
-        let grouped = Dictionary(grouping: events, by: \.accessoryID)
-
-        var accessories: [[String: Any]] = []
-        for (accessoryID, eventsForAccessory) in grouped {
-            guard let first = eventsForAccessory.first else { continue }
-
-            let onEvents  = eventsForAccessory.filter { $0.state }
-            let offEvents = eventsForAccessory.filter { !$0.state }
-
-            var patternsArr: [[String: Any]] = []
-
-            // Pattern accensione
-            if let avgOnTime = averageTimeString(from: onEvents.map(\.timestamp)) {
-                let weekdays = Array(Set(onEvents.map(\.weekday))).sorted()
-                let frequency = Double(Set(onEvents.map {
-                    Calendar.current.startOfDay(for: $0.timestamp)
-                }).count) / 14.0
-
-                var p: [String: Any] = [
-                    "action":    "on",
-                    "avgTime":   avgOnTime,
-                    "weekdays":  weekdays,
-                    "frequency": Double(round(frequency * 100) / 100),
-                ]
-
-                // Brightness media se disponibile
-                let brightVals = onEvents.compactMap(\.brightness)
-                if !brightVals.isEmpty {
-                    let avgBrightness = brightVals.reduce(0, +) / Double(brightVals.count)
-                    if avgBrightness < 0.95 {
-                        p["action"] = "dim:\(Int(avgBrightness * 100))"
-                    }
-                }
-                patternsArr.append(p)
-            }
-
-            // Pattern spegnimento
-            if let avgOffTime = averageTimeString(from: offEvents.map(\.timestamp)) {
-                let weekdays = Array(Set(offEvents.map(\.weekday))).sorted()
-                let frequency = Double(Set(offEvents.map {
-                    Calendar.current.startOfDay(for: $0.timestamp)
-                }).count) / 14.0
-
-                patternsArr.append([
-                    "action":    "off",
-                    "avgTime":   avgOffTime,
-                    "weekdays":  weekdays,
-                    "frequency": Double(round(frequency * 100) / 100),
-                ])
-            }
-
-            guard !patternsArr.isEmpty else { continue }
-
-            accessories.append([
-                "name":     first.accessoryName,
-                "id":       accessoryID.uuidString,
-                "type":     first.eventType,
-                "room":     first.roomName ?? "",
-                "patterns": patternsArr,
-            ])
-        }
-
-        // ── Scene ──────────────────────────────────────────────────────────────
-        // Raggruppa per nome scena e aggrega orari e giorni di attivazione
-        let groupedScenes = Dictionary(grouping: sceneEvents, by: \.title)
-
-        var scenes: [[String: Any]] = []
-        for (sceneName, sceneActivations) in groupedScenes {
-            guard sceneActivations.count >= 3 else { continue }  // soglia minima
-
-            let timestamps = sceneActivations.map(\.timestamp)
-            guard let avgTime = averageTimeString(from: timestamps) else { continue }
-
-            let weekdays = Array(Set(timestamps.map {
-                Calendar.current.component(.weekday, from: $0)
-            })).sorted()
-
-            let frequency = Double(Set(timestamps.map {
-                Calendar.current.startOfDay(for: $0)
-            }).count) / 14.0
-
-            scenes.append([
-                "name":      sceneName,
-                "avgTime":   avgTime,
-                "weekdays":  weekdays,
-                "frequency": Double(round(frequency * 100) / 100),
-                "count":     sceneActivations.count,
-            ])
-        }
-
-        // ── Payload finale ─────────────────────────────────────────────────────
-        var payloadDict: [String: Any] = [
-            "analysisWindow": "14 days",
-            "accessories":    accessories,
-        ]
-        if !scenes.isEmpty {
-            payloadDict["scenes"] = scenes
-        }
-
-        guard let data = try? JSONSerialization.data(withJSONObject: payloadDict, options: [.sortedKeys]),
-              let str = String(data: data, encoding: .utf8)
-        else { return "{\"analysisWindow\":\"14 days\",\"accessories\":[]}" }
-
-        return str
-    }
-
-    // MARK: - Response Parser
-
-    private func parsePatterns(from response: String) -> [HabitPattern] {
-        let cleaned = extractJSONArray(from: response)
-        guard let data = cleaned.data(using: .utf8),
-              let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
-        else { return [] }
-
-        return jsonArray.compactMap { item -> HabitPattern? in
-            guard let description = item["description"] as? String,
-                  let confidence  = item["confidence"] as? Double,
-                  confidence >= 0.75,
-                  let ruleDict    = item["rule"] as? [String: Any],
-                  let ruleData    = try? JSONSerialization.data(withJSONObject: ruleDict),
-                  let ruleJSON    = String(data: ruleData, encoding: .utf8)
-            else { return nil }
-
-            let rawType = item["patternType"] as? String ?? "accessory"
-            let patternType: PatternType = rawType == "scene" ? .scene : .accessory
-
-            if patternType == .scene {
-                // Pattern scena: sceneName obbligatorio, accessoryID non applicabile
-                guard let sceneName = item["sceneName"] as? String, !sceneName.isEmpty
-                else { return nil }
-
-                return HabitPattern(
-                    patternType:       .scene,
-                    accessoryName:     sceneName,  // usato anche come fallback
-                    accessoryID:       UUID(),      // sentinel — non viene usato per le scene
-                    sceneName:         sceneName,
-                    roomName:          item["roomName"] as? String ?? "",
-                    description:       description,
-                    confidence:        confidence,
-                    suggestedRuleJSON: ruleJSON
-                )
-            } else {
-                // Pattern accessorio
-                guard let name  = item["accessoryName"] as? String,
-                      let idStr = item["accessoryID"] as? String,
-                      let room  = item["roomName"] as? String
-                else { return nil }
-
-                let accessoryID = UUID(uuidString: idStr) ?? UUID()
-
-                return HabitPattern(
-                    patternType:       .accessory,
-                    accessoryName:     name,
-                    accessoryID:       accessoryID,
-                    sceneName:         nil,
-                    roomName:          room,
-                    description:       description,
-                    confidence:        confidence,
-                    suggestedRuleJSON: ruleJSON
-                )
-            }
-        }
-    }
-
-    private func extractJSONArray(from string: String) -> String {
-        guard let start = string.firstIndex(of: "["),
-              let end = string.lastIndex(of: "]")
-        else { return "[]" }
-        return String(string[start...end])
-    }
-
-    // MARK: - Pattern Merge
-
-    private func mergePatterns(_ newPatterns: [HabitPattern]) {
-        for new in newPatterns {
-            let alreadyExists: Bool
-            if new.patternType == .scene {
-                // Dedup scene per nome scena + descrizione
-                alreadyExists = patterns.contains {
-                    $0.patternType == .scene &&
-                    $0.sceneName == new.sceneName &&
-                    $0.description == new.description &&
-                    $0.status != .dismissed
-                }
-            } else {
-                // Dedup accessori per accessoryID + descrizione
-                alreadyExists = patterns.contains {
-                    $0.accessoryID == new.accessoryID &&
-                    $0.description == new.description &&
-                    $0.status != .dismissed
-                }
-            }
-            if !alreadyExists {
-                patterns.append(new)
-            }
-        }
-    }
-
-    private func updateStatus(id: UUID, status: PatternStatus) {
-        if let idx = patterns.firstIndex(where: { $0.id == id }) {
-            patterns[idx].status = status
-        }
-        persistPatterns()
-    }
-
-    // MARK: - Persistence (UserDefaults, solo dati non sensibili)
-
-    private let persistKey = "habitPatterns.persisted"
-
-    private func persistPatterns() {
-        guard let data = try? JSONEncoder().encode(patterns) else { return }
-        UserDefaults.standard.set(data, forKey: persistKey)
-    }
-
-    private func loadPersistedPatterns() {
-        guard let data = UserDefaults.standard.data(forKey: persistKey),
-              let saved = try? JSONDecoder().decode([HabitPattern].self, from: data)
-        else { return }
-        patterns = saved
+    func analyzeHabits(knownPatterns: [BehavioralPattern] = []) async {
+        // Naming is now triggered by scheduleNaming() from BehavioralAnalysisService.
     }
 
     // MARK: - Stale Pattern Cleanup
 
-    /// Removes patterns that are no longer actionable. Called by DataLifecycleService BGTask.
-    ///
-    /// Removes:
-    /// - Dismissed patterns older than 60 days (user already decided; safe to discard)
-    /// - Pending patterns older than 90 days (orphaned; AI stopped detecting the behaviour)
-    ///
-    /// Approved patterns are never removed — they represent explicit user decisions.
     func cleanupStalePatterns() {
         let now             = Date()
         let dismissedCutoff = now.addingTimeInterval(-60 * 24 * 3600)
@@ -352,49 +157,149 @@ final class HabitAnalysisService {
         }
     }
 
-    // MARK: - Data Loading
+    // MARK: - Private: Naming pipeline
 
-    private func loadRecentEvents(days: Int) -> [AccessoryEvent] {
-        let context = ModelContext(modelContainer)
-        let cutoff = Date(timeIntervalSinceNow: -Double(days) * 24 * 3600)
+    private func nameClusters(inputs: [ClusterNamingInput]) async {
+        let unnamed     = inputs.filter { clusterNames[$0.clusterID] == nil }
+        let cachedCount = inputs.count - unnamed.count
 
-        let descriptor = FetchDescriptor<AccessoryEvent>(
-            predicate: #Predicate<AccessoryEvent> { $0.timestamp >= cutoff }
-        )
-        return (try? context.fetch(descriptor)) ?? []
-    }
-
-    /// Carica le esecuzioni di scene registrate negli ultimi N giorni.
-    private func loadRecentSceneEvents(days: Int) -> [ActivityEvent] {
-        let context = ModelContext(modelContainer)
-        let cutoff = Date(timeIntervalSinceNow: -Double(days) * 24 * 3600)
-        let sceneRaw = ActivityEventCategory.sceneExecution.rawValue
-
-        let descriptor = FetchDescriptor<ActivityEvent>(
-            predicate: #Predicate<ActivityEvent> {
-                $0.timestamp >= cutoff && $0.categoryRaw == sceneRaw
-            }
-        )
-        return (try? context.fetch(descriptor)) ?? []
-    }
-
-    // MARK: - Time Helpers
-
-    private func averageTimeString(from dates: [Date]) -> String? {
-        guard !dates.isEmpty else { return nil }
-        let cal = Calendar.current
-        var sinSum = 0.0
-        var cosSum = 0.0
-        for date in dates {
-            let h = cal.component(.hour,   from: date)
-            let m = cal.component(.minute, from: date)
-            let radians = (Double(h * 60 + m) / 1440.0) * 2 * .pi
-            sinSum += sin(radians)
-            cosSum += cos(radians)
+        guard !unnamed.isEmpty else {
+            lastAnalyzed = Date()
+            lastCallResult = .empty
+            return
         }
-        let avgAngle = atan2(sinSum, cosSum)
-        let normalized = avgAngle < 0 ? avgAngle + 2 * .pi : avgAngle
-        let avgMinutes = Int((normalized / (2 * .pi)) * 1440) % 1440
-        return String(format: "%02d:%02d", avgMinutes / 60, avgMinutes % 60)
+
+        isAnalyzing = true
+        defer {
+            isAnalyzing  = false
+            lastAnalyzed = Date()
+            persistClusterNames()
+        }
+
+        do {
+            let service  = AIService(settings: aiSettings)
+            let newNames = try await callLLM(for: unnamed, service: service)
+            for (id, name) in newNames {
+                clusterNames[id] = name
+            }
+            lastCallResult = .success(namedCount: newNames.count, cachedCount: cachedCount)
+            dprint("🏷 HabitNaming: named \(newNames.count) clusters, \(cachedCount) from cache")
+        } catch {
+            lastCallResult = .error(message: error.localizedDescription)
+            dprint("❌ HabitNaming: \(error.localizedDescription)")
+        }
+    }
+
+    private func buildInputsFromPatterns(_ patterns: [BehavioralPattern]) -> [ClusterNamingInput] {
+        patterns.compactMap { pattern -> ClusterNamingInput? in
+            guard pattern.patternType == .scene,
+                  let sig = pattern.causeSignature,
+                  sig.hasPrefix("burst_cluster:")
+            else { return nil }
+            let members = String(sig.dropFirst("burst_cluster:".count))
+                .split(separator: "|").map(String.init)
+            return ClusterNamingInput(
+                clusterID:        sig,
+                memberNames:      members,
+                dominantRoom:     nil,
+                typicalTime:      pattern.avgTimeString,
+                matchedSceneName: nil
+            )
+        }
+    }
+
+    private func buildInputs(from reports: [BurstReport], patterns: [BehavioralPattern]) -> [ClusterNamingInput] {
+        reports.map { report in
+            let members = String(report.signature.dropFirst("burst_cluster:".count))
+                .split(separator: "|").map(String.init)
+
+            // Match temporal context from a BehavioralPattern with the same causeSignature
+            let typicalTime = patterns.first {
+                $0.patternType == .scene && $0.causeSignature == report.signature
+            }?.avgTimeString ?? "?"
+
+            return ClusterNamingInput(
+                clusterID:        report.signature,
+                memberNames:      members,
+                dominantRoom:     nil,
+                typicalTime:      typicalTime,
+                matchedSceneName: report.matchedSceneName
+            )
+        }
+    }
+
+    private func callLLM(for inputs: [ClusterNamingInput], service: AIService) async throws -> [String: String] {
+        let lang = AILocale.outputLanguage
+
+        let systemPrompt = """
+        You are a smart home assistant. RESPOND IN \(lang.uppercased()).
+        Assign a short, human-readable name (2-4 words) to each home automation routine.
+        Each routine is a group of accessories that activate together at a typical time.
+        Use the member names and typical time to infer the purpose (e.g. "Evening Reading", "Buona Notte", "Mattina Cucina").
+        Respond ONLY with a valid JSON object mapping each clusterID to its name. No markdown, no extra text.
+        Example: {"burst_cluster:A|B|C|D": "Evening Reading"}
+        """
+
+        let entries = inputs.map { input -> String in
+            let membersJSON = "[\(input.memberNames.map { "\"\($0)\"" }.joined(separator: ", "))]"
+            var parts = ["\"members\": \(membersJSON)",
+                         "\"typicalTime\": \"\(input.typicalTime)\""]
+            if let scene = input.matchedSceneName {
+                parts.append("\"matchedScene\": \"\(scene)\"")
+            }
+            return "  \"\(input.clusterID)\": { \(parts.joined(separator: ", ")) }"
+        }.joined(separator: ",\n")
+
+        let userPrompt = "{\n\(entries)\n}"
+
+        let response = try await service.sendPrompt(systemPrompt: systemPrompt, userPrompt: userPrompt)
+        let parsed = parseClusterNames(from: response)
+
+        // Only accept IDs that were actually requested
+        let validIDs = Set(inputs.map(\.clusterID))
+        return parsed.filter { validIDs.contains($0.key) }
+    }
+
+    private func parseClusterNames(from response: String) -> [String: String] {
+        guard let start = response.firstIndex(of: "{"),
+              let end   = response.lastIndex(of: "}"),
+              start <= end,
+              let data  = String(response[start...end]).data(using: .utf8),
+              let dict  = try? JSONSerialization.jsonObject(with: data) as? [String: String]
+        else { return [:] }
+        return dict
+    }
+
+    // MARK: - Persistence
+
+    private let persistKey = "habitPatterns.persisted"
+    private var clusterNamesKey: String { "habit.clusterNames.v1.\(AILocale.languageCode)" }
+    private var namingLastRunKey: String { "habit.clusterNaming.lastRun.\(AILocale.languageCode)" }
+
+    private func persistPatterns() {
+        VersionedStore<[HabitPattern]>(key: persistKey, version: 1).save(patterns)
+    }
+
+    private func loadPersistedPatterns() {
+        patterns = VersionedStore<[HabitPattern]>(key: persistKey, version: 1).load() ?? []
+    }
+
+    private func persistClusterNames() {
+        VersionedStore<[String: String]>(key: clusterNamesKey, version: 1).save(clusterNames)
+        if let date = lastAnalyzed {
+            UserDefaults.standard.set(date, forKey: namingLastRunKey)
+        }
+    }
+
+    private func loadPersistedClusterNames() {
+        clusterNames = VersionedStore<[String: String]>(key: clusterNamesKey, version: 1).load() ?? [:]
+        lastAnalyzed = UserDefaults.standard.object(forKey: namingLastRunKey) as? Date
+    }
+
+    private func updateStatus(id: UUID, status: PatternStatus) {
+        if let idx = patterns.firstIndex(where: { $0.id == id }) {
+            patterns[idx].status = status
+        }
+        persistPatterns()
     }
 }

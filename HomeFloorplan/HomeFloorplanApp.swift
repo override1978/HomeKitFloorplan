@@ -27,7 +27,11 @@ struct HomeFloorplanApp: App {
     @State private var locationPresenceService: LocationPresenceService
     @State private var familyPresenceService: FamilyPresenceService
     @State private var maintenancePredictionService: MaintenancePredictionService
-    @State private var weatherKitService = WeatherKitService()
+    @State private var weatherKitService: WeatherKitService
+    @State private var smartLightingEngine: SmartLightingEngine
+    @State private var aiSettings: AISettings
+
+    @Environment(\.scenePhase) private var scenePhase
 
     @AppStorage("securityMonitoredUUIDs") private var securityMonitoredUUIDsRaw: String = ""
     /// Set to true when a SwiftData migration failure forces a store wipe.
@@ -90,6 +94,10 @@ struct HomeFloorplanApp: App {
         self._homeKit = State(initialValue: kit)
         let scenes = HomeKitScenesService(homeKit: kit)
         self._scenesService = State(initialValue: scenes)
+        let weather = WeatherKitService()
+        self._weatherKitService = State(initialValue: weather)
+        let lightingEngine = SmartLightingEngine(homeKit: kit, weatherKit: weather, scenesService: scenes)
+        self._smartLightingEngine = State(initialValue: lightingEngine)
 
         // Costruisce il container prima di creare i servizi che ne hanno bisogno
         let schema = Schema([
@@ -131,7 +139,9 @@ struct HomeFloorplanApp: App {
         kit.accessoryEventStore = eventStore
         self._accessoryEventStore = State(initialValue: eventStore)
         let aiSettings = AISettings()
-        self._habitAnalysisService = State(initialValue: HabitAnalysisService(aiSettings: aiSettings, modelContainer: container))
+        self._aiSettings = State(initialValue: aiSettings)
+        let habitSvc = HabitAnalysisService(aiSettings: aiSettings, modelContainer: container)
+        self._habitAnalysisService = State(initialValue: habitSvc)
         self._ruleEngineService = State(initialValue: RuleEngineService(modelContainer: container))
         // Tracker condiviso tra AmbientalAIService (per dismiss/expiration) e ActionExecutionService
         // (per trackExecution). Una sola istanza garantisce coerenza del dataset di efficacia.
@@ -148,7 +158,9 @@ struct HomeFloorplanApp: App {
         kit.sensorEventRouter = SensorEventRouter.shared
         self._ambientalAIService = State(initialValue: ambientalSvc)
         self._dataLifecycleService = State(initialValue: DataLifecycleService(modelContainer: container))
-        self._behavioralAnalysisService = State(initialValue: BehavioralAnalysisService(modelContainer: container))
+        let behavioralSvc = BehavioralAnalysisService(modelContainer: container)
+        behavioralSvc.habitNamingService = habitSvc
+        self._behavioralAnalysisService = State(initialValue: behavioralSvc)
         self._proactiveIntelligenceService = State(initialValue: ProactiveIntelligenceService(modelContainer: container))
         self._occupancyPredictionService = State(initialValue: OccupancyPredictionService())
         self._locationPresenceService = State(initialValue: LocationPresenceService())
@@ -197,14 +209,38 @@ struct HomeFloorplanApp: App {
                 .environment(locationPresenceService)
                 .environment(familyPresenceService)
                 .environment(maintenancePredictionService)
+                .environment(weatherKitService)
+                .environment(smartLightingEngine)
+                .environment(aiSettings)
                 .task {
                     securityNotifier.start(monitoredUUIDsRaw: securityMonitoredUUIDsRaw)
-                    // Sprint 5B: collega il tracker condiviso a SensorLogger
-                    // così ogni campionamento chiude automaticamente le misurazioni pending.
                     SensorLogger.shared.effectivenessTracker = actionExecutionService.tracker
-                    // Sprint 31: initial weather fetch
                     await weatherKitService.refreshIfNeeded()
                     ambientalAIService.currentWeather = weatherKitService.currentWeather
+                    if let snapshot = weatherKitService.currentWeather {
+                        await SensorLogger.shared.sampleOutdoor(snapshot: snapshot, modelContainer: sharedModelContainer)
+                    }
+                }
+                // Foreground loop: lux dense sampling (~5 min) + outdoor snapshot (rate-limited to 1/hr).
+                // Cancels automatically when the scene leaves .active.
+                .task(id: scenePhase) {
+                    guard scenePhase == .active else { return }
+                    let container = sharedModelContainer
+                    while !Task.isCancelled {
+                        if let home = homeKit.currentHome {
+                            await SensorLogger.shared.sampleLightSensors(home: home, modelContainer: container)
+                        }
+                        await weatherKitService.refreshIfNeeded()
+                        if let snapshot = weatherKitService.currentWeather {
+                            await SensorLogger.shared.sampleOutdoor(snapshot: snapshot, modelContainer: container)
+                        }
+                        await smartLightingEngine.evaluate()
+                        do {
+                            try await Task.sleep(for: .seconds(300)) // 5 min
+                        } catch {
+                            break // task cancelled — scene went inactive
+                        }
+                    }
                 }
                 .onChange(of: securityMonitoredUUIDsRaw) { _, newValue in
                     securityNotifier.updateMonitored(uuidsRaw: newValue)
@@ -223,6 +259,21 @@ struct HomeFloorplanApp: App {
                 }
                 .onChange(of: weatherKitService.currentWeather) { _, newWeather in
                     ambientalAIService.currentWeather = newWeather
+                    if let snapshot = newWeather {
+                        let container = sharedModelContainer
+                        Task { await SensorLogger.shared.sampleOutdoor(snapshot: snapshot, modelContainer: container) }
+                    }
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    guard newPhase == .active else { return }
+                    let key = "behavioral.foregroundAnalysis.lastTriggered"
+                    let last = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
+                    guard Date().timeIntervalSince(last) >= 12 * 3600 else { return }
+                    UserDefaults.standard.set(Date(), forKey: key)
+                    let behavioral = behavioralAnalysisService
+                    Task {
+                        await behavioral.analyze()
+                    }
                 }
                 .alert(
                     String(localized: "alert.migration.title", defaultValue: "Dati ripristinati"),
@@ -285,6 +336,7 @@ struct HomeFloorplanApp: App {
 
         let container = sharedModelContainer
         let homeKitService = homeKit
+        let weather = weatherKitService
 
         task.expirationHandler = {
             dprint("⚠️ BGTask scaduto prima del completamento")
@@ -294,6 +346,9 @@ struct HomeFloorplanApp: App {
             if let home = homeKitService.currentHome {
                 await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: container)
                 await SensorLogger.shared.pruneOldReadings(olderThan: 30, modelContainer: container)
+            }
+            if let snapshot = weather.currentWeather {
+                await SensorLogger.shared.sampleOutdoor(snapshot: snapshot, modelContainer: container)
             }
             task.setTaskCompleted(success: true)
         }
@@ -325,6 +380,7 @@ struct HomeFloorplanApp: App {
         let location    = locationPresenceService
         let maintenance = maintenancePredictionService
         let weather     = weatherKitService
+        let lighting    = smartLightingEngine
 
         task.expirationHandler = {
             dprint("⚠️ BGTask ruleEvaluation scaduto prima del completamento")
@@ -334,6 +390,7 @@ struct HomeFloorplanApp: App {
             if let home = homeKitSvc.currentHome {
                 await engine.evaluateInAppRules(home: home)
             }
+            await lighting.evaluate()
             occupancy.updateNextArrival()
             await proactive.runCycleIfNeeded(
                 behavioralService:  behavioral,

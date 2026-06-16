@@ -142,6 +142,10 @@ enum EnvironmentalAlertBuilder {
             return String(format: String(localized: "notif.env.co.headline",       defaultValue: "CO detected in %@"),           room)
         case .smoke:
             return String(format: String(localized: "notif.env.smoke.headline",    defaultValue: "Smoke detected in %@"),         room)
+        case .lightSensor:
+            return String(format: String(localized: "notif.env.light.headline",    defaultValue: "High light level in %@"),       room)
+        case .outdoorTemperature, .outdoorHumidity:
+            return "\(signal.sensorType.displayName): \(room)"
         }
     }
 
@@ -176,6 +180,8 @@ enum EnvironmentalAlertBuilder {
         case .smoke:
             return String(localized: "notif.env.smoke.why",
                           defaultValue: "Smoke presence requires immediate attention.")
+        case .lightSensor, .outdoorTemperature, .outdoorHumidity:
+            return signal.sensorType.displayName
         }
     }
 
@@ -193,7 +199,7 @@ enum EnvironmentalAlertBuilder {
             return String(localized: "notif.env.air.rec",     defaultValue: "Run the air purifier or open windows.")
         case .carbonMonoxide:
             return String(localized: "notif.env.co.rec",      defaultValue: "Ventilate immediately and check combustion sources.")
-        case .smoke:
+        case .smoke, .lightSensor, .outdoorTemperature, .outdoorHumidity:
             return nil
         }
     }
@@ -226,6 +232,10 @@ enum EnvironmentalAlertBuilder {
             return String(format: String(localized: "notif.env.co.headline",       defaultValue: "CO detected in %@"),           room)
         case .smoke:
             return String(format: String(localized: "notif.env.smoke.headline",    defaultValue: "Smoke detected in %@"),         room)
+        case .lightSensor:
+            return String(format: String(localized: "notif.env.light.headline",    defaultValue: "High light level in %@"),       room)
+        case .outdoorTemperature, .outdoorHumidity:
+            return "\(type.displayName): \(room)"
         }
     }
 
@@ -243,7 +253,7 @@ enum EnvironmentalAlertBuilder {
             return String(localized: "notif.env.air.rec",      defaultValue: "Run the air purifier or open windows.")
         case .carbonMonoxide:
             return String(localized: "notif.env.co.rec",       defaultValue: "Ventilate immediately and check combustion sources.")
-        case .smoke:
+        case .smoke, .lightSensor, .outdoorTemperature, .outdoorHumidity:
             return nil
         }
     }
@@ -271,6 +281,8 @@ enum EnvironmentalAlertBuilder {
         case .smoke:
             return String(localized: "notif.env.smoke.why",
                           defaultValue: "Smoke presence requires immediate attention.")
+        case .lightSensor, .outdoorTemperature, .outdoorHumidity:
+            return type.displayName
         }
     }
 }

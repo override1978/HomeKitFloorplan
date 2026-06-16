@@ -17,6 +17,10 @@ final class AccessoryEventStore {
 
     private let modelContainer: ModelContainer
 
+    /// Last time the rolling 30-day cleanup predicate-delete ran.
+    /// Throttles the batch delete to once per hour instead of once per HomeKit notification.
+    @ObservationIgnored private var lastCleanupDate: Date = .distantPast
+
     // MARK: - Init
 
     init(modelContainer: ModelContainer) {
@@ -25,8 +29,11 @@ final class AccessoryEventStore {
 
     // MARK: - Save
 
-    /// Salva un evento nel database e rimuove quelli più vecchi di 30 giorni.
-    /// Thread-safe: usa un ModelContext dedicato sul chiamante (sempre @MainActor in HomeKitService).
+    /// Salva un evento nel database.
+    /// Il cleanup rolling 30 giorni è throttled a 1x/ora per evitare una
+    /// predicate-delete sincrona su ogni notifica HomeKit.
+    /// Il save esplicito è rimosso: SwiftData autosave gestisce il flush
+    /// senza bloccare il main thread su ogni evento.
     @MainActor
     func saveEvent(_ dto: AccessoryEventDTO) {
         let context = modelContainer.mainContext
@@ -45,12 +52,15 @@ final class AccessoryEventStore {
         )
         context.insert(event)
 
-        // Cleanup rolling 30 giorni on-write
-        let cutoff = Date(timeIntervalSinceNow: -30 * 24 * 3600)
-        let predicate = #Predicate<AccessoryEvent> { $0.timestamp < cutoff }
-        try? context.delete(model: AccessoryEvent.self, where: predicate)
-
-        try? context.save()
+        // Batch delete throttled to once per hour — running a predicate-delete
+        // on every HomeKit notification was blocking the main thread unnecessarily.
+        let now = Date()
+        if now.timeIntervalSince(lastCleanupDate) > 3600 {
+            let cutoff = Date(timeIntervalSinceNow: -30 * 24 * 3600)
+            let predicate = #Predicate<AccessoryEvent> { $0.timestamp < cutoff }
+            try? context.delete(model: AccessoryEvent.self, where: predicate)
+            lastCleanupDate = now
+        }
     }
 
     // MARK: - Queries
@@ -195,6 +205,34 @@ final class AccessoryEventStore {
                 state: state,
                 brightness: nil,
                 eventType: AccessoryEventType.motion.rawValue
+            )
+
+        case activeUUID:
+            // Termostati, fan, purificatori, prese smart — usano Active (0xB0) invece di PowerState
+            guard let raw = intVal(value) else { return nil }
+            let state = raw != 0
+            let serviceChars = characteristic.service?.characteristics ?? []
+            func hasChar(_ uuid: String) -> Bool {
+                serviceChars.contains { $0.characteristicType.lowercased() == uuid }
+            }
+            let eventType: String
+            if hasChar("000000b2-0000-1000-8000-0026bb765291") {   // TargetHeaterCoolerState
+                eventType = AccessoryEventType.thermostat.rawValue
+            } else if hasChar("00000029-0000-1000-8000-0026bb765291") {  // RotationSpeed
+                eventType = AccessoryEventType.fan.rawValue
+            } else if hasChar("000000a8-0000-1000-8000-0026bb765291") {  // TargetAirPurifierState
+                eventType = AccessoryEventType.airPurifier.rawValue
+            } else {
+                eventType = AccessoryEventType.outlet.rawValue
+            }
+            return AccessoryEventDTO(
+                accessoryID: accessory.uniqueIdentifier,
+                accessoryName: accessory.name,
+                roomID: roomID,
+                roomName: roomName,
+                state: state,
+                brightness: nil,
+                eventType: eventType
             )
 
         default:

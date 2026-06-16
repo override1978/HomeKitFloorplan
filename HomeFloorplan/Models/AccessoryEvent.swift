@@ -58,11 +58,16 @@ final class AccessoryEvent {
 
 /// Tipi di dispositivo supportati da AccessoryEvent.
 enum AccessoryEventType: String {
-    case light   = "light"
-    case blind   = "blind"
-    case `switch` = "switch"
-    case contact = "contact"
-    case motion  = "motion"
+    case light      = "light"
+    case blind      = "blind"
+    case `switch`   = "switch"
+    case contact    = "contact"
+    case motion     = "motion"
+    // Dispositivi che usano "Active" (0xB0) invece di "PowerState" (0x25)
+    case thermostat = "thermostat"
+    case fan        = "fan"
+    case airPurifier = "airPurifier"
+    case outlet     = "outlet"
 }
 
 // MARK: - AccessoryEventDTO

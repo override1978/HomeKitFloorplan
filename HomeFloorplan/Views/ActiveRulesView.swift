@@ -20,9 +20,14 @@ struct ActiveRulesView: View {
             if ruleEngine.rules.isEmpty {
                 emptyState
             } else {
-                rulesList
+                List {
+                    rulesList
+                }
+                .listStyle(.insetGrouped)
             }
         }
+        .navigationTitle(String(localized: "habits.automations.title", defaultValue: "Automations"))
+        .navigationBarTitleDisplayMode(.large)
         // Sheet a livello della view, non del ForEach, per evitare dismiss immediato
         .sheet(item: $editingRule) { rule in
             RuleEditorView(rule: rule) { updatedDraft in
@@ -91,18 +96,19 @@ struct ActiveRulesView: View {
 
     @ViewBuilder
     private func ruleRow(_ rule: Rule) -> some View {
+        let isScene = rule.actionSceneName != nil
         Button {
             editingRule = rule
         } label: {
             HStack(spacing: 12) {
-                // Icona azione
+                // Icona azione — viola per scene multi-azione, accent per azioni singole
                 ZStack {
                     Circle()
-                        .fill(Color.accentColor.opacity(0.12))
+                        .fill((isScene ? Color.indigo : Color.accentColor).opacity(0.12))
                         .frame(width: 40, height: 40)
-                    Image(systemName: actionIcon(for: rule.actionType))
+                    Image(systemName: isScene ? "sparkles" : actionIcon(for: rule.actionType))
                         .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(isScene ? Color.indigo : Color.accentColor)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -114,6 +120,16 @@ struct ActiveRulesView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+
+                    // Scena multi-azione collegata
+                    if let sceneName = rule.actionSceneName {
+                        Label(sceneName, systemImage: "theatermasks.fill")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.indigo)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(.indigo.opacity(0.10), in: Capsule())
+                    }
 
                     // Badge row
                     HStack(spacing: 6) {
@@ -127,6 +143,16 @@ struct ActiveRulesView: View {
                         if rule.generatedByAI {
                             badgeView(icon: "brain", label: "AI", color: .purple)
                         }
+                    }
+
+                    // Condizione sensore
+                    if let condSummary = conditionSummary(for: rule) {
+                        Label(condSummary, systemImage: conditionIcon(for: rule))
+                            .font(.caption2)
+                            .foregroundStyle(.teal)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(.teal.opacity(0.10), in: Capsule())
                     }
 
                     // Ultima esecuzione
@@ -148,7 +174,7 @@ struct ActiveRulesView: View {
                     // Toggle attiva/disattiva
                     Toggle("", isOn: Binding(
                         get: { rule.isEnabled },
-                        set: { _ in ruleEngine.toggleRule(rule) }
+                        set: { _ in ruleEngine.toggleRule(rule, home: homeKit.currentHome) }
                     ))
                     .labelsHidden()
                 }
@@ -187,6 +213,42 @@ struct ActiveRulesView: View {
             return "\(dayName) \(timeStr)"
         } else {
             return date.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+        }
+    }
+
+    private func conditionSummary(for rule: Rule) -> String? {
+        guard let charID = rule.triggerCharacteristicID, let threshold = rule.triggerThreshold else { return nil }
+        let parts = charID.split(separator: "|").map(String.init)
+        guard let sensorTypeRaw = parts.first else { return nil }
+        let sensorName = SensorServiceType(rawValue: sensorTypeRaw)?.displayName ?? sensorTypeRaw
+        let room      = parts.count > 1 ? parts[1] : nil
+        let direction = parts.count > 2 ? parts[2] : "below"
+        let dirSymbol = direction == "above" ? ">" : "<"
+        let roomStr   = room.map { " (\($0))" } ?? ""
+        let unit: String
+        switch sensorTypeRaw {
+        case "lightSensor":   unit = " lux"
+        case "temperature":   unit = "°C"
+        case "humidity":      unit = "%"
+        case "carbonDioxide": unit = " ppm"
+        default:              unit = ""
+        }
+        return "\(sensorName)\(roomStr) \(dirSymbol) \(String(format: "%.1f", threshold))\(unit)"
+    }
+
+    private func conditionIcon(for rule: Rule) -> String {
+        guard let charID = rule.triggerCharacteristicID,
+              let sensorTypeRaw = charID.split(separator: "|").first.map(String.init) else {
+            return "sensor.tag.radiowaves.forward"
+        }
+        switch sensorTypeRaw {
+        case "lightSensor":    return "sun.max.fill"
+        case "temperature":    return "thermometer.medium"
+        case "humidity":       return "humidity.fill"
+        case "carbonDioxide":  return "carbon.dioxide.cloud.fill"
+        case "carbonMonoxide": return "aqi.medium"
+        case "airQuality":     return "aqi.low"
+        default:               return "sensor.tag.radiowaves.forward"
         }
     }
 
