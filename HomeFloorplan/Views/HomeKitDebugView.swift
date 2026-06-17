@@ -78,7 +78,11 @@ struct HomeKitDebugAccessoryDetail: View {
             kvRow("Firmware", accessoryInfoValue(for: "00000052-0000-1000-8000-0026BB765291") ?? "—")
             kvRow("Serial", accessoryInfoValue(for: "00000030-0000-1000-8000-0026BB765291") ?? "—")
             kvRow("Hardware", accessoryInfoValue(for: HMCharacteristicTypeHardwareVersion) ?? "—")
-            kvRow("Reachable", accessory.isReachable ? "sì" : "no")
+            kvRow("Reachable raw", accessory.isReachable ? "sì" : "no")
+            kvRow("Reachable app", homeKit.isReachable(accessory) ? "sì" : "no")
+            kvRow("Reachability settled", homeKit.reachabilitySettled ? "sì" : "no")
+            kvRow("Reachability map", reachabilityMapText)
+            kvRow("Recent command failed", homeKit.isLikelyOffline(accessory) ? "sì" : "no")
             kvRow("Bridged", accessory.isBridged ? "sì" : "no")
             kvRow("Blocked", accessory.isBlocked ? "sì" : "no")
         }
@@ -95,7 +99,7 @@ struct HomeKitDebugAccessoryDetail: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
-                            Text(service.name ?? "Servizio")
+                            Text(service.name.isEmpty ? "Servizio" : service.name)
                                 .font(.body)
                             if service.isPrimaryService {
                                 Text("PRIMARY")
@@ -197,11 +201,16 @@ struct HomeKitDebugAccessoryDetail: View {
         out.append("Model: \(accessoryInfoValue(for: "00000021-0000-1000-8000-0026BB765291") ?? "—")")
         out.append("Firmware: \(accessoryInfoValue(for: "00000052-0000-1000-8000-0026BB765291") ?? "—")")
         out.append("Hardware: \(accessoryInfoValue(for: HMCharacteristicTypeHardwareVersion) ?? "—")")
-        out.append("Reachable: \(accessory.isReachable)  Bridged: \(accessory.isBridged)  Blocked: \(accessory.isBlocked)")
+        out.append("Reachable raw: \(accessory.isReachable)")
+        out.append("Reachable app: \(homeKit.isReachable(accessory))")
+        out.append("Reachability settled: \(homeKit.reachabilitySettled)")
+        out.append("Reachability map: \(reachabilityMapText)")
+        out.append("Recent command failed: \(homeKit.isLikelyOffline(accessory))")
+        out.append("Bridged: \(accessory.isBridged)  Blocked: \(accessory.isBlocked)")
         out.append("")
         out.append("Services (\(accessory.services.count)):")
         for service in accessory.services {
-            out.append("─ Service: \(service.name ?? "?")  primary=\(service.isPrimaryService)")
+            out.append("─ Service: \(service.name.isEmpty ? "?" : service.name)  primary=\(service.isPrimaryService)")
             out.append("  serviceType: \(service.serviceType)")
             for ch in service.characteristics {
                 let value = homeKit.value(for: ch) ?? ch.value
@@ -215,5 +224,12 @@ struct HomeKitDebugAccessoryDetail: View {
             }
         }
         return out.joined(separator: "\n")
+    }
+
+    private var reachabilityMapText: String {
+        guard let mapped = homeKit.reachabilityMap[accessory.uniqueIdentifier] else {
+            return "—"
+        }
+        return mapped ? "sì" : "no"
     }
 }

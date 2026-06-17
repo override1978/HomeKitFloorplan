@@ -209,7 +209,7 @@ struct AllAccessoriesView: View {
         if selectedStateFilter != .all {
             accessories = accessories.filter { accessory in
                 let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
-                let isOffline = homeKit.isLikelyOffline(accessory)
+                let isOffline = !homeKit.isReachable(accessory)
                 return selectedStateFilter.matches(adapter: adapter, isOffline: isOffline)
             }
         }
@@ -334,7 +334,7 @@ struct AllAccessoriesView: View {
         if selectedStateFilter != .all {
             result = result.filter { accessory in
                 let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
-                let isOffline = homeKit.isLikelyOffline(accessory)
+                let isOffline = !homeKit.isReachable(accessory)
                 return selectedStateFilter.matches(adapter: adapter, isOffline: isOffline)
             }
         }
@@ -381,11 +381,16 @@ struct AllAccessoriesView: View {
             if let battery = adapter.batteryInfo {
                     BatteryBadgeView(info: battery)
                 }
-            
-            if homeKit.isLikelyOffline(accessory) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                }
+
+            if !homeKit.isReachable(accessory) {
+                Image(systemName: "wifi.slash")
+                    .foregroundStyle(.orange)
+                    .accessibilityLabel(String(localized: "accessory.unreachable", defaultValue: "Unreachable"))
+            } else if homeKit.isLikelyOffline(accessory) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.yellow)
+                    .accessibilityLabel(String(localized: "accessory.recentCommandFailed", defaultValue: "Recent command failed"))
+            }
         }
         .contentShape(Rectangle())
     }
@@ -465,4 +470,3 @@ private struct RoomPlanCaptureFallbackView: View {
     }
 }
 #endif
-

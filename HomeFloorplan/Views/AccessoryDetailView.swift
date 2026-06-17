@@ -98,11 +98,15 @@ struct AccessoryDetailView: View {
                         Text(accessory.room?.name ?? "—")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        if homeKit.isLikelyOffline(accessory) {
-                                Text("• \(String(localized: "accessory.offline", defaultValue: "Offline"))")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.orange)
-                            }
+                        if !homeKit.isReachable(accessory) {
+                            Text("• \(String(localized: "accessory.unreachable", defaultValue: "Unreachable"))")
+                                .font(.subheadline)
+                                .foregroundStyle(.orange)
+                        } else if homeKit.isLikelyOffline(accessory) {
+                            Text("• \(String(localized: "accessory.recentCommandFailed", defaultValue: "Recent command failed"))")
+                                .font(.subheadline)
+                                .foregroundStyle(.yellow)
+                        }
                     }
                 }
                 Spacer()
