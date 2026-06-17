@@ -22,6 +22,10 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable {
         self.accessory = accessory
         self.homeKit = homeKit
         
+        guard Self.shouldUseSensorAdapter(for: accessory) else {
+            return nil
+        }
+        
         // Cerca in ordine di priorità il primo sensore noto
         guard let (kind, characteristic) = Self.findPrimarySensor(in: accessory) else {
             return nil
@@ -62,9 +66,7 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable {
     
     var primaryStatusText: String? {
         let raw = homeKit.value(for: primaryCharacteristic) ?? primaryCharacteristic.value
-        let result = primaryKind.formattedValue(raw)
-        dprint("📊 [\(accessory.name)] kind=\(primaryKind), raw=\(String(describing: raw)) (\(type(of: raw))), formatted=\(String(describing: result))")
-        return result
+        return primaryKind.formattedValue(raw)
     }
     
     // QUESTE qui dentro la classe
@@ -398,5 +400,46 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable {
             }
         }
         return nil
+    }
+    
+    private static func shouldUseSensorAdapter(for accessory: HMAccessory) -> Bool {
+        let serviceTypes = Set(accessory.services.map { $0.serviceType.uppercased() })
+        let controllableServiceTypes: Set<String> = [
+            "00000043-0000-1000-8000-0026BB765291", // Lightbulb
+            "00000047-0000-1000-8000-0026BB765291", // Outlet
+            "00000049-0000-1000-8000-0026BB765291", // Switch
+            "00000040-0000-1000-8000-0026BB765291", // Fan
+            "000000B7-0000-1000-8000-0026BB765291", // Fan v2
+            "0000008C-0000-1000-8000-0026BB765291", // Window Covering
+            "000000BC-0000-1000-8000-0026BB765291", // Heater Cooler
+            "0000004A-0000-1000-8000-0026BB765291", // Thermostat
+            "000000BB-0000-1000-8000-0026BB765291", // Air Purifier
+            "000000D8-0000-1000-8000-0026BB765291", // Television
+            "00000045-0000-1000-8000-0026BB765291", // Lock Mechanism
+            "00000041-0000-1000-8000-0026BB765291", // Garage Door Opener
+            "0000007E-0000-1000-8000-0026BB765291"  // Security System
+        ]
+        
+        guard serviceTypes.isDisjoint(with: controllableServiceTypes) else {
+            return false
+        }
+        
+        if accessory.category.categoryType == HMAccessoryCategoryTypeSensor {
+            return true
+        }
+        
+        let sensorServiceTypes: Set<String> = [
+            "0000007F-0000-1000-8000-0026BB765291", // Carbon Monoxide Sensor
+            "00000080-0000-1000-8000-0026BB765291", // Contact Sensor
+            "00000082-0000-1000-8000-0026BB765291", // Humidity Sensor
+            "00000083-0000-1000-8000-0026BB765291", // Leak Sensor
+            "00000084-0000-1000-8000-0026BB765291", // Light Sensor
+            "00000085-0000-1000-8000-0026BB765291", // Motion Sensor
+            "00000086-0000-1000-8000-0026BB765291", // Occupancy Sensor
+            "00000087-0000-1000-8000-0026BB765291", // Smoke Sensor
+            "0000008A-0000-1000-8000-0026BB765291", // Temperature Sensor
+            "0000008D-0000-1000-8000-0026BB765291"  // Air Quality Sensor
+        ]
+        return !serviceTypes.isDisjoint(with: sensorServiceTypes)
     }
 }

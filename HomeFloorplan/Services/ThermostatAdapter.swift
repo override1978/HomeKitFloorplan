@@ -174,7 +174,7 @@ final class ThermostatAdapter: AccessoryAdapter {
     var supportsFloorplanPlacement: Bool { true }
     
     var primaryStatusText: String? {
-        guard accessory.isReachable else { return nil }
+        guard homeKit.isReachable(accessory) else { return nil }
         let display = celsiusToDisplay(currentTemperature)
         return String(format: "%.0f%@", display, displayUnit.symbol)
     }

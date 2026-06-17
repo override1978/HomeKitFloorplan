@@ -65,15 +65,18 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         switch adapter {
         case is DimmableLightAdapter: return .lights
         case let onOff as OnOffAdapter:
-            // Lightbulb → luci; Outlet reale → prese; Switch (NightMode ecc.) → switch
+            // Service-type first; then fall back to the official HomeKit category.
             let lightbulbUUID = "00000043-0000-1000-8000-0026BB765291"
             let outletUUID    = "00000047-0000-1000-8000-0026BB765291"
             let switchUUID    = "00000049-0000-1000-8000-0026BB765291"
+            let fanV2UUID     = "000000B7-0000-1000-8000-0026BB765291"
+            let fanV1UUID     = "00000040-0000-1000-8000-0026BB765291"
             let services = onOff.accessory.services
             if services.contains(where: { $0.serviceType == lightbulbUUID }) { return .lights }
             if services.contains(where: { $0.serviceType == outletUUID    }) { return .outlets }
             if services.contains(where: { $0.serviceType == switchUUID    }) { return .switches }
-            return .others
+            if services.contains(where: { $0.serviceType == fanV2UUID || $0.serviceType == fanV1UUID }) { return .air }
+            return categoryFromHomeKit(onOff.accessory)
         case is WindowCoveringAdapter:       return .windowCoverings
         case is ThermostatAdapter:           return .climate
         case is LegacyThermostatAdapter:     return .climate

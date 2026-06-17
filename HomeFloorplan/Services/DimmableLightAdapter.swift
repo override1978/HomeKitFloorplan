@@ -14,6 +14,10 @@ final class DimmableLightAdapter: AccessoryAdapter {
     private let brightnessCharacteristic: HMCharacteristic
     
     init?(accessory: HMAccessory, homeKit: HomeKitService) {
+        guard accessory.services.contains(where: { $0.serviceType == HMServiceTypeLightbulb })
+                || accessory.category.categoryType == HMAccessoryCategoryTypeLightbulb
+        else { return nil }
+        
         guard let brightness = AccessoryAdapterFactory.findCharacteristic(
             in: accessory, type: HMCharacteristicTypeBrightness
         ) else { return nil }
@@ -44,7 +48,7 @@ final class DimmableLightAdapter: AccessoryAdapter {
     }
     
     var supportsQuickToggle: Bool {
-        (powerCharacteristic != nil) && accessory.isReachable
+        (powerCharacteristic != nil) && homeKit.isReachable(accessory)
     }
     
     var primaryStatusText: String? { nil }

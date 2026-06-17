@@ -71,9 +71,9 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
     }
     
     var isOn: Bool { currentMode != .off && (heaterCoolerState == 2 || heaterCoolerState == 3) }
-    var supportsQuickToggle: Bool { true }
+    var supportsQuickToggle: Bool { false }
     var primaryStatusText: String? {
-        guard accessory.isReachable else { return nil }
+        guard homeKit.isReachable(accessory) else { return nil }
         let display = celsiusToDisplay(currentTemperature)
         return String(format: "%.0f%@", display, displayUnit.symbol)
     }

@@ -69,6 +69,9 @@ struct HomeKitDebugAccessoryDetail: View {
             kvRow("UUID", accessory.uniqueIdentifier.uuidString)
             kvRow("Categoria (raw)", accessory.category.categoryType)
             kvRow("Categoria (display)", accessory.category.localizedDescription)
+            kvRow("Adapter", adapterName)
+            kvRow("Categoria UI", uiCategory.displayName)
+            kvRow("Categoria AI", AccessoryCategorizer.categorize(accessory))
             kvRow("Stanza", accessory.room?.name ?? "—")
             // HMCharacteristicTypeManufacturer/Model/FirmwareVersion/SerialNumber sono
             // deprecated da iOS 11 ma restano funzionali; soppressiamo i warning qui
@@ -196,6 +199,9 @@ struct HomeKitDebugAccessoryDetail: View {
         out.append("UUID: \(accessory.uniqueIdentifier)")
         out.append("Category raw: \(accessory.category.categoryType)")
         out.append("Category display: \(accessory.category.localizedDescription)")
+        out.append("Adapter: \(adapterName)")
+        out.append("UI category: \(uiCategory.rawValue)")
+        out.append("AI category: \(AccessoryCategorizer.categorize(accessory))")
         out.append("Room: \(accessory.room?.name ?? "—")")
         out.append("Manufacturer: \(accessoryInfoValue(for: "00000020-0000-1000-8000-0026BB765291") ?? "—")")
         out.append("Model: \(accessoryInfoValue(for: "00000021-0000-1000-8000-0026BB765291") ?? "—")")
@@ -231,5 +237,20 @@ struct HomeKitDebugAccessoryDetail: View {
             return "—"
         }
         return mapped ? "sì" : "no"
+    }
+    
+    @MainActor
+    private var adapter: any AccessoryAdapter {
+        AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+    }
+    
+    @MainActor
+    private var adapterName: String {
+        String(describing: type(of: adapter))
+    }
+    
+    @MainActor
+    private var uiCategory: AccessoryCategory {
+        AccessoryCategory.classify(adapter: adapter)
     }
 }
