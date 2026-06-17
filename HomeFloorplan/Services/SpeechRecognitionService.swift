@@ -13,11 +13,35 @@ final class SpeechRecognitionService: NSObject, SFSpeechRecognizerDelegate {
 
     enum PermissionState { case undetermined, authorized, denied }
 
+    enum SpeechRecognitionError: LocalizedError {
+        case alreadyRecording
+        case permissionsDenied
+        case recognizerUnavailable
+        case audioInputUnavailable
+        case startFailed(Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .alreadyRecording:
+                return String(localized: "speech.error.alreadyRecording", defaultValue: "Recording is already active.")
+            case .permissionsDenied:
+                return String(localized: "speech.error.permissionsDenied", defaultValue: "Microphone or speech recognition permission is disabled.")
+            case .recognizerUnavailable:
+                return String(localized: "speech.error.recognizerUnavailable", defaultValue: "Speech recognition is currently unavailable.")
+            case .audioInputUnavailable:
+                return String(localized: "speech.error.audioInputUnavailable", defaultValue: "No usable microphone input is available.")
+            case .startFailed(let error):
+                return error.localizedDescription
+            }
+        }
+    }
+
     // MARK: - Observed state
 
     private(set) var isRecording:     Bool            = false
     private(set) var transcript:      String          = ""
     private(set) var permissionState: PermissionState = .undetermined
+    private(set) var errorMessage:    String?
 
     var isAvailable: Bool { recognizer?.isAvailable == true }
 
@@ -27,7 +51,9 @@ final class SpeechRecognitionService: NSObject, SFSpeechRecognizerDelegate {
     private var recognitionReq:  SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
-    private var didPreWarm = false
+    private let audioQueue = DispatchQueue(label: "com.homefloorplan.speech.audio", qos: .userInitiated)
+    private var hasInstalledTap = false
+    private var isStarting = false
 
     // MARK: - Init
 
@@ -42,10 +68,6 @@ final class SpeechRecognitionService: NSObject, SFSpeechRecognizerDelegate {
         super.init()
         recognizer?.delegate = self
         refreshPermissionState()
-        if permissionState == .authorized {
-            didPreWarm = true
-            preWarmAudio()
-        }
     }
 
     // MARK: - Permissions
@@ -75,94 +97,132 @@ final class SpeechRecognitionService: NSObject, SFSpeechRecognizerDelegate {
             }
         }
         refreshPermissionState()
-        if permissionState == .authorized && !didPreWarm {
-            didPreWarm = true
-            preWarmAudio()
-        }
-    }
-
-    /// Pre-warms both audio hardware and the on-device speech model so the first mic tap is instant.
-    private func preWarmAudio() {
-        // Audio hardware: setActive blocks ~100-400 ms — keep it off the main thread.
-        DispatchQueue.global(qos: .utility).async {
-            let session = AVAudioSession.sharedInstance()
-            try? session.setCategory(.record, mode: .measurement, options: .duckOthers)
-            try? session.setActive(true, options: .notifyOthersOnDeactivation)
-            try? session.setActive(false, options: .notifyOthersOnDeactivation)
-        }
-        // Speech model: recognitionTask(with:) must run on main actor. First call loads
-        // the model (~200-500 ms). Create and immediately cancel a dummy task here so
-        // the model is resident by the time the user taps the mic.
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let req = SFSpeechAudioBufferRecognitionRequest()
-            let t = self.recognizer?.recognitionTask(with: req) { _, _ in }
-            t?.cancel()
-            req.endAudio()
-        }
     }
 
     // MARK: - Recording
 
     func startRecording() async throws {
-        recognitionTask?.cancel(); recognitionTask = nil
-        recognitionReq?.endAudio(); recognitionReq = nil
+        guard permissionState == .authorized else { throw SpeechRecognitionError.permissionsDenied }
+        guard let recognizer, recognizer.isAvailable else { throw SpeechRecognitionError.recognizerUnavailable }
+
         transcript = ""
+        errorMessage = nil
+        isRecording = true
 
-        let req = SFSpeechAudioBufferRecognitionRequest()
-        req.shouldReportPartialResults = true
-        recognitionReq = req
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
 
-        // All audio setup on a background queue:
-        // • AVAudioSession.setActive() blocks ~100-400 ms
-        // • inputNode first access initialises hardware (~50-200 ms on first call)
-        // • AVAudioEngine.start() is also blocking
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                guard let self else { cont.resume(); return }
-                do {
-                    let session = AVAudioSession.sharedInstance()
-                    try session.setCategory(.record, mode: .measurement, options: .duckOthers)
-                    try session.setActive(true, options: .notifyOthersOnDeactivation)
-                    let node   = self.audioEngine.inputNode
-                    let format = node.outputFormat(forBus: 0)
-                    node.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-                        self?.recognitionReq?.append(buffer)
+        do {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                audioQueue.async { [weak self] in
+                    guard let self else {
+                        cont.resume(throwing: SpeechRecognitionError.recognizerUnavailable)
+                        return
                     }
-                    self.audioEngine.prepare()
-                    try self.audioEngine.start()
-                    cont.resume()
-                } catch {
-                    cont.resume(throwing: error)
+
+                    guard !self.isStarting, !self.audioEngine.isRunning else {
+                        cont.resume(throwing: SpeechRecognitionError.alreadyRecording)
+                        return
+                    }
+
+                    self.isStarting = true
+                    self.cleanupOnAudioQueue(deactivateSession: false)
+
+                    do {
+                        self.recognitionReq = request
+
+                        let session = AVAudioSession.sharedInstance()
+                        try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
+                        try session.setActive(true, options: .notifyOthersOnDeactivation)
+
+                        let node = self.audioEngine.inputNode
+                        let format = node.outputFormat(forBus: 0)
+                        guard format.sampleRate > 0, format.channelCount > 0 else {
+                            throw SpeechRecognitionError.audioInputUnavailable
+                        }
+
+                        node.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+                            request.append(buffer)
+                        }
+                        self.hasInstalledTap = true
+
+                        self.audioEngine.prepare()
+                        try self.audioEngine.start()
+                        self.isStarting = false
+                        cont.resume()
+                    } catch let speechError as SpeechRecognitionError {
+                        self.isStarting = false
+                        self.cleanupOnAudioQueue(deactivateSession: true)
+                        cont.resume(throwing: speechError)
+                    } catch {
+                        self.isStarting = false
+                        self.cleanupOnAudioQueue(deactivateSession: true)
+                        cont.resume(throwing: SpeechRecognitionError.startFailed(error))
+                    }
                 }
             }
-        }
 
-        // recognitionTask(with:) must run on main actor — first call loads the on-device
-        // speech model; the pre-warm in preWarmAudio() ensures this has already happened
-        // before the user taps the mic.
-        recognitionTask = recognizer?.recognitionTask(with: req) { [weak self] result, error in
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                if let result { self.transcript = result.bestTranscription.formattedString }
-                if error != nil || result?.isFinal == true { self.stopRecording() }
+            recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    if let result {
+                        self.transcript = result.bestTranscription.formattedString
+                    }
+                    if error != nil || result?.isFinal == true {
+                        self.stopRecording()
+                    }
+                }
             }
+        } catch {
+            isRecording = false
+            throw error
         }
-        isRecording = true
     }
 
     func stopRecording() {
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        recognitionReq?.endAudio(); recognitionReq = nil
-        recognitionTask?.cancel();  recognitionTask = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        isRecording = false
+        audioQueue.async { [weak self] in
+            guard let self else { return }
+            self.isStarting = false
+            self.cleanupOnAudioQueue(deactivateSession: true)
+            DispatchQueue.main.async { [weak self] in
+                self?.isRecording = false
+            }
+        }
+    }
+
+    func clearError() {
+        errorMessage = nil
+    }
+
+    func setError(_ error: Error) {
+        errorMessage = error.localizedDescription
+    }
+
+    private func cleanupOnAudioQueue(deactivateSession: Bool) {
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        if hasInstalledTap {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            hasInstalledTap = false
+        }
+        recognitionReq?.endAudio()
+        recognitionReq = nil
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        if deactivateSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     // MARK: - SFSpeechRecognizerDelegate
 
     func speechRecognizer(_ speechRecognizer: SFSpeechRecognizer, availabilityDidChange available: Bool) {
-        if !available && isRecording { stopRecording() }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if !available && self.isRecording {
+                self.stopRecording()
+            }
+        }
     }
 }

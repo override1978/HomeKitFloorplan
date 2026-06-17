@@ -23,6 +23,10 @@ final class SmartLightingEngine {
     var lastEvaluationAt: Date?
     var lastEvaluationLog: String = "Mai valutato"
 
+    /// Traccia quando il motore ha attivato una scena per profilo (in-memory, reset al rilancio).
+    /// Usato per spegnere le luci quando il lux risale sopra soglia dopo il cooldown.
+    private var engineActivatedAt: [UUID: Date] = [:]
+
     var isGloballyEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: "smartLighting.globalEnabled") }
         set { UserDefaults.standard.set(newValue, forKey: "smartLighting.globalEnabled") }
@@ -87,11 +91,29 @@ final class SmartLightingEngine {
                 }
             }
 
-            // Lux bypass: se c'è ancora abbastanza luce naturale, non fare nulla
+            // Lux bypass: se c'è ancora abbastanza luce naturale, non fare nulla.
+            // Se il motore aveva acceso le luci e il cooldown (20 min) è scaduto,
+            // attiva la scena off configurata (se presente).
             if profile.luxBypassThreshold > 0 {
                 if let lux = readLux(for: profile, in: home) {
                     if lux > profile.luxBypassThreshold {
-                        log.append("• \(profile.roomName): \(Int(lux)) lx > soglia \(Int(profile.luxBypassThreshold)) lx — luce naturale sufficiente, skip")
+                        if let activatedAt = engineActivatedAt[profile.id],
+                           now.timeIntervalSince(activatedAt) >= 20 * 60 {
+                            let offName = profile.luxOffSceneName ?? ""
+                            if !offName.isEmpty,
+                               let offScene = availableScenes.first(where: {
+                                   $0.name.lowercased() == offName.lowercased()
+                               }) {
+                                try? await scenesService.run(offScene)
+                                log.append("• \(profile.roomName): \(Int(lux)) lx > soglia — '\(offName)' attivata (luce rientrata)")
+                            } else {
+                                log.append("• \(profile.roomName): \(Int(lux)) lx > soglia — luce rientrata, nessuna scena off configurata")
+                            }
+                            engineActivatedAt.removeValue(forKey: profile.id)
+                            markDeactivated(profileID: profile.id, at: now)
+                        } else {
+                            log.append("• \(profile.roomName): \(Int(lux)) lx > soglia — luce naturale sufficiente, skip")
+                        }
                         continue
                     }
                     log.append("• \(profile.roomName): \(Int(lux)) lx (sotto soglia, procedo)")
@@ -139,6 +161,7 @@ final class SmartLightingEngine {
             do {
                 try await scenesService.run(scene)
                 markApplied(profileID: profile.id, phase: phase, at: now)
+                engineActivatedAt[profile.id] = now
                 log.append("• \(profile.roomName): ✅ '\(sceneName)' attivata (\(phase.displayName))")
             } catch {
                 log.append("• \(profile.roomName): ❌ \(error.localizedDescription)")
@@ -258,6 +281,14 @@ final class SmartLightingEngine {
         guard let idx = profiles.firstIndex(where: { $0.id == profileID }) else { return }
         profiles[idx].lastAppliedPhase = phase.rawValue
         profiles[idx].lastAppliedAt   = date
+        saveProfiles()
+    }
+
+    /// Aggiorna lastAppliedAt senza cambiare la fase, così il cooldown di riattivazione
+    /// riparte dal momento dello spegnimento e previene cicli rapidi accendi/spegni.
+    private func markDeactivated(profileID: UUID, at date: Date) {
+        guard let idx = profiles.firstIndex(where: { $0.id == profileID }) else { return }
+        profiles[idx].lastAppliedAt = date
         saveProfiles()
     }
 

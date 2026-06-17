@@ -290,20 +290,6 @@ final class ToolDispatcher {
             ]
         ),
         ToolSchema(
-            name: "getUsage",
-            description: "Restituisce le ore di utilizzo dei dispositivi energivori (luci, prese, ecc.) oggi e nell'ultima settimana.",
-            inputSchema: [
-                "type": "object",
-                "properties": [
-                    "room": [
-                        "type": "string",
-                        "description": "Filtro stanza opzionale. Ometti per tutti i dispositivi."
-                    ]
-                ],
-                "required": []
-            ]
-        ),
-        ToolSchema(
             name: "getSecurityState",
             description: "Restituisce lo stato del sistema di sicurezza: allarme, serrature chiuse/aperte, sensori di contatto.",
             inputSchema: [
@@ -663,7 +649,6 @@ final class ToolDispatcher {
         case "getRoomState":       return getRoomState(input: input)
         case "listAccessories":    return listAccessories(input: input)
         case "getHistory":         return await getHistory(input: input)
-        case "getUsage":           return await getUsage(input: input)
         case "getSecurityState":   return getSecurityState(input: input)
         case "getHabits":          return getHabits(input: input)
         case "getOutdoor":         return getOutdoor(input: input)
@@ -676,7 +661,7 @@ final class ToolDispatcher {
         case "getLightingStatus":   return getLightingStatus(input: input)
         case "configureLighting":   return configureLighting(input: input)
         default:
-            return "Tool '\(toolName)' non riconosciuto. Tool disponibili: readSensor, getRoomState, listAccessories, getHistory, getUsage, getSecurityState, getHabits, getOutdoor, controlAccessory, proposeAction, chooseAccessory, proposeOpportunity, createScene, listScenes, getLightingStatus, configureLighting."
+            return "Tool '\(toolName)' non riconosciuto. Tool disponibili: readSensor, getRoomState, listAccessories, getHistory, getSecurityState, getHabits, getOutdoor, controlAccessory, proposeAction, chooseAccessory, proposeOpportunity, createScene, listScenes, getLightingStatus, configureLighting."
         }
     }
 
@@ -848,34 +833,6 @@ final class ToolDispatcher {
         }
 
         return lines.joined(separator: "\n")
-    }
-
-    // MARK: - getUsage
-
-    private func getUsage(input: [String: Any]) async -> String {
-        let roomFilter = input["room"] as? String
-
-        let records = await EnergyUsageTracker.analyze(modelContainer: modelContainer)
-
-        let filtered: [EnergyUsageRecord]
-        if let room = roomFilter {
-            let needle = room.lowercased()
-            filtered = records.filter { $0.roomName.lowercased().contains(needle) }
-        } else {
-            filtered = records
-        }
-
-        if filtered.isEmpty {
-            return "Nessun dato di utilizzo disponibile\(roomFilter.map { " per '\($0)'" } ?? "")."
-        }
-
-        let lines = filtered.prefix(15).map { r -> String in
-            let status = r.isCurrentlyOn ? "acceso" : "spento"
-            return "- \(r.accessoryName) [\(r.roomName)]: oggi \(String(format: "%.1f", r.totalHoursToday))h, settimana \(String(format: "%.1f", r.totalHoursWeek))h — ora \(status)"
-        }.joined(separator: "\n")
-        let more = filtered.count > 15 ? "\n(+ altri \(filtered.count - 15) dispositivi)" : ""
-
-        return "Utilizzo dispositivi:\n" + lines + more
     }
 
     // MARK: - getSecurityState

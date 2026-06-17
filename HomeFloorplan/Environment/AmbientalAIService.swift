@@ -162,6 +162,12 @@ final class AmbientalAIService {
         insights.contains { $0.roomName == roomName && $0.isVisible }
     }
 
+    /// Clears all per-room analysis gates, forcing the next analyzeRooms call to re-analyse
+    /// every room regardless of when it was last analysed. Use before a manual refresh.
+    func clearAnalysisGates() {
+        lastAnalysisByRoom.removeAll()
+    }
+
     /// Called by SensorEventRouter on high-priority sensor events.
     /// Resets the 15-min gate for `roomName` so the next analyzeRooms call includes it immediately.
     /// Rate-limited to once every 5 minutes per room to prevent alert storms.

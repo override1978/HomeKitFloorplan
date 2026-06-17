@@ -60,8 +60,8 @@ enum EnvironmentalAlertBuilder {
         guard group.count >= 2, let first = group.first else { return nil }
 
         let type    = first.serviceType
-        // Boolean sensors (smoke, CO in alert mode) are handled separately
-        guard !type.isBooleanAlert else { return nil }
+        // Boolean sensors (smoke, CO in alert mode) and display-only types are handled separately
+        guard !type.isBooleanAlert, type != .lightSensor else { return nil }
 
         let season  = CalendarSeason.current
         let sorted  = group.sorted { $0.timestamp < $1.timestamp }

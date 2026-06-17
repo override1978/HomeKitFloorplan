@@ -125,9 +125,9 @@ struct ContentView: View {
                 if showChatPanel {
                     ChatBotView()
                         .frame(width: 400, height: chatPanelHeight)
-                        .background(Color(.systemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .shadow(color: .black.opacity(0.22), radius: 20, x: -4, y: 8)
+                        .background(.regularMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .shadow(color: .black.opacity(0.18), radius: 28, x: -4, y: 10)
                         .padding(.top, 20)
                         .padding(.trailing, 20)
                         .ignoresSafeArea(.keyboard)

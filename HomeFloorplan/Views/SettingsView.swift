@@ -1,6 +1,5 @@
 import SwiftUI
 import HomeKit
-import SwiftData
 import CoreLocation
 
 struct SettingsView: View {
@@ -8,7 +7,6 @@ struct SettingsView: View {
     @Environment(OnboardingService.self)    private var onboarding
     @Environment(WeatherKitService.self)    private var weatherKit
     @Environment(SmartLightingEngine.self)  private var smartLightingEngine
-    @Environment(\.modelContext) private var modelContext
 
     @AppStorage(MarkerSize.appStorageKey)
     private var markerSizeRaw: String = MarkerSize.regular.rawValue
@@ -21,17 +19,9 @@ struct SettingsView: View {
     @AppStorage("idleTimeout")
     private var idleTimeoutSeconds: Double = 90
 
-    /// Nome esatto della stanza HomeKit che rappresenta il sensore outdoor.
-    /// Usato dal banner esterno nella Dashboard Ambientale e (futuro) nel Floorplan.
-    @AppStorage("outdoorRoomName")
-    private var outdoorRoomName: String = ""
-
     /// Unità di misura temperatura (celsius / fahrenheit).
     @AppStorage(TemperatureUnit.appStorageKey)
     private var temperatureUnitRaw: String = TemperatureUnit.celsius.rawValue
-
-    /// Stanze distinte presenti in SwiftData, caricate all'apertura della view.
-    @State private var availableRooms: [String] = []
 
     // MARK: - Home Location state
     @State private var showsLocationPicker = false
@@ -112,29 +102,15 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.menu)
 
-                // Stanza outdoor
-                if availableRooms.isEmpty {
-                    HStack(spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .foregroundStyle(.secondary)
-                        Text(String(localized: "settings.environment.noReadings", defaultValue: "No readings available. Go to the Environment Dashboard to sample sensors."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Picker(selection: $outdoorRoomName) {
-                        Text(String(localized: "settings.environment.outdoorRoom.none", defaultValue: "None")).tag("")
-                        ForEach(availableRooms, id: \.self) { room in
-                            Text(room).tag(room)
-                        }
-                    } label: {
-                        Label(String(localized: "settings.environment.outdoorRoom", defaultValue: "Outdoor room"), systemImage: "cloud.sun")
-                    }
+                NavigationLink {
+                    EnvironmentSettingsView()
+                } label: {
+                    Label(String(localized: "settings.environment.settings.link",
+                                 defaultValue: "Environment Settings"),
+                          systemImage: "leaf")
                 }
             } header: {
                 Text(String(localized: "settings.environment.header", defaultValue: "Environment"))
-            } footer: {
-                Text(String(localized: "settings.environment.footer", defaultValue: "Select the HomeKit room for the outdoor sensor (e.g. external Netatmo module). Used by the weather banner in the Environment Dashboard."))
             }
 
             // MARK: - Posizione casa (WeatherKit)
@@ -181,14 +157,6 @@ struct SettingsView: View {
 
             Section {
                 NavigationLink {
-                    EnvironmentNotificationsSettingsView()
-                } label: {
-                    Label(String(localized: "settings.notifications.environment.link",
-                                 defaultValue: "Environment Notifications"),
-                          systemImage: "leaf")
-                }
-
-                NavigationLink {
                     SecurityNotificationsSettingsView()
                 } label: {
                     Label(String(localized: "settings.notifications.security.link",
@@ -197,9 +165,6 @@ struct SettingsView: View {
                 }
             } header: {
                 Text(String(localized: "settings.notifications.header", defaultValue: "Notifications"))
-            } footer: {
-                Text(String(localized: "settings.notifications.footer",
-                            defaultValue: "Configure environmental alerts (temperature, humidity, air thresholds) and security notifications (alarm, smoke, CO, water) separately."))
             }
 
             // MARK: - Intelligenza Artificiale
@@ -256,7 +221,6 @@ struct SettingsView: View {
         }
         .navigationTitle(String(localized: "settings.title", defaultValue: "Settings"))
         .navigationBarTitleDisplayMode(.large)
-        .onAppear { loadAvailableRooms() }
         .sheet(isPresented: $showsLocationPicker) {
             let lat = UserDefaults.standard.double(forKey: LocationPresenceService.homeLatKey)
             let lon = UserDefaults.standard.double(forKey: LocationPresenceService.homeLonKey)
@@ -318,13 +282,6 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Carica stanze da SwiftData
-
-    private func loadAvailableRooms() {
-        let all = (try? modelContext.fetch(FetchDescriptor<SensorReading>())) ?? []
-        availableRooms = Array(Set(all.map(\.roomName))).sorted()
-    }
-    
     // MARK: - HomeKit section
     
     @ViewBuilder

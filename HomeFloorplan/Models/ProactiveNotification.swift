@@ -7,7 +7,6 @@ enum NotificationCategory: String, Codable, CaseIterable {
     case environment          = "environment"
     case comfort              = "comfort"
     case security             = "security"
-    case energy               = "energy"
     case lighting             = "lighting"
     case presence             = "presence"
     case hvac                 = "hvac"
@@ -25,7 +24,6 @@ enum NotificationCategory: String, Codable, CaseIterable {
         case .environment:           return "thermometer.medium"
         case .comfort:               return "bed.double.fill"
         case .security:              return "lock.shield.fill"
-        case .energy:                return "bolt.fill"
         case .lighting:              return "lightbulb.fill"
         case .presence:              return "person.fill.viewfinder"
         case .hvac:                  return "air.conditioner.horizontal.fill"
@@ -45,7 +43,7 @@ enum NotificationCategory: String, Codable, CaseIterable {
         case .security, .deviceHealth:                               return .high
         case .maintenance:                                            return .high
         case .environment, .hvac, .presence, .automationOpportunity: return .medium
-        case .comfort, .energy, .lighting, .scenes, .behavioralAI:   return .low
+        case .comfort, .lighting, .scenes, .behavioralAI:             return .low
         case .learning, .aiDiscovery:                                 return .info
         case .weather:                                                return .low
         }
@@ -57,7 +55,6 @@ enum NotificationCategory: String, Codable, CaseIterable {
         case .environment:           return "blue"
         case .comfort:               return "purple"
         case .security:              return "red"
-        case .energy:                return "yellow"
         case .lighting:              return "amber"
         case .presence:              return "teal"
         case .hvac:                  return "orange"
@@ -77,7 +74,6 @@ enum NotificationCategory: String, Codable, CaseIterable {
         case .environment:           return String(localized: "notif.cat.environment",    defaultValue: "Environment")
         case .comfort:               return String(localized: "notif.cat.comfort",        defaultValue: "Comfort")
         case .security:              return String(localized: "notif.cat.security",       defaultValue: "Security")
-        case .energy:                return String(localized: "notif.cat.energy",         defaultValue: "Energy")
         case .lighting:              return String(localized: "notif.cat.lighting",       defaultValue: "Lighting")
         case .presence:              return String(localized: "notif.cat.presence",       defaultValue: "Presence")
         case .hvac:                  return String(localized: "notif.cat.hvac",           defaultValue: "Climate")

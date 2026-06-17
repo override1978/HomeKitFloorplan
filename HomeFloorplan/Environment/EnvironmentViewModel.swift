@@ -18,6 +18,7 @@ private struct RawSensorThreshold: Sendable {
     let roomName: String?
     let warningValue: Double
     let dangerValue: Double
+    let isEnabled: Bool
 }
 
 // MARK: - SensorUrgency
@@ -86,6 +87,7 @@ struct SensorData: Identifiable {
     var accessoryUUID: String { accessoryUUIDs.first ?? "" }
 
     var urgency: SensorUrgency {
+        guard serviceType != .lightSensor else { return .normal }
         if currentValue >= dangerThreshold  { return .danger }
         if currentValue >= warningThreshold { return .warning }
         return .normal
@@ -307,7 +309,7 @@ final class EnvironmentViewModel {
 
                 // Estraiamo subito value-type Sendable per evitare di passare @Model tra attori
                 let r = fetchedReadings.map { RawSensorReading(accessoryUUID: $0.accessoryUUID, serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, value: $0.value, timestamp: $0.timestamp) }
-                let t = fetchedThresholds.map { RawSensorThreshold(serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, warningValue: $0.warningValue, dangerValue: $0.dangerValue) }
+                let t = fetchedThresholds.map { RawSensorThreshold(serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, warningValue: $0.warningValue, dangerValue: $0.dangerValue, isEnabled: $0.isEnabled) }
                 return (r, t)
             }.value
 
@@ -333,8 +335,8 @@ final class EnvironmentViewModel {
                       let serviceType = SensorServiceType(rawValue: first.serviceTypeRaw) else { continue }
                 let roomName = first.roomName
 
-                let threshold = rawThresholds.first(where: { $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == roomName })
-                    ?? rawThresholds.first(where: { $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == nil })
+                let threshold = rawThresholds.first(where: { $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == roomName && $0.isEnabled })
+                    ?? rawThresholds.first(where: { $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == nil && $0.isEnabled })
 
                 let aggregatedValue: Double
                 if serviceType.isBooleanAlert || serviceType == .airQuality {
@@ -359,10 +361,17 @@ final class EnvironmentViewModel {
             }
 
             // 4. Costruisce RoomEnvironmentData e ordina
-            let roomData = byRoom.map { roomName, sensors -> RoomEnvironmentData in
-                RoomEnvironmentData(id: UUID(), roomName: roomName, sensors: sensors.sorted { $0.urgency > $1.urgency })
-            }
-            .sorted { $0.worstUrgency > $1.worstUrgency }
+            // Esclude la stanza sintetica outdoor (UUID "weather.outdoor") — i dati meteo
+            // sono mostrati nell'OutdoorBannerView tramite WeatherKitService.
+            let outdoorUUID = "weather.outdoor"
+            let roomData = byRoom
+                .filter { _, sensors in
+                    !sensors.allSatisfy { $0.accessoryUUIDs == [outdoorUUID] }
+                }
+                .map { roomName, sensors -> RoomEnvironmentData in
+                    RoomEnvironmentData(id: UUID(), roomName: roomName, sensors: sensors.sorted { $0.urgency > $1.urgency })
+                }
+                .sorted { $0.worstUrgency > $1.worstUrgency }
 
             // 5. Applica ordinamento utente
             let orderNames = customOrderNames

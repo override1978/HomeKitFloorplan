@@ -130,19 +130,7 @@ final class ProactiveIntelligenceService {
         // 5. Learning milestones
         await processLearningMilestones(behavioralService: behavioralService)
 
-        // 6. Occupancy prediction — HVAC warm-up suggestion
-        if let occ = occupancyService,
-           occ.shouldSuggestHVACWarmUp(presenceState: context.presenceState),
-           let pred = occ.nextArrival {
-            await processOccupancyPrediction(pred, context: context)
-        }
-
-        // 6.5 (Sprint 29): Arrival automation suggestion — "Vuoi che le luci si accendano al tuo arrivo?"
-        if let occ = occupancyService, !context.suppressNonCritical {
-            processArrivalAutomationSuggestion(occ)
-        }
-
-        // 7. Predictive environmental alerts (pattern-based, before-the-fact)
+        // 6. Predictive environmental alerts (pattern-based, before-the-fact)
         if !context.suppressNonCritical {
             let recurrence = EnvironmentalPatternAnalyzer.loadPatterns()
             let predictive = PredictiveAlertBuilder.build(patterns: recurrence)
@@ -164,18 +152,7 @@ final class ProactiveIntelligenceService {
             }
         }
 
-        // 10. Energy anomalies (Sprint 30) — user-ignored accessories are filtered out
-        if !context.suppressNonCritical {
-            let energySignals = await EnergyInsightBuilder.buildFromStore(
-                modelContainer: modelContainer,
-                ignoredIDs: EnergyIgnoreStore.ignoredIDs
-            )
-            for sig in energySignals where sig.score.composite >= deliveryThreshold {
-                await processEnergyAnomaly(sig, context: context)
-            }
-        }
-
-        // 11. Weather prediction (Sprint 31) — morning-only, next-day extremes
+        // 10. Weather prediction (Sprint 31) — morning-only, next-day extremes
         if !context.suppressNonCritical, let weather = weatherService {
             await processWeatherPrediction(weatherService: weather, context: context)
         }
@@ -452,129 +429,6 @@ final class ProactiveIntelligenceService {
         // Maintenance alerts are low-priority — no system notification needed
     }
 
-    private func processOccupancyPrediction(_ pred: ArrivalPrediction, context: ContextSnapshot) async {
-        let key = "occupancy|hvac|arrival"
-        let score = IntelligenceScore(
-            relevance: 0.80, confidence: min(1.0, pred.meanMinuteOfDay > 0 ? 0.70 : 0.30),
-            urgency: 0.70, actionability: 1.00, novelty: 0.60
-        )
-        guard score.composite >= deliveryThreshold else { return }
-        if let existing = findLive(semanticKey: key) {
-            existing.recommendation = String(localized: "notif.occupancy.rec",
-                defaultValue: "Turn on heating/cooling now to arrive home at the right temperature.")
-            existing.whyExplanation = String(format:
-                String(localized: "notif.occupancy.why",
-                       defaultValue: "Based on your return-home patterns. Confidence: %@."),
-                pred.confidenceLabel)
-            return
-        }
-
-        let arrivalFmt = DateFormatter()
-        arrivalFmt.timeStyle = .short
-        let arrivalStr = arrivalFmt.string(from: pred.estimatedArrival)
-        let minutes    = Int(pred.estimatedArrival.timeIntervalSinceNow / 60)
-
-        let notif = ProactiveNotification(
-            category:    .hvac,
-            priority:    .medium,
-            semanticKey: key,
-            headline:    String(localized: "notif.occupancy.headline",
-                                defaultValue: "Arrival Expected Soon"),
-            body:        String(format:
-                String(localized: "notif.occupancy.body",
-                       defaultValue: "Estimated arrival %@ (in ~%d min). Pre-heat your home?"),
-                arrivalStr, minutes),
-            recommendation: String(localized: "notif.occupancy.rec",
-                defaultValue: "Turn on heating/cooling now to arrive home at the right temperature."),
-            whyExplanation: String(format:
-                String(localized: "notif.occupancy.why",
-                       defaultValue: "Based on your return patterns. Confidence: %@."),
-                pred.confidenceLabel),
-            score: score
-        )
-        notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-        modelContainer.mainContext.insert(notif)
-        if checkRateLimit(priority: .medium, category: .hvac) {
-            await NotificationDeliveryOrchestrator.deliver(notif, context: context)
-        }
-    }
-
-    /// Sprint 29: surfaces a suggestion asking whether the user wants arrival-triggered automation.
-    /// One notification per qualifying weekday pattern (keyed by weekday), limited to the
-    /// most-confident pattern per cycle to avoid notification spam.
-    private func processArrivalAutomationSuggestion(_ occupancyService: OccupancyPredictionService) {
-        let eligible = occupancyService.patterns.filter {
-            $0.sampleCount >= 5 && $0.confidence >= 0.60
-        }
-        guard let pattern = eligible.max(by: { $0.confidence < $1.confidence }) else { return }
-
-        let key = "occupancy|arrival|auto|\(pattern.weekday)"
-        guard findLive(semanticKey: key) == nil else { return }
-
-        let score = IntelligenceScore(
-            relevance:     0.80,
-            confidence:    pattern.confidence,
-            urgency:       0.15,
-            actionability: 0.90,
-            novelty:       0.85
-        )
-        guard score.composite >= deliveryThreshold else { return }
-
-        let dayName       = localizedWeekdayName(pattern.weekday)
-        let confidencePct = String(format: "%.0f%%", pattern.confidence * 100)
-        let notif = ProactiveNotification(
-            category:    .automationOpportunity,
-            priority:    .low,
-            semanticKey: key,
-            headline:    String(localized: "notif.arrivalAuto.headline",
-                                defaultValue: "Suggested Arrival Automation"),
-            body: String(format:
-                String(localized: "notif.arrivalAuto.body",
-                       defaultValue: "You usually arrive on %1$@ at %2$@. Would you like the lights to turn on automatically when you get home?"),
-                dayName, pattern.formattedMeanTime),
-            whyExplanation: String(format:
-                String(localized: "notif.arrivalAuto.why",
-                       defaultValue: "Pattern detected in %1$d arrivals, confidence %2$@."),
-                pattern.sampleCount, confidencePct),
-            score: score
-        )
-        notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-        modelContainer.mainContext.insert(notif)
-    }
-
-    // MARK: - Sprint 30: Energy Anomaly
-
-    private func processEnergyAnomaly(_ signal: EnergySignal, context: ContextSnapshot) async {
-        let key = signal.semanticKey
-        if let existing = findLive(semanticKey: key) {
-            existing.body           = EnergyInsightBuilder.body(for: signal)
-            existing.whyExplanation = EnergyInsightBuilder.whyExplanation(for: signal)
-            existing.status         = .updated
-            existing.lastUpdatedAt  = Date()
-            existing.scoreData      = try? JSONEncoder().encode(signal.score)
-        } else {
-            // Don't re-surface within 48h of a user dismiss — avoids spam for always-on devices
-            // that haven't been added to EnergyIgnoreStore yet.
-            guard !findRecentlyDismissed(semanticKey: key, withinHours: 48) else { return }
-            let notif = ProactiveNotification(
-                category:       .energy,
-                priority:       signal.score.urgency >= 0.60 ? .medium : .low,
-                semanticKey:    key,
-                headline:       EnergyInsightBuilder.headline(for: signal),
-                body:           EnergyInsightBuilder.body(for: signal),
-                recommendation: EnergyInsightBuilder.recommendation(for: signal),
-                whyExplanation: EnergyInsightBuilder.whyExplanation(for: signal),
-                score:          signal.score
-            )
-            notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-            modelContainer.mainContext.insert(notif)
-            if signal.score.urgency >= 0.60,
-               checkRateLimit(priority: .low, category: .energy) {
-                await NotificationDeliveryOrchestrator.deliver(notif, context: context)
-            }
-        }
-    }
-
     // MARK: - Sprint 31: Weather Prediction
 
     /// Surfaces a pre-cool or pre-heat suggestion when tomorrow's forecast is extreme.
@@ -770,7 +624,9 @@ final class ProactiveIntelligenceService {
             sortBy: [SortDescriptor(\.priorityRaw, order: .reverse),
                      SortDescriptor(\.lastUpdatedAt, order: .reverse)]
         )
-        liveNotifications = (try? ctx.fetch(liveDescriptor)) ?? []
+        liveNotifications = ((try? ctx.fetch(liveDescriptor)) ?? []).filter {
+            !$0.semanticKey.contains("|lightSensor") && !$0.semanticKey.hasPrefix("occupancy|")
+        }
 
         // Feed: all non-expired, sorted newest first
         let feedDescriptor = FetchDescriptor<ProactiveNotification>(
@@ -779,7 +635,9 @@ final class ProactiveIntelligenceService {
             },
             sortBy: [SortDescriptor(\.lastUpdatedAt, order: .reverse)]
         )
-        feedNotifications = (try? ctx.fetch(feedDescriptor)) ?? []
+        feedNotifications = ((try? ctx.fetch(feedDescriptor)) ?? []).filter {
+            !$0.semanticKey.contains("|lightSensor") && !$0.semanticKey.hasPrefix("occupancy|")
+        }
     }
 
     // MARK: - Helpers
@@ -808,19 +666,6 @@ final class ProactiveIntelligenceService {
             }
         )
         return (try? ctx.fetch(descriptor).isEmpty) == false
-    }
-
-    // MARK: - Energy Ignore
-
-    /// Permanently suppresses energy alerts for the device referenced by this notification,
-    /// then dismisses the notification. The accessory UUID is extracted from the semantic key
-    /// ("energy|alwaysOn|<UUID>" or "energy|runtime|<UUID>").
-    func ignoreEnergyDevice(_ notification: ProactiveNotification) {
-        let parts = notification.semanticKey.split(separator: "|")
-        if parts.count == 3, let id = UUID(uuidString: String(parts[2])) {
-            EnergyIgnoreStore.ignore(id)
-        }
-        dismiss(notification)
     }
 
     private func fetchRecentEventSignatures() async -> Set<String> {

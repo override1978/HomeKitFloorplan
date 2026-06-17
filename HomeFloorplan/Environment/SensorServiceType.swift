@@ -64,10 +64,10 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
     }
 
     /// False for types that should not generate SensorAlertThreshold entries.
-    /// Outdoor weather types are read-only log data, not user-alertable.
+    /// Outdoor weather types and light sensors are read-only / display-only — not user-alertable.
     var hasAlertThreshold: Bool {
         switch self {
-        case .outdoorTemperature, .outdoorHumidity: return false
+        case .outdoorTemperature, .outdoorHumidity, .lightSensor: return false
         default: return true
         }
     }
@@ -210,7 +210,7 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .carbonDioxide:      return 1000.0
         case .smoke:              return 1.0
         case .vocDensity:         return 500.0
-        case .lightSensor:        return 10_000.0  // 10 klux = very bright indoor
+        case .lightSensor:        return Double.greatestFiniteMagnitude  // display-only — never alert
         case .outdoorTemperature: return 100.0     // sentinel — outdoor types have no user alert
         case .outdoorHumidity:    return 100.0
         }
@@ -226,7 +226,7 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .carbonDioxide:      return 2000.0
         case .smoke:              return 1.0
         case .vocDensity:         return 1000.0
-        case .lightSensor:        return 25_000.0
+        case .lightSensor:        return Double.greatestFiniteMagnitude
         case .outdoorTemperature: return 200.0     // sentinel — outdoor types have no user alert
         case .outdoorHumidity:    return 200.0
         }

@@ -24,6 +24,7 @@ enum ChatSessionStore {
     private static let userDefaultsKey = "chatbot.lastSession"
     private static let maxMessages = 40
     private static let maxTurns = 20
+    private static let sessionTTL: TimeInterval = 45 * 60
 
     static func save(messages: [ChatMessage], turns: [ConversationTurn]) {
         guard !messages.isEmpty else { return }
@@ -44,7 +45,8 @@ enum ChatSessionStore {
     static func load() -> PersistedChatSession? {
         guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
               let session = try? JSONDecoder().decode(PersistedChatSession.self, from: data),
-              !session.isEmpty else { return nil }
+              !session.isEmpty,
+              Date().timeIntervalSince(session.savedAt) < sessionTTL else { return nil }
         return session
     }
 

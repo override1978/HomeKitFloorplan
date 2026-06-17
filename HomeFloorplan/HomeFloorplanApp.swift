@@ -187,6 +187,7 @@ struct HomeFloorplanApp: App {
 
         // Richiede permesso notifiche per gli alert ambientali
         AlertNotificationService.shared.requestAuthorization()
+
     }
 
     var body: some Scene {

@@ -65,6 +65,8 @@ struct FloorplanEditorView: View {
     /// Avoids repeated disk I/O on every body re-evaluation.
     @State private var cachedFloorplanImage: UIImage?
     @State private var cachedFloorplanImageFilename: String = ""
+    /// True while the image is being loaded from disk — prevents the "not available" state flash.
+    @State private var isLoadingImage: Bool = false
 
     /// Cached overlay context — recomputed only when HomeKit accessories change.
     @State private var cachedOverlayContext: FloorplanOverlayContext = .none
@@ -130,6 +132,10 @@ struct FloorplanEditorView: View {
                             height: effectiveOffset.height + topBarHeight / 2
                         ))
                         .gesture(zoomPanGesture(in: proxy.size))
+                        .transition(.opacity)
+                } else if isLoadingImage {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ContentUnavailableView(
                         "Immagine non disponibile",
@@ -779,11 +785,16 @@ struct FloorplanEditorView: View {
                 || cachedFloorplanImage == nil else { return }
         let filename = floorplan.imageFilename
         cachedFloorplanImageFilename = filename
+        guard !filename.isEmpty else { return }
+        isLoadingImage = true
         Task {
             let image = await Task.detached(priority: .userInitiated) {
                 ImageStorageService.load(filename: filename)
             }.value
-            cachedFloorplanImage = image
+            withAnimation(.easeIn(duration: 0.2)) {
+                cachedFloorplanImage = image
+                isLoadingImage = false
+            }
         }
     }
 

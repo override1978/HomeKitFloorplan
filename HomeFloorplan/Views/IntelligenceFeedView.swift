@@ -9,7 +9,6 @@ private enum FeedFilter: String, CaseIterable, Identifiable {
     case environment = "environment"
     case security    = "security"
     case automation  = "automation"
-    case energy      = "energy"
 
     var id: String { rawValue }
 
@@ -21,7 +20,6 @@ private enum FeedFilter: String, CaseIterable, Identifiable {
         case .environment: return String(localized: "feed.filter.environment", defaultValue: "Environment")
         case .security:    return String(localized: "feed.filter.security",    defaultValue: "Security")
         case .automation:  return String(localized: "feed.filter.automation",  defaultValue: "Automations")
-        case .energy:      return String(localized: "feed.filter.energy",      defaultValue: "Energy")
         }
     }
 
@@ -33,7 +31,6 @@ private enum FeedFilter: String, CaseIterable, Identifiable {
         case .environment: return "thermometer.medium"
         case .security:    return "lock.shield"
         case .automation:  return "wand.and.stars"
-        case .energy:      return "bolt"
         }
     }
 
@@ -45,7 +42,6 @@ private enum FeedFilter: String, CaseIterable, Identifiable {
         case .environment: return [.environment, .comfort, .hvac, .lighting, .presence, .weather].contains(notif.category)
         case .security:    return notif.category == .security || notif.category == .deviceHealth
         case .automation:  return [.automationOpportunity, .scenes].contains(notif.category)
-        case .energy:      return notif.category == .energy || notif.category == .maintenance
         }
     }
 }
@@ -212,9 +208,7 @@ struct IntelligenceFeedView: View {
                     onActedOn:      { service.markActedOn(notif) },
                     onSnooze:       { service.snooze(notif) },
                     onDismiss:      { service.dismiss(notif) },
-                    onIgnoreDevice: notif.category == .energy
-                        ? { service.ignoreEnergyDevice(notif) }
-                        : nil
+                    onIgnoreDevice: nil
                 )
                 .id(notif.id)
             }

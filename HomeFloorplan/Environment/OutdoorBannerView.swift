@@ -1,85 +1,108 @@
 import SwiftUI
-import SwiftData
 
 // MARK: - OutdoorBannerView
 //
-// Banner compatto che mostra temperatura e umidità del modulo outdoor.
-// La stanza da cercare è configurabile in Impostazioni → Ambiente → "Stanza esterna"
-// (chiave AppStorage "outdoorRoomName", default "Outdoor Module").
-// Il banner è nascosto automaticamente se il nome non è configurato o
-// non esistono letture recenti (ultimi 3 h).
+// Hero card che mostra le condizioni meteo esterne usando WeatherKitService.
+// Visibile solo quando currentWeather è disponibile (richiede posizione casa configurata).
+// Mostra: condizione, temperatura, percepita, umidità, vento, UV, previsione domani.
 
 struct OutdoorBannerView: View {
 
-    let modelContainer: ModelContainer
-    /// Nome stanza outdoor, passato dall'esterno (letto da AppStorage nel parent).
-    let roomName: String
-
-    @State private var temp: Double?
-    @State private var humidity: Double?
-    @State private var lastUpdate: Date?
+    @Environment(WeatherKitService.self) private var weatherKit
 
     var body: some View {
-        Group {
-            if !roomName.isEmpty, temp != nil || humidity != nil {
-                bannerContent
-            }
+        if let weather = weatherKit.currentWeather {
+            cardContent(weather)
         }
-        .onAppear { loadOutdoorReadings() }
-        .onChange(of: roomName) { _, _ in loadOutdoorReadings() }
     }
 
-    // MARK: - Banner UI
+    // MARK: - Card principale
 
-    private var bannerContent: some View {
-        HStack(spacing: 0) {
+    private func cardContent(_ w: WeatherSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
 
-            // Icona decorativa
-            ZStack {
-                Circle()
-                    .fill(Color.blue.opacity(0.10))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "cloud.sun.fill")
+            // ── Riga 1: icona + temp + percepita ──────────────────────
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: w.symbolName)
                     .symbolRenderingMode(.multicolor)
-                    .font(.system(size: 22))
-            }
-            .padding(.trailing, 12)
+                    .font(.system(size: 40))
+                    .frame(width: 48)
 
-            // Label + timestamp
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Esterno")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                if let date = lastUpdate {
-                    Text("Agg. \(date.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))")
-                        .font(.caption2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(format: "%.1f°", w.outdoorTemperature))
+                        .font(.system(size: 34, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    Text(String(format: String(localized: "outdoor.feelsLike",
+                                               defaultValue: "Feels like %.0f°"),
+                                w.apparentTemperature))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(String(localized: "outdoor.title", defaultValue: "Outdoor"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    if let updated = weatherKit.lastUpdated {
+                        Text(updated, format: .relative(presentation: .named, unitsStyle: .abbreviated))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
-            Spacer()
+            // ── Riga 2: pillole humidity / vento / UV ─────────────────
+            HStack(spacing: 10) {
+                weatherPill(
+                    String(format: "%.0f%%", w.outdoorHumidity * 100),
+                    icon: "humidity.fill",
+                    color: humidityColor(w.outdoorHumidity * 100)
+                )
+                weatherPill(
+                    String(format: "%.0f km/h", w.windSpeedKmh),
+                    icon: "wind",
+                    color: .cyan
+                )
+                weatherPill(
+                    "UV \(w.uvIndex)",
+                    icon: "sun.max.fill",
+                    color: uvColor(w.uvIndex)
+                )
+                Spacer()
+            }
 
-            // Pillole valori
-            HStack(spacing: 14) {
-                if let t = temp {
-                    outdoorPill(
-                        value: String(format: "%.1f°", t),
-                        icon: "thermometer.medium",
-                        color: temperatureColor(t)
-                    )
-                }
-                if let h = humidity {
-                    outdoorPill(
-                        value: String(format: "%.0f%%", h),
-                        icon: "humidity.fill",
-                        color: humidityColor(h)
-                    )
+            // ── Riga 3: previsione domani ─────────────────────────────
+            if let tmr = weatherKit.tomorrowForecast {
+                Divider()
+                HStack(spacing: 12) {
+                    Label(String(localized: "outdoor.tomorrow", defaultValue: "Tomorrow"),
+                          systemImage: "calendar")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Text(String(format: "%.0f° – %.0f°",
+                                tmr.minTemperature, tmr.maxTemperature))
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+
+                    if tmr.precipitationProbability > 0.1 {
+                        Label(String(format: "%.0f%%", tmr.precipitationProbability * 100),
+                              systemImage: "drop.fill")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                    }
+
+                    Image(systemName: tmrSymbol(tmr.condition))
+                        .symbolRenderingMode(.multicolor)
+                        .font(.system(size: 14))
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.regularMaterial)
@@ -91,14 +114,16 @@ struct OutdoorBannerView: View {
         .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
     }
 
+    // MARK: - Pill helper
+
     @ViewBuilder
-    private func outdoorPill(value: String, icon: String, color: Color) -> some View {
+    private func weatherPill(_ value: String, icon: String, color: Color) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(color)
             Text(value)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
                 .monospacedDigit()
         }
@@ -107,120 +132,31 @@ struct OutdoorBannerView: View {
         .background(color.opacity(0.10), in: Capsule())
     }
 
-    // MARK: - Colori contestuali
-
-    private func temperatureColor(_ t: Double) -> Color {
-        if t >= 32 { return .red }
-        if t >= 28 { return .orange }
-        if t <= 5  { return .blue }
-        return .green
-    }
+    // MARK: - Color helpers
 
     private func humidityColor(_ h: Double) -> Color {
-        if h >= 75 || h < 30 { return .orange }
-        return .blue
+        h >= 75 || h < 30 ? .orange : .blue
     }
 
-    // MARK: - Fetch SwiftData
-
-    private func loadOutdoorReadings() {
-        guard !roomName.isEmpty else {
-            temp = nil; humidity = nil; lastUpdate = nil
-            return
-        }
-
-        let context = ModelContext(modelContainer)
-        let name = roomName
-        let cutoff = Date().addingTimeInterval(-24 * 3600)
-        let tempRaw = SensorServiceType.temperature.rawValue
-        let humRaw  = SensorServiceType.humidity.rawValue
-
-        let tempDescriptor = FetchDescriptor<SensorReading>(
-            predicate: #Predicate {
-                $0.roomName == name &&
-                $0.serviceTypeRaw == tempRaw &&
-                $0.timestamp > cutoff
-            },
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-        )
-
-        let humDescriptor = FetchDescriptor<SensorReading>(
-            predicate: #Predicate {
-                $0.roomName == name &&
-                $0.serviceTypeRaw == humRaw &&
-                $0.timestamp > cutoff
-            },
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-        )
-
-        if let t = try? context.fetch(tempDescriptor).first {
-            temp = t.value
-            lastUpdate = t.timestamp
-        } else {
-            temp = nil
-        }
-
-        if let h = try? context.fetch(humDescriptor).first {
-            humidity = h.value
-            if let lu = lastUpdate {
-                lastUpdate = max(lu, h.timestamp)
-            } else {
-                lastUpdate = h.timestamp
-            }
-        } else {
-            humidity = nil
+    private func uvColor(_ uv: Int) -> Color {
+        switch uv {
+        case 0...2:  return .green
+        case 3...5:  return .yellow
+        case 6...7:  return .orange
+        case 8...10: return .red
+        default:     return .purple
         }
     }
-}
 
-// MARK: - Preview
-
-#Preview {
-    VStack(spacing: 12) {
-        HStack(spacing: 0) {
-            ZStack {
-                Circle()
-                    .fill(Color.blue.opacity(0.10))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "cloud.sun.fill")
-                    .symbolRenderingMode(.multicolor)
-                    .font(.system(size: 22))
-            }
-            .padding(.trailing, 12)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Esterno")
-                    .font(.subheadline.weight(.semibold))
-                Text("Agg. 5 min fa")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            HStack(spacing: 14) {
-                HStack(spacing: 4) {
-                    Image(systemName: "thermometer.medium").font(.system(size: 12)).foregroundStyle(.green)
-                    Text("22.4°").font(.system(size: 14, weight: .semibold, design: .rounded))
-                }
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Color.green.opacity(0.10), in: Capsule())
-
-                HStack(spacing: 4) {
-                    Image(systemName: "humidity.fill").font(.system(size: 12)).foregroundStyle(.blue)
-                    Text("58%").font(.system(size: 14, weight: .semibold, design: .rounded))
-                }
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Color.blue.opacity(0.10), in: Capsule())
-            }
+    private func tmrSymbol(_ condition: String) -> String {
+        switch condition {
+        case let c where c.contains("rain") || c.contains("drizzle"): return "cloud.rain.fill"
+        case let c where c.contains("snow"):                          return "cloud.snow.fill"
+        case let c where c.contains("thunder"):                       return "cloud.bolt.rain.fill"
+        case let c where c.contains("fog") || c.contains("haze"):    return "cloud.fog.fill"
+        case let c where c.contains("cloud"):                         return "cloud.fill"
+        case let c where c.contains("clear"):                         return "sun.max.fill"
+        default:                                                       return "cloud.sun.fill"
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
-        )
     }
-    .padding()
-    .background(Color(.systemGroupedBackground))
 }

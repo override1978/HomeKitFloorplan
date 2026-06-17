@@ -369,13 +369,29 @@ struct LightingProfileEditView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
+                    Picker(selection: Binding(
+                        get: { draft.luxOffSceneName ?? "" },
+                        set: { draft.luxOffSceneName = $0.isEmpty ? nil : $0 }
+                    )) {
+                        Text(String(localized: "smartlighting.edit.luxOffScene.none",
+                                    defaultValue: "None (keep lights on)")).tag("")
+                        ForEach(customSceneNames, id: \.self) { name in
+                            Text(name).tag(name)
+                        }
+                    } label: {
+                        Label(String(localized: "smartlighting.edit.luxOffScene",
+                                     defaultValue: "Scene when light returns"),
+                              systemImage: "sun.max")
+                    }
+                    .pickerStyle(.menu)
                 }
             } header: {
                 Text(String(localized: "smartlighting.edit.lux.header",
                             defaultValue: "Lux Sensor"))
             } footer: {
                 Text(String(localized: "smartlighting.edit.lux.footer",
-                            defaultValue: "If a lux sensor in this room reads above the threshold, the engine skips activation — natural light is already sufficient."))
+                            defaultValue: "If a lux sensor in this room reads above the threshold, the engine skips activation. If natural light returns after the engine already activated a scene, the selected scene will be triggered after 20 minutes."))
             }
 
             // MARK: Override manuale

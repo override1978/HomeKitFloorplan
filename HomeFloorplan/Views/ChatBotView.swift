@@ -57,6 +57,8 @@ struct ChatBotView: View {
     @State private var isReady       = false
     @State private var speechService = SpeechRecognitionService()
     @State private var micPulse      = false
+    @State private var isPreparing   = false
+    @State private var voiceSubmitTask: Task<Void, Never>?
 
     #if DEBUG
     @State private var debugLogs: [AgentLogEntry] = []
@@ -80,32 +82,26 @@ struct ChatBotView: View {
             .animation(.easeOut(duration: 0.25), value: isReady || !messages.isEmpty)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             inputBar
         }
         .onChange(of: speechService.transcript) { _, t in
-            if speechService.isRecording { query = t }
+            if !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                query = t
+            }
         }
         .onChange(of: speechService.isRecording) { _, recording in
+            isPreparing = false
             if recording {
                 withAnimation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
                     micPulse = true
                 }
             } else {
                 withAnimation(.easeInOut(duration: 0.2)) { micPulse = false }
-                // Auto-send: fires when silence detected (isFinal) or user taps mic to stop.
-                // 200 ms delay lets the last partial result propagate into `query`.
-                guard isReady, !isRunning,
-                      !query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(200))
-                    guard !isRunning,
-                          !query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                    sendQuery()
-                }
+                scheduleVoiceSubmit()
             }
         }
+        .interactiveDismissDisabled(speechService.isRecording || isPreparing)
         .opacity(appeared ? 1 : 0)
         .scaleEffect(appeared ? 1 : 0.96, anchor: .top)
         .onAppear {
@@ -130,6 +126,7 @@ struct ChatBotView: View {
         }
         .onDisappear {
             loopTask?.cancel()
+            voiceSubmitTask?.cancel()
             ChatSessionStore.save(messages: messages, turns: turnHistory)
         }
     }
@@ -181,7 +178,7 @@ struct ChatBotView: View {
 
     @ViewBuilder
     private var messageList: some View {
-        if messages.isEmpty && !isRunning {
+        if messages.isEmpty && !isRunning && !speechService.isRecording {
             emptyState
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -191,8 +188,12 @@ struct ChatBotView: View {
                         ForEach(messages) { msg in
                             messageBubble(msg).id(msg.id)
                         }
+                        if speechService.isRecording {
+                            liveTranscriptBubble
+                                .id("liveTranscript")
+                        }
                         if isRunning {
-                            thinkingIndicator.id("thinking")
+                            ThinkingDotsView().id("thinking")
                         }
                         #if DEBUG
                         if showDebugLogs && !debugLogs.isEmpty {
@@ -214,6 +215,13 @@ struct ChatBotView: View {
                     if isRunning {
                         withAnimation(.easeOut(duration: 0.25)) {
                             proxy.scrollTo("thinking", anchor: .bottom)
+                        }
+                    }
+                }
+                .onChange(of: speechService.isRecording) { _, recording in
+                    if recording {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            proxy.scrollTo("liveTranscript", anchor: .bottom)
                         }
                     }
                 }
@@ -532,20 +540,25 @@ struct ChatBotView: View {
         }
     }
 
-    private var thinkingIndicator: some View {
+    private var liveTranscriptBubble: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            HStack(spacing: 4) {
-                ForEach(0..<3) { i in
-                    Circle()
-                        .fill(Color.secondary.opacity(0.5))
-                        .frame(width: 7, height: 7)
-                }
+            Spacer(minLength: 48)
+            HStack(spacing: 8) {
+                Image(systemName: "mic.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .symbolEffect(.pulse)
+                Text(query.isEmpty ? "…" : query)
+                    .font(.body)
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.leading)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
-            Spacer(minLength: 48)
+            .padding(.vertical, 10)
+            .background(BrandColor.primary.opacity(0.65), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.red.opacity(0.35), lineWidth: 1))
         }
+        .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .bottomTrailing)))
     }
 
     private var emptyState: some View {
@@ -637,29 +650,37 @@ struct ChatBotView: View {
     // MARK: - Input bar (voice-only)
 
     private var inputBar: some View {
-        VStack(spacing: 0) {
-            // Live transcript preview — fades in while speaking
-            if speechService.isRecording, !query.isEmpty {
-                Text(query)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 8) {
+            if let errorMessage = speechService.errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
-                    .padding(.top, 16)
                     .transition(.opacity)
             }
-
+            if speechService.isRecording {
+                Text(query.isEmpty ? String(localized: "speech.listening", defaultValue: "Listening…") : query)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(4)
+                    .padding(.horizontal, 24)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             HStack {
                 Spacer()
                 voiceMicButton
                 Spacer()
             }
-            .padding(.top, speechService.isRecording && !query.isEmpty ? 12 : 20)
-            .padding(.bottom, 20)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 12)
+        .padding(.bottom, 20)
         .background(.regularMaterial)
-        .animation(.easeInOut(duration: 0.18), value: speechService.isRecording && !query.isEmpty)
+        .contentShape(Rectangle())
+        .animation(.easeInOut(duration: 0.2), value: speechService.errorMessage)
+        .animation(.easeInOut(duration: 0.2), value: speechService.isRecording)
     }
 
     private var voiceMicButton: some View {
@@ -667,60 +688,73 @@ struct ChatBotView: View {
             Task { await toggleRecording() }
         } label: {
             ZStack {
-                // Pulse ring
+                // Ambient pulse ring — only while recording
                 if speechService.isRecording {
                     Circle()
-                        .fill(Color.red.opacity(micPulse ? 0.22 : 0.06))
-                        .frame(width: 90, height: 90)
-                        .scaleEffect(micPulse ? 1.0 : 0.78)
+                        .fill(Color.red.opacity(micPulse ? 0.18 : 0.0))
+                        .frame(width: 96, height: 96)
+                        .scaleEffect(micPulse ? 1.08 : 0.85)
                 }
-                // Core circle
-                Circle()
-                    .fill(
-                        speechService.isRecording
-                            ? Color.red.opacity(0.13)
-                            : Color(.tertiarySystemBackground)
-                    )
-                    .frame(width: 68, height: 68)
-                    .shadow(color: .black.opacity(isRunning ? 0.05 : 0.14), radius: 6, y: 3)
-                // Icon
+                // Core content with Liquid Glass
                 Group {
                     if isRunning {
-                        ProgressView()
-                            .controlSize(.regular)
-                            .tint(.secondary)
+                        ProgressView().controlSize(.regular).tint(.secondary)
+                    } else if isPreparing {
+                        ProgressView().controlSize(.regular).tint(.primary)
                     } else {
                         Image(systemName: speechService.isRecording ? "mic.fill" : "mic")
                             .font(.system(size: 26, weight: .medium))
-                            .foregroundStyle(
-                                speechService.isRecording ? Color.red : Color.primary
-                            )
+                            .foregroundStyle(speechService.isRecording ? .white : .primary)
                     }
                 }
-                // Rainbow ring — only during AI run or active recording
-                if isRunning || speechService.isRecording {
+                .frame(width: 68, height: 68)
+                .glassEffect(
+                    speechService.isRecording
+                        ? .regular.tint(.red).interactive()
+                        : .regular.interactive(),
+                    in: Circle()
+                )
+                // Rainbow ring — only during AI processing
+                if isRunning {
                     RainbowBorderView(cornerRadius: 34)
                         .frame(width: 68, height: 68)
                 }
             }
+            .frame(width: 104, height: 104)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .disabled(isRunning || speechService.permissionState == .denied)
+        .disabled(isRunning || isPreparing)
         .animation(.spring(response: 0.35, dampingFraction: 0.7), value: speechService.isRecording)
         .animation(.easeInOut(duration: 0.2), value: isRunning)
+        .animation(.easeInOut(duration: 0.15), value: isPreparing)
     }
 
     private func toggleRecording() async {
         if speechService.isRecording {
             speechService.stopRecording()
+            scheduleVoiceSubmit()
             return
         }
+        speechService.clearError()
         if speechService.permissionState == .undetermined {
             await speechService.requestPermissionsIfNeeded()
         }
-        guard speechService.permissionState == .authorized,
-              speechService.isAvailable else { return }
-        try? await speechService.startRecording()
+        guard speechService.permissionState == .authorized else {
+            speechService.setError(SpeechRecognitionService.SpeechRecognitionError.permissionsDenied)
+            return
+        }
+        guard speechService.isAvailable else {
+            speechService.setError(SpeechRecognitionService.SpeechRecognitionError.recognizerUnavailable)
+            return
+        }
+        isPreparing = true
+        defer { isPreparing = false }
+        do {
+            try await speechService.startRecording()
+        } catch {
+            speechService.setError(error)
+        }
     }
 
     // MARK: - Setup
@@ -732,14 +766,47 @@ struct ChatBotView: View {
         envVM = evm
 
         let avm = AccessoriesViewModel(homeKit: homeKit)
-        avm.refresh()
         accessoriesVM = avm
+        // Defer HomeKit introspection to the next run loop so the main actor
+        // is not blocked during view ready transition.
+        Task { avm.refresh() }
     }
 
     // MARK: - Send
 
+    private func scheduleVoiceSubmit() {
+        voiceSubmitTask?.cancel()
+        voiceSubmitTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            submitVoiceQueryIfNeeded()
+        }
+    }
+
+    private func submitVoiceQueryIfNeeded() {
+        guard !isRunning,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if envVM == nil || accessoriesVM == nil {
+            setupViewModels()
+            isReady = true
+        }
+        sendQuery()
+    }
+
     private func sendQuery() {
-        guard let envVM, let accessoriesVM else { return }
+        if envVM == nil || accessoriesVM == nil {
+            setupViewModels()
+            isReady = true
+        }
+        guard let envVM, let accessoriesVM else {
+            speechService.setError(SpeechRecognitionService.SpeechRecognitionError.startFailed(
+                NSError(
+                    domain: "HomeFloorplan.ChatBotView",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: String(localized: "agent.error.notReady", defaultValue: "Assistant is not ready yet. Try again.")]
+                )
+            ))
+            return
+        }
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
 
@@ -790,6 +857,36 @@ struct ChatBotView: View {
                 messages.append(ChatMessage(role: .assistant, content: "⚠️ \(error.localizedDescription)"))
             }
         }
+    }
+}
+
+// MARK: - ThinkingDotsView
+
+private struct ThinkingDotsView: View {
+    @State private var phase = false
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            HStack(spacing: 5) {
+                ForEach(0..<3) { i in
+                    Circle()
+                        .fill(Color.secondary.opacity(0.5))
+                        .frame(width: 7, height: 7)
+                        .offset(y: phase ? -5 : 0)
+                        .animation(
+                            .easeInOut(duration: 0.5)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(i) * 0.18),
+                            value: phase
+                        )
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+            Spacer(minLength: 48)
+        }
+        .onAppear { phase = true }
     }
 }
 

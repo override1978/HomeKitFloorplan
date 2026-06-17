@@ -51,12 +51,6 @@ struct HomeIntelligenceDashboardView: View {
     private static let feedTimeFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
     }()
-    private static let arrivalTimeFormatter: DateFormatter = {
-        let f = DateFormatter(); f.timeStyle = .short; return f
-    }()
-    private static let arrivalDayFormatter: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "EEEE"; return f
-    }()
 
     var body: some View {
         NavigationStack {
@@ -99,7 +93,6 @@ struct HomeIntelligenceDashboardView: View {
                     icon: "eye.fill"
                 )
                 feedSection()
-                occupancySection()
                 aiInsightsSection(svc: svc)
                 predictiveAlertsSection(svc: svc)
 
@@ -429,104 +422,6 @@ struct HomeIntelligenceDashboardView: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
                 )
             }
-        }
-    }
-
-    // MARK: - Section: Occupancy Prediction
-
-    @ViewBuilder
-    private func occupancySection() -> some View {
-        if let pred = occupancyService.nextArrival, pred.meanMinuteOfDay > 0 {
-            let minutesUntil = Int(pred.estimatedArrival.timeIntervalSinceNow / 60)
-            let warmUp = occupancyService.shouldSuggestHVACWarmUp(
-                presenceState: locationService.presenceState ?? ContextResolver.resolve().presenceState
-            )
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader(
-                    icon: "figure.walk.arrival",
-                    title: String(localized: "intelligence.occupancy.header",
-                                  defaultValue: "Next Arrival")
-                )
-                HStack(spacing: 16) {
-                    VStack(spacing: 2) {
-                        Text(Self.arrivalTimeFormatter.string(from: pred.estimatedArrival))
-                            .font(.title2.weight(.bold))
-                            .monospacedDigit()
-                            .foregroundStyle(.primary)
-                        Text(arrivalDayLabel(pred.estimatedArrival))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(minWidth: 54, alignment: .center)
-
-                    Divider().frame(height: 36)
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        if minutesUntil <= 60 {
-                            Label(
-                                String(format: String(localized: "occupancy.inMinutes",
-                                                      defaultValue: "In %d min"), minutesUntil),
-                                systemImage: "clock.fill"
-                            )
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(BrandColor.primary)
-                        } else {
-                            Text(String(format: String(localized: "occupancy.inHours",
-                                                       defaultValue: "In ~%.0f hours"),
-                                        Double(minutesUntil) / 60.0))
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.secondary)
-                        }
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.seal.fill")
-                                .font(.caption2)
-                                .foregroundStyle(arrivalConfidenceColor(pred.confidenceLabel))
-                            Text(pred.confidenceLabel)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if pred.stdDevMinutes > 0 {
-                                Text("·")
-                                    .font(.caption).foregroundStyle(.tertiary)
-                                Text(String(format: "±%.0f min", pred.stdDevMinutes))
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    Spacer(minLength: 0)
-
-                    if warmUp {
-                        VStack(spacing: 3) {
-                            Image(systemName: "thermometer.and.liquid.waves")
-                                .font(.title3)
-                                .foregroundStyle(.orange)
-                                .symbolEffect(.pulse)
-                            Text(String(localized: "occupancy.warmup", defaultValue: "Pre-heat"))
-                                .font(.caption2)
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                }
-                .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-                )
-            }
-        }
-    }
-
-    private func arrivalDayLabel(_ date: Date) -> String {
-        let cal = Calendar.current
-        if cal.isDateInToday(date)    { return String(localized: "day.today",    defaultValue: "Today") }
-        if cal.isDateInTomorrow(date) { return String(localized: "day.tomorrow", defaultValue: "Tomorrow") }
-        return Self.arrivalDayFormatter.string(from: date).capitalized
-    }
-
-    private func arrivalConfidenceColor(_ label: String) -> Color {
-        switch label {
-        case String(localized: "occupancy.confidence.high",   defaultValue: "High"):   return .green
-        case String(localized: "occupancy.confidence.medium", defaultValue: "Medium"):  return .orange
-        default:                                                                         return .secondary
         }
     }
 

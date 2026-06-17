@@ -35,6 +35,7 @@ struct LightingProfile: Codable, Identifiable, Equatable {
     // 0 = bypass disabilitato (nessun sensore lux in stanza).
     var luxBypassThreshold: Double = 150.0
     var luxSensorRoomName: String?          // stanza del sensore lux, se diversa dalla target
+    var luxOffSceneName: String?            // scena da attivare quando la luce naturale è tornata sufficiente
 
     // Ora (0-23) in cui la fase "sera" diventa "notte" — per-profilo perché ogni stanza
     // può avere un orario di spegnimento diverso (es. camera 22, living 24).

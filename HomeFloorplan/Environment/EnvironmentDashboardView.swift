@@ -23,13 +23,13 @@ struct EnvironmentDashboardView: View {
     @State private var vm = EnvironmentViewModel()
     @Environment(RuleEngineService.self) private var ruleEngine
 
+    @Environment(WeatherKitService.self) private var weatherKit
+
     @State private var selectedSensor: SensorData?
     @State private var showThresholdSettings = false
     @State private var isRefreshing = false
     @State private var isReordering = false
-    @AppStorage("outdoorRoomName") private var outdoorRoomName: String = ""
-    @AppStorage("ai.isEnabled")   private var isAIEnabled: Bool = false
-    @State private var outdoorRefreshID = UUID()
+    @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
 
     /// Servizio AI per gli insight ambientali (app-scoped, iniettato dall'ambiente).
     @Environment(AmbientalAIService.self) private var aiService
@@ -83,9 +83,8 @@ struct EnvironmentDashboardView: View {
             .onAppear {
                 vm.configure(modelContainer: modelContext.container)
                 vm.loadFromCoreData()
-                sampleIfNeeded()
                 AlertNotificationService.shared.clearBadge()
-                Task { await aiService.analyzeRooms(vm.rooms) }
+                sampleIfNeeded()
             }
         }
         // Sheet regola — sul NavigationStack per evitare conflitti con gli altri sheet.
@@ -123,13 +122,9 @@ struct EnvironmentDashboardView: View {
                     trend: nil   // Trend futuro: confronto con snapshot precedente
                 )
 
-                // ── 2. Banner esterno (opzionale) ──────────────────────
-                if !outdoorRoomName.isEmpty {
-                    OutdoorBannerView(
-                        modelContainer: modelContext.container,
-                        roomName: outdoorRoomName
-                    )
-                    .id(outdoorRefreshID)
+                // ── 2. Banner esterno (WeatherKit) ─────────────────────
+                if weatherKit.currentWeather != nil {
+                    OutdoorBannerView()
                 }
 
                 // ── 3. AI Digest: insight aggregati (visibile solo se AI abilitata e ci sono insight) ──
@@ -151,9 +146,6 @@ struct EnvironmentDashboardView: View {
                         )
                     }
                 }
-
-                // ── 3.5. Energy Dashboard ─────────────────────────────
-                EnergyDashboardCard(modelContainer: modelContext.container)
 
                 // ── 4. Header sezione stanze ───────────────────────────
                 HStack {
@@ -263,22 +255,28 @@ struct EnvironmentDashboardView: View {
         // producano cluster di letture temporalmente compresse, che abbassano
         // artificialmente la stdDev della baseline e generano falsi positivi AI.
         if let last = lastSampledAt,
-           Date().timeIntervalSince(last) < samplingThrottle { return }
+           Date().timeIntervalSince(last) < samplingThrottle {
+            // Sampling skipped — still run AI analysis on existing data.
+            Task { await aiService.analyzeRooms(vm.rooms) }
+            return
+        }
         lastSampledAt = Date()
         Task {
             await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: modelContext.container)
             vm.loadFromCoreData()
-            outdoorRefreshID = UUID()
+            await aiService.analyzeRooms(vm.rooms)
         }
     }
 
     private func refreshManual() {
         guard !isRefreshing, let home = homeKit.currentHome else { return }
         isRefreshing = true
+        // Clear the per-room 15-min gate so the upcoming analyzeRooms call
+        // analyses every room with the freshly sampled data.
+        aiService.clearAnalysisGates()
         Task {
             await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: modelContext.container)
             vm.loadFromCoreData()
-            outdoorRefreshID = UUID()
             await aiService.analyzeRooms(vm.rooms)
             isRefreshing = false
         }
