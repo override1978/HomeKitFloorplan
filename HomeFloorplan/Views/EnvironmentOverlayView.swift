@@ -175,11 +175,11 @@ struct EnvironmentOverlayView: View {
 
 /// Visual command centre for the Environment overlay mode.
 ///
-/// Four cards answer **"What is happening?"** while the floorplan answers **"Where?"**:
-/// - Card 1: Home Health Score (circular progress + label)
-/// - Card 2: Top Insights     (up to 3 sensor alerts, filtered by active pill)
-/// - Card 3: Recommended Action (primary CTA, shown only when alerts exist)
-/// - Card 4: Summary          (counts per urgency level)
+/// Cards answer **"What is happening?"** while the floorplan answers **"Where?"**:
+/// - Score card: current environment health trend.
+/// - Digest card: narrative explanation of what matters now.
+/// - Action card: primary next step, shown only when there is something actionable.
+/// - Summary / drill-down cards: supporting detail without repeating the digest.
 ///
 /// `highlightedRoomID` is accepted but only used to provide per-room context
 /// inside each card — the card set itself never changes.
@@ -210,6 +210,28 @@ struct EnvironmentContextDashboard: View {
         return linkedRooms.first { $0.hmRoomUUID == id }?.name
     }
 
+    private func effectiveSeverity(_ insight: AmbientalAIInsight) -> InsightSeverity {
+        guard let room = envVM.rooms.first(where: { $0.roomName == insight.roomName }) else {
+            return insight.severity
+        }
+
+        let roomSeverity: InsightSeverity
+        switch room.worstUrgency {
+        case .danger:  roomSeverity = .anomaly
+        case .warning: roomSeverity = .warning
+        case .normal:  roomSeverity = .info
+        }
+        return max(insight.severity, roomSeverity)
+    }
+
+    private func effectiveSeverityColor(_ insight: AmbientalAIInsight) -> Color {
+        switch effectiveSeverity(insight) {
+        case .anomaly: return .red
+        case .warning: return .orange
+        case .info:    return .blue
+        }
+    }
+
     // MARK: Body
 
     var body: some View {
@@ -238,15 +260,30 @@ struct EnvironmentContextDashboard: View {
         let topAlert: SensorData? = filtered.first { $0.urgency == .danger } ?? filtered.first { $0.urgency == .warning }
         let aiInsights: [AmbientalAIInsight] = {
             guard let svc = aiService else { return [] }
-            let rank: (InsightSeverity) -> Int = { s in switch s { case .anomaly: return 2; case .warning: return 1; case .info: return 0 } }
-            return svc.insights.filter { $0.isVisible && !$0.nextActions.isEmpty }.sorted { rank($0.severity) > rank($1.severity) }
+            let rank: (InsightSeverity) -> Int = {
+                switch $0 {
+                case .anomaly: return 2
+                case .warning: return 1
+                case .info:    return 0
+                }
+            }
+            return svc.insights
+                .filter { $0.isVisible && !$0.nextActions.isEmpty }
+                .sorted { rank(effectiveSeverity($0)) > rank(effectiveSeverity($1)) }
         }()
         // ───────────────────────────────────────────────────────────────
 
         return VStack(spacing: 14) {
-
-            // ── Card 1: Health Score ───────────────────────────────────────
+            // ── Card 1: Health Score / graph ───────────────────────────────
             healthScoreCard
+
+            // ── Card 2: Assistant narrative ────────────────────────────────
+            HomeDigestSummaryCard(
+                summary: HomeAssistantDigestService.environmentDigest(
+                    rooms: envVM.rooms,
+                    highlightedRoomName: highlightedRoomName
+                )
+            )
 
             if envVM.isLoading {
                 HStack(spacing: 8) {
@@ -262,19 +299,35 @@ struct EnvironmentContextDashboard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .panelCard(accentColor: .secondary)
             } else {
-                // ── Card 2: Top Insights ───────────────────────────────────
-                insightsCard(rows: rows)
-
                 // ── Card 3: AI Azioni Consigliate ──────────────────────────
                 // Prefer real AI next-actions; fall back to basic sensor alert if none.
                 if isAIEnabled && !aiInsights.isEmpty {
                     aiActionsCard(insights: aiInsights)
                 } else if let sensor = topAlert {
                     actionCard(sensor: sensor)
+                } else if isAIEnabled {
+                    FloorplanEmptyStateCard(
+                        title: String(localized: "environment.panel.stable.title", defaultValue: "Ambiente stabile"),
+                        message: String(localized: "environment.panel.stable.message", defaultValue: "Non ci sono anomalie ambientali o azioni AI da proporre in questo momento."),
+                        icon: "checkmark.seal.fill",
+                        color: .green
+                    )
+                } else {
+                    FloorplanEmptyStateCard(
+                        title: String(localized: "environment.panel.aiOff.title", defaultValue: "Insight AI disattivati"),
+                        message: String(localized: "environment.panel.aiOff.message", defaultValue: "I dati ambientali restano visibili; abilita l'AI nelle impostazioni per ricevere spiegazioni e azioni suggerite."),
+                        icon: "sparkles",
+                        color: .secondary
+                    )
                 }
 
                 // ── Card 4: Summary ────────────────────────────────────────
                 summaryCard(dangerCount: dangerCount, warningCount: warningCount, normalCount: normalCount)
+
+                // ── Card 5: Context drill-down ─────────────────────────────
+                if highlightedRoomName != nil || overlayVM.selectedSensorFilter != nil {
+                    insightsCard(rows: rows)
+                }
             }
         }
         .onAppear {
@@ -548,13 +601,7 @@ struct EnvironmentContextDashboard: View {
     /// Shows up to 3 insights (one per row) with their action chips.
     private func aiActionsCard(insights: [AmbientalAIInsight]) -> some View {
         let topInsight = insights[0]
-        let severityColor: Color = {
-            switch topInsight.severity {
-            case .anomaly: return .red
-            case .warning: return .orange
-            case .info:    return .blue
-            }
-        }()
+        let severityColor = effectiveSeverityColor(topInsight)
 
         return VStack(alignment: .leading, spacing: 12) {
             // Header
@@ -574,18 +621,13 @@ struct EnvironmentContextDashboard: View {
 
             // One block per insight (max 2)
             ForEach(insights.prefix(2)) { insight in
-                let iColor: Color = {
-                    switch insight.severity {
-                    case .anomaly: return .red
-                    case .warning: return .orange
-                    case .info:    return .blue
-                    }
-                }()
+                let iColor = effectiveSeverityColor(insight)
+                let effective = effectiveSeverity(insight)
 
                 VStack(alignment: .leading, spacing: 8) {
                     // Insight message
                     HStack(spacing: 6) {
-                        Image(systemName: insight.severity.sfSymbol)
+                        Image(systemName: effective.sfSymbol)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(iColor)
                         Text(insight.message)
@@ -853,4 +895,3 @@ private struct AIActionChip: View {
         }
     }
 }
-

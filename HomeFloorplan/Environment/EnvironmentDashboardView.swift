@@ -48,12 +48,48 @@ struct EnvironmentDashboardView: View {
 
     // Tutti gli insight visibili da tutte le stanze (per il Digest globale)
     private var allVisibleInsights: [AmbientalAIInsight] {
-        vm.rooms.flatMap { aiService.visibleInsights(for: $0.roomName) }
+        vm.rooms.flatMap { room in
+            normalizedInsights(for: room)
+        }
     }
 
     // Numero di stanze con almeno un sensore in warning o danger
     private var attentionRoomCount: Int {
         vm.rooms.filter { $0.worstUrgency != .normal }.count
+    }
+
+    private func normalizedInsights(for room: RoomEnvironmentData) -> [AmbientalAIInsight] {
+        aiService.visibleInsights(for: room.roomName).map { insight in
+            let effectiveSeverity = max(insight.severity, severityFloor(for: room.worstUrgency))
+            guard effectiveSeverity != insight.severity else { return insight }
+            return AmbientalAIInsight(
+                id: insight.id,
+                roomName: insight.roomName,
+                message: insight.message,
+                severity: effectiveSeverity,
+                intelligenceLevel: insight.intelligenceLevel,
+                patternKey: insight.patternKey,
+                whyExplanation: insight.whyExplanation,
+                confidence: insight.confidence,
+                generatedAt: insight.generatedAt,
+                isDismissed: insight.isDismissed,
+                nextActions: insight.nextActions,
+                resolvedIntents: insight.resolvedIntents,
+                sourceAccessoryID: insight.sourceAccessoryID,
+                sourceAccessoryName: insight.sourceAccessoryName,
+                sourceServiceType: insight.sourceServiceType,
+                promptVersion: insight.promptVersion,
+                isLanguageSuspect: insight.isLanguageSuspect
+            )
+        }
+    }
+
+    private func severityFloor(for urgency: SensorUrgency) -> InsightSeverity {
+        switch urgency {
+        case .danger:  return .anomaly
+        case .warning: return .warning
+        case .normal:  return .info
+        }
     }
 
     var body: some View {
@@ -127,6 +163,10 @@ struct EnvironmentDashboardView: View {
                     OutdoorBannerView()
                 }
 
+                if isAIEnabled && aiService.isAnalyzing {
+                    aiAnalysisStatus
+                }
+
                 // ── 3. AI Digest: insight aggregati (visibile solo se AI abilitata e ci sono insight) ──
                 if isAIEnabled {
                     let insights = allVisibleInsights
@@ -137,8 +177,8 @@ struct EnvironmentDashboardView: View {
                                 aiService.dismiss(insight, reason: reason)
                             },
                             onExecuteAction: { action, insight in
-                                guard let home = homeKit.currentHome else { return }
-                                Task { await executionService.execute(action, insight: insight, in: home) }
+                                guard let home = homeKit.currentHome else { return false }
+                                return await executionService.execute(action, insight: insight, in: home)
                             },
                             onCreateRule: { draft, _ in
                                 openRuleEditor(draft: draft)
@@ -166,11 +206,11 @@ struct EnvironmentDashboardView: View {
                         RoomSectionView(
                             room: room,
                             onSensorTap: { sensor in selectedSensor = sensor },
-                            aiInsights: isAIEnabled ? aiService.visibleInsights(for: room.roomName) : [],
+                            aiInsights: isAIEnabled ? normalizedInsights(for: room) : [],
                             onDismissInsight: { insight, reason in aiService.dismiss(insight, reason: reason) },
                             onExecuteAction: { action, insight in
-                                guard let home = homeKit.currentHome else { return }
-                                Task { await executionService.execute(action, insight: insight, in: home) }
+                                guard let home = homeKit.currentHome else { return false }
+                                return await executionService.execute(action, insight: insight, in: home)
                             },
                             onCreateRule: { draft, _ in
                                 openRuleEditor(draft: draft)
@@ -183,6 +223,21 @@ struct EnvironmentDashboardView: View {
             .padding(.top, 8)
             .padding(.bottom, 32)
         }
+    }
+
+    private var aiAnalysisStatus: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text(String(localized: "environment.ai.analyzing", defaultValue: "Analisi AI in corso"))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Rule editor helper
@@ -263,8 +318,8 @@ struct EnvironmentDashboardView: View {
         lastSampledAt = Date()
         Task {
             await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: modelContext.container)
-            vm.loadFromCoreData()
-            await aiService.analyzeRooms(vm.rooms)
+            let rooms = await vm.reloadFromCoreData()
+            await aiService.analyzeRooms(rooms)
         }
     }
 
@@ -276,8 +331,8 @@ struct EnvironmentDashboardView: View {
         aiService.clearAnalysisGates()
         Task {
             await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: modelContext.container)
-            vm.loadFromCoreData()
-            await aiService.analyzeRooms(vm.rooms)
+            let rooms = await vm.reloadFromCoreData()
+            await aiService.analyzeRooms(rooms)
             isRefreshing = false
         }
     }
@@ -369,7 +424,7 @@ private struct EnvironmentRoomReorderSheet: View {
                         )
                     ],
                     onDismissInsight: { _, _ in },
-                    onExecuteAction: { _, _ in },
+                    onExecuteAction: { _, _ in true },
                     onCreateRule: { _, _ in }
                 )
 

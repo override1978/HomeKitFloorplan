@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 struct AccessoryAppearance {
     let urgency: MarkerUrgency
+    let markerTint: Color?
     
     /// Colore principale dello stato, usato come tint per icone "standalone"
     /// (es. icona nella lista accessori, icona header in DetailView).
@@ -13,7 +14,7 @@ struct AccessoryAppearance {
         switch urgency {
         case .normal:  return .secondary
         case .ok:      return .green
-        case .active:  return .yellow
+        case .active:  return markerTint ?? .yellow
         case .warning: return .orange
         case .alarm:   return .red
         }
@@ -24,9 +25,13 @@ struct AccessoryAppearance {
     /// gli altri usano il colore di stato con opacità.
     var markerFill: AnyShapeStyle {
         switch urgency {
-        case .normal:  return AnyShapeStyle(.thinMaterial)
+        case .normal:
+            if let markerTint {
+                return AnyShapeStyle(markerTint.opacity(0.22))
+            }
+            return AnyShapeStyle(.thinMaterial)
         case .ok:      return AnyShapeStyle(Color.green.opacity(0.85))
-        case .active:  return AnyShapeStyle(Color.yellow.opacity(0.85))
+        case .active:  return AnyShapeStyle((markerTint ?? .yellow).opacity(0.85))
         case .warning: return AnyShapeStyle(Color.orange.opacity(0.85))
         case .alarm:   return AnyShapeStyle(Color.red.opacity(0.85))
         }
@@ -50,6 +55,9 @@ struct AccessoryAppearance {
     
     /// Crea AccessoryAppearance leggendo l'urgency dall'adapter.
     static func from(_ adapter: (any AccessoryAdapter)?) -> AccessoryAppearance {
-        AccessoryAppearance(urgency: adapter?.visualUrgency ?? .normal)
+        AccessoryAppearance(
+            urgency: adapter?.visualUrgency ?? .normal,
+            markerTint: adapter?.markerTint
+        )
     }
 }

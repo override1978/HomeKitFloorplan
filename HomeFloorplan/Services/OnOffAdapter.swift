@@ -25,12 +25,38 @@ final class OnOffAdapter: AccessoryAdapter {
     var visualUrgency: MarkerUrgency {
         isOn ? .active : .normal
     }
+
+    var markerTint: Color? {
+        guard isOn else { return nil }
+        if isLikelyRobotVacuum { return .teal }
+        if isLikelyAirCareAccessory { return .cyan }
+        if hasService(of: HMServiceTypeLightbulb) ||
+            accessory.category.categoryType == HMAccessoryCategoryTypeLightbulb {
+            return .yellow
+        }
+        if hasService(of: HMServiceTypeFan) ||
+            accessory.category.categoryType == HMAccessoryCategoryTypeFan {
+            return .cyan
+        }
+        if hasService(of: HMServiceTypeOutlet) ||
+            accessory.category.categoryType == HMAccessoryCategoryTypeOutlet {
+            return .blue
+        }
+        if hasService(of: HMServiceTypeSwitch) ||
+            accessory.category.categoryType == HMAccessoryCategoryTypeSwitch {
+            return .indigo
+        }
+        return .blue
+    }
     
     var iconName: String {
         // 0) Robot vacuum: spesso si dichiara come Switch/Outlet/Other,
         //    quindi rileviamo dal nome dell'accessorio.
         if isLikelyRobotVacuum {
             return isOn ? "house.fill" : "house"  // fallback se "vacuum.cleaner" non esiste
+        }
+        if isLikelyAirCareAccessory {
+            return isOn ? "humidifier.fill" : "humidifier"
         }
         
         // 1) Service-type first: più affidabile della categoria.
@@ -67,6 +93,16 @@ final class OnOffAdapter: AccessoryAdapter {
     private var isLikelyRobotVacuum: Bool {
         let name = accessory.name.lowercased()
         let keywords = ["vacuum", "robot", "roomba", "roborock", "aspirapolvere", "deebot"]
+        return keywords.contains { name.contains($0) }
+    }
+    
+    private var isLikelyAirCareAccessory: Bool {
+        let humidifierDehumidifierServiceType = "000000BD-0000-1000-8000-0026BB765291"
+        if hasService(of: humidifierDehumidifierServiceType) {
+            return true
+        }
+        let name = accessory.name.lowercased()
+        let keywords = ["diffusore", "diffuser", "aroma", "humidifier", "umidificatore", "dehumidifier", "deumidificatore"]
         return keywords.contains { name.contains($0) }
     }
 

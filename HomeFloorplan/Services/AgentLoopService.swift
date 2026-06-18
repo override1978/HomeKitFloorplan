@@ -47,7 +47,7 @@ final class AgentLoopService {
             - getRoomState: stato aggregato accessori di una stanza (conteggio, health score)
             - listAccessories: elenco accessori HomeKit. Formato risposta: \
               "- Nome [Stanza, tipo, stato, caps:CAPACITÀ] id=UUID". \
-              tipo: luce | presa | interruttore | ventilatore | tenda | termostato | serratura | portone | purificatore | altro. \
+              tipo: luce | presa | interruttore | ventilatore | tenda | termostato | serratura | portone | purificatore | umidificatore | sicurezza | altro. \
               stato: "on", "off", "on 80%" (accensione nota), "online"/"offline" (solo connettività). \
               Esempi: "- Faretti [Cucina, luce, on 80%, caps:on/off+dim] id=12345-...", \
                       "- Presa Isola [Cucina, presa, on, caps:on/off] id=6789-...". \
@@ -60,6 +60,9 @@ final class AgentLoopService {
             - getUsage: ore utilizzo dispositivi energia (luci, prese, ecc.)
             - getSecurityState: stato allarme, serrature, sensori contatto
             - getHabits: abitudini rilevate e opportunità di automazione
+            - diagnoseAutomations: elenco e diagnosi delle automazioni/regole già create nell'app. \
+              Usa per "che automazioni ho?", "perché non parte?", "è sincronizzata con HomeKit?", \
+              "quali regole sono disabilitate?". Può filtrare per nome regola/scena/azione.
             - getOutdoor: meteo esterno e previsione domani
             - controlAccessory: esegue un'azione su un accessorio HomeKit \
               (on/off/dim/open/close/setSpeed/setMode/setTemp). \
@@ -73,6 +76,10 @@ final class AgentLoopService {
             - proposeOpportunity: crea una regola di automazione dalla chat e la salva. \
               Usa SOLO quando l'utente chiede di automatizzare qualcosa \
               ("ogni sera accendi le luci", "automatizza questo"). \
+              Se la richiesta è esplicita e contiene i dettagli necessari, NON chiedere conferma prima: \
+              crea direttamente l'opportunità. La conferma utente avviene già con il bottone "Crea regola". \
+              Chiedi una domanda solo quando manca un dettaglio indispensabile \
+              (ora, stanza, soglia, accessorio/scena o valore target). \
               Per automazioni singola-azione: richiede accessoryID valido + naturalLanguage descrittivo. \
               Per automazioni multi-azione (AC con modalità+velocità, scene complesse): \
               usa sceneName = nome esatto della scena creata da createScene — NON accessoryID. \
@@ -96,7 +103,9 @@ final class AgentLoopService {
               · setColorTemp: Kelvin (2700=caldo/sera, 4000=neutro, 6500=freddo/lavoro). \
               · setMode (caps:setMode): AC → 0=Auto, 1=Caldo, 2=Freddo; \
                 valvola termostatica → 0=Off, 1=Caldo, 2=Freddo, 3=Auto; \
-                purificatore → 0=Manuale, 1=Auto. Attiva automaticamente il dispositivo. \
+                purificatore → 0=Manuale, 1=Auto; \
+                umidificatore/diffusore → 0=Auto, 1=Umidifica, 2=Deumidifica. \
+                Attiva automaticamente il dispositivo. \
               · setSpeed: 0.0–1.0. setTemp: °C. \
               La scena viene creata immediatamente su HomeKit ed è visibile nella sezione Scene.
             - listScenes: elenca le scene HomeKit personalizzate esistenti con il dettaglio delle azioni. \
@@ -165,6 +174,8 @@ final class AgentLoopService {
               Proponi (proposeAction/chooseAccessory) solo se il dato la giustifica.
             - Richiesta di automazione temporale ("ogni sera…", "alle 22 spegni…"): \
               listAccessories per UUID, poi proposeOpportunity con triggerType=calendar. \
+              NON chiedere "vuoi che crei la regola?" se l'utente ha già chiesto di automatizzare: \
+              il bottone "Crea regola" è la conferma. \
               REGOLA CRITICA SUL TRIGGER TYPE: se la richiesta contiene un'ora FISSA \
               (es. "alle 8:00", "ogni mattina", "ogni sera alle 22"), usa SEMPRE \
               triggerType=calendar anche se c'è una condizione aggiuntiva sul sensore. \
@@ -178,7 +189,8 @@ final class AgentLoopService {
             - Richiesta su soglia sensore SENZA ora fissa ("quando supera 30°C…", "se l'umidità scende sotto…"): \
               1) readSensor per confermare il sensore e leggere le soglie. \
               2) listAccessories per l'UUID dell'accessorio da controllare. \
-              3) proposeOpportunity con triggerType=characteristic + campi sensore.
+              3) proposeOpportunity con triggerType=characteristic + campi sensore. \
+              NON chiedere conferma prima se soglia, sensore e azione sono già chiari.
             - Automazione multi-azione ("accendi il climatizzatore in modalità freddo con ventilazione 5", \
               "quando supera 28° attiva il clima su freddo"): \
               1) listScenes (opz. con query) per verificare se esiste già una scena compatibile. \
@@ -201,6 +213,10 @@ final class AgentLoopService {
               3) configureLighting con roomName + scene appropriate + isEnabled=true. \
               NON inventare nomi di scene — usa solo nomi esistenti in HomeKit \
               (visibili in listAccessories o nella sezione Scene dell'app).
+            - Domande su automazioni già create o troubleshooting ("che automazioni ho?", \
+              "perché non parte?", "questa regola è su HomeKit?"): \
+              chiama diagnoseAutomations prima di rispondere. Se l'utente cita una regola/scena, \
+              passa quel testo come query.
             - Serrature, allarme, sistema di sicurezza: MAI eseguire — il tool rifiuta.
             - Nome stanza ambiguo (es. due "Bagno"): chiedi chiarimento prima di agire.
 
@@ -225,7 +241,7 @@ final class AgentLoopService {
             - getRoomState: aggregated accessory state for a room (count, health score)
             - listAccessories: list HomeKit accessories. Response format: \
               "- Name [Room, type, state, caps:CAPABILITIES] id=UUID". \
-              type: luce | presa | interruttore | ventilatore | tenda | termostato | serratura | portone | purificatore | altro. \
+              type: luce | presa | interruttore | ventilatore | tenda | termostato | serratura | portone | purificatore | umidificatore | sicurezza | altro. \
               state: "on", "off", "on 80%" (power known), "online"/"offline" (connectivity only). \
               Examples: "- Spotlight [Kitchen, luce, on 80%, caps:on/off+dim] id=12345-...", \
                         "- Island Outlet [Kitchen, presa, on, caps:on/off] id=6789-...". \
@@ -238,6 +254,9 @@ final class AgentLoopService {
             - getUsage: device usage hours (lights, outlets, etc.)
             - getSecurityState: alarm, locks, contact sensor state
             - getHabits: detected habits and automation opportunities
+            - diagnoseAutomations: list and diagnose automations/rules already created in the app. \
+              Use for "what automations do I have?", "why doesn't it run?", "is it synced with HomeKit?", \
+              "which rules are disabled?". Can filter by rule/scene/action name.
             - getOutdoor: current outdoor weather and tomorrow's forecast
             - controlAccessory: execute an action on a HomeKit accessory \
               (on/off/dim/open/close/setSpeed/setMode/setTemp). \
@@ -251,6 +270,10 @@ final class AgentLoopService {
             - proposeOpportunity: creates an automation rule from the chat and saves it. \
               Use ONLY when the user asks to automate something \
               ("every evening turn on the lights", "automate this"). \
+              If the request is explicit and contains the required details, do NOT ask for confirmation first: \
+              create the opportunity directly. The user confirmation already happens through the "Create rule" button. \
+              Ask a question only when an essential detail is missing \
+              (time, room, threshold, target accessory/scene, or target value). \
               For single-action automations: requires a valid accessoryID + descriptive naturalLanguage. \
               For multi-action automations (AC with mode+speed, complex scenes): \
               use sceneName = exact name of the scene created by createScene — NOT accessoryID. \
@@ -274,7 +297,9 @@ final class AgentLoopService {
               · setColorTemp: Kelvin (2700=warm/evening, 4000=neutral, 6500=cool/work). \
               · setMode (caps:setMode): AC → 0=Auto, 1=Heat, 2=Cool; \
                 thermostat/TRV → 0=Off, 1=Heat, 2=Cool, 3=Auto; \
-                air purifier → 0=Manual, 1=Auto. Activates the device automatically. \
+                air purifier → 0=Manual, 1=Auto; \
+                humidifier/diffuser → 0=Auto, 1=Humidify, 2=Dehumidify. \
+                Activates the device automatically. \
               · setSpeed: 0.0–1.0. setTemp: °C. \
               The scene is created immediately on HomeKit and visible in the Scenes section.
             - listScenes: lists existing custom HomeKit scenes with the detail of each scene's actions. \
@@ -342,6 +367,8 @@ final class AgentLoopService {
               Do NOT use controlAccessory.
             - Time-based automation ("every evening…", "at 10pm turn off…"): \
               listAccessories for UUID, then proposeOpportunity with triggerType=calendar. \
+              Do NOT ask "do you want me to create the rule?" if the user already asked to automate it: \
+              the "Create rule" button is the confirmation. \
               CRITICAL TRIGGER RULE: if the request contains a FIXED TIME \
               (e.g., "at 8am", "every morning", "every evening at 10pm"), ALWAYS use \
               triggerType=calendar even if there is an additional sensor condition. \
@@ -355,7 +382,8 @@ final class AgentLoopService {
             - Sensor-threshold automation with NO fixed time ("when it exceeds 30°C…", "if humidity drops below…"): \
               1) readSensor to confirm the sensor exists and read thresholds. \
               2) listAccessories for the UUID of the accessory to control. \
-              3) proposeOpportunity with triggerType=characteristic + sensor fields.
+              3) proposeOpportunity with triggerType=characteristic + sensor fields. \
+              Do NOT ask for confirmation first if threshold, sensor, and action are already clear.
             - Multi-action automation ("turn on AC in cool mode at fan speed 5", \
               "when it exceeds 28°C activate AC in cool mode"): \
               1) listScenes (optionally with query) to check if a compatible scene already exists. \
@@ -378,6 +406,10 @@ final class AgentLoopService {
               3) configureLighting with roomName + appropriate scenes + isEnabled=true. \
               Do NOT invent scene names — only use names that exist in HomeKit \
               (visible via listAccessories or in the Scenes section of the app).
+            - Questions about existing automations or troubleshooting ("what automations do I have?", \
+              "why doesn't it run?", "is this rule on HomeKit?"): \
+              call diagnoseAutomations before answering. If the user names a rule/scene, \
+              pass that text as query.
             - Locks, alarm, security system: NEVER execute — the tool refuses.
             - Ambiguous room name (e.g., two "Bathrooms"): ask for clarification before acting.
 

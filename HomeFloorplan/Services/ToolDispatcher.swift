@@ -16,6 +16,7 @@ final class ToolDispatcher {
     private let homeKit:              HomeKitService
     private let weatherKit:           WeatherKitService
     private let behavioralService:    BehavioralAnalysisService
+    private let ruleEngine:           RuleEngineService
     private let modelContainer:       ModelContainer
     private let smartLightingEngine:  SmartLightingEngine
     private let scenesService:        HomeKitScenesService
@@ -37,6 +38,7 @@ final class ToolDispatcher {
         homeKit:             HomeKitService,
         weatherKit:          WeatherKitService,
         behavioralService:   BehavioralAnalysisService,
+        ruleEngine:          RuleEngineService,
         modelContainer:      ModelContainer,
         smartLightingEngine: SmartLightingEngine,
         scenesService:       HomeKitScenesService
@@ -46,6 +48,7 @@ final class ToolDispatcher {
         self.homeKit             = homeKit
         self.weatherKit          = weatherKit
         self.behavioralService   = behavioralService
+        self.ruleEngine          = ruleEngine
         self.modelContainer      = modelContainer
         self.smartLightingEngine = smartLightingEngine
         self.scenesService       = scenesService
@@ -65,23 +68,73 @@ final class ToolDispatcher {
         }
     }
 
+    private func supportsAction(_ action: String, accessory: HMAccessory) -> Bool {
+        guard !isSecurityAccessory(accessory) else { return false }
+
+        let services = Set(accessory.services.map { $0.serviceType.lowercased() })
+        let chars = Set(accessory.services
+            .flatMap(\.characteristics)
+            .map { $0.characteristicType.lowercased() })
+
+        let lightbulb = "00000043-0000-1000-8000-0026bb765291"
+        let cover = "0000008c-0000-1000-8000-0026bb765291"
+        let humidifier = "000000bd-0000-1000-8000-0026bb765291"
+
+        switch action {
+        case "on", "off":
+            return chars.contains("00000025-0000-1000-8000-0026bb765291")
+                || chars.contains("000000b0-0000-1000-8000-0026bb765291")
+        case "dim":
+            return services.contains(lightbulb)
+                && !services.contains(humidifier)
+                && chars.contains("00000008-0000-1000-8000-0026bb765291")
+        case "setColorTemp":
+            return services.contains(lightbulb)
+                && !services.contains(humidifier)
+                && chars.contains("000000ce-0000-1000-8000-0026bb765291")
+        case "open", "close":
+            return services.contains(cover)
+                && chars.contains("0000007c-0000-1000-8000-0026bb765291")
+        case "setSpeed":
+            return chars.contains("00000029-0000-1000-8000-0026bb765291")
+        case "setTemp":
+            return chars.contains("00000035-0000-1000-8000-0026bb765291")
+        case "setMode":
+            return chars.contains("000000b2-0000-1000-8000-0026bb765291")
+                || chars.contains("00000033-0000-1000-8000-0026bb765291")
+                || chars.contains("000000a8-0000-1000-8000-0026bb765291")
+                || chars.contains("000000b4-0000-1000-8000-0026bb765291")
+        default:
+            return false
+        }
+    }
+
     // MARK: - Capability helpers
 
     /// Returns a compact capability string for an accessory, e.g. "on/off+dim" or "on/off+setTemp".
     /// Used by listAccessories so the LLM knows what actions make sense without tool-round-trips.
     private func accessoryCapabilities(_ accessory: HMAccessory) -> String {
+        guard !isSecurityAccessory(accessory) else { return "readOnly" }
+
+        let serviceTypes = Set(accessory.services.map { $0.serviceType.lowercased() })
         let charTypes = accessory.services
             .flatMap(\.characteristics)
             .map { $0.characteristicType.lowercased() }
         var caps: [String] = ["on/off"]
-        if charTypes.contains("00000008-0000-1000-8000-0026bb765291") { caps.append("dim") }
-        if charTypes.contains("000000ce-0000-1000-8000-0026bb765291") { caps.append("setColorTemp") }
+
+        let lightbulb  = "00000043-0000-1000-8000-0026bb765291"
+        let humidifier = "000000bd-0000-1000-8000-0026bb765291"
+        if serviceTypes.contains(lightbulb), !serviceTypes.contains(humidifier) {
+            if charTypes.contains("00000008-0000-1000-8000-0026bb765291") { caps.append("dim") }
+            if charTypes.contains("000000ce-0000-1000-8000-0026bb765291") { caps.append("setColorTemp") }
+        }
         if charTypes.contains("00000035-0000-1000-8000-0026bb765291") { caps.append("setTemp") }
         if charTypes.contains("00000029-0000-1000-8000-0026bb765291") { caps.append("setSpeed") }
-        // setMode: TargetHeaterCoolerState (AC), TargetHeatingCoolingState (thermostat/TRV), TargetAirPurifierState
+        // setMode: TargetHeaterCoolerState (AC), TargetHeatingCoolingState (thermostat/TRV), TargetAirPurifierState, TargetHumidifierDehumidifierState
         if charTypes.contains("000000b2-0000-1000-8000-0026bb765291")
             || charTypes.contains("00000033-0000-1000-8000-0026bb765291")
-            || charTypes.contains("000000a8-0000-1000-8000-0026bb765291") { caps.append("setMode") }
+            || charTypes.contains("000000a8-0000-1000-8000-0026bb765291")
+            || charTypes.contains("000000b4-0000-1000-8000-0026bb765291") { caps.append("setMode") }
         return caps.joined(separator: "+")
     }
 
@@ -100,16 +153,19 @@ final class ToolDispatcher {
         let lock       = "00000045-0000-1000-8000-0026bb765291"
         let garage     = "00000041-0000-1000-8000-0026bb765291"
         let airPurif   = "000000bb-0000-1000-8000-0026bb765291"
+        let humidifier = "000000bd-0000-1000-8000-0026bb765291"
         let services   = Set(accessory.services.map { $0.serviceType.lowercased() })
+        if isSecurityAccessory(accessory)                   { return "sicurezza" }
+        if services.contains(humidifier)                    { return "umidificatore" }
+        if services.contains(airPurif)                      { return "purificatore" }
+        if services.contains(thermostat)                    { return "termostato" }
+        if services.contains(lock)                          { return "serratura" }
+        if services.contains(garage)                        { return "portone" }
         if services.contains(lightbulb)                     { return "luce" }
         if services.contains(outlet)                        { return "presa" }
         if services.contains(switchSvc)                     { return "interruttore" }
         if services.contains(fanV2) || services.contains(fanV1) { return "ventilatore" }
         if services.contains(cover)                         { return "tenda" }
-        if services.contains(thermostat)                    { return "termostato" }
-        if services.contains(lock)                          { return "serratura" }
-        if services.contains(garage)                        { return "portone" }
-        if services.contains(airPurif)                      { return "purificatore" }
         return "altro"
     }
 
@@ -308,6 +364,20 @@ final class ToolDispatcher {
             ]
         ),
         ToolSchema(
+            name: "diagnoseAutomations",
+            description: "Elenca e diagnostica le regole/automazioni create nell'app: trigger, azione, modalità HomeKit/In-App, stato enabled, scene collegate e problemi evidenti. Usa per domande come 'che automazioni ho?', 'perché non parte?', 'questa regola è sincronizzata con HomeKit?'.",
+            inputSchema: [
+                "type": "object",
+                "properties": [
+                    "query": [
+                        "type": "string",
+                        "description": "Filtro opzionale su nome regola, descrizione, scena o azione."
+                    ]
+                ],
+                "required": []
+            ]
+        ),
+        ToolSchema(
             name: "getOutdoor",
             description: "Restituisce le condizioni meteo esterne correnti e la previsione per domani (richiede posizione casa configurata).",
             inputSchema: [
@@ -437,7 +507,9 @@ final class ToolDispatcher {
             · setColorTemp: Kelvin (2700=caldo, 4000=neutro, 6500=freddo) — solo luci con caps:setColorTemp. \
             · setMode: per AC (caps:setMode) → 0=Auto, 1=Caldo, 2=Freddo; \
               per valvole termostatiche → 0=Off, 1=Caldo, 2=Freddo, 3=Auto; \
-              per purificatori → 0=Manuale, 1=Auto. Attiva automaticamente il dispositivo. \
+              per purificatori → 0=Manuale, 1=Auto; \
+              per umidificatori/diffusori → 0=Auto, 1=Umidifica, 2=Deumidifica. \
+              Attiva automaticamente il dispositivo. \
             · setSpeed: 0.0–1.0 (es. 1.0=100% velocità ventola). \
             · setTemp: °C (es. 22.0). \
             La scena viene creata direttamente su HomeKit ed è subito visibile nell'app e in Apple Home.
@@ -461,11 +533,11 @@ final class ToolDispatcher {
                                 ],
                                 "action": [
                                     "type": "string",
-                                    "description": "on | off | dim | setColorTemp | setTemp | setSpeed | setMode | open | close"
+                    "description": "on | off | dim | setColorTemp | setTemp | setSpeed | setMode | open | close"
                                 ],
                                 "value": [
                                     "type": "number",
-                                    "description": "dim: 0.0–1.0, setColorTemp: Kelvin (es. 2700), setTemp: °C, setSpeed: 0.0–1.0. Ometti per on/off/open/close."
+                        "description": "dim: 0.0–1.0, setColorTemp: Kelvin (es. 2700), setTemp: °C, setSpeed: 0.0–1.0, setMode: valore intero della modalità. Ometti per on/off/open/close."
                                 ]
                             ],
                             "required": ["accessoryID", "action"]
@@ -589,7 +661,7 @@ final class ToolDispatcher {
                     ],
                     "action": [
                         "type": "string",
-                        "description": "on | off | dim | open | close | setSpeed | setTemp. Obbligatorio se sceneName è assente."
+                        "description": "on | off | dim | open | close | setSpeed | setTemp | setMode. Obbligatorio se sceneName è assente."
                     ],
                     "sceneName": [
                         "type": "string",
@@ -651,6 +723,7 @@ final class ToolDispatcher {
         case "getHistory":         return await getHistory(input: input)
         case "getSecurityState":   return getSecurityState(input: input)
         case "getHabits":          return getHabits(input: input)
+        case "diagnoseAutomations": return diagnoseAutomations(input: input)
         case "getOutdoor":         return getOutdoor(input: input)
         case "controlAccessory":    return await controlAccessory(input: input)
         case "proposeAction":       return proposeAction(input: input)
@@ -661,7 +734,7 @@ final class ToolDispatcher {
         case "getLightingStatus":   return getLightingStatus(input: input)
         case "configureLighting":   return configureLighting(input: input)
         default:
-            return "Tool '\(toolName)' non riconosciuto. Tool disponibili: readSensor, getRoomState, listAccessories, getHistory, getSecurityState, getHabits, getOutdoor, controlAccessory, proposeAction, chooseAccessory, proposeOpportunity, createScene, listScenes, getLightingStatus, configureLighting."
+            return "Tool '\(toolName)' non riconosciuto. Tool disponibili: readSensor, getRoomState, listAccessories, getHistory, getSecurityState, getHabits, diagnoseAutomations, getOutdoor, controlAccessory, proposeAction, chooseAccessory, proposeOpportunity, createScene, listScenes, getLightingStatus, configureLighting."
         }
     }
 
@@ -913,6 +986,141 @@ final class ToolDispatcher {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - diagnoseAutomations
+
+    private func diagnoseAutomations(input: [String: Any]) -> String {
+        let query = (input["query"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        let rules = ruleEngine.rules.filter { rule in
+            guard let query, !query.isEmpty else { return true }
+            let haystack = [
+                rule.name,
+                rule.ruleDescription,
+                rule.actionSceneName ?? "",
+                rule.actionType,
+                rule.triggerType
+            ].joined(separator: " ").lowercased()
+            return haystack.contains(query)
+        }
+
+        guard !rules.isEmpty else {
+            lastActionPayload = .automationDiagnostics(
+                title: String(localized: "chat.diagnostics.title", defaultValue: "Automazioni"),
+                items: []
+            )
+            return query == nil
+                ? "Nessuna automazione attiva nell'app."
+                : "Nessuna automazione corrisponde al filtro '\(query ?? "")'."
+        }
+
+        let homeTriggers = Set(homeKit.currentHome?.triggers.map { $0.uniqueIdentifier.uuidString } ?? [])
+        let sceneNames = Set(homeKit.currentHome?.actionSets.map { $0.name.lowercased() } ?? [])
+        let accessoryIDs = Set(homeKit.allAccessories.map { $0.uniqueIdentifier.uuidString })
+
+        var lines: [String] = ["Automazioni nell'app (\(rules.count)):"]
+        var diagnosticItems: [AutomationDiagnosticItem] = []
+        for rule in rules.prefix(12) {
+            var issues: [String] = []
+            if !rule.isEnabled {
+                issues.append("disabilitata")
+            }
+            if rule.executionMode == "homeKit" {
+                if let triggerID = rule.homeKitTriggerID {
+                    if !homeTriggers.contains(triggerID) {
+                        issues.append("trigger HomeKit non trovato")
+                    }
+                } else {
+                    issues.append("trigger HomeKit assente")
+                }
+            }
+            if let sceneName = rule.actionSceneName {
+                if !sceneNames.contains(sceneName.lowercased()) {
+                    issues.append("scena non trovata")
+                }
+            } else if !rule.actionAccessoryID.isEmpty,
+                      !accessoryIDs.contains(rule.actionAccessoryID) {
+                issues.append("accessorio non trovato")
+            }
+            if rule.triggerType == "calendar", rule.triggerTime == nil {
+                issues.append("orario mancante")
+            }
+            if rule.triggerType == "characteristic",
+               (rule.triggerCharacteristicID == nil || rule.triggerThreshold == nil) {
+                issues.append("soglia sensore incompleta")
+            }
+
+            let status = issues.isEmpty ? "ok" : issues.joined(separator: ", ")
+            let sceneOrAction = rule.actionSceneName.map { "scena '\($0)'" } ?? automationActionSummary(rule)
+            diagnosticItems.append(AutomationDiagnosticItem(
+                title: rule.name,
+                trigger: automationTriggerSummary(rule),
+                action: sceneOrAction,
+                mode: rule.executionModeLabel,
+                isEnabled: rule.isEnabled,
+                status: status
+            ))
+            lines.append("- \(rule.name): \(rule.isEnabled ? "attiva" : "spenta"), \(rule.executionModeLabel), trigger \(automationTriggerSummary(rule)), azione \(sceneOrAction), stato: \(status)")
+        }
+        if rules.count > 12 {
+            lines.append("(+ altre \(rules.count - 12) automazioni)")
+        }
+
+        lastActionPayload = .automationDiagnostics(
+            title: "Automazioni nell'app",
+            items: diagnosticItems
+        )
+
+        return lines.joined(separator: "\n")
+    }
+
+    private func automationTriggerSummary(_ rule: Rule) -> String {
+        switch rule.triggerType {
+        case "calendar":
+            let time = rule.triggerTime ?? "--:--"
+            let weekdays = rule.weekdaysArray
+            guard !weekdays.isEmpty else { return "ogni giorno alle \(time)" }
+            let symbols = Calendar.current.shortWeekdaySymbols
+            let days = weekdays.sorted().compactMap { day -> String? in
+                guard day >= 1, day <= symbols.count else { return nil }
+                return symbols[day - 1]
+            }.joined(separator: ", ")
+            return "\(days) alle \(time)"
+        case "characteristic":
+            guard let condition = rule.triggerCharacteristicID,
+                  let threshold = rule.triggerThreshold else {
+                return "soglia sensore"
+            }
+            let parts = condition.split(separator: "|").map(String.init)
+            let sensorRaw = parts.first ?? ""
+            let sensorName = SensorServiceType(rawValue: sensorRaw)?.displayName ?? sensorRaw
+            let room = parts.count > 1 ? " (\(parts[1]))" : ""
+            let direction = parts.count > 2 ? parts[2] : "below"
+            let symbol = direction == "above" ? ">" : "<"
+            return "\(sensorName)\(room) \(symbol) \(String(format: "%.1f", threshold))"
+        default:
+            return "manuale/in-app"
+        }
+    }
+
+    private func automationActionSummary(_ rule: Rule) -> String {
+        switch rule.actionType {
+        case "on": return "accendi"
+        case "off": return "spegni"
+        case "dim":
+            return "luminosità \(Int((rule.actionValue ?? 0.3) * 100))%"
+        case "setSpeed":
+            return "velocità \(Int((rule.actionValue ?? 0.5) * 100))%"
+        case "setTemp":
+            return "temperatura \(Int(rule.actionValue ?? 22.0))°C"
+        case "setMode": return "modalità"
+        case "open": return "apri"
+        case "close": return "chiudi"
+        default: return rule.actionType
+        }
+    }
+
     // MARK: - controlAccessory (Phase 2 — write, reversible only)
 
     private func controlAccessory(input: [String: Any]) async -> String {
@@ -983,8 +1191,11 @@ final class ToolDispatcher {
         }
 
         guard let uuid = UUID(uuidString: accessoryIDStr),
-              homeKit.allAccessories.first(where: { $0.uniqueIdentifier == uuid }) != nil else {
+              let accessory = homeKit.allAccessories.first(where: { $0.uniqueIdentifier == uuid }) else {
             return "Accessorio non trovato con ID '\(accessoryIDStr)'. Usa listAccessories per ottenere gli UUID corretti."
+        }
+        guard supportsAction(action, accessory: accessory) else {
+            return "Azione '\(action)' non consentita o non supportata per '\(accessory.name)'."
         }
 
         let value = input["value"] as? Double
@@ -1013,9 +1224,20 @@ final class ToolDispatcher {
         }
 
         let value = input["value"] as? Double
-        lastActionPayload = .choose(accessories: choices, action: action,
+        let safeChoices = choices.filter { choice in
+            guard let uuid = UUID(uuidString: choice.id),
+                  let accessory = homeKit.allAccessories.first(where: { $0.uniqueIdentifier == uuid }) else {
+                return false
+            }
+            return supportsAction(action, accessory: accessory)
+        }
+        guard !safeChoices.isEmpty else {
+            return "Nessun accessorio selezionabile supporta in sicurezza l'azione '\(action)'."
+        }
+
+        lastActionPayload = .choose(accessories: safeChoices, action: action,
                                     value: value, promptText: promptText)
-        return "Disambiguazione presentata all'utente: \(choices.map(\.name).joined(separator: ", "))."
+        return "Disambiguazione presentata all'utente: \(safeChoices.map(\.name).joined(separator: ", "))."
     }
 
     // MARK: - proposeOpportunity (Phase 3 — create automation rule from chat)
@@ -1038,8 +1260,11 @@ final class ToolDispatcher {
                 return "Parametri mancanti: fornisci sceneName oppure accessoryID + action."
             }
             guard UUID(uuidString: accessoryIDStr) != nil,
-                  homeKit.allAccessories.first(where: { $0.uniqueIdentifier.uuidString == accessoryIDStr }) != nil else {
+                  let accessory = homeKit.allAccessories.first(where: { $0.uniqueIdentifier.uuidString == accessoryIDStr }) else {
                 return "Accessorio non trovato con ID '\(accessoryIDStr)'. Usa listAccessories per ottenere gli UUID corretti."
+            }
+            guard supportsAction(action, accessory: accessory) else {
+                return "Automazione non creata: azione '\(action)' non consentita o non supportata per '\(accessory.name)'."
             }
         }
 
@@ -1050,6 +1275,7 @@ final class ToolDispatcher {
         let sensorRoom      = input["triggerSensorRoom"] as? String
         let sensorThreshold = input["triggerThreshold"] as? Double
         let sensorDirection = input["triggerDirection"] as? String
+        let value           = input["value"] as? Double
 
         // Validazione: calendar senza ora non è schedulabile
         if triggerType == "calendar", (triggerTime?.isEmpty ?? true) {
@@ -1063,19 +1289,39 @@ final class ToolDispatcher {
         }
 
         // B2 — intra-session semantic dedup
+        let valueKey = value.map { String($0) } ?? ""
+        let thresholdKey = sensorThreshold.map { String($0) } ?? ""
         let semanticKey: String
         if let sn = sceneName, !sn.isEmpty {
-            semanticKey = "scene:\(sn):\(triggerType):\(triggerTime ?? "")"
+            semanticKey = [
+                "scene",
+                sn.lowercased(),
+                triggerType,
+                triggerTime ?? "",
+                triggerWeekdays ?? "",
+                sensorType ?? "",
+                sensorRoom ?? "",
+                thresholdKey,
+                sensorDirection ?? ""
+            ].joined(separator: ":")
         } else {
-            semanticKey = "\(accessoryIDStr):\(action)"
+            semanticKey = [
+                accessoryIDStr,
+                action,
+                valueKey,
+                triggerType,
+                triggerTime ?? "",
+                triggerWeekdays ?? "",
+                sensorType ?? "",
+                sensorRoom ?? "",
+                thresholdKey,
+                sensorDirection ?? ""
+            ].joined(separator: ":")
         }
         if proposedSemanticKeys.contains(semanticKey) {
             return "Opportunità per questa azione già proposta in questa sessione."
         }
         proposedSemanticKeys.insert(semanticKey)
-
-        let value = input["value"] as? Double
-
         let opp = AutomationOpportunity.fromConversation(
             accessoryID:        accessoryIDStr,
             action:             action,
@@ -1162,6 +1408,10 @@ final class ToolDispatcher {
                 skipped.append(idStr)
                 continue
             }
+            guard supportsAction(action, accessory: accessory) else {
+                skipped.append(accessory.name)
+                continue
+            }
 
             let allChars = accessory.services.flatMap(\.characteristics)
             func ch(_ u: String) -> HMCharacteristic? {
@@ -1218,9 +1468,11 @@ final class ToolDispatcher {
                 // TargetHeaterCoolerState (AC): 000000b2 — 0=Auto, 1=Heat, 2=Cool
                 // TargetHeatingCoolingState (Thermostat/TRV): 00000033 — 0=Off, 1=Heat, 2=Cool, 3=Auto
                 // TargetAirPurifierState (Purifier): 000000a8 — 0=Manual, 1=Auto
+                // TargetHumidifierDehumidifierState: 000000b4 — 0=Auto, 1=Humidify, 2=Dehumidify
                 let hcModeUUID    = "000000b2-0000-1000-8000-0026bb765291"
                 let thermoModeUUID = "00000033-0000-1000-8000-0026bb765291"
                 let apModeUUID    = "000000a8-0000-1000-8000-0026bb765291"
+                let humidifierModeUUID = "000000b4-0000-1000-8000-0026bb765291"
                 let intMode = Int(value ?? 0)
                 if let modeChar = ch(hcModeUUID) {
                     // AC (HeaterCooler): activate first, then set target mode
@@ -1237,6 +1489,11 @@ final class ToolDispatcher {
                 } else if let apChar = ch(apModeUUID) {
                     // Air purifier: TargetAirPurifierState
                     pending.append(PendingAction(characteristic: apChar, value: intMode as NSNumber))
+                } else if let humidifierChar = ch(humidifierModeUUID) {
+                    if let active = ch(activeUUID) {
+                        pending.append(PendingAction(characteristic: active, value: 1 as NSNumber))
+                    }
+                    pending.append(PendingAction(characteristic: humidifierChar, value: intMode as NSNumber))
                 }
             default:
                 break
@@ -1362,6 +1619,9 @@ final class ToolDispatcher {
         let fanV2      = "000000b7-0000-1000-8000-0026bb765291"
         let fanV1      = "00000040-0000-1000-8000-0026bb765291"
         let cover      = "0000008c-0000-1000-8000-0026bb765291"
+        let thermostat = "0000004a-0000-1000-8000-0026bb765291"
+        let airPurif   = "000000bb-0000-1000-8000-0026bb765291"
+        let humidifier = "000000bd-0000-1000-8000-0026bb765291"
         let services   = Set(acc.services.map { $0.serviceType.lowercased() })
         switch type {
         case "luci", "luce", "light", "lights":          return services.contains(lightbulb)
@@ -1372,6 +1632,12 @@ final class ToolDispatcher {
                                                           return services.contains(fanV2) || services.contains(fanV1)
         case "tende", "tapparelle", "blind", "blinds", "cover":
                                                           return services.contains(cover)
+        case "clima", "climate", "termostato", "termostati", "thermostat", "thermostats":
+                                                          return services.contains(thermostat)
+        case "purificatore", "purificatori", "airpurifier", "airpurifiers", "air purifier", "air purifiers":
+                                                          return services.contains(airPurif)
+        case "umidificatore", "umidificatori", "humidifier", "humidifiers", "diffusore", "diffusori", "diffuser", "diffusers":
+                                                          return services.contains(humidifier)
         default:                                          return true
         }
     }

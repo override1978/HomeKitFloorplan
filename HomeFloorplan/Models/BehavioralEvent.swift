@@ -101,6 +101,10 @@ struct BehavioralEvent: Identifiable, Codable {
     /// Nil for raw accessory/scene events.
     var groupingKey: String? = nil
 
+    /// HomeKit scene name matched to a burst synthetic event, when available.
+    /// Nil for raw accessory events and unmatched burst routines.
+    var matchedSceneName: String? = nil
+
     /// Stable key for correlation pairing and deduplication.
     var signature: String {
         "\(eventTypeRaw):\(accessoryName):\(action.rawValue)"

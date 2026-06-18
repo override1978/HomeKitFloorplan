@@ -12,6 +12,7 @@ struct ActiveRulesView: View {
     @Environment(HomeKitService.self) private var homeKit
 
     @State private var editingRule: Rule?
+    @State private var blockedEditRule: Rule?
     @State private var pendingDelete: Rule?
     @State private var executingRule: Rule?
 
@@ -34,6 +35,19 @@ struct ActiveRulesView: View {
                 guard let updatedDraft else { return }
                 ruleEngine.updateRule(rule, from: updatedDraft)
             }
+        }
+        .alert(String(localized: "rules.homekitEdit.title", defaultValue: "Modifica da Apple Home"),
+               isPresented: Binding(
+                get: { blockedEditRule != nil },
+                set: { if !$0 { blockedEditRule = nil } }
+               ),
+               presenting: blockedEditRule) { _ in
+            Button(String(localized: "common.ok", defaultValue: "OK"), role: .cancel) {}
+        } message: { rule in
+            Text(String(
+                localized: "rules.homekitEdit.message",
+                defaultValue: "Questa automazione è già sincronizzata con HomeKit. Per ora puoi attivarla, disattivarla, eseguirla o eliminarla dall'app; la modifica completa va fatta da Apple Home."
+            ))
         }
         .alert(String(localized: "rules.delete.title", defaultValue: "Eliminare la regola?"),
                isPresented: Binding(
@@ -98,7 +112,11 @@ struct ActiveRulesView: View {
     private func ruleRow(_ rule: Rule) -> some View {
         let isScene = rule.actionSceneName != nil
         Button {
-            editingRule = rule
+            if rule.executionMode == "homeKit" {
+                blockedEditRule = rule
+            } else {
+                editingRule = rule
+            }
         } label: {
             HStack(spacing: 12) {
                 // Icona azione — viola per scene multi-azione, accent per azioni singole
@@ -116,10 +134,27 @@ struct ActiveRulesView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    Text(rule.ruleDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+
+                    if rule.generatedByAI {
+                        HStack(alignment: .top, spacing: 5) {
+                            Image(systemName: "quote.bubble.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.purple)
+                                .padding(.top, 1)
+                            Text(
+                                String(localized: "rules.aiRequest.prefix", defaultValue: "Richiesta AI: ")
+                                + rule.ruleDescription
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(4)
+                        }
+                    } else {
+                        Text(rule.ruleDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
 
                     // Scena multi-azione collegata
                     if let sceneName = rule.actionSceneName {
@@ -130,6 +165,20 @@ struct ActiveRulesView: View {
                             .padding(.vertical, 3)
                             .background(.indigo.opacity(0.10), in: Capsule())
                     }
+
+                    Label(triggerSummary(for: rule), systemImage: triggerIcon(for: rule))
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.blue)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.blue.opacity(0.10), in: Capsule())
+
+                    Label(actionSummary(for: rule), systemImage: actionIcon(for: rule.actionType))
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(isScene ? .indigo : .accentColor)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background((isScene ? Color.indigo : Color.accentColor).opacity(0.10), in: Capsule())
 
                     // Badge row
                     HStack(spacing: 6) {
@@ -249,6 +298,85 @@ struct ActiveRulesView: View {
         case "carbonMonoxide": return "aqi.medium"
         case "airQuality":     return "aqi.low"
         default:               return "sensor.tag.radiowaves.forward"
+        }
+    }
+
+    private func triggerSummary(for rule: Rule) -> String {
+        switch rule.triggerType {
+        case "calendar":
+            let time = rule.triggerTime ?? "--:--"
+            let weekdays = weekdaySummary(for: rule.weekdaysArray)
+            return weekdays.isEmpty ? time : "\(time) · \(weekdays)"
+        case "characteristic":
+            return conditionSummary(for: rule) ?? String(localized: "rules.trigger.sensor", defaultValue: "Sensor trigger")
+        default:
+            return String(localized: "rules.trigger.ondemand", defaultValue: "On-demand")
+        }
+    }
+
+    private func triggerIcon(for rule: Rule) -> String {
+        switch rule.triggerType {
+        case "calendar": return "calendar.badge.clock"
+        case "characteristic": return conditionIcon(for: rule)
+        default: return "bolt"
+        }
+    }
+
+    private func weekdaySummary(for weekdays: [Int]) -> String {
+        guard !weekdays.isEmpty else { return "" }
+        let normalized = Set(weekdays)
+        if normalized == Set(1...7) {
+            return String(localized: "rules.weekdays.everyDay", defaultValue: "Every day")
+        }
+        if normalized == Set([2, 3, 4, 5, 6]) {
+            return String(localized: "rules.weekdays.weekdays", defaultValue: "Weekdays")
+        }
+        if normalized == Set([1, 7]) {
+            return String(localized: "rules.weekdays.weekend", defaultValue: "Weekend")
+        }
+
+        let symbols = Calendar.current.shortWeekdaySymbols
+        return weekdays.sorted().compactMap { day in
+            guard day >= 1, day <= symbols.count else { return nil }
+            return symbols[day - 1]
+        }.joined(separator: ", ")
+    }
+
+    private func actionSummary(for rule: Rule) -> String {
+        if let sceneName = rule.actionSceneName {
+            return String(
+                format: String(localized: "rules.action.scene.format", defaultValue: "Scene: %@"),
+                sceneName
+            )
+        }
+
+        switch rule.actionType {
+        case "on": return String(localized: "rules.action.on", defaultValue: "Turn on")
+        case "off": return String(localized: "rules.action.off", defaultValue: "Turn off")
+        case "dim":
+            let percent = Int((rule.actionValue ?? 0.3) * 100)
+            return String(
+                format: String(localized: "rules.action.dim.format", defaultValue: "Dim %d%%"),
+                percent
+            )
+        case "open": return String(localized: "rules.action.open", defaultValue: "Open")
+        case "close": return String(localized: "rules.action.close", defaultValue: "Close")
+        case "setSpeed":
+            let percent = Int((rule.actionValue ?? 0.5) * 100)
+            return String(
+                format: String(localized: "rules.action.speed.format", defaultValue: "Speed %d%%"),
+                percent
+            )
+        case "setTemp":
+            let temp = rule.actionValue ?? 22.0
+            return String(
+                format: String(localized: "rules.action.temp.format", defaultValue: "Set %d°C"),
+                Int(temp)
+            )
+        case "setMode":
+            return String(localized: "rules.action.mode", defaultValue: "Set mode")
+        default:
+            return rule.actionType
         }
     }
 

@@ -5,9 +5,12 @@ import HomeKit
 struct FloorplanEditorView: View {
     @Bindable var floorplan: Floorplan
     @Binding var columnVisibility: NavigationSplitViewVisibility
+    var onSelectFloorplan: ((UUID) -> Void)? = nil
     
     @AppStorage(MarkerSize.appStorageKey)
     private var markerSizeRaw: String = MarkerSize.regular.rawValue
+    @AppStorage("ai.isEnabled")
+    private var isAIEnabled: Bool = false
     
     private var size: MarkerSize {
         MarkerSize(rawValue: markerSizeRaw) ?? .regular
@@ -29,6 +32,7 @@ struct FloorplanEditorView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(HabitAnalysisService.self) private var habitService
     
     @State private var isEditing: Bool = false
     @State private var showingPicker: Bool = false
@@ -42,6 +46,10 @@ struct FloorplanEditorView: View {
     @State private var selectedMarkerID: UUID?
     @State private var pendingDelete: PlacedAccessory?
     @State private var iconPickerTarget: PlacedAccessory?
+    @State private var showFloorplanDiagnostics = false
+    @State private var editHighlightedRoomID: UUID?
+    @State private var suppressNextMarkerTapID: UUID?
+    @State private var executingMarkerID: UUID?
     
     // Zoom & pan state
     @State private var zoomScale: CGFloat = 1.0
@@ -55,6 +63,11 @@ struct FloorplanEditorView: View {
     
     @Environment(HomeKitScenesService.self) private var scenesService
     @State private var showScenesPanel = false
+
+    @Query(sort: \Floorplan.createdAt, order: .reverse) private var allFloorplans: [Floorplan]
+
+    @AppStorage("primaryFloorplanID") private var primaryFloorplanID: String = ""
+    @AppStorage("pinnedFloorplanIDs") private var pinnedFloorplanIDsRaw: String = "[]"
 
     /// Overlay layer view model — scoped to this editor instance, keyed to the floorplan UUID.
     @State private var overlayVM: FloorplanOverlayViewModel?
@@ -86,6 +99,43 @@ struct FloorplanEditorView: View {
         return floorplan.accessories.first { $0.id == id }
     }
 
+    private var duplicatedMarkerAccessoryIDs: Set<UUID> {
+        let counts = Dictionary(grouping: floorplan.accessories, by: \.homeKitAccessoryUUID)
+        return Set(counts.compactMap { accessoryID, markers in
+            markers.count > 1 ? accessoryID : nil
+        })
+    }
+
+    private var accessoryPickerTitle: String {
+        guard let pickerRoomFilter,
+              let room = floorplan.linkedRooms.first(where: { $0.hmRoomUUID == pickerRoomFilter }) else {
+            return "Aggiungi accessori"
+        }
+        return "Aggiungi in \(room.name)"
+    }
+
+    private var availableFloorplans: [Floorplan] {
+        guard let homeUUID = homeKit.currentHome?.uniqueIdentifier else {
+            return allFloorplans
+        }
+        return allFloorplans.filter { $0.homeUUID == nil || $0.homeUUID == homeUUID }
+    }
+
+    private var pinnedFloorplans: [Floorplan] {
+        let ids = decodePinnedFloorplanIDs()
+        let matched = ids.compactMap { idString -> Floorplan? in
+            guard let id = UUID(uuidString: idString) else { return nil }
+            return availableFloorplans.first { $0.id == id }
+        }
+        let primary = matched.first { $0.id.uuidString == primaryFloorplanID }
+        let rest = matched.filter { $0.id.uuidString != primaryFloorplanID }
+        return (primary.map { [$0] } ?? []) + rest
+    }
+
+    private func decodePinnedFloorplanIDs() -> [String] {
+        (try? JSONDecoder().decode([String].self, from: Data(pinnedFloorplanIDsRaw.utf8))) ?? []
+    }
+
     private func buildOverlayContext() -> FloorplanOverlayContext {
         let hasEnv = !floorplan.linkedRooms.isEmpty
         let hasSecure = homeKit.allAccessories.contains { acc in
@@ -99,8 +149,18 @@ struct FloorplanEditorView: View {
         return FloorplanOverlayContext(
             hasEnvironmentData: hasEnv,
             hasSecurityDevices: hasSecure,
-            hasAIService: false           // Phase 6 will set this
+            hasAIService: isAIEnabled
         )
+    }
+
+    private func refreshOverlayContext() {
+        let context = buildOverlayContext()
+        cachedOverlayContext = context
+
+        if let vm = overlayVM,
+           !vm.activeMode.isAvailable(in: context) {
+            vm.activeMode = .controls
+        }
     }
     
     private var effectiveScale: CGFloat {
@@ -189,12 +249,14 @@ struct FloorplanEditorView: View {
         .sheet(isPresented: $showingPicker, onDismiss: {
             pickerRoomFilter = nil
             pendingMarkerPosition = nil
+            editHighlightedRoomID = nil
         }) {
             AccessoryPickerSheet(
                 alreadyPlaced: Set(floorplan.accessories.map(\.homeKitAccessoryUUID)),
                 preferredRoomUUIDs: pickerRoomFilter != nil
                     ? Set([pickerRoomFilter!])
                     : Set(floorplan.linkedRooms.map(\.hmRoomUUID)),
+                title: accessoryPickerTitle,
                 onPick: { accessories in
                     for accessory in accessories {
                         addAccessory(accessory, at: pendingMarkerPosition)
@@ -214,6 +276,12 @@ struct FloorplanEditorView: View {
                 )
                 .presentationDetents([.large])
             }
+        }
+        .sheet(isPresented: $showFloorplanDiagnostics) {
+            FloorplanDiagnosticsView(
+                report: FloorplanHealthAnalyzer.analyze(floorplan: floorplan, homeKit: homeKit),
+                onAddAccessories: startAssistedPlacement
+            )
         }
         
         
@@ -248,21 +316,31 @@ struct FloorplanEditorView: View {
             }
             // Warm up caches
             refreshFloorplanImageCache()
-            cachedOverlayContext = buildOverlayContext()
+            backfillMarkerRoomLinksIfNeeded()
+            refreshOverlayContext()
         }
         .onChange(of: homeKit.isReady) { _, isReady in
             if isReady {
                 subscribeToAccessories()
-                cachedOverlayContext = buildOverlayContext()
+                refreshOverlayContext()
             }
         }
         .onChange(of: homeKit.allAccessories.count) { _, _ in
-            cachedOverlayContext = buildOverlayContext()
+            refreshOverlayContext()
         }
         .onChange(of: floorplan.linkedRooms.count) { _, _ in
             // Ricalcola il contesto quando le stanze linkate cambiano,
             // così la pill "Ambiente" appare non appena si collega la prima stanza.
-            cachedOverlayContext = buildOverlayContext()
+            refreshOverlayContext()
+        }
+        .onChange(of: habitService.pendingPatterns.count) { _, _ in
+            refreshOverlayContext()
+        }
+        .onChange(of: habitService.isAnalyzing) { _, _ in
+            refreshOverlayContext()
+        }
+        .onChange(of: isAIEnabled) { _, _ in
+            refreshOverlayContext()
         }
         .onChange(of: floorplan.imageFilename) { _, _ in
             refreshFloorplanImageCache()
@@ -365,19 +443,13 @@ struct FloorplanEditorView: View {
                             .buttonStyle(.plain)
                         }
 
-                        GlassTitlePill {
-                            Text(floorplan.name)
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                        }
+                        floorplanTitleMenu
                     }
 
                     Spacer()
 
                     // Destra: azioni (+ / scene / modifica)
-                    topRightActions
+                    topRightActions(in: size)
                 }
             }
             .animation(.spring(response: 0.4), value: columnVisibility)
@@ -406,6 +478,12 @@ struct FloorplanEditorView: View {
                 )
                 .padding(.top, 6)
                 .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            if isEditing {
+                editModeBanner
+                    .padding(.top, 6)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
 
             // Hint banner: stanze non collegate → layer Ambiente non disponibile
@@ -444,6 +522,118 @@ struct FloorplanEditorView: View {
         )
         .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var editModeBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "pencil.and.outline")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandColor.primary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Modifica planimetria")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text("Tocca una stanza per aggiungere lì. Usa + per aggiunta libera.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                showFloorplanDiagnostics = true
+            } label: {
+                Image(systemName: "checklist")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandColor.primary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stato planimetria")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .frame(maxWidth: 560, alignment: .leading)
+        .padding(.horizontal, 20)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(BrandColor.primary.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private var floorplanTitleMenu: some View {
+        Menu {
+            if pinnedFloorplans.isEmpty {
+                Button {
+                    withAnimation(.spring(response: 0.4)) {
+                        columnVisibility = .all
+                    }
+                } label: {
+                    Label("Apri sidebar", systemImage: "sidebar.left")
+                }
+            } else {
+                Section("Accesso rapido") {
+                    ForEach(pinnedFloorplans) { item in
+                        Button {
+                            guard item.id != floorplan.id else { return }
+                            onSelectFloorplan?(item.id)
+                        } label: {
+                            Label {
+                                HStack {
+                                    Text(item.name)
+                                    if item.id == floorplan.id {
+                                        Text("Attuale")
+                                    }
+                                }
+                            } icon: {
+                                Image(systemName: titleMenuIcon(for: item))
+                            }
+                        }
+                        .disabled(item.id == floorplan.id || onSelectFloorplan == nil)
+                    }
+                }
+
+                Button {
+                    withAnimation(.spring(response: 0.4)) {
+                        columnVisibility = .all
+                    }
+                } label: {
+                    Label("Mostra sidebar", systemImage: "sidebar.left")
+                }
+            }
+        } label: {
+            GlassTitlePill {
+                HStack(spacing: 8) {
+                    Text(floorplan.name)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+        }
+        .buttonStyle(.plain)
+        .menuOrder(.fixed)
+    }
+
+    private func titleMenuIcon(for item: Floorplan) -> String {
+        if item.id == floorplan.id {
+            return "checkmark.circle.fill"
+        }
+        if item.id.uuidString == primaryFloorplanID {
+            return "star.square.fill"
+        }
+        return "pin.circle.fill"
     }
 
     // MARK: - Controlli secondari (auto-hide)
@@ -553,11 +743,12 @@ struct FloorplanEditorView: View {
     }
 
     @ViewBuilder
-    private var topRightActions: some View {
+    private func topRightActions(in size: CGSize) -> some View {
         // Nascondi la pill quando si è in un overlay non-Controlli (Ambiente / Sicurezza / …)
         // a meno che non si stia già modificando (uscire dall'edit deve essere sempre possibile).
         let inOverlayMode = (overlayVM?.activeMode ?? .controls) != .controls
         let hideEditButton = inOverlayMode && !isEditing
+        let showSceneText = size.width >= 760
 
         GlassTitlePill {
             HStack(spacing: 0) {
@@ -566,6 +757,7 @@ struct FloorplanEditorView: View {
                     Button {
                         pickerRoomFilter = nil
                         pendingMarkerPosition = nil
+                        editHighlightedRoomID = nil
                         showingPicker = true
                     } label: {
                         Image(systemName: "plus")
@@ -575,6 +767,7 @@ struct FloorplanEditorView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Aggiungi accessorio")
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
 
                     Divider().frame(height: 20)
@@ -584,15 +777,36 @@ struct FloorplanEditorView: View {
                 // Scene: visibile solo in modalità Controlli o in editing
                 if !hideEditButton {
                     Button {
-                        showScenesPanel = true
+                        showFloorplanDiagnostics = true
                     } label: {
-                        Image(systemName: "wand.and.sparkles")
+                        Image(systemName: "checklist")
                             .font(.subheadline)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+
+                    Divider().frame(height: 20)
+
+                    Button {
+                        showScenesPanel = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "play.rectangle.on.rectangle")
+                            if showSceneText {
+                                Text("Scene")
+                            }
+                        }
+                        .font(.subheadline)
+                        .fontWeight(showSceneText ? .medium : .regular)
+                        .padding(.horizontal, showSceneText ? 14 : 13)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Scene")
+                    .help("Apri scene")
 
                     Divider().frame(height: 20)
                 }
@@ -602,7 +816,12 @@ struct FloorplanEditorView: View {
                     Button {
                         withAnimation(.spring(response: 0.3)) {
                             isEditing.toggle()
-                            if !isEditing { selectedMarkerID = nil }
+                            suppressNextMarkerTapID = nil
+                            executingMarkerID = nil
+                            if !isEditing {
+                                selectedMarkerID = nil
+                                editHighlightedRoomID = nil
+                            }
                         }
                     } label: {
                         HStack(spacing: 6) {
@@ -667,15 +886,19 @@ struct FloorplanEditorView: View {
         // 3. Editing + has linked room areas: detect which area was tapped
         guard !floorplan.linkedRooms.isEmpty else { return }
 
-        // Reverse the zoom/pan transform (scaleEffect anchor: .center, then offset)
+        // Reverse the zoom/pan transform (scaleEffect anchor: .center, then offset).
+        // The rendered image is additionally shifted by topBarHeight / 2 to stay centered
+        // below the top bar, so the inverse transform must subtract the same visual offset.
         let centerX = containerSize.width / 2
         let centerY = containerSize.height / 2
         let adjustedX = (tapLocation.x - centerX - effectiveOffset.width) / effectiveScale + centerX
-        let adjustedY = (tapLocation.y - centerY - effectiveOffset.height) / effectiveScale + centerY
+        let visualYOffset = effectiveOffset.height + topBarHeight / 2
+        let adjustedY = (tapLocation.y - centerY - visualYOffset) / effectiveScale + centerY
 
-        // Compute the content rect using the saved image (aspect-fit).
-        guard let image = ImageStorageService.load(filename: floorplan.imageFilename) else { return }
+        // Compute the content rect from the cached image to avoid disk I/O on every tap.
+        guard let image = cachedFloorplanImage else { return }
         let imgRect = imageRect(imageSize: image.size, container: containerSize)
+        let helper = FloorplanCoordinateHelper(imageRect: imgRect)
 
         // Normalize to [0, 1] within the content rect
         let normX = (adjustedX - imgRect.origin.x) / imgRect.width
@@ -685,11 +908,14 @@ struct FloorplanEditorView: View {
         pendingMarkerPosition = NormalizedPoint(x: normX, y: normY)
 
         // Hit-test linked room areas
-        pickerRoomFilter = floorplan.linkedRooms.first { room in
-            let r = room.normalizedRect
-            return normX >= r.x && normX <= r.x + r.width
-                && normY >= r.y && normY <= r.y + r.height
-        }?.hmRoomUUID
+        let tappedRoom = floorplan.linkedRooms.first { room in
+            helper.overlayPath(for: room).contains(CGPoint(x: adjustedX, y: adjustedY))
+        }
+
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+            editHighlightedRoomID = tappedRoom?.hmRoomUUID
+        }
+        pickerRoomFilter = tappedRoom?.hmRoomUUID
 
         showingPicker = true
     }
@@ -846,6 +1072,10 @@ struct FloorplanEditorView: View {
                 overlayLayer(vm: vm, container: container, imageRect: rect)
             }
 
+            if isEditing, !floorplan.linkedRooms.isEmpty {
+                editRoomInteractionLayer(container: container, imageRect: rect)
+            }
+
             // Marker accessori: visibili solo in modalità Controlli (o in modifica).
             // Transizione opacity per evitare un salto brusco al cambio modalità.
             let showMarkers = isEditing || (overlayVM?.activeMode == .controls)
@@ -865,6 +1095,59 @@ struct FloorplanEditorView: View {
         .frame(width: container.width, height: container.height)
     }
 
+    private func editRoomInteractionLayer(container: CGSize, imageRect: CGRect) -> some View {
+        let helper = FloorplanCoordinateHelper(imageRect: imageRect)
+
+        return ZStack(alignment: .topLeading) {
+            Canvas { ctx, _ in
+                for room in floorplan.linkedRooms {
+                    let path = helper.overlayPath(for: room)
+                    let isHighlighted = room.hmRoomUUID == editHighlightedRoomID
+                    let fill = isHighlighted
+                        ? BrandColor.primary.opacity(0.18)
+                        : BrandColor.primary.opacity(0.055)
+                    let stroke = isHighlighted
+                        ? BrandColor.primary.opacity(0.72)
+                        : BrandColor.primary.opacity(0.24)
+
+                    ctx.fill(path, with: .color(fill))
+                    ctx.stroke(
+                        path,
+                        with: .color(stroke),
+                        style: StrokeStyle(lineWidth: isHighlighted ? 2.0 : 1.0, dash: [6, 5])
+                    )
+                }
+            }
+            .frame(width: container.width, height: container.height)
+            .allowsHitTesting(false)
+
+            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+                let center = helper.centroid(for: room)
+                let isHighlighted = room.hmRoomUUID == editHighlightedRoomID
+
+                Text(room.name)
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .foregroundStyle(isHighlighted ? .white : BrandColor.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(isHighlighted ? BrandColor.primary.opacity(0.92) : Color(.systemBackground).opacity(0.78))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(BrandColor.primary.opacity(isHighlighted ? 0.0 : 0.24), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+                    .position(center)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(width: container.width, height: container.height)
+    }
+
     // MARK: - Overlay context panel
 
     @ViewBuilder
@@ -877,28 +1160,142 @@ struct FloorplanEditorView: View {
             title: panelTitle(for: mode),
             accentColor: mode.accentColor
         ) {
-            switch mode {
-            case .controls:
-                EmptyView()
-            case .environment:
-                EnvironmentContextDashboard(
-                    envVM: overlayEnvVM,
-                    overlayVM: vm,
-                    highlightedRoomID: vm.highlightedRoomID,
-                    linkedRooms: floorplan.linkedRooms
-                )
-            case .security:
-                SecurityContextDashboard(
-                    highlightedRoomID: vm.highlightedRoomID,
-                    linkedRooms: floorplan.linkedRooms
-                )
-            case .intelligence:
-                IntelligenceContextDashboard(
-                    highlightedRoomID: vm.highlightedRoomID,
-                    linkedRooms: floorplan.linkedRooms
-                )
+            VStack(spacing: 14) {
+                if mode == .intelligence, !habitService.pendingPatterns.isEmpty {
+                    floorplanOverviewCard(for: mode)
+                }
+
+                switch mode {
+                case .controls:
+                    EmptyView()
+                case .environment:
+                    EnvironmentContextDashboard(
+                        envVM: overlayEnvVM,
+                        overlayVM: vm,
+                        highlightedRoomID: vm.highlightedRoomID,
+                        linkedRooms: floorplan.linkedRooms
+                    )
+                case .security:
+                    SecurityContextDashboard(
+                        highlightedRoomID: vm.highlightedRoomID,
+                        linkedRooms: floorplan.linkedRooms
+                    )
+                case .intelligence:
+                    IntelligenceContextDashboard(
+                        highlightedRoomID: vm.highlightedRoomID,
+                        linkedRooms: floorplan.linkedRooms
+                    )
+                }
             }
+            .padding(.top, mode == .intelligence ? 36 : 0)
         }
+    }
+
+    private func floorplanOverviewCard(for mode: FloorplanOverlayMode) -> some View {
+        let health = FloorplanHealthAnalyzer.analyze(floorplan: floorplan, homeKit: homeKit)
+        let attentionRoomList = overlayEnvVM.rooms
+            .filter { $0.worstUrgency != .normal }
+            .sorted {
+                if $0.worstUrgency != $1.worstUrgency { return $0.worstUrgency > $1.worstUrgency }
+                return $0.roomName < $1.roomName
+            }
+        let attentionRooms = attentionRoomList.count
+        let topEnvironmentRoom = attentionRoomList.first
+        let suggestions = habitService.pendingPatterns.count
+        let issueCount = health.criticalCount + health.warningCount
+        let securityDeviceCount = homeKit.allAccessories.filter { accessory in
+            accessory.services.contains { service in
+                service.serviceType == HMServiceTypeLockMechanism ||
+                    service.serviceType == HMServiceTypeSecuritySystem ||
+                    service.serviceType == HMServiceTypeGarageDoorOpener ||
+                    service.serviceType == HMServiceTypeDoorbell
+            }
+        }.count
+
+        let color: Color
+        let icon: String
+        if mode == .environment, topEnvironmentRoom?.worstUrgency == .danger {
+            color = .red
+            icon = "exclamationmark.triangle.fill"
+        } else if mode == .security, securityDeviceCount == 0 {
+            color = .orange
+            icon = "lock.shield"
+        } else if mode == .intelligence, suggestions > 0 {
+            color = .orange
+            icon = "sparkles"
+        } else if issueCount > 0 {
+            color = .orange
+            icon = "checklist"
+        } else if attentionRooms > 0 || health.criticalCount > 0 {
+            color = .red
+            icon = "house.and.flag.fill"
+        } else {
+            color = .green
+            icon = "checkmark.seal.fill"
+        }
+
+        let title: String = {
+            switch mode {
+            case .environment:
+                if let room = topEnvironmentRoom {
+                    return "\(room.roomName) da controllare"
+                }
+                return "Ambiente stabile"
+            case .security:
+                if securityDeviceCount == 0 {
+                    return "Configura la sicurezza"
+                }
+                return "Sicurezza disponibile"
+            case .intelligence:
+                if suggestions > 0 {
+                    return suggestions == 1 ? "Un suggerimento pronto" : "\(suggestions) suggerimenti pronti"
+                }
+                return "Intelligenza in apprendimento"
+            case .controls:
+                if issueCount > 0 {
+                    return "Completa la planimetria"
+                }
+                return "Floorplan pronto"
+            }
+        }()
+
+        let message: String = {
+            switch mode {
+            case .environment:
+                if let room = topEnvironmentRoom {
+                    let level = room.worstUrgency == .danger ? "critica" : "da monitorare"
+                    return "Priorità \(level): guarda le card sotto per valori, spiegazione AI e azioni disponibili."
+                }
+                return "Nessuna stanza è fuori soglia: puoi usare questo pannello per controllare il riepilogo ambientale."
+            case .security:
+                if securityDeviceCount == 0 {
+                    return "Aggiungi serrature, sensori o allarme HomeKit per vedere stato e priorità sicurezza qui."
+                }
+                return "Usa le card sotto per controllare stato sistema, sensori monitorati e stanze evidenziate."
+            case .intelligence:
+                if suggestions > 0 {
+                    return "Valuta le raccomandazioni sotto: puoi approvarle o ignorarle direttamente da questo pannello."
+                }
+                return "Non ci sono azioni pronte: la casa continua a raccogliere pattern e mostrerà opportunità affidabili qui."
+            case .controls:
+                if issueCount > 0 {
+                    return "Apri la diagnostica con l'icona checklist per vedere cosa manca o cosa non torna."
+                }
+                return "Marker e stanze sono pronti: usa la pill centrale per passare agli overlay operativi."
+            }
+        }()
+
+        return FloorplanStatusSummaryCard(
+            title: title,
+            message: message,
+            icon: icon,
+            color: color,
+            metrics: [
+                FloorplanStatusMetric(value: "\(attentionRooms)", label: "Da controllare"),
+                FloorplanStatusMetric(value: "\(suggestions)", label: "Suggerimenti"),
+                FloorplanStatusMetric(value: "\(health.linkableUnplacedCount)", label: "Da piazzare")
+            ]
+        )
     }
 
     private func panelTitle(for mode: FloorplanOverlayMode) -> String {
@@ -1051,19 +1448,27 @@ struct FloorplanEditorView: View {
         let delta = dragDeltas[placed.id] ?? .zero
         let livePoint = CGPoint(x: basePoint.x + delta.width,
                                 y: basePoint.y + delta.height)
+        let collisionOffset = markerCollisionOffset(for: placed, in: imageRect)
+        let displayPoint = CGPoint(
+            x: livePoint.x + collisionOffset.width,
+            y: livePoint.y + collisionOffset.height
+        )
         let shaking = shakeMarkerID == placed.id
         
         let inverseScale = 1.0 / effectiveScale
+        let editIssue = markerEditIssue(for: placed, accessory: accessory)
         
         AccessoryMarkerView(
             adapter: adapter,
             isEditing: isEditing,
             isSelected: isEditing && isSelected,
+            isExecuting: executingMarkerID == placed.id,
+            editIssue: editIssue,
             label: displayLabel,
             hasCustomLabel: placed.customLabel?.isEmpty == false
         )
         .scaleEffect(inverseScale)
-        .position(livePoint)
+        .position(displayPoint)
         .offset(x: shaking ? 6 : 0)
         .animation(shaking ? .default.repeatCount(3, autoreverses: true).speed(8) : .default,
                    value: shaking)
@@ -1074,6 +1479,7 @@ struct FloorplanEditorView: View {
             : LongPressGesture(minimumDuration: 0.45)
                 .onEnded { _ in
                     if let accessory {
+                        suppressNextMarkerTapID = placed.id
                         controllingAccessory = accessory
                     }
                 }
@@ -1100,6 +1506,72 @@ struct FloorplanEditorView: View {
             isEditing ? dragGesture(for: placed, imageRect: imageRect) : nil
         )
     }
+
+    private func markerEditIssue(for placed: PlacedAccessory,
+                                 accessory: HMAccessory?) -> AccessoryMarkerEditIssue? {
+        guard isEditing else { return nil }
+
+        if accessory == nil {
+            return .missingHomeKitAccessory
+        }
+
+        if duplicatedMarkerAccessoryIDs.contains(placed.homeKitAccessoryUUID) {
+            return .duplicateMarker
+        }
+
+        guard !floorplan.linkedRooms.isEmpty else { return nil }
+
+        let containingRoomID = FloorplanRoomMatcher.linkedRoomID(
+            containing: placed.position,
+            in: floorplan.linkedRooms
+        )
+
+        guard let containingRoomID else {
+            return .outsideLinkedRoom
+        }
+
+        if placed.linkedRoomUUID != containingRoomID {
+            return .roomLinkMismatch
+        }
+
+        return nil
+    }
+
+    private func markerCollisionOffset(for placed: PlacedAccessory,
+                                       in imageRect: CGRect) -> CGSize {
+        guard !isEditing, floorplan.accessories.count > 1 else { return .zero }
+
+        let scale = max(effectiveScale, 0.01)
+        let threshold = 32 / scale
+        let basePoint = CGPoint(
+            x: imageRect.origin.x + placed.position.x * imageRect.width,
+            y: imageRect.origin.y + placed.position.y * imageRect.height
+        )
+
+        let nearbyMarkers = floorplan.accessories
+            .filter { candidate in
+                let candidatePoint = CGPoint(
+                    x: imageRect.origin.x + candidate.position.x * imageRect.width,
+                    y: imageRect.origin.y + candidate.position.y * imageRect.height
+                )
+                return hypot(candidatePoint.x - basePoint.x, candidatePoint.y - basePoint.y) <= threshold
+            }
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+
+        guard nearbyMarkers.count > 1,
+              let index = nearbyMarkers.firstIndex(where: { $0.id == placed.id }) else {
+            return .zero
+        }
+
+        let count = CGFloat(nearbyMarkers.count)
+        let angle = (2 * CGFloat.pi * CGFloat(index) / count) - (.pi / 2)
+        let radius = min(24, 10 + count * 3) / scale
+
+        return CGSize(
+            width: cos(angle) * radius,
+            height: sin(angle) * radius
+        )
+    }
     
     // MARK: - Tap handling
     
@@ -1109,19 +1581,25 @@ struct FloorplanEditorView: View {
         guard !isEditing else { return }
         guard let accessory else { return }
 
+        if suppressNextMarkerTapID == placed.id {
+            suppressNextMarkerTapID = nil
+            return
+        }
+
         scheduleAutoHide()
 
         // Tap: toggle diretto se supportato, altrimenti apre il pannello dettaglio.
         if let adapter, adapter.supportsQuickToggle {
-            performQuickToggle(adapter: adapter)
+            performQuickToggle(adapter: adapter, markerID: placed.id)
         } else {
             controllingAccessory = accessory
         }
     }
     
-    private func performQuickToggle(adapter: any AccessoryAdapter) {
+    private func performQuickToggle(adapter: any AccessoryAdapter, markerID: UUID) {
         let haptic = UIImpactFeedbackGenerator(style: .medium)
         haptic.impactOccurred()
+        executingMarkerID = markerID
         
         Task {
             do {
@@ -1129,6 +1607,11 @@ struct FloorplanEditorView: View {
             } catch {
                 let notif = UINotificationFeedbackGenerator()
                 notif.notificationOccurred(.error)
+            }
+            await MainActor.run {
+                if executingMarkerID == markerID {
+                    executingMarkerID = nil
+                }
             }
         }
     }
@@ -1168,6 +1651,10 @@ struct FloorplanEditorView: View {
                     y: max(0, min(1, newY / imageRect.height))
                 )
                 placed.position = normalized
+                placed.linkedRoomUUID = FloorplanRoomMatcher.linkedRoomID(
+                    containing: normalized,
+                    in: floorplan.linkedRooms
+                )
                 floorplan.updatedAt = .now
                 try? modelContext.save()
                 
@@ -1176,11 +1663,48 @@ struct FloorplanEditorView: View {
     }
     
     // MARK: - Marker actions
+
+    private func startAssistedPlacement(for roomID: UUID) {
+        pickerRoomFilter = roomID
+        editHighlightedRoomID = roomID
+        pendingMarkerPosition = floorplan.linkedRooms
+            .first { $0.hmRoomUUID == roomID }
+            .map(normalizedCenter)
+
+        showFloorplanDiagnostics = false
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            showingPicker = true
+        }
+    }
+
+    private func normalizedCenter(for room: LinkedRoom) -> NormalizedPoint {
+        if let points = room.normalizedPoints, !points.isEmpty {
+            let sum = points.reduce((x: 0.0, y: 0.0)) { partial, point in
+                (partial.x + point.x, partial.y + point.y)
+            }
+            return NormalizedPoint(
+                x: sum.x / Double(points.count),
+                y: sum.y / Double(points.count)
+            )
+        }
+
+        return NormalizedPoint(
+            x: room.normalizedRect.x + room.normalizedRect.width / 2,
+            y: room.normalizedRect.y + room.normalizedRect.height / 2
+        )
+    }
     
     private func addAccessory(_ accessory: HMAccessory, at position: NormalizedPoint? = nil) {
+        let markerPosition = position ?? .center
         let placed = PlacedAccessory(
             homeKitAccessoryUUID: accessory.uniqueIdentifier,
-            position: position ?? .center
+            position: markerPosition,
+            linkedRoomUUID: FloorplanRoomMatcher.linkedRoomID(
+                containing: markerPosition,
+                in: floorplan.linkedRooms
+            )
         )
         placed.floorplan = floorplan
         modelContext.insert(placed)
@@ -1213,6 +1737,26 @@ struct FloorplanEditorView: View {
         placed.customLabel = trimmed.isEmpty ? nil : trimmed
         floorplan.updatedAt = .now
         try? modelContext.save()
+    }
+
+    private func backfillMarkerRoomLinksIfNeeded() {
+        guard !floorplan.linkedRooms.isEmpty else { return }
+
+        var didUpdate = false
+        for marker in floorplan.accessories where marker.linkedRoomUUID == nil {
+            guard let roomID = FloorplanRoomMatcher.linkedRoomID(
+                containing: marker.position,
+                in: floorplan.linkedRooms
+            ) else { continue }
+
+            marker.linkedRoomUUID = roomID
+            didUpdate = true
+        }
+
+        if didUpdate {
+            floorplan.updatedAt = .now
+            try? modelContext.save()
+        }
     }
     
     // MARK: - Top Bar Height PreferenceKey

@@ -64,6 +64,9 @@ final class WindowCoveringAdapter: AccessoryAdapter {
     }
     
     var markerStyle: MarkerStyle { .controllable }
+    var markerTint: Color? {
+        isOn ? .orange : nil
+    }
     
     var visualUrgency: MarkerUrgency {
         // Aperta = "active" (gialla); chiusa = "normal" (grigia)

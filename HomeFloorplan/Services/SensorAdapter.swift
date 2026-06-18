@@ -412,6 +412,7 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable {
             "000000B7-0000-1000-8000-0026BB765291", // Fan v2
             "0000008C-0000-1000-8000-0026BB765291", // Window Covering
             "000000BC-0000-1000-8000-0026BB765291", // Heater Cooler
+            "000000BD-0000-1000-8000-0026BB765291", // Humidifier Dehumidifier
             "0000004A-0000-1000-8000-0026BB765291", // Thermostat
             "000000BB-0000-1000-8000-0026BB765291", // Air Purifier
             "000000D8-0000-1000-8000-0026BB765291", // Television

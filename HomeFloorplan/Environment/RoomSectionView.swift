@@ -28,7 +28,7 @@ struct RoomSectionView: View {
     let onSensorTap: (SensorData) -> Void
     var aiInsights: [AmbientalAIInsight] = []
     var onDismissInsight: ((AmbientalAIInsight, DismissalReason) -> Void)? = nil
-    var onExecuteAction: ((AINextAction, AmbientalAIInsight) -> Void)? = nil
+    var onExecuteAction: ((AINextAction, AmbientalAIInsight) async -> Bool)? = nil
     var onCreateRule: ((RuleDraft, AmbientalAIInsight) -> Void)? = nil
 
     @State private var isExpanded = false
@@ -214,7 +214,10 @@ struct RoomSectionView: View {
                         insight: insight,
                         fallbackAccessoryID: room.sensors.first?.accessoryUUIDs.first,
                         onDismiss: { reason in onDismissInsight?(insight, reason) },
-                        onExecuteAction: { action in onExecuteAction?(action, insight) },
+                        onExecuteAction: { action in
+                            guard let onExecuteAction else { return false }
+                            return await onExecuteAction(action, insight)
+                        },
                         onCreateRule: { draft in onCreateRule?(draft, insight) }
                     )
                 }
@@ -417,7 +420,7 @@ private struct AIInsightRow: View {
     let insight: AmbientalAIInsight
     let fallbackAccessoryID: String?
     let onDismiss: (DismissalReason) -> Void
-    let onExecuteAction: (AINextAction) -> Void
+    let onExecuteAction: (AINextAction) async -> Bool
     let onCreateRule: (RuleDraft) -> Void
 
     @State private var showDismissDialog = false
@@ -462,14 +465,14 @@ private struct AIInsightRow: View {
                 }
                 .buttonStyle(.plain)
                 .confirmationDialog(
-                    String(localized: "insight.dismiss.dialog.title", defaultValue: "Why dismiss this insight?"),
+                    String(localized: "insight.dismiss.dialog.title", defaultValue: "Perché vuoi ignorare questo insight?"),
                     isPresented: $showDismissDialog,
                     titleVisibility: .visible
                 ) {
                     Button(DismissalReason.userActedManually.localizedLabel) { onDismiss(.userActedManually) }
                     Button(DismissalReason.irrelevant.localizedLabel)        { onDismiss(.irrelevant) }
                     Button(DismissalReason.unclear.localizedLabel)           { onDismiss(.unclear) }
-                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Cancel"), role: .cancel) {}
+                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Annulla"), role: .cancel) {}
                 }
             }
 
@@ -504,7 +507,7 @@ private struct NextActionButtonView: View {
     let action: AINextAction
     let insightColor: Color
     let fallbackAccessoryID: String?
-    let onExecuteAction: (AINextAction) -> Void
+    let onExecuteAction: (AINextAction) async -> Bool
     let onCreateRule: (RuleDraft) -> Void
 
     enum ButtonState { case idle, executing, completed, error }
@@ -542,7 +545,7 @@ private struct NextActionButtonView: View {
     private var suggestButton: some View {
         Button {
             guard state == .idle else { return }
-            handleTap()
+            Task { await handleTap() }
         } label: {
             HStack(spacing: 5) {
                 switch state {
@@ -579,14 +582,16 @@ private struct NextActionButtonView: View {
         }
     }
 
-    private func handleTap() {
+    private func handleTap() async {
         // "suggest" actions execute immediately via HomeKit — no rule panel
         if action.actionType == "suggest" {
             state = .executing
-            onExecuteAction(action)
-            Task {
-                try? await Task.sleep(nanoseconds: 500_000_000)
+            let success = await onExecuteAction(action)
+            if success {
                 state = .completed
+            } else {
+                state = .error
+                Task { try? await Task.sleep(nanoseconds: 2_000_000_000); state = .idle }
             }
             return
         }

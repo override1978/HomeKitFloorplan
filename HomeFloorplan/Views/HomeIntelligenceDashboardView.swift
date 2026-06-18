@@ -85,6 +85,7 @@ struct HomeIntelligenceDashboardView: View {
         ScrollView {
             VStack(spacing: 20) {
                 profileRow
+                assistantSummaryCard(svc: svc)
 
                 // ── Sezione 1: Cosa sta succedendo ora ───────────────
                 IntelligenceSectionGroup(
@@ -124,6 +125,106 @@ struct HomeIntelligenceDashboardView: View {
             .padding(.bottom, 40)
         }
         .refreshable { await performRefresh() }
+    }
+
+    // MARK: - Section: Assistant Summary
+
+    private func assistantSummaryCard(svc: HomeKnowledgeService) -> some View {
+        let priorities = assistantPriorities(svc: svc)
+        let pendingCount = habitService.pendingPatterns.count + behavioralService.pendingOpportunities.count
+        let activeInsightCount = svc.recentInsights.filter { $0.statusRaw == InsightPersistedStatus.active.rawValue }.count
+
+        let title: String
+        let message: String
+        let color: Color
+        let icon: String
+
+        if pendingCount > 0 {
+            title = String(localized: "intelligence.assistant.ready.title", defaultValue: "C'è qualcosa di pronto")
+            message = String(
+                format: String(localized: "intelligence.assistant.ready.message",
+                               defaultValue: "%d suggerimento/i possono diventare automazioni dopo la tua conferma."),
+                pendingCount
+            )
+            color = BrandColor.primary
+            icon = "sparkles"
+        } else if activeInsightCount > 0 || !svc.predictiveAlerts.isEmpty {
+            title = String(localized: "intelligence.assistant.watch.title", defaultValue: "La casa chiede attenzione")
+            message = String(localized: "intelligence.assistant.watch.message",
+                             defaultValue: "Ho trovato alcuni segnali ambientali o predittivi da controllare.")
+            color = .orange
+            icon = "exclamationmark.triangle.fill"
+        } else if behavioralService.visiblePatternCount > 0 {
+            title = String(localized: "intelligence.assistant.learning.title", defaultValue: "Sto imparando le routine")
+            message = String(
+                format: String(localized: "intelligence.assistant.learning.message",
+                               defaultValue: "%d comportamento/i sono in osservazione prima di diventare suggerimenti."),
+                behavioralService.visiblePatternCount
+            )
+            color = .indigo
+            icon = "brain.head.profile"
+        } else {
+            title = String(localized: "intelligence.assistant.ok.title", defaultValue: "La casa è stabile")
+            message = String(localized: "intelligence.assistant.ok.message",
+                             defaultValue: "Non vedo azioni urgenti. Continuo a osservare ambiente, sicurezza e abitudini.")
+            color = .green
+            icon = "checkmark.circle.fill"
+        }
+
+        return IntelligenceAssistantSummaryCard(
+            title: title,
+            message: message,
+            icon: icon,
+            color: color,
+            priorities: priorities
+        )
+    }
+
+    private func assistantPriorities(svc: HomeKnowledgeService) -> [IntelligenceAssistantPriority] {
+        var items: [IntelligenceAssistantPriority] = []
+
+        if let opp = behavioralService.pendingOpportunities.first {
+            items.append(IntelligenceAssistantPriority(
+                icon: "wand.and.sparkles",
+                title: String(localized: "intelligence.assistant.priority.automation", defaultValue: "Automazione pronta"),
+                detail: opp.naturalLanguage,
+                color: BrandColor.primary
+            ))
+        }
+
+        if let insight = svc.recentInsights.first(where: { $0.statusRaw == InsightPersistedStatus.active.rawValue }) {
+            items.append(IntelligenceAssistantPriority(
+                icon: insight.severityRaw == "anomaly" ? "exclamationmark.octagon.fill" : "waveform.path.ecg",
+                title: insight.roomName.isEmpty
+                    ? String(localized: "intelligence.assistant.priority.environment", defaultValue: "Ambiente")
+                    : insight.roomName,
+                detail: insight.message,
+                color: insight.severityRaw == "anomaly" ? .red : .orange
+            ))
+        }
+
+        if let alert = svc.predictiveAlerts.first {
+            items.append(IntelligenceAssistantPriority(
+                icon: "clock.arrow.2.circlepath",
+                title: String(localized: "intelligence.assistant.priority.prediction", defaultValue: "Previsto a breve"),
+                detail: alert.message,
+                color: .blue
+            ))
+        }
+
+        if items.count < 3, let pattern = behavioralService.patterns
+            .filter({ $0.status == .active && $0.confidence >= 0.15 })
+            .sorted(by: { $0.confidence > $1.confidence })
+            .first {
+            items.append(IntelligenceAssistantPriority(
+                icon: pattern.sfSymbol,
+                title: String(localized: "intelligence.assistant.priority.learning", defaultValue: "Abitudine emergente"),
+                detail: habitService.name(for: pattern) ?? pattern.localizedTitle,
+                color: .indigo
+            ))
+        }
+
+        return Array(items.prefix(3))
     }
 
     // MARK: - Section: Abitudini (unified 3-tier)
@@ -199,9 +300,14 @@ struct HomeIntelligenceDashboardView: View {
                         BehavioralOpportunityCard(
                             opportunity: opp,
                             onApprove: {
-                                let rule = behavioralService.approve(opp)
+                                let rule = opp.buildRule()
                                 Task {
-                                   await ruleEngine.insertRule(rule, home: homeKit.currentHome)
+                                    do {
+                                        _ = try await ruleEngine.insertRule(rule, home: homeKit.currentHome)
+                                        behavioralService.approve(opp)
+                                    } catch {
+                                        dprint("HomeIntelligence: failed to create rule from opportunity \(opp.id): \(error.localizedDescription)")
+                                    }
                                 }
                             },
                             onSnooze:  { behavioralService.snooze(opp) },
@@ -212,10 +318,14 @@ struct HomeIntelligenceDashboardView: View {
                         AISuggestionCard(
                             pattern: pattern,
                             onApprove: {
-                                habitService.approve(pattern)
                                 Task {
                                     if let home = homeKit.currentHome {
-                                        try? await ruleEngine.createRule(from: pattern, home: home)
+                                        do {
+                                            try await ruleEngine.createRule(from: pattern, home: home)
+                                            habitService.approve(pattern)
+                                        } catch {
+                                            dprint("HomeIntelligence: failed to create rule from habit pattern \(pattern.id): \(error.localizedDescription)")
+                                        }
                                     }
                                 }
                             },
@@ -868,6 +978,95 @@ struct HomeIntelligenceDashboardView: View {
     }
 }
 
+// MARK: - IntelligenceAssistantSummaryCard
+
+private struct IntelligenceAssistantPriority: Identifiable {
+    let id = UUID()
+    let icon: String
+    let title: String
+    let detail: String
+    let color: Color
+}
+
+private struct IntelligenceAssistantSummaryCard: View {
+    let title: String
+    let message: String
+    let icon: String
+    let color: Color
+    let priorities: [IntelligenceAssistantPriority]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(color.opacity(0.12))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: icon)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(color)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(String(localized: "intelligence.assistant.eyebrow", defaultValue: "Assistente casa"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .tracking(0.5)
+                    Text(title)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+
+            if !priorities.isEmpty {
+                Divider()
+                VStack(spacing: 10) {
+                    ForEach(priorities) { item in
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: item.icon)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(item.color)
+                                .frame(width: 20)
+                                .padding(.top, 2)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Text(item.detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(color.opacity(0.55))
+                        .frame(height: 3)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        )
+        .shadow(color: color.opacity(0.10), radius: 12, x: 0, y: 4)
+        .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
+    }
+}
+
 // MARK: - PhaseHeroCard
 
 private struct PhaseHeroCard: View {
@@ -1102,6 +1301,7 @@ private struct TrustScoreCard: View {
                 )
         )
     }
+
 }
 
 // MARK: - AISuggestionCard
@@ -1263,6 +1463,7 @@ private struct BehavioralOpportunityCard: View {
                                 .foregroundStyle(BrandColor.secondary)
                         }
                     }
+                    kindBadge
                 }
                 Spacer(minLength: 0)
             }
@@ -1309,6 +1510,37 @@ private struct BehavioralOpportunityCard: View {
                         .strokeBorder(BrandColor.primary.opacity(0.12), lineWidth: 1)
                 )
         )
+    }
+
+    private var kindBadge: some View {
+        let label: String
+        let icon: String
+        let color: Color
+
+        if opportunity.origin == .conversational {
+            label = String(localized: "habits.opportunity.kind.requested", defaultValue: "Richiesta da te")
+            icon = "text.bubble.fill"
+            color = BrandColor.secondary
+        } else if opportunity.patternType == .scene && opportunity.effectSceneName != nil {
+            label = String(localized: "habits.opportunity.kind.existingScene", defaultValue: "Scena esistente")
+            icon = "theatermasks.fill"
+            color = .indigo
+        } else if opportunity.patternType == .scene {
+            label = String(localized: "habits.opportunity.kind.routine", defaultValue: "Routine scoperta")
+            icon = "sparkles"
+            color = .purple
+        } else {
+            label = String(localized: "habits.opportunity.kind.newHabit", defaultValue: "Nuova abitudine")
+            icon = "lightbulb.fill"
+            color = .green
+        }
+
+        return Label(label, systemImage: icon)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.10), in: Capsule())
     }
 }
 
@@ -1437,6 +1669,7 @@ private struct IntentEffectivenessRow: View {
             }
         }
     }
+
 }
 
 // MARK: - RoomTrendCard
@@ -1716,4 +1949,3 @@ private struct AIStatTile: View {
         )
     }
 }
-

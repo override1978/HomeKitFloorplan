@@ -8,6 +8,17 @@ struct AccessoryChoice: Equatable {
     let name: String   // nome leggibile
 }
 
+// MARK: - AutomationDiagnosticItem
+
+struct AutomationDiagnosticItem: Equatable {
+    let title: String
+    let trigger: String
+    let action: String
+    let mode: String
+    let isEnabled: Bool
+    let status: String
+}
+
 // MARK: - AgentActionPayload
 
 /// Payload strutturato per un bottone azione nel ChatBot.
@@ -19,6 +30,7 @@ enum AgentActionPayload: Equatable {
     case executeNow(accessoryID: String, action: String, value: Double?, label: String)
     case createRule(opportunity: AutomationOpportunity)
     case undo(accessoryID: String, action: String, value: Double?, label: String)
+    case automationDiagnostics(title: String, items: [AutomationDiagnosticItem])
     /// Presenta una lista di accessori come pills selezionabili per disambiguare.
     case choose(accessories: [AccessoryChoice], action: String, value: Double?, promptText: String)
 
@@ -27,6 +39,7 @@ enum AgentActionPayload: Equatable {
         case .executeNow(_, _, _, let l):    return l
         case .createRule(let opp):            return opp.title
         case .undo(_, _, _, let l):           return l
+        case .automationDiagnostics(let title, _): return title
         case .choose(_, _, _, let prompt):    return prompt
         }
     }

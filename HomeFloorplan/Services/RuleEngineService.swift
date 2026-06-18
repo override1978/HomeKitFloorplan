@@ -5,6 +5,12 @@ import Observation
 
 // MARK: - RuleEngineService
 
+struct RuleInsertResult {
+    let rule: Rule
+    let didSyncHomeKit: Bool
+    let usedInAppFallback: Bool
+}
+
 /// Gestisce la creazione, esecuzione e ciclo di vita delle regole di automazione.
 /// Quando un pattern viene approvato, decide automaticamente se delegare a HomeKit
 /// o eseguire in-app. Valuta le regole inApp periodicamente.
@@ -36,7 +42,7 @@ final class RuleEngineService {
               let ruleDict = try? JSONSerialization.jsonObject(with: ruleData) as? [String: Any]
         else {
             // Fallback: crea regola inApp minimale
-            createFallbackRule(from: pattern)
+            try createFallbackRule(from: pattern)
             return
         }
 
@@ -78,7 +84,7 @@ final class RuleEngineService {
 
         let context = modelContainer.mainContext
         context.insert(rule)
-        try? context.save()
+        try context.save()
         rules.append(rule)
     }
 
@@ -115,7 +121,7 @@ final class RuleEngineService {
 
         let context = modelContainer.mainContext
         context.insert(rule)
-        try? context.save()
+        try context.save()
         rules.append(rule)
     }
 
@@ -149,6 +155,14 @@ final class RuleEngineService {
             let activeUUID     = "000000b0-0000-1000-8000-0026bb765291"
             let brightnessUUID = "00000008-0000-1000-8000-0026bb765291"
             let positionUUID   = "0000007c-0000-1000-8000-0026bb765291"
+            let targetTempUUID = "00000035-0000-1000-8000-0026bb765291"
+            let heatingUUID    = "00000012-0000-1000-8000-0026bb765291"
+            let coolingUUID    = "0000000d-0000-1000-8000-0026bb765291"
+            let rotSpeedUUID   = "00000029-0000-1000-8000-0026bb765291"
+            let hcModeUUID     = "000000b2-0000-1000-8000-0026bb765291"
+            let thermoModeUUID = "00000033-0000-1000-8000-0026bb765291"
+            let apModeUUID     = "000000a8-0000-1000-8000-0026bb765291"
+            let humidModeUUID  = "000000b4-0000-1000-8000-0026bb765291"
 
             let allChars = accessory.services.flatMap(\.characteristics)
             func char(_ uuid: String) -> HMCharacteristic? {
@@ -185,6 +199,56 @@ final class RuleEngineService {
                     let pos = rule.actionType == "open" ? 100 : 0
                     writeActions.append(HMCharacteristicWriteAction(characteristic: posChar,
                                                                     targetValue: pos as NSNumber))
+                }
+            case "setSpeed":
+                if let active = char(activeUUID) ?? char(onUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: active,
+                                                                    targetValue: 1 as NSNumber))
+                }
+                if let speed = char(rotSpeedUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: speed,
+                                                                    targetValue: Int((rule.actionValue ?? 0.5) * 100) as NSNumber))
+                }
+            case "setTemp":
+                let temp = rule.actionValue ?? 22.0
+                if let active = char(activeUUID) ?? char(onUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: active,
+                                                                    targetValue: 1 as NSNumber))
+                }
+                if let targetTemp = char(targetTempUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: targetTemp,
+                                                                    targetValue: temp as NSNumber))
+                }
+                if let heating = char(heatingUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: heating,
+                                                                    targetValue: temp as NSNumber))
+                }
+                if let cooling = char(coolingUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: cooling,
+                                                                    targetValue: temp as NSNumber))
+                }
+            case "setMode":
+                let mode = Int(rule.actionValue ?? 0)
+                if let modeChar = char(hcModeUUID) ?? char(thermoModeUUID) ?? char(humidModeUUID) {
+                    if let active = char(activeUUID) ?? char(onUUID) {
+                        writeActions.append(HMCharacteristicWriteAction(characteristic: active,
+                                                                        targetValue: 1 as NSNumber))
+                    }
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: modeChar,
+                                                                    targetValue: mode as NSNumber))
+                    if let temp = rule.actionValue2 {
+                        if let heating = char(heatingUUID) {
+                            writeActions.append(HMCharacteristicWriteAction(characteristic: heating,
+                                                                            targetValue: temp as NSNumber))
+                        }
+                        if let cooling = char(coolingUUID) {
+                            writeActions.append(HMCharacteristicWriteAction(characteristic: cooling,
+                                                                            targetValue: temp as NSNumber))
+                        }
+                    }
+                } else if let apMode = char(apModeUUID) {
+                    writeActions.append(HMCharacteristicWriteAction(characteristic: apMode,
+                                                                    targetValue: mode as NSNumber))
                 }
             default:
                 print("[HK] ❌ actionType non delegabile: \(rule.actionType)")
@@ -248,8 +312,26 @@ final class RuleEngineService {
             }
 
             // ── Crea ActionSet + Trigger in HomeKit ────────────────────────────────
+            let calendarCondition: (characteristic: HMCharacteristic, threshold: Double, direction: String)?
+            if rule.triggerType == "calendar",
+               let conditionStr = rule.triggerCharacteristicID,
+               let threshold = rule.triggerThreshold {
+                let parts = conditionStr.split(separator: "|").map(String.init)
+                let sensorTypeRaw = parts.first ?? ""
+                let sensorRoom = parts.count > 1 ? String(parts[1]) : nil
+                let direction = parts.count > 2 ? String(parts[2]) : "below"
+                if let conditionChar = findSensorCharacteristic(typeRaw: sensorTypeRaw, room: sensorRoom, in: home) {
+                    calendarCondition = (conditionChar, threshold, direction)
+                } else {
+                    calendarCondition = nil
+                }
+            } else {
+                calendarCondition = nil
+            }
+
             return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
                 let actionSetName = homeKitSafeName(for: rule)
+                let recurrences = homeKitRecurrences(for: rule)
                 print("[HK] addActionSet: '\(actionSetName)'")
                 home.addActionSet(withName: actionSetName) { [weak home] actionSet, error in
                     guard error == nil, let actionSet, let home else {
@@ -263,7 +345,7 @@ final class RuleEngineService {
                             let trigger = HMEventTrigger(name: actionSetName,
                                                          events: [hmEvent],
                                                          end: nil,
-                                                         recurrences: nil,
+                                                         recurrences: recurrences,
                                                          predicate: nil)
                             print("[HK] addTrigger: '\(actionSetName)'")
                             home.addTrigger(trigger) { error in
@@ -294,25 +376,18 @@ final class RuleEngineService {
                                     }
 
                                     // Calendar + sensore aggiuntivo: aggiungi predicato HK
-                                    if rule.triggerType == "calendar",
-                                       let conditionStr = rule.triggerCharacteristicID,
-                                       let threshold = rule.triggerThreshold {
-                                        let parts = conditionStr.split(separator: "|").map(String.init)
-                                        let sensorTypeRaw = parts.first ?? ""
-                                        let sensorRoom    = parts.count > 1 ? String(parts[1]) : nil
-                                        let direction     = parts.count > 2 ? String(parts[2]) : "below"
-                                        if let condChar = self.findSensorCharacteristic(
-                                            typeRaw: sensorTypeRaw, room: sensorRoom, in: home) {
-                                            let op: NSComparisonPredicate.Operator = direction == "above"
-                                                ? .greaterThan : .lessThan
-                                            let predicate = HMEventTrigger.predicateForEvaluatingTrigger(
-                                                condChar, relatedBy: op, toValue: NSNumber(value: threshold))
-                                            trigger.updatePredicate(predicate) { _ in
-                                                trigger.enable(enabled) { _ in }
-                                                continuation.resume(returning: triggerID)
-                                            }
-                                            return
+                                    if let calendarCondition {
+                                        let op: NSComparisonPredicate.Operator = calendarCondition.direction == "above"
+                                            ? .greaterThan : .lessThan
+                                        let predicate = HMEventTrigger.predicateForEvaluatingTrigger(
+                                            calendarCondition.characteristic,
+                                            relatedBy: op,
+                                            toValue: NSNumber(value: calendarCondition.threshold))
+                                        trigger.updatePredicate(predicate) { _ in
+                                            trigger.enable(enabled) { _ in }
+                                            continuation.resume(returning: triggerID)
                                         }
+                                        return
                                     }
                                     trigger.enable(enabled) { _ in }
                                     continuation.resume(returning: triggerID)
@@ -388,13 +463,14 @@ final class RuleEngineService {
         }
 
         let triggerName = homeKitSafeName(for: rule)
+        let recurrences = homeKitRecurrences(for: rule)
         print("[HK] addTrigger (scene): '\(triggerName)' → scena '\(sceneName)'")
 
         return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             let trigger = HMEventTrigger(name: triggerName,
                                          events: [hmEvent],
                                          end: nil,
-                                         recurrences: nil,
+                                         recurrences: recurrences,
                                          predicate: nil)
             home.addTrigger(trigger) { error in
                 guard error == nil else {
@@ -428,6 +504,17 @@ final class RuleEngineService {
     }
 
     // MARK: - In-App Rule Evaluation
+
+    private func homeKitRecurrences(for rule: Rule) -> [DateComponents]? {
+        let weekdays = rule.weekdaysArray
+        guard !weekdays.isEmpty else { return nil }
+
+        return weekdays.map { weekday in
+            var components = DateComponents()
+            components.weekday = weekday
+            return components
+        }
+    }
 
     /// Valuta le regole inApp e le esegue se il trigger è soddisfatto.
     /// Chiamato periodicamente dal BGAppRefreshTask o dall'app in foreground.
@@ -603,9 +690,15 @@ final class RuleEngineService {
                     }
                 }
             } else {
-                // Purificatore o altro: TargetAirPurifierState
+                // Purificatore / umidificatore
                 let apUUID = "000000a8-0000-1000-8000-0026bb765291"
-                try? await char(apUUID)?.writeValue(Int(rule.actionValue ?? 0))
+                let humidUUID = "000000b4-0000-1000-8000-0026bb765291"
+                if let modeChar = char(apUUID) ?? char(humidUUID) {
+                    if let activeChar = char(activeUUID) {
+                        try? await activeChar.writeValue(1)
+                    }
+                    try? await modeChar.writeValue(Int(rule.actionValue ?? 0))
+                }
             }
 
         case "setTemp":
@@ -753,7 +846,7 @@ final class RuleEngineService {
         return (parts[0], parts[1])
     }
 
-    private func createFallbackRule(from pattern: HabitPattern) {
+    private func createFallbackRule(from pattern: HabitPattern) throws {
         let rule = Rule(
             name: pattern.accessoryName,
             ruleDescription: pattern.description,
@@ -767,7 +860,7 @@ final class RuleEngineService {
         )
         let context = modelContainer.mainContext
         context.insert(rule)
-        try? context.save()
+        try context.save()
         rules.append(rule)
     }
 
@@ -783,20 +876,66 @@ final class RuleEngineService {
      */
     /// Inserts an already-built Rule. If it's a calendar rule, delegates to HomeKit
     /// like the draft/pattern paths do.
-    func insertRule(_ rule: Rule, home: HMHome?) async {
+    func insertRule(_ rule: Rule, home: HMHome?) async throws -> RuleInsertResult {
+        let requestedHomeKit = rule.executionMode == "homeKit"
+        var didSyncHomeKit = false
+        var usedInAppFallback = false
+
+        if let home,
+           rule.actionSceneName == nil,
+           let inferredScene = inferExistingSceneName(for: rule, home: home) {
+            rule.actionSceneName = inferredScene
+        }
+
         // Delega HomeKit se calendar (stessa logica degli altri percorsi)
         if rule.executionMode == "homeKit", let home {
             if let triggerID = await tryCreateHomeKitTrigger(rule: rule, home: home, enabled: rule.isEnabled) {
                 rule.homeKitTriggerID = triggerID
+                didSyncHomeKit = true
             } else {
                 rule.executionMode = "inApp"   // fallback se HomeKit fallisce
+                usedInAppFallback = true
             }
+        } else if requestedHomeKit {
+            rule.executionMode = "inApp"
+            usedInAppFallback = true
         }
 
         let context = modelContainer.mainContext   // usa mainContext, non un context nuovo
         context.insert(rule)
-        try? context.save()
+        try context.save()
         rules.append(rule)
+        return RuleInsertResult(
+            rule: rule,
+            didSyncHomeKit: didSyncHomeKit,
+            usedInAppFallback: usedInAppFallback
+        )
+    }
+
+    private func inferExistingSceneName(for rule: Rule, home: HMHome) -> String? {
+        guard rule.actionAccessoryID.isEmpty,
+              rule.actionType == "activate"
+        else { return nil }
+
+        let trimmedName = rule.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let strippedPrefixes = [
+            "Activate ",
+            "Attiva ",
+            String(localized: "behavioral.opportunity.title.activate.prefix", defaultValue: "Activate ")
+        ]
+        let candidates = ([trimmedName] + strippedPrefixes.compactMap { prefix -> String? in
+            guard trimmedName.range(of: prefix, options: [.caseInsensitive, .diacriticInsensitive, .anchored]) != nil else {
+                return nil
+            }
+            return String(trimmedName.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        })
+        .filter { !$0.isEmpty }
+
+        return home.actionSets.first { actionSet in
+            candidates.contains { candidate in
+                actionSet.name.compare(candidate, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            }
+        }?.name
     }
 
     // MARK: - Load

@@ -90,11 +90,27 @@ struct HabitsView: View {
             behavioralService.patterns
                 .filter { p in
                     p.status == .active &&
-                    p.confidence >= 0.15 &&
+                    p.confidence >= 0.45 &&
                     !pendingIDs.contains(p.id)
                 }
                 .sorted { $0.confidence > $1.confidence }
                 .prefix(8)
+        )
+    }
+
+    /// Early weak signals: visible to build trust, not actionable enough to create automations.
+    private var noticingPatterns: [BehavioralPattern] {
+        let pendingIDs = Set(behavioralService.pendingOpportunities.map(\.patternID))
+        return Array(
+            behavioralService.patterns
+                .filter { p in
+                    p.status == .active &&
+                    p.confidence >= 0.15 &&
+                    p.confidence < 0.45 &&
+                    !pendingIDs.contains(p.id)
+                }
+                .sorted { $0.confidence > $1.confidence }
+                .prefix(3)
         )
     }
 
@@ -104,6 +120,7 @@ struct HabitsView: View {
     private var content: some View {
         List {
             voiceSection
+            noticingSection
             readySection
             activeSection
             learningSection
@@ -225,6 +242,58 @@ struct HabitsView: View {
             behavioralService.patterns.count,
             ruleEngine.rules.count
         )
+    }
+
+    // MARK: - Section 1b: Sto notando
+
+    @ViewBuilder
+    private var noticingSection: some View {
+        let patterns = noticingPatterns
+        if !patterns.isEmpty {
+            Section {
+                ForEach(patterns) { pattern in
+                    noticingPatternRow(pattern)
+                }
+            } header: {
+                Label(String(localized: "habits.noticing.header", defaultValue: "Sto notando"),
+                      systemImage: "eye.fill")
+            } footer: {
+                Text(String(localized: "habits.noticing.footer",
+                            defaultValue: "Sono segnali ancora deboli: li mostro per trasparenza, ma non li trasformo in automazioni finché non sono più affidabili."))
+            }
+        }
+    }
+
+    private func noticingPatternRow(_ pattern: BehavioralPattern) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(BrandColor.primary.opacity(0.10))
+                    .frame(width: 36, height: 36)
+                Image(systemName: pattern.sfSymbol)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(BrandColor.primary)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(habitService.name(for: pattern) ?? pattern.localizedTitle)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    Text(String(localized: "habits.noticing.signal", defaultValue: "Segnale iniziale"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandColor.primary)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text(pattern.confidenceLabel)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 6)
     }
 
     // MARK: - Section 2: Pronta per te
@@ -643,13 +712,21 @@ struct HabitsView: View {
                             .padding(.vertical, 3)
                             .background(.indigo.opacity(0.10), in: Capsule())
                     }
+                    opportunityKindBadge(opp)
                 }
                 Spacer()
             }
             HStack(spacing: 12) {
                 Button {
-                    let rule = behavioralService.approve(opp)
-                    Task { await ruleEngine.insertRule(rule, home: homeKit.currentHome) }
+                    let rule = opp.buildRule()
+                    Task {
+                        do {
+                            _ = try await ruleEngine.insertRule(rule, home: homeKit.currentHome)
+                            behavioralService.approve(opp)
+                        } catch {
+                            dprint("Habits: failed to create rule from opportunity \(opp.id): \(error.localizedDescription)")
+                        }
+                    }
                 } label: {
                     Text(String(localized: "behavioral.opportunity.approve",
                                 defaultValue: "Create automation"))
@@ -677,6 +754,37 @@ struct HabitsView: View {
             }
         }
         .padding(.vertical, 6)
+    }
+
+    private func opportunityKindBadge(_ opp: AutomationOpportunity) -> some View {
+        let label: String
+        let icon: String
+        let color: Color
+
+        if opp.origin == .conversational {
+            label = String(localized: "habits.opportunity.kind.requested", defaultValue: "Richiesta da te")
+            icon = "text.bubble.fill"
+            color = BrandColor.secondary
+        } else if opp.patternType == .scene && opp.effectSceneName != nil {
+            label = String(localized: "habits.opportunity.kind.existingScene", defaultValue: "Scena esistente")
+            icon = "theatermasks.fill"
+            color = .indigo
+        } else if opp.patternType == .scene {
+            label = String(localized: "habits.opportunity.kind.routine", defaultValue: "Routine scoperta")
+            icon = "sparkles"
+            color = .purple
+        } else {
+            label = String(localized: "habits.opportunity.kind.newHabit", defaultValue: "Nuova abitudine")
+            icon = "lightbulb.fill"
+            color = .green
+        }
+
+        return Label(label, systemImage: icon)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.10), in: Capsule())
     }
 
     // MARK: - Habit pattern row (AI patterns)
@@ -903,10 +1011,14 @@ struct HabitsView: View {
     // MARK: - Actions
 
     private func approveHabitPattern(_ pattern: HabitPattern) {
-        habitService.approve(pattern)
         Task {
             if let home = homeKit.currentHome {
-                try? await ruleEngine.createRule(from: pattern, home: home)
+                do {
+                    try await ruleEngine.createRule(from: pattern, home: home)
+                    habitService.approve(pattern)
+                } catch {
+                    dprint("Habits: failed to create rule from habit pattern \(pattern.id): \(error.localizedDescription)")
+                }
             }
         }
     }

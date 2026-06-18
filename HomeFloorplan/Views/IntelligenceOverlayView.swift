@@ -15,6 +15,14 @@ struct IntelligenceOverlayView: View {
     let effectiveOffset: CGSize
 
     @Environment(HabitAnalysisService.self) private var habitService
+    @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
+
+    private enum RoomIntelligenceState {
+        case ready(count: Int, confidence: Double)
+        case learning
+        case needsSetup
+        case disabled
+    }
 
     // MARK: Derived
 
@@ -28,9 +36,9 @@ struct IntelligenceOverlayView: View {
             Canvas { ctx, _ in
                 for room in floorplan.linkedRooms {
                     let path = h.overlayPath(for: room)
-                    let count = pendingCount(for: room)
-                    ctx.fill(path, with: .color(fillColor(count: count)))
-                    ctx.stroke(path, with: .color(borderColor(count: count).opacity(0.6)),
+                    let state = intelligenceState(for: room)
+                    ctx.fill(path, with: .color(fillColor(for: state)))
+                    ctx.stroke(path, with: .color(borderColor(for: state).opacity(0.6)),
                                lineWidth: 1.5 / effectiveScale)
                 }
             }
@@ -38,14 +46,14 @@ struct IntelligenceOverlayView: View {
             .allowsHitTesting(false)
 
             ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
-                let count = pendingCount(for: room)
+                let state = intelligenceState(for: room)
                 let center = h.centroid(for: room)
                 let inverseScale = 1.0 / effectiveScale
 
                 Button {
                     overlayVM.selectRoom(room.hmRoomUUID)
                 } label: {
-                    intelligenceBadge(room: room, count: count)
+                    intelligenceBadge(room: room, state: state)
                         .scaleEffect(inverseScale)
                 }
                 .buttonStyle(.plain)
@@ -56,11 +64,11 @@ struct IntelligenceOverlayView: View {
 
     // MARK: Badge
 
-    private func intelligenceBadge(room: LinkedRoom, count: Int) -> some View {
+    private func intelligenceBadge(room: LinkedRoom, state: RoomIntelligenceState) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: count > 0 ? "sparkles" : "sparkle")
+            Image(systemName: badgeIcon(for: state))
                 .font(.caption.weight(.bold))
-            Text(count > 0 ? "\(count)" : room.name)
+            Text(badgeText(room: room, state: state))
                 .font(.caption2)
                 .lineLimit(1)
         }
@@ -68,30 +76,94 @@ struct IntelligenceOverlayView: View {
         .padding(.vertical, 5)
         .background(
             Capsule()
-                .fill(fillColor(count: count).opacity(0.9))
+                .fill(badgeBackground(for: state))
                 .overlay(
                     Capsule()
-                        .strokeBorder(borderColor(count: count).opacity(0.7), lineWidth: 1)
+                        .strokeBorder(borderColor(for: state).opacity(0.7), lineWidth: 1)
                 )
         )
-        .foregroundStyle(count > 0 ? .white : Color.secondary)
+        .foregroundStyle(isReady(state) ? .white : Color.secondary)
         .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
     }
 
     // MARK: Helpers
 
-    private func pendingCount(for room: LinkedRoom) -> Int {
-        habitService.pendingPatterns.filter { $0.roomName == room.name }.count
+    private func intelligenceState(for room: LinkedRoom) -> RoomIntelligenceState {
+        guard isAIEnabled else { return .disabled }
+
+        let patterns = patterns(for: room)
+        if !patterns.isEmpty {
+            let confidence = patterns.map(\.confidence).max() ?? 0
+            return .ready(count: patterns.count, confidence: confidence)
+        }
+
+        return hasPlacedMarker(in: room) ? .learning : .needsSetup
     }
 
-    private func fillColor(count: Int) -> Color {
-        count > 0
-            ? Color(.systemIndigo).opacity(0.28)
-            : Color(.systemIndigo).opacity(0.06)
+    private func patterns(for room: LinkedRoom) -> [HabitPattern] {
+        habitService.pendingPatterns.filter {
+            FloorplanRoomMatcher.matches(roomName: $0.roomName, linkedRoom: room)
+        }
     }
 
-    private func borderColor(count: Int) -> Color {
-        count > 0 ? Color(.systemIndigo) : Color(.systemIndigo).opacity(0.2)
+    private func hasPlacedMarker(in room: LinkedRoom) -> Bool {
+        floorplan.accessories.contains { accessory in
+            if accessory.linkedRoomUUID == room.hmRoomUUID {
+                return true
+            }
+            return FloorplanRoomMatcher.contains(accessory.position, in: room)
+        }
+    }
+
+    private func fillColor(for state: RoomIntelligenceState) -> Color {
+        switch state {
+        case .ready(_, let confidence):
+            return Color(.systemIndigo).opacity(confidence >= 0.8 ? 0.34 : 0.26)
+        case .learning: return Color(.systemIndigo).opacity(0.08)
+        case .needsSetup: return Color.gray.opacity(0.05)
+        case .disabled: return Color.gray.opacity(0.03)
+        }
+    }
+
+    private func borderColor(for state: RoomIntelligenceState) -> Color {
+        switch state {
+        case .ready: return Color(.systemIndigo)
+        case .learning: return Color(.systemIndigo).opacity(0.26)
+        case .needsSetup: return Color.gray.opacity(0.22)
+        case .disabled: return Color.gray.opacity(0.16)
+        }
+    }
+
+    private func badgeBackground(for state: RoomIntelligenceState) -> Color {
+        switch state {
+        case .ready: return Color(.systemIndigo).opacity(0.92)
+        case .learning: return Color(.systemBackground).opacity(0.82)
+        case .needsSetup: return Color(.systemBackground).opacity(0.72)
+        case .disabled: return Color(.systemBackground).opacity(0.64)
+        }
+    }
+
+    private func badgeIcon(for state: RoomIntelligenceState) -> String {
+        switch state {
+        case .ready: return "sparkles"
+        case .learning: return "brain.head.profile"
+        case .needsSetup: return "plus.viewfinder"
+        case .disabled: return "sparkles.slash"
+        }
+    }
+
+    private func badgeText(room: LinkedRoom, state: RoomIntelligenceState) -> String {
+        switch state {
+        case .ready(let count, _): return "\(count)"
+        case .learning: return room.name
+        case .needsSetup: return "Completa"
+        case .disabled: return room.name
+        }
+    }
+
+    private func isReady(_ state: RoomIntelligenceState) -> Bool {
+        if case .ready = state { return true }
+        return false
     }
 }
 
@@ -108,6 +180,7 @@ struct IntelligenceOverlayView: View {
 struct IntelligenceContextDashboard: View {
 
     @Environment(HabitAnalysisService.self) private var habitService
+    @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
     /// UUID of the room the user last tapped on the floorplan (highlight only).
     let highlightedRoomID: UUID?
     /// Linked rooms list — used to resolve the highlighted room name.
@@ -120,29 +193,44 @@ struct IntelligenceContextDashboard: View {
         return linkedRooms.first { $0.hmRoomUUID == id }?.name
     }
 
-    // Patterns sorted by confidence descending
     private var sortedPatterns: [HabitPattern] {
-        habitService.pendingPatterns.sorted { $0.confidence > $1.confidence }
+        habitService.pendingPatterns.sorted { lhs, rhs in
+            let lhsHighlighted = FloorplanRoomMatcher.matches(
+                roomName: lhs.roomName,
+                highlightedRoomName: highlightedRoomName
+            )
+            let rhsHighlighted = FloorplanRoomMatcher.matches(
+                roomName: rhs.roomName,
+                highlightedRoomName: highlightedRoomName
+            )
+
+            if lhsHighlighted != rhsHighlighted {
+                return lhsHighlighted
+            }
+
+            return lhs.confidence > rhs.confidence
+        }
     }
 
     private var topAction: HabitPattern? { sortedPatterns.first }
+
+    private var highlightedRoomPatterns: [HabitPattern] {
+        guard let highlightedRoomName else { return [] }
+        return habitService.pendingPatterns
+            .filter {
+                FloorplanRoomMatcher.matches(
+                    roomName: $0.roomName,
+                    highlightedRoomName: highlightedRoomName
+                )
+            }
+            .sorted { $0.confidence > $1.confidence }
+    }
 
     // MARK: Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-
-            // ── Header / status ───────────────────────────────────────────
-            if habitService.isAnalyzing {
-                HStack(spacing: 8) {
-                    ProgressView().scaleEffect(0.8)
-                    Text("Analisi in corso…")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            } else {
-                // Mini score row
-                intelligenceScoreRow
-            }
+            nextUsefulCard
 
             // ── Recommendations ───────────────────────────────────────────
             if !sortedPatterns.isEmpty {
@@ -152,55 +240,85 @@ struct IntelligenceContextDashboard: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     ForEach(sortedPatterns) { pattern in
-                        let highlighted = pattern.roomName == highlightedRoomName
+                        let highlighted = FloorplanRoomMatcher.matches(
+                            roomName: pattern.roomName,
+                            highlightedRoomName: highlightedRoomName
+                        )
                         recommendationRow(pattern, highlighted: highlighted)
                         if pattern.id != sortedPatterns.last?.id {
                             Divider().padding(.leading, 26)
                         }
                     }
                 }
-            } else if !habitService.isAnalyzing {
-                Label("Nessuna raccomandazione disponibile", systemImage: "sparkle")
-                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 8)
-            }
-
-            // ── Suggested top action ──────────────────────────────────────
-            if let action = topAction {
-                Divider()
-                actionChip(action.description, icon: action.sfSymbol, color: accent)
             }
         }
     }
 
-    // MARK: Score row
+    // MARK: Next useful card
 
-    private var intelligenceScoreRow: some View {
-        let count = sortedPatterns.count
-        let color: Color = count == 0 ? .green : count <= 2 ? accent : .orange
-        let label: String = count == 0 ? "Tutto ottimizzato" :
-                            count <= 2 ? "\(count) suggerimento\(count == 1 ? "" : "i")" :
-                                         "\(count) suggerimenti"
-        return HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .stroke(color.opacity(0.2), lineWidth: 4)
-                Circle()
-                    .trim(from: 0, to: min(1.0, CGFloat(count) / 5.0))
-                    .stroke(color, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Image(systemName: count == 0 ? "checkmark" : "sparkles")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(color)
-            }
-            .frame(width: 36, height: 36)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Intelligenza Casa")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text(label)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(color)
-            }
+    @ViewBuilder
+    private var nextUsefulCard: some View {
+        if habitService.isAnalyzing {
+            FloorplanEmptyStateCard(
+                title: "Analisi in corso",
+                message: "Sto aggiornando pattern e opportunità. Le raccomandazioni compariranno qui quando saranno affidabili.",
+                icon: "sparkles",
+                color: accent
+            )
+        } else if !isAIEnabled {
+            FloorplanEmptyStateCard(
+                title: "Intelligenza disattivata",
+                message: "Abilita l'AI nelle impostazioni per analizzare abitudini e opportunità di automazione.",
+                icon: "sparkles.slash",
+                color: .secondary
+            )
+        } else if let pattern = highlightedRoomPatterns.first, let roomName = highlightedRoomName {
+            nextActionCard(
+                title: "Prossima azione in \(roomName)",
+                pattern: pattern,
+                metrics: [
+                    FloorplanStatusMetric(value: pattern.confidenceLabel, label: "Confidenza"),
+                    FloorplanStatusMetric(value: "\(highlightedRoomPatterns.count)", label: "Pronte")
+                ]
+            )
+        } else if let pattern = topAction {
+            nextActionCard(
+                title: "Prossima automazione da valutare",
+                pattern: pattern,
+                metrics: [
+                    FloorplanStatusMetric(value: pattern.confidenceLabel, label: "Confidenza"),
+                    FloorplanStatusMetric(value: "\(sortedPatterns.count)", label: "Totali")
+                ]
+            )
+        } else if let roomName = highlightedRoomName {
+            FloorplanEmptyStateCard(
+                title: "Sto imparando \(roomName)",
+                message: "Non ci sono azioni affidabili per questa stanza. Continua a usarla normalmente: quando emerge una routine utile la vedrai qui.",
+                icon: "brain.head.profile",
+                color: accent
+            )
+        } else {
+            FloorplanEmptyStateCard(
+                title: "Sto imparando le routine",
+                message: "Non ci sono raccomandazioni pronte. Apri una stanza sulla mappa per vedere lo stato di apprendimento locale.",
+                icon: "brain.head.profile",
+                color: accent
+            )
         }
+    }
+
+    private func nextActionCard(
+        title: String,
+        pattern: HabitPattern,
+        metrics: [FloorplanStatusMetric]
+    ) -> some View {
+        FloorplanStatusSummaryCard(
+            title: title,
+            message: pattern.description,
+            icon: pattern.sfSymbol,
+            color: accent,
+            metrics: metrics
+        )
     }
 
     // MARK: Recommendation row
@@ -269,19 +387,5 @@ struct IntelligenceContextDashboard: View {
             in: RoundedRectangle(cornerRadius: 10, style: .continuous)
         )
         .animation(.easeInOut(duration: 0.2), value: highlighted)
-    }
-
-    // MARK: Action chip
-
-    private func actionChip(_ text: String, icon: String, color: Color) -> some View {
-        Label(text, systemImage: icon)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(color)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
     }
 }

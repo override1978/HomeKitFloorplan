@@ -618,6 +618,12 @@ struct RuleEditorView: View {
             if has("000000a8-0000-1000-8000-0026bb765291") { types.append("setMode") }
             return types
         }
+        // Umidificatore / diffusore
+        if adapter is HumidifierAdapter {
+            var types = ["on", "off"]
+            if has("000000b4-0000-1000-8000-0026bb765291") { types.append("setMode") }
+            return types
+        }
         // Luce dimmerabile
         if has("00000008-0000-1000-8000-0026bb765291") { return ["on", "off", "dim"] }
         // Tenda / tapparella
@@ -656,7 +662,9 @@ struct RuleEditorView: View {
         guard let uuid = UUID(uuidString: accessoryID),
               let acc = homeKit.accessory(for: uuid) else { return 5 }
         let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit)
-        return (adapter is AirPurifierAdapter) ? 1 : 5
+        if adapter is AirPurifierAdapter { return 1 }
+        if adapter is HumidifierAdapter { return 2 }
+        return 5
     }
 
     /// Icona colorata per la modalità nello Stepper.
@@ -668,6 +676,14 @@ struct RuleEditorView: View {
         let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit)
         if adapter is AirPurifierAdapter {
             return mode == 1 ? "a.circle" : "hand.tap.fill"
+        }
+        if adapter is HumidifierAdapter {
+            switch mode {
+            case 0: return "a.circle"
+            case 1: return "humidity.fill"
+            case 2: return "drop.triangle.fill"
+            default: return "slider.horizontal.3"
+            }
         }
         switch mode {
         case 0: return "a.circle"
@@ -687,6 +703,14 @@ struct RuleEditorView: View {
         let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit)
         if adapter is AirPurifierAdapter {
             return mode == 1 ? .green : .orange
+        }
+        if adapter is HumidifierAdapter {
+            switch mode {
+            case 0: return .green
+            case 1: return .cyan
+            case 2: return .orange
+            default: return .purple
+            }
         }
         switch mode {
         case 0: return .green

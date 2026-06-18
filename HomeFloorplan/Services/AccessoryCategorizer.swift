@@ -17,6 +17,7 @@ enum AccessoryCategorizer {
 
     private static let cameraServiceType         = "00000111-0000-1000-8000-0026BB765291"
     private static let purifierServiceType       = "000000BB-0000-1000-8000-0026BB765291"
+    private static let humidifierDehumidifierServiceType = "000000BD-0000-1000-8000-0026BB765291"
     private static let heaterCoolerType          = "000000BC-0000-1000-8000-0026BB765291"
     private static let thermostatType            = "0000004A-0000-1000-8000-0026BB765291"
     private static let valveType                 = "00000081-0000-1000-8000-0026BB765291"
@@ -54,6 +55,11 @@ enum AccessoryCategorizer {
         // Air Purifier
         if services.contains(where: { $0.serviceType == purifierServiceType }) {
             return "airPurifier"
+        }
+        
+        // Diffusers/humidifiers may expose a Lightbulb service for LEDs; classify by primary function first.
+        if isLikelyAirCareAccessory(accessory) {
+            return "humidifier"
         }
 
         // Thermostat / HeaterCooler
@@ -126,5 +132,14 @@ enum AccessoryCategorizer {
         }
 
         return "sensor"
+    }
+    
+    private static func isLikelyAirCareAccessory(_ accessory: HMAccessory) -> Bool {
+        if accessory.services.contains(where: { $0.serviceType == humidifierDehumidifierServiceType }) {
+            return true
+        }
+        let name = accessory.name.lowercased()
+        let keywords = ["diffusore", "diffuser", "aroma", "humidifier", "umidificatore", "dehumidifier", "deumidificatore"]
+        return keywords.contains { name.contains($0) }
     }
 }

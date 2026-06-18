@@ -27,6 +27,8 @@ final class AmbientalAIService {
     var insights: [AmbientalAIInsight] = []
     var isAnalyzing: Bool = false
     var lastAnalyzed: Date?
+    private(set) var lastAnalysisError: String?
+    private(set) var lastAnalysisFailedAt: Date?
 
     /// Current presence state injected from LocationPresenceService when geofencing is active.
     /// Falls back to ContextResolver heuristics inside buildPayload when nil.
@@ -93,6 +95,8 @@ final class AmbientalAIService {
     func analyzeRooms(_ rooms: [RoomEnvironmentData]) async {
         if !isRestored { restoreFromStorage() }
         guard aiSettings.isOperational, aiSettings.anomalyDetectionEnabled else { return }
+
+        normalizeVisibleInsightSeverities(rooms: rooms)
 
         // Re-resolve stale insights on every cycle so accessory state changes
         // (e.g. blind opened between analysis cycles) are reflected immediately.
@@ -291,6 +295,8 @@ final class AmbientalAIService {
                 systemPrompt: systemPrompt,
                 userPrompt: payload
             )
+            lastAnalysisError = nil
+            lastAnalysisFailedAt = nil
             if let insight = parseInsight(response: response, roomName: room.roomName, preResult: preResult) {
                 let sortedIntents = insight.resolvedIntents.sorted()
 
@@ -351,6 +357,11 @@ final class AmbientalAIService {
             }
         } catch {
             // Graceful degradation: non mostrare errori all'utente
+            lastAnalysisError = error.localizedDescription
+            lastAnalysisFailedAt = Date()
+            #if DEBUG
+            dprint("⚠️ [EnvironmentAI] \(room.roomName): \(error.localizedDescription)")
+            #endif
         }
     }
 
@@ -611,13 +622,20 @@ final class AmbientalAIService {
         )
         #endif
 
-        // Clamp severity al ceiling deterministico
+        // Clamp severity within deterministic bounds: the model cannot overstate or understate
+        // the severity implied by current sensor urgency.
         let clampedSeverity = EnvironmentPreProcessor.clampSeverity(
-            llmSeverity, ceiling: preResult.severityCeiling
+            llmSeverity,
+            ceiling: preResult.severityCeiling,
+            floor: EnvironmentPreProcessor.severityFloor(for: preResult.sensorStatuses)
         )
 
-        // Parse intent strings dal LLM
-        let rawIntents = intentStrings.compactMap { ActionIntent(rawValue: $0) }
+        // Parse intent strings dal LLM e integra intent deterministici quando il dato
+        // rende l'azione evidente anche se il modello risponde in modo generico.
+        let rawIntents = augmentedIntents(
+            intentStrings.compactMap { ActionIntent(rawValue: $0) },
+            preResult: preResult
+        )
 
         // Filtra intent per tipo di stanza
         let filteredIntents = EnvironmentPreProcessor.filterIntents(rawIntents, for: preResult.roomType)
@@ -679,6 +697,30 @@ final class AmbientalAIService {
             promptVersion: AIPromptVersion.currentEnvironmental,
             isLanguageSuspect: suspect
         )
+    }
+
+    private func augmentedIntents(
+        _ intents: [ActionIntent],
+        preResult: PreProcessorResult
+    ) -> [ActionIntent] {
+        var result = intents
+
+        let hasOutdoorHeatIssue = preResult.roomType == .outdoor &&
+            preResult.sensorStatuses.contains { status in
+                status.type == SensorServiceType.temperature.rawValue &&
+                !status.isStale &&
+                (
+                    status.urgency == "danger" ||
+                    (status.actionableAnomaly && status.anomalyDirection == "high") ||
+                    ((status.deviationSigma ?? 0) >= 2.0 && status.anomalyDirection == "high")
+                )
+            }
+
+        if hasOutdoorHeatIssue && !result.contains(.coolRoom) {
+            result.insert(.coolRoom, at: 0)
+        }
+
+        return result
     }
 
     // MARK: - Confidence Computation (24.B)
@@ -850,6 +892,49 @@ final class AmbientalAIService {
         }
     }
 
+    private func normalizeVisibleInsightSeverities(rooms: [RoomEnvironmentData]) {
+        let severityByRoom = Dictionary(uniqueKeysWithValues: rooms.map { room in
+            (room.roomName, severityFloor(for: room.worstUrgency))
+        })
+
+        for index in insights.indices {
+            let insight = insights[index]
+            guard insight.isVisible,
+                  let roomSeverity = severityByRoom[insight.roomName],
+                  roomSeverity > insight.severity
+            else { continue }
+
+            insights[index] = AmbientalAIInsight(
+                id: insight.id,
+                roomName: insight.roomName,
+                message: insight.message,
+                severity: roomSeverity,
+                intelligenceLevel: insight.intelligenceLevel,
+                patternKey: insight.patternKey,
+                whyExplanation: insight.whyExplanation,
+                confidence: insight.confidence,
+                generatedAt: insight.generatedAt,
+                isDismissed: insight.isDismissed,
+                nextActions: insight.nextActions,
+                resolvedIntents: insight.resolvedIntents,
+                sourceAccessoryID: insight.sourceAccessoryID,
+                sourceAccessoryName: insight.sourceAccessoryName,
+                sourceServiceType: insight.sourceServiceType,
+                promptVersion: insight.promptVersion,
+                isLanguageSuspect: insight.isLanguageSuspect
+            )
+            updatePersistedSeverity(for: insight.id, to: roomSeverity)
+        }
+    }
+
+    private func severityFloor(for urgency: SensorUrgency) -> InsightSeverity {
+        switch urgency {
+        case .danger:  return .anomaly
+        case .warning: return .warning
+        case .normal:  return .info
+        }
+    }
+
     /// Auto-dismisses non-safety insights for a room when the PreProcessor determines
     /// all sensors have returned to normal (shouldCallAI = false).
     /// Safety-critical insights (respondToSmoke, respondToCO) are never auto-dismissed.
@@ -907,6 +992,15 @@ final class AmbientalAIService {
         )
         guard let record = (try? context.fetch(descriptor))?.first else { return }
         record.statusRaw = status.rawValue
+        try? context.save()
+    }
+
+    private func updatePersistedSeverity(for id: UUID, to severity: InsightSeverity) {
+        let descriptor = FetchDescriptor<PersistedInsight>(
+            predicate: #Predicate { $0.id == id }
+        )
+        guard let record = (try? context.fetch(descriptor))?.first else { return }
+        record.severityRaw = severity.rawValue
         try? context.save()
     }
 

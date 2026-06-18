@@ -79,7 +79,7 @@ enum PatternDetectionEngine {
     // Event type filter — motion and contact sensors produce spurious sequential hits
     // and are not habit-forming targets for automation suggestions.
     private static let habitEligibleTypes: Set<String> = [
-        "light", "blind", "switch", "thermostat", "fan", "airPurifier", "outlet"
+        "light", "blind", "switch", "thermostat", "fan", "airPurifier", "humidifier", "outlet"
     ]
 
     // Burst detection — a rapid cascade of ≥ burstMinSize distinct accessories
@@ -359,7 +359,8 @@ enum PatternDetectionEngine {
                     action:        .activate,
                     numericValue:  nil,
                     context:       ctx,
-                    groupingKey:   clusterID
+                    groupingKey:   clusterID,
+                    matchedSceneName: matchedScene
                 ))
             }
 
@@ -585,6 +586,7 @@ enum PatternDetectionEngine {
             // For burst-cluster events the groupingKey is the stable cluster ID.
             // Store it as causeSignature so deduplicationKey is stable across runs.
             let clusterSig = group.first?.groupingKey
+            let matchedSceneName = group.compactMap(\.matchedSceneName).first
 
             let pattern = BehavioralPattern(
                 id:                       UUID(),
@@ -601,7 +603,7 @@ enum PatternDetectionEngine {
                 weekdays:                 weekdays,
                 dayType:                  resolvedDayType,
                 causeSignature:           clusterSig,
-                causeName:                nil,
+                causeName:                matchedSceneName,
                 avgGapSeconds:            nil,
                 observations:             group.count,
                 validations:              group.count,

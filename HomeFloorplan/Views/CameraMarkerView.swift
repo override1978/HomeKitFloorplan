@@ -17,6 +17,8 @@ struct CameraMarkerView: View {
     let size: CGSize
     let isEditing: Bool
     let isSelected: Bool
+    let isExecuting: Bool
+    let editIssue: AccessoryMarkerEditIssue?
     let label: String
     let hasCustomLabel: Bool
 
@@ -27,6 +29,24 @@ struct CameraMarkerView: View {
     @State private var wiggleAngle: Double = 0
 
     private static let refreshInterval: TimeInterval = 30
+
+    init(adapter: CameraAdapter,
+         size: CGSize,
+         isEditing: Bool,
+         isSelected: Bool,
+         isExecuting: Bool,
+         editIssue: AccessoryMarkerEditIssue? = nil,
+         label: String,
+         hasCustomLabel: Bool) {
+        self.adapter = adapter
+        self.size = size
+        self.isEditing = isEditing
+        self.isSelected = isSelected
+        self.isExecuting = isExecuting
+        self.editIssue = editIssue
+        self.label = label
+        self.hasCustomLabel = hasCustomLabel
+    }
 
     private var isOffline: Bool {
         !homeKit.isReachable(adapter.accessory)
@@ -127,6 +147,19 @@ struct CameraMarkerView: View {
                         .padding(4)
                 }
                 .frame(width: size.width, height: size.height, alignment: .topTrailing)
+            }
+
+            if isEditing, let editIssue {
+                HStack {
+                    Image(systemName: editIssue.systemImage)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(4)
+                        .background(editIssue.color.opacity(0.92), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(4)
+                    Spacer()
+                }
+                .frame(width: size.width, height: size.height, alignment: .topLeading)
             }
 
             // Loading indicator while first snapshot is being fetched

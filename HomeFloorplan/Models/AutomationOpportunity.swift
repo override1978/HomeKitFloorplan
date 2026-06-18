@@ -266,9 +266,12 @@ extension AutomationOpportunity {
             self.triggerDirection   = nil
         }
 
-        self.effectAccessoryIDString = pattern.accessoryID?.uuidString
+        let matchedSceneName = pattern.patternType == .scene ? pattern.causeName : nil
+
+        self.effectAccessoryIDString = matchedSceneName == nil ? pattern.accessoryID?.uuidString : nil
         self.effectActionRaw         = pattern.action.rawValue
         self.effectValue             = pattern.numericValue
+        self.effectSceneName         = matchedSceneName
 
         self.status      = .pending
         self.snoozedUntil = nil

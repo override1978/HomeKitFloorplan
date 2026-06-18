@@ -96,6 +96,7 @@ final class TelevisionAdapter: AccessoryAdapter {
 
     var supportsQuickToggle: Bool { true }
     var markerStyle: MarkerStyle { .controllable }
+    var markerTint: Color? { isOn ? .purple : nil }
     var visualUrgency: MarkerUrgency { isOn ? .active : .normal }
     var supportsFloorplanPlacement: Bool { true }
     var batteryInfo: BatteryInfo? { nil }

@@ -14,6 +14,8 @@ final class DimmableLightAdapter: AccessoryAdapter {
     private let brightnessCharacteristic: HMCharacteristic
     
     init?(accessory: HMAccessory, homeKit: HomeKitService) {
+        guard !Self.isLikelyAirCareAccessory(accessory) else { return nil }
+        
         guard accessory.services.contains(where: { $0.serviceType == HMServiceTypeLightbulb })
                 || accessory.category.categoryType == HMAccessoryCategoryTypeLightbulb
         else { return nil }
@@ -48,16 +50,21 @@ final class DimmableLightAdapter: AccessoryAdapter {
     }
     
     var supportsQuickToggle: Bool {
-        (powerCharacteristic != nil) && homeKit.isReachable(accessory)
+        homeKit.isReachable(accessory)
     }
     
     var primaryStatusText: String? { nil }
     var markerStyle: MarkerStyle { .controllable }
+    var markerTint: Color? { isOn ? .yellow : nil }
     var visualUrgency: MarkerUrgency { isOn ? .active : .normal }
     
     func performQuickToggle(via homeKit: HomeKitService) async throws {
-        guard let power = powerCharacteristic else { return }
-        try await homeKit.write(!isOn, to: power)
+        if let power = powerCharacteristic {
+            try await homeKit.write(!isOn, to: power)
+        } else {
+            let newBrightness = currentBrightness > 0 ? 0 : 80
+            try await setBrightness(newBrightness)
+        }
     }
     
     @MainActor
@@ -94,5 +101,15 @@ final class DimmableLightAdapter: AccessoryAdapter {
         if let n = raw as? NSNumber { return n.intValue }
         if let d = raw as? Double { return Int(d) }
         return nil
+    }
+    
+    private static func isLikelyAirCareAccessory(_ accessory: HMAccessory) -> Bool {
+        let humidifierDehumidifierServiceType = "000000BD-0000-1000-8000-0026BB765291"
+        if accessory.services.contains(where: { $0.serviceType == humidifierDehumidifierServiceType }) {
+            return true
+        }
+        let name = accessory.name.lowercased()
+        let keywords = ["diffusore", "diffuser", "aroma", "humidifier", "umidificatore", "dehumidifier", "deumidificatore"]
+        return keywords.contains { name.contains($0) }
     }
 }

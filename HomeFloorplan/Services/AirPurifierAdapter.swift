@@ -112,6 +112,10 @@ final class AirPurifierAdapter: AccessoryAdapter {
     }
     
     var markerStyle: MarkerStyle { .controllable }
+    var markerTint: Color? {
+        guard isActive else { return nil }
+        return isPurifying ? .teal : .green
+    }
     var visualUrgency: MarkerUrgency { isActive ? .active : .normal }
     
     func performQuickToggle(via homeKit: HomeKitService) async throws {

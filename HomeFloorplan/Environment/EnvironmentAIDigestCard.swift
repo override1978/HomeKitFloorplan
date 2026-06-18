@@ -24,7 +24,7 @@ struct EnvironmentAIDigestCard: View {
 
     let insights: [AmbientalAIInsight]
     let onDismissInsight: (AmbientalAIInsight, DismissalReason) -> Void
-    let onExecuteAction: (AINextAction, AmbientalAIInsight) -> Void
+    let onExecuteAction: (AINextAction, AmbientalAIInsight) async -> Bool
     let onCreateRule: (RuleDraft, AmbientalAIInsight) -> Void
 
     @State private var currentPage: Int = 0
@@ -41,14 +41,14 @@ struct EnvironmentAIDigestCard: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.blue)
-                Text(String(localized: "digest.header.title", defaultValue: "AI Insights"))
+                Text(String(localized: "digest.header.title", defaultValue: "Insight AI"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
                     .tracking(0.6)
                 Spacer()
                 if sorted.count > 1 {
-                    Text(String(format: String(localized: "digest.header.pageOf", defaultValue: "%1$d of %2$d"), currentPage + 1, sorted.count))
+                    Text(String(format: String(localized: "digest.header.pageOf", defaultValue: "%1$d di %2$d"), currentPage + 1, sorted.count))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .monospacedDigit()
@@ -73,7 +73,7 @@ struct EnvironmentAIDigestCard: View {
                                 withAnimation { currentPage -= 1 }
                             }
                         },
-                        onExecuteAction: { action in onExecuteAction(action, insight) },
+                        onExecuteAction: { action in await onExecuteAction(action, insight) },
                         onCreateRule: { draft in onCreateRule(draft, insight) }
                     )
                     .tag(idx)
@@ -123,7 +123,7 @@ private struct InsightPageView: View {
 
     let insight: AmbientalAIInsight
     let onDismiss: (DismissalReason) -> Void
-    let onExecuteAction: (AINextAction) -> Void
+    let onExecuteAction: (AINextAction) async -> Bool
     let onCreateRule: (RuleDraft) -> Void
 
     @State private var showDismissDialog = false
@@ -196,7 +196,7 @@ private struct InsightPageView: View {
                 Button {
                     showDismissDialog = true
                 } label: {
-                    Text(String(localized: "insight.action.dismiss", defaultValue: "Dismiss"))
+                    Text(String(localized: "insight.action.dismiss", defaultValue: "Ignora"))
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 10)
@@ -208,14 +208,14 @@ private struct InsightPageView: View {
                 }
                 .buttonStyle(.plain)
                 .confirmationDialog(
-                    String(localized: "insight.dismiss.dialog.title", defaultValue: "Why dismiss this insight?"),
+                    String(localized: "insight.dismiss.dialog.title", defaultValue: "Perché vuoi ignorare questo insight?"),
                     isPresented: $showDismissDialog,
                     titleVisibility: .visible
                 ) {
                     Button(DismissalReason.userActedManually.localizedLabel) { onDismiss(.userActedManually) }
                     Button(DismissalReason.irrelevant.localizedLabel)        { onDismiss(.irrelevant) }
                     Button(DismissalReason.unclear.localizedLabel)           { onDismiss(.unclear) }
-                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Cancel"), role: .cancel) {}
+                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Annulla"), role: .cancel) {}
                 }
             }
 
@@ -260,7 +260,7 @@ private struct DigestActionButton: View {
     let action: AINextAction
     let color: Color
     let fallbackAccessoryID: String?
-    let onExecuteAction: (AINextAction) -> Void
+    let onExecuteAction: (AINextAction) async -> Bool
     let onCreateRule: (RuleDraft) -> Void
 
     enum ButtonState { case idle, executing, completed, error }
@@ -314,7 +314,7 @@ private struct DigestActionButton: View {
     private var suggestButton: some View {
         Button {
             guard state == .idle else { return }
-            handleTap()
+            Task { await handleTap() }
         } label: {
             HStack(spacing: 6) {
                 switch state {
@@ -371,20 +371,25 @@ private struct DigestActionButton: View {
 
     private var buttonLabel: String {
         switch state {
-        case .completed: return String(localized: "insight.action.done",  defaultValue: "Done")
-        case .error:     return String(localized: "insight.action.error", defaultValue: "Error")
+        case .completed: return String(localized: "insight.action.done",  defaultValue: "Fatto")
+        case .error:     return String(localized: "insight.action.error", defaultValue: "Errore")
         default:         return action.label
         }
     }
 
-    private func handleTap() {
+    private func handleTap() async {
         // "suggest" actions execute immediately via HomeKit — no rule panel
         if action.actionType == "suggest" {
             state = .executing
-            onExecuteAction(action)
-            Task {
-                try? await Task.sleep(nanoseconds: 500_000_000)
+            let success = await onExecuteAction(action)
+            if success {
                 state = .completed
+            } else {
+                state = .error
+                Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    state = .idle
+                }
             }
             return
         }
@@ -475,7 +480,7 @@ private extension InsightSeverity {
         EnvironmentAIDigestCard(
             insights: insights,
             onDismissInsight: { _, _ in },
-            onExecuteAction: { _, _ in },
+            onExecuteAction: { _, _ in true },
             onCreateRule: { _, _ in }
         )
         .padding()

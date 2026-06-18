@@ -35,7 +35,6 @@ final class ActionResolver {
     ///   - roomName: HomeKit room name used to find accessories.
     ///   - roomType: Room type for room-aware fallback tips. Defaults to `.indoor`.
     func resolve(intents: [ActionIntent], roomName: String, roomType: RoomType = .indoor) -> [AINextAction] {
-        let accessories = homeKit.allAccessories.filter { $0.room?.name == roomName }
         let hour = Calendar.current.component(.hour, from: Date())
         let season = CalendarSeason.current
         let isNight = hour >= 19 || hour < 7
@@ -53,6 +52,7 @@ final class ActionResolver {
 
             // Sprint 6: sort candidates by historical effectiveness for this intent (desc).
             // Accessories without history get a neutral prior of 0.5 — not penalised.
+            let accessories = accessoriesFor(intent: intent, roomName: roomName, roomType: roomType)
             let candidates: [HMAccessory]
             if let tracker {
                 candidates = accessories.sorted {
@@ -67,10 +67,11 @@ final class ActionResolver {
             } else {
                 candidates = accessories
             }
+            let prioritizedCandidates = prioritize(candidates: candidates, for: intent, roomType: roomType)
 
             // Phase 6 trace: build candidates list with effectiveness scores
             #if DEBUG
-            let traceCandidates: [(name: String, score: Double)] = candidates.map { acc in
+            let traceCandidates: [(name: String, score: Double)] = prioritizedCandidates.map { acc in
                 let score = tracker?.averageEffectiveness(
                     for: intent.rawValue,
                     accessoryID: acc.uniqueIdentifier.uuidString
@@ -81,7 +82,7 @@ final class ActionResolver {
 
             var selectedAccessoryName: String? = nil
 
-            for accessory in candidates {
+            for accessory in prioritizedCandidates {
                 guard results.count < 3 else { break }
                 guard !usedAccessoryIDs.contains(accessory.uniqueIdentifier) else { continue }
 
@@ -90,9 +91,9 @@ final class ActionResolver {
                 guard !intent.forbiddenCategories.contains(category) else { continue }
 
                 hasEligibleCandidate = true
-                if isAlreadyActive(accessory: accessory, for: intent) { continue }
+                if isAlreadyActive(accessory: accessory, for: intent, roomType: roomType) { continue }
 
-                guard let action = intent.resolveAction(for: category, season: season, hour: hour)
+                guard let action = resolvedAction(for: intent, category: category, roomType: roomType, season: season, hour: hour)
                 else { continue }
 
                 let rawLabel = action.labelKey
@@ -155,6 +156,77 @@ final class ActionResolver {
         return results
     }
 
+    private func prioritize(candidates: [HMAccessory], for intent: ActionIntent, roomType: RoomType) -> [HMAccessory] {
+        guard roomType == .outdoor, intent == .coolRoom else { return candidates }
+        return candidates.sorted {
+            let lhsIsShade = categorize($0) == "windowCovering"
+            let rhsIsShade = categorize($1) == "windowCovering"
+            if lhsIsShade != rhsIsShade { return lhsIsShade }
+            return $0.name < $1.name
+        }
+    }
+
+    private func resolvedAction(
+        for intent: ActionIntent,
+        category: String,
+        roomType: RoomType,
+        season: CalendarSeason,
+        hour: Int
+    ) -> ResolvedAction? {
+        if roomType == .outdoor, intent == .coolRoom, category == "windowCovering" {
+            return ResolvedAction(
+                actionType: "open",
+                value: nil,
+                value2: nil,
+                labelKey: String(localized: "action.label.lowerSunshade", defaultValue: "Abbassa tenda")
+            )
+        }
+        return intent.resolveAction(for: category, season: season, hour: hour)
+    }
+
+    private func accessoriesFor(intent: ActionIntent, roomName: String, roomType: RoomType) -> [HMAccessory] {
+        let exactRoomAccessories = homeKit.allAccessories.filter {
+            normalized($0.room?.name ?? "") == normalized(roomName)
+        }
+
+        guard roomType == .outdoor, intent == .coolRoom else {
+            return exactRoomAccessories
+        }
+
+        var seenIDs = Set(exactRoomAccessories.map(\.uniqueIdentifier))
+        var candidates = exactRoomAccessories
+        let normalizedRoomName = normalized(roomName)
+
+        let outdoorShadeCandidates = homeKit.allAccessories.filter { accessory in
+            guard !seenIDs.contains(accessory.uniqueIdentifier) else { return false }
+            guard categorize(accessory) == "windowCovering" else { return false }
+
+            let accessoryRoomName = accessory.room?.name ?? ""
+            let normalizedAccessoryRoomName = normalized(accessoryRoomName)
+            let normalizedAccessoryName = normalized(accessory.name)
+
+            if normalizedAccessoryRoomName == normalizedRoomName { return true }
+            if !accessoryRoomName.isEmpty,
+               RoomClassifier.classify(roomName: accessoryRoomName) == .outdoor {
+                return true
+            }
+            return normalizedAccessoryName.contains(normalizedRoomName)
+        }
+
+        for accessory in outdoorShadeCandidates {
+            seenIDs.insert(accessory.uniqueIdentifier)
+            candidates.append(accessory)
+        }
+
+        return candidates
+    }
+
+    private func normalized(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Private: Accessory Categorization
 
     private func categorize(_ accessory: HMAccessory) -> String {
@@ -165,15 +237,28 @@ final class ActionResolver {
 
     /// Returns true if the accessory is already in the state the intent would set it to,
     /// so we avoid suggesting a no-op action.
-    private func isAlreadyActive(accessory: HMAccessory, for intent: ActionIntent) -> Bool {
+    private func isAlreadyActive(accessory: HMAccessory, for intent: ActionIntent, roomType: RoomType) -> Bool {
         let allChars = accessory.services.flatMap(\.characteristics)
 
         func typedValue<T>(_ uuidLower: String) -> T? {
             allChars.first { $0.characteristicType.lowercased() == uuidLower }?.value as? T
         }
 
+        func numericValue(_ uuidLower: String) -> Double? {
+            guard let raw = allChars.first(where: { $0.characteristicType.lowercased() == uuidLower })?.value else {
+                return nil
+            }
+            if let value = raw as? Double { return value }
+            if let value = raw as? Float { return Double(value) }
+            if let value = raw as? Int { return Double(value) }
+            if let value = raw as? UInt8 { return Double(value) }
+            if let value = raw as? NSNumber { return value.doubleValue }
+            return nil
+        }
+
         let activeUUID         = HMCharacteristicTypeActive.lowercased()
         let onUUID             = HMCharacteristicTypePowerState.lowercased()
+        let currentPositionUUID = HMCharacteristicTypeCurrentPosition.lowercased()
         let targetPositionUUID = HMCharacteristicTypeTargetPosition.lowercased()
         let brightnessUUID     = HMCharacteristicTypeBrightness.lowercased()
 
@@ -181,10 +266,16 @@ final class ActionResolver {
         case .coolRoom:
             let isBlind = categorize(accessory) == "windowCovering"
             if isBlind {
-                // For blinds, only TargetPosition == 0 means "already closed".
+                // Indoor blinds reduce heat when closed; outdoor awnings reduce heat when extended/open.
+                // CurrentPosition is more reliable than a stale TargetPosition.
                 // Active/PowerState on blind controllers means "device powered", not "blind closed".
-                if let pos: Int = typedValue(targetPositionUUID), pos == 0 { return true }
-                if let pos: Double = typedValue(targetPositionUUID), pos == 0 { return true }
+                if roomType == .outdoor {
+                    if let pos = numericValue(currentPositionUUID) { return pos >= 90 }
+                    if let pos = numericValue(targetPositionUUID) { return pos >= 90 }
+                } else {
+                    if let pos = numericValue(currentPositionUUID) { return pos <= 5 }
+                    if let pos = numericValue(targetPositionUUID) { return pos <= 5 }
+                }
                 return false
             }
             if let active: Int = typedValue(activeUUID), active == 1 { return true }

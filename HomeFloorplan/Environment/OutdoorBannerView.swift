@@ -33,7 +33,7 @@ struct OutdoorBannerView: View {
                         .font(.system(size: 34, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                     Text(String(format: String(localized: "outdoor.feelsLike",
-                                               defaultValue: "Feels like %.0f°"),
+                                               defaultValue: "Percepita %.0f°"),
                                 w.apparentTemperature))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -42,7 +42,7 @@ struct OutdoorBannerView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text(String(localized: "outdoor.title", defaultValue: "Outdoor"))
+                    Text(String(localized: "outdoor.title", defaultValue: "Esterno"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     if let updated = weatherKit.lastUpdated {
@@ -77,7 +77,7 @@ struct OutdoorBannerView: View {
             if let tmr = weatherKit.tomorrowForecast {
                 Divider()
                 HStack(spacing: 12) {
-                    Label(String(localized: "outdoor.tomorrow", defaultValue: "Tomorrow"),
+                    Label(String(localized: "outdoor.tomorrow", defaultValue: "Domani"),
                           systemImage: "calendar")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)

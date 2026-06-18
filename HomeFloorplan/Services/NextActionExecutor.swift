@@ -16,12 +16,15 @@ final class NextActionExecutor {
     private static let positionUUID            = "0000007c-0000-1000-8000-0026bb765291"
     private static let rotationSpeedUUID       = "00000029-0000-1000-8000-0026bb765291"
     private static let targetHeaterCoolerUUID  = "000000b2-0000-1000-8000-0026bb765291"
+    private static let targetHeatingCoolingUUID = "00000033-0000-1000-8000-0026bb765291"
     private static let targetAirPurifierUUID   = "000000a8-0000-1000-8000-0026bb765291"
+    private static let targetHumidifierUUID    = "000000b4-0000-1000-8000-0026bb765291"
     private static let targetTempUUID          = "00000035-0000-1000-8000-0026bb765291"
     private static let heatingThresholdUUID    = "00000012-0000-1000-8000-0026bb765291"
     private static let coolingThresholdUUID    = "0000000d-0000-1000-8000-0026bb765291"
     private static let lockTargetStateUUID     = "0000001e-0000-1000-8000-0026bb765291"
     private static let garageDoorTargetUUID    = "00000032-0000-1000-8000-0026bb765291"
+    private static let securitySystemServiceType = "0000007E-0000-1000-8000-0026BB765291"
 
     // MARK: - Execute
 
@@ -37,6 +40,8 @@ final class NextActionExecutor {
         guard let accessory = home.accessories.first(where: {
             $0.uniqueIdentifier == accessoryUUID
         }) else { return false }
+
+        guard !Self.isSecurityAccessory(accessory) else { return false }
 
         guard let characteristic = characteristic(for: actionType, accessory: accessory)
         else { return false }
@@ -66,6 +71,15 @@ final class NextActionExecutor {
 
     // MARK: - Private Helpers
 
+    private static func isSecurityAccessory(_ accessory: HMAccessory) -> Bool {
+        accessory.services.contains { service in
+            let type = service.serviceType.uppercased()
+            return type == securitySystemServiceType ||
+                type == HMServiceTypeLockMechanism.uppercased() ||
+                type == HMServiceTypeGarageDoorOpener.uppercased()
+        }
+    }
+
     /// Restituisce la caratteristica HomeKit corretta per il tipo di azione.
     /// Per setMode e setSpeed sceglie dinamicamente la caratteristica giusta
     /// in base al tipo di servizio primario dell'accessorio.
@@ -87,8 +101,11 @@ final class NextActionExecutor {
         case "setSpeed":
             return find(Self.rotationSpeedUUID)
         case "setMode":
-            // TargetHeaterCoolerState o TargetAirPurifierState a seconda del dispositivo
-            return find(Self.targetHeaterCoolerUUID) ?? find(Self.targetAirPurifierUUID)
+            // TargetHeaterCoolerState / Thermostat / AirPurifier / Humidifier a seconda del dispositivo.
+            return find(Self.targetHeaterCoolerUUID)
+                ?? find(Self.targetHeatingCoolingUUID)
+                ?? find(Self.targetAirPurifierUUID)
+                ?? find(Self.targetHumidifierUUID)
         case "setTemp":
             return find(Self.targetTempUUID)
         case "lock":

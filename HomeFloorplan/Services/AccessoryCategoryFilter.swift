@@ -72,6 +72,7 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
             let fanV2UUID     = "000000B7-0000-1000-8000-0026BB765291"
             let fanV1UUID     = "00000040-0000-1000-8000-0026BB765291"
             let services = onOff.accessory.services
+            if isLikelyAirCareAccessory(onOff.accessory) { return .air }
             if services.contains(where: { $0.serviceType == lightbulbUUID }) { return .lights }
             if services.contains(where: { $0.serviceType == outletUUID    }) { return .outlets }
             if services.contains(where: { $0.serviceType == switchUUID    }) { return .switches }
@@ -86,6 +87,7 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         case is GarageDoorAdapter:           return .security
         case is CameraAdapter:               return .cameras
         case is AirPurifierAdapter:            return .air
+        case is HumidifierAdapter:             return .air
         case is TelevisionAdapter:             return .television
         case is ProgrammableSwitchAdapter:     return .buttons
         case is MatterDeviceAdapter:           return .others
@@ -119,6 +121,16 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
         case HMAccessoryCategoryTypeVideoDoorbell:    return .cameras
         default:                                      return .others
         }
+    }
+    
+    private static func isLikelyAirCareAccessory(_ accessory: HMAccessory) -> Bool {
+        let humidifierDehumidifierServiceType = "000000BD-0000-1000-8000-0026BB765291"
+        if accessory.services.contains(where: { $0.serviceType == humidifierDehumidifierServiceType }) {
+            return true
+        }
+        let name = accessory.name.lowercased()
+        let keywords = ["diffusore", "diffuser", "aroma", "humidifier", "umidificatore", "dehumidifier", "deumidificatore"]
+        return keywords.contains { name.contains($0) }
     }
 }
 

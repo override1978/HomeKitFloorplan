@@ -231,9 +231,9 @@ struct ChatBotView: View {
 
     @ViewBuilder
     private func messageBubble(_ msg: ChatMessage) -> some View {
-        HStack(alignment: .bottom, spacing: 0) {
-            if msg.role == .user { Spacer(minLength: 48) }
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 0) {
+                if msg.role == .user { Spacer(minLength: 48) }
                 renderedText(msg)
                     .textSelection(.enabled)
                     .padding(.horizontal, 14)
@@ -245,11 +245,16 @@ struct ChatBotView: View {
                         in: RoundedRectangle(cornerRadius: 18)
                     )
                     .foregroundStyle(msg.role == .user ? Color.white : Color.primary)
-                if msg.role == .assistant, let payload = msg.actionPayload {
+                if msg.role == .assistant { Spacer(minLength: 48) }
+            }
+
+            if msg.role == .assistant, let payload = msg.actionPayload {
+                HStack(spacing: 0) {
                     actionButtonView(payload: payload, messageID: msg.id)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer(minLength: 0)
                 }
             }
-            if msg.role == .assistant { Spacer(minLength: 48) }
         }
     }
 
@@ -267,12 +272,11 @@ struct ChatBotView: View {
             }
 
         case .createRule(let opp):
-            actionButton(
-                icon: "wand.and.sparkles", label: payload.label,
-                tint: BrandColor.secondary, isExecuting: false
-            ) {
-                createRuleAction(opp, messageID: messageID)
-            }
+            automationPreviewCard(
+                opportunity: opp,
+                messageID: messageID,
+                isExecuting: isExecuting
+            )
 
         case .undo:
             actionButton(
@@ -282,12 +286,265 @@ struct ChatBotView: View {
                 Task { @MainActor in await executeHomeKitAction(payload, messageID: messageID) }
             }
 
+        case .automationDiagnostics(let title, let items):
+            automationDiagnosticsCard(title: title, items: items)
+
         case .choose(let accessories, let action, let value, let promptText):
             accessoryPillsView(
                 accessories: accessories, action: action,
                 value: value, promptText: promptText, messageID: messageID
             )
         }
+    }
+
+    private func automationDiagnosticsCard(title: String, items: [AutomationDiagnosticItem]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "checklist")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.blue)
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+            }
+
+            if items.isEmpty {
+                Text(String(localized: "chat.diagnostics.empty", defaultValue: "Nessuna automazione trovata."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                        automationDiagnosticRow(item)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Color.blue.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func automationDiagnosticRow(_ item: AutomationDiagnosticItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: item.isEnabled ? "checkmark.circle.fill" : "pause.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(item.isEnabled ? .green : .secondary)
+                Text(item.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(item.mode)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(item.mode == "HomeKit" ? .blue : .secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background((item.mode == "HomeKit" ? Color.blue : Color.secondary).opacity(0.10), in: Capsule())
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Label(item.trigger, systemImage: "calendar.badge.clock")
+                Label(item.action, systemImage: "bolt.fill")
+                Label(item.status, systemImage: item.status == "ok" ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func automationPreviewCard(
+        opportunity: AutomationOpportunity,
+        messageID: UUID,
+        isExecuting: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "wand.and.sparkles")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandColor.secondary)
+                Text(String(localized: "chat.automation.preview.title", defaultValue: "Automation preview"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                previewRow(
+                    icon: opportunity.triggerIcon,
+                    title: String(localized: "chat.automation.preview.when", defaultValue: "When"),
+                    value: automationTriggerSummary(for: opportunity)
+                )
+
+                if let condition = automationConditionSummary(for: opportunity) {
+                    previewRow(
+                        icon: "sensor.tag.radiowaves.forward",
+                        title: String(localized: "chat.automation.preview.condition", defaultValue: "Condition"),
+                        value: condition
+                    )
+                }
+
+                previewRow(
+                    icon: automationActionIcon(for: opportunity),
+                    title: String(localized: "chat.automation.preview.action", defaultValue: "Action"),
+                    value: automationActionSummary(for: opportunity)
+                )
+
+                if !opportunity.naturalLanguage.isEmpty {
+                    previewRow(
+                        icon: "quote.bubble.fill",
+                        title: String(localized: "chat.automation.preview.request", defaultValue: "Request"),
+                        value: opportunity.naturalLanguage
+                    )
+                }
+            }
+
+            actionButton(
+                icon: "checkmark.circle.fill",
+                label: String(localized: "chat.automation.createRule", defaultValue: "Crea regola"),
+                tint: BrandColor.secondary,
+                isExecuting: isExecuting
+            ) {
+                createRuleAction(opportunity, messageID: messageID)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BrandColor.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(BrandColor.secondary.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func previewRow(icon: String, title: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandColor.secondary)
+                .frame(width: 16, alignment: .center)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func automationTriggerSummary(for opportunity: AutomationOpportunity) -> String {
+        switch opportunity.triggerType {
+        case "calendar":
+            let time = opportunity.triggerTime ?? "--:--"
+            let days = weekdaySummary(for: opportunity.triggerWeekdays)
+            return days.isEmpty ? time : "\(days) · \(time)"
+        case "characteristic":
+            return opportunity.scheduleSummary
+                ?? String(localized: "chat.automation.trigger.sensor", defaultValue: "Sensor threshold")
+        default:
+            return String(localized: "chat.automation.trigger.manual", defaultValue: "Manual / in-app")
+        }
+    }
+
+    private func automationConditionSummary(for opportunity: AutomationOpportunity) -> String? {
+        guard opportunity.triggerType == "calendar",
+              let sensor = opportunity.triggerSensorType,
+              let threshold = opportunity.triggerThreshold else {
+            return nil
+        }
+
+        let sensorName = SensorServiceType(rawValue: sensor)?.displayName ?? sensor
+        let room = opportunity.roomName.isEmpty ? "" : " (\(opportunity.roomName))"
+        let symbol = opportunity.triggerDirection == "above" ? ">" : "<"
+        return "\(sensorName)\(room) \(symbol) \(String(format: "%.1f", threshold))"
+    }
+
+    private func automationActionSummary(for opportunity: AutomationOpportunity) -> String {
+        if let sceneName = opportunity.effectSceneName, !sceneName.isEmpty {
+            return String(
+                format: String(localized: "chat.automation.action.scene", defaultValue: "Run scene %@"),
+                sceneName
+            )
+        }
+
+        let action = opportunity.effectActionRaw
+        switch action {
+        case "on": return String(localized: "chat.automation.action.on", defaultValue: "Turn on accessory")
+        case "off": return String(localized: "chat.automation.action.off", defaultValue: "Turn off accessory")
+        case "dim":
+            let percent = Int((opportunity.effectValue ?? 0.3) * 100)
+            return String(
+                format: String(localized: "chat.automation.action.dim", defaultValue: "Set brightness to %d%%"),
+                percent
+            )
+        case "setSpeed":
+            let percent = Int((opportunity.effectValue ?? 0.5) * 100)
+            return String(
+                format: String(localized: "chat.automation.action.speed", defaultValue: "Set speed to %d%%"),
+                percent
+            )
+        case "setTemp":
+            let temp = Int(opportunity.effectValue ?? 22.0)
+            return String(
+                format: String(localized: "chat.automation.action.temp", defaultValue: "Set temperature to %d°C"),
+                temp
+            )
+        case "setMode":
+            return String(localized: "chat.automation.action.mode", defaultValue: "Set mode")
+        case "open": return String(localized: "chat.automation.action.open", defaultValue: "Open")
+        case "close": return String(localized: "chat.automation.action.close", defaultValue: "Close")
+        default: return action
+        }
+    }
+
+    private func automationActionIcon(for opportunity: AutomationOpportunity) -> String {
+        if opportunity.effectSceneName != nil { return "sparkles" }
+
+        switch opportunity.effectActionRaw {
+        case "on": return "power"
+        case "off": return "poweroff"
+        case "dim": return "sun.min.fill"
+        case "setSpeed": return "wind"
+        case "setTemp": return "thermometer.medium"
+        case "setMode": return "slider.horizontal.3"
+        case "open": return "arrow.up.square"
+        case "close": return "arrow.down.square"
+        default: return "bolt.fill"
+        }
+    }
+
+    private func weekdaySummary(for weekdays: [Int]) -> String {
+        guard !weekdays.isEmpty else { return "" }
+        let normalized = Set(weekdays)
+        if normalized == Set(1...7) {
+            return String(localized: "chat.weekdays.everyDay", defaultValue: "Every day")
+        }
+        if normalized == Set([2, 3, 4, 5, 6]) {
+            return String(localized: "chat.weekdays.weekdays", defaultValue: "Weekdays")
+        }
+        if normalized == Set([1, 7]) {
+            return String(localized: "chat.weekdays.weekend", defaultValue: "Weekend")
+        }
+
+        let symbols = Calendar.current.shortWeekdaySymbols
+        return weekdays.sorted().compactMap { day in
+            guard day >= 1, day <= symbols.count else { return nil }
+            return symbols[day - 1]
+        }.joined(separator: ", ")
     }
 
     @ViewBuilder
@@ -334,6 +591,7 @@ struct ChatBotView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -368,11 +626,17 @@ struct ChatBotView: View {
             accessoryID = id; action = act; value = val
         case .undo(let id, let act, let val, _):
             accessoryID = id; action = act; value = val
-        case .createRule, .choose:
+        case .createRule, .choose, .automationDiagnostics:
             return
         }
 
-        guard let home = homeKit.currentHome else { return }
+        guard let home = homeKit.currentHome else {
+            appendAssistantStatus(String(
+                localized: "chat.action.noHome",
+                defaultValue: "Non riesco ad accedere alla casa HomeKit in questo momento."
+            ))
+            return
+        }
         executingActionID = messageID
 
         // Snapshot current characteristic state BEFORE execution so undo is precise.
@@ -389,15 +653,22 @@ struct ChatBotView: View {
         let success = await executor.execute(nextAction, in: home)
         executingActionID = nil
 
-        guard success,
-              let idx = messages.firstIndex(where: { $0.id == messageID }) else { return }
+        guard success else {
+            appendAssistantStatus(String(
+                localized: "chat.action.failed",
+                defaultValue: "Non sono riuscito a eseguire l'azione su HomeKit. Controlla che l'accessorio sia online e supporti questo comando."
+            ))
+            return
+        }
+
+        guard let idx = messages.firstIndex(where: { $0.id == messageID }) else { return }
 
         switch payload {
         case .undo:
             messages[idx].actionPayload = nil
         case .executeNow:
             messages[idx].actionPayload = undoPayload
-        case .createRule, .choose:
+        case .createRule, .choose, .automationDiagnostics:
             break
         }
     }
@@ -409,7 +680,13 @@ struct ChatBotView: View {
         value: Double?,
         messageID: UUID
     ) async {
-        guard let home = homeKit.currentHome else { return }
+        guard let home = homeKit.currentHome else {
+            appendAssistantStatus(String(
+                localized: "chat.action.noHome",
+                defaultValue: "Non riesco ad accedere alla casa HomeKit in questo momento."
+            ))
+            return
+        }
         executingPillID = choice.id
 
         let undoPayload = captureCurrentStateForUndo(accessoryID: choice.id, executedAction: action)
@@ -425,19 +702,55 @@ struct ChatBotView: View {
         let success = await executor.execute(nextAction, in: home)
         executingPillID = nil
 
-        guard success, let idx = messages.firstIndex(where: { $0.id == messageID }) else { return }
+        guard success else {
+            appendAssistantStatus(String(
+                localized: "chat.action.failed",
+                defaultValue: "Non sono riuscito a eseguire l'azione su HomeKit. Controlla che l'accessorio sia online e supporti questo comando."
+            ))
+            return
+        }
+
+        guard let idx = messages.firstIndex(where: { $0.id == messageID }) else { return }
         messages[idx].actionPayload = undoPayload
     }
 
     /// Approves a conversational opportunity and inserts the rule — one tap, no HabitsView needed.
     private func createRuleAction(_ opportunity: AutomationOpportunity, messageID: UUID) {
-        let rule = behavioralService.approve(opportunity)
-            Task { @MainActor in
-                await ruleEngine.insertRule(rule, home: homeKit.currentHome)
+        executingActionID = messageID
+        let rule = opportunity.buildRule()
+        Task { @MainActor in
+            do {
+                let result = try await ruleEngine.insertRule(rule, home: homeKit.currentHome)
+                behavioralService.approve(opportunity)
                 if let idx = messages.firstIndex(where: { $0.id == messageID }) {
                     messages[idx].actionPayload = nil
                 }
+                executingActionID = nil
+                let statusText: String
+                if result.didSyncHomeKit {
+                    statusText = String(
+                        localized: "chat.rule.created.homekit",
+                        defaultValue: "Regola creata e sincronizzata con HomeKit."
+                    )
+                } else {
+                    statusText = String(
+                        localized: "chat.rule.created.inapp",
+                        defaultValue: "Regola creata nell'app. HomeKit non l'ha accettata, quindi verrà gestita internamente quando l'app può valutarla."
+                    )
+                }
+                appendAssistantStatus(statusText)
+            } catch {
+                executingActionID = nil
+                appendAssistantStatus(String(
+                    localized: "chat.rule.create.failed",
+                    defaultValue: "Non sono riuscito a creare la regola. La proposta resta disponibile: puoi riprovare tra poco."
+                ))
             }
+        }
+    }
+
+    private func appendAssistantStatus(_ content: String) {
+        messages.append(ChatMessage(role: .assistant, content: content))
     }
 
     /// Reads homeKit.characteristicValues at call time so the undo payload reflects
@@ -823,6 +1136,7 @@ struct ChatBotView: View {
             homeKit:             homeKit,
             weatherKit:          weatherKit,
             behavioralService:   behavioralService,
+            ruleEngine:          ruleEngine,
             modelContainer:      modelContext.container,
             smartLightingEngine: smartLightingEngine,
             scenesService:       scenesService

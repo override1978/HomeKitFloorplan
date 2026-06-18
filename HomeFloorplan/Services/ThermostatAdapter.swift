@@ -180,6 +180,20 @@ final class ThermostatAdapter: AccessoryAdapter {
     }
     
     var markerStyle: MarkerStyle { .sensorNumeric }
+    var markerTint: Color? {
+        guard currentMode != .off else { return nil }
+        switch heaterCoolerState {
+        case 2: return .orange
+        case 3: return .blue
+        default:
+            switch currentMode {
+            case .heat: return .orange
+            case .cool: return .blue
+            case .auto: return .green
+            case .off: return nil
+            }
+        }
+    }
     
     var visualUrgency: MarkerUrgency {
         guard currentMode != .off else { return .normal }

@@ -205,12 +205,24 @@ enum EnvironmentPreProcessor {
     // MARK: - Severity Clamping
 
     /// Clamp la severity LLM al ceiling deterministico.
-    /// Garantisce che il modello non possa assegnare severità più alta di quella giustificata dai dati.
+    /// Garantisce che il modello non possa assegnare severità più alta o più bassa
+    /// di quella giustificata dai dati deterministici.
     static func clampSeverity(
         _ llmSeverity: InsightSeverity,
-        ceiling: InsightSeverity
+        ceiling: InsightSeverity,
+        floor: InsightSeverity = .info
     ) -> InsightSeverity {
-        min(llmSeverity, ceiling)
+        max(min(llmSeverity, ceiling), floor)
+    }
+
+    static func severityFloor(for statuses: [SensorStatusEntry]) -> InsightSeverity {
+        if statuses.contains(where: { $0.urgency == "danger" && !$0.isStale }) {
+            return .anomaly
+        }
+        if statuses.contains(where: { ($0.urgency == "warning" || $0.actionableAnomaly) && !$0.isStale }) {
+            return .warning
+        }
+        return .info
     }
 
     // MARK: - Intent Filtering

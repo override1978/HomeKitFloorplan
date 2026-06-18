@@ -31,6 +31,7 @@ protocol AccessoryAdapter: AnyObject {
     var primaryStatusText: String? { get }
     var markerStyle: MarkerStyle { get }
     var visualUrgency: MarkerUrgency { get }
+    var markerTint: Color? { get }
     var batteryInfo: BatteryInfo? { get }
     
     /// True se questo adapter può essere piazzato come marker sul floorplan.
@@ -52,4 +53,5 @@ extension AccessoryAdapter {
     var id: UUID { accessory.uniqueIdentifier }
     var name: String { accessory.name }
     var isReachable: Bool { accessory.isReachable }
+    var markerTint: Color? { nil }
 }

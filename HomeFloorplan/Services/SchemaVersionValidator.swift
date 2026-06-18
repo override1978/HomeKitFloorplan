@@ -12,7 +12,7 @@ import SwiftData
 //   • If a migration is non-lightweight (e.g. custom mapping), create a
 //     VersionedSchema + SchemaMigrationPlan before shipping.
 //
-// Current schema — v15 (15 @Model types):
+// Current schema — v16 (15 @Model types):
 //   1.  Floorplan
 //   2.  PlacedAccessory
 //   3.  ActivityEvent
@@ -41,7 +41,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 15
+    static let currentVersion: Int = 16
 
     // MARK: - Persistence
 

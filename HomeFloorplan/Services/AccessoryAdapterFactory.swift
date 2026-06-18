@@ -43,6 +43,11 @@ enum AccessoryAdapterFactory {
         if let purifier = AirPurifierAdapter(accessory: accessory, homeKit: homeKit) {
             return purifier
         }
+        
+        // 0.85 Umidificatori / diffusori (prima di sensori e luci secondarie)
+        if let humidifier = HumidifierAdapter(accessory: accessory, homeKit: homeKit) {
+            return humidifier
+        }
 
         // 0.9 Televisori (DEVE precedere OnOffAdapter: usa la caratteristica Active)
         if let tv = TelevisionAdapter(accessory: accessory, homeKit: homeKit) {

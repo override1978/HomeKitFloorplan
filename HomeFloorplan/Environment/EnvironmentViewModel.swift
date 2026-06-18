@@ -51,9 +51,9 @@ enum SensorUrgency: Int, Comparable {
 
     var label: String {
         switch self {
-        case .normal:  return String(localized: "urgency.normal",  defaultValue: "Normal")
-        case .warning: return String(localized: "urgency.warning", defaultValue: "Warning")
-        case .danger:  return String(localized: "urgency.danger",  defaultValue: "Critical")
+        case .normal:  return String(localized: "urgency.normal",  defaultValue: "Normale")
+        case .warning: return String(localized: "urgency.warning", defaultValue: "Attenzione")
+        case .danger:  return String(localized: "urgency.danger",  defaultValue: "Critico")
         }
     }
 
@@ -104,11 +104,11 @@ struct SensorData: Identifiable {
             return String(format: "%.0f%%", currentValue)
         case .airQuality:
             switch Int(currentValue) {
-            case 1: return String(localized: "airquality.excellent",  defaultValue: "Excellent")
-            case 2: return String(localized: "airquality.good",       defaultValue: "Good")
-            case 3: return String(localized: "airquality.fair",       defaultValue: "Fair")
-            case 4: return String(localized: "airquality.poor",       defaultValue: "Poor")
-            case 5: return String(localized: "airquality.veryPoor",   defaultValue: "Very Poor")
+            case 1: return String(localized: "airquality.excellent",  defaultValue: "Eccellente")
+            case 2: return String(localized: "airquality.good",       defaultValue: "Buona")
+            case 3: return String(localized: "airquality.fair",       defaultValue: "Discreta")
+            case 4: return String(localized: "airquality.poor",       defaultValue: "Scarsa")
+            case 5: return String(localized: "airquality.veryPoor",   defaultValue: "Molto scarsa")
             default: return "—"
             }
         case .carbonMonoxide:
@@ -117,8 +117,8 @@ struct SensorData: Identifiable {
             return String(format: "%.0f ppm", currentValue)
         case .smoke:
             return currentValue >= 1
-                ? String(localized: "smoke.detected",     defaultValue: "Detected")
-                : String(localized: "smoke.notDetected",  defaultValue: "Clear")
+                ? String(localized: "smoke.detected",     defaultValue: "Rilevato")
+                : String(localized: "smoke.notDetected",  defaultValue: "Libero")
         case .vocDensity:
             return String(format: "%.0f µg/m³", currentValue)
         case .lightSensor:
@@ -165,10 +165,10 @@ struct RoomEnvironmentData: Identifiable {
 
     var qualityLabel: String {
         switch qualityScore {
-        case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Excellent")
-        case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Fair")
-        case 0.35..<0.60: return String(localized: "quality.warning",   defaultValue: "Warning")
-        default:          return String(localized: "quality.critical",  defaultValue: "Critical")
+        case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Ottima")
+        case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Discreta")
+        case 0.35..<0.60: return String(localized: "quality.warning",   defaultValue: "Attenzione")
+        default:          return String(localized: "quality.critical",  defaultValue: "Critica")
         }
     }
 
@@ -260,10 +260,10 @@ final class EnvironmentViewModel {
 
     var globalLabel: String {
         switch globalScore {
-        case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Excellent")
-        case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Fair")
-        case 0.35..<0.60: return String(localized: "quality.warning",   defaultValue: "Warning")
-        default:          return String(localized: "quality.critical",  defaultValue: "Critical")
+        case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Ottima")
+        case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Discreta")
+        case 0.35..<0.60: return String(localized: "quality.warning",   defaultValue: "Attenzione")
+        default:          return String(localized: "quality.critical",  defaultValue: "Critica")
         }
     }
 
@@ -286,34 +286,54 @@ final class EnvironmentViewModel {
     /// Fase 2 (main actor): elaborazione — veloce, in-memory.
     func loadFromCoreData() {
         currentLoadTask?.cancel()
-        guard let container = modelContainer else { return }
+        currentLoadTask = Task {
+            _ = await performReloadFromCoreData()
+        }
+    }
+
+    /// Reloads environment data and returns only after `rooms` has been updated.
+    /// Use this before running AI analysis that depends on freshly sampled readings.
+    @discardableResult
+    func reloadFromCoreData() async -> [RoomEnvironmentData] {
+        currentLoadTask?.cancel()
+        currentLoadTask = nil
+        return await performReloadFromCoreData()
+    }
+
+    @discardableResult
+    private func performReloadFromCoreData() async -> [RoomEnvironmentData] {
+        guard let container = modelContainer else { return rooms }
         isLoading = true
 
-        currentLoadTask = Task {
-            #if DEBUG
-            let _loadStart = ContinuousClock.now
-            #endif
-            // ── Fase 1: fetch off main thread ───────────────────────────────
-            let (rawReadings, rawThresholds) = await Task.detached(priority: .userInitiated) {
-                let context = ModelContext(container)
+        #if DEBUG
+        let _loadStart = ContinuousClock.now
+        #endif
+        // ── Fase 1: fetch off main thread ───────────────────────────────
+        let (rawReadings, rawThresholds) = await Task.detached(priority: .userInitiated) {
+            let context = ModelContext(container)
 
-                // Limita alle 500 letture più recenti: copre tutti i dispositivi attivi
-                // evitando di scansionare l'intera storia (fino a 30 giorni × N sensori).
-                var desc = FetchDescriptor<SensorReading>(
-                    sortBy: [SortDescriptor(\SensorReading.timestamp, order: .reverse)]
-                )
-                desc.fetchLimit = 500
+            // Limita alle 500 letture più recenti: copre tutti i dispositivi attivi
+            // evitando di scansionare l'intera storia (fino a 30 giorni × N sensori).
+            var desc = FetchDescriptor<SensorReading>(
+                sortBy: [SortDescriptor(\SensorReading.timestamp, order: .reverse)]
+            )
+            desc.fetchLimit = 500
 
-                let fetchedReadings    = (try? context.fetch(desc)) ?? []
-                let fetchedThresholds  = (try? context.fetch(FetchDescriptor<SensorAlertThreshold>())) ?? []
+            let fetchedReadings    = (try? context.fetch(desc)) ?? []
+            let fetchedThresholds  = (try? context.fetch(FetchDescriptor<SensorAlertThreshold>())) ?? []
 
-                // Estraiamo subito value-type Sendable per evitare di passare @Model tra attori
-                let r = fetchedReadings.map { RawSensorReading(accessoryUUID: $0.accessoryUUID, serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, value: $0.value, timestamp: $0.timestamp) }
-                let t = fetchedThresholds.map { RawSensorThreshold(serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, warningValue: $0.warningValue, dangerValue: $0.dangerValue, isEnabled: $0.isEnabled) }
-                return (r, t)
-            }.value
+            // Estraiamo subito value-type Sendable per evitare di passare @Model tra attori
+            let r = fetchedReadings.map { RawSensorReading(accessoryUUID: $0.accessoryUUID, serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, value: $0.value, timestamp: $0.timestamp) }
+            let t = fetchedThresholds.map { RawSensorThreshold(serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, warningValue: $0.warningValue, dangerValue: $0.dangerValue, isEnabled: $0.isEnabled) }
+            return (r, t)
+        }.value
 
-            // ── Fase 2: elaborazione su main actor (veloce, in-memory) ──────
+        guard !Task.isCancelled else {
+            isLoading = false
+            return rooms
+        }
+
+        // ── Fase 2: elaborazione su main actor (veloce, in-memory) ──────
 
             // 1. Ultima lettura per ogni coppia accessoryUUID+serviceType
             var latestByDevice: [String: RawSensorReading] = [:]
@@ -383,13 +403,16 @@ final class EnvironmentViewModel {
                     (orderMap[a.roomName] ?? Int.max) < (orderMap[b.roomName] ?? Int.max)
                 }
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                isLoading = false
+                return rooms
+            }
             lastRefresh = Date()
             isLoading   = false
             #if DEBUG
             dprint("⏱ [loadFromCoreData] \(ContinuousClock.now - _loadStart) | readings=\(rawReadings.count) rooms=\(rooms.count)")
             #endif
-        }
+        return rooms
     }
 
     /// Genera un UUID v5-like deterministico da una stringa composta.

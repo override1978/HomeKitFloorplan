@@ -9,18 +9,23 @@ final class PlacedAccessory : Identifiable{
     var homeKitAccessoryUUID: UUID
     var positionX: Double   // 0...1
     var positionY: Double   // 0...1
+    /// UUID della stanza disegnata/linkata sul floorplan che contiene il marker.
+    /// Nil per marker legacy o marker fuori da una stanza linkata.
+    var linkedRoomUUID: UUID?
     /// Etichetta personalizzata opzionale (sovrascrive il nome HomeKit se valorizzata)
     var customLabel: String?
     var floorplan: Floorplan?
     
     init(homeKitAccessoryUUID: UUID,
          position: NormalizedPoint,
-         customLabel: String? = nil) {
+         customLabel: String? = nil,
+         linkedRoomUUID: UUID? = nil) {
         self.id = UUID()
         self.homeKitAccessoryUUID = homeKitAccessoryUUID
         self.positionX = position.x
         self.positionY = position.y
         self.customLabel = customLabel
+        self.linkedRoomUUID = linkedRoomUUID
     }
     
     /// Accesso conveniente come NormalizedPoint

@@ -48,6 +48,10 @@ final class MultiOutletAdapter: AccessoryAdapter {
     var visualUrgency: MarkerUrgency {
         isOn ? .active : .normal
     }
+
+    var markerTint: Color? {
+        isOn ? .blue : nil
+    }
     
     var primaryStatusText: String? {
         let total = outletServices.count

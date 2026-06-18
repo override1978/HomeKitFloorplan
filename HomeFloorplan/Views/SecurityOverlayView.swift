@@ -77,6 +77,7 @@ struct SecurityOverlayView: View {
                             size: MarkerSize.regular.cameraMarkerSize,
                             isEditing: false,
                             isSelected: false,
+                            isExecuting: false,
                             label: adapter.accessory.name,
                             hasCustomLabel: false
                         )
@@ -289,8 +290,9 @@ enum RoomSecurityStatus {
 
 // MARK: - SecurityContextDashboard
 
-/// Context panel for the Security overlay — 4 card layout matching EnvironmentContextDashboard style.
-/// Cards: 1) Security Score hero  2) Active alerts  3) Devices by room  4) Suggested action
+/// Context panel for the Security overlay.
+/// The score card stays first, then the assistant digest explains the current state.
+/// Alerts are shown as drill-down detail only when the panel is scoped to a room.
 struct SecurityContextDashboard: View {
 
     @Environment(HomeKitService.self) private var homeKit
@@ -391,27 +393,53 @@ struct SecurityContextDashboard: View {
             scoreCard(score: score, scoreColor: scoreColor, aggregated: aggregated,
                       criticals: criticals, warnings: warnings, allAdapters: allAdapters, system: system)
 
-            // Card 2 — Active alerts
-            if !insights.isEmpty {
+            // Card 2 — Assistant narrative
+            HomeDigestSummaryCard(
+                summary: HomeAssistantDigestService.securityDigest(
+                    score: score,
+                    aggregated: aggregated,
+                    criticals: criticals,
+                    warnings: warnings,
+                    monitoredCount: monitored.count,
+                    highlightedRoomName: highlightName
+                )
+            )
+
+            // Card 3 — Suggested action
+            if let action = topAction, let suggested = action.suggestedAction {
+                actionCard(action: action, suggested: suggested)
+            } else if allAdapters.isEmpty {
+                FloorplanEmptyStateCard(
+                    title: String(localized: "security.panel.noDevices.title", defaultValue: "Nessun dispositivo sicurezza"),
+                    message: String(localized: "security.panel.noDevices.message", defaultValue: "Aggiungi serrature, sensori, videocamere o un sistema di allarme HomeKit per usare l'overlay Sicurezza."),
+                    icon: "lock.shield",
+                    color: .secondary
+                )
+            } else if monitored.isEmpty {
+                FloorplanEmptyStateCard(
+                    title: String(localized: "security.panel.noMonitoring.title", defaultValue: "Monitoraggio non configurato"),
+                    message: String(localized: "security.panel.noMonitoring.message", defaultValue: "Seleziona i sensori da monitorare nella sezione Sicurezza per ricevere priorità e avvisi sul floorplan."),
+                    icon: "shield.slash",
+                    color: .orange
+                )
+            }
+
+            // Card 4 — Active alerts drill-down
+            if !insights.isEmpty && highlightName != nil {
                 alertsCard(insights: insights, criticals: criticals, warnings: warnings,
                            infos: infos, highlightName: highlightName)
             }
 
-            // Card 3 — Monitored sensors (alarm → warning → ok)
+            // Card 5 — Monitored sensors (alarm → warning → ok)
             if !monitored.isEmpty {
                 monitoredSensorsCard(monitored: monitored, alarm: alarmSensors,
                                      warning: warningSensors, ok: okSensors,
                                      highlightName: highlightName)
             }
 
-            // Card 4 — Devices by room
+            // Card 6 — Devices by room
             if !byRoom.isEmpty {
                 devicesCard(byRoom: byRoom, highlightName: highlightName)
-            }
-
-            // Card 5 — Suggested action
-            if let action = topAction, let suggested = action.suggestedAction {
-                actionCard(action: action, suggested: suggested)
             }
         }
         .padding(.horizontal, 12)
@@ -905,4 +933,3 @@ private struct PanelCardModifier: ViewModifier {
             .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
     }
 }
-

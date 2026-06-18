@@ -67,6 +67,7 @@ enum AccessoryEventType: String {
     case thermostat = "thermostat"
     case fan        = "fan"
     case airPurifier = "airPurifier"
+    case humidifier = "humidifier"
     case outlet     = "outlet"
 }
 

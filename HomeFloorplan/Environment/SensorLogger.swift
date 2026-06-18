@@ -143,7 +143,7 @@ final class SensorLogger {
             ctx.insert(SensorReading(
                 accessoryUUID: "weather.outdoor",
                 serviceType:   type,
-                roomName:      String(localized: "outdoor.roomName", defaultValue: "Outdoor"),
+                roomName:      String(localized: "outdoor.roomName", defaultValue: "Esterno"),
                 value:         value
             ))
         }

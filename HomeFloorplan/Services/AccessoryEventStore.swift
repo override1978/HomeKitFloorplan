@@ -222,6 +222,8 @@ final class AccessoryEventStore {
                 eventType = AccessoryEventType.fan.rawValue
             } else if hasChar("000000a8-0000-1000-8000-0026bb765291") {  // TargetAirPurifierState
                 eventType = AccessoryEventType.airPurifier.rawValue
+            } else if hasChar("000000b4-0000-1000-8000-0026bb765291") {  // TargetHumidifierDehumidifierState
+                eventType = AccessoryEventType.humidifier.rawValue
             } else {
                 eventType = AccessoryEventType.outlet.rawValue
             }

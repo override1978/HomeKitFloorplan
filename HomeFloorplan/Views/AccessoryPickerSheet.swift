@@ -13,6 +13,9 @@ struct AccessoryPickerSheet: View {
     /// Optional: UUIDs of HMRooms drawn on this floorplan — shown first under a dedicated header.
     var preferredRoomUUIDs: Set<UUID> = []
 
+    /// Optional contextual title, used when the picker is opened from a specific room.
+    var title: String = "Aggiungi accessori"
+
     /// Callback con gli accessori scelti (uno o più).
     let onPick: ([HMAccessory]) -> Void
 
@@ -40,7 +43,7 @@ struct AccessoryPickerSheet: View {
                 }
             }
             .searchable(text: $searchText, prompt: "Cerca accessorio")
-            .navigationTitle("Aggiungi accessori")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -213,7 +213,7 @@ final class BehavioralAnalysisService {
         let sceneEvents     = rawActivity.map  { BehavioralEventPreprocessor.convert($0) }
 
         // Track stats for diagnostics (same eligibility filter as the engine)
-        let eligibleSet: Set<String> = ["light", "blind", "switch", "thermostat", "fan", "airPurifier", "outlet"]
+        let eligibleSet: Set<String> = ["light", "blind", "switch", "thermostat", "fan", "airPurifier", "humidifier", "outlet"]
         let eligibleForStats = accessoryEvents.filter { eligibleSet.contains($0.eventTypeRaw) }
         lastAnalyzedEventCount      = eligibleForStats.count
         lastAnalyzedEventEarliestAt = eligibleForStats.map(\.timestamp).min()
@@ -341,15 +341,13 @@ final class BehavioralAnalysisService {
     }
 
     /// Adds a conversational opportunity proposed by the chatbot.
-    /// Deduplicates only exact matches (same accessory + action + triggerTime) among pending
-    /// conversationals. Different trigger times = distinct automations, always allowed.
+    /// Deduplicates by deterministic patternID, generated from the full semantic key
+    /// (target, action/value, trigger, weekdays and optional sensor condition).
     func addConversationalOpportunity(_ opp: AutomationOpportunity) {
         let isDuplicate = opportunities.contains {
             $0.origin == .conversational &&
             $0.status == .pending &&
-            $0.effectAccessoryIDString == opp.effectAccessoryIDString &&
-            $0.effectActionRaw == opp.effectActionRaw &&
-            $0.triggerTime == opp.triggerTime
+            $0.patternID == opp.patternID
         }
         guard !isDuplicate else { return }
         opportunities.append(opp)
@@ -490,7 +488,7 @@ final class BehavioralAnalysisService {
         let descriptor = FetchDescriptor<AccessoryEvent>(
             predicate: #Predicate { $0.timestamp >= cutoff }
         )
-        let eligible: Set<String> = ["light", "blind", "switch", "thermostat", "fan", "airPurifier", "outlet"]
+        let eligible: Set<String> = ["light", "blind", "switch", "thermostat", "fan", "airPurifier", "humidifier", "outlet"]
         let all = (try? context.fetch(descriptor)) ?? []
         return all.filter { eligible.contains($0.eventType) }.count
     }

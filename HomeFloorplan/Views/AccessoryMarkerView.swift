@@ -1,10 +1,41 @@
 import SwiftUI
 import HomeKit
 
+enum AccessoryMarkerEditIssue {
+    case missingHomeKitAccessory
+    case duplicateMarker
+    case outsideLinkedRoom
+    case roomLinkMismatch
+
+    var systemImage: String {
+        switch self {
+        case .missingHomeKitAccessory:
+            return "exclamationmark"
+        case .duplicateMarker:
+            return "square.on.square"
+        case .outsideLinkedRoom:
+            return "location.slash"
+        case .roomLinkMismatch:
+            return "link"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .missingHomeKitAccessory:
+            return .red
+        case .duplicateMarker, .outsideLinkedRoom, .roomLinkMismatch:
+            return Color(.systemOrange)
+        }
+    }
+}
+
 struct AccessoryMarkerView: View {
     let adapter: (any AccessoryAdapter)?
     let isEditing: Bool
     let isSelected: Bool
+    let isExecuting: Bool
+    let editIssue: AccessoryMarkerEditIssue?
     let label: String
     let hasCustomLabel: Bool
 
@@ -16,6 +47,22 @@ struct AccessoryMarkerView: View {
 
     /// Angolo corrente del wiggle (cambia con animazione repeatForever).
     @State private var wiggleAngle: Double = 0
+
+    init(adapter: (any AccessoryAdapter)?,
+         isEditing: Bool,
+         isSelected: Bool,
+         isExecuting: Bool,
+         editIssue: AccessoryMarkerEditIssue? = nil,
+         label: String,
+         hasCustomLabel: Bool) {
+        self.adapter = adapter
+        self.isEditing = isEditing
+        self.isSelected = isSelected
+        self.isExecuting = isExecuting
+        self.editIssue = editIssue
+        self.label = label
+        self.hasCustomLabel = hasCustomLabel
+    }
     
     private var size: MarkerSize {
         MarkerSize(rawValue: markerSizeRaw) ?? .regular
@@ -50,6 +97,10 @@ struct AccessoryMarkerView: View {
         guard let adapter else { return false }
         return homeKit.isLikelyOffline(adapter.accessory)
     }
+
+    private var batteryInfo: BatteryInfo? {
+        adapter?.batteryInfo
+    }
     
     var body: some View {
         let _ = homeKit.characteristicValues
@@ -65,6 +116,8 @@ struct AccessoryMarkerView: View {
                 size: size.cameraMarkerSize,
                 isEditing: isEditing,
                 isSelected: isEditing && isSelected,
+                isExecuting: isExecuting,
+                editIssue: editIssue,
                 label: label,
                 hasCustomLabel: hasCustomLabel
             )
@@ -98,6 +151,7 @@ struct AccessoryMarkerView: View {
         .scaleEffect(isEditing ? 1.1 : 1.0)
         .rotationEffect(.degrees(wiggleAngle))
         .animation(.spring(response: 0.3), value: isEditing)
+        .animation(.spring(response: 0.2), value: isExecuting)
         .animation(.easeInOut(duration: 0.2), value: urgency)
         .contentShape(Rectangle())
         .onChange(of: isSelected) { _, selected in
@@ -151,10 +205,18 @@ struct AccessoryMarkerView: View {
                 .overlay(controllableStrokeOverlay)
                 .frame(width: size.controllableDiameter, height: size.controllableDiameter)
             
-            AccessoryIconView(iconName: effectiveIconName)
-                .foregroundStyle(iconColor)
-                .frame(width: size.controllableDiameter * 0.5,
-                       height: size.controllableDiameter * 0.5)
+            if isExecuting {
+                ProgressView()
+                    .tint(iconColor)
+                    .scaleEffect(0.7)
+            } else {
+                AccessoryIconView(iconName: effectiveIconName)
+                    .foregroundStyle(iconColor)
+                    .frame(width: size.controllableDiameter * 0.5,
+                           height: size.controllableDiameter * 0.5)
+            }
+
+            markerBadges
         }
     }
 
@@ -191,6 +253,8 @@ struct AccessoryMarkerView: View {
                 .foregroundStyle(iconColor)
                 .frame(width: size.sensorBoolDiameter * 0.55,
                        height: size.sensorBoolDiameter * 0.55)
+
+            markerBadges
         }
     }
 
@@ -213,7 +277,82 @@ struct AccessoryMarkerView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .padding(.horizontal, 4)
+
+            markerBadges
         }
+    }
+
+    @ViewBuilder
+    private var markerBadges: some View {
+        let topTrailing = badgeTopTrailingOffset
+        let bottomTrailing = badgeBottomTrailingOffset
+
+        if adapter == nil {
+            statusBadge(systemImage: "exclamationmark", color: .red)
+                .offset(topTrailing)
+        } else if isLikelyOffline {
+            statusBadge(systemImage: "wifi.slash", color: .red)
+                .offset(topTrailing)
+        }
+
+        if let batteryInfo, batteryInfo.isLow {
+            statusBadge(systemImage: batteryInfo.symbolName, color: batteryInfo.tintColor)
+                .offset(bottomTrailing)
+        }
+
+        if isEditing, let editIssue {
+            statusBadge(systemImage: editIssue.systemImage, color: editIssue.color)
+                .offset(badgeTopLeadingOffset)
+        }
+    }
+
+    private var badgeTopTrailingOffset: CGSize {
+        switch style {
+        case .controllable:
+            return CGSize(width: size.controllableDiameter * 0.33, height: -size.controllableDiameter * 0.33)
+        case .sensorBoolean:
+            return CGSize(width: size.sensorBoolDiameter * 0.34, height: -size.sensorBoolDiameter * 0.34)
+        case .sensorNumeric:
+            return CGSize(width: size.sensorNumericSize.width * 0.42, height: -size.sensorNumericSize.height * 0.42)
+        case .camera:
+            return .zero
+        }
+    }
+
+    private var badgeTopLeadingOffset: CGSize {
+        switch style {
+        case .controllable:
+            return CGSize(width: -size.controllableDiameter * 0.33, height: -size.controllableDiameter * 0.33)
+        case .sensorBoolean:
+            return CGSize(width: -size.sensorBoolDiameter * 0.34, height: -size.sensorBoolDiameter * 0.34)
+        case .sensorNumeric:
+            return CGSize(width: -size.sensorNumericSize.width * 0.42, height: -size.sensorNumericSize.height * 0.42)
+        case .camera:
+            return .zero
+        }
+    }
+
+    private var badgeBottomTrailingOffset: CGSize {
+        switch style {
+        case .controllable:
+            return CGSize(width: size.controllableDiameter * 0.34, height: size.controllableDiameter * 0.34)
+        case .sensorBoolean:
+            return CGSize(width: size.sensorBoolDiameter * 0.34, height: size.sensorBoolDiameter * 0.34)
+        case .sensorNumeric:
+            return CGSize(width: size.sensorNumericSize.width * 0.42, height: size.sensorNumericSize.height * 0.42)
+        case .camera:
+            return .zero
+        }
+    }
+
+    private func statusBadge(systemImage: String, color: Color) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 15, height: 15)
+            .background(color, in: Circle())
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 1))
+            .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
     }
     
     /// Bordo sottile per sensori (sempre presente, anche se discreto).

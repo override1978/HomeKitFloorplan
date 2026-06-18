@@ -100,14 +100,21 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.5), value: idleTimer.isIdle)
     }
     
-    /// Panel height — collapses to fit above the docked keyboard; 500pt when keyboard hidden.
+    /// Panel height — collapses to fit above the docked keyboard; roomy when keyboard hidden.
     private var chatPanelHeight: CGFloat {
-        guard chatKeyboardHeight > 0 else { return 500 }
+        guard chatKeyboardHeight > 0 else { return 640 }
         let window = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first
         let screenH = window?.screen.bounds.height ?? 800
         let safeTop = window?.safeAreaInsets.top ?? 20
         // screenH - keyboardH - safeTop - 20(padding top) - 20(bottom gap)
         return max(300, screenH - chatKeyboardHeight - safeTop - 40)
+    }
+
+    private var chatPanelWidth: CGFloat {
+        let window = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.windows.first
+        let screenW = window?.screen.bounds.width ?? 430
+        let horizontalPadding: CGFloat = 40
+        return min(max(430, screenW * 0.42), min(640, screenW - horizontalPadding))
     }
 
     private var mainContent: some View {
@@ -124,7 +131,7 @@ struct ContentView: View {
             .overlay(alignment: .topTrailing) {
                 if showChatPanel {
                     ChatBotView()
-                        .frame(width: 400, height: chatPanelHeight)
+                        .frame(width: chatPanelWidth, height: chatPanelHeight)
                         .background(.regularMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
                         .shadow(color: .black.opacity(0.18), radius: 28, x: -4, y: 10)
@@ -201,6 +208,9 @@ struct ContentView: View {
                 FloorplanEditorView(
                     floorplan: floorplan,
                     columnVisibility: $columnVisibility,
+                    onSelectFloorplan: { selectedID in
+                        selection = .floorplan(selectedID)
+                    },
                     presentationStyle: .splitView,
                     startInEditMode: isNew
                 )
@@ -333,4 +343,3 @@ private struct ChatFABButtonView: View {
         }
     }
 }
-

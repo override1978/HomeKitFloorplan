@@ -161,7 +161,7 @@ private struct ThresholdRow: View {
         case .carbonDioxide:  return String(format: "%.0f ppm", value)
         case .smoke:
             return value >= 1
-                ? String(localized: "smoke.detected",    defaultValue: "Yes")
+                ? String(localized: "smoke.detected",    defaultValue: "Sì")
                 : String(localized: "smoke.notDetected", defaultValue: "No")
         case .vocDensity:         return String(format: "%.0f µg/m³", value)
         case .lightSensor:        return String(format: "%.0f lux", value)
