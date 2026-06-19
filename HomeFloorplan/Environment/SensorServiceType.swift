@@ -123,16 +123,16 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
     /// Label leggibile del tipo di sensore.
     var displayName: String {
         switch self {
-        case .temperature:        return String(localized: "sensor.temperature",        defaultValue: "Temperatura")
-        case .humidity:           return String(localized: "sensor.humidity",           defaultValue: "Umidità")
-        case .airQuality:         return String(localized: "sensor.airQuality",         defaultValue: "Qualità aria")
-        case .carbonMonoxide:     return String(localized: "sensor.carbonMonoxide",     defaultValue: "Monossido di carbonio")
-        case .carbonDioxide:      return String(localized: "sensor.carbonDioxide",      defaultValue: "Anidride carbonica")
-        case .smoke:              return String(localized: "sensor.smoke",              defaultValue: "Fumo")
+        case .temperature:        return String(localized: "sensor.temperature",        defaultValue: "Temperature")
+        case .humidity:           return String(localized: "sensor.humidity",           defaultValue: "Humidity")
+        case .airQuality:         return String(localized: "sensor.airQuality",         defaultValue: "Air quality")
+        case .carbonMonoxide:     return String(localized: "sensor.carbonMonoxide",     defaultValue: "Carbon monoxide")
+        case .carbonDioxide:      return String(localized: "sensor.carbonDioxide",      defaultValue: "Carbon dioxide")
+        case .smoke:              return String(localized: "sensor.smoke",              defaultValue: "Smoke")
         case .vocDensity:         return String(localized: "sensor.vocDensity",         defaultValue: "VOC")
-        case .lightSensor:        return String(localized: "sensor.lightSensor",        defaultValue: "Luminosità")
-        case .outdoorTemperature: return String(localized: "sensor.outdoorTemperature", defaultValue: "Temperatura esterna")
-        case .outdoorHumidity:    return String(localized: "sensor.outdoorHumidity",    defaultValue: "Umidità esterna")
+        case .lightSensor:        return String(localized: "sensor.lightSensor",        defaultValue: "Light")
+        case .outdoorTemperature: return String(localized: "sensor.outdoorTemperature", defaultValue: "Outdoor temperature")
+        case .outdoorHumidity:    return String(localized: "sensor.outdoorHumidity",    defaultValue: "Outdoor humidity")
         }
     }
 

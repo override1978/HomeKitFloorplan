@@ -101,18 +101,18 @@ struct FloorplanListView: View {
                 }
                 .ignoresSafeArea()
             }
-            .alert("Eliminare la planimetria?",
+            .alert(String(localized: "floorplan.delete.title", defaultValue: "Delete floorplan?"),
                    isPresented: Binding(
                     get: { pendingDelete != nil },
                     set: { if !$0 { pendingDelete = nil } }
                    ),
                    presenting: pendingDelete) { fp in
-                Button("Elimina", role: .destructive) {
+                Button(String(localized: "common.delete", defaultValue: "Delete"), role: .destructive) {
                     delete(fp)
                 }
-                Button("Annulla", role: .cancel) {}
+                Button(String(localized: "common.cancel", defaultValue: "Cancel"), role: .cancel) {}
             } message: { _ in
-                Text("L'immagine e tutti i marker piazzati saranno persi.")
+                Text(String(localized: "floorplan.delete.message", defaultValue: "The image and all placed markers will be lost."))
             }
         }
     }
@@ -219,12 +219,12 @@ struct FloorplanListView: View {
     
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("Nessuna planimetria", systemImage: "square.dashed")
+            Label(String(localized: "floorplan.empty.title", defaultValue: "No floorplans"), systemImage: "square.dashed")
         } description: {
             VStack(spacing: 12) {
-                Text("Crea la tua prima planimetria per iniziare.")
+                Text(String(localized: "floorplan.empty.subtitle", defaultValue: "Create your first floorplan to get started."))
                 
-                Text("Carica un'immagine (planimetria, foto della casa, schema) e posiziona i marker dei tuoi accessori HomeKit per controllarli con un colpo d'occhio.")
+                Text(String(localized: "floorplan.empty.description", defaultValue: "Upload an image, home photo, or schematic and place HomeKit accessory markers so you can control them at a glance."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -236,13 +236,13 @@ struct FloorplanListView: View {
                 Button {
                     showingNewSheet = true
                 } label: {
-                    Label("Crea planimetria", systemImage: "plus.circle.fill")
+                    Label(String(localized: "floorplan.create", defaultValue: "Create floorplan"), systemImage: "plus.circle.fill")
                         .font(.body.weight(.semibold))
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 
-                Text("Suggerimento: una foto della planimetria stampata, uno screenshot dal piano dell'architetto, o un disegno schematico vanno bene.")
+                Text(String(localized: "floorplan.empty.tip", defaultValue: "Tip: a photo of a printed floorplan, an architect drawing screenshot, or a simple schematic works well."))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
@@ -397,7 +397,7 @@ struct FloorplanListView: View {
                     Button(role: .destructive) {
                         pendingDelete = floorplan
                     } label: {
-                        Label("Elimina", systemImage: "trash")
+                        Label(String(localized: "common.delete", defaultValue: "Delete"), systemImage: "trash")
                     }
                     Button {
                         if floorplan.drawingDocumentJSON != nil {
@@ -406,7 +406,7 @@ struct FloorplanListView: View {
                             editingFloorplan = floorplan
                         }
                     } label: {
-                        Label("Modifica", systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "pencil")
+                        Label(String(localized: "common.edit", defaultValue: "Edit"), systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "pencil")
                     }
                     .tint(.blue)
                 }
@@ -414,7 +414,7 @@ struct FloorplanListView: View {
                     Button {
                         duplicate(floorplan)
                     } label: {
-                        Label("Duplica", systemImage: "doc.on.doc")
+                        Label(String(localized: "common.duplicate", defaultValue: "Duplicate"), systemImage: "doc.on.doc")
                     }
                     .tint(.orange)
                 }
@@ -437,26 +437,26 @@ struct FloorplanListView: View {
             Button {
                 pinFloorplan(floorplan)
             } label: {
-                Label("Aggiungi ad Accesso rapido", systemImage: "pin.fill")
+                Label(String(localized: "floorplan.quickAccess.add", defaultValue: "Add to Quick Access"), systemImage: "pin.fill")
             }
         } else {
             if !isPrimary {
                 Button {
                     setPrimary(floorplan)
                 } label: {
-                    Label("Imposta come principale", systemImage: "star.fill")
+                    Label(String(localized: "floorplan.primary.set", defaultValue: "Set as primary"), systemImage: "star.fill")
                 }
             } else {
                 Button {
                     primaryFloorplanID = ""
                 } label: {
-                    Label("Rimuovi da principale", systemImage: "star.slash")
+                    Label(String(localized: "floorplan.primary.remove", defaultValue: "Remove as primary"), systemImage: "star.slash")
                 }
             }
             Button {
                 unpinFloorplan(floorplan)
             } label: {
-                Label("Rimuovi da Accesso rapido", systemImage: "pin.slash")
+                Label(String(localized: "floorplan.quickAccess.remove", defaultValue: "Remove from Quick Access"), systemImage: "pin.slash")
             }
         }
 
@@ -464,7 +464,7 @@ struct FloorplanListView: View {
         Button {
             editingFloorplan = floorplan
         } label: {
-            Label("Rinomina", systemImage: "pencil")
+            Label(String(localized: "common.rename", defaultValue: "Rename"), systemImage: "pencil")
         }
         Button {
             if floorplan.drawingDocumentJSON != nil {
@@ -473,18 +473,18 @@ struct FloorplanListView: View {
                 editingFloorplan = floorplan
             }
         } label: {
-            Label("Modifica", systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "photo")
+            Label(String(localized: "common.edit", defaultValue: "Edit"), systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "photo")
         }
         Button {
             duplicate(floorplan)
         } label: {
-            Label("Duplica", systemImage: "doc.on.doc")
+            Label(String(localized: "common.duplicate", defaultValue: "Duplicate"), systemImage: "doc.on.doc")
         }
         Divider()
         Button(role: .destructive) {
             pendingDelete = floorplan
         } label: {
-            Label("Elimina", systemImage: "trash")
+            Label(String(localized: "common.delete", defaultValue: "Delete"), systemImage: "trash")
         }
     }
     

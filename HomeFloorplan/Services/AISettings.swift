@@ -8,6 +8,16 @@ enum AIProvider: String, CaseIterable, Codable {
     case claude = "Claude (Anthropic)"
     case openai = "OpenAI"
 
+    /// Providers exposed in the public app UI.
+    /// OpenAI support remains in code for a future agentic implementation.
+    static var publicProviders: [AIProvider] {
+        [.claude]
+    }
+
+    var isPubliclyAvailable: Bool {
+        Self.publicProviders.contains(self)
+    }
+
     /// Endpoint base dell'API per questo provider.
     var apiEndpoint: String {
         switch self {
@@ -45,6 +55,19 @@ enum AIProvider: String, CaseIterable, Codable {
         switch self {
         case .claude: return String(localized: "ai.provider.claude", defaultValue: "Claude (Anthropic)")
         case .openai: return String(localized: "ai.provider.openai", defaultValue: "OpenAI")
+        }
+    }
+
+    /// Plain prompt features such as environmental insights and habit naming.
+    var supportsPromptAnalysis: Bool {
+        true
+    }
+
+    /// Agentic assistant features that require tool-use / tool-result loops.
+    var supportsHomeAssistantTools: Bool {
+        switch self {
+        case .claude: return true
+        case .openai: return false
         }
     }
 }
@@ -156,10 +179,12 @@ final class AISettings {
         let ud = UserDefaults.standard
 
         if let raw = ud.string(forKey: AISettingsKeys.selectedProvider),
-           let provider = AIProvider(rawValue: raw) {
+           let provider = AIProvider(rawValue: raw),
+           provider.isPubliclyAvailable {
             self.selectedProvider = provider
         } else {
             self.selectedProvider = .claude
+            ud.set(AIProvider.claude.rawValue, forKey: AISettingsKeys.selectedProvider)
         }
 
         self.isAIEnabled             = ud.bool(forKey: AISettingsKeys.isAIEnabled)

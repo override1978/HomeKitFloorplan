@@ -29,9 +29,9 @@ enum FloorplanPlacementPriority: Int {
 
     var label: String {
         switch self {
-        case .high: return "Alta"
-        case .medium: return "Media"
-        case .low: return "Bassa"
+        case .high: return String(localized: "floorplan.priority.high", defaultValue: "High")
+        case .medium: return String(localized: "floorplan.priority.medium", defaultValue: "Medium")
+        case .low: return String(localized: "floorplan.priority.low", defaultValue: "Low")
         }
     }
 }
@@ -174,7 +174,18 @@ enum FloorplanHealthAnalyzer {
 
         let markersWithoutLinkedRoom = floorplan.accessories.filter {
             guard $0.linkedRoomUUID == nil else { return false }
-            return FloorplanRoomMatcher.linkedRoomID(containing: $0.position, in: linkedRooms) == nil
+            if FloorplanRoomMatcher.linkedRoomID(containing: $0.position, in: linkedRooms) != nil {
+                return false
+            }
+            guard let accessory = homeKit.accessory(for: $0.homeKitAccessoryUUID) else {
+                return true
+            }
+            return !isPerimeterMarkerAccessory(accessory) ||
+                !FloorplanRoomMatcher.isNearAnyRoom(
+                    $0.position,
+                    in: linkedRooms,
+                    tolerance: perimeterMarkerRoomTolerance
+                )
         }
         if !markersWithoutLinkedRoom.isEmpty && !linkedRooms.isEmpty {
             issues.append(FloorplanHealthIssue(
@@ -191,6 +202,25 @@ enum FloorplanHealthAnalyzer {
             unplacedGroups: unplacedGroups,
             issues: issues.sorted { $0.severity.rawValue > $1.severity.rawValue }
         )
+    }
+
+    private static var perimeterMarkerRoomTolerance: Double {
+        0.035
+    }
+
+    private static func isPerimeterMarkerAccessory(_ accessory: HMAccessory) -> Bool {
+        let category = AccessoryCategorizer.categorize(accessory)
+        if category == "doorLock" ||
+            category == "garageDoor" ||
+            category == "windowCovering" {
+            return true
+        }
+
+        let serviceTypes = Set(accessory.services.map(\.serviceType))
+        return serviceTypes.contains(HMServiceTypeContactSensor) ||
+            serviceTypes.contains(HMServiceTypeLockMechanism) ||
+            serviceTypes.contains(HMServiceTypeGarageDoorOpener) ||
+            serviceTypes.contains(HMServiceTypeWindowCovering)
     }
 
     private static func displayName(for accessory: HMAccessory) -> String {

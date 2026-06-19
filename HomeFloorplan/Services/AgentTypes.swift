@@ -99,12 +99,12 @@ enum AgentError: LocalizedError {
         case .providerNotSupported:
             return String(
                 localized: "agent.error.providerNotSupported",
-                defaultValue: "Le funzioni agentiche richiedono il provider Claude. Configura Claude in Impostazioni → AI."
+                defaultValue: "The voice assistant currently requires Claude because HomeKit tool-use is not available for the selected provider."
             )
         case .iterationCapReached:
             return String(
                 localized: "agent.error.iterationCapReached",
-                defaultValue: "Loop terminato: raggiunto il limite di 5 iterazioni."
+                defaultValue: "The assistant reached the 5-step limit."
             )
         }
     }

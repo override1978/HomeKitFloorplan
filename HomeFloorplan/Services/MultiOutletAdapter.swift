@@ -134,16 +134,18 @@ private struct MultiOutletControl: View {
     // MARK: - Summary
     
     private var summarySection: some View {
-        HStack(spacing: 12) {
+        let tint = adapter.markerTint ?? .blue
+
+        return HStack(spacing: 12) {
             Image(systemName: adapter.isOn ? "powerplug.fill" : "powerplug")
                 .font(.title2)
                 .foregroundStyle(adapter.isOn
-                                 ? AnyShapeStyle(.tint)
+                                 ? AnyShapeStyle(tint)
                                  : AnyShapeStyle(.secondary))
                 .frame(width: 40, height: 40)
                 .background(
                     Circle().fill(adapter.isOn
-                                  ? AnyShapeStyle(.tint.opacity(0.15))
+                                  ? AnyShapeStyle(tint.opacity(0.15))
                                   : AnyShapeStyle(.thinMaterial))
                 )
             
@@ -179,7 +181,7 @@ private struct MultiOutletControl: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(Capsule().fill(.tint))
+                        .background(Capsule().fill(tint))
                 }
                 .buttonStyle(.plain)
                 .disabled(adapter.onCount == adapter.outletServices.count)
@@ -212,11 +214,12 @@ private struct MultiOutletControl: View {
         let isOn = adapter.isOutletOn(service)
         let name = adapter.outletName(service, index: index)
         let inUse = adapter.isInUse(service)
+        let tint = adapter.markerTint ?? .blue
         
         return HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .fill(isOn ? AnyShapeStyle(.tint) : AnyShapeStyle(.thinMaterial))
+                    .fill(isOn ? AnyShapeStyle(tint) : AnyShapeStyle(.thinMaterial))
                     .frame(width: 36, height: 36)
                 Image(systemName: "powerplug.fill")
                     .font(.subheadline)

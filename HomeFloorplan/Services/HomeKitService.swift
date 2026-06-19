@@ -109,6 +109,10 @@ final class HomeKitService: NSObject {
 
     /// Routes sensor value changes to AlertNotificationService. Iniettato dall'app dopo l'init.
     var sensorEventRouter: SensorEventRouter?
+
+    /// Smart Lighting engine. Iniettato dall'app per sospendere temporaneamente
+    /// una stanza quando l'utente cambia manualmente una luce.
+    weak var smartLightingEngine: SmartLightingEngine?
     
     private var observedAccessoryUUIDs: Set<UUID> = []
 
@@ -279,6 +283,7 @@ final class HomeKitService: NSObject {
     /// Mappa UUID accessorio → timestamp dell'ultimo errore.
     /// Le view leggono via `isLikelyOffline(_:)` per mostrare warning.
     var lastWriteErrors: [UUID: Date] = [:]
+    private var lastWriteDates: [UUID: Date] = [:]
 
     /// Soglia entro cui consideriamo un accessorio ancora "potenzialmente offline".
     /// Dopo questo tempo dall'ultimo errore, il flag si auto-cancella alla prossima lettura.
@@ -290,6 +295,7 @@ final class HomeKitService: NSObject {
         do {
             try await characteristic.writeValue(value)
             characteristicValues[characteristic.uniqueIdentifier] = value
+            lastWriteDates[characteristic.uniqueIdentifier] = .now
 
             // Successo: cancella eventuale errore precedente
             if let uuid = characteristic.service?.accessory?.uniqueIdentifier {
@@ -311,6 +317,10 @@ final class HomeKitService: NSObject {
                 }
             }
 
+            if let accessory = characteristic.service?.accessory {
+                pauseSmartLightingAfterManualLightChange(accessory: accessory, characteristic: characteristic)
+            }
+
             // Registra evento per lo storico AI (solo tipi rilevanti)
             if let store = accessoryEventStore,
                let accessory = characteristic.service?.accessory,
@@ -327,6 +337,11 @@ final class HomeKitService: NSObject {
             }
             throw error
         }
+    }
+
+    func wasRecentlyWritten(_ characteristic: HMCharacteristic, within interval: TimeInterval) -> Bool {
+        guard let date = lastWriteDates[characteristic.uniqueIdentifier] else { return false }
+        return Date().timeIntervalSince(date) <= interval
     }
     
     /// True se l'accessorio ha avuto un errore di scrittura recente (entro `offlineWindow`).
@@ -551,6 +566,8 @@ extension HomeKitService: HMAccessoryDelegate {
                 )
             }
 
+            pauseSmartLightingAfterManualLightChange(accessory: accessory, characteristic: characteristic)
+
             // Registra evento per lo storico AI (solo tipi rilevanti)
             if let store = accessoryEventStore,
                let dto = AccessoryEventStore.makeDTO(
@@ -576,5 +593,29 @@ extension HomeKitService: HMAccessoryDelegate {
     
     func accessoryDidUpdateServices(_ accessory: HMAccessory) {
         refreshAccessoriesList()
+    }
+}
+
+private extension HomeKitService {
+    func pauseSmartLightingAfterManualLightChange(accessory: HMAccessory, characteristic: HMCharacteristic) {
+        guard isLightControlCharacteristic(characteristic) else { return }
+        let roomName = accessory.room?.name
+        Task { @MainActor in
+            _ = smartLightingEngine?.pauseAfterManualChange(roomName: roomName)
+        }
+    }
+
+    func isLightControlCharacteristic(_ characteristic: HMCharacteristic) -> Bool {
+        switch characteristic.characteristicType {
+        case HMCharacteristicTypePowerState,
+             HMCharacteristicTypeActive,
+             HMCharacteristicTypeBrightness,
+             HMCharacteristicTypeHue,
+             HMCharacteristicTypeSaturation,
+             HMCharacteristicTypeColorTemperature:
+            return true
+        default:
+            return false
+        }
     }
 }

@@ -43,7 +43,7 @@ struct ScenesSidePanel: View {
 
     private var panelHeader: some View {
         HStack {
-            Text("Scene")
+            Text(String(localized: "scenes.title", defaultValue: "Scenes"))
                 .font(.headline)
                 .fontWeight(.semibold)
             Spacer()
@@ -70,7 +70,7 @@ struct ScenesSidePanel: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
                 .font(.subheadline)
-            TextField("Cerca scena", text: $searchText)
+            TextField(String(localized: "scenes.search.placeholder", defaultValue: "Search scene"), text: $searchText)
                 .font(.subheadline)
                 .autocorrectionDisabled()
             if !searchText.isEmpty {
@@ -98,7 +98,7 @@ struct ScenesSidePanel: View {
     private var roomFilterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                roomPill(label: String(localized: "filter.all.scenes", defaultValue: "Tutte"), roomID: nil)
+                roomPill(label: String(localized: "filter.all.scenes", defaultValue: "All"), roomID: nil)
                 ForEach(scenesService.representedRooms, id: \.id) { room in
                     roomPill(label: room.name, roomID: room.id)
                 }
@@ -137,9 +137,9 @@ struct ScenesSidePanel: View {
         return ScrollView {
             if filtered.isEmpty && scenesService.scenes.isEmpty {
                 ContentUnavailableView {
-                    Label("Nessuna scena", systemImage: "wand.and.sparkles")
+                    Label(String(localized: "scenes.empty.title", defaultValue: "No scenes"), systemImage: "wand.and.sparkles")
                 } description: {
-                    Text("Non hai scene configurate in HomeKit.")
+                    Text(String(localized: "scenes.empty.description", defaultValue: "You do not have scenes configured in HomeKit."))
                         .font(.caption)
                         .multilineTextAlignment(.center)
                 }
@@ -196,7 +196,9 @@ struct ScenesSidePanel: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text("\(scene.actionCount) \(scene.actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "azione") : String(localized: "count.action.plural", defaultValue: "azioni"))")
+                Text(scene.actionCount == 1
+                     ? String(localized: "count.action.singular", defaultValue: "1 action")
+                     : String(localized: "count.action.plural", defaultValue: "\(scene.actionCount) actions"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -13,7 +13,7 @@ struct SecurityNotificationsSettingsView: View {
     @Environment(HomeKitService.self) private var homeKit
 
     @AppStorage(SecurityNotificationService.enabledKey)
-    private var securityNotificationsEnabled: Bool = true
+    private var securityNotificationsEnabled: Bool = false
 
     var body: some View {
         Form {

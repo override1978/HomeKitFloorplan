@@ -19,8 +19,8 @@ struct HomeKitDebugView: View {
                 }
             }
         }
-        .searchable(text: $searchText, prompt: "Filtra accessori")
-        .navigationTitle("Debug HomeKit")
+        .searchable(text: $searchText, prompt: Text("homekit.debug.search.prompt"))
+        .navigationTitle(Text("homekit.debug.title"))
         .navigationBarTitleDisplayMode(.inline)
     }
     
@@ -31,7 +31,7 @@ struct HomeKitDebugView: View {
     }
 }
 
-// MARK: - Dettaglio accessorio
+// MARK: - Accessory detail
 
 struct HomeKitDebugAccessoryDetail: View {
     let accessory: HMAccessory
@@ -51,28 +51,28 @@ struct HomeKitDebugAccessoryDetail: View {
                     UIPasteboard.general.string = diagnosticDump()
                     copyConfirm = true
                 } label: {
-                    Label("Copia diagnostica", systemImage: "doc.on.doc")
+                    Label(String(localized: "homekit.debug.copyDiagnostic", defaultValue: "Copy Diagnostic"), systemImage: "doc.on.doc")
                 }
             }
         }
-        .alert("Diagnostica copiata negli appunti", isPresented: $copyConfirm) {
+        .alert(String(localized: "homekit.debug.copyConfirm", defaultValue: "Diagnostic copied to clipboard"), isPresented: $copyConfirm) {
             Button("OK", role: .cancel) {}
         }
     }
     
-    // MARK: Sezione identità
+    // MARK: Identity section
     
     @ViewBuilder
     private var identitySection: some View {
-        Section("Identità") {
-            kvRow("Nome", accessory.name)
+        Section(String(localized: "homekit.debug.section.identity", defaultValue: "Identity")) {
+            kvRow(String(localized: "homekit.debug.name", defaultValue: "Name"), accessory.name)
             kvRow("UUID", accessory.uniqueIdentifier.uuidString)
-            kvRow("Categoria (raw)", accessory.category.categoryType)
-            kvRow("Categoria (display)", accessory.category.localizedDescription)
+            kvRow(String(localized: "homekit.debug.categoryRaw", defaultValue: "Category (raw)"), accessory.category.categoryType)
+            kvRow(String(localized: "homekit.debug.categoryDisplay", defaultValue: "Category (display)"), accessory.category.localizedDescription)
             kvRow("Adapter", adapterName)
-            kvRow("Categoria UI", uiCategory.displayName)
-            kvRow("Categoria AI", AccessoryCategorizer.categorize(accessory))
-            kvRow("Stanza", accessory.room?.name ?? "—")
+            kvRow(String(localized: "homekit.debug.uiCategory", defaultValue: "UI category"), uiCategory.displayName)
+            kvRow(String(localized: "homekit.debug.aiCategory", defaultValue: "AI category"), AccessoryCategorizer.categorize(accessory))
+            kvRow(String(localized: "homekit.debug.room", defaultValue: "Room"), accessory.room?.name ?? "—")
             // HMCharacteristicTypeManufacturer/Model/FirmwareVersion/SerialNumber sono
             // deprecated da iOS 11 ma restano funzionali; soppressiamo i warning qui
             // perché non esiste un'API sostitutiva pubblica per recuperare questi valori.
@@ -81,28 +81,28 @@ struct HomeKitDebugAccessoryDetail: View {
             kvRow("Firmware", accessoryInfoValue(for: "00000052-0000-1000-8000-0026BB765291") ?? "—")
             kvRow("Serial", accessoryInfoValue(for: "00000030-0000-1000-8000-0026BB765291") ?? "—")
             kvRow("Hardware", accessoryInfoValue(for: HMCharacteristicTypeHardwareVersion) ?? "—")
-            kvRow("Reachable raw", accessory.isReachable ? "sì" : "no")
-            kvRow("Reachable app", homeKit.isReachable(accessory) ? "sì" : "no")
-            kvRow("Reachability settled", homeKit.reachabilitySettled ? "sì" : "no")
-            kvRow("Reachability map", reachabilityMapText)
-            kvRow("Recent command failed", homeKit.isLikelyOffline(accessory) ? "sì" : "no")
-            kvRow("Bridged", accessory.isBridged ? "sì" : "no")
-            kvRow("Blocked", accessory.isBlocked ? "sì" : "no")
+            kvRow(String(localized: "homekit.debug.reachableRaw", defaultValue: "Reachable raw"), yesNo(accessory.isReachable))
+            kvRow(String(localized: "homekit.debug.reachableApp", defaultValue: "Reachable app"), yesNo(homeKit.isReachable(accessory)))
+            kvRow(String(localized: "homekit.debug.reachabilitySettled", defaultValue: "Reachability settled"), yesNo(homeKit.reachabilitySettled))
+            kvRow(String(localized: "homekit.debug.reachabilityMap", defaultValue: "Reachability map"), reachabilityMapText)
+            kvRow(String(localized: "homekit.debug.recentCommandFailed", defaultValue: "Recent command failed"), yesNo(homeKit.isLikelyOffline(accessory)))
+            kvRow(String(localized: "homekit.debug.bridged", defaultValue: "Bridged"), yesNo(accessory.isBridged))
+            kvRow(String(localized: "homekit.debug.blocked", defaultValue: "Blocked"), yesNo(accessory.isBlocked))
         }
     }
     
-    // MARK: Sezione servizi
+    // MARK: Services section
     
     @ViewBuilder
     private var servicesSection: some View {
-        Section("Servizi (\(accessory.services.count))") {
+        Section(String(format: String(localized: "homekit.debug.services.count", defaultValue: "Services (%lld)"), accessory.services.count)) {
             ForEach(accessory.services, id: \.uniqueIdentifier) { service in
                 DisclosureGroup {
                     serviceBody(service)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
-                            Text(service.name.isEmpty ? "Servizio" : service.name)
+                            Text(service.name.isEmpty ? String(localized: "homekit.debug.service", defaultValue: "Service") : service.name)
                                 .font(.body)
                             if service.isPrimaryService {
                                 Text("PRIMARY")
@@ -128,7 +128,7 @@ struct HomeKitDebugAccessoryDetail: View {
         VStack(alignment: .leading, spacing: 8) {
             kvRow("serviceType (raw)", service.serviceType)
             kvRow("uniqueIdentifier", service.uniqueIdentifier.uuidString)
-            kvRow("characteristics", "\(service.characteristics.count)")
+            kvRow(String(localized: "homekit.debug.characteristics", defaultValue: "characteristics"), "\(service.characteristics.count)")
             
             ForEach(service.characteristics, id: \.uniqueIdentifier) { ch in
                 Divider()
@@ -189,6 +189,12 @@ struct HomeKitDebugAccessoryDetail: View {
         guard let n else { return "—" }
         return n.stringValue
     }
+
+    private func yesNo(_ value: Bool) -> String {
+        value
+        ? String(localized: "common.yes", defaultValue: "Yes")
+        : String(localized: "common.no", defaultValue: "No")
+    }
     
     // MARK: Diagnostic dump (clipboard)
     
@@ -236,7 +242,7 @@ struct HomeKitDebugAccessoryDetail: View {
         guard let mapped = homeKit.reachabilityMap[accessory.uniqueIdentifier] else {
             return "—"
         }
-        return mapped ? "sì" : "no"
+        return yesNo(mapped)
     }
     
     @MainActor

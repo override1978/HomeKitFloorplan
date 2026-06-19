@@ -210,11 +210,11 @@ struct DrawingFloorplanSheet: View {
         .ignoresSafeArea()
         // Re-apply bottom safe area so the bottom toolbar isn't clipped.
         .ignoresSafeArea(edges: .bottom)
-        .confirmationDialog("Vuoi annullare il disegno?",
+        .confirmationDialog(String(localized: "drawing.cancelDialog.title", defaultValue: "Cancel drawing?"),
                             isPresented: $showCancelConfirm,
                             titleVisibility: .visible) {
-            Button("Annulla disegno", role: .destructive) { dismiss() }
-            Button("Continua a disegnare", role: .cancel) {}
+            Button(String(localized: "drawing.cancelDialog.discard", defaultValue: "Discard drawing"), role: .destructive) { dismiss() }
+            Button(String(localized: "drawing.cancelDialog.continue", defaultValue: "Continue drawing"), role: .cancel) {}
         }
         .sheet(isPresented: $showRoomPicker) {
             RoomPickerSheet(
@@ -270,6 +270,7 @@ struct DrawingFloorplanSheet: View {
                 }
             )
         }
+        .suppressesIdleScreensaver(.drawingEditor)
         } // GeometryReader
     }
 

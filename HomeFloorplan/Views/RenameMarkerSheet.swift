@@ -14,16 +14,16 @@ struct RenameMarkerSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Etichetta personalizzata", text: $text)
+                    TextField(String(localized: "marker.rename.placeholder", defaultValue: "Custom label"), text: $text)
                         .focused($focused)
                         .submitLabel(.done)
                         .onSubmit {
                             onSave(text)
                         }
                 } header: {
-                    Text("Etichetta")
+                    Text(String(localized: "marker.rename.section", defaultValue: "Label"))
                 } footer: {
-                    Text("Lascia vuoto per usare il nome originale dell'accessorio HomeKit.")
+                    Text(String(localized: "marker.rename.footer", defaultValue: "Leave empty to use the original HomeKit accessory name."))
                 }
                 
                 if !initialText.isEmpty {
@@ -31,19 +31,19 @@ struct RenameMarkerSheet: View {
                         Button(role: .destructive) {
                             onReset()
                         } label: {
-                            Label("Ripristina nome originale", systemImage: "arrow.uturn.backward")
+                            Label(String(localized: "marker.rename.resetOriginal", defaultValue: "Restore original name"), systemImage: "arrow.uturn.backward")
                         }
                     }
                 }
             }
-            .navigationTitle("Rinomina marker")
+            .navigationTitle(String(localized: "marker.rename.title", defaultValue: "Rename marker"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annulla") { dismiss() }
+                    Button(String(localized: "common.cancel", defaultValue: "Cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Salva") { onSave(text) }
+                    Button(String(localized: "common.save", defaultValue: "Save")) { onSave(text) }
                 }
             }
             .onAppear {

@@ -307,15 +307,15 @@ struct EnvironmentContextDashboard: View {
                     actionCard(sensor: sensor)
                 } else if isAIEnabled {
                     FloorplanEmptyStateCard(
-                        title: String(localized: "environment.panel.stable.title", defaultValue: "Ambiente stabile"),
-                        message: String(localized: "environment.panel.stable.message", defaultValue: "Non ci sono anomalie ambientali o azioni AI da proporre in questo momento."),
+                        title: String(localized: "environment.panel.stable.title", defaultValue: "Environment stable"),
+                        message: String(localized: "environment.panel.stable.message", defaultValue: "There are no environmental anomalies or AI actions to suggest right now."),
                         icon: "checkmark.seal.fill",
                         color: .green
                     )
                 } else {
                     FloorplanEmptyStateCard(
-                        title: String(localized: "environment.panel.aiOff.title", defaultValue: "Insight AI disattivati"),
-                        message: String(localized: "environment.panel.aiOff.message", defaultValue: "I dati ambientali restano visibili; abilita l'AI nelle impostazioni per ricevere spiegazioni e azioni suggerite."),
+                        title: String(localized: "environment.panel.aiOff.title", defaultValue: "AI insights disabled"),
+                        message: String(localized: "environment.panel.aiOff.message", defaultValue: "Environmental data remains visible. Enable AI in Settings to receive explanations and suggested actions."),
                         icon: "sparkles",
                         color: .secondary
                     )

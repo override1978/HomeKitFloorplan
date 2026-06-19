@@ -625,6 +625,14 @@ final class ToolDispatcher {
                         "type": "number",
                         "description": "Soglia lux sopra cui la luce naturale è sufficiente e l'engine non agisce (default 150, 0 per disabilitare il bypass)."
                     ],
+                    "luxSensorRoomName": [
+                        "type": "string",
+                        "description": "Nome stanza del sensore lux se diversa dalla stanza controllata. Stringa vuota per usare la stessa stanza."
+                    ],
+                    "luxOffSceneName": [
+                        "type": "string",
+                        "description": "Nome scena HomeKit da attivare quando la luce naturale torna sopra soglia. Stringa vuota per non spegnere/cambiare nulla."
+                    ],
                     "nightHour": [
                         "type": "integer",
                         "description": "Ora (0-23) in cui la fase 'Sera' diventa 'Notte' per questa stanza (default 23)."
@@ -632,6 +640,10 @@ final class ToolDispatcher {
                     "sleepHour": [
                         "type": "integer",
                         "description": "Ora (0-23) in cui l'engine smette completamente di agire su questa stanza durante la notte. Dopo quest'ora le luci non vengono più toccate (rimangono nello stato manuale). Esempio: nightHour=23, sleepHour=1 → scena Notte attiva 23:00-01:00, poi silenzio fino al mattino."
+                    ],
+                    "wakeHour": [
+                        "type": "integer",
+                        "description": "Ora (0-23) prima della quale l'engine non attiva scene per questa stanza. Esempio: 7 evita accensioni prima delle 07:00."
                     ]
                 ],
                 "required": ["roomName"]
@@ -1586,14 +1598,15 @@ final class ToolDispatcher {
         if let v = input["sceneEvening"] as? String   { profile.sceneEvening    = v.isEmpty ? nil : v }
         if let v = input["sceneNight"] as? String     { profile.sceneNight      = v.isEmpty ? nil : v }
         if let v = input["luxBypassThreshold"] as? Double { profile.luxBypassThreshold = v }
+        if let v = input["luxSensorRoomName"] as? String { profile.luxSensorRoomName = v.isEmpty ? nil : v }
+        if let v = input["luxOffSceneName"] as? String { profile.luxOffSceneName = v.isEmpty ? nil : v }
         if let v = input["nightHour"] as? Int         { profile.nightHour = v }
         if let v = input["sleepHour"] as? Int         { profile.sleepHour = v }
         else if (input["sleepHour"] as? NSNull) != nil { profile.sleepHour = nil }
+        if let v = input["wakeHour"] as? Int          { profile.wakeHour = v }
+        else if (input["wakeHour"] as? NSNull) != nil { profile.wakeHour = nil }
 
         smartLightingEngine.addOrUpdateProfile(profile)
-        if profile.isEnabled && !smartLightingEngine.isGloballyEnabled {
-            smartLightingEngine.isGloballyEnabled = true
-        }
         let verb = existing == nil ? "creato" : "aggiornato"
         return "✅ Profilo Smart Lighting per '\(profile.roomName)' \(verb).\n\(profile.summary)"
     }

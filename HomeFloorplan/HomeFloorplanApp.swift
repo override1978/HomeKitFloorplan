@@ -34,6 +34,7 @@ struct HomeFloorplanApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     @AppStorage("securityMonitoredUUIDs") private var securityMonitoredUUIDsRaw: String = ""
+    @AppStorage(AppLanguage.appStorageKey) private var appLanguageRaw = AppLanguage.system.rawValue
     /// Set to true when a SwiftData migration failure forces a store wipe.
     /// The WindowGroup shows a one-time alert on the next launch.
     @AppStorage("com.homefloorplan.migrationWipedStore") private var migrationWipedStore = false
@@ -97,6 +98,7 @@ struct HomeFloorplanApp: App {
         let weather = WeatherKitService()
         self._weatherKitService = State(initialValue: weather)
         let lightingEngine = SmartLightingEngine(homeKit: kit, weatherKit: weather, scenesService: scenes)
+        kit.smartLightingEngine = lightingEngine
         self._smartLightingEngine = State(initialValue: lightingEngine)
 
         // Costruisce il container prima di creare i servizi che ne hanno bisogno
@@ -185,9 +187,6 @@ struct HomeFloorplanApp: App {
         // Registra categorie UNUserNotificationCenter per la Proactive Intelligence
         NotificationDeliveryOrchestrator.registerCategories()
 
-        // Richiede permesso notifiche per gli alert ambientali
-        AlertNotificationService.shared.requestAuthorization()
-
     }
 
     var body: some Scene {
@@ -213,6 +212,7 @@ struct HomeFloorplanApp: App {
                 .environment(weatherKitService)
                 .environment(smartLightingEngine)
                 .environment(aiSettings)
+                .environment(\.locale, AppLanguage.resolved(from: appLanguageRaw).locale)
                 .task {
                     securityNotifier.start(monitoredUUIDsRaw: securityMonitoredUUIDsRaw)
                     SensorLogger.shared.effectivenessTracker = actionExecutionService.tracker
@@ -222,22 +222,42 @@ struct HomeFloorplanApp: App {
                         await SensorLogger.shared.sampleOutdoor(snapshot: snapshot, modelContainer: sharedModelContainer)
                     }
                 }
-                // Foreground loop: lux dense sampling (~5 min) + outdoor snapshot (rate-limited to 1/hr).
+                // Foreground loop: staggered sampling so returning to the floorplan does not
+                // compete with HomeKit reads, SwiftData writes, and layout on the first frame.
                 // Cancels automatically when the scene leaves .active.
                 .task(id: scenePhase) {
                     guard scenePhase == .active else { return }
                     let container = sharedModelContainer
+                    var lastLightSampleAt: Date?
+                    var lastSmartLightingEvaluationAt: Date?
+                    var nextFullSensorSampleAt = Date().addingTimeInterval(45)
                     while !Task.isCancelled {
+                        let now = Date()
                         if let home = homeKit.currentHome {
-                            await SensorLogger.shared.sampleLightSensors(home: home, modelContainer: container)
+                            if lastLightSampleAt == nil ||
+                                now.timeIntervalSince(lastLightSampleAt ?? .distantPast) >= 5 * 60 {
+                                await SensorLogger.shared.sampleLightSensors(home: home, modelContainer: container)
+                                lastLightSampleAt = Date()
+                            }
+
+                            if now >= nextFullSensorSampleAt {
+                                await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: container)
+                                nextFullSensorSampleAt = Date().addingTimeInterval(15 * 60)
+                            }
                         }
                         await weatherKitService.refreshIfNeeded()
                         if let snapshot = weatherKitService.currentWeather {
                             await SensorLogger.shared.sampleOutdoor(snapshot: snapshot, modelContainer: container)
                         }
-                        await smartLightingEngine.evaluate()
+
+                        if lastSmartLightingEvaluationAt == nil ||
+                            now.timeIntervalSince(lastSmartLightingEvaluationAt ?? .distantPast) >= 5 * 60 {
+                            await smartLightingEngine.evaluate()
+                            lastSmartLightingEvaluationAt = Date()
+                        }
+
                         do {
-                            try await Task.sleep(for: .seconds(300)) // 5 min
+                            try await Task.sleep(for: .seconds(60))
                         } catch {
                             break // task cancelled — scene went inactive
                         }

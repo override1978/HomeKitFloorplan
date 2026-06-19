@@ -23,7 +23,7 @@ struct EnvironmentHeaderView: View {
                     Image(systemName: "leaf.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(color)
-                    Text("Qualità Ambiente")
+                    Text(String(localized: "environment.header.title", defaultValue: "Environment Quality"))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
@@ -36,11 +36,11 @@ struct EnvironmentHeaderView: View {
                     .contentTransition(.interpolate)
 
                 if let refresh = lastRefresh {
-                    Text("Aggiornato \(refresh, format: .relative(presentation: .named))")
+                    Text("Updated \(refresh, format: .relative(presentation: .named))")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Nessun dato ancora")
+                    Text(String(localized: "environment.header.noData", defaultValue: "No data yet"))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

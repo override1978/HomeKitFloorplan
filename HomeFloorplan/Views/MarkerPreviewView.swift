@@ -10,32 +10,32 @@ struct MarkerPreviewView: View {
         VStack(spacing: 18) {
             // Riga 1: controllable nei 4 stati principali
             HStack(spacing: 22) {
-                mockupCell(label: "Spento") {
+                mockupCell(label: String(localized: "marker.preview.off", defaultValue: "Off")) {
                     controllableMockup(state: .normal, icon: "lightbulb")
                 }
-                mockupCell(label: "Acceso") {
+                mockupCell(label: String(localized: "marker.preview.on", defaultValue: "On")) {
                     controllableMockup(state: .active, icon: "lightbulb.fill")
                 }
-                mockupCell(label: "Protetto") {
+                mockupCell(label: String(localized: "marker.preview.secured", defaultValue: "Secured")) {
                     controllableMockup(state: .ok, icon: "shield.fill")
                 }
-                mockupCell(label: "Aperta") {
+                mockupCell(label: String(localized: "marker.preview.open", defaultValue: "Open")) {
                     controllableMockup(state: .warning, icon: "lock.open.fill")
                 }
-                mockupCell(label: "Allarme") {
+                mockupCell(label: String(localized: "marker.preview.alarm", defaultValue: "Alarm")) {
                     controllableMockup(state: .alarm, icon: "exclamationmark.shield.fill")
                 }
             }
             
             // Riga 2: sensor boolean + numeric
             HStack(spacing: 22) {
-                mockupCell(label: "Numerico") {
+                mockupCell(label: String(localized: "marker.preview.numeric", defaultValue: "Numeric")) {
                     sensorNumericMockup()
                 }
-                mockupCell(label: "Sensore") {
+                mockupCell(label: String(localized: "marker.preview.sensor", defaultValue: "Sensor")) {
                     sensorBooleanMockup(triggered: false)
                 }
-                mockupCell(label: "Movimento") {
+                mockupCell(label: String(localized: "marker.preview.motion", defaultValue: "Motion")) {
                     sensorBooleanMockup(triggered: true)
                 }
             }

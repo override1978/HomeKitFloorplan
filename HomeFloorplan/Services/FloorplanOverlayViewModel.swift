@@ -56,7 +56,7 @@ final class FloorplanOverlayViewModel {
 
     init(floorplanID: UUID) {
         self.floorplanID = floorplanID
-        restoreMode()
+        resetToControls()
         // Panel always starts closed — it opens on explicit room tap.
         isPanelVisible = false
     }
@@ -117,15 +117,10 @@ final class FloorplanOverlayViewModel {
         UserDefaults.standard.set(activeMode.rawValue, forKey: Self.sharedActiveModeKey)
     }
 
-    private func restoreMode() {
-        if let raw = UserDefaults.standard.string(forKey: modeKey),
-           let mode = FloorplanOverlayMode(rawValue: raw) {
-            activeMode = mode
-            // persistMode() fires via didSet and updates the shared key too.
-        } else {
-            // No saved mode: reset shared key to controls so ContentView reflects defaults.
-            UserDefaults.standard.set(FloorplanOverlayMode.controls.rawValue, forKey: Self.sharedActiveModeKey)
-        }
+    private func resetToControls() {
+        activeMode = .controls
+        UserDefaults.standard.set(FloorplanOverlayMode.controls.rawValue, forKey: modeKey)
+        UserDefaults.standard.set(FloorplanOverlayMode.controls.rawValue, forKey: Self.sharedActiveModeKey)
     }
 }
 
@@ -158,9 +153,9 @@ enum HomeAssistantDigestService {
     ) -> HomeDigestSummary {
         guard !rooms.isEmpty else {
             return HomeDigestSummary(
-                title: String(localized: "home.digest.environment.title", defaultValue: "Ambiente casa"),
-                message: String(localized: "home.digest.environment.empty", defaultValue: "Non ci sono ancora dati ambientali sufficienti."),
-                statusLabel: String(localized: "home.digest.status.waiting", defaultValue: "In attesa"),
+                title: String(localized: "home.digest.environment.title", defaultValue: "Home environment"),
+                message: String(localized: "home.digest.environment.empty", defaultValue: "There is not enough environmental data yet."),
+                statusLabel: String(localized: "home.digest.status.waiting", defaultValue: "Waiting"),
                 systemImage: "leaf",
                 color: .secondary,
                 lines: []
@@ -189,8 +184,8 @@ enum HomeAssistantDigestService {
         let color: Color = score >= 0.85 ? .green : score >= 0.60 ? .orange : .red
 
         let title = highlightedRoomName.map {
-            String(format: String(localized: "home.digest.environment.roomTitle", defaultValue: "Ambiente in %@"), $0)
-        } ?? String(localized: "home.digest.environment.title", defaultValue: "Ambiente casa")
+            String(format: String(localized: "home.digest.environment.roomTitle", defaultValue: "Environment in %@"), $0)
+        } ?? String(localized: "home.digest.environment.title", defaultValue: "Home environment")
 
         let message: String
         let statusLabel: String
@@ -198,7 +193,7 @@ enum HomeAssistantDigestService {
         if let sensor = topSensor {
             message = String(
                 format: String(localized: "home.digest.environment.issue",
-                               defaultValue: "%1$@ richiede attenzione: %2$@ è a %3$@."),
+                               defaultValue: "%1$@ needs attention: %2$@ is at %3$@."),
                 sensor.roomName,
                 sensor.serviceType.displayName.lowercased(),
                 sensor.formattedValue
@@ -207,9 +202,9 @@ enum HomeAssistantDigestService {
             icon = sensor.urgency.sfSymbol.isEmpty ? "leaf.fill" : sensor.urgency.sfSymbol
         } else {
             message = highlightedRoomName == nil
-                ? String(localized: "home.digest.environment.ok", defaultValue: "La casa è stabile: nessuna stanza richiede attenzione ora.")
-                : String(localized: "home.digest.environment.roomOk", defaultValue: "Questa stanza è stabile e non richiede azioni ora.")
-            statusLabel = String(localized: "home.digest.status.stable", defaultValue: "Stabile")
+                ? String(localized: "home.digest.environment.ok", defaultValue: "The home is stable: no room needs attention right now.")
+                : String(localized: "home.digest.environment.roomOk", defaultValue: "This room is stable and does not need actions right now.")
+            statusLabel = String(localized: "home.digest.status.stable", defaultValue: "Stable")
             icon = "checkmark.circle.fill"
         }
 
@@ -229,7 +224,7 @@ enum HomeAssistantDigestService {
             message: message,
             statusLabel: alertRooms.isEmpty
                 ? statusLabel
-                : String(format: String(localized: "home.digest.environment.roomsToCheck", defaultValue: "%lld da controllare"), alertRooms.count),
+                : String(format: String(localized: "home.digest.environment.roomsToCheck", defaultValue: "%lld to check"), alertRooms.count),
             systemImage: icon,
             color: color,
             lines: lines
@@ -249,24 +244,24 @@ enum HomeAssistantDigestService {
             .sorted { $0.priority < $1.priority }
 
         let title = highlightedRoomName.map {
-            String(format: String(localized: "home.digest.security.roomTitle", defaultValue: "Sicurezza in %@"), $0)
-        } ?? String(localized: "home.digest.security.title", defaultValue: "Sicurezza casa")
+            String(format: String(localized: "home.digest.security.roomTitle", defaultValue: "Security in %@"), $0)
+        } ?? String(localized: "home.digest.security.title", defaultValue: "Home security")
 
         let message: String
         if let first = active.first {
             message = first.room.map { "\($0): \(first.message)" } ?? first.message
         } else if monitoredCount == 0 {
-            message = String(localized: "home.digest.security.noSensors", defaultValue: "Non ci sono sensori di sicurezza monitorati.")
+            message = String(localized: "home.digest.security.noSensors", defaultValue: "There are no monitored security sensors.")
         } else {
             message = highlightedRoomName == nil
-                ? String(localized: "home.digest.security.ok", defaultValue: "La casa è protetta: nessun evento di sicurezza attivo.")
-                : String(localized: "home.digest.security.roomOk", defaultValue: "Questa stanza non ha eventi di sicurezza attivi.")
+                ? String(localized: "home.digest.security.ok", defaultValue: "The home is protected: no active security events.")
+                : String(localized: "home.digest.security.roomOk", defaultValue: "This room has no active security events.")
         }
 
         let lines = active.prefix(3).map { insight in
             HomeDigestLine(
                 icon: insight.sfSymbol,
-                title: insight.room ?? String(localized: "home.digest.security.global", defaultValue: "Casa"),
+                title: insight.room ?? String(localized: "home.digest.security.global", defaultValue: "Home"),
                 detail: insight.message,
                 color: insight.priority.color
             )
@@ -282,7 +277,7 @@ enum HomeAssistantDigestService {
                 ? [
                     HomeDigestLine(
                         icon: "shield.checkered",
-                        title: String(localized: "home.digest.security.score", defaultValue: "Score sicurezza"),
+                        title: String(localized: "home.digest.security.score", defaultValue: "Security score"),
                         detail: "\(score)%",
                         color: aggregated.color
                     )

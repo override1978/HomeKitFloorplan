@@ -9,6 +9,11 @@ import SwiftUI
 struct OutdoorBannerView: View {
 
     @Environment(WeatherKitService.self) private var weatherKit
+    @AppStorage(TemperatureUnit.appStorageKey) private var temperatureUnitRaw: String = TemperatureUnit.celsius.rawValue
+
+    private var temperatureUnit: TemperatureUnit {
+        TemperatureUnit(rawValue: temperatureUnitRaw) ?? .celsius
+    }
 
     var body: some View {
         if let weather = weatherKit.currentWeather {
@@ -29,12 +34,12 @@ struct OutdoorBannerView: View {
                     .frame(width: 48)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(format: "%.1f°", w.outdoorTemperature))
+                    Text(formatTemperature(w.outdoorTemperature, decimals: 1))
                         .font(.system(size: 34, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                     Text(String(format: String(localized: "outdoor.feelsLike",
-                                               defaultValue: "Percepita %.0f°"),
-                                w.apparentTemperature))
+                                               defaultValue: "Feels like %@"),
+                                formatTemperature(w.apparentTemperature, decimals: 0)))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -42,7 +47,7 @@ struct OutdoorBannerView: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text(String(localized: "outdoor.title", defaultValue: "Esterno"))
+                    Text(String(localized: "outdoor.title", defaultValue: "Outdoor"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     if let updated = weatherKit.lastUpdated {
@@ -61,7 +66,7 @@ struct OutdoorBannerView: View {
                     color: humidityColor(w.outdoorHumidity * 100)
                 )
                 weatherPill(
-                    String(format: "%.0f km/h", w.windSpeedKmh),
+                    formatWindSpeed(w.windSpeedKmh),
                     icon: "wind",
                     color: .cyan
                 )
@@ -77,15 +82,14 @@ struct OutdoorBannerView: View {
             if let tmr = weatherKit.tomorrowForecast {
                 Divider()
                 HStack(spacing: 12) {
-                    Label(String(localized: "outdoor.tomorrow", defaultValue: "Domani"),
+                    Label(String(localized: "outdoor.tomorrow", defaultValue: "Tomorrow"),
                           systemImage: "calendar")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
 
                     Spacer()
 
-                    Text(String(format: "%.0f° – %.0f°",
-                                tmr.minTemperature, tmr.maxTemperature))
+                    Text("\(formatTemperature(tmr.minTemperature, decimals: 0)) – \(formatTemperature(tmr.maxTemperature, decimals: 0))")
                         .font(.caption.weight(.semibold))
                         .monospacedDigit()
 
@@ -115,6 +119,20 @@ struct OutdoorBannerView: View {
     }
 
     // MARK: - Pill helper
+
+    private func formatTemperature(_ celsius: Double, decimals: Int) -> String {
+        let value = temperatureUnit.convert(celsius)
+        return String(format: "%.\(decimals)f%@", value, temperatureUnit.symbol)
+    }
+
+    private func formatWindSpeed(_ kmh: Double) -> String {
+        switch temperatureUnit {
+        case .celsius:
+            return String(format: "%.0f km/h", kmh)
+        case .fahrenheit:
+            return String(format: "%.0f mph", kmh * 0.621371)
+        }
+    }
 
     @ViewBuilder
     private func weatherPill(_ value: String, icon: String, color: Color) -> some View {

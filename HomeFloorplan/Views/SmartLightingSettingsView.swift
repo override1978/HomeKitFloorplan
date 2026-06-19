@@ -33,7 +33,7 @@ struct SmartLightingSettingsView: View {
                             defaultValue: "General"))
             } footer: {
                 Text(String(localized: "smartlighting.section.general.footer",
-                            defaultValue: "When enabled, HomeKit scenes are automatically activated based on sunrise/sunset times and room conditions. Runs every 5 minutes."))
+                            defaultValue: "HomeFloorplan can apply lighting scenes when the app evaluates your home context. iOS may limit background checks."))
             }
 
             // MARK: Ultima valutazione
@@ -127,12 +127,17 @@ struct SmartLightingSettingsView: View {
         let configuredCount = LightingPhase.allCases
             .compactMap { profile.sceneName(for: $0) }
             .count
+        let missingCount = missingScenes(for: profile).count
 
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile.roomName)
                 Group {
-                    if configuredCount == 0 {
+                    if missingCount > 0 {
+                        Text(String(format: String(localized: "smartlighting.row.missingScenes",
+                                                   defaultValue: "%d missing scene(s)"),
+                                    missingCount))
+                    } else if configuredCount == 0 {
                         Text(String(localized: "smartlighting.row.noScenes",
                                     defaultValue: "No scenes assigned"))
                     } else {
@@ -142,10 +147,14 @@ struct SmartLightingSettingsView: View {
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(missingCount > 0 ? .orange : .secondary)
             }
             Spacer()
-            if profile.isEnabled {
+            if missingCount > 0 {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.subheadline)
+            } else if profile.isEnabled {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .font(.subheadline)
@@ -156,6 +165,13 @@ struct SmartLightingSettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func missingScenes(for profile: LightingProfile) -> [String] {
+        let available = Set(scenesService.scenes.map { $0.name.lowercased() })
+        return LightingPhase.allCases
+            .compactMap { profile.sceneName(for: $0) }
+            .filter { !available.contains($0.lowercased()) }
     }
 }
 
@@ -189,7 +205,6 @@ private struct AddLightingRoomSheet: View {
                     List(unconfiguredRooms, id: \.self) { name in
                         Button {
                             engine.addOrUpdateProfile(LightingProfile(roomName: name))
-                            if !engine.isGloballyEnabled { engine.isGloballyEnabled = true }
                             dismiss()
                         } label: {
                             Label(name, systemImage: "lightbulb")
@@ -249,6 +264,20 @@ struct LightingProfileEditView: View {
             .filter { !$0.isBuiltIn }
             .map(\.name)
             .sorted()
+    }
+
+    private var configuredSceneNames: [(phase: LightingPhase, name: String)] {
+        LightingPhase.allCases.compactMap { phase in
+            guard let name = draft.sceneName(for: phase), !name.isEmpty else { return nil }
+            return (phase, name)
+        }
+    }
+
+    private var missingSceneNames: [String] {
+        let available = Set(customSceneNames.map { $0.lowercased() })
+        return configuredSceneNames
+            .map(\.name)
+            .filter { !available.contains($0.lowercased()) }
     }
 
     private static let timeFmt: DateFormatter = {
@@ -348,6 +377,50 @@ struct LightingProfileEditView: View {
             } footer: {
                 Text(String(localized: "smartlighting.edit.scenes.footer",
                             defaultValue: "\"None\" skips that phase — the engine makes no change. Only custom HomeKit scenes are listed. Times are based on today's sunrise/sunset."))
+            }
+
+            // MARK: Profile preview
+            Section {
+                if configuredSceneNames.isEmpty {
+                    Label(
+                        String(localized: "smartlighting.preview.noScenes",
+                               defaultValue: "No scenes configured yet. This profile will not activate anything."),
+                        systemImage: "info.circle"
+                    )
+                    .foregroundStyle(.secondary)
+                } else {
+                    ForEach(configuredSceneNames, id: \.phase) { item in
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: missingSceneNames.contains(item.name) ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                                .foregroundStyle(missingSceneNames.contains(item.name) ? .orange : .green)
+                                .frame(width: 22)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.phase.displayName)
+                                    .font(.subheadline.weight(.medium))
+                                Text(item.name)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if let range = phaseTimeRange(for: item.phase) {
+                                    Text(range)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                        }
+                    }
+                    if !missingSceneNames.isEmpty {
+                        Text(String(localized: "smartlighting.preview.missing.footer",
+                                    defaultValue: "Missing scenes will be skipped until they are restored or replaced."))
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            } header: {
+                Text(String(localized: "smartlighting.preview.header",
+                            defaultValue: "Activation Preview"))
+            } footer: {
+                Text(String(localized: "smartlighting.preview.footer",
+                            defaultValue: "Review what this room can do before enabling the profile."))
             }
 
             // MARK: Lux bypass

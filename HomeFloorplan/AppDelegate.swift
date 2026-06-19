@@ -15,7 +15,12 @@ final class HomeFloorplanAppDelegate: NSObject, UIApplicationDelegate {
         // Imposta il delegate per le notifiche locali, necessario per
         // mostrarle anche con l'app in foreground.
         UNUserNotificationCenter.current().delegate = self
+        AlertNotificationService.shared.clearBadge()
         return true
+    }
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        AlertNotificationService.shared.clearBadge()
     }
 }
 
@@ -30,7 +35,7 @@ extension HomeFloorplanAppDelegate: UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound])
+        completionHandler([.banner, .list, .sound])
     }
 }
 

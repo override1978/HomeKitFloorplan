@@ -19,6 +19,13 @@ struct IconPickerSheet: View {
         case system = "Sistema"
         case custom = "Custom"
         var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .system: return String(localized: "iconPicker.system", defaultValue: "System")
+            case .custom: return String(localized: "iconPicker.custom", defaultValue: "Custom")
+            }
+        }
     }
     
     var body: some View {
@@ -26,7 +33,7 @@ struct IconPickerSheet: View {
             VStack(spacing: 0) {
                 Picker("", selection: $selectedTab) {
                     ForEach(PickerTab.allCases) { tab in
-                        Text(tab.rawValue).tag(tab)
+                        Text(tab.label).tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -41,14 +48,14 @@ struct IconPickerSheet: View {
                     .padding()
                 }
             }
-            .navigationTitle("Icona di \(accessory.name)")
+            .navigationTitle(String(localized: "iconPicker.accessory.title", defaultValue: "\(accessory.name) Icon"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Chiudi") { dismiss() }
+                    Button(String(localized: "common.close", defaultValue: "Close")) { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Ripristina") {
+                    Button(String(localized: "common.reset", defaultValue: "Reset")) {
                         store.removeIcon(for: accessory.uniqueIdentifier)
                         dismiss()
                     }

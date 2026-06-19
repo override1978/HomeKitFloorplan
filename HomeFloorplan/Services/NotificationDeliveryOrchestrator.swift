@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import UserNotifications
 
 // MARK: - NotificationDeliveryOrchestrator
@@ -104,7 +105,8 @@ enum NotificationDeliveryOrchestrator {
         content.categoryIdentifier = categoryIdentifier(for: notification.category)
         content.userInfo           = ["notificationID": notification.id.uuidString]
 
-        if notification.priority.incrementsBadge {
+        if notification.priority.incrementsBadge,
+           UIApplication.shared.applicationState != .active {
             content.badge = NSNumber(value: 1)
         }
 

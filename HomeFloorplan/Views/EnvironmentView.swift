@@ -37,9 +37,9 @@ private struct EnvThreshold {
 
     static func label(for level: Level) -> String {
         switch level {
-        case .good: return "Ottimo"
-        case .fair: return "Accettabile"
-        case .poor: return "Scarso"
+        case .good: return String(localized: "environment.level.good", defaultValue: "Good")
+        case .fair: return String(localized: "environment.level.fair", defaultValue: "Acceptable")
+        case .poor: return String(localized: "environment.level.poor", defaultValue: "Poor")
         }
     }
 }
@@ -83,7 +83,7 @@ private struct MetricSummary {
         case 0: return ""
         case 1: return worstRooms[0]
         case 2: return "\(worstRooms[0]), \(worstRooms[1])"
-        default: return "\(worstRooms.count) stanze"
+        default: return String(format: String(localized: "environment.metric.roomsCount", defaultValue: "%lld rooms"), worstRooms.count)
         }
     }
 
@@ -95,13 +95,17 @@ private struct MetricSummary {
         case .pm25, .pm10, .voc: return String(format: "%.0f µg/m³", v)
         case .airQuality:
             switch Int(v) {
-            case 1: return "Ottima"; case 2: return "Buona"; case 3: return "Media"
-            case 4: return "Scarsa"; case 5: return "Pessima"; default: return "—"
+            case 1: return String(localized: "airquality.excellent", defaultValue: "Excellent")
+            case 2: return String(localized: "airquality.good", defaultValue: "Good")
+            case 3: return String(localized: "airquality.fair", defaultValue: "Fair")
+            case 4: return String(localized: "airquality.poor", defaultValue: "Poor")
+            case 5: return String(localized: "airquality.veryPoor", defaultValue: "Very poor")
+            default: return "—"
             }
         case .lightLevel:
             let i = Int(v)
-            if i < 10 { return "Buio" }
-            if i > 5000 { return "Sole" }
+            if i < 10 { return String(localized: "environment.light.dark", defaultValue: "Dark") }
+            if i > 5000 { return String(localized: "environment.light.sunny", defaultValue: "Sunny") }
             return "\(i) lx"
         }
     }
@@ -141,7 +145,7 @@ struct EnvironmentView: View {
         ) {
             let rooms: [RoomReading] = allSensors.compactMap { s in
                 guard let v = extract(s) else { return nil }
-                let name = s.accessory.room?.name ?? "Senza stanza"
+                let name = s.accessory.room?.name ?? String(localized: "room.none", defaultValue: "No room")
                 return RoomReading(roomName: name, value: Double(v))
             }
             // Deduplica per stanza (media se più sensori nella stessa stanza)
@@ -185,9 +189,9 @@ struct EnvironmentView: View {
             ))
         }
 
-        build(kind: .temperature, symbol: "thermometer.medium", label: "Temperatura", unit: "°C",
+        build(kind: .temperature, symbol: "thermometer.medium", label: String(localized: "sensor.temperature", defaultValue: "Temperature"), unit: "°C",
               extract: \.environmentTemperature, range: EnvThreshold.temperature)
-        build(kind: .humidity, symbol: "humidity", label: "Umidità", unit: "%",
+        build(kind: .humidity, symbol: "humidity", label: String(localized: "sensor.humidity", defaultValue: "Humidity"), unit: "%",
               extract: \.environmentHumidity, range: EnvThreshold.humidity)
         build(kind: .co2, symbol: "carbon.dioxide.cloud", label: "CO₂", unit: "ppm",
               extract: \.environmentCO2, range: EnvThreshold.co2)
@@ -203,10 +207,14 @@ struct EnvironmentView: View {
             guard let q = s.environmentAirQuality else { return nil }
             let v: Double
             switch q {
-            case "Ottima": v = 1; case "Buona": v = 2; case "Media": v = 3
-            case "Scarsa": v = 4; case "Pessima": v = 5; default: return nil
+            case "Ottima", "Excellent": v = 1
+            case "Buona", "Good": v = 2
+            case "Media", "Fair": v = 3
+            case "Scarsa", "Poor": v = 4
+            case "Pessima", "Very poor": v = 5
+            default: return nil
             }
-            return RoomReading(roomName: s.accessory.room?.name ?? "Senza stanza", value: v)
+            return RoomReading(roomName: s.accessory.room?.name ?? String(localized: "room.none", defaultValue: "No room"), value: v)
         }
         let aqByRoom = Dictionary(grouping: aqRooms, by: \.roomName)
             .map { RoomReading(roomName: $0.key, value: $0.value.map(\.value).max() ?? 0) }
@@ -222,7 +230,7 @@ struct EnvironmentView: View {
                     .map(\.roomName)
                 : []
             result.append(MetricSummary(
-                kind: .airQuality, symbol: "aqi.medium", label: "Qualità aria", unit: "",
+                kind: .airQuality, symbol: "aqi.medium", label: String(localized: "sensor.airQuality", defaultValue: "Air quality"), unit: "",
                 average: avgAq, worstLevel: lvl,
                 worstRooms: aqWorstRooms,
                 bestRoom: nil,
@@ -231,7 +239,7 @@ struct EnvironmentView: View {
         }
 
         // Luminosità (solo informativa, sempre verde)
-        build(kind: .lightLevel, symbol: "sun.max", label: "Luminosità", unit: "lx",
+        build(kind: .lightLevel, symbol: "sun.max", label: String(localized: "sensor.lightSensor", defaultValue: "Light"), unit: "lx",
               extract: { s in s.environmentLightLevel.map(Double.init) },
               range: EnvThreshold.Range(good: 0...100000, fair: 0...100000),
               higherIsBetter: true)
@@ -250,7 +258,7 @@ struct EnvironmentView: View {
                     scrollContent
                 }
             }
-            .navigationTitle("Ambiente")
+            .navigationTitle(String(localized: "environment.title", defaultValue: "Environment"))
             .navigationBarTitleDisplayMode(.large)
             .sheet(item: $selectedMetric) { metric in
                 MetricDetailSheet(metric: metric)
@@ -278,9 +286,9 @@ struct EnvironmentView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("Nessun sensore ambientale", systemImage: "leaf.slash")
+            Label(String(localized: "environment.empty.title", defaultValue: "No environmental sensors"), systemImage: "leaf.slash")
         } description: {
-            Text("Aggiungi sensori di temperatura, umidità o qualità dell'aria in HomeKit per monitorarli qui.")
+            Text(String(localized: "environment.empty.description", defaultValue: "Add temperature, humidity, or air quality sensors in HomeKit to monitor them here."))
         }
     }
 
@@ -337,7 +345,9 @@ private struct HeroMetricTile: View {
                     .foregroundStyle(color)
                     .contentTransition(.numericText())
 
-                Text("media casa · \(metric.byRoom.count) stanz\(metric.byRoom.count == 1 ? "a" : "e")")
+                Text(metric.byRoom.count == 1
+                     ? String(localized: "environment.metric.homeAverage.oneRoom", defaultValue: "home average · 1 room")
+                     : String(localized: "environment.metric.homeAverage.manyRooms", defaultValue: "home average · \(metric.byRoom.count) rooms"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top, 2)
@@ -354,7 +364,7 @@ private struct HeroMetricTile: View {
                         Image(systemName: "exclamationmark.circle.fill")
                             .font(.caption2)
                             .foregroundStyle(color)
-                        Text("Attenzione: \(metric.worstRoomsLabel)")
+                        Text(String(localized: "environment.metric.warningRooms", defaultValue: "Warning: \(metric.worstRoomsLabel)"))
                             .font(.caption2)
                             .foregroundStyle(color)
                             .lineLimit(2)
@@ -527,7 +537,7 @@ private struct MetricDetailSheet: View {
                     // Valore medio casa
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Media casa")
+                            Text(String(localized: "environment.metric.homeAverage", defaultValue: "Home average"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Text(metric.formattedAverage)
@@ -540,7 +550,7 @@ private struct MetricDetailSheet: View {
                     .padding(.vertical, 4)
                 }
 
-                Section("Per stanza") {
+                Section(String(localized: "environment.metric.byRoom", defaultValue: "By room")) {
                     ForEach(metric.byRoom.sorted { $0.value > $1.value }, id: \.roomName) { reading in
                         let level = levelFor(reading.value)
                         HStack {
@@ -565,7 +575,7 @@ private struct MetricDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Chiudi") { dismiss() }
+                    Button(String(localized: "common.close", defaultValue: "Close")) { dismiss() }
                 }
             }
         }

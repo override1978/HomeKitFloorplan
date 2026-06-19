@@ -11,7 +11,7 @@ import Observation
 /// - Osserva `HomeKitService.characteristicValues` tramite un loop `withObservationTracking`
 /// - Tiene traccia dell'ultima urgency notificata per UUID per evitare notifiche duplicate
 /// - Cooldown di 60s per stesso UUID: non rinotifica se già in allarme
-/// - Chiede il permesso notifiche al primo avvio
+/// - Non chiede permessi al primo avvio: la richiesta parte dai Settings quando l'utente abilita le notifiche
 /// - Rispetta la preferenza `securityNotificationsEnabled` (AppStorage)
 @MainActor
 @Observable
@@ -33,7 +33,6 @@ final class SecurityNotificationService {
 
     /// Avvia il monitoraggio. Chiamare da HomeFloorplanApp.init o .task.
     func start(monitoredUUIDsRaw: String) {
-        requestPermissionIfNeeded()
         observedUUIDsRaw = monitoredUUIDsRaw
         startObservationLoop()
     }
@@ -135,8 +134,8 @@ final class SecurityNotificationService {
 
     private func sendNotification(for accessory: HMAccessory, adapter: any AccessoryAdapter, urgency: MarkerUrgency) {
         guard urgency == .alarm else { return }
-        // Rispetta la preferenza utente (default: abilitato)
-        let enabled = UserDefaults.standard.object(forKey: SecurityNotificationService.enabledKey) as? Bool ?? true
+        // Rispetta la preferenza utente. Default: disabilitato finché l'utente non abilita dai Settings.
+        let enabled = UserDefaults.standard.object(forKey: SecurityNotificationService.enabledKey) as? Bool ?? false
         guard enabled else { return }
 
         let content = UNMutableNotificationContent()
@@ -159,17 +158,6 @@ final class SecurityNotificationService {
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
                 dprint("🔔 Notifica sicurezza fallita per \(accName): \(error)")
-            }
-        }
-    }
-
-    // MARK: - Permission
-
-    private func requestPermissionIfNeeded() {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            guard settings.authorizationStatus == .notDetermined else { return }
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-                dprint("🔔 Permesso notifiche: \(granted), errore: \(String(describing: error))")
             }
         }
     }

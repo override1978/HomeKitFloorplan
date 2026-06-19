@@ -236,7 +236,7 @@ struct IntelligenceContextDashboard: View {
             if !sortedPatterns.isEmpty {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Raccomandazioni")
+                    Text(String(localized: "intelligence.recommendations", defaultValue: "Recommendations"))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     ForEach(sortedPatterns) { pattern in
@@ -260,47 +260,47 @@ struct IntelligenceContextDashboard: View {
     private var nextUsefulCard: some View {
         if habitService.isAnalyzing {
             FloorplanEmptyStateCard(
-                title: "Analisi in corso",
-                message: "Sto aggiornando pattern e opportunità. Le raccomandazioni compariranno qui quando saranno affidabili.",
+                title: String(localized: "intelligence.analysis.running.title", defaultValue: "Analysis in progress"),
+                message: String(localized: "intelligence.analysis.running.message", defaultValue: "Updating patterns and opportunities. Recommendations will appear here when they are reliable."),
                 icon: "sparkles",
                 color: accent
             )
         } else if !isAIEnabled {
             FloorplanEmptyStateCard(
-                title: "Intelligenza disattivata",
-                message: "Abilita l'AI nelle impostazioni per analizzare abitudini e opportunità di automazione.",
+                title: String(localized: "intelligence.disabled.title", defaultValue: "Intelligence disabled"),
+                message: String(localized: "intelligence.disabled.message", defaultValue: "Enable AI in Settings to analyze habits and automation opportunities."),
                 icon: "sparkles.slash",
                 color: .secondary
             )
         } else if let pattern = highlightedRoomPatterns.first, let roomName = highlightedRoomName {
             nextActionCard(
-                title: "Prossima azione in \(roomName)",
+                title: String(localized: "intelligence.nextAction.room", defaultValue: "Next action in \(roomName)"),
                 pattern: pattern,
                 metrics: [
-                    FloorplanStatusMetric(value: pattern.confidenceLabel, label: "Confidenza"),
-                    FloorplanStatusMetric(value: "\(highlightedRoomPatterns.count)", label: "Pronte")
+                    FloorplanStatusMetric(value: pattern.confidenceLabel, label: String(localized: "intelligence.confidence", defaultValue: "Confidence")),
+                    FloorplanStatusMetric(value: "\(highlightedRoomPatterns.count)", label: String(localized: "intelligence.ready", defaultValue: "Ready"))
                 ]
             )
         } else if let pattern = topAction {
             nextActionCard(
-                title: "Prossima automazione da valutare",
+                title: String(localized: "intelligence.nextAutomation.title", defaultValue: "Next automation to review"),
                 pattern: pattern,
                 metrics: [
-                    FloorplanStatusMetric(value: pattern.confidenceLabel, label: "Confidenza"),
-                    FloorplanStatusMetric(value: "\(sortedPatterns.count)", label: "Totali")
+                    FloorplanStatusMetric(value: pattern.confidenceLabel, label: String(localized: "intelligence.confidence", defaultValue: "Confidence")),
+                    FloorplanStatusMetric(value: "\(sortedPatterns.count)", label: String(localized: "intelligence.total", defaultValue: "Total"))
                 ]
             )
         } else if let roomName = highlightedRoomName {
             FloorplanEmptyStateCard(
-                title: "Sto imparando \(roomName)",
-                message: "Non ci sono azioni affidabili per questa stanza. Continua a usarla normalmente: quando emerge una routine utile la vedrai qui.",
+                title: String(localized: "intelligence.learning.room", defaultValue: "Learning \(roomName)"),
+                message: String(localized: "intelligence.learning.room.message", defaultValue: "No reliable actions are available for this room yet. Keep using it normally; useful routines will appear here."),
                 icon: "brain.head.profile",
                 color: accent
             )
         } else {
             FloorplanEmptyStateCard(
-                title: "Sto imparando le routine",
-                message: "Non ci sono raccomandazioni pronte. Apri una stanza sulla mappa per vedere lo stato di apprendimento locale.",
+                title: String(localized: "intelligence.learning.title", defaultValue: "Learning routines"),
+                message: String(localized: "intelligence.learning.message", defaultValue: "No recommendations are ready. Open a room on the map to see local learning status."),
                 icon: "brain.head.profile",
                 color: accent
             )
@@ -357,7 +357,7 @@ struct IntelligenceContextDashboard: View {
                 Button {
                     habitService.approve(pattern)
                 } label: {
-                    Label("Approva", systemImage: "checkmark")
+                    Label(String(localized: "common.approve", defaultValue: "Approve"), systemImage: "checkmark")
                         .font(.caption.weight(.medium))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -369,7 +369,7 @@ struct IntelligenceContextDashboard: View {
                 Button {
                     habitService.dismiss(pattern)
                 } label: {
-                    Label("Ignora", systemImage: "xmark")
+                    Label(String(localized: "common.ignore", defaultValue: "Ignore"), systemImage: "xmark")
                         .font(.caption.weight(.medium))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)

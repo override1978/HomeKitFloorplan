@@ -48,7 +48,7 @@ struct EnvironmentHeroView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(color)
 
-                Text("Salute Casa")
+                Text(String(localized: "environment.hero.title", defaultValue: "Home Health"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -80,7 +80,7 @@ struct EnvironmentHeroView: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 } else {
-                    Text("Nessun dato")
+                    Text(String(localized: "environment.hero.noData", defaultValue: "No data"))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -119,8 +119,8 @@ struct EnvironmentHeroView: View {
                             Image(systemName: "bell.badge.fill")
                                 .font(.system(size: 11, weight: .medium))
                             Text(attentionRoomCount == 1
-                                 ? "1 stanza da controllare"
-                                 : "\(attentionRoomCount) stanze da controllare")
+                                 ? String(localized: "environment.hero.roomToCheck.one", defaultValue: "1 room to check")
+                                 : String(localized: "environment.hero.roomToCheck.many", defaultValue: "\(attentionRoomCount) rooms to check"))
                                 .font(.caption.weight(.medium))
                         }
                         .foregroundStyle(attentionRoomCount > 0 ? Color.orange : Color.green)
@@ -134,7 +134,7 @@ struct EnvironmentHeroView: View {
                         HStack(spacing: 5) {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 11, weight: .medium))
-                            Text("Tutto nella norma")
+                            Text(String(localized: "environment.hero.allNormal", defaultValue: "Everything looks normal"))
                                 .font(.caption.weight(.medium))
                         }
                         .foregroundStyle(Color.green)

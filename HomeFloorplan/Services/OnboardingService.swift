@@ -11,7 +11,7 @@ final class OnboardingService {
     
     /// Versione corrente dell'onboarding. Incrementala quando vuoi forzare
     /// la ri-visualizzazione (es. dopo aggiornamenti major o cambi rilevanti).
-    static let currentVersion: Int = 1
+    static let currentVersion: Int = 2
     
     /// True se l'utente deve vedere l'onboarding adesso.
     /// Calcolato comparando la versione vista con quella corrente.
@@ -38,5 +38,6 @@ final class OnboardingService {
     func resetForDebug() {
         lastSeenVersion = 0
         UserDefaults.standard.removeObject(forKey: Self.lastSeenVersionKey)
+        UserDefaults.standard.removeObject(forKey: "onboardingCurrentStep")
     }
 }

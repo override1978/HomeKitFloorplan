@@ -104,59 +104,59 @@ enum ActionIntent: String, CaseIterable {
         case .coolRoom:
             switch category {
             case "thermostat", "airConditioner":
-                return ResolvedAction(actionType: "setMode", value: 2, value2: 24, labelKey: String(localized: "action.label.cool", defaultValue: "Raffredda"))
+                return ResolvedAction(actionType: "setMode", value: 2, value2: 24, labelKey: String(localized: "action.label.cool", defaultValue: "Cool"))
             case "fan":
-                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.fan", defaultValue: "Ventila"))
+                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.fan", defaultValue: "Ventilate"))
             case "windowCovering":
-                return ResolvedAction(actionType: "close", value: nil, value2: nil, labelKey: String(localized: "action.label.closeBlinds", defaultValue: "Chiudi tende"))
+                return ResolvedAction(actionType: "close", value: nil, value2: nil, labelKey: String(localized: "action.label.closeBlinds", defaultValue: "Close blinds"))
             default: return nil
             }
 
         case .heatRoom:
             switch category {
             case "thermostat":
-                return ResolvedAction(actionType: "setMode", value: 1, value2: 21, labelKey: String(localized: "action.label.heat", defaultValue: "Riscalda"))
+                return ResolvedAction(actionType: "setMode", value: 1, value2: 21, labelKey: String(localized: "action.label.heat", defaultValue: "Heat"))
             case "valve":
-                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.openValve", defaultValue: "Apri valvola"))
+                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.openValve", defaultValue: "Open valve"))
             default: return nil
             }
 
         case .reduceHumidity:
             switch category {
             case "airPurifier":
-                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.dehumidify", defaultValue: "Riduci umidità"))
+                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.dehumidify", defaultValue: "Reduce humidity"))
             case "fan":
-                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.fan", defaultValue: "Ventila"))
+                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.fan", defaultValue: "Ventilate"))
             default: return nil
             }
 
         case .increaseHumidity:
             if category == "humidifier" || category == "airPurifier" {
-                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.humidify", defaultValue: "Aumenta umidità"))
+                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.humidify", defaultValue: "Increase humidity"))
             }
             return nil
 
         case .improveAirQuality:
             if category == "airPurifier" {
-                return ResolvedAction(actionType: "setMode", value: 1, value2: nil, labelKey: String(localized: "action.label.purifyAir", defaultValue: "Purifica aria"))
+                return ResolvedAction(actionType: "setMode", value: 1, value2: nil, labelKey: String(localized: "action.label.purifyAir", defaultValue: "Purify air"))
             }
             return nil
 
         case .ventilateRoom:
             switch category {
             case "fan":
-                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.fan", defaultValue: "Ventila"))
+                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.fan", defaultValue: "Ventilate"))
             case "airPurifier":
-                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.airExchange", defaultValue: "Ricambia aria"))
+                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.airExchange", defaultValue: "Refresh air"))
             default: return nil
             }
 
         case .reduceCO2:
             switch category {
             case "fan":
-                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.lowerCO2", defaultValue: "Abbassa CO₂"))
+                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.lowerCO2", defaultValue: "Lower CO₂"))
             case "airPurifier":
-                return ResolvedAction(actionType: "setMode", value: 1, value2: nil, labelKey: String(localized: "action.label.lowerCO2", defaultValue: "Abbassa CO₂"))
+                return ResolvedAction(actionType: "setMode", value: 1, value2: nil, labelKey: String(localized: "action.label.lowerCO2", defaultValue: "Lower CO₂"))
             default: return nil
             }
 
@@ -166,26 +166,26 @@ enum ActionIntent: String, CaseIterable {
         case .brightenRoom:
             switch category {
             case "dimmableLight", "colorLight":
-                return ResolvedAction(actionType: "dim", value: 0.8, value2: nil, labelKey: String(localized: "action.label.brighten", defaultValue: "Aumenta luce"))
+                return ResolvedAction(actionType: "dim", value: 0.8, value2: nil, labelKey: String(localized: "action.label.brighten", defaultValue: "Brighten"))
             default: return nil
             }
 
         case .dimRoom:
             switch category {
             case "dimmableLight", "colorLight":
-                return ResolvedAction(actionType: "dim", value: 0.25, value2: nil, labelKey: String(localized: "action.label.dim", defaultValue: "Abbassa luce"))
+                return ResolvedAction(actionType: "dim", value: 0.25, value2: nil, labelKey: String(localized: "action.label.dim", defaultValue: "Dim"))
             default: return nil
             }
 
         case .setCircadianLight:
             if category == "colorLight" {
-                return ResolvedAction(actionType: "dim", value: 0.35, value2: nil, labelKey: String(localized: "action.label.circadian", defaultValue: "Luce serale"))
+                return ResolvedAction(actionType: "dim", value: 0.35, value2: nil, labelKey: String(localized: "action.label.circadian", defaultValue: "Evening light"))
             }
             return nil
 
         case .setScene:
             if category == "sceneController" {
-                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.activateScene", defaultValue: "Attiva scena"))
+                return ResolvedAction(actionType: "on", value: nil, value2: nil, labelKey: String(localized: "action.label.activateScene", defaultValue: "Activate scene"))
             }
             return nil
 
@@ -194,16 +194,16 @@ enum ActionIntent: String, CaseIterable {
             case "thermostat":
                 let isHot = season == .summer
                 return ResolvedAction(actionType: "setMode", value: isHot ? 2 : 1, value2: isHot ? 24 : 20,
-                                      labelKey: String(localized: "action.label.prepareArrival", defaultValue: "Prepara casa"))
+                                      labelKey: String(localized: "action.label.prepareArrival", defaultValue: "Prepare home"))
             case "valve":
                 return ResolvedAction(actionType: "on", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.prepareArrival", defaultValue: "Prepara casa"))
+                                      labelKey: String(localized: "action.label.prepareArrival", defaultValue: "Prepare home"))
             case "colorLight", "dimmableLight":
                 return ResolvedAction(actionType: "dim", value: 0.60, value2: nil,
-                                      labelKey: String(localized: "action.label.prepareArrival", defaultValue: "Prepara casa"))
+                                      labelKey: String(localized: "action.label.prepareArrival", defaultValue: "Prepare home"))
             case "windowCovering":
                 return ResolvedAction(actionType: "open", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.prepareArrival", defaultValue: "Prepara casa"))
+                                      labelKey: String(localized: "action.label.prepareArrival", defaultValue: "Prepare home"))
             default: return nil
             }
 
@@ -211,13 +211,13 @@ enum ActionIntent: String, CaseIterable {
             switch category {
             case "colorLight", "dimmableLight", "outlet", "switch", "fan", "onOff":
                 return ResolvedAction(actionType: "off", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.secureDeparture", defaultValue: "Spegni tutto"))
+                                      labelKey: String(localized: "action.label.secureDeparture", defaultValue: "Turn off"))
             case "doorLock":
                 return ResolvedAction(actionType: "lock", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.secureDeparture", defaultValue: "Metti in sicurezza"))
+                                      labelKey: String(localized: "action.label.secureDeparture", defaultValue: "Secure home"))
             case "garageDoor":
                 return ResolvedAction(actionType: "closeGarage", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.secureDeparture", defaultValue: "Chiudi garage"))
+                                      labelKey: String(localized: "action.label.secureDeparture", defaultValue: "Close garage"))
             default: return nil
             }
 
@@ -225,14 +225,14 @@ enum ActionIntent: String, CaseIterable {
             switch category {
             case "colorLight", "dimmableLight":
                 return ResolvedAction(actionType: "off", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.reduceConsumption", defaultValue: "Riduci consumi"))
+                                      labelKey: String(localized: "action.label.reduceConsumption", defaultValue: "Reduce usage"))
             case "fan", "outlet", "switch", "onOff":
                 return ResolvedAction(actionType: "off", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.reduceConsumption", defaultValue: "Riduci consumi"))
+                                      labelKey: String(localized: "action.label.reduceConsumption", defaultValue: "Reduce usage"))
             case "thermostat", "airConditioner":
                 let isHot = season == .summer
                 return ResolvedAction(actionType: "setMode", value: isHot ? 2 : 1, value2: isHot ? 26 : 18,
-                                      labelKey: String(localized: "action.label.reduceConsumption", defaultValue: "Riduci consumi"))
+                                      labelKey: String(localized: "action.label.reduceConsumption", defaultValue: "Reduce usage"))
             default: return nil
             }
 
@@ -242,13 +242,13 @@ enum ActionIntent: String, CaseIterable {
                 switch season {
                 case .summer:
                     return ResolvedAction(actionType: "setMode", value: 2, value2: 26,
-                                          labelKey: String(localized: "action.label.ecoMode", defaultValue: "Modalità Eco"))
+                                          labelKey: String(localized: "action.label.ecoMode", defaultValue: "Eco mode"))
                 case .winter:
                     return ResolvedAction(actionType: "setMode", value: 1, value2: 18,
-                                          labelKey: String(localized: "action.label.ecoMode", defaultValue: "Modalità Eco"))
+                                          labelKey: String(localized: "action.label.ecoMode", defaultValue: "Eco mode"))
                 default:
                     return ResolvedAction(actionType: "setMode", value: 0, value2: 22,
-                                          labelKey: String(localized: "action.label.ecoMode", defaultValue: "Modalità Eco"))
+                                          labelKey: String(localized: "action.label.ecoMode", defaultValue: "Eco mode"))
                 }
             default: return nil
             }
@@ -259,14 +259,14 @@ enum ActionIntent: String, CaseIterable {
         case .lockAll:
             if category == "doorLock" {
                 return ResolvedAction(actionType: "lock", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.lockAll", defaultValue: "Chiudi porte"))
+                                      labelKey: String(localized: "action.label.lockAll", defaultValue: "Lock doors"))
             }
             return nil
 
         case .closeGarage:
             if category == "garageDoor" {
                 return ResolvedAction(actionType: "closeGarage", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.closeGarage", defaultValue: "Chiudi garage"))
+                                      labelKey: String(localized: "action.label.closeGarage", defaultValue: "Close garage"))
             }
             return nil
 
@@ -274,10 +274,10 @@ enum ActionIntent: String, CaseIterable {
             switch category {
             case "doorLock":
                 return ResolvedAction(actionType: "lock", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.armNight", defaultValue: "Proteggi notte"))
+                                      labelKey: String(localized: "action.label.armNight", defaultValue: "Secure night"))
             case "garageDoor":
                 return ResolvedAction(actionType: "closeGarage", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.armNight", defaultValue: "Proteggi notte"))
+                                      labelKey: String(localized: "action.label.armNight", defaultValue: "Secure night"))
             default: return nil
             }
 
@@ -285,10 +285,10 @@ enum ActionIntent: String, CaseIterable {
             switch category {
             case "doorLock":
                 return ResolvedAction(actionType: "lock", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.armAway", defaultValue: "Proteggi casa"))
+                                      labelKey: String(localized: "action.label.armAway", defaultValue: "Secure home"))
             case "garageDoor":
                 return ResolvedAction(actionType: "closeGarage", value: nil, value2: nil,
-                                      labelKey: String(localized: "action.label.armAway", defaultValue: "Proteggi casa"))
+                                      labelKey: String(localized: "action.label.armAway", defaultValue: "Secure home"))
             default: return nil
             }
         }
@@ -302,61 +302,61 @@ enum ActionIntent: String, CaseIterable {
         let icon: String
         switch (self, roomType) {
         case (.coolRoom, .outdoor):
-            label = String(localized: "action.tip.sunshade", defaultValue: "Abbassa la tenda"); icon = "arrow.down.square"
+            label = String(localized: "action.tip.sunshade", defaultValue: "Lower the shade"); icon = "arrow.down.square"
         case (.heatRoom, .outdoor):
-            label = String(localized: "action.tip.goInside", defaultValue: "Rientra in casa");         icon = "house.fill"
+            label = String(localized: "action.tip.goInside", defaultValue: "Go back inside");         icon = "house.fill"
         case (.reduceHumidity, .outdoor):
             return nil  // non ha senso deumidificare all'aperto
         case (.ventilateRoom, .outdoor):
             return nil  // sei già all'aperto
         case (.coolRoom, _):
-            label = String(localized: "action.tip.openWindows", defaultValue: "Apri le finestre");        icon = "wind"
+            label = String(localized: "action.tip.openWindows", defaultValue: "Open the windows");        icon = "wind"
         case (.heatRoom, _):
-            label = String(localized: "action.tip.closeDoors", defaultValue: "Chiudi porte e finestre"); icon = "xmark.square"
+            label = String(localized: "action.tip.closeDoors", defaultValue: "Close doors and windows"); icon = "xmark.square"
         case (.reduceHumidity, _):
-            label = String(localized: "action.tip.ventilate", defaultValue: "Arieggia la stanza");      icon = "wind"
+            label = String(localized: "action.tip.ventilate", defaultValue: "Air out the room");      icon = "wind"
         case (.increaseHumidity, _):
-            label = String(localized: "action.tip.useHumidifier", defaultValue: "Usa un umidificatore");    icon = "drop.fill"
+            label = String(localized: "action.tip.useHumidifier", defaultValue: "Use a humidifier");    icon = "drop.fill"
         case (.improveAirQuality, _):
-            label = String(localized: "action.tip.openWindows", defaultValue: "Apri le finestre");        icon = "wind"
+            label = String(localized: "action.tip.openWindows", defaultValue: "Open the windows");        icon = "wind"
         case (.ventilateRoom, _):
-            label = String(localized: "action.tip.openWindows", defaultValue: "Apri le finestre");        icon = "wind"
+            label = String(localized: "action.tip.openWindows", defaultValue: "Open the windows");        icon = "wind"
         case (.reduceCO2, .outdoor):
             return nil  // outdoors CO₂ is naturally dispersed
         case (.reduceCO2, _):
-            label = String(localized: "action.tip.ventilate", defaultValue: "Arieggia la stanza");      icon = "wind"
+            label = String(localized: "action.tip.ventilate", defaultValue: "Air out the room");      icon = "wind"
         case (.respondToSmoke, _):
-            label = String(localized: "action.tip.evacuate", defaultValue: "Esci e chiama i soccorsi"); icon = "sos"
+            label = String(localized: "action.tip.evacuate", defaultValue: "Leave and call emergency services"); icon = "sos"
         case (.respondToCO, _):
-            label = String(localized: "action.tip.exitAndOpenAll", defaultValue: "Apri tutto ed esci");       icon = "arrow.up.right.square"
+            label = String(localized: "action.tip.exitAndOpenAll", defaultValue: "Open everything and leave");       icon = "arrow.up.right.square"
         case (.brightenRoom, .outdoor), (.dimRoom, .outdoor), (.setCircadianLight, .outdoor):
             return nil  // outdoor lighting adjustments don't need indoor tips
         case (.setScene, _):
             return nil  // no manual equivalent for scene controllers
         case (.brightenRoom, _):
-            label = String(localized: "action.tip.openBlinds", defaultValue: "Apri le tende");      icon = "arrow.up.square"
+            label = String(localized: "action.tip.openBlinds", defaultValue: "Open the blinds");      icon = "arrow.up.square"
         case (.dimRoom, _):
-            label = String(localized: "action.tip.dimManually", defaultValue: "Abbassa la luminosità"); icon = "light.min"
+            label = String(localized: "action.tip.dimManually", defaultValue: "Lower the brightness"); icon = "light.min"
         case (.setCircadianLight, _):
-            label = String(localized: "action.tip.warmLight", defaultValue: "Imposta luce calda");   icon = "sun.min.fill"
+            label = String(localized: "action.tip.warmLight", defaultValue: "Set warm light");   icon = "sun.min.fill"
         case (.prepareForArrival, _):
-            label = String(localized: "action.tip.prepareHome",       defaultValue: "Prepara casa per il rientro");                icon = "house.circle"
+            label = String(localized: "action.tip.prepareHome",       defaultValue: "Prepare home for arrival");                icon = "house.circle"
         case (.secureForDeparture, _):
-            label = String(localized: "action.tip.secureOnLeave",     defaultValue: "Spegni luci e dispositivi");         icon = "power"
+            label = String(localized: "action.tip.secureOnLeave",     defaultValue: "Turn off lights and devices");         icon = "power"
         case (.reduceConsumption, _):
-            label = String(localized: "action.tip.reduceConsumption", defaultValue: "Spegni i dispositivi inutilizzati");                 icon = "bolt.slash.fill"
+            label = String(localized: "action.tip.reduceConsumption", defaultValue: "Turn off unused devices");                 icon = "bolt.slash.fill"
         case (.enableEcoMode, _):
-            label = String(localized: "action.tip.ecoMode",           defaultValue: "Imposta una temperatura ridotta");        icon = "leaf.fill"
+            label = String(localized: "action.tip.ecoMode",           defaultValue: "Set a reduced temperature");        icon = "leaf.fill"
         case (.schedulePeakHours, _):
-            label = String(localized: "action.tip.peakHours",         defaultValue: "Usa i dispositivi fuori dagli orari di punta"); icon = "clock.fill"
+            label = String(localized: "action.tip.peakHours",         defaultValue: "Use devices outside peak hours"); icon = "clock.fill"
         case (.lockAll, _):
-            label = String(localized: "action.tip.lockManually",        defaultValue: "Controlla e chiudi le porte");             icon = "lock.fill"
+            label = String(localized: "action.tip.lockManually",        defaultValue: "Check and lock the doors");             icon = "lock.fill"
         case (.closeGarage, _):
-            label = String(localized: "action.tip.closeGarageManually", defaultValue: "Chiudi il garage prima di uscire");      icon = "garage"
+            label = String(localized: "action.tip.closeGarageManually", defaultValue: "Close the garage before leaving");      icon = "garage"
         case (.armNightSecurity, _):
-            label = String(localized: "action.tip.armNightManually",    defaultValue: "Controlla porte e finestre"); icon = "moon.zzz.fill"
+            label = String(localized: "action.tip.armNightManually",    defaultValue: "Check doors and windows"); icon = "moon.zzz.fill"
         case (.armAwaySecurity, _):
-            label = String(localized: "action.tip.armAwayManually",     defaultValue: "Controlla tutto prima di uscire"); icon = "house.fill"
+            label = String(localized: "action.tip.armAwayManually",     defaultValue: "Check everything before leaving"); icon = "house.fill"
         }
         return AINextAction(label: label, actionType: "tip", iconName: icon)
     }
@@ -364,7 +364,7 @@ enum ActionIntent: String, CaseIterable {
     /// Backward-compatible wrapper: tip per stanze indoor (default).
     var fallbackTip: AINextAction {
         fallbackTip(for: .indoor) ?? AINextAction(
-            label: String(localized: "action.tip.ventilate", defaultValue: "Arieggia la stanza"),
+            label: String(localized: "action.tip.ventilate", defaultValue: "Air out the room"),
             actionType: "tip",
             iconName: "wind"
         )

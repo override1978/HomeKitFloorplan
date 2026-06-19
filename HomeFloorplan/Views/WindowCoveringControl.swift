@@ -44,7 +44,7 @@ struct WindowCoveringControl: View {
     
     private var stateLabel: some View {
         HStack {
-            Text("Posizione")
+            Text(String(localized: "windowCovering.position", defaultValue: "Position"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -56,11 +56,19 @@ struct WindowCoveringControl: View {
     }
     
     private var stateText: String {
-        if !isReachable { return "Non raggiungibile" }
-        if isMoving { return "In movimento → \(targetValue)%" }
-        if currentValue >= 90 { return "Aperta" }
-        if currentValue <= 10 { return "Chiusa" }
-        return "Aperta al \(currentValue)%"
+        if !isReachable {
+            return String(localized: "windowCovering.unreachable", defaultValue: "Unreachable")
+        }
+        if isMoving {
+            return String(localized: "windowCovering.moving", defaultValue: "Moving → \(targetValue)%")
+        }
+        if currentValue >= 90 {
+            return String(localized: "windowCovering.open", defaultValue: "Open")
+        }
+        if currentValue <= 10 {
+            return String(localized: "windowCovering.closed", defaultValue: "Closed")
+        }
+        return String(localized: "windowCovering.partiallyOpen", defaultValue: "Open \(currentValue)%")
     }
     
     // MARK: - Slider Apple-Home-style
@@ -120,8 +128,8 @@ struct WindowCoveringControl: View {
     
     private var quickActions: some View {
         HStack(spacing: 12) {
-            quickButton(label: "Chiudi", systemImage: "arrow.down.to.line", target: 0)
-            quickButton(label: "Apri", systemImage: "arrow.up.to.line", target: 100)
+            quickButton(label: String(localized: "windowCovering.close", defaultValue: "Close"), systemImage: "arrow.down.to.line", target: 0)
+            quickButton(label: String(localized: "windowCovering.openAction", defaultValue: "Open"), systemImage: "arrow.up.to.line", target: 100)
         }
     }
     

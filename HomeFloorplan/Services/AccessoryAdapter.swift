@@ -22,6 +22,33 @@ enum MarkerUrgency {
     case alarm       // Allarme (rosso) — es. fumo, CO, perdita acqua
 }
 
+enum MarkerRuntimeState {
+    case sensorTriggered
+    case transitioning
+    case unreachable
+
+    var systemImage: String {
+        switch self {
+        case .sensorTriggered: return "dot.radiowaves.left.and.right"
+        case .transitioning: return "arrow.triangle.2.circlepath"
+        case .unreachable: return "wifi.exclamationmark"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .sensorTriggered: return Color(.systemOrange)
+        case .transitioning: return BrandColor.primary
+        case .unreachable: return Color(.systemYellow)
+        }
+    }
+}
+
+@MainActor
+protocol MarkerRuntimeStateProviding {
+    var markerRuntimeState: MarkerRuntimeState? { get }
+}
+
 @MainActor
 protocol AccessoryAdapter: AnyObject {
     var accessory: HMAccessory { get }

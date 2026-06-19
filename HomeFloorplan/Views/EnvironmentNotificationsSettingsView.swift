@@ -11,7 +11,7 @@ struct EnvironmentSettingsView: View {
     @Environment(\.modelContext) private var modelContext
 
     @AppStorage("alertNotificationsEnabled")
-    private var alertNotificationsEnabled: Bool = true
+    private var alertNotificationsEnabled: Bool = false
 
     @AppStorage("outdoorRoomName")
     private var outdoorRoomName: String = ""

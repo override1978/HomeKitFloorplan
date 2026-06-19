@@ -53,7 +53,7 @@ struct AccessoryDetailView: View {
                 }
                 
                 if let controlView = adapter.makeControlSection(homeKit: homeKit) {
-                    Section(String(localized: "accessory.detail.controls", defaultValue: "Controlli")) {
+                    Section(String(localized: "accessory.detail.controls", defaultValue: "Controls")) {
                         controlView
                     }
                 }
@@ -64,7 +64,7 @@ struct AccessoryDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "button.done", defaultValue: "Fine")) { dismiss() }
+                    Button(String(localized: "common.done", defaultValue: "Done")) { dismiss() }
                 }
             }
             .onAppear {

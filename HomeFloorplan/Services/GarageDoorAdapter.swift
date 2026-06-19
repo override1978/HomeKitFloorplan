@@ -21,7 +21,7 @@ enum GarageDoorTargetState: Int {
 /// Esempi: Meross, Tailwind, Garadget, Chamberlain via Homebridge.
 @MainActor
 @Observable
-final class GarageDoorAdapter: AccessoryAdapter {
+final class GarageDoorAdapter: AccessoryAdapter, MarkerRuntimeStateProviding {
     let accessory: HMAccessory
     private let homeKit: HomeKitService
     
@@ -139,6 +139,10 @@ final class GarageDoorAdapter: AccessoryAdapter {
         case .opening, .closing: return true
         default: return false
         }
+    }
+
+    var markerRuntimeState: MarkerRuntimeState? {
+        isTransitioning ? .transitioning : nil
     }
     
     var hasLowBattery: Bool {

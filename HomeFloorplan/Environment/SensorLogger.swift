@@ -38,7 +38,7 @@ final class SensorLogger {
         var readings: [(accessoryUUID: String, serviceType: SensorServiceType, roomName: String, value: Double)] = []
 
         for accessory in accessories {
-            let roomName = accessory.room?.name ?? "Senza stanza"
+            let roomName = accessory.room?.name ?? String(localized: "room.none", defaultValue: "No room")
             let accessoryUUID = accessory.uniqueIdentifier.uuidString
 
             for serviceType in SensorServiceType.allCases where !serviceType.isWeatherKitSource {
@@ -55,6 +55,7 @@ final class SensorLogger {
 
         // Carica i threshold attivi per il controllo soglie
         let thresholds = (try? backgroundContext.fetch(FetchDescriptor<SensorAlertThreshold>())) ?? []
+        var alertCandidates: [EnvironmentalAlertCandidate] = []
 
         for reading in readings {
             let entity = SensorReading(
@@ -65,14 +66,17 @@ final class SensorLogger {
             )
             backgroundContext.insert(entity)
 
-            // Controlla soglie e invia notifiche
-            checkThreshold(
+            if let candidate = thresholdAlert(
                 serviceType: reading.serviceType,
                 roomName: reading.roomName,
                 value: reading.value,
                 thresholds: thresholds
-            )
+            ) {
+                alertCandidates.append(candidate)
+            }
         }
+
+        AlertNotificationService.shared.sendGroupedAlerts(alertCandidates)
 
         do {
             try backgroundContext.save()
@@ -105,7 +109,7 @@ final class SensorLogger {
         var count = 0
         let ctx = ModelContext(modelContainer)
         for accessory in home.accessories {
-            let roomName = accessory.room?.name ?? "Senza stanza"
+            let roomName = accessory.room?.name ?? String(localized: "room.none", defaultValue: "No room")
             if let value = await readValue(for: .lightSensor, from: accessory) {
                 ctx.insert(SensorReading(
                     accessoryUUID: accessory.uniqueIdentifier.uuidString,
@@ -143,7 +147,7 @@ final class SensorLogger {
             ctx.insert(SensorReading(
                 accessoryUUID: "weather.outdoor",
                 serviceType:   type,
-                roomName:      String(localized: "outdoor.roomName", defaultValue: "Esterno"),
+                roomName:      String(localized: "outdoor.roomName", defaultValue: "Outdoor"),
                 value:         value
             ))
         }
@@ -203,7 +207,7 @@ final class SensorLogger {
         return nil
     }
 
-    private static func parseDouble(_ raw: Any) -> Double? {
+    nonisolated private static func parseDouble(_ raw: Any) -> Double? {
         if let d = raw as? Double { return d }
         if let f = raw as? Float  { return Double(f) }
         if let i = raw as? Int    { return Double(i) }
@@ -214,14 +218,14 @@ final class SensorLogger {
 
     // MARK: - Controllo soglie
 
-    private func checkThreshold(
+    private func thresholdAlert(
         serviceType: SensorServiceType,
         roomName: String,
         value: Double,
         thresholds: [SensorAlertThreshold]
-    ) {
+    ) -> EnvironmentalAlertCandidate? {
         // Rispetta il toggle globale delle notifiche ambientali
-        guard UserDefaults.standard.bool(forKey: "alertNotificationsEnabled") else { return }
+        guard UserDefaults.standard.bool(forKey: "alertNotificationsEnabled") else { return nil }
 
         // Prima cerca soglia specifica per stanza, poi globale
         let threshold = thresholds.first(where: {
@@ -230,22 +234,23 @@ final class SensorLogger {
             $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == nil
         })
 
-        guard let threshold, threshold.isEnabled else { return }
+        guard let threshold, threshold.isEnabled else { return nil }
 
         if value >= threshold.dangerValue {
-            AlertNotificationService.shared.sendAlert(
+            return EnvironmentalAlertCandidate(
                 sensorType: serviceType,
                 roomName: roomName,
                 value: value,
                 level: .danger
             )
         } else if value >= threshold.warningValue {
-            AlertNotificationService.shared.sendAlert(
+            return EnvironmentalAlertCandidate(
                 sensorType: serviceType,
                 roomName: roomName,
                 value: value,
                 level: .warning
             )
         }
+        return nil
     }
 }

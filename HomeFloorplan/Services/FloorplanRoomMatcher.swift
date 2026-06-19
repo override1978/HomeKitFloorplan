@@ -19,6 +19,26 @@ enum FloorplanRoomMatcher {
         rooms.first { contains(point, in: $0) }?.hmRoomUUID
     }
 
+    static func isNearAnyRoom(_ point: NormalizedPoint,
+                              in rooms: [LinkedRoom],
+                              tolerance: Double) -> Bool {
+        rooms.contains { isNear(point, to: $0, tolerance: tolerance) }
+    }
+
+    static func isNear(_ point: NormalizedPoint,
+                       to room: LinkedRoom,
+                       tolerance: Double) -> Bool {
+        if contains(point, in: room) {
+            return true
+        }
+
+        if let polygon = room.normalizedPoints, polygon.count >= 3 {
+            return distance(from: point, to: polygon) <= tolerance
+        }
+
+        return distance(from: point, to: room.normalizedRect) <= tolerance
+    }
+
     static func contains(_ point: NormalizedPoint, in room: LinkedRoom) -> Bool {
         if let polygon = room.normalizedPoints, polygon.count >= 3 {
             return contains(point: point, polygon: polygon)
@@ -52,5 +72,52 @@ enum FloorplanRoomMatcher {
         }
 
         return isInside
+    }
+
+    private static func distance(from point: NormalizedPoint, to rect: CodableRect) -> Double {
+        let minX = rect.x
+        let maxX = rect.x + rect.width
+        let minY = rect.y
+        let maxY = rect.y + rect.height
+        let dx = max(max(minX - point.x, 0), point.x - maxX)
+        let dy = max(max(minY - point.y, 0), point.y - maxY)
+        return hypot(dx, dy)
+    }
+
+    private static func distance(from point: NormalizedPoint, to polygon: [CodablePoint]) -> Double {
+        guard polygon.count >= 2 else { return .greatestFiniteMagnitude }
+
+        var shortestDistance = Double.greatestFiniteMagnitude
+        var previous = polygon[polygon.count - 1]
+
+        for current in polygon {
+            shortestDistance = min(
+                shortestDistance,
+                distance(from: point, toSegmentFrom: previous, to: current)
+            )
+            previous = current
+        }
+
+        return shortestDistance
+    }
+
+    private static func distance(from point: NormalizedPoint,
+                                 toSegmentFrom start: CodablePoint,
+                                 to end: CodablePoint) -> Double {
+        let vx = end.x - start.x
+        let vy = end.y - start.y
+        let wx = point.x - start.x
+        let wy = point.y - start.y
+        let lengthSquared = vx * vx + vy * vy
+
+        guard lengthSquared > .ulpOfOne else {
+            return hypot(point.x - start.x, point.y - start.y)
+        }
+
+        let projection = max(0, min(1, (wx * vx + wy * vy) / lengthSquared))
+        let closestX = start.x + projection * vx
+        let closestY = start.y + projection * vy
+
+        return hypot(point.x - closestX, point.y - closestY)
     }
 }

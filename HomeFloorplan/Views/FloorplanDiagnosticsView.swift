@@ -20,7 +20,7 @@ struct FloorplanDiagnosticsView: View {
                         healthyState
                     } else {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Da controllare")
+                            Text(String(localized: "floorplan.diagnostics.toCheck", defaultValue: "Needs attention"))
                                 .font(.headline)
 
                             ForEach(report.issues) { issue in
@@ -31,11 +31,11 @@ struct FloorplanDiagnosticsView: View {
                 }
                 .padding(20)
             }
-            .navigationTitle("Stato planimetria")
+            .navigationTitle(String(localized: "floorplan.diagnostics.title", defaultValue: "Floorplan Status"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Chiudi") { dismiss() }
+                    Button(String(localized: "common.close", defaultValue: "Close")) { dismiss() }
                 }
             }
         }
@@ -44,9 +44,9 @@ struct FloorplanDiagnosticsView: View {
     private var unplacedAccessoriesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Accessori da aggiungere")
+                Text(String(localized: "floorplan.diagnostics.unplaced.title", defaultValue: "Accessories to add"))
                     .font(.headline)
-                Text("Raggruppati per stanza, con priorità agli elementi più utili per overlay e automazioni.")
+                Text(String(localized: "floorplan.diagnostics.unplaced.description", defaultValue: "Grouped by room, prioritizing the most useful items for overlays and automations."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -67,19 +67,19 @@ struct FloorplanDiagnosticsView: View {
             )
             metricCard(
                 value: "\(report.linkedRoomCount)",
-                label: "Stanze",
+                label: String(localized: "environment.rooms", defaultValue: "Rooms"),
                 icon: "rectangle.3.group",
                 color: .green
             )
             metricCard(
                 value: "\(report.linkableUnplacedCount)",
-                label: "Da piazzare",
+                label: String(localized: "floorplan.metric.toPlace", defaultValue: "To place"),
                 icon: "plus.viewfinder",
                 color: report.linkableUnplacedCount == 0 ? .green : .orange
             )
             metricCard(
                 value: "\(report.criticalCount + report.warningCount)",
-                label: "Problemi",
+                label: String(localized: "floorplan.diagnostics.issues", defaultValue: "Issues"),
                 icon: report.isHealthy ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
                 color: report.isHealthy ? .green : .orange
             )
@@ -88,10 +88,10 @@ struct FloorplanDiagnosticsView: View {
 
     private var healthyState: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("La planimetria è coerente", systemImage: "checkmark.seal.fill")
+            Label(String(localized: "floorplan.diagnostics.healthy.title", defaultValue: "The floorplan is consistent"), systemImage: "checkmark.seal.fill")
                 .font(.headline)
                 .foregroundStyle(.green)
-            Text("Marker, stanze e accessori HomeKit risultano allineati.")
+            Text(String(localized: "floorplan.diagnostics.healthy.description", defaultValue: "Markers, rooms, and HomeKit accessories are aligned."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -159,11 +159,11 @@ struct FloorplanDiagnosticsView: View {
                     }
 
                     if group.highPriorityCount > 0 {
-                        Text("\(group.highPriorityCount) ad alta priorità per overlay e automazioni.")
+                        Text(String(localized: "floorplan.diagnostics.highPriorityCount", defaultValue: "\(group.highPriorityCount) high priority for overlays and automations."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("Accessori supportati non ancora presenti sul floorplan.")
+                        Text(String(localized: "floorplan.diagnostics.supportedMissing", defaultValue: "Supported accessories not yet present on the floorplan."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -175,7 +175,7 @@ struct FloorplanDiagnosticsView: View {
                     dismiss()
                     onAddAccessories(group.roomID)
                 } label: {
-                    Label("Aggiungi", systemImage: "plus")
+                    Label(String(localized: "common.add", defaultValue: "Add"), systemImage: "plus")
                         .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.borderedProminent)
@@ -190,7 +190,11 @@ struct FloorplanDiagnosticsView: View {
                             Text(accessory.name)
                                 .font(.caption.weight(.medium))
                                 .lineLimit(1)
-                            Text("\(accessory.categoryName) · priorità \(accessory.priority.label.lowercased())")
+                            Text(String(
+                                format: String(localized: "floorplan.diagnostics.accessoryPriority", defaultValue: "%1$@ · %2$@ priority"),
+                                accessory.categoryName,
+                                accessory.priority.label.lowercased()
+                            ))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -201,7 +205,7 @@ struct FloorplanDiagnosticsView: View {
 
                 let remaining = group.accessories.count - 4
                 if remaining > 0 {
-                    Text("+\(remaining) altri accessori")
+                    Text(String(format: String(localized: "floorplan.diagnostics.moreAccessories", defaultValue: "+%lld more accessories"), remaining))
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(.leading, 16)

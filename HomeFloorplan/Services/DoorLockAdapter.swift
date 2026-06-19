@@ -20,7 +20,7 @@ enum DoorLockTargetState: Int {
 /// Esempi: Yale, Nuki, August, Aqara Lock, Bticino via Homebridge.
 @MainActor
 @Observable
-final class DoorLockAdapter: AccessoryAdapter {
+final class DoorLockAdapter: AccessoryAdapter, MarkerRuntimeStateProviding {
     let accessory: HMAccessory
     private let homeKit: HomeKitService
     
@@ -117,11 +117,19 @@ final class DoorLockAdapter: AccessoryAdapter {
     /// True quando l'utente ha richiesto un cambio e il sistema non ha ancora confermato.
     /// La serratura sta operando fisicamente (motore in movimento).
     var isTransitioning: Bool {
+        guard homeKit.wasRecentlyWritten(targetStateCharacteristic, within: 20) else {
+            return false
+        }
+
         switch (currentState, targetState) {
         case (.unsecured, .secured): return true  // sta chiudendo
         case (.secured, .unsecured): return true  // sta aprendo
         default: return false
         }
+    }
+
+    var markerRuntimeState: MarkerRuntimeState? {
+        isTransitioning ? .transitioning : nil
     }
     
     var hasLowBattery: Bool {

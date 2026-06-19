@@ -14,7 +14,7 @@ struct AccessoryPickerSheet: View {
     var preferredRoomUUIDs: Set<UUID> = []
 
     /// Optional contextual title, used when the picker is opened from a specific room.
-    var title: String = "Aggiungi accessori"
+    var title: String = String(localized: "floorplan.accessoryPicker.title", defaultValue: "Add accessories")
 
     /// Callback con gli accessori scelti (uno o più).
     let onPick: ([HMAccessory]) -> Void
@@ -42,12 +42,12 @@ struct AccessoryPickerSheet: View {
                     }
                 }
             }
-            .searchable(text: $searchText, prompt: "Cerca accessorio")
+            .searchable(text: $searchText, prompt: String(localized: "accessory.search.placeholder", defaultValue: "Search accessory"))
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Chiudi") { dismiss() }
+                    Button(String(localized: "common.close", defaultValue: "Close")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -56,9 +56,9 @@ struct AccessoryPickerSheet: View {
                         dismiss()
                     } label: {
                         if selected.isEmpty {
-                            Text("Aggiungi")
+                            Text(String(localized: "common.add", defaultValue: "Add"))
                         } else {
-                            Text("Aggiungi (\(selected.count))")
+                            Text(String(localized: "common.add.count", defaultValue: "Add (\(selected.count))"))
                         }
                     }
                     .disabled(selected.isEmpty)

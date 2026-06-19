@@ -14,6 +14,13 @@ struct SceneIconPickerSheet: View {
         case system = "Sistema"
         case custom = "Custom"
         var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .system: return String(localized: "iconPicker.system", defaultValue: "System")
+            case .custom: return String(localized: "iconPicker.custom", defaultValue: "Custom")
+            }
+        }
     }
     
     private var currentIcon: String {
@@ -33,8 +40,8 @@ struct SceneIconPickerSheet: View {
             VStack(spacing: 0) {
                 header
                 
-                Picker("Tipologia", selection: $selectedTab) {
-                    ForEach(IconTab.allCases) { Text($0.rawValue).tag($0) }
+                Picker(String(localized: "sceneIconPicker.type", defaultValue: "Type"), selection: $selectedTab) {
+                    ForEach(IconTab.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .padding()
@@ -50,18 +57,18 @@ struct SceneIconPickerSheet: View {
                     .padding(.bottom, 20)
                 }
             }
-            .navigationTitle("Icona scena")
+            .navigationTitle(String(localized: "sceneIconPicker.title", defaultValue: "Scene Icon"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if hasOverride {
-                        Button("Ripristina") {
+                        Button(String(localized: "common.reset", defaultValue: "Reset")) {
                             iconOverrides.removeIcon(for: scene.id)
                         }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fine") { dismiss() }
+                    Button(String(localized: "common.done", defaultValue: "Done")) { dismiss() }
                         .fontWeight(.semibold)
                 }
             }

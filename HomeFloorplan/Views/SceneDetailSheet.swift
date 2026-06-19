@@ -23,7 +23,7 @@ struct SceneDetailSheet: View {
         let summaries = scene.actionSummaries
         let grouped = Dictionary(grouping: summaries, by: { $0.roomID })
         return grouped.map { (roomID, actions) in
-            let roomName = actions.first?.roomName ?? String(localized: "scene.detail.noRoom", defaultValue: "Senza stanza")
+            let roomName = actions.first?.roomName ?? String(localized: "scene.detail.noRoom", defaultValue: "No room")
             return (roomID: roomID, roomName: roomName, actions: actions)
         }
         .sorted { $0.roomName.localizedCaseInsensitiveCompare($1.roomName) == .orderedAscending }
@@ -41,9 +41,9 @@ struct SceneDetailSheet: View {
                 if groupedByRoom.isEmpty {
                     Section {
                         ContentUnavailableView(
-                            String(localized: "scene.detail.noActions.title", defaultValue: "Nessuna azione"),
+                            String(localized: "scene.detail.noActions.title", defaultValue: "No actions"),
                             systemImage: "list.bullet.rectangle",
-                            description: Text(String(localized: "scene.detail.noActions.description", defaultValue: "Questa scena non ha azioni associate. Puoi configurarla dall'app Casa di Apple."))
+                            description: Text(String(localized: "scene.detail.noActions.description", defaultValue: "This scene has no associated actions. You can configure it in the Apple Home app."))
                         )
                     }
                 } else {
@@ -57,11 +57,11 @@ struct SceneDetailSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle(String(localized: "scene.detail.navigationTitle", defaultValue: "Scena"))
+            .navigationTitle(String(localized: "scene.detail.navigationTitle", defaultValue: "Scene"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(String(localized: "scene.detail.toolbar.done", defaultValue: "Fine")) {
+                    Button(String(localized: "common.done", defaultValue: "Done")) {
                         commitRename()
                         dismiss()
                     }
@@ -81,7 +81,7 @@ struct SceneDetailSheet: View {
                 SceneIconPickerSheet(scene: scene)
                     .presentationDetents([.large])
             }
-            .alert(String(localized: "alert.error.title", defaultValue: "Errore"),
+            .alert(String(localized: "alert.error.title", defaultValue: "Error"),
                    isPresented: Binding(
                     get: { renameError != nil },
                     set: { if !$0 { renameError = nil } }
@@ -127,7 +127,7 @@ struct SceneDetailSheet: View {
             
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    TextField(String(localized: "scene.detail.namePlaceholder", defaultValue: "Nome scena"), text: $editedName)
+                    TextField(String(localized: "scene.detail.namePlaceholder", defaultValue: "Scene name"), text: $editedName)
                         .font(.title3.weight(.semibold))
                         .focused($nameFieldFocused)
                         .textFieldStyle(.plain)
@@ -155,7 +155,9 @@ struct SceneDetailSheet: View {
                 )
                 .animation(.easeInOut(duration: 0.2), value: nameFieldFocused)
                 
-                Text("\(scene.actionCount) \(scene.actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "azione") : String(localized: "count.action.plural", defaultValue: "azioni"))")
+                Text(scene.actionCount == 1
+                     ? String(localized: "count.action.singular", defaultValue: "1 action")
+                     : String(localized: "count.action.plural", defaultValue: "\(scene.actionCount) actions"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 4)
@@ -196,7 +198,7 @@ struct SceneDetailSheet: View {
         scene.actionSet.updateName(trimmed) { error in
             Task { @MainActor in
                 if let error {
-                    renameError = "\(String(localized: "scene.detail.renameError.prefix", defaultValue: "Impossibile rinominare:")): \(error.localizedDescription)"
+                    renameError = "\(String(localized: "scene.detail.renameError.prefix", defaultValue: "Could not rename")): \(error.localizedDescription)"
                     editedName = scene.name
                 } else {
                     // Refresh per propagare il nuovo nome alla lista

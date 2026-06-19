@@ -14,6 +14,13 @@ struct ChatMessage: Identifiable {
     var actionPayload: AgentActionPayload? = nil
 }
 
+private struct ChatSuggestionCategory: Identifiable {
+    let id: String
+    let icon: String
+    let title: String
+    let prompts: [String]
+}
+
 // MARK: - ChatBotView
 //
 // Production sheet for the home assistant (read-only, Phase 1.5).
@@ -59,6 +66,7 @@ struct ChatBotView: View {
     @State private var micPulse      = false
     @State private var isPreparing   = false
     @State private var voiceSubmitTask: Task<Void, Never>?
+    @State private var expandedSuggestionCategoryID: String?
 
     #if DEBUG
     @State private var debugLogs: [AgentLogEntry] = []
@@ -69,7 +77,7 @@ struct ChatBotView: View {
         VStack(spacing: 0) {
             chatHeader
             Divider().opacity(0.35)
-            if !isClaudeOperational { providerWarningBanner }
+            if !isAssistantOperational { providerWarningBanner }
             // Show a lightweight loading placeholder until VMs are ready so the
             // sheet entry animation is not blocked by AccessoriesViewModel.refresh().
             ZStack {
@@ -879,21 +887,164 @@ struct ChatBotView: View {
     }
 
     private var defaultEmptyStateView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "house.circle")
-                .font(.system(size: 44))
-                .foregroundStyle(.secondary)
-            Text(String(localized: "agent.emptyState.title", defaultValue: "How's the house?"))
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text(String(localized: "agent.emptyState.description",
-                        defaultValue: "Ask about temperature, devices, security, or energy usage."))
-                .font(.subheadline)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
+        ScrollView {
+            VStack(spacing: 18) {
+                VStack(spacing: 12) {
+                    Image(systemName: "house.circle")
+                        .font(.system(size: 44))
+                        .foregroundStyle(.secondary)
+                    Text(String(localized: "agent.emptyState.title", defaultValue: "How's the house?"))
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                    Text(String(localized: "agent.emptyState.description",
+                                defaultValue: "Ask about temperature, devices, security, or energy usage."))
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
+
+                suggestionCategoriesView
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 24)
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 32)
+    }
+
+    private var suggestionCategoriesView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(String(localized: "agent.suggestions.header", defaultValue: "Try asking"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            ForEach(suggestionCategories) { category in
+                suggestionCategoryCard(category)
+            }
+        }
+    }
+
+    private func suggestionCategoryCard(_ category: ChatSuggestionCategory) -> some View {
+        let isExpanded = expandedSuggestionCategoryID == category.id
+        return VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    expandedSuggestionCategoryID = isExpanded ? nil : category.id
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: category.icon)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(BrandColor.primary)
+                        .frame(width: 28, height: 28)
+                        .background(BrandColor.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                    Text(category.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(category.prompts, id: \.self) { prompt in
+                        Button {
+                            submitSuggestion(prompt)
+                        } label: {
+                            Text(prompt)
+                                .font(.subheadline)
+                                .foregroundStyle(BrandColor.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(BrandColor.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isRunning)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.10), lineWidth: 1)
+        )
+    }
+
+    private var suggestionCategories: [ChatSuggestionCategory] {
+        [
+            ChatSuggestionCategory(
+                id: "status",
+                icon: "house.fill",
+                title: String(localized: "agent.suggestions.status", defaultValue: "Home status"),
+                prompts: [
+                    String(localized: "agent.prompt.home.attention", defaultValue: "What needs attention right now?"),
+                    String(localized: "agent.prompt.home.unusual", defaultValue: "Is anything unusual happening?"),
+                    String(localized: "agent.prompt.home.rooms", defaultValue: "Which rooms need review?")
+                ]
+            ),
+            ChatSuggestionCategory(
+                id: "environment",
+                icon: "leaf.fill",
+                title: String(localized: "agent.suggestions.environment", defaultValue: "Environment"),
+                prompts: [
+                    String(localized: "agent.prompt.environment.air", defaultValue: "What can I do to improve air quality?"),
+                    String(localized: "agent.prompt.environment.humidity", defaultValue: "Why is humidity high?"),
+                    String(localized: "agent.prompt.environment.temperature", defaultValue: "Which room is warmer than usual?")
+                ]
+            ),
+            ChatSuggestionCategory(
+                id: "habits",
+                icon: "brain.head.profile",
+                title: String(localized: "agent.suggestions.habits", defaultValue: "Habits"),
+                prompts: [
+                    String(localized: "agent.prompt.habits.learned", defaultValue: "What routines have you learned?"),
+                    String(localized: "agent.prompt.habits.ready", defaultValue: "What automations are ready?"),
+                    String(localized: "agent.prompt.habits.createOpportunity", defaultValue: "Create an automation opportunity from my routines")
+                ]
+            ),
+            ChatSuggestionCategory(
+                id: "automations",
+                icon: "wand.and.stars",
+                title: String(localized: "agent.suggestions.automations", defaultValue: "Automations"),
+                prompts: [
+                    String(localized: "agent.prompt.automations.create", defaultValue: "Create an automation for this pattern"),
+                    String(localized: "agent.prompt.automations.opportunities", defaultValue: "Show automation opportunities I can approve"),
+                    String(localized: "agent.prompt.automations.diagnose", defaultValue: "Check my active automations for issues")
+                ]
+            ),
+            ChatSuggestionCategory(
+                id: "accessories",
+                icon: "switch.2",
+                title: String(localized: "agent.suggestions.accessories", defaultValue: "Accessories"),
+                prompts: [
+                    String(localized: "agent.prompt.accessories.lights", defaultValue: "Turn off the living room lights"),
+                    String(localized: "agent.prompt.accessories.blinds", defaultValue: "Close the kitchen blinds"),
+                    String(localized: "agent.prompt.accessories.purifier", defaultValue: "Is the purifier running?")
+                ]
+            ),
+            ChatSuggestionCategory(
+                id: "security",
+                icon: "lock.shield.fill",
+                title: String(localized: "agent.suggestions.security", defaultValue: "Security"),
+                prompts: [
+                    String(localized: "agent.prompt.security.locked", defaultValue: "Are all doors locked?"),
+                    String(localized: "agent.prompt.security.open", defaultValue: "Is anything open?"),
+                    String(localized: "agent.prompt.security.sensors", defaultValue: "What security sensors are active?")
+                ]
+            )
+        ]
     }
 
     private var assistantLoadingView: some View {
@@ -916,7 +1067,7 @@ struct ChatBotView: View {
     #if DEBUG
     private var debugLogSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Debug — \(debugLogs.count) eventi")
+            Text(String(localized: "agent.debug.events", defaultValue: "Debug — \(debugLogs.count) events"))
                 .font(.caption2.monospaced())
                 .foregroundStyle(.tertiary)
             ForEach(debugLogs) { entry in
@@ -932,8 +1083,8 @@ struct ChatBotView: View {
 
     // MARK: - Provider warning
 
-    private var isClaudeOperational: Bool {
-        aiSettings.selectedProvider == .claude && aiSettings.isOperational
+    private var isAssistantOperational: Bool {
+        aiSettings.selectedProvider.supportsHomeAssistantTools && aiSettings.isOperational
     }
 
     private var providerWarningBanner: some View {
@@ -953,11 +1104,11 @@ struct ChatBotView: View {
         if aiSettings.selectedProvider != .claude {
             let provider = aiSettings.selectedProvider.localizedName
             let base = String(localized: "agent.warning.wrongProvider",
-                              defaultValue: "Home intelligence requires Claude AI.")
+                              defaultValue: "The voice assistant currently requires Claude for HomeKit tool use.")
             return "\(base) (\(provider))"
         }
         return String(localized: "agent.warning.notOperational",
-                      defaultValue: "AI not operational. Check API key and consent in Settings → AI.")
+                      defaultValue: "AI is not ready. Check API key and data consent in Settings → AI.")
     }
 
     // MARK: - Input bar (voice-only)
@@ -1102,6 +1253,12 @@ struct ChatBotView: View {
             setupViewModels()
             isReady = true
         }
+        sendQuery()
+    }
+
+    private func submitSuggestion(_ prompt: String) {
+        guard !isRunning else { return }
+        query = prompt
         sendQuery()
     }
 

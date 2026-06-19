@@ -63,11 +63,6 @@ struct CameraMarkerView: View {
 
             // Label pill (mirrors AccessoryMarkerView)
             HStack(spacing: 3) {
-                if hasCustomLabel {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.secondary)
-                }
                 Text(label)
                     .font(.caption2)
                     .lineLimit(1)

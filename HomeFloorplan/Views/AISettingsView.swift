@@ -35,6 +35,7 @@ struct AISettingsView: View {
     var body: some View {
         Form {
             providerSection
+            providerCapabilitiesSection
             if settings.isAIEnabled {
                 featuresSection
             }
@@ -67,22 +68,14 @@ struct AISettingsView: View {
                 }
             }
 
-            // Selezione provider
-            Picker(
-                String(localized: "ai.settings.provider", defaultValue: "Provider"),
-                selection: $settings.selectedProvider
-            ) {
-                ForEach(AIProvider.allCases, id: \.self) { provider in
-                    Text(provider.localizedName).tag(provider)
-                }
-            }
-            .pickerStyle(.menu)
-            .onChange(of: settings.selectedProvider) { _, _ in
-                loadAPIKeyDraft()
-                // Reset stato test quando si cambia provider
-                settings.lastConnectionTest    = nil
-                settings.lastConnectionSuccess = nil
-                testError = nil
+            HStack {
+                Label(
+                    String(localized: "ai.settings.provider", defaultValue: "Provider"),
+                    systemImage: "sparkles"
+                )
+                Spacer()
+                Text(settings.selectedProvider.localizedName)
+                    .foregroundStyle(.secondary)
             }
 
             // API Key field
@@ -95,8 +88,51 @@ struct AISettingsView: View {
             Text(String(localized: "ai.settings.provider.header", defaultValue: "Provider"))
         } footer: {
             Text(String(localized: "ai.settings.provider.footer",
-                        defaultValue: "Select an AI provider and enter your API key to enable smart features."))
+                        defaultValue: "Claude is currently the supported AI provider for smart HomeKit features. Additional providers may be added later."))
         }
+    }
+
+    @ViewBuilder
+    private var providerCapabilitiesSection: some View {
+        Section {
+            capabilityRow(
+                title: String(localized: "ai.settings.capability.analysis", defaultValue: "Environmental and habit insights"),
+                detail: String(localized: "ai.settings.capability.analysis.detail", defaultValue: "Used for room analysis, anomaly summaries, and habit naming."),
+                isAvailable: settings.selectedProvider.supportsPromptAnalysis
+            )
+
+            capabilityRow(
+                title: String(localized: "ai.settings.capability.assistant", defaultValue: "Voice assistant with HomeKit tools"),
+                detail: settings.selectedProvider.supportsHomeAssistantTools
+                    ? String(localized: "ai.settings.capability.assistant.detail.enabled", defaultValue: "Can read devices, propose actions, and create scenes or rules.")
+                    : String(localized: "ai.settings.capability.assistant.detail.disabled", defaultValue: "Currently requires Claude because this feature depends on tool-use loops."),
+                isAvailable: settings.selectedProvider.supportsHomeAssistantTools
+            )
+        } header: {
+            Text(String(localized: "ai.settings.capabilities.header", defaultValue: "Provider Capabilities"))
+        } footer: {
+            if !settings.selectedProvider.supportsHomeAssistantTools {
+                Text(String(localized: "ai.settings.capabilities.footer.openai",
+                            defaultValue: "OpenAI can be used for AI analysis features. The in-app voice assistant will remain unavailable until OpenAI tool-use routing is implemented."))
+            }
+        }
+    }
+
+    private func capabilityRow(title: String, detail: String, isAvailable: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: isAvailable ? "checkmark.circle.fill" : "minus.circle.fill")
+                .foregroundStyle(isAvailable ? .green : .secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     // MARK: - API Key row

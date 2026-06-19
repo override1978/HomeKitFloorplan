@@ -68,7 +68,7 @@ struct RoomDetailSheet: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fine") { dismiss() }
+                    Button(String(localized: "common.done", defaultValue: "Done")) { dismiss() }
                         .fontWeight(.semibold)
                 }
             }
@@ -97,7 +97,7 @@ struct RoomDetailSheet: View {
 
     private var scenesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Scene", systemImage: "wand.and.sparkles")
+            Label(String(localized: "scenes.title", defaultValue: "Scenes"), systemImage: "wand.and.sparkles")
                 .font(.headline)
                 .foregroundStyle(.primary)
 
@@ -156,7 +156,9 @@ struct RoomDetailSheet: View {
                         .truncationMode(.tail)
                         .multilineTextAlignment(.leading)
 
-                    Text("\(scene.actionCount) \(scene.actionCount == 1 ? "azione" : "azioni")")
+                    Text(scene.actionCount == 1
+                         ? String(localized: "roomDetail.sceneActionCount.one", defaultValue: "1 action")
+                         : String(localized: "roomDetail.sceneActionCount.many", defaultValue: "\(scene.actionCount) actions"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -289,9 +291,9 @@ struct RoomDetailSheet: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("Nessun accessorio", systemImage: "house")
+            Label(String(localized: "roomDetail.empty.title", defaultValue: "No accessories"), systemImage: "house")
         } description: {
-            Text("Questa stanza non ha accessori configurati in HomeKit.")
+            Text(String(localized: "roomDetail.empty.description", defaultValue: "This room has no accessories configured in HomeKit."))
         }
         .padding(.top, 40)
     }

@@ -152,7 +152,7 @@ struct HabitsView: View {
 
                 if let pattern = narrativePattern {
                     Text(narrativeSentence(for: pattern))
-                        .font(.system(size: 20, weight: .regular, design: .serif))
+                        .font(.system(size: 19, weight: .medium, design: .default))
                         .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(.primary)
 
@@ -171,7 +171,7 @@ struct HabitsView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(String(localized: "habits.voice.waiting",
                         defaultValue: "I'm just starting to observe your home. In a few days I'll tell you about the first habits."))
-                .font(.system(size: 18, weight: .regular, design: .serif))
+                .font(.system(size: 18, weight: .medium, design: .default))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(String(localized: "habits.voice.placeholder.subtitle",
@@ -244,7 +244,7 @@ struct HabitsView: View {
         )
     }
 
-    // MARK: - Section 1b: Sto notando
+    // MARK: - Section 1b: Noticing
 
     @ViewBuilder
     private var noticingSection: some View {
@@ -255,11 +255,11 @@ struct HabitsView: View {
                     noticingPatternRow(pattern)
                 }
             } header: {
-                Label(String(localized: "habits.noticing.header", defaultValue: "Sto notando"),
+                Label(String(localized: "habits.noticing.header", defaultValue: "I'm noticing"),
                       systemImage: "eye.fill")
             } footer: {
                 Text(String(localized: "habits.noticing.footer",
-                            defaultValue: "Sono segnali ancora deboli: li mostro per trasparenza, ma non li trasformo in automazioni finché non sono più affidabili."))
+                            defaultValue: "These signals are still weak: I show them for transparency, but I won't turn them into automations until they are more reliable."))
             }
         }
     }
@@ -472,7 +472,7 @@ struct HabitsView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Section 4: Sto imparando
+    // MARK: - Section 4: Learning
 
     @ViewBuilder
     private var learningSection: some View {
@@ -488,14 +488,14 @@ struct HabitsView: View {
         } header: {
             Label(
                 String(format: String(localized: "habits.learning.sectionTitle",
-                                      defaultValue: "Sto imparando · %d"),
+                                      defaultValue: "Learning · %d"),
                        learning.count),
                 systemImage: "brain.head.profile"
             )
         } footer: {
             if !learning.isEmpty {
                 Text(String(localized: "habits.learning.footer",
-                            defaultValue: "Scorri a sinistra per nascondere un'abitudine che non ti interessa."))
+                            defaultValue: "Swipe left to hide a habit you are not interested in."))
             }
         }
     }
@@ -539,15 +539,24 @@ struct HabitsView: View {
 
     @ViewBuilder
     private var monitoringMetricCards: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             metricCard(
                 value: "\(behavioralService.patterns.count)",
                 title: String(localized: "habits.monitoring.behaviors.title",
-                              defaultValue: "Behaviors Detected"),
+                              defaultValue: "Raw Patterns"),
                 subtitle: String(localized: "habits.monitoring.behaviors.subtitle",
-                                 defaultValue: "last 30 days"),
+                                 defaultValue: "engine total"),
                 icon: "chart.bar.fill",
                 color: BrandColor.primary
+            )
+            metricCard(
+                value: "\(behavioralService.visiblePatternCount)",
+                title: String(localized: "habits.monitoring.learning.title",
+                              defaultValue: "Being Learned"),
+                subtitle: String(localized: "habits.monitoring.learning.subtitle",
+                                 defaultValue: "visible signals"),
+                icon: "brain.head.profile",
+                color: .indigo
             )
             metricCard(
                 value: "\(eligibleEvents)",
@@ -570,17 +579,20 @@ struct HabitsView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(color)
             Text(value)
-                .font(.title2.weight(.bold).monospacedDigit())
+                .font(.title3.weight(.bold).monospacedDigit())
                 .foregroundStyle(.primary)
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.78)
             Text(subtitle)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
         }
-        .padding(12)
+        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground),
                     in: RoundedRectangle(cornerRadius: 12))
@@ -969,13 +981,13 @@ struct HabitsView: View {
         switch pattern.confidence {
         case ..<0.25:
             return String(localized: "habits.learning.statusLow",
-                          defaultValue: "Sto ancora osservando questa abitudine")
+                          defaultValue: "Still observing this habit")
         case 0.25..<0.45:
             return String(localized: "habits.learning.statusMid",
-                          defaultValue: "Fiducia in crescita — ancora qualche giorno")
+                          defaultValue: "Confidence is growing — a few more days")
         default:
             return String(localized: "habits.learning.statusHigh",
-                          defaultValue: "Quasi pronta a diventare un suggerimento")
+                          defaultValue: "Almost ready to become a suggestion")
         }
     }
 

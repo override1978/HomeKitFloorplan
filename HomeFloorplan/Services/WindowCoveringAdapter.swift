@@ -12,11 +12,12 @@ import SwiftUI
 /// Long press apre il pannello (futuro: slider posizione 0-100%).
 @MainActor
 @Observable
-final class WindowCoveringAdapter: AccessoryAdapter {
+final class WindowCoveringAdapter: AccessoryAdapter, MarkerRuntimeStateProviding {
     let accessory: HMAccessory
     private let homeKit: HomeKitService
     private let targetPositionCharacteristic: HMCharacteristic?
     private let currentPositionCharacteristic: HMCharacteristic?
+    private let positionStateCharacteristic: HMCharacteristic?
     
     init?(accessory: HMAccessory, homeKit: HomeKitService) {
         self.accessory = accessory
@@ -28,11 +29,15 @@ final class WindowCoveringAdapter: AccessoryAdapter {
         let current = AccessoryAdapterFactory.findCharacteristic(
             in: accessory, type: HMCharacteristicTypeCurrentPosition
         )
+        let positionState = AccessoryAdapterFactory.findCharacteristic(
+            in: accessory, type: HMCharacteristicTypePositionState
+        )
         
         guard target != nil || current != nil else { return nil }
         
         self.targetPositionCharacteristic = target
         self.currentPositionCharacteristic = current
+        self.positionStateCharacteristic = positionState
     }
     
     // MARK: - AccessoryAdapter
@@ -70,7 +75,11 @@ final class WindowCoveringAdapter: AccessoryAdapter {
     
     var visualUrgency: MarkerUrgency {
         // Aperta = "active" (gialla); chiusa = "normal" (grigia)
-        isOn ? .active : .normal
+        isTransitioning ? .active : (isOn ? .active : .normal)
+    }
+
+    var markerRuntimeState: MarkerRuntimeState? {
+        isTransitioning ? .transitioning : nil
     }
     
     func performQuickToggle(via homeKit: HomeKitService) async throws {
@@ -105,6 +114,16 @@ final class WindowCoveringAdapter: AccessoryAdapter {
         guard let c = targetPositionCharacteristic else { return currentPositionValue }
         let raw = homeKit.value(for: c) ?? c.value
         return Self.intValue(raw) ?? currentPositionValue
+    }
+
+    var isTransitioning: Bool {
+        guard let positionStateCharacteristic else {
+            return false
+        }
+
+        let raw = homeKit.value(for: positionStateCharacteristic) ?? positionStateCharacteristic.value
+        let state = Self.intValue(raw) ?? 2
+        return state == 0 || state == 1
     }
 
     /// Scrive direttamente una posizione (0-100).

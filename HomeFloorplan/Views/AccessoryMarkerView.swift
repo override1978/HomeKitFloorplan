@@ -47,6 +47,7 @@ struct AccessoryMarkerView: View {
 
     /// Angolo corrente del wiggle (cambia con animazione repeatForever).
     @State private var wiggleAngle: Double = 0
+    @State private var runtimePulse: Bool = false
 
     init(adapter: (any AccessoryAdapter)?,
          isEditing: Bool,
@@ -101,6 +102,18 @@ struct AccessoryMarkerView: View {
     private var batteryInfo: BatteryInfo? {
         adapter?.batteryInfo
     }
+
+    private var runtimeState: MarkerRuntimeState? {
+        if isUnreachableButNotLikelyOffline {
+            return .unreachable
+        }
+
+        return (adapter as? MarkerRuntimeStateProviding)?.markerRuntimeState
+    }
+
+    private var isUnreachableButNotLikelyOffline: Bool {
+        isOffline && !isLikelyOffline
+    }
     
     var body: some View {
         let _ = homeKit.characteristicValues
@@ -133,13 +146,15 @@ struct AccessoryMarkerView: View {
                         radius: urgency != .normal ? 5 : 3,
                         y: 1)
                 .opacity(isLikelyOffline ? 0.6 : 1.0)
+                .scaleEffect(runtimeState == .sensorTriggered && runtimePulse ? 1.16 : 1.0)
+                .animation(
+                    runtimeState == .sensorTriggered
+                        ? .easeInOut(duration: 0.85).repeatForever(autoreverses: true)
+                        : .default,
+                    value: runtimePulse
+                )
 
             HStack(spacing: 3) {
-                if hasCustomLabel {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.secondary)
-                }
                 Text(label)
                     .font(.caption2)
                     .lineLimit(1)
@@ -153,6 +168,12 @@ struct AccessoryMarkerView: View {
         .animation(.spring(response: 0.3), value: isEditing)
         .animation(.spring(response: 0.2), value: isExecuting)
         .animation(.easeInOut(duration: 0.2), value: urgency)
+        .onAppear {
+            updateRuntimePulse()
+        }
+        .onChange(of: runtimeState?.systemImage) { _, _ in
+            updateRuntimePulse()
+        }
         .contentShape(Rectangle())
         .onChange(of: isSelected) { _, selected in
             if selected {
@@ -177,6 +198,21 @@ struct AccessoryMarkerView: View {
                     wiggleAngle = 0
                 }
             }
+        }
+    }
+
+    private func updateRuntimePulse() {
+        guard runtimeState == .sensorTriggered || runtimeState == .transitioning else {
+            runtimePulse = false
+            return
+        }
+
+        runtimePulse = false
+        let animation: Animation = runtimeState == .transitioning
+            ? .linear(duration: 1.1).repeatForever(autoreverses: false)
+            : .easeInOut(duration: 0.85).repeatForever(autoreverses: true)
+        withAnimation(animation) {
+            runtimePulse = true
         }
     }
     
@@ -209,6 +245,12 @@ struct AccessoryMarkerView: View {
                 ProgressView()
                     .tint(iconColor)
                     .scaleEffect(0.7)
+            } else if runtimeState == .transitioning {
+                Image(systemName: MarkerRuntimeState.transitioning.systemImage)
+                    .font(.system(size: size.controllableDiameter * 0.38, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                    .rotationEffect(.degrees(runtimePulse ? 360 : 0))
+                    .animation(.linear(duration: 1.1).repeatForever(autoreverses: false), value: runtimePulse)
             } else {
                 AccessoryIconView(iconName: effectiveIconName)
                     .foregroundStyle(iconColor)
@@ -292,6 +334,12 @@ struct AccessoryMarkerView: View {
                 .offset(topTrailing)
         } else if isLikelyOffline {
             statusBadge(systemImage: "wifi.slash", color: .red)
+                .offset(topTrailing)
+        } else if runtimeState == .unreachable {
+            statusBadge(systemImage: MarkerRuntimeState.unreachable.systemImage, color: MarkerRuntimeState.unreachable.tint)
+                .offset(topTrailing)
+        } else if let runtimeState {
+            statusBadge(systemImage: runtimeState.systemImage, color: runtimeState.tint)
                 .offset(topTrailing)
         }
 

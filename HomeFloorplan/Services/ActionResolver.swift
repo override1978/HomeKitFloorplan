@@ -175,7 +175,7 @@ final class ActionResolver {
     ) -> ResolvedAction? {
         if roomType == .outdoor, intent == .coolRoom, category == "windowCovering" {
             return ResolvedAction(
-                actionType: "open",
+                actionType: "close",
                 value: nil,
                 value2: nil,
                 labelKey: String(localized: "action.label.lowerSunshade", defaultValue: "Abbassa tenda")
@@ -266,16 +266,12 @@ final class ActionResolver {
         case .coolRoom:
             let isBlind = categorize(accessory) == "windowCovering"
             if isBlind {
-                // Indoor blinds reduce heat when closed; outdoor awnings reduce heat when extended/open.
+                // In this app's HomeKit convention: close = TargetPosition 0, open = 100.
+                // A cooling shade action must therefore be treated as already active when closed.
                 // CurrentPosition is more reliable than a stale TargetPosition.
                 // Active/PowerState on blind controllers means "device powered", not "blind closed".
-                if roomType == .outdoor {
-                    if let pos = numericValue(currentPositionUUID) { return pos >= 90 }
-                    if let pos = numericValue(targetPositionUUID) { return pos >= 90 }
-                } else {
-                    if let pos = numericValue(currentPositionUUID) { return pos <= 5 }
-                    if let pos = numericValue(targetPositionUUID) { return pos <= 5 }
-                }
+                if let pos = numericValue(currentPositionUUID) { return pos <= 5 }
+                if let pos = numericValue(targetPositionUUID) { return pos <= 5 }
                 return false
             }
             if let active: Int = typedValue(activeUUID), active == 1 { return true }

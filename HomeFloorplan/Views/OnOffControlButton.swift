@@ -20,6 +20,7 @@ struct OnOffControlButton: View {
     
     private var isOn: Bool { adapter.isOn }
     private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
+    private var activeTint: Color { adapter.markerTint ?? .yellow }
     
     var body: some View {
         VStack(spacing: 10) {
@@ -61,7 +62,7 @@ struct OnOffControlButton: View {
             return AnyShapeStyle(.thinMaterial)
         }
         return isOn
-            ? AnyShapeStyle(Color.yellow.opacity(0.9))
+            ? AnyShapeStyle(activeTint.opacity(0.9))
             : AnyShapeStyle(.thinMaterial)
     }
     

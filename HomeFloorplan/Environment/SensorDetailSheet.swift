@@ -10,8 +10,8 @@ private enum ChartMode: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .average:   return String(localized: "chart.mode.average",    defaultValue: "Media")
-        case .perSensor: return String(localized: "chart.mode.perSensor",  defaultValue: "Per sensore")
+        case .average:   return String(localized: "chart.mode.average",    defaultValue: "Average")
+        case .perSensor: return String(localized: "chart.mode.perSensor",  defaultValue: "Per sensor")
         }
     }
 }
@@ -90,7 +90,7 @@ struct SensorDetailSheet: View {
             .background(Color(.systemGroupedBackground))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Chiudi") { dismiss() }
+                    Button(String(localized: "common.close", defaultValue: "Close")) { dismiss() }
                 }
             }
             .onAppear { loadReadings() }
@@ -145,7 +145,7 @@ struct SensorDetailSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentTransition(.numericText())
 
-            Text("Stanza: \(sensor.roomName)")
+            Text(String(localized: "sensor.detail.room", defaultValue: "Room: \(sensor.roomName)"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -158,7 +158,7 @@ struct SensorDetailSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             // Header con titolo e toggle (solo se più sensori)
             HStack {
-                Text("Ultime 24 ore")
+                Text(String(localized: "sensor.detail.last24h", defaultValue: "Last 24 hours"))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -176,9 +176,9 @@ struct SensorDetailSheet: View {
 
             if readings.isEmpty {
                 ContentUnavailableView(
-                    "Nessun dato storico",
+                    String(localized: "sensor.detail.noHistory.title", defaultValue: "No historical data"),
                     systemImage: "chart.xyaxis.line",
-                    description: Text("I dati storici appariranno qui dopo il primo campionamento.")
+                    description: Text(String(localized: "sensor.detail.noHistory.description", defaultValue: "Historical data will appear here after the first sample."))
                 )
                 .frame(height: 200)
             } else if chartMode == .average || sensor.sourceCount <= 1 {

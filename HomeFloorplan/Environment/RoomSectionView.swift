@@ -136,7 +136,9 @@ struct RoomSectionView: View {
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
-                    Text("\(room.sensors.count) \(room.sensors.count == 1 ? "sensore" : "sensori")")
+                    Text(room.sensors.count == 1
+                         ? String(localized: "environment.room.sensorCount.one", defaultValue: "1 sensor")
+                         : String(localized: "environment.room.sensorCount.many", defaultValue: "\(room.sensors.count) sensors"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
@@ -472,7 +474,7 @@ private struct AIInsightRow: View {
                     Button(DismissalReason.userActedManually.localizedLabel) { onDismiss(.userActedManually) }
                     Button(DismissalReason.irrelevant.localizedLabel)        { onDismiss(.irrelevant) }
                     Button(DismissalReason.unclear.localizedLabel)           { onDismiss(.unclear) }
-                    Button(String(localized: "insight.dismiss.dialog.cancel", defaultValue: "Annulla"), role: .cancel) {}
+                    Button(String(localized: "common.cancel", defaultValue: "Cancel"), role: .cancel) {}
                 }
             }
 

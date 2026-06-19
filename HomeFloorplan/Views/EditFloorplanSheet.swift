@@ -32,7 +32,7 @@ struct EditFloorplanSheet: View {
                 }
                 
                 Section {
-                    TextField("Nome planimetria", text: $nameDraft)
+                    TextField(String(localized: "floorplan.name.placeholder", defaultValue: "Floorplan name"), text: $nameDraft)
                         .focused($nameFieldFocused)
                         .submitLabel(.done)
                         .onSubmit { save() }
@@ -40,19 +40,19 @@ struct EditFloorplanSheet: View {
                             hasUnsavedChanges = true
                         }
                 } header: {
-                    Text("Nome")
+                    Text(String(localized: "common.name", defaultValue: "Name"))
                 } footer: {
                     Text("Es. \"Piano terra\", \"Mansarda\", \"Garage\".")
                 }
             }
-            .navigationTitle("Modifica planimetria")
+            .navigationTitle(String(localized: "floorplan.edit.title", defaultValue: "Edit floorplan"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annulla") { dismiss() }
+                    Button(String(localized: "common.cancel", defaultValue: "Cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Salva") { save() }
+                    Button(String(localized: "common.save", defaultValue: "Save")) { save() }
                         .disabled(!canSave)
                 }
             }
@@ -63,6 +63,7 @@ struct EditFloorplanSheet: View {
                 nameDraft = floorplan.name
             }
         }
+        .suppressesIdleScreensaver(.modalPresentation)
     }
     
     @ViewBuilder

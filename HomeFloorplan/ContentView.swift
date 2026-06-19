@@ -85,9 +85,9 @@ struct ContentView: View {
         }
         // Avvia il timer al primo apparire dell'app.
         .onAppear { idleTimer.resetTimer() }
-        // Overlay screensaver quando idle
+        // Overlay screensaver quando idle e nessuna UI protetta è aperta.
         .overlay {
-            if idleTimer.isIdle && !onboarding.shouldShowOnboarding {
+            if idleTimer.shouldShowScreensaver && !onboarding.shouldShowOnboarding {
                 IdleScreensaverView {
                     withAnimation(.easeOut(duration: 0.35)) {
                         idleTimer.dismissScreensaver()
@@ -165,17 +165,16 @@ struct ContentView: View {
                 AlarmTriggeredView()
             }
             .onAppear {
-                if selection == nil {
-                    let homeUUID = homeKit.currentHome?.uniqueIdentifier
-                    let homeFiltered = floorplans.filter { $0.homeUUID == nil || $0.homeUUID == homeUUID }
-                    let primaryID = UUID(uuidString: primaryFloorplanID)
-                    let target = homeFiltered.first(where: { $0.id == primaryID }) ?? homeFiltered.first
-                    if let target { selection = .floorplan(target.id) }
-                }
+                resolveInitialSelectionIfNeeded()
+            }
+            .onChange(of: floorplans.map(\.id)) { _, _ in
+                resolveInitialSelectionIfNeeded()
             }
             .onChange(of: showChatPanel) { _, visible in
                 if !visible { chatKeyboardHeight = 0 }
             }
+            .suppressesIdleScreensaver(.chatPanel, when: showChatPanel)
+            .suppressesIdleScreensaver(.alarmOverlay, when: showAlarmOverlay)
             // Track docked keyboard height so the chat panel shrinks above it.
             .task {
                 for await notif in NotificationCenter.default.notifications(named: UIResponder.keyboardWillShowNotification) {
@@ -199,6 +198,26 @@ struct ContentView: View {
             }
         }
     
+    private func resolveInitialSelectionIfNeeded() {
+        guard selection == nil else { return }
+
+        let homeUUID = homeKit.currentHome?.uniqueIdentifier
+        let homeFiltered = floorplans.filter { $0.homeUUID == nil || $0.homeUUID == homeUUID }
+        guard !homeFiltered.isEmpty else {
+            selection = .allFloorplans
+            return
+        }
+
+        let primaryID = UUID(uuidString: primaryFloorplanID)
+        let target = homeFiltered.first(where: { $0.id == primaryID }) ?? homeFiltered.first
+        if let target {
+            if primaryFloorplanID.isEmpty {
+                primaryFloorplanID = target.id.uuidString
+            }
+            selection = .floorplan(target.id)
+        }
+    }
+
     @ViewBuilder
     private var detailView: some View {
         switch selection {
@@ -221,7 +240,10 @@ struct ContentView: View {
                     if isNew { newlyCreatedFloorplanID = nil }
                 }
             } else {
-                emptyState(text: "Planimetria non trovata")
+                emptyState(
+                    title: String(localized: "content.floorplan.notFound.title", defaultValue: "Floorplan not found"),
+                    message: String(localized: "content.floorplan.notFound.message", defaultValue: "Choose another item from the sidebar to continue.")
+                )
             }
         case .allFloorplans:
             FloorplanListView(columnVisibility: $columnVisibility)
@@ -255,16 +277,19 @@ struct ContentView: View {
                 SettingsView()
             }
         case .none:
-            emptyState(text: "Seleziona una planimetria")
+            emptyState(
+                title: String(localized: "content.empty.title", defaultValue: "Select a section"),
+                message: String(localized: "content.empty.message", defaultValue: "Choose an item from the sidebar to get started.")
+            )
         }
     }
     
     @ViewBuilder
-    private func emptyState(text: String) -> some View {
+    private func emptyState(title: String, message: String) -> some View {
         ContentUnavailableView {
-            Label(text, systemImage: "square.dashed")
+            Label(title, systemImage: "square.dashed")
         } description: {
-            Text("Scegli un elemento dalla sidebar per iniziare.")
+            Text(message)
         }
     }
 }

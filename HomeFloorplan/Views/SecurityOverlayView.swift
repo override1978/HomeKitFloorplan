@@ -410,15 +410,15 @@ struct SecurityContextDashboard: View {
                 actionCard(action: action, suggested: suggested)
             } else if allAdapters.isEmpty {
                 FloorplanEmptyStateCard(
-                    title: String(localized: "security.panel.noDevices.title", defaultValue: "Nessun dispositivo sicurezza"),
-                    message: String(localized: "security.panel.noDevices.message", defaultValue: "Aggiungi serrature, sensori, videocamere o un sistema di allarme HomeKit per usare l'overlay Sicurezza."),
+                    title: String(localized: "security.panel.noDevices.title", defaultValue: "No security devices"),
+                    message: String(localized: "security.panel.noDevices.message", defaultValue: "Add locks, sensors, cameras, or a HomeKit alarm system to use the Security overlay."),
                     icon: "lock.shield",
                     color: .secondary
                 )
             } else if monitored.isEmpty {
                 FloorplanEmptyStateCard(
-                    title: String(localized: "security.panel.noMonitoring.title", defaultValue: "Monitoraggio non configurato"),
-                    message: String(localized: "security.panel.noMonitoring.message", defaultValue: "Seleziona i sensori da monitorare nella sezione Sicurezza per ricevere priorità e avvisi sul floorplan."),
+                    title: String(localized: "security.panel.noMonitoring.title", defaultValue: "Monitoring not configured"),
+                    message: String(localized: "security.panel.noMonitoring.message", defaultValue: "Select sensors to monitor in the Security section to receive priorities and alerts on the floorplan."),
                     icon: "shield.slash",
                     color: .orange
                 )

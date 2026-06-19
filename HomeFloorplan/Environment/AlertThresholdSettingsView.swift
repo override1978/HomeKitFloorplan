@@ -19,7 +19,7 @@ struct AlertThresholdSettingsView: View {
                     thresholdList
                 }
             }
-            .navigationTitle("Soglie Alert")
+            .navigationTitle(String(localized: "alertThresholds.title", defaultValue: "Alert Thresholds"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -59,9 +59,9 @@ struct AlertThresholdSettingsView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("Nessuna soglia configurata", systemImage: "slider.horizontal.3")
+            Label(String(localized: "alertThresholds.empty.title", defaultValue: "No thresholds configured"), systemImage: "slider.horizontal.3")
         } description: {
-            Text("Tocca + per aggiungere una soglia di alert per un tipo di sensore.")
+            Text(String(localized: "alertThresholds.empty.description", defaultValue: "Tap + to add an alert threshold for a sensor type."))
         }
     }
 
@@ -91,7 +91,7 @@ private struct ThresholdRow: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                 } else {
-                    Text("Globale")
+                    Text(String(localized: "alertThresholds.scope.global", defaultValue: "Global"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
@@ -106,7 +106,7 @@ private struct ThresholdRow: View {
             if threshold.isEnabled {
                 VStack(spacing: 10) {
                     ThresholdValueRow(
-                        label: "Attenzione",
+                        label: String(localized: "alertThresholds.warning", defaultValue: "Warning"),
                         icon: "exclamationmark.triangle.fill",
                         color: .orange,
                         value: $threshold.warningValue,
@@ -117,7 +117,7 @@ private struct ThresholdRow: View {
                     .onChange(of: threshold.warningValue) { _, _ in save() }
 
                     ThresholdValueRow(
-                        label: "Critico",
+                        label: String(localized: "alertThresholds.critical", defaultValue: "Critical"),
                         icon: "exclamationmark.octagon.fill",
                         color: .red,
                         value: $threshold.dangerValue,
@@ -356,8 +356,8 @@ private struct AddThresholdSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Tipo sensore") {
-                    Picker("Tipo", selection: $selectedType) {
+                Section(String(localized: "alertThresholds.sensorType.section", defaultValue: "Sensor Type")) {
+                    Picker(String(localized: "alertThresholds.sensorType.picker", defaultValue: "Type"), selection: $selectedType) {
                         ForEach(SensorServiceType.allCases) { type in
                             Label(type.displayName, systemImage: type.sfSymbol).tag(type)
                         }
@@ -368,34 +368,34 @@ private struct AddThresholdSheet: View {
                     }
                 }
 
-                Section("Stanza (opzionale)") {
-                    TextField("es. Cucina", text: $roomName)
-                    Text("Lascia vuoto per una soglia globale.")
+                Section(String(localized: "alertThresholds.room.section", defaultValue: "Room (optional)")) {
+                    TextField(String(localized: "alertThresholds.room.placeholder", defaultValue: "e.g. Kitchen"), text: $roomName)
+                    Text(String(localized: "alertThresholds.room.help", defaultValue: "Leave empty for a global threshold."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Section("Soglie") {
-                    LabeledContent("Attenzione") {
+                Section(String(localized: "alertThresholds.values.section", defaultValue: "Thresholds")) {
+                    LabeledContent(String(localized: "alertThresholds.warning", defaultValue: "Warning")) {
                         TextField("Warning", value: $warningValue, format: .number)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }
-                    LabeledContent("Critico") {
+                    LabeledContent(String(localized: "alertThresholds.critical", defaultValue: "Critical")) {
                         TextField("Danger", value: $dangerValue, format: .number)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }
                 }
             }
-            .navigationTitle("Nuova soglia")
+            .navigationTitle(String(localized: "alertThresholds.add.title", defaultValue: "New Threshold"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Annulla") { dismiss() }
+                    Button(String(localized: "common.cancel", defaultValue: "Cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Aggiungi") { addThreshold() }
+                    Button(String(localized: "common.add", defaultValue: "Add")) { addThreshold() }
                         .fontWeight(.semibold)
                 }
             }

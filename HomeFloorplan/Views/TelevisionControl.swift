@@ -22,6 +22,7 @@ struct TelevisionControl: View {
     private var isReachable: Bool { !homeKit.isLikelyOffline(adapter.accessory) }
     private var isMuted: Bool { optimisticMute ?? adapter.isMuted }
     private var activeID: Int { optimisticInputID ?? adapter.activeIdentifier }
+    private var activeTint: Color { adapter.markerTint ?? .purple }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -70,7 +71,7 @@ struct TelevisionControl: View {
 
     private var toggleFill: AnyShapeStyle {
         if !isReachable { return AnyShapeStyle(.thinMaterial) }
-        return isOn ? AnyShapeStyle(Color.indigo.opacity(0.85)) : AnyShapeStyle(.thinMaterial)
+        return isOn ? AnyShapeStyle(activeTint.opacity(0.85)) : AnyShapeStyle(.thinMaterial)
     }
 
     private var toggleIconColor: Color {
@@ -137,7 +138,7 @@ struct TelevisionControl: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(isSelected ? AnyShapeStyle(Color.indigo) : AnyShapeStyle(.thinMaterial))
+                    .fill(isSelected ? AnyShapeStyle(activeTint) : AnyShapeStyle(.thinMaterial))
             )
         }
         .buttonStyle(.plain)

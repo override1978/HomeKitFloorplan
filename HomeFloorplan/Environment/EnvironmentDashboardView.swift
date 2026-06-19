@@ -103,7 +103,7 @@ struct EnvironmentDashboardView: View {
                     scrollContent
                 }
             }
-            .navigationTitle("Ambiente")
+            .navigationTitle(String(localized: "environment.title", defaultValue: "Environment"))
             .navigationBarTitleDisplayMode(.large)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .toolbar { toolbarContent }
@@ -189,7 +189,7 @@ struct EnvironmentDashboardView: View {
 
                 // ── 4. Header sezione stanze ───────────────────────────
                 HStack {
-                    Text("Stanze")
+                    Text(String(localized: "environment.rooms", defaultValue: "Rooms"))
                         .font(.title3.weight(.bold))
                         .foregroundStyle(.primary)
                     Spacer()
@@ -261,7 +261,7 @@ struct EnvironmentDashboardView: View {
     private var loadingState: some View {
         VStack(spacing: 16) {
             ProgressView().scaleEffect(1.2)
-            Text("Lettura sensori HomeKit…")
+            Text(String(localized: "environment.dashboard.loading", defaultValue: "Reading HomeKit sensors..."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -270,9 +270,9 @@ struct EnvironmentDashboardView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("Nessun sensore trovato", systemImage: "sensor.tag.radiowaves.forward.slash")
+            Label(String(localized: "environment.dashboard.empty.title", defaultValue: "No sensors found"), systemImage: "sensor.tag.radiowaves.forward.slash")
         } description: {
-            Text("Collega sensori ambientali in HomeKit: temperatura, umidità, qualità aria e altro appariranno qui.")
+            Text(String(localized: "environment.dashboard.empty.description", defaultValue: "Connect environmental sensors in HomeKit. Temperature, humidity, air quality, and more will appear here."))
         }
     }
 
@@ -367,11 +367,11 @@ private struct EnvironmentRoomReorderSheet: View {
                 }
             }
             .environment(\.editMode, .constant(.active))
-            .navigationTitle("Ordine stanze")
+            .navigationTitle(String(localized: "environment.rooms.order.title", defaultValue: "Room Order"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Ripristina") {
+                    Button(String(localized: "common.reset", defaultValue: "Reset")) {
                         vm.saveOrder([])
                         vm.loadFromCoreData()
                         dismiss()
@@ -379,7 +379,7 @@ private struct EnvironmentRoomReorderSheet: View {
                     .foregroundStyle(.secondary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Fine") {
+                    Button(String(localized: "common.done", defaultValue: "Done")) {
                         vm.saveOrder(localRooms)
                         vm.loadFromCoreData()
                         dismiss()
@@ -429,7 +429,7 @@ private struct EnvironmentRoomReorderSheet: View {
                 )
 
                 HStack {
-                    Text("Stanze").font(.title3.weight(.bold))
+                    Text(String(localized: "environment.rooms", defaultValue: "Rooms")).font(.title3.weight(.bold))
                     Spacer()
                     Text("\(vm.rooms.count)").font(.subheadline).foregroundStyle(.secondary)
                 }
@@ -445,7 +445,7 @@ private struct EnvironmentRoomReorderSheet: View {
             .padding(.top, 8)
             .padding(.bottom, 32)
         }
-        .navigationTitle("Ambiente")
+        .navigationTitle(String(localized: "environment.title", defaultValue: "Environment"))
         .background(Color(.systemGroupedBackground))
     }
 }

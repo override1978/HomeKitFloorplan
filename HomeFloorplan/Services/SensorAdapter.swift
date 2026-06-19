@@ -10,7 +10,7 @@ import SwiftUI
 /// di sicurezza (fumo, CO, acqua), poi presenza, poi numerici comuni.
 @MainActor
 @Observable
-final class SensorAdapter: AccessoryAdapter, EnvironmentReadable {
+final class SensorAdapter: AccessoryAdapter, EnvironmentReadable, MarkerRuntimeStateProviding {
     let accessory: HMAccessory
     private let homeKit: HomeKitService
     
@@ -227,6 +227,10 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable {
         }
         
         return .normal
+    }
+
+    var markerRuntimeState: MarkerRuntimeState? {
+        primaryKind.isBoolean && isTriggered ? .sensorTriggered : nil
     }
     
     func performQuickToggle(via homeKit: HomeKitService) async throws {

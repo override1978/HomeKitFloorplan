@@ -2,6 +2,21 @@ import Foundation
 import HomeKit
 import Observation
 
+struct SmartLightingFloorplanStatus {
+    enum State {
+        case active
+        case paused
+        case disabled
+        case needsAttention
+    }
+
+    var state: State
+    var activeCount: Int
+    var pausedRooms: [(roomName: String, until: Date)]
+    var issueCount: Int
+    var nextResumeAt: Date?
+}
+
 // MARK: - SmartLightingEngine
 //
 // Valuta periodicamente le condizioni di luce per ogni stanza configurata e
@@ -26,6 +41,7 @@ final class SmartLightingEngine {
     /// Traccia quando il motore ha attivato una scena per profilo (in-memory, reset al rilancio).
     /// Usato per spegnere le luci quando il lux risale sopra soglia dopo il cooldown.
     private var engineActivatedAt: [UUID: Date] = [:]
+    private var engineMutationSuppressionUntilByRoom: [String: Date] = [:]
 
     var isGloballyEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: "smartLighting.globalEnabled") }
@@ -104,6 +120,7 @@ final class SmartLightingEngine {
                                let offScene = availableScenes.first(where: {
                                    $0.name.lowercased() == offName.lowercased()
                                }) {
+                                suppressManualPause(for: profile.roomName)
                                 try? await scenesService.run(offScene)
                                 log.append("• \(profile.roomName): \(Int(lux)) lx > soglia — '\(offName)' attivata (luce rientrata)")
                             } else {
@@ -159,6 +176,7 @@ final class SmartLightingEngine {
             }
 
             do {
+                suppressManualPause(for: profile.roomName)
                 try await scenesService.run(scene)
                 markApplied(profileID: profile.id, phase: phase, at: now)
                 engineActivatedAt[profile.id] = now
@@ -259,6 +277,81 @@ final class SmartLightingEngine {
         saveProfiles()
     }
 
+    func clearAllManualOverrides() {
+        var changed = false
+        for idx in profiles.indices where profiles[idx].manualOverrideUntil != nil {
+            profiles[idx].manualOverrideUntil = nil
+            changed = true
+        }
+        if changed {
+            saveProfiles()
+            lastEvaluationLog = "Smart Lighting resumed for all rooms."
+        }
+    }
+
+    @discardableResult
+    func pauseAfterManualChange(roomName: String?, hours: Double = 1) -> Bool {
+        guard isGloballyEnabled,
+              let roomName,
+              let idx = profiles.firstIndex(where: {
+                  $0.roomName.lowercased() == roomName.lowercased()
+              }),
+              profiles[idx].isEnabled else { return false }
+
+        if let lastApplied = profiles[idx].lastAppliedAt,
+           Date().timeIntervalSince(lastApplied) < 45 {
+            return false
+        }
+
+        if isSuppressingManualPause(for: profiles[idx].roomName) {
+            return false
+        }
+
+        let until = Date().addingTimeInterval(hours * 3_600)
+        profiles[idx].manualOverrideUntil = until
+        saveProfiles()
+        lastEvaluationLog = "Smart Lighting paused in \(profiles[idx].roomName) until \(timeString(until)) after a manual light change."
+        return true
+    }
+
+    var floorplanStatus: SmartLightingFloorplanStatus? {
+        let enabledProfiles = profiles.filter(\.isEnabled)
+        guard !enabledProfiles.isEmpty else { return nil }
+
+        let now = Date()
+        let pausedRooms = enabledProfiles
+            .compactMap { profile -> (roomName: String, until: Date)? in
+                guard let until = profile.manualOverrideUntil, until > now else { return nil }
+                return (profile.roomName, until)
+            }
+            .sorted { $0.until < $1.until }
+
+        let issueCount = missingSceneCount(in: enabledProfiles)
+        let state: SmartLightingFloorplanStatus.State
+        if issueCount > 0 {
+            state = .needsAttention
+        } else if !isGloballyEnabled {
+            state = .disabled
+        } else if !pausedRooms.isEmpty {
+            state = .paused
+        } else {
+            state = .active
+        }
+
+        return SmartLightingFloorplanStatus(
+            state: state,
+            activeCount: enabledProfiles.count,
+            pausedRooms: pausedRooms,
+            issueCount: issueCount,
+            nextResumeAt: pausedRooms.first?.until
+        )
+    }
+
+    func isProfilePaused(_ profile: LightingProfile, at now: Date = Date()) -> Bool {
+        guard let until = profile.manualOverrideUntil else { return false }
+        return until > now
+    }
+
     // MARK: - Persistence
 
     private static let profilesKey = "smartLighting.profiles.v1"
@@ -290,6 +383,42 @@ final class SmartLightingEngine {
         guard let idx = profiles.firstIndex(where: { $0.id == profileID }) else { return }
         profiles[idx].lastAppliedAt = date
         saveProfiles()
+    }
+
+    private func missingSceneCount(in enabledProfiles: [LightingProfile]) -> Int {
+        let availableSceneNames = Set(scenesService.scenes.map { $0.name.lowercased() })
+        var count = 0
+        for profile in enabledProfiles {
+            for phase in LightingPhase.allCases {
+                guard let sceneName = profile.sceneName(for: phase), !sceneName.isEmpty else { continue }
+                if !availableSceneNames.contains(sceneName.lowercased()) {
+                    count += 1
+                }
+            }
+            if let offScene = profile.luxOffSceneName, !offScene.isEmpty,
+               !availableSceneNames.contains(offScene.lowercased()) {
+                count += 1
+            }
+        }
+        return count
+    }
+
+    private func suppressManualPause(for roomName: String, seconds: TimeInterval = 20) {
+        engineMutationSuppressionUntilByRoom[normalizedRoomName(roomName)] = Date().addingTimeInterval(seconds)
+    }
+
+    private func isSuppressingManualPause(for roomName: String) -> Bool {
+        let key = normalizedRoomName(roomName)
+        guard let until = engineMutationSuppressionUntilByRoom[key] else { return false }
+        if until > Date() {
+            return true
+        }
+        engineMutationSuppressionUntilByRoom.removeValue(forKey: key)
+        return false
+    }
+
+    private func normalizedRoomName(_ roomName: String) -> String {
+        roomName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     // MARK: - Status Summary (for AI tool)

@@ -22,8 +22,8 @@ struct NewFloorplanSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Nome") {
-                    TextField("Es. Piano terra", text: $name)
+                Section(String(localized: "common.name", defaultValue: "Name")) {
+                    TextField(String(localized: "floorplan.name.example", defaultValue: "E.g. Ground floor"), text: $name)
                         .autocorrectionDisabled()
                 }
 
@@ -34,8 +34,8 @@ struct NewFloorplanSheet: View {
                         HStack {
                             Label(
                                 selectedImage == nil
-                                    ? "Disegna planimetria"
-                                    : "Modifica planimetria",
+                                    ? String(localized: "floorplan.draw.title", defaultValue: "Draw floorplan")
+                                    : String(localized: "floorplan.edit.title", defaultValue: "Edit floorplan"),
                                 systemImage: "pencil.and.ruler"
                             )
                             .foregroundStyle(BrandColor.primary)
@@ -52,9 +52,9 @@ struct NewFloorplanSheet: View {
                         }
                     }
                 } header: {
-                    Text("Planimetria")
+                    Text(String(localized: "floorplan.section.floorplan", defaultValue: "Floorplan"))
                 } footer: {
-                    Text("Disegna le stanze e collegale agli ambienti HomeKit.")
+                    Text(String(localized: "floorplan.draw.footer", defaultValue: "Draw rooms and link them to HomeKit rooms."))
                 }
 
                 if let errorMessage {
@@ -64,15 +64,15 @@ struct NewFloorplanSheet: View {
                     }
                 }
             }
-            .navigationTitle("Nuovo floorplan")
+            .navigationTitle(String(localized: "floorplan.new.title", defaultValue: "New floorplan"))
             .navigationBarTitleDisplayMode(.inline)
             .tint(BrandColor.primary)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Annulla") { dismiss() }
+                    Button(String(localized: "common.cancel", defaultValue: "Cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Crea") { save() }
+                    Button(String(localized: "common.create", defaultValue: "Create")) { save() }
                         .disabled(!canSave || isSaving)
                 }
             }
@@ -82,12 +82,13 @@ struct NewFloorplanSheet: View {
                     linkedRooms = rooms
                     savedDrawingDocument = doc
                     if name.trimmingCharacters(in: .whitespaces).isEmpty {
-                        name = "Planimetria disegnata"
+                        name = String(localized: "floorplan.drawn.defaultName", defaultValue: "Drawn floorplan")
                     }
                 }
                 .ignoresSafeArea()
             }
         }
+        .suppressesIdleScreensaver(.modalPresentation)
     }
 
     private var canSave: Bool {
