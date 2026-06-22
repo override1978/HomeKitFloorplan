@@ -70,7 +70,7 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
         }
     }
     
-    var isOn: Bool { currentMode != .off && (heaterCoolerState == 2 || heaterCoolerState == 3) }
+    var isOn: Bool { currentMode != .off }
     var supportsQuickToggle: Bool { false }
     var primaryStatusText: String? {
         guard homeKit.isReachable(accessory) else { return nil }
@@ -78,9 +78,17 @@ final class LegacyThermostatAdapter: AccessoryAdapter {
         return String(format: "%.0f%@", display, displayUnit.symbol)
     }
     var markerStyle: MarkerStyle { .sensorNumeric }
+    var markerTint: Color? {
+        switch currentMode {
+        case .off: return nil
+        case .heat: return .orange
+        case .cool: return .blue
+        case .auto: return .green
+        }
+    }
     var visualUrgency: MarkerUrgency {
         guard currentMode != .off else { return .normal }
-        return (heaterCoolerState == 2 || heaterCoolerState == 3) ? .active : .normal
+        return .active
     }
     
     func performQuickToggle(via homeKit: HomeKitService) async throws {

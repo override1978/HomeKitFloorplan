@@ -36,7 +36,7 @@ struct EnvironmentHeaderView: View {
                     .contentTransition(.interpolate)
 
                 if let refresh = lastRefresh {
-                    Text("Updated \(refresh, format: .relative(presentation: .named))")
+                    Text("\(String(localized: "environment.header.updated", defaultValue: "Updated")) \(refresh, format: .relative(presentation: .named))")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {

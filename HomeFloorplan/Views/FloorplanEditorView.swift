@@ -52,6 +52,9 @@ struct FloorplanEditorView: View {
     @State private var suppressNextMarkerTapID: UUID?
     @State private var executingMarkerID: UUID?
     @State private var isSmartLightingBannerExpanded = false
+    @State private var showFloorplanHelp = false
+    @AppStorage("floorplan.help.hasSeen.v1")
+    private var hasSeenFloorplanHelp = false
     
     // Zoom & pan state
     @State private var zoomScale: CGFloat = 1.0
@@ -184,6 +187,7 @@ struct FloorplanEditorView: View {
             || iconPickerTarget != nil
             || showFloorplanDiagnostics
             || showScenesPanel
+            || showFloorplanHelp
             || pendingDelete != nil
     }
     
@@ -294,6 +298,14 @@ struct FloorplanEditorView: View {
                 onAddAccessories: startAssistedPlacement
             )
         }
+        .sheet(isPresented: $showFloorplanHelp, onDismiss: {
+            hasSeenFloorplanHelp = true
+        }) {
+            FloorplanHelpSheet {
+                hasSeenFloorplanHelp = true
+                showFloorplanHelp = false
+            }
+        }
         .suppressesIdleScreensaver(.floorplanInteraction, when: shouldSuppressIdleScreensaver)
         
         
@@ -330,6 +342,7 @@ struct FloorplanEditorView: View {
             refreshFloorplanImageCache()
             backfillMarkerRoomLinksIfNeeded()
             refreshOverlayContext()
+            showFloorplanHelpIfNeeded()
         }
         .onChange(of: homeKit.isReady) { _, isReady in
             if isReady {
@@ -572,6 +585,31 @@ struct FloorplanEditorView: View {
             )
             .shadow(color: .black.opacity(0.10), radius: 10, x: 0, y: 3)
 
+            if status.state == .active || status.isUserPaused {
+                HStack(spacing: 8) {
+                    Button {
+                        smartLightingEngine.pauseFromFloorplan()
+                    } label: {
+                        Label(String(localized: "common.pause", defaultValue: "Pause"), systemImage: "pause.fill")
+                            .labelStyle(.iconOnly)
+                    }
+                    .disabled(status.isUserPaused)
+
+                    Button {
+                        smartLightingEngine.resumeFromFloorplan()
+                    } label: {
+                        Label(String(localized: "common.play", defaultValue: "Play"), systemImage: "play.fill")
+                            .labelStyle(.iconOnly)
+                    }
+                    .disabled(!status.isUserPaused)
+                }
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(smartLightingStatusColor(status.state))
+                .background(.regularMaterial, in: Capsule())
+            }
+
             if isSmartLightingBannerExpanded {
                 smartLightingFloorplanBanner(status)
             }
@@ -598,9 +636,9 @@ struct FloorplanEditorView: View {
 
                 Spacer(minLength: 8)
 
-                if !status.pausedRooms.isEmpty {
-                    Button("Resume") {
-                        smartLightingEngine.clearAllManualOverrides()
+                if status.state == .paused {
+                    Button(String(localized: "common.resume", defaultValue: "Resume")) {
+                        smartLightingEngine.resumeFromFloorplan()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                             isSmartLightingBannerExpanded = false
                         }
@@ -615,7 +653,10 @@ struct FloorplanEditorView: View {
             if !status.pausedRooms.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(status.pausedRooms.prefix(3), id: \.roomName) { item in
-                        Text("\(item.roomName) until \(shortTime(item.until))")
+                        Text(String(format: String(localized: "smartlighting.floorplan.pausedRoomUntil",
+                                                   defaultValue: "%@ until %@"),
+                                    item.roomName,
+                                    shortTime(item.until)))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -636,42 +677,55 @@ struct FloorplanEditorView: View {
     private func smartLightingStatusTitle(_ status: SmartLightingFloorplanStatus) -> String {
         switch status.state {
         case .active:
-            return "Smart Lighting active"
+            return String(localized: "smartlighting.floorplan.status.active", defaultValue: "Smart Lighting active")
         case .paused:
-            if let nextResumeAt = status.nextResumeAt {
-                return "Smart Lighting paused until \(shortTime(nextResumeAt))"
+            if status.isUserPaused {
+                return String(localized: "smartlighting.floorplan.status.paused", defaultValue: "Smart Lighting paused")
             }
-            return "Smart Lighting paused"
+            if let nextResumeAt = status.nextResumeAt {
+                return String(format: String(localized: "smartlighting.floorplan.status.pausedUntil",
+                                             defaultValue: "Smart Lighting paused until %@"),
+                              shortTime(nextResumeAt))
+            }
+            return String(localized: "smartlighting.floorplan.status.paused", defaultValue: "Smart Lighting paused")
         case .disabled:
-            return "Smart Lighting disabled"
+            return String(localized: "smartlighting.floorplan.status.disabled", defaultValue: "Smart Lighting disabled")
         case .needsAttention:
-            return "\(status.issueCount) Smart Lighting issue\(status.issueCount == 1 ? "" : "s")"
+            return String(format: String(localized: "smartlighting.floorplan.status.issues",
+                                         defaultValue: "%d Smart Lighting issues"),
+                          status.issueCount)
         }
     }
 
     private func smartLightingBannerTitle(_ status: SmartLightingFloorplanStatus) -> String {
         switch status.state {
         case .active:
-            return "\(status.activeCount) room\(status.activeCount == 1 ? "" : "s") following Smart Lighting"
+            return String(format: String(localized: "smartlighting.floorplan.banner.active",
+                                         defaultValue: "%d rooms following Smart Lighting"),
+                          status.activeCount)
         case .paused:
-            return "Manual lighting change detected"
+            return status.isUserPaused
+                ? String(localized: "smartlighting.floorplan.status.paused", defaultValue: "Smart Lighting paused")
+                : String(localized: "smartlighting.floorplan.banner.roomPauseActive", defaultValue: "Room pause active")
         case .disabled:
-            return "Configured rooms are on hold"
+            return String(localized: "smartlighting.floorplan.banner.disabled", defaultValue: "Configured rooms are on hold")
         case .needsAttention:
-            return "Scene configuration needs attention"
+            return String(localized: "smartlighting.floorplan.banner.needsAttention", defaultValue: "Scene configuration needs attention")
         }
     }
 
     private func smartLightingBannerMessage(_ status: SmartLightingFloorplanStatus) -> String {
         switch status.state {
         case .active:
-            return "The engine can adjust configured rooms when home context changes."
+            return String(localized: "smartlighting.floorplan.message.active", defaultValue: "The engine can adjust configured rooms when home context changes.")
         case .paused:
-            return "Smart Lighting is temporarily respecting your manual changes. It resumes automatically, or you can resume now."
+            return status.isUserPaused
+                ? String(localized: "smartlighting.floorplan.message.userPaused", defaultValue: "Smart Lighting will stay paused until you press Play.")
+                : String(localized: "smartlighting.floorplan.message.roomPaused", defaultValue: "One or more rooms are paused from their room profile. Press Play to resume everything now.")
         case .disabled:
-            return "Room profiles exist, but the global Smart Lighting switch is off."
+            return String(localized: "smartlighting.floorplan.message.disabled", defaultValue: "Room profiles exist, but the global Smart Lighting switch is off.")
         case .needsAttention:
-            return "Some configured scenes are missing from HomeKit. Review Smart Lighting settings before relying on automation."
+            return String(localized: "smartlighting.floorplan.message.needsAttention", defaultValue: "Some configured scenes are missing from HomeKit. Review Smart Lighting settings before relying on automation.")
         }
     }
 
@@ -957,6 +1011,22 @@ struct FloorplanEditorView: View {
                 // Scene: visibile solo in modalità Controlli o in editing
                 if !hideEditButton {
                     Button {
+                        hasSeenFloorplanHelp = true
+                        showFloorplanHelp = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .font(.subheadline)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(String(localized: "floorplan.help.open", defaultValue: "Floorplan help"))
+                    .help(String(localized: "floorplan.help.open", defaultValue: "Floorplan help"))
+
+                    Divider().frame(height: 20)
+
+                    Button {
                         showFloorplanDiagnostics = true
                     } label: {
                         Image(systemName: "checklist")
@@ -1025,6 +1095,20 @@ struct FloorplanEditorView: View {
     }
     
     // MARK: - Auto-hide
+
+    private func showFloorplanHelpIfNeeded() {
+        guard !hasSeenFloorplanHelp else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !hasSeenFloorplanHelp,
+                  !showingPicker,
+                  controllingAccessory == nil,
+                  iconPickerTarget == nil,
+                  !showFloorplanDiagnostics,
+                  !showScenesPanel else { return }
+            showFloorplanHelp = true
+        }
+    }
     
     private func scheduleAutoHide() {
         hideTask?.cancel()
@@ -2075,6 +2159,87 @@ struct FloorplanEditorView: View {
     private func unsubscribeFromAccessories() {
         let uuids = Set(floorplan.accessories.map(\.homeKitAccessoryUUID))
         homeKit.stopObserving(accessoryUUIDs: uuids)
+    }
+}
+
+private struct FloorplanHelpSheet: View {
+    let onDone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text(String(localized: "floorplan.help.subtitle",
+                                defaultValue: "Use the floorplan as a live map for HomeKit controls, scenes, overlays, and setup."))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(spacing: 12) {
+                        helpRow(
+                            icon: "pencil",
+                            title: String(localized: "floorplan.help.edit.title", defaultValue: "Edit mode"),
+                            message: String(localized: "floorplan.help.edit.message", defaultValue: "Tap Edit to place and manage accessory markers on the floorplan.")
+                        )
+                        helpRow(
+                            icon: "rectangle.dashed.badge.plus",
+                            title: String(localized: "floorplan.help.add.title", defaultValue: "Add markers"),
+                            message: String(localized: "floorplan.help.add.message", defaultValue: "In edit mode, tap a room area to add an accessory there. If no room areas exist, use + in the top-right corner.")
+                        )
+                        helpRow(
+                            icon: "hand.tap",
+                            title: String(localized: "floorplan.help.editMarker.title", defaultValue: "Edit a marker"),
+                            message: String(localized: "floorplan.help.editMarker.message", defaultValue: "In edit mode, tap a marker to rename it, change its icon, recenter it, or remove it from the floorplan.")
+                        )
+                        helpRow(
+                            icon: "bolt.fill",
+                            title: String(localized: "floorplan.help.action.title", defaultValue: "Run quick actions"),
+                            message: String(localized: "floorplan.help.action.message", defaultValue: "Outside edit mode, tap a marker to run its primary action when supported.")
+                        )
+                        helpRow(
+                            icon: "rectangle.expand.vertical",
+                            title: String(localized: "floorplan.help.detail.title", defaultValue: "Open details"),
+                            message: String(localized: "floorplan.help.detail.message", defaultValue: "Long-press a marker to open the full accessory control view.")
+                        )
+                        helpRow(
+                            icon: "ipad",
+                            title: String(localized: "floorplan.help.foreground.title", defaultValue: "When to keep it open"),
+                            message: String(localized: "floorplan.help.foreground.message", defaultValue: "Keep HomeFloorplan in the foreground while editing, monitoring live dashboards, collecting sensor context, or letting AI suggestions and habits learn from recent activity. HomeKit automations saved to Apple Home continue to run without keeping the app open.")
+                        )
+                    }
+                }
+                .padding(24)
+            }
+            .navigationTitle(String(localized: "floorplan.help.title", defaultValue: "Floorplan basics"))
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "common.done", defaultValue: "Done")) {
+                        onDone()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func helpRow(icon: String, title: String, message: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(BrandColor.primary)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(BrandColor.primary.opacity(0.12)))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -167,7 +167,7 @@ final class ThermostatAdapter: AccessoryAdapter {
         }
     }
     
-    var isOn: Bool { currentMode != .off && isHeatingOrCoolingActive }
+    var isOn: Bool { currentMode != .off }
     
     var supportsQuickToggle: Bool { false }
     
@@ -197,10 +197,7 @@ final class ThermostatAdapter: AccessoryAdapter {
     
     var visualUrgency: MarkerUrgency {
         guard currentMode != .off else { return .normal }
-        switch heaterCoolerState {
-        case 2, 3: return .active   // heating o cooling attivo
-        default: return .normal
-        }
+        return .active
     }
     
     func performQuickToggle(via homeKit: HomeKitService) async throws {

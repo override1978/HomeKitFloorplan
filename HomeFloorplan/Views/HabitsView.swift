@@ -6,21 +6,22 @@ import HomeKit
 /// Narrative 5-section habits dashboard.
 /// 1. La voce       — serif phrase from top-confidence pattern (always visible)
 /// 2. Pronta per te — pending suggestion cards (hidden when empty)
-/// 3. Attive        — active rule cards, round status dot, executor badge (hidden when empty)
+/// 3. Attive        — HomeKit automations created through the unified builder
 /// 4. Sto imparando — patterns building toward 0.60 threshold (always visible)
 /// 5. Monitoraggio  — real engine metrics + warm footer
 struct HabitsView: View {
 
     @Environment(HabitAnalysisService.self)      private var habitService
     @Environment(BehavioralAnalysisService.self) private var behavioralService
-    @Environment(RuleEngineService.self)         private var ruleEngine
     @Environment(HomeKitService.self)            private var homeKit
+    @Environment(HomeKitScenesService.self)      private var scenesService
+    @Environment(HomeKitAutomationsService.self) private var automationsService
 
     @State private var showAISettings       = false
     @State private var showAllOpportunities = false
-    @State private var editingRule:   Rule?
-    @State private var pendingDelete: Rule?
-    @State private var executingRule: Rule?
+    @State private var reviewingProposal: AutomationProposal?
+    @State private var reviewingOpportunity: AutomationOpportunity?
+    @State private var reviewingHabitPattern: HabitPattern?
     @State private var eligibleEvents: Int  = 0
 
     var body: some View {
@@ -32,28 +33,21 @@ struct HabitsView: View {
                 .sheet(isPresented: $showAISettings) {
                     NavigationStack { AISettingsView() }
                 }
-                .sheet(item: $editingRule) { rule in
-                    RuleEditorView(rule: rule) { draft in
-                        guard let draft else { return }
-                        ruleEngine.updateRule(rule, from: draft)
+                .sheet(item: $reviewingProposal, onDismiss: {
+                    reviewingOpportunity = nil
+                    reviewingHabitPattern = nil
+                }) { proposal in
+                    AutomationWizardSheet(proposal: proposal) { _ in
+                        if let reviewingOpportunity {
+                            behavioralService.markApproved(reviewingOpportunity)
+                        }
+                        if let reviewingHabitPattern {
+                            habitService.approve(reviewingHabitPattern)
+                        }
+                        automationsService.refresh()
                     }
-                }
-                .alert(
-                    String(localized: "rules.delete.title", defaultValue: "Eliminare la regola?"),
-                    isPresented: Binding(
-                        get: { pendingDelete != nil },
-                        set: { if !$0 { pendingDelete = nil } }
-                    ),
-                    presenting: pendingDelete
-                ) { rule in
-                    Button(String(localized: "rules.delete.confirm", defaultValue: "Elimina"),
-                           role: .destructive) {
-                        Task { try? await ruleEngine.deleteRule(rule, home: homeKit.currentHome) }
-                    }
-                    Button(String(localized: "rules.delete.cancel", defaultValue: "Annulla"),
-                           role: .cancel) {}
-                } message: { rule in
-                    Text(rule.ruleDescription)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
                 }
                 .task {
                     eligibleEvents = behavioralService.eligibleEventCount(days: 30)
@@ -81,6 +75,19 @@ struct HabitsView: View {
             .filter { $0.status == .active && $0.confidence >= 0.20 }
             .sorted { $0.confidence > $1.confidence }
             .first
+    }
+
+    private func proposal(from opportunity: AutomationOpportunity) -> AutomationProposal {
+        scenesService.refresh()
+        let capabilities = homeKit.currentHome.map {
+            AutomationCapabilityCatalog.capabilities(in: $0)
+        } ?? []
+
+        return AutomationProposalMapper.proposal(
+            from: opportunity,
+            capabilities: capabilities,
+            scenes: scenesService.scenes
+        )
     }
 
     /// Patterns still building confidence — excludes those already surfaced as pending suggestions.
@@ -240,7 +247,7 @@ struct HabitsView: View {
             format: String(localized: "habits.voice.context",
                            defaultValue: "Last 30 days · %1$d behaviors · %2$d automations"),
             behavioralService.patterns.count,
-            ruleEngine.rules.count
+            automationsService.automations.count
         )
     }
 
@@ -360,116 +367,7 @@ struct HabitsView: View {
 
     @ViewBuilder
     private var activeSection: some View {
-        if !ruleEngine.rules.isEmpty {
-            Section {
-                ForEach(ruleEngine.rules) { rule in
-                    ruleCard(rule)
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                            Button { runNow(rule) } label: {
-                                Label(String(localized: "rules.action.run",
-                                             defaultValue: "Esegui ora"),
-                                      systemImage: "play.fill")
-                            }
-                            .tint(.green)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) { pendingDelete = rule } label: {
-                                Label(String(localized: "rules.action.delete",
-                                             defaultValue: "Elimina"),
-                                      systemImage: "trash")
-                            }
-                        }
-                }
-
-                NavigationLink {
-                    ActiveRulesView()
-                } label: {
-                    Text(String(localized: "habits.active.viewAll",
-                                defaultValue: "View all automations"))
-                        .font(.subheadline)
-                        .foregroundStyle(Color.accentColor)
-                }
-            } header: {
-                Label(String(localized: "habits.active.header",
-                             defaultValue: "active · your home does these for you"),
-                      systemImage: "bolt.fill")
-            }
-        }
-    }
-
-    // MARK: - Rule card
-
-    @ViewBuilder
-    private func ruleCard(_ rule: Rule) -> some View {
-        Button { editingRule = rule } label: {
-            HStack(spacing: 12) {
-                ZStack(alignment: .topTrailing) {
-                    Circle()
-                        .fill(BrandColor.primary.opacity(0.10))
-                        .frame(width: 40, height: 40)
-                    Image(systemName: actionIcon(for: rule.actionType))
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(BrandColor.primary)
-                        .frame(width: 40, height: 40)
-                    // Round status dot (green = enabled, gray = paused)
-                    Circle()
-                        .fill(rule.isEnabled ? Color.green : Color.secondary.opacity(0.30))
-                        .frame(width: 9, height: 9)
-                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1.5))
-                        .offset(x: 1, y: -1)
-                        .accessibilityLabel(rule.isEnabled
-                            ? String(localized: "habits.active.statusOn", defaultValue: "active")
-                            : String(localized: "habits.active.statusOff", defaultValue: "paused"))
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(rule.name)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(rule.ruleDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-
-                    HStack(spacing: 6) {
-                        badgeView(
-                            icon: rule.executionModeIcon,
-                            label: rule.executionModeLabel,
-                            color: rule.executionMode == "homeKit" ? .blue : .orange
-                        )
-                        if rule.generatedByAI {
-                            badgeView(icon: "brain", label: "AI", color: .purple)
-                        }
-                    }
-
-                    if !rule.isEnabled {
-                        Label(String(localized: "habits.active.paused", defaultValue: "Paused"),
-                              systemImage: "pause.circle")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    } else if let label = lastExecutedLabel(for: rule) {
-                        Label(label, systemImage: "clock")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-
-                Spacer()
-
-                if executingRule?.id == rule.id {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                        .frame(width: 24)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .padding(.vertical, 4)
-        }
-        .buttonStyle(.plain)
+        EmptyView()
     }
 
     // MARK: - Section 4: Learning
@@ -730,18 +628,11 @@ struct HabitsView: View {
             }
             HStack(spacing: 12) {
                 Button {
-                    let rule = opp.buildRule()
-                    Task {
-                        do {
-                            _ = try await ruleEngine.insertRule(rule, home: homeKit.currentHome)
-                            behavioralService.approve(opp)
-                        } catch {
-                            dprint("Habits: failed to create rule from opportunity \(opp.id): \(error.localizedDescription)")
-                        }
-                    }
+                    reviewingOpportunity = opp
+                    reviewingProposal = proposal(from: opp)
                 } label: {
                     Text(String(localized: "behavioral.opportunity.approve",
-                                defaultValue: "Create automation"))
+                                defaultValue: "Review automation"))
                         .font(.subheadline.weight(.medium))
                         .frame(maxWidth: .infinity)
                 }
@@ -829,9 +720,9 @@ struct HabitsView: View {
                     .background(confidenceColor(pattern.confidence), in: Capsule())
             }
             HStack(spacing: 12) {
-                Button { approveHabitPattern(pattern) } label: {
+                Button { reviewHabitPattern(pattern) } label: {
                     Text(String(localized: "habits.pattern.approve",
-                                defaultValue: "Create Automatic Rule"))
+                                defaultValue: "Review automation"))
                         .font(.subheadline.weight(.medium))
                         .frame(maxWidth: .infinity)
                 }
@@ -925,50 +816,6 @@ struct HabitsView: View {
         .background(color.opacity(0.10), in: Capsule())
     }
 
-    @ViewBuilder
-    private func badgeView(icon: String, label: String, color: Color) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: icon)
-                .font(.system(size: 9, weight: .semibold))
-            Text(label)
-                .font(.system(size: 10, weight: .semibold))
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(color.opacity(0.12), in: Capsule())
-    }
-
-    private func lastExecutedLabel(for rule: Rule) -> String? {
-        guard let date = rule.lastExecutedAt else { return nil }
-        let cal     = Calendar.current
-        let now     = Date()
-        let timeStr = date.formatted(.dateTime.hour().minute())
-        if cal.isDateInToday(date) {
-            return "Oggi \(timeStr)"
-        } else if cal.isDateInYesterday(date) {
-            return "Ieri \(timeStr)"
-        } else if let days = cal.dateComponents([.day], from: date, to: now).day, days < 7 {
-            return "\(date.formatted(.dateTime.weekday(.wide))) \(timeStr)"
-        } else {
-            return date.formatted(.dateTime.day().month(.abbreviated).hour().minute())
-        }
-    }
-
-    private func actionIcon(for actionType: String) -> String {
-        switch actionType {
-        case "on":       return "lightbulb.fill"
-        case "off":      return "lightbulb.slash"
-        case "dim":      return "sun.min.fill"
-        case "open":     return "arrow.up.square"
-        case "close":    return "arrow.down.square"
-        case "setMode":  return "slider.horizontal.3"
-        case "setTemp":  return "thermometer.medium"
-        case "setSpeed": return "wind"
-        default:         return "bolt.fill"
-        }
-    }
-
     private func learningProgressColor(_ confidence: Double) -> Color {
         switch confidence {
         case 0.45...: return .green
@@ -1022,26 +869,17 @@ struct HabitsView: View {
 
     // MARK: - Actions
 
-    private func approveHabitPattern(_ pattern: HabitPattern) {
-        Task {
-            if let home = homeKit.currentHome {
-                do {
-                    try await ruleEngine.createRule(from: pattern, home: home)
-                    habitService.approve(pattern)
-                } catch {
-                    dprint("Habits: failed to create rule from habit pattern \(pattern.id): \(error.localizedDescription)")
-                }
-            }
-        }
-    }
-
-    private func runNow(_ rule: Rule) {
-        guard let home = homeKit.currentHome else { return }
-        executingRule = rule
-        Task {
-            await ruleEngine.executeNow(rule, home: home)
-            executingRule = nil
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        }
+    private func reviewHabitPattern(_ pattern: HabitPattern) {
+        scenesService.refresh()
+        let capabilities = homeKit.currentHome.map {
+            AutomationCapabilityCatalog.capabilities(in: $0)
+        } ?? []
+        reviewingOpportunity = nil
+        reviewingHabitPattern = pattern
+        reviewingProposal = AutomationProposalMapper.proposal(
+            from: pattern,
+            capabilities: capabilities,
+            scenes: scenesService.scenes
+        )
     }
 }

@@ -45,7 +45,9 @@ final class ProgrammableSwitchAdapter: AccessoryAdapter {
             return value
         }
         if let idx = labelIndex(of: service) {
-            return "Pulsante \(idx)"
+            return String(format: String(localized: "programmableSwitch.button.index",
+                                         defaultValue: "Button %d"),
+                          idx)
         }
         return service.name
     }
@@ -85,9 +87,11 @@ final class ProgrammableSwitchAdapter: AccessoryAdapter {
     
     var primaryStatusText: String? {
         let count = switchServices.count
-        if count == 0 { return "Pulsante" }
-        if count == 1 { return "Pulsante" }
-        return "\(count) pulsanti"
+        if count == 0 { return String(localized: "programmableSwitch.button", defaultValue: "Button") }
+        if count == 1 { return String(localized: "programmableSwitch.button", defaultValue: "Button") }
+        return String(format: String(localized: "programmableSwitch.buttons.count",
+                                     defaultValue: "%d buttons"),
+                      count)
     }
     
     var batteryInfo: BatteryInfo? {
@@ -125,7 +129,9 @@ private struct ProgrammableSwitchControl: View {
     
     private var buttonsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(adapter.switchServices.count == 1 ? "Trigger" : "Pulsanti")
+            Text(adapter.switchServices.count == 1
+                 ? String(localized: "programmableSwitch.trigger", defaultValue: "Trigger")
+                 : String(localized: "programmableSwitch.buttons", defaultValue: "Buttons"))
                 .font(.headline)
             
             VStack(spacing: 10) {
@@ -149,7 +155,9 @@ private struct ProgrammableSwitchControl: View {
                 if let last, let label = eventLabel(last) {
                     HStack(spacing: 4) {
                         Circle().fill(.tint).frame(width: 6, height: 6)
-                        Text("Ultimo: \(label)")
+                        Text(String(format: String(localized: "programmableSwitch.lastEvent",
+                                                   defaultValue: "Last: %@"),
+                                    label))
                             .font(.caption)
                             .foregroundStyle(.tint)
                     }
@@ -158,13 +166,20 @@ private struct ProgrammableSwitchControl: View {
             
             HStack(spacing: 8) {
                 if supported.contains(0) {
-                    eventPill(label: "Singolo", symbol: "hand.tap.fill", isActive: last == 0)
+                    eventPill(label: String(localized: "programmableSwitch.event.single", defaultValue: "Single"),
+                              symbol: "hand.tap.fill",
+                              isActive: last == 0)
                 }
                 if supported.contains(1) {
-                    eventPill(label: "Doppio", symbol: "hand.tap.fill", isActive: last == 1, doubleTap: true)
+                    eventPill(label: String(localized: "programmableSwitch.event.double", defaultValue: "Double"),
+                              symbol: "hand.tap.fill",
+                              isActive: last == 1,
+                              doubleTap: true)
                 }
                 if supported.contains(2) {
-                    eventPill(label: "Lungo", symbol: "hand.point.up.left.fill", isActive: last == 2)
+                    eventPill(label: String(localized: "programmableSwitch.event.long", defaultValue: "Long"),
+                              symbol: "hand.point.up.left.fill",
+                              isActive: last == 2)
                 }
             }
         }
@@ -204,9 +219,9 @@ private struct ProgrammableSwitchControl: View {
     
     private func eventLabel(_ event: Int) -> String? {
         switch event {
-        case 0: return "Singolo"
-        case 1: return "Doppio"
-        case 2: return "Lungo"
+        case 0: return String(localized: "programmableSwitch.event.single", defaultValue: "Single")
+        case 1: return String(localized: "programmableSwitch.event.double", defaultValue: "Double")
+        case 2: return String(localized: "programmableSwitch.event.long", defaultValue: "Long")
         default: return nil
         }
     }
@@ -215,10 +230,11 @@ private struct ProgrammableSwitchControl: View {
     
     private var configurationSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Configurazione")
+            Text(String(localized: "programmableSwitch.configuration.title", defaultValue: "Configuration"))
                 .font(.headline)
             
-            Text("Per associare i pulsanti a scene o automazioni, usa l'app Casa di Apple. Le impostazioni di automazione non sono modificabili da qui.")
+            Text(String(localized: "programmableSwitch.configuration.message",
+                        defaultValue: "To associate buttons with scenes or automations, use the Apple Home app. Automation settings cannot be edited here."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             
@@ -227,7 +243,7 @@ private struct ProgrammableSwitchControl: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.up.right.square")
-                    Text("Configura in Casa")
+                    Text(String(localized: "programmableSwitch.configuration.openHome", defaultValue: "Configure in Home"))
                 }
                 .font(.body.weight(.semibold))
                 .padding(.horizontal, 16)

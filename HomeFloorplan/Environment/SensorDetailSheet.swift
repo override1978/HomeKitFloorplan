@@ -284,7 +284,9 @@ struct SensorDetailSheet: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(sensorColors[index % sensorColors.count])
                         .frame(width: 16, height: 3)
-                    Text("Sensore \(index + 1)")
+                    Text(String(format: String(localized: "sensor.detail.sensorIndex",
+                                               defaultValue: "Sensor %d"),
+                                index + 1))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -347,6 +349,7 @@ struct SensorDetailSheet: View {
                 ? String(localized: "smoke.detected",    defaultValue: "Sì")
                 : String(localized: "smoke.notDetected", defaultValue: "No")
         case .vocDensity:         return String(format: "%.0f µg/m³", value)
+        case .pm25, .pm10:        return String(format: "%.0f µg/m³", value)
         case .lightSensor:        return String(format: "%.0f lux", value)
         case .outdoorTemperature: return unit.format(value)
         case .outdoorHumidity:    return String(format: "%.0f%%", value)

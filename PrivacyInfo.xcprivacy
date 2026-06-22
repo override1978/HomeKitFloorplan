@@ -7,12 +7,13 @@
         Last updated: 2026-06-09
         Sprint 26.A
 
-        Data sent to external AI services (Anthropic / OpenAI):
+        Data sent to external AI services (Anthropic / OpenAI), only when enabled:
           • Environmental sensor readings (temperature, humidity, CO₂, air quality, etc.)
           • HomeKit room names (e.g. "Cucina", "Camera da letto")
-        These are sent ONLY when the user explicitly enables AI features and grants
-        data consent via AIConsentView. No GPS coordinates, user identity, or personal
-        information are included in AI requests.
+          • User prompts sent through the assistant
+        These are sent only when the user explicitly enables AI features and grants
+        data consent via AIConsentView. Home location coordinates are used for app
+        functionality such as WeatherKit/geofencing and are not used for tracking.
 
         All other processing is on-device.
     -->
@@ -44,8 +45,8 @@
             <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
             <key>NSPrivacyAccessedAPITypeReasons</key>
             <array>
-                <!-- 3B52.1: Organise files/data stored by the app -->
-                <string>3B52.1</string>
+                <!-- C617.1: Access metadata for files inside the app container -->
+                <string>C617.1</string>
             </array>
         </dict>
 
@@ -55,15 +56,93 @@
     <key>NSPrivacyCollectedDataTypes</key>
     <array>
 
-        <!--
-            Environmental sensor data (temperature, humidity, CO₂, air quality, VOC,
-            smoke, carbon monoxide) and HomeKit room names.
+        <!-- Home location for weather, geofencing, and presence-aware automations. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypePreciseLocation</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
 
-            Sent to: Anthropic Claude API / OpenAI API (user-selected provider)
-            Purpose: Generate contextual AI insights about home environment conditions.
-            Conditions: ONLY when user explicitly enables AI and grants data consent.
-            NOT linked to user identity. NOT used for advertising or tracking.
-        -->
+        <!-- Voice assistant input captured when the user explicitly starts listening. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeAudioData</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+        <!-- Imported floorplan images or images selected by the user. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypePhotosorVideos</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+        <!-- RoomPlan scans and derived room geometry. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeEnvironmentScanning</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+        <!-- User-created floorplans, rooms, names, automations, scenes, and prompts. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+                <string>NSPrivacyCollectedDataTypePurposeProductPersonalization</string>
+            </array>
+        </dict>
+
+        <!-- Accessory events, habits, activity history, and app feature interactions. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherUsageData</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+                <string>NSPrivacyCollectedDataTypePurposeProductPersonalization</string>
+            </array>
+        </dict>
+
+        <!-- Environmental sensor readings and HomeKit accessory metadata. -->
         <dict>
             <key>NSPrivacyCollectedDataType</key>
             <string>NSPrivacyCollectedDataTypeOtherDataTypes</string>
@@ -74,6 +153,7 @@
             <key>NSPrivacyCollectedDataTypePurposes</key>
             <array>
                 <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+                <string>NSPrivacyCollectedDataTypePurposeProductPersonalization</string>
             </array>
         </dict>
 

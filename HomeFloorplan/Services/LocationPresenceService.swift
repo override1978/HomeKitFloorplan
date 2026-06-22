@@ -4,7 +4,7 @@ import Observation
 
 // MARK: - LocationPresenceService
 
-/// Opt-in geofencing service that detects home departure and arrival.
+/// Opt-in geofencing service that detects home departure and arrival while the app has location access.
 ///
 /// The user must explicitly call `enable(latitude:longitude:)`. Location data is
 /// never used for any purpose beyond determining whether the user is inside the
@@ -53,7 +53,7 @@ final class LocationPresenceService: NSObject {
 
     // MARK: - Public API
 
-    /// Requests "always" authorization and starts monitoring the home geofence.
+    /// Requests location authorization and starts monitoring the home geofence.
     ///
     /// - Parameters:
     ///   - latitude:      Home coordinate latitude.
@@ -100,7 +100,7 @@ final class LocationPresenceService: NSObject {
             isMonitoring    = true
             authorizationError = nil
         case .notDetermined:
-            manager.requestAlwaysAuthorization()
+            manager.requestWhenInUseAuthorization()
         default:
             authorizationError = String(localized: "location.authDenied",
                 defaultValue: "Permesso posizione negato. Abilitalo in Impostazioni > Privacy.")

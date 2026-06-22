@@ -143,6 +143,7 @@ private struct ThresholdRow: View {
         case .carbonDioxide:  return 50.0
         case .smoke:          return 1.0
         case .vocDensity:         return 50.0
+        case .pm25, .pm10:        return 1.0
         case .lightSensor:        return 100.0
         case .outdoorTemperature: return 0.5
         case .outdoorHumidity:    return 1.0
@@ -164,6 +165,7 @@ private struct ThresholdRow: View {
                 ? String(localized: "smoke.detected",    defaultValue: "Sì")
                 : String(localized: "smoke.notDetected", defaultValue: "No")
         case .vocDensity:         return String(format: "%.0f µg/m³", value)
+        case .pm25, .pm10:        return String(format: "%.0f µg/m³", value)
         case .lightSensor:        return String(format: "%.0f lux", value)
         case .outdoorTemperature: return unit.format(value)
         case .outdoorHumidity:    return String(format: "%.0f%%", value)

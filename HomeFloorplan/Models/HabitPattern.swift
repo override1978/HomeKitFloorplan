@@ -36,7 +36,8 @@ struct HabitPattern: Identifiable, Codable {
     let detectedAt: Date
     /// Confidenza 0.0–1.0 calcolata dall'AI.
     let confidence: Double
-    /// JSON della regola pre-generata dall'AI, parsato da RuleEngineService.
+    /// JSON legacy della regola pre-generata dall'AI.
+    /// Conservato per compatibilità con pattern già persistiti e convertito in AutomationProposal dal mapper.
     let suggestedRuleJSON: String
     var status: PatternStatus
 

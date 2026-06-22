@@ -46,6 +46,8 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
     case carbonDioxide
     case smoke
     case vocDensity
+    case pm25
+    case pm10
     case lightSensor        // HomeKit HMServiceTypeLightSensor / CurrentAmbientLightLevel
     case outdoorTemperature // WeatherKit source — persisted by SensorLogger.sampleOutdoor
     case outdoorHumidity    // WeatherKit source — persisted by SensorLogger.sampleOutdoor
@@ -82,6 +84,8 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .carbonDioxide:      return HMCharacteristicTypeCarbonDioxideLevel
         case .smoke:              return HMCharacteristicTypeSmokeDetected
         case .vocDensity:         return HMCharacteristicTypeVolatileOrganicCompoundDensity
+        case .pm25:               return HMCharacteristicTypePM2_5Density
+        case .pm10:               return HMCharacteristicTypePM10Density
         case .lightSensor:        return HMCharacteristicTypeCurrentLightLevel
         case .outdoorTemperature, .outdoorHumidity: return "" // WeatherKit — not read from HM
         }
@@ -97,6 +101,8 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .carbonDioxide:      return HMServiceTypeCarbonDioxideSensor
         case .smoke:              return HMServiceTypeSmokeSensor
         case .vocDensity:         return HMServiceTypeAirQualitySensor
+        case .pm25:               return HMServiceTypeAirQualitySensor
+        case .pm10:               return HMServiceTypeAirQualitySensor
         case .lightSensor:        return HMServiceTypeLightSensor
         case .outdoorTemperature, .outdoorHumidity: return "" // WeatherKit — not read from HM
         }
@@ -114,6 +120,8 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .carbonDioxide:      return "ppm"
         case .smoke:              return ""
         case .vocDensity:         return "µg/m³"
+        case .pm25:               return "µg/m³"
+        case .pm10:               return "µg/m³"
         case .lightSensor:        return "lux"
         case .outdoorTemperature: return "°C"
         case .outdoorHumidity:    return "%"
@@ -130,6 +138,8 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .carbonDioxide:      return String(localized: "sensor.carbonDioxide",      defaultValue: "Carbon dioxide")
         case .smoke:              return String(localized: "sensor.smoke",              defaultValue: "Smoke")
         case .vocDensity:         return String(localized: "sensor.vocDensity",         defaultValue: "VOC")
+        case .pm25:               return String(localized: "sensor.pm25",               defaultValue: "PM2.5")
+        case .pm10:               return String(localized: "sensor.pm10",               defaultValue: "PM10")
         case .lightSensor:        return String(localized: "sensor.lightSensor",        defaultValue: "Light")
         case .outdoorTemperature: return String(localized: "sensor.outdoorTemperature", defaultValue: "Outdoor temperature")
         case .outdoorHumidity:    return String(localized: "sensor.outdoorHumidity",    defaultValue: "Outdoor humidity")
@@ -146,6 +156,8 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .carbonDioxide:      return "carbon.dioxide.cloud.fill"
         case .smoke:              return "smoke.fill"
         case .vocDensity:         return "flask.fill"
+        case .pm25:               return "microbe.fill"
+        case .pm10:               return "microbe"
         case .lightSensor:        return "sun.max.fill"
         case .outdoorTemperature: return "thermometer.sun.fill"
         case .outdoorHumidity:    return "cloud.rain.fill"
@@ -172,7 +184,7 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
     var notificationCategory: NotificationCategory {
         switch self {
         case .smoke, .carbonMonoxide:                        return .safety
-        case .carbonDioxide, .vocDensity, .airQuality:       return .health
+        case .carbonDioxide, .vocDensity, .airQuality, .pm25, .pm10: return .health
         case .temperature, .humidity,
              .lightSensor, .outdoorTemperature, .outdoorHumidity: return .comfort
         }
@@ -192,6 +204,8 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .carbonDioxide:  return 2.0
         case .airQuality:     return 2.0
         case .vocDensity:     return 2.0
+        case .pm25:           return 2.0
+        case .pm10:           return 2.0
         case .temperature:    return 1.0
         case .humidity:       return 1.0
         case .lightSensor, .outdoorTemperature, .outdoorHumidity: return 0.0
@@ -210,6 +224,8 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .carbonDioxide:      return 1000.0
         case .smoke:              return 1.0
         case .vocDensity:         return 500.0
+        case .pm25:               return 12.0
+        case .pm10:               return 20.0
         case .lightSensor:        return Double.greatestFiniteMagnitude  // display-only — never alert
         case .outdoorTemperature: return 100.0     // sentinel — outdoor types have no user alert
         case .outdoorHumidity:    return 100.0
@@ -226,6 +242,8 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
         case .carbonDioxide:      return 2000.0
         case .smoke:              return 1.0
         case .vocDensity:         return 1000.0
+        case .pm25:               return 35.0
+        case .pm10:               return 50.0
         case .lightSensor:        return Double.greatestFiniteMagnitude
         case .outdoorTemperature: return 200.0     // sentinel — outdoor types have no user alert
         case .outdoorHumidity:    return 200.0

@@ -102,7 +102,7 @@ final class SensorEventRouter {
             if value >= sensorType.defaultWarning { return (.medium, .warning) }
             return nil
 
-        case .vocDensity:
+        case .vocDensity, .pm25, .pm10:
             if value >= sensorType.defaultDanger  { return (.medium, .danger) }
             if value >= sensorType.defaultWarning { return (.medium, .warning) }
             return nil

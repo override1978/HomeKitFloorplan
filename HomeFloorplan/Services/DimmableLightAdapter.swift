@@ -12,6 +12,9 @@ final class DimmableLightAdapter: AccessoryAdapter {
     private let homeKit: HomeKitService
     private let powerCharacteristic: HMCharacteristic?
     private let brightnessCharacteristic: HMCharacteristic
+    private let hueCharacteristic: HMCharacteristic?
+    private let saturationCharacteristic: HMCharacteristic?
+    private let colorTemperatureCharacteristic: HMCharacteristic?
     
     init?(accessory: HMAccessory, homeKit: HomeKitService) {
         guard !Self.isLikelyAirCareAccessory(accessory) else { return nil }
@@ -29,6 +32,15 @@ final class DimmableLightAdapter: AccessoryAdapter {
         self.brightnessCharacteristic = brightness
         self.powerCharacteristic = AccessoryAdapterFactory.findCharacteristic(
             in: accessory, type: HMCharacteristicTypePowerState
+        )
+        self.hueCharacteristic = AccessoryAdapterFactory.findCharacteristic(
+            in: accessory, type: HMCharacteristicTypeHue
+        )
+        self.saturationCharacteristic = AccessoryAdapterFactory.findCharacteristic(
+            in: accessory, type: HMCharacteristicTypeSaturation
+        )
+        self.colorTemperatureCharacteristic = AccessoryAdapterFactory.findCharacteristic(
+            in: accessory, type: HMCharacteristicTypeColorTemperature
         )
     }
     
@@ -86,11 +98,57 @@ final class DimmableLightAdapter: AccessoryAdapter {
         let raw = homeKit.value(for: brightnessCharacteristic) ?? brightnessCharacteristic.value
         return Self.intValue(raw) ?? 0
     }
+
+    var supportsColor: Bool {
+        hueCharacteristic != nil && saturationCharacteristic != nil
+    }
+
+    var supportsColorTemperature: Bool {
+        colorTemperatureCharacteristic != nil
+    }
+
+    var currentHue: Double {
+        guard let hueCharacteristic else { return 45 }
+        let raw = homeKit.value(for: hueCharacteristic) ?? hueCharacteristic.value
+        return Self.doubleValue(raw) ?? 45
+    }
+
+    var currentSaturation: Double {
+        guard let saturationCharacteristic else { return 0 }
+        let raw = homeKit.value(for: saturationCharacteristic) ?? saturationCharacteristic.value
+        return Self.doubleValue(raw) ?? 0
+    }
+
+    /// HomeKit color temperature is expressed in mireds. Lower values are cooler.
+    var currentColorTemperature: Int {
+        guard let colorTemperatureCharacteristic else { return 250 }
+        let raw = homeKit.value(for: colorTemperatureCharacteristic) ?? colorTemperatureCharacteristic.value
+        return Self.intValue(raw) ?? 250
+    }
+
+    var colorTemperatureRange: ClosedRange<Int> {
+        let minValue = metadataInt(colorTemperatureCharacteristic?.metadata?.minimumValue) ?? 140
+        let maxValue = metadataInt(colorTemperatureCharacteristic?.metadata?.maximumValue) ?? 500
+        return minValue...max(maxValue, minValue)
+    }
     
     /// Scrive la luminosità (0-100).
     func setBrightness(_ value: Int) async throws {
         let clamped = max(0, min(100, value))
         try await homeKit.write(clamped, to: brightnessCharacteristic)
+    }
+
+    func setColor(hue: Double, saturation: Double) async throws {
+        guard let hueCharacteristic, let saturationCharacteristic else { return }
+        try await homeKit.write(max(0, min(360, hue)), to: hueCharacteristic)
+        try await homeKit.write(max(0, min(100, saturation)), to: saturationCharacteristic)
+    }
+
+    func setColorTemperature(_ value: Int) async throws {
+        guard let colorTemperatureCharacteristic else { return }
+        let range = colorTemperatureRange
+        let clamped = max(range.lowerBound, min(range.upperBound, value))
+        try await homeKit.write(clamped, to: colorTemperatureCharacteristic)
     }
     
     // MARK: - Private helpers
@@ -101,6 +159,18 @@ final class DimmableLightAdapter: AccessoryAdapter {
         if let n = raw as? NSNumber { return n.intValue }
         if let d = raw as? Double { return Int(d) }
         return nil
+    }
+
+    private static func doubleValue(_ raw: Any?) -> Double? {
+        if let d = raw as? Double { return d }
+        if let f = raw as? Float { return Double(f) }
+        if let i = raw as? Int { return Double(i) }
+        if let n = raw as? NSNumber { return n.doubleValue }
+        return nil
+    }
+
+    private func metadataInt(_ value: NSNumber?) -> Int? {
+        value?.intValue
     }
     
     private static func isLikelyAirCareAccessory(_ accessory: HMAccessory) -> Bool {

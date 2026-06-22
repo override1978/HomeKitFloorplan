@@ -2,6 +2,31 @@ import SwiftUI
 import UIKit
 import HomeKit
 
+enum DrawingExportMode: String, CaseIterable, Identifiable {
+    case legacy
+    case adaptive
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .legacy:
+            return String(localized: "drawing.export.mode.legacy", defaultValue: "Legacy")
+        case .adaptive:
+            return String(localized: "drawing.export.mode.adaptive", defaultValue: "Adaptive")
+        }
+    }
+
+    var localizedSubtitle: String {
+        switch self {
+        case .legacy:
+            return String(localized: "drawing.export.mode.legacy.subtitle", defaultValue: "Current screen-based export")
+        case .adaptive:
+            return String(localized: "drawing.export.mode.adaptive.subtitle", defaultValue: "Stable landscape export")
+        }
+    }
+}
+
 // MARK: - DrawingFloorplanSheet
 
 /// Full-screen 2D drawing editor.
@@ -36,6 +61,8 @@ struct DrawingFloorplanSheet: View {
     @State private var mode: DrawingMode = .draw
     @State private var selection: DrawingSelection = .none
     @State private var wallKind: WallKind = .exterior
+    @AppStorage("drawing.export.mode") private var exportModeRaw: String = DrawingExportMode.legacy.rawValue
+    @AppStorage("drawing.help.hasSeen") private var hasSeenDrawingHelp = false
     /// When false, wall drawing snaps only to the 20pt grid (no vertex snapping).
     @State private var vertexSnapEnabled: Bool = true
 
@@ -56,11 +83,19 @@ struct DrawingFloorplanSheet: View {
     // MARK: Undo stack (max 30 snapshots)
 
     @State private var undoStack: [DrawingDocument] = []
+    @State private var redoStack: [DrawingDocument] = []
     private let undoLimit = 30
 
     // MARK: Alert for cancel confirmation
 
     @State private var showCancelConfirm = false
+    @State private var isExporting = false
+    @State private var showHelpSheet = false
+
+    private var exportMode: DrawingExportMode {
+        get { DrawingExportMode(rawValue: exportModeRaw) ?? .legacy }
+        nonmutating set { exportModeRaw = newValue.rawValue }
+    }
 
     // MARK: Body
 
@@ -193,18 +228,42 @@ struct DrawingFloorplanSheet: View {
             }
             .animation(.spring(response: 0.3), value: selection)
 
-            // Top bar pinned at the top of the full-screen ZStack.
-            // geo.safeAreaInsets.top gives the real status-bar / Dynamic Island
-            // height so buttons are never hidden behind system UI.
+            // Floating top bar. Keep a minimum top offset because iPad full-screen
+            // covers can report a small/zero safe inset while the system menu bar
+            // is still visually present.
             VStack(spacing: 0) {
                 DrawingTopBar(
                     canUndo: !undoStack.isEmpty,
+                    canRedo: !redoStack.isEmpty,
+                    isExporting: isExporting,
+                    exportMode: exportMode,
+                    onExportModeChange: { exportMode = $0 },
+                    onHelp: { showHelpSheet = true },
                     onCancel: { showCancelConfirm = true },
                     onUndo: performUndo,
+                    onRedo: performRedo,
                     onDone: exportAndFinish
                 )
-                .padding(.top, geo.safeAreaInsets.top)
+                .frame(maxWidth: 640)
+                .padding(.horizontal, 18)
+                .padding(.top, max(geo.safeAreaInsets.top + 12, 28))
                 Spacer()
+            }
+
+            if isExporting {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text(String(localized: "drawing.export.progress", defaultValue: "Preparing floorplan..."))
+                        .font(.subheadline.weight(.medium))
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 18)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
             }
         }
         .ignoresSafeArea()
@@ -269,6 +328,16 @@ struct DrawingFloorplanSheet: View {
                     mode = .select
                 }
             )
+        }
+        .sheet(isPresented: $showHelpSheet) {
+            DrawingEditorHelpSheet()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .onAppear {
+            guard !hasSeenDrawingHelp else { return }
+            hasSeenDrawingHelp = true
+            showHelpSheet = true
         }
         .suppressesIdleScreensaver(.drawingEditor)
         } // GeometryReader
@@ -529,20 +598,46 @@ struct DrawingFloorplanSheet: View {
         if undoStack.count > undoLimit {
             undoStack.removeFirst()
         }
+        redoStack.removeAll()
     }
 
     private func performUndo() {
         guard let previous = undoStack.popLast() else { return }
+        redoStack.append(document)
         document = previous
+        selection = .none
+    }
+
+    private func performRedo() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(document)
+        if undoStack.count > undoLimit {
+            undoStack.removeFirst()
+        }
+        document = next
         selection = .none
     }
 
     // MARK: - Export
 
     private func exportAndFinish() {
-        let (image, linkedRooms) = renderToImage(document)
-        onComplete(image, linkedRooms, document)
-        dismiss()
+        guard !isExporting else { return }
+        isExporting = true
+        Task { @MainActor in
+            await Task.yield()
+            let (image, linkedRooms) = renderToImage(document, mode: exportMode)
+            onComplete(image, linkedRooms, document)
+            dismiss()
+        }
+    }
+
+    private func renderToImage(_ doc: DrawingDocument, mode: DrawingExportMode) -> (UIImage, [LinkedRoom]) {
+        switch mode {
+        case .legacy:
+            return renderToImage(doc)
+        case .adaptive:
+            return renderAdaptiveToImage(doc)
+        }
     }
 
     /// Renders the document cropped to the drawing content with margin, scaled to
@@ -650,6 +745,95 @@ struct DrawingFloorplanSheet: View {
             cgCtx.translateBy(x: -originX * scaleFactor, y: -originY * scaleFactor)
             cgCtx.scaleBy(x: scaleFactor, y: scaleFactor)
 
+            renderDocument(doc, in: cgCtx, canvasSize: DrawingDocument.canvasSize)
+        }
+        return (image, linkedRooms)
+    }
+
+    /// Parallel export pipeline for test floorplans. It keeps the same crop/fit
+    /// strategy as legacy but renders into a deterministic landscape canvas so the
+    /// result is not tied to the current device orientation or split-view size.
+    private func renderAdaptiveToImage(_ doc: DrawingDocument) -> (UIImage, [LinkedRoom]) {
+        var allPoints: [CGPoint] = doc.walls.flatMap { [$0.start, $0.end] }
+                                  + doc.roomLabels.map(\.position)
+        for area in doc.roomAreas {
+            allPoints.append(contentsOf: area.effectivePoints)
+        }
+        for item in doc.furnitureItems {
+            allPoints.append(CGPoint(x: item.rect.minX, y: item.rect.minY))
+            allPoints.append(CGPoint(x: item.rect.maxX, y: item.rect.maxY))
+        }
+
+        let outputW: CGFloat = 1600
+        let outputH: CGFloat = 1000
+        let scale: CGFloat = 2.0
+        let marginFraction: CGFloat = 0.10
+
+        func blankImage() -> UIImage {
+            let size = CGSize(width: outputW, height: outputH)
+            let fmt = UIGraphicsImageRendererFormat()
+            fmt.scale = scale
+            return UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
+                UIColor.white.setFill()
+                ctx.fill(CGRect(origin: .zero, size: size))
+            }
+        }
+
+        guard !allPoints.isEmpty else { return (blankImage(), []) }
+
+        let minX = allPoints.map(\.x).min()!
+        let maxX = allPoints.map(\.x).max()!
+        let minY = allPoints.map(\.y).min()!
+        let maxY = allPoints.map(\.y).max()!
+
+        let drawingW = maxX - minX
+        let drawingH = maxY - minY
+        let longestSide = max(drawingW, drawingH)
+        guard longestSide > 0 else { return (blankImage(), []) }
+
+        let margin = longestSide * marginFraction
+        let paddedW = drawingW + margin * 2
+        let paddedH = drawingH + margin * 2
+        let scaleFactor = min(outputW / paddedW, outputH / paddedH)
+
+        let centerX = (minX + maxX) / 2
+        let centerY = (minY + maxY) / 2
+        let cropW = outputW / scaleFactor
+        let cropH = outputH / scaleFactor
+        let originX = centerX - cropW / 2
+        let originY = centerY - cropH / 2
+
+        let linkedRooms: [LinkedRoom] = doc.roomAreas.compactMap { area in
+            guard let hmUUID = area.hmRoomUUID else { return nil }
+            let normX = Double((area.rect.minX - originX) / cropW)
+            let normY = Double((area.rect.minY - originY) / cropH)
+            let normW = Double(area.rect.width / cropW)
+            let normH = Double(area.rect.height / cropH)
+            let normalizedPoints: [CodablePoint]? = area.points.map { pts in
+                pts.map { CodablePoint(
+                    x: Double(($0.x - originX) / cropW),
+                    y: Double(($0.y - originY) / cropH)
+                )}
+            }
+            return LinkedRoom(
+                hmRoomUUID: hmUUID,
+                name: area.name,
+                normalizedRect: CodableRect(x: normX, y: normY, width: normW, height: normH),
+                normalizedPoints: normalizedPoints
+            )
+        }
+
+        let outputSize = CGSize(width: outputW, height: outputH)
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = scale
+        let renderer = UIGraphicsImageRenderer(size: outputSize, format: fmt)
+
+        let image = renderer.image { ctx in
+            let cgCtx = ctx.cgContext
+            cgCtx.setFillColor(UIColor.white.cgColor)
+            cgCtx.fill(CGRect(origin: .zero, size: outputSize))
+            cgCtx.translateBy(x: -originX * scaleFactor, y: -originY * scaleFactor)
+            cgCtx.scaleBy(x: scaleFactor, y: scaleFactor)
             renderDocument(doc, in: cgCtx, canvasSize: DrawingDocument.canvasSize)
         }
         return (image, linkedRooms)

@@ -598,24 +598,7 @@ extension HomeKitService: HMAccessoryDelegate {
 
 private extension HomeKitService {
     func pauseSmartLightingAfterManualLightChange(accessory: HMAccessory, characteristic: HMCharacteristic) {
-        guard isLightControlCharacteristic(characteristic) else { return }
-        let roomName = accessory.room?.name
-        Task { @MainActor in
-            _ = smartLightingEngine?.pauseAfterManualChange(roomName: roomName)
-        }
-    }
-
-    func isLightControlCharacteristic(_ characteristic: HMCharacteristic) -> Bool {
-        switch characteristic.characteristicType {
-        case HMCharacteristicTypePowerState,
-             HMCharacteristicTypeActive,
-             HMCharacteristicTypeBrightness,
-             HMCharacteristicTypeHue,
-             HMCharacteristicTypeSaturation,
-             HMCharacteristicTypeColorTemperature:
-            return true
-        default:
-            return false
-        }
+        // Smart Lighting is paused/resumed explicitly from the floorplan.
+        // Characteristic updates are not reliable enough to infer manual intent.
     }
 }

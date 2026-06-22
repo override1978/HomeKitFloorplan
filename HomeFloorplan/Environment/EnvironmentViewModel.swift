@@ -121,6 +121,8 @@ struct SensorData: Identifiable {
                 : String(localized: "smoke.notDetected",  defaultValue: "Libero")
         case .vocDensity:
             return String(format: "%.0f µg/m³", currentValue)
+        case .pm25, .pm10:
+            return String(format: "%.0f µg/m³", currentValue)
         case .lightSensor:
             return String(format: "%.0f lux", currentValue)
         case .outdoorTemperature:

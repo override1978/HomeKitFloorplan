@@ -136,6 +136,10 @@ enum EnvironmentalAlertBuilder {
             return String(format: String(localized: "notif.env.co2.headline",      defaultValue: "High CO₂ in %@"),           room)
         case .vocDensity:
             return String(format: String(localized: "notif.env.voc.headline",      defaultValue: "High VOC in %@"),           room)
+        case .pm25:
+            return String(format: String(localized: "notif.env.pm25.headline",     defaultValue: "High PM2.5 in %@"),         room)
+        case .pm10:
+            return String(format: String(localized: "notif.env.pm10.headline",     defaultValue: "High PM10 in %@"),          room)
         case .airQuality:
             return String(format: String(localized: "notif.env.air.headline",      defaultValue: "Air quality dropping in %@"), room)
         case .carbonMonoxide:
@@ -171,6 +175,12 @@ enum EnvironmentalAlertBuilder {
         case .vocDensity:
             return String(localized: "notif.env.voc.why",
                           defaultValue: "Volatile organic compounds can irritate the airways.")
+        case .pm25:
+            return String(localized: "notif.env.pm25.why",
+                          defaultValue: "Fine particulates can reach deep into the lungs and worsen indoor air quality.")
+        case .pm10:
+            return String(localized: "notif.env.pm10.why",
+                          defaultValue: "Coarse particulates can irritate airways and indicate dusty indoor air.")
         case .airQuality:
             return String(localized: "notif.env.air.why",
                           defaultValue: "Air quality affects wellbeing and concentration.")
@@ -195,6 +205,8 @@ enum EnvironmentalAlertBuilder {
             return String(localized: "notif.env.temp.rec",    defaultValue: "Consider lowering the AC temperature.")
         case .vocDensity:
             return String(localized: "notif.env.voc.rec",     defaultValue: "Ventilate the room and remove possible VOC sources.")
+        case .pm25, .pm10:
+            return String(localized: "notif.env.pm.rec",      defaultValue: "Run the air purifier and ventilate if outdoor air quality is safe.")
         case .airQuality:
             return String(localized: "notif.env.air.rec",     defaultValue: "Run the air purifier or open windows.")
         case .carbonMonoxide:
@@ -226,6 +238,10 @@ enum EnvironmentalAlertBuilder {
             return String(format: String(localized: "notif.env.co2.headline",      defaultValue: "Elevated CO₂ in %@"),           room)
         case .vocDensity:
             return String(format: String(localized: "notif.env.voc.headline",      defaultValue: "Elevated VOC in %@"),           room)
+        case .pm25:
+            return String(format: String(localized: "notif.env.pm25.headline",     defaultValue: "Elevated PM2.5 in %@"),         room)
+        case .pm10:
+            return String(format: String(localized: "notif.env.pm10.headline",     defaultValue: "Elevated PM10 in %@"),          room)
         case .airQuality:
             return String(format: String(localized: "notif.env.air.headline",      defaultValue: "Air quality declining in %@"), room)
         case .carbonMonoxide:
@@ -249,6 +265,8 @@ enum EnvironmentalAlertBuilder {
             return String(localized: "notif.env.temp.rec",     defaultValue: "Consider lowering the AC temperature.")
         case .vocDensity:
             return String(localized: "notif.env.voc.rec",      defaultValue: "Ventilate the room and remove possible VOC sources.")
+        case .pm25, .pm10:
+            return String(localized: "notif.env.pm.rec",       defaultValue: "Run the air purifier and ventilate if outdoor air quality is safe.")
         case .airQuality:
             return String(localized: "notif.env.air.rec",      defaultValue: "Run the air purifier or open windows.")
         case .carbonMonoxide:
@@ -272,6 +290,12 @@ enum EnvironmentalAlertBuilder {
         case .vocDensity:
             return String(localized: "notif.env.voc.why",
                           defaultValue: "Volatile organic compounds can irritate the airways.")
+        case .pm25:
+            return String(localized: "notif.env.pm25.why",
+                          defaultValue: "Fine particulates can reach deep into the lungs and worsen indoor air quality.")
+        case .pm10:
+            return String(localized: "notif.env.pm10.why",
+                          defaultValue: "Coarse particulates can irritate airways and indicate dusty indoor air.")
         case .airQuality:
             return String(localized: "notif.env.air.why",
                           defaultValue: "Air quality affects wellbeing and concentration.")

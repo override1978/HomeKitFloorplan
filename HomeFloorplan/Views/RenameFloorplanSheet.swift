@@ -19,7 +19,8 @@ struct RenameFloorplanSheet: View {
                 } header: {
                     Text(String(localized: "common.name", defaultValue: "Name"))
                 } footer: {
-                    Text("Es. \"Piano terra\", \"Mansarda\", \"Garage\".")
+                    Text(String(localized: "floorplan.name.examples",
+                                defaultValue: "E.g. \"Ground floor\", \"Attic\", \"Garage\"."))
                 }
             }
             .navigationTitle(String(localized: "floorplan.rename.title", defaultValue: "Rename floorplan"))

@@ -24,11 +24,11 @@ struct AutomationDiagnosticItem: Equatable {
 /// Payload strutturato per un bottone azione nel ChatBot.
 ///
 /// - `executeNow`: esegui azione HomeKit direttamente (imperativo da proposeAction).
-/// - `createRule`: crea una regola di automazione dal chatbot (da proposeOpportunity).
+/// - `reviewAutomation`: apre il nuovo Automation Builder con una proposta nativa.
 /// - `undo`:       annulla un'azione appena eseguita (rimette lo stato precedente).
 enum AgentActionPayload: Equatable {
     case executeNow(accessoryID: String, action: String, value: Double?, label: String)
-    case createRule(opportunity: AutomationOpportunity)
+    case reviewAutomation(proposal: AutomationProposal)
     case undo(accessoryID: String, action: String, value: Double?, label: String)
     case automationDiagnostics(title: String, items: [AutomationDiagnosticItem])
     /// Presenta una lista di accessori come pills selezionabili per disambiguare.
@@ -37,7 +37,7 @@ enum AgentActionPayload: Equatable {
     var label: String {
         switch self {
         case .executeNow(_, _, _, let l):    return l
-        case .createRule(let opp):            return opp.title
+        case .reviewAutomation(let proposal): return proposal.title
         case .undo(_, _, _, let l):           return l
         case .automationDiagnostics(let title, _): return title
         case .choose(_, _, _, let prompt):    return prompt

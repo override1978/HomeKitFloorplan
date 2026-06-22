@@ -5,6 +5,8 @@ import Foundation
 /// Struttura intermedia tra il JSON dell'AI e l'entità SwiftData `Rule`.
 /// Usata da RuleEditorView per visualizzare e modificare la regola prima di salvarla.
 /// Costruita da `AINextAction.ruleJSON` o da `HabitPattern.suggestedRuleJSON`.
+/// Legacy: prefer `AutomationProposal` for new AI/chat/opportunity automation drafts.
+@available(*, deprecated, message: "Use AutomationProposal for new automation drafts.")
 struct RuleDraft: Codable, Identifiable {
     var id: UUID = UUID()
     var name: String

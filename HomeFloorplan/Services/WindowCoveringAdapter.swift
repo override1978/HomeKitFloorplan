@@ -2,6 +2,43 @@ import HomeKit
 import Observation
 import SwiftUI
 
+enum WindowCoveringPositionMapper {
+    private static let keyPrefix = "windowCovering.positionMapping.reversed."
+
+    static func isReversed(accessoryID: UUID) -> Bool {
+        UserDefaults.standard.bool(forKey: keyPrefix + accessoryID.uuidString)
+    }
+
+    static func setReversed(_ isReversed: Bool, accessoryID: UUID) {
+        UserDefaults.standard.set(isReversed, forKey: keyPrefix + accessoryID.uuidString)
+    }
+
+    static func logicalPosition(fromRaw rawPosition: Int, accessoryID: UUID) -> Int {
+        let clamped = clamp(rawPosition)
+        return isReversed(accessoryID: accessoryID) ? 100 - clamped : clamped
+    }
+
+    static func rawPosition(forLogicalPosition logicalPosition: Int, accessoryID: UUID) -> Int {
+        let clamped = clamp(logicalPosition)
+        return isReversed(accessoryID: accessoryID) ? 100 - clamped : clamped
+    }
+
+    static func rawTarget(forActionType actionType: String, accessoryID: UUID) -> Int? {
+        switch actionType {
+        case "open":
+            return rawPosition(forLogicalPosition: 100, accessoryID: accessoryID)
+        case "close":
+            return rawPosition(forLogicalPosition: 0, accessoryID: accessoryID)
+        default:
+            return nil
+        }
+    }
+
+    private static func clamp(_ value: Int) -> Int {
+        max(0, min(100, value))
+    }
+}
+
 /// Adapter per coperture finestre HomeKit (tende, tapparelle, veneziane).
 /// Caratteristiche HomeKit principali:
 /// - TargetPosition (0-100%): dove la copertura deve andare
@@ -84,7 +121,11 @@ final class WindowCoveringAdapter: AccessoryAdapter, MarkerRuntimeStateProviding
     
     func performQuickToggle(via homeKit: HomeKitService) async throws {
         guard let target = targetPositionCharacteristic else { return }
-        let newValue: Int = isOn ? 0 : 100
+        let logicalValue: Int = isOn ? 0 : 100
+        let newValue = WindowCoveringPositionMapper.rawPosition(
+            forLogicalPosition: logicalValue,
+            accessoryID: accessory.uniqueIdentifier
+        )
         try await homeKit.write(newValue, to: target)
     }
     
@@ -106,14 +147,28 @@ final class WindowCoveringAdapter: AccessoryAdapter, MarkerRuntimeStateProviding
         let source = currentPositionCharacteristic ?? targetPositionCharacteristic
         guard let c = source else { return 0 }
         let raw = homeKit.value(for: c) ?? c.value
-        return Self.intValue(raw) ?? 0
+        return WindowCoveringPositionMapper.logicalPosition(
+            fromRaw: Self.intValue(raw) ?? 0,
+            accessoryID: accessory.uniqueIdentifier
+        )
     }
 
     /// Posizione di destinazione (0-100). Quella verso cui la tenda si sta muovendo.
     var targetPositionValue: Int {
         guard let c = targetPositionCharacteristic else { return currentPositionValue }
         let raw = homeKit.value(for: c) ?? c.value
-        return Self.intValue(raw) ?? currentPositionValue
+        return WindowCoveringPositionMapper.logicalPosition(
+            fromRaw: Self.intValue(raw) ?? currentPositionValue,
+            accessoryID: accessory.uniqueIdentifier
+        )
+    }
+
+    var isPositionMappingReversed: Bool {
+        WindowCoveringPositionMapper.isReversed(accessoryID: accessory.uniqueIdentifier)
+    }
+
+    func setPositionMappingReversed(_ isReversed: Bool) {
+        WindowCoveringPositionMapper.setReversed(isReversed, accessoryID: accessory.uniqueIdentifier)
     }
 
     var isTransitioning: Bool {
@@ -129,7 +184,10 @@ final class WindowCoveringAdapter: AccessoryAdapter, MarkerRuntimeStateProviding
     /// Scrive direttamente una posizione (0-100).
     func setPosition(_ value: Int) async throws {
         guard let target = targetPositionCharacteristic else { return }
-        let clamped = max(0, min(100, value))
+        let clamped = WindowCoveringPositionMapper.rawPosition(
+            forLogicalPosition: value,
+            accessoryID: accessory.uniqueIdentifier
+        )
         try await homeKit.write(clamped, to: target)
     }
 

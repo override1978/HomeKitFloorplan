@@ -340,23 +340,8 @@ final class BehavioralAnalysisService {
         persist()
     }
 
-    /// Adds a conversational opportunity proposed by the chatbot.
-    /// Deduplicates by deterministic patternID, generated from the full semantic key
-    /// (target, action/value, trigger, weekdays and optional sensor condition).
-    func addConversationalOpportunity(_ opp: AutomationOpportunity) {
-        let isDuplicate = opportunities.contains {
-            $0.origin == .conversational &&
-            $0.status == .pending &&
-            $0.patternID == opp.patternID
-        }
-        guard !isDuplicate else { return }
-        opportunities.append(opp)
-        persist()
-    }
-
-    /// User approves — returns a Rule ready to be inserted into RuleEngineService.
-    @discardableResult
-    func approve(_ opportunity: AutomationOpportunity) -> Rule {
+    /// Marks an opportunity as approved after it has been converted through the unified automation builder.
+    func markApproved(_ opportunity: AutomationOpportunity) {
         if let idx = opportunities.firstIndex(where: { $0.id == opportunity.id }) {
             opportunities[idx].status     = .approved
             opportunities[idx].approvedAt = Date()
@@ -371,7 +356,6 @@ final class BehavioralAnalysisService {
             }
         }
         persist()
-        return opportunity.buildRule()
     }
 
     /// Removes stale dismissed patterns and expired opportunities.

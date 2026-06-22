@@ -31,8 +31,10 @@ struct ScenesView: View {
     @State private var searchText: String = ""
     @State private var selectedCategory: SceneIntentCategory = .all
     @State private var sceneDetailTarget: SceneItem?
+    @State private var sceneEditorTarget: SceneEditorPresentation?
     @State private var executingSceneID: UUID?
     @State private var recentlySucceededID: UUID?
+    @State private var executionError: SceneExecutionError?
 
     // MARK: - Computed
 
@@ -91,6 +93,21 @@ struct ScenesView: View {
                 SceneDetailSheet(scene: scene)
                     .presentationDetents([.large])
             }
+            .sheet(item: $sceneEditorTarget) { target in
+                SceneEditorSheet(scene: target.scene)
+                    .presentationDetents([.large])
+            }
+            .alert(String(localized: "alert.error.title", defaultValue: "Error"),
+                   isPresented: Binding(
+                    get: { executionError != nil },
+                    set: { if !$0 { executionError = nil } }
+                   )) {
+                Button(String(localized: "common.ok", defaultValue: "OK"), role: .cancel) {
+                    executionError = nil
+                }
+            } message: {
+                Text(executionError?.message ?? "")
+            }
             .task {
                 scenesService.refresh()
                 if usageStore == nil {
@@ -124,7 +141,7 @@ struct ScenesView: View {
                         executingSceneID: executingSceneID,
                         recentlySucceededID: recentlySucceededID,
                         onRun: runScene,
-                        onDetail: { sceneDetailTarget = $0 }
+                        onDetail: openSceneManagement
                     )
                 }
 
@@ -149,7 +166,7 @@ struct ScenesView: View {
                             executingSceneID: executingSceneID,
                             recentlySucceededID: recentlySucceededID,
                             onRun: runScene,
-                            onDetail: { sceneDetailTarget = $0 }
+                            onDetail: openSceneManagement
                         )
                     }
 
@@ -163,7 +180,7 @@ struct ScenesView: View {
                             executingSceneID: executingSceneID,
                             recentlySucceededID: recentlySucceededID,
                             onRun: runScene,
-                            onDetail: { sceneDetailTarget = $0 }
+                            onDetail: openSceneManagement
                         )
                     }
                 }
@@ -195,12 +212,32 @@ struct ScenesView: View {
         } actions: {
             if let url = URL(string: "x-apple-homekit://"),
                UIApplication.shared.canOpenURL(url) {
+                HStack {
+                    Button {
+                        sceneEditorTarget = SceneEditorPresentation(scene: nil)
+                    } label: {
+                        Label(String(localized: "scenes.empty.createHere",
+                                     defaultValue: "Create Scene"),
+                              systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button {
+                        UIApplication.shared.open(url)
+                    } label: {
+                        Label(String(localized: "scenes.empty.openHome",
+                                     defaultValue: "Apple Home"),
+                              systemImage: "arrow.up.right.square")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
                 Button {
-                    UIApplication.shared.open(url)
+                    sceneEditorTarget = SceneEditorPresentation(scene: nil)
                 } label: {
-                    Label(String(localized: "scenes.empty.openHome",
-                                 defaultValue: "Create in Apple Home"),
-                          systemImage: "arrow.up.right.square")
+                    Label(String(localized: "scenes.empty.createHere",
+                                 defaultValue: "Create Scene"),
+                          systemImage: "plus")
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -212,6 +249,15 @@ struct ScenesView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: presentedAsSheet ? .topBarLeading : .topBarTrailing) {
+            Button {
+                sceneEditorTarget = SceneEditorPresentation(scene: nil)
+            } label: {
+                Image(systemName: "plus")
+            }
+            .accessibilityLabel(String(localized: "scenes.toolbar.create", defaultValue: "Create Scene"))
+        }
+
         if presentedAsSheet {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(String(localized: "scenes.toolbar.done",
@@ -222,6 +268,14 @@ struct ScenesView: View {
     }
 
     // MARK: - Run scene
+
+    private func openSceneManagement(_ scene: SceneItem) {
+        if scene.isBuiltIn {
+            sceneDetailTarget = scene
+        } else {
+            sceneEditorTarget = SceneEditorPresentation(scene: scene)
+        }
+    }
 
     private func runScene(_ scene: SceneItem) {
         guard executingSceneID == nil else { return }
@@ -250,9 +304,29 @@ struct ScenesView: View {
                 }
             } catch {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
-                await MainActor.run { executingSceneID = nil }
+                await MainActor.run {
+                    executingSceneID = nil
+                    executionError = SceneExecutionError(sceneName: scene.name, underlyingError: error)
+                }
             }
         }
+    }
+}
+
+private struct SceneEditorPresentation: Identifiable {
+    let id = UUID()
+    let scene: SceneItem?
+}
+
+private struct SceneExecutionError {
+    let sceneName: String
+    let underlyingError: Error
+
+    var message: String {
+        String(
+            localized: "scenes.run.error.message",
+            defaultValue: "The scene \"\(sceneName)\" could not be run.\n\(underlyingError.localizedDescription)"
+        )
     }
 }
 
@@ -497,15 +571,11 @@ private struct SceneSuggestionCard: View {
 
                 Spacer()
 
-                Button(action: onRun) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.orange)
-                        .padding(9)
-                        .background(Circle().fill(Color.orange.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
-                .disabled(isExecuting)
+                SceneRunButton(
+                    isExecuting: isExecuting,
+                    justSucceeded: justSucceeded,
+                    onRun: onRun
+                )
             }
 
             Text(scene.name)
@@ -537,7 +607,8 @@ private struct SceneSuggestionCard: View {
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .opacity(isExecuting ? 0.6 : 1.0)
         .animation(.spring(response: 0.3), value: justSucceeded)
-        .onLongPressGesture(minimumDuration: 0.45) {
+        .onTapGesture {
+            guard !isExecuting && !justSucceeded else { return }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             onDetail()
         }
@@ -696,18 +767,11 @@ private struct SceneFeaturedCard: View {
 
                 Spacer()
 
-                Button(action: onRun) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.orange.opacity(0.10))
-                            .frame(width: 36, height: 36)
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.orange)
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(isExecuting || justSucceeded)
+                SceneRunButton(
+                    isExecuting: isExecuting,
+                    justSucceeded: justSucceeded,
+                    onRun: onRun
+                )
             }
 
             // Nome + azioni
@@ -763,7 +827,8 @@ private struct SceneFeaturedCard: View {
         .scaleEffect(isExecuting ? 0.97 : 1.0)
         .animation(.spring(response: 0.3), value: isExecuting)
         .animation(.spring(response: 0.3), value: justSucceeded)
-        .onLongPressGesture(minimumDuration: 0.45) {
+        .onTapGesture {
+            guard !isExecuting && !justSucceeded else { return }
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             onDetail()
         }
@@ -890,22 +955,18 @@ private struct SceneListRow: View {
 
                 Spacer()
 
-                Button(action: onRun) {
-                    Image(systemName: "play.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(
-                            isExecuting
-                                ? AnyShapeStyle(Color.secondary)
-                                : AnyShapeStyle(Color.orange)
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(isExecuting || justSucceeded)
+                SceneRunButton(
+                    isExecuting: isExecuting,
+                    justSucceeded: justSucceeded,
+                    onRun: onRun
+                )
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .contentShape(Rectangle())
-            .onLongPressGesture(minimumDuration: 0.45) {
+            .opacity(isExecuting ? 0.6 : 1.0)
+            .onTapGesture {
+                guard !isExecuting && !justSucceeded else { return }
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 onDetail()
             }
@@ -932,4 +993,54 @@ private func sceneSectionHeader(icon: String,
             .tracking(0.6)
     }
     .padding(.horizontal, 2)
+}
+
+private struct SceneRunButton: View {
+    let isExecuting: Bool
+    let justSucceeded: Bool
+    let onRun: () -> Void
+
+    var body: some View {
+        Button {
+            guard !isExecuting && !justSucceeded else { return }
+            onRun()
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(backgroundStyle)
+                    .frame(width: 36, height: 36)
+
+                if isExecuting {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                        .scaleEffect(0.75)
+                } else if justSucceeded {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                } else {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(BrandColor.primary)
+                        .offset(x: 1)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(isExecuting || justSucceeded)
+        .accessibilityLabel(String(localized: "scenes.run.accessibility", defaultValue: "Run Scene"))
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isExecuting)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: justSucceeded)
+    }
+
+    private var backgroundStyle: AnyShapeStyle {
+        if justSucceeded {
+            return AnyShapeStyle(Color.green.gradient)
+        }
+        if isExecuting {
+            return AnyShapeStyle(BrandColor.heroGradient)
+        }
+        return AnyShapeStyle(BrandColor.primary.opacity(0.12))
+    }
 }

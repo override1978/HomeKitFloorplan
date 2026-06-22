@@ -39,7 +39,7 @@ final class AgentLoopService {
             Rispondi sempre usando i dati reali dei tool — non inventare valori.
 
             TOOL DISPONIBILI:
-            - readSensor: valore corrente di un sensore (temperatura, umidità, CO₂, ecc.). \
+            - readSensor: valore corrente di un sensore (temperatura, umidità, CO₂, VOC, PM2.5, PM10, ecc.). \
               'room' è opzionale: se l'utente dice "temperatura esterna" o "outdoor" senza specificare \
               la stanza, chiama readSensor SENZA 'room' → ottieni l'elenco di tutti i sensori di quel \
               tipo in ogni stanza → identifica quello esterno dal nome (es. Balcone, Terrazza, Giardino). \
@@ -52,6 +52,7 @@ final class AgentLoopService {
               Esempi: "- Faretti [Cucina, luce, on 80%, caps:on/off+dim] id=12345-...", \
                       "- Presa Isola [Cucina, presa, on, caps:on/off] id=6789-...". \
               Usa sempre l'id per controlAccessory/proposeAction/proposeOpportunity. \
+              Caps con prefisso automation: sono permessi solo in proposeOpportunity, non in controlAccessory. \
               FILTRAGGIO PER TIPO: se l'utente chiede di "luci", considera SOLO le righe con tipo=luce; \
               se chiede di "prese" solo tipo=presa; e così via. NON mescolare tipi diversi. \
               DOMANDE DI STATO ("cosa è acceso/on?"): riporta SOLO gli accessori con stato=on/on N%. \
@@ -73,29 +74,46 @@ final class AgentLoopService {
             - chooseAccessory: mostra una lista di accessori come pills selezionabili \
               quando devi disambiguare tra più accessori con capacità non-triviali \
               (dim, setTemp, setSpeed). NON usare per on/off — esegui su tutti.
-            - proposeOpportunity: crea una regola di automazione dalla chat e la salva. \
-              Usa SOLO quando l'utente chiede di automatizzare qualcosa \
-              ("ogni sera accendi le luci", "automatizza questo"). \
+            - proposeOpportunity: crea una proposta di automazione dalla chat e la mostra nel nuovo builder. \
+              Usa quando l'utente chiede di automatizzare qualcosa oppure quando scrive un comando \
+              con trigger temporale/condizionale, anche senza la parola "automazione" \
+              ("ogni sera accendi le luci", "accendi luce soggiorno ogni giorno alle 20:30", \
+              "quando la porta si apre accendi i faretti", "al tramonto imposta Relax"). \
               Se la richiesta è esplicita e contiene i dettagli necessari, NON chiedere conferma prima: \
-              crea direttamente l'opportunità. La conferma utente avviene già con il bottone "Crea regola". \
+              crea direttamente la proposta. La conferma utente avviene già con il bottone di revisione automazione. \
               Chiedi una domanda solo quando manca un dettaglio indispensabile \
               (ora, stanza, soglia, accessorio/scena o valore target). \
-              Per automazioni singola-azione: richiede accessoryID valido + naturalLanguage descrittivo. \
-              Per automazioni multi-azione (AC con modalità+velocità, scene complesse): \
-              usa sceneName = nome esatto della scena creata da createScene — NON accessoryID. \
+              Per automazioni singola-azione: richiede accessoryID valido + action + naturalLanguage descrittivo. \
+              Azioni supportate dal builder: on, off, dim, open, close, openGarage, closeGarage, lock, unlock, \
+              setMode, setTemp, setSpeed, setHumidity, armStay, armAway, armNight, disarm. \
+              Per clima/termostato usa setMode con value=0 Auto, 1 Caldo, 2 Freddo e value2=temperatura target °C quando nota. \
+              Per la velocità ventola del climatizzatore usa setSpeed value=0.0–1.0. Se l'utente chiede modalità/temperatura e velocità insieme, usa actions[] con due azioni sullo stesso accessoryID: setMode e setSpeed. \
+              Per purificatore usa setMode value=0 Manuale o 1 Auto; per umidificatore value=0 Auto, 1 Umidifica, 2 Deumidifica. \
+              Per automazioni multi-azione reali usa actions=[{accessoryID, action, value, value2}, ...] \
+              nello stesso proposeOpportunity, così il builder mostra tutte le azioni native. \
+              Usa sceneName solo se l'utente chiede esplicitamente una scena o vuole riusarne una esistente. \
               Tipi trigger: \
               · calendar → imposta triggerTime (HH:mm) e opzionalmente triggerWeekdays. \
+                Per alba/tramonto usa triggerScheduleKind=sunrise/sunset. Per offset usa \
+                triggerOffsetMinutes (20 minuti dopo il tramonto = 20, 15 minuti prima = -15). \
                 Se c'è anche una condizione sensore, includi: triggerSensorType, \
                 triggerSensorRoom, triggerThreshold, triggerDirection (predicato HomeKit). \
               · characteristic → trigger su soglia sensore SENZA ora fissa. Imposta: \
-                triggerSensorType (es. temperature), triggerSensorRoom (es. Balcone), \
-                triggerThreshold (es. 30.0), triggerDirection (above|below). \
-                Prima chiama readSensor per confermare il sensore e leggere le soglie. \
+                triggerSensorType (es. temperature, humidity, carbonDioxide, vocDensity, pm25, pm10, contact, motion, occupancy), \
+                triggerSensorRoom (es. Balcone), triggerDirection (above|below|open|closed|active|inactive). \
+                Se l'utente cita un sensore specifico come finestra/porta, imposta anche \
+                triggerSensorAccessoryName (es. "finestra", "porta ingresso") per evitare di scegliere un contatto generico nella stanza. \
+                Per sensori numerici includi triggerThreshold (es. 30.0, 1200 per CO2 ppm). \
+                Per contatto/movimento/presenza non serve triggerThreshold. \
+                Prima chiama readSensor per sensori ambientali o getSecurityState/listAccessories \
+                per sensori porta/contatto/allarme. \
+              · presence → arrivo/uscita casa. Imposta triggerPresenceKind=everyEntry per \
+                "quando arrivo a casa", triggerPresenceKind=everyExit per "quando esco di casa"; \
+                triggerPresenceUserScope=currentUser salvo richiesta esplicita su tutti/chiunque. \
               · inApp → trigger manuale/sequenziale.
             - createScene: crea una scena HomeKit con più azioni su più accessori. \
               Usa quando l'utente chiede di creare una scena \
-              ("crea una scena Cinema", "imposta le luci della cucina a 2700K", ecc.) \
-              oppure come PRIMO PASSO per automazioni multi-azione prima di proposeOpportunity. \
+              ("crea una scena Cinema", "imposta le luci della cucina a 2700K", ecc.). \
               Flusso obbligatorio: prima listAccessories per ottenere UUID e verificare caps, \
               poi createScene con le azioni. \
               Capabilities: controlla caps da listAccessories per ogni accessorio — \
@@ -109,8 +127,7 @@ final class AgentLoopService {
               · setSpeed: 0.0–1.0. setTemp: °C. \
               La scena viene creata immediatamente su HomeKit ed è visibile nella sezione Scene.
             - listScenes: elenca le scene HomeKit personalizzate esistenti con il dettaglio delle azioni. \
-              Usa PRIMA di createScene per automazioni multi-azione: se esiste già una scena \
-              compatibile con le azioni richieste, riusala in proposeOpportunity invece di crearne una nuova. \
+              Usa quando l'utente vuole riusare o controllare scene esistenti. \
               Parametro opzionale 'query' per filtrare per nome.
             - getLightingStatus: restituisce lo stato attuale dello Smart Lighting Engine — \
               fase del giorno corrente, sunrise/sunset, profili configurati per stanza e log \
@@ -158,6 +175,11 @@ final class AgentLoopService {
               risposta valutativa → controlAccessory(room, type, action) direttamente.
 
             QUANDO USARE I TOOL DI SCRITTURA:
+            - Se la frase contiene un trigger temporale o condizionale \
+              ("ogni", "alle HH:mm", "quando", "se", "al tramonto", "all'alba", \
+              "dopo il tramonto", "prima dell'alba", "al mattino") e contiene anche \
+              un'azione, usa proposeOpportunity, non controlAccessory. Non serve che \
+              l'utente dica "automazione".
             - Imperativo diretto per tipo+stanza ("Accendi le luci in cucina"): \
               controlAccessory(room, type, action) — SENZA listAccessories. \
               Il tool risolve internamente per tipo e stanza.
@@ -174,8 +196,8 @@ final class AgentLoopService {
               Proponi (proposeAction/chooseAccessory) solo se il dato la giustifica.
             - Richiesta di automazione temporale ("ogni sera…", "alle 22 spegni…"): \
               listAccessories per UUID, poi proposeOpportunity con triggerType=calendar. \
-              NON chiedere "vuoi che crei la regola?" se l'utente ha già chiesto di automatizzare: \
-              il bottone "Crea regola" è la conferma. \
+              NON chiedere "vuoi che crei l'automazione?" se l'utente ha già chiesto di automatizzare: \
+              il bottone di revisione automazione è la conferma. \
               REGOLA CRITICA SUL TRIGGER TYPE: se la richiesta contiene un'ora FISSA \
               (es. "alle 8:00", "ogni mattina", "ogni sera alle 22"), usa SEMPRE \
               triggerType=calendar anche se c'è una condizione aggiuntiva sul sensore. \
@@ -186,21 +208,40 @@ final class AgentLoopService {
               Chiama readSensor prima per ottenere il valore attuale e le soglie. \
               La condizione viene aggiunta come predicato HomeKit: l'automazione \
               scatta ALL'ORA stabilita SOLO SE il sensore soddisfa la soglia.
+              Esempi: \
+              · "Accendi luce soggiorno ogni giorno alle 20:30" → listAccessories luce soggiorno, \
+                poi proposeOpportunity triggerType=calendar triggerTime=20:30 action=on. \
+              · "Al tramonto imposta la scena Relax" → listScenes query=Relax, \
+                poi proposeOpportunity sceneName=Relax triggerType=calendar triggerScheduleKind=sunset. \
+              · "20 minuti dopo il tramonto accendi i faretti in cucina" → listAccessories faretti cucina, \
+                poi proposeOpportunity triggerType=calendar triggerScheduleKind=sunset triggerOffsetMinutes=20. \
+              · "La temperatura sul balcone al mattino è superiore a 26° chiudi la tenda" → \
+                readSensor temperature Balcone, listAccessories tenda, poi proposeOpportunity \
+                triggerType=calendar triggerTime=08:00 triggerSensorType=temperature \
+                triggerSensorRoom=Balcone triggerThreshold=26 triggerDirection=above action=close.
             - Richiesta su soglia sensore SENZA ora fissa ("quando supera 30°C…", "se l'umidità scende sotto…"): \
               1) readSensor per confermare il sensore e leggere le soglie. \
               2) listAccessories per l'UUID dell'accessorio da controllare. \
               3) proposeOpportunity con triggerType=characteristic + campi sensore. \
               NON chiedere conferma prima se soglia, sensore e azione sono già chiari.
-            - Automazione multi-azione ("accendi il climatizzatore in modalità freddo con ventilazione 5", \
-              "quando supera 28° attiva il clima su freddo"): \
-              1) listScenes (opz. con query) per verificare se esiste già una scena compatibile. \
-                 Se esiste → vai direttamente al passo 4 usando il nome della scena trovata. \
-              2) listAccessories per gli UUID degli accessori coinvolti (se devi creare la scena). \
-              3) createScene con TUTTE le azioni necessarie (on, setMode, setSpeed, setTemp, ecc.). \
-                 Dai alla scena un nome descrittivo (es. "AC Freddo Living 5"). \
-              4) proposeOpportunity con sceneName = nome ESATTO della scena (esistente o appena creata) \
-                 (non accessoryID, non action), + trigger appropriato (calendar o characteristic). \
-              NON inventare sceneName: usa il nome esatto da listScenes o da createScene.
+              Esempi: \
+              · "Quando la porta in ingresso è aperta accendi i faretti" → \
+                getSecurityState/listAccessories per contatto ingresso e faretti, poi \
+                proposeOpportunity triggerType=characteristic triggerSensorType=contact \
+                triggerSensorRoom=Ingresso triggerDirection=open action=on. \
+              · "Quando la CO2 in studio supera 1200 BPM accendi il purificatore" → \
+                interpreta BPM come ppm per CO2, readSensor carbonDioxide Studio, listAccessories \
+                purificatore, poi proposeOpportunity triggerType=characteristic \
+                triggerSensorType=carbonDioxide triggerSensorRoom=Studio triggerThreshold=1200 \
+                triggerDirection=above action=setMode value=1.
+            - Automazione singola-azione avanzata ("quando supera 28° attiva il clima su freddo a 24°"): \
+              usa proposeOpportunity direttamente con accessoryID, action=setMode, value=2, value2=24. \
+              Non creare una scena se basta una sola card del builder. \
+            - Automazione multi-azione vera ("accendi il climatizzatore in freddo a 24° e imposta anche ventola 80%", \
+              "quando supera 28° attiva clima e chiudi tende"): \
+              1) listAccessories per gli UUID degli accessori coinvolti e le capability. \
+              2) proposeOpportunity con actions=[...] e trigger appropriato (calendar, characteristic o presence). \
+              NON creare una scena solo per aggregare più azioni: il builder supporta actions native.
             - Richiesta di creare una scena ("crea una scena Lettura", "imposta le luci a 2700K"): \
               listAccessories per UUID + caps, poi createScene con le azioni appropriate. \
               Filtra SEMPRE gli accessori in base alle capabilities — NON includere luci \
@@ -224,6 +265,10 @@ final class AgentLoopService {
             - Lunghezza: 2-3 frasi al massimo. Dato reale + conclusione operativa.
             - Niente markdown: zero **grassetto**, zero liste puntate, zero titoli con #.
             - Niente saggi: vietati disclaimer multipli, spiegazioni non richieste.
+            - Non dire mai "ho creato l'automazione/la regola" se prima non hai chiamato \
+              proposeOpportunity con successo. Se una frase contiene un trigger temporale o \
+              condizionale, la risposta testuale da sola è sbagliata: deve esserci il bottone \
+              "Rivedi automazione".
             - Per richieste valutative: chiudi con UNA domanda breve, poi proposeAction.
             - Se un dato non è disponibile: una frase sola, senza scuse.
             """
@@ -233,7 +278,7 @@ final class AgentLoopService {
             Always answer using real data from the tools — never invent values.
 
             AVAILABLE TOOLS:
-            - readSensor: current sensor value (temperature, humidity, CO₂, etc.). \
+            - readSensor: current sensor value (temperature, humidity, CO₂, VOC, PM2.5, PM10, etc.). \
               'room' is optional: if the user says "outdoor/external temperature" without a room, \
               call readSensor WITHOUT 'room' → get all sensors of that type across all rooms → \
               identify the outdoor one by name (e.g. Balcone, Terrazza, Garden). \
@@ -246,6 +291,7 @@ final class AgentLoopService {
               Examples: "- Spotlight [Kitchen, luce, on 80%, caps:on/off+dim] id=12345-...", \
                         "- Island Outlet [Kitchen, presa, on, caps:on/off] id=6789-...". \
               Always use the id for controlAccessory/proposeAction/proposeOpportunity. \
+              Caps prefixed with automation: are allowed only in proposeOpportunity, not in controlAccessory. \
               TYPE FILTERING: if the user asks about "lights/luci", consider ONLY rows with type=luce; \
               "outlets/prese" → type=presa; etc. Never mix different types in a single answer. \
               STATE QUESTIONS ("what is on?"): report ONLY accessories with state=on/on N%. \
@@ -267,29 +313,46 @@ final class AgentLoopService {
             - chooseAccessory: shows a list of accessories as selectable pills \
               to disambiguate when there are multiple accessories with non-trivial \
               capabilities (dim, setTemp, setSpeed). Do NOT use for on/off — execute all.
-            - proposeOpportunity: creates an automation rule from the chat and saves it. \
-              Use ONLY when the user asks to automate something \
-              ("every evening turn on the lights", "automate this"). \
+            - proposeOpportunity: creates an automation proposal from the chat and opens it in the unified builder. \
+              Use when the user asks to automate something or writes a command with a temporal/conditional \
+              trigger, even without saying "automation" \
+              ("every evening turn on the lights", "turn on living room light every day at 20:30", \
+              "when the front door opens turn on the spotlights", "at sunset set Relax"). \
               If the request is explicit and contains the required details, do NOT ask for confirmation first: \
-              create the opportunity directly. The user confirmation already happens through the "Create rule" button. \
+              create the proposal directly. User confirmation already happens through the automation review button. \
               Ask a question only when an essential detail is missing \
               (time, room, threshold, target accessory/scene, or target value). \
-              For single-action automations: requires a valid accessoryID + descriptive naturalLanguage. \
-              For multi-action automations (AC with mode+speed, complex scenes): \
-              use sceneName = exact name of the scene created by createScene — NOT accessoryID. \
+              For single-action automations: requires valid accessoryID + action + descriptive naturalLanguage. \
+              Builder-supported actions: on, off, dim, open, close, openGarage, closeGarage, lock, unlock, \
+              setMode, setTemp, setSpeed, setHumidity, armStay, armAway, armNight, disarm. \
+              For climate/thermostat use setMode with value=0 Auto, 1 Heat, 2 Cool and value2=target °C when known. \
+              For AC fan speed use setSpeed value=0.0–1.0. If the user asks for mode/temperature and fan speed together, use actions[] with two actions on the same accessoryID: setMode and setSpeed. \
+              For air purifier use setMode value=0 Manual or 1 Auto; for humidifier value=0 Auto, 1 Humidify, 2 Dehumidify. \
+              For true multi-action automations use actions=[{accessoryID, action, value, value2}, ...] \
+              in the same proposeOpportunity, so the builder shows all native actions. \
+              Use sceneName only when the user explicitly asks for a scene or wants to reuse an existing scene. \
               Trigger types: \
               · calendar → set triggerTime (HH:mm) and optionally triggerWeekdays. \
+                For sunrise/sunset use triggerScheduleKind=sunrise/sunset. For offsets use \
+                triggerOffsetMinutes (20 minutes after sunset = 20, 15 minutes before = -15). \
                 If there is also a sensor condition, also include: triggerSensorType, \
                 triggerSensorRoom, triggerThreshold, triggerDirection (HomeKit predicate). \
               · characteristic → sensor-threshold trigger with NO fixed time. Set: \
-                triggerSensorType (e.g. temperature), triggerSensorRoom (e.g. Balcone), \
-                triggerThreshold (e.g. 30.0), triggerDirection (above|below). \
-                Always call readSensor first to confirm the sensor exists and read the thresholds. \
+                triggerSensorType (e.g. temperature, humidity, carbonDioxide, vocDensity, pm25, pm10, contact, motion, occupancy), \
+                triggerSensorRoom (e.g. Balcone), triggerDirection (above|below|open|closed|active|inactive). \
+                If the user names a specific sensor such as window/door, also set \
+                triggerSensorAccessoryName (e.g. "window", "front door") to avoid choosing a generic contact in the room. \
+                For numeric sensors include triggerThreshold (e.g. 30.0, 1200 for CO2 ppm). \
+                For contact/motion/occupancy no triggerThreshold is needed. \
+                Call readSensor for environment sensors or getSecurityState/listAccessories \
+                for door/contact/alarm sensors. \
+              · presence → arrival/departure home. Set triggerPresenceKind=everyEntry for \
+                "when I arrive home", triggerPresenceKind=everyExit for "when I leave home"; \
+                triggerPresenceUserScope=currentUser unless the user explicitly says anyone/everyone. \
               · inApp → manual/sequential trigger.
             - createScene: creates a HomeKit scene with multiple actions across multiple accessories. \
               Use when the user asks to create a scene \
-              ("create a Cinema scene", "set the kitchen lights to 2700K", etc.) \
-              or as the FIRST STEP for multi-action automations before proposeOpportunity. \
+              ("create a Cinema scene", "set the kitchen lights to 2700K", etc.). \
               Required flow: first listAccessories for UUIDs and capabilities, \
               then createScene with the actions. \
               Check caps from listAccessories for each accessory — include ONLY supported actions. \
@@ -303,8 +366,7 @@ final class AgentLoopService {
               · setSpeed: 0.0–1.0. setTemp: °C. \
               The scene is created immediately on HomeKit and visible in the Scenes section.
             - listScenes: lists existing custom HomeKit scenes with the detail of each scene's actions. \
-              Use BEFORE createScene for multi-action automations: if a compatible scene already exists, \
-              reuse it in proposeOpportunity instead of creating a new one. \
+              Use when the user wants to inspect or reuse existing scenes. \
               Optional 'query' parameter to filter by scene name.
             - getLightingStatus: returns the current state of the Smart Lighting Engine — \
               current day phase, sunrise/sunset times, configured room profiles, and the \
@@ -352,6 +414,10 @@ final class AgentLoopService {
               controlAccessory(room, type, action) directly.
 
             WHEN TO USE WRITE TOOLS:
+            - If the sentence contains a temporal or conditional trigger \
+              ("every", "at HH:mm", "when", "if", "at sunset", "at sunrise", \
+              "after sunset", "before sunrise", "in the morning") and also contains an action, \
+              use proposeOpportunity, not controlAccessory. The user does not need to say "automation".
             - Direct imperative by type+room ("Turn on the lights in the kitchen"): \
               controlAccessory(room, type, action) — WITHOUT listAccessories. \
               The tool resolves internally by type and room.
@@ -367,8 +433,8 @@ final class AgentLoopService {
               Do NOT use controlAccessory.
             - Time-based automation ("every evening…", "at 10pm turn off…"): \
               listAccessories for UUID, then proposeOpportunity with triggerType=calendar. \
-              Do NOT ask "do you want me to create the rule?" if the user already asked to automate it: \
-              the "Create rule" button is the confirmation. \
+              Do NOT ask "do you want me to create the automation?" if the user already asked to automate it: \
+              the automation review button is the confirmation. \
               CRITICAL TRIGGER RULE: if the request contains a FIXED TIME \
               (e.g., "at 8am", "every morning", "every evening at 10pm"), ALWAYS use \
               triggerType=calendar even if there is an additional sensor condition. \
@@ -379,21 +445,39 @@ final class AgentLoopService {
               Call readSensor first to get the current value and thresholds. \
               The condition is added as a HomeKit predicate: the automation fires \
               AT THE SET TIME ONLY IF the sensor meets the threshold.
+              Examples: \
+              · "Turn on living room light every day at 20:30" → listAccessories living room light, \
+                then proposeOpportunity triggerType=calendar triggerTime=20:30 action=on. \
+              · "At sunset set Relax scene" → listScenes query=Relax, then proposeOpportunity \
+                sceneName=Relax triggerType=calendar triggerScheduleKind=sunset. \
+              · "20 minutes after sunset turn on the kitchen spotlights" → listAccessories kitchen spotlights, \
+                then proposeOpportunity triggerType=calendar triggerScheduleKind=sunset triggerOffsetMinutes=20. \
+              · "If balcony temperature in the morning is above 26° close the blind" → \
+                readSensor temperature Balcone, listAccessories blind, then proposeOpportunity \
+                triggerType=calendar triggerTime=08:00 triggerSensorType=temperature \
+                triggerSensorRoom=Balcone triggerThreshold=26 triggerDirection=above action=close.
             - Sensor-threshold automation with NO fixed time ("when it exceeds 30°C…", "if humidity drops below…"): \
               1) readSensor to confirm the sensor exists and read thresholds. \
               2) listAccessories for the UUID of the accessory to control. \
               3) proposeOpportunity with triggerType=characteristic + sensor fields. \
               Do NOT ask for confirmation first if threshold, sensor, and action are already clear.
-            - Multi-action automation ("turn on AC in cool mode at fan speed 5", \
-              "when it exceeds 28°C activate AC in cool mode"): \
-              1) listScenes (optionally with query) to check if a compatible scene already exists. \
-                 If found → skip to step 4 using the existing scene name. \
-              2) listAccessories for the UUIDs of the accessories involved (if you need to create the scene). \
-              3) createScene with ALL the needed actions (on, setMode, setSpeed, setTemp, etc.). \
-                 Give the scene a descriptive name (e.g. "AC Cool Living 5"). \
-              4) proposeOpportunity with sceneName = EXACT name of the scene (existing or just created) \
-                 (not accessoryID, not action), + the appropriate trigger (calendar or characteristic). \
-              NEVER invent sceneName: use the exact name from listScenes or from createScene.
+              Examples: \
+              · "When the front door is open turn on the spotlights" → getSecurityState/listAccessories \
+                for front contact and spotlights, then proposeOpportunity triggerType=characteristic \
+                triggerSensorType=contact triggerSensorRoom=Ingresso triggerDirection=open action=on. \
+              · "When studio CO2 exceeds 1200 BPM turn on the purifier" → interpret BPM as ppm \
+                for CO2, readSensor carbonDioxide Studio, listAccessories purifier, then \
+                proposeOpportunity triggerType=characteristic triggerSensorType=carbonDioxide \
+                triggerSensorRoom=Studio triggerThreshold=1200 triggerDirection=above \
+                action=setMode value=1.
+            - Advanced single-action automation ("when it exceeds 28°C set AC to cool at 24°C"): \
+              use proposeOpportunity directly with accessoryID, action=setMode, value=2, value2=24. \
+              Do not create a scene when one builder card is enough. \
+            - True multi-action automation ("set AC to cool at 24°C and also fan 80%", \
+              "when it exceeds 28°C activate AC and close blinds"): \
+              1) listAccessories for UUIDs and capabilities of involved accessories. \
+              2) proposeOpportunity with actions=[...] and the appropriate trigger (calendar, characteristic, or presence). \
+              Do NOT create a scene only to aggregate multiple actions: the builder supports native actions.
             - Scene creation request ("create a Reading scene", "set lights to 2700K"): \
               listAccessories for UUIDs + caps, then createScene with the appropriate actions. \
               ALWAYS filter accessories by capability — do NOT include lights without \
@@ -417,6 +501,10 @@ final class AgentLoopService {
             - Length: 2-3 sentences maximum. Real data + operational conclusion.
             - No markdown: zero **bold**, zero bullet lists, zero # headings.
             - No essays: no multiple disclaimers, unsolicited explanations.
+            - Never say "I created the automation/rule" unless you first called \
+              proposeOpportunity successfully. If a sentence contains a temporal or \
+              conditional trigger, a text-only answer is wrong: the "Review automation" \
+              button must be attached.
             - For evaluative requests: close with ONE short question, then proposeAction.
             - If data is unavailable: one sentence, no apologies.
             """
@@ -481,8 +569,22 @@ final class AgentLoopService {
                 switch turn {
 
                 case .textResponse(let text):
-                    onLog("✅ Risposta finale ricevuta (iterazioni: \(iteration))")
                     let payload = dispatcher.lastActionPayload
+                    if payload == nil,
+                       requiresAutomationProposal(for: query),
+                       !isClarifyingAutomationQuestion(text),
+                       iteration < Self.maxIterations {
+                        onLog("⚠️ Risposta testuale rifiutata: richiesta automazione senza proposeOpportunity")
+                        messages.append(["role": "assistant", "content": text])
+                        messages.append([
+                            "role": "user",
+                            "content": """
+                            La richiesta contiene un trigger temporale o condizionale e un'azione. Non rispondere solo con testo: devi chiamare proposeOpportunity con i dati necessari per creare una AutomationProposal. Se manca un dettaglio indispensabile, fai una sola domanda breve.
+                            """
+                        ])
+                        continue
+                    }
+                    onLog("✅ Risposta finale ricevuta (iterazioni: \(iteration))")
                     return .success(AgentResponse(text: text, actionPayload: payload))
 
                 case .toolCalls(let calls):
@@ -527,6 +629,50 @@ final class AgentLoopService {
 
         onLog("⚠️ Cap iterazioni raggiunto (\(Self.maxIterations)). Loop terminato.")
         return .failure(AgentError.iterationCapReached)
+    }
+
+    private func requiresAutomationProposal(for query: String) -> Bool {
+        let normalized = query
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+
+        let troubleshootingTerms = [
+            "che automazioni", "quali automazioni", "lista automazioni",
+            "mostra automazioni", "perche", "diagnostica", "problemi"
+        ]
+        if troubleshootingTerms.contains(where: { normalized.contains($0) }) {
+            return false
+        }
+
+        let triggerTerms = [
+            "quando", "se ", "ogni", " alle ", "all'alba", "alba",
+            "tramonto", "dopo il tramonto", "prima del tramonto",
+            "supera", "superiore", "sotto", "inferiore"
+        ]
+        let actionTerms = [
+            "accendi", "spegni", "attiva", "disattiva", "imposta",
+            "chiudi", "apri", "avvia", "blocca", "sblocca",
+            "setta", "porta", "metti"
+        ]
+
+        let hasTrigger = triggerTerms.contains { normalized.contains($0) }
+        let hasAction = actionTerms.contains { normalized.contains($0) }
+        return hasTrigger && hasAction
+    }
+
+    private func isClarifyingAutomationQuestion(_ text: String) -> Bool {
+        let normalized = text
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+
+        guard normalized.contains("?") else { return false }
+
+        let missingDetailTerms = [
+            "a che ora", "quale ora", "quali giorni", "quale stanza",
+            "quale accessorio", "quale scena", "quale soglia",
+            "che valore", "che temperatura", "che percentuale"
+        ]
+        return missingDetailTerms.contains { normalized.contains($0) }
     }
 
     // MARK: - HTTP (Claude only)

@@ -9,12 +9,10 @@ struct SettingsView: View {
     @Environment(WeatherKitService.self)    private var weatherKit
     @Environment(SmartLightingEngine.self)  private var smartLightingEngine
     @Environment(AISettings.self)           private var aiSettings
+    @Environment(RuleEngineService.self)    private var ruleEngine
 
     @AppStorage(MarkerSize.appStorageKey)
     private var markerSizeRaw: String = MarkerSize.regular.rawValue
-
-    @AppStorage(AppLanguage.appStorageKey)
-    private var appLanguageRaw: String = AppLanguage.system.rawValue
 
     private var currentMarkerSize: MarkerSize {
         MarkerSize(rawValue: markerSizeRaw) ?? .regular
@@ -36,7 +34,6 @@ struct SettingsView: View {
 
     // MARK: - Home Location state
     @State private var showsLocationPicker = false
-    @State private var showsLanguageRestartAlert = false
     @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
     @AppStorage("homeLocation.cityName") private var homeLocationCityName: String = ""
 
@@ -58,6 +55,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
 
+#if DEBUG
                 NavigationLink {
                     HomeKitDebugView()
                 } label: {
@@ -67,6 +65,7 @@ struct SettingsView: View {
                         subtitle: String(localized: "settings.homekit.diagnostics.subtitle", defaultValue: "Export HomeKit accessory details for troubleshooting.")
                     )
                 }
+#endif
             } header: {
                 Text(String(localized: "settings.section.homeFloorplan", defaultValue: "Home & Floorplan"))
             } footer: {
@@ -169,16 +168,17 @@ struct SettingsView: View {
             // MARK: - App
 
             Section {
-                Picker(String(localized: "settings.language.picker", defaultValue: "App Language"), selection: $appLanguageRaw) {
-                    ForEach(AppLanguage.allCases) { language in
-                        Text(language.displayName).tag(language.rawValue)
+                HStack(spacing: 12) {
+                    Image(systemName: "globe")
+                        .foregroundStyle(BrandColor.primary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(String(localized: "settings.language.picker", defaultValue: "App Language"))
+                        Text(String(localized: "settings.language.lockedBeta", defaultValue: "English for this beta"))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
-                }
-                .pickerStyle(.menu)
-
-                if AppLanguage.resolved(from: appLanguageRaw) != .system {
-                    Text(String(localized: "settings.language.restartHint", defaultValue: "Restart the app to apply the selected language everywhere."))
-                        .font(.footnote)
+                    Spacer()
+                    Text("English")
                         .foregroundStyle(.secondary)
                 }
 
@@ -202,11 +202,7 @@ struct SettingsView: View {
             } header: {
                 Text(String(localized: "settings.section.app", defaultValue: "App"))
             } footer: {
-                Text(String(localized: "settings.app.footer", defaultValue: "Language changes require an app restart."))
-            }
-            .onChange(of: appLanguageRaw) { _, newValue in
-                AppLanguage.apply(rawValue: newValue)
-                showsLanguageRestartAlert = true
+                Text(String(localized: "settings.app.footer.lockedLanguage", defaultValue: "The first beta is locked to English while localization is completed."))
             }
             .onChange(of: idleTimeoutSeconds) { _, newValue in
                 if newValue == 0 {
@@ -226,6 +222,15 @@ struct SettingsView: View {
                     Label(String(localized: "settings.developer.showOnboarding", defaultValue: "Show onboarding on next launch"), systemImage: "arrow.clockwise.circle")
                         .foregroundStyle(BrandColor.primary)
                 }
+                NavigationLink {
+                    ActivityLogView()
+                } label: {
+                    settingsLinkRow(
+                        icon: "clock.arrow.circlepath",
+                        title: String(localized: "settings.diagnostics.activityLog", defaultValue: "Activity Log"),
+                        subtitle: String(localized: "settings.diagnostics.activityLog.subtitle", defaultValue: "Review recent app actions for troubleshooting.")
+                    )
+                }
 #if DEBUG
                 NavigationLink {
                     AITraceView()
@@ -236,6 +241,15 @@ struct SettingsView: View {
                     HabitsDiagnosticsView()
                 } label: {
                     Label("Habits Diagnostics", systemImage: "brain.head.profile.fill")
+                }
+                NavigationLink {
+                    LegacyAutomationCleanupView()
+                } label: {
+                    settingsLinkRow(
+                        icon: "trash.circle",
+                        title: "Legacy Rule Cleanup",
+                        subtitle: "\(ruleEngine.rules.count) local legacy rules"
+                    )
                 }
                 #endif
             } header: {
@@ -248,14 +262,6 @@ struct SettingsView: View {
         .navigationTitle(String(localized: "settings.title", defaultValue: "Settings"))
         .navigationBarTitleDisplayMode(.large)
         .onAppear { refreshNotificationAuthorizationStatus() }
-        .alert(
-            String(localized: "settings.language.restart.title", defaultValue: "Restart required"),
-            isPresented: $showsLanguageRestartAlert
-        ) {
-            Button(String(localized: "common.ok", defaultValue: "OK"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "settings.language.restart.message", defaultValue: "Close and reopen the app to apply the selected language to every screen."))
-        }
         .sheet(isPresented: $showsLocationPicker) {
             let lat = UserDefaults.standard.double(forKey: LocationPresenceService.homeLatKey)
             let lon = UserDefaults.standard.double(forKey: LocationPresenceService.homeLonKey)
@@ -506,6 +512,134 @@ struct SettingsView: View {
         }
     }
 }
+
+#if DEBUG
+private struct LegacyAutomationCleanupView: View {
+    @Environment(RuleEngineService.self) private var ruleEngine
+    @Environment(HomeKitService.self) private var homeKit
+
+    @State private var showDeleteAllConfirmation = false
+    @State private var isDeleting = false
+
+    var body: some View {
+        List {
+            Section {
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Legacy local rules")
+                            .font(.headline)
+                        Text("These records belong to the old Rule system. Deleting them does not remove habits, events, insights, proposals, or HomeKit automations created with the new builder.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            Section {
+                if ruleEngine.rules.isEmpty {
+                    ContentUnavailableView(
+                        "No legacy rules",
+                        systemImage: "checkmark.circle",
+                        description: Text("The local legacy Rule store is already clean.")
+                    )
+                } else {
+                    ForEach(ruleEngine.rules) { rule in
+                        LegacyRuleCleanupRow(rule: rule)
+                    }
+                    .onDelete { offsets in
+                        deleteRules(at: offsets)
+                    }
+                }
+            } header: {
+                Text("Stored Rules")
+            }
+
+            if !ruleEngine.rules.isEmpty {
+                Section {
+                    Button(role: .destructive) {
+                        showDeleteAllConfirmation = true
+                    } label: {
+                        if isDeleting {
+                            ProgressView()
+                        } else {
+                            Label("Delete all legacy rules", systemImage: "trash")
+                        }
+                    }
+                    .disabled(isDeleting)
+                } footer: {
+                    Text("Only SwiftData Rule records are deleted. If a legacy rule has a linked HomeKit trigger ID, the cleanup also asks HomeKit to remove that old trigger.")
+                }
+            }
+        }
+        .navigationTitle("Legacy Cleanup")
+        .alert("Delete all legacy rules?", isPresented: $showDeleteAllConfirmation) {
+            Button("Delete", role: .destructive) {
+                deleteAllRules()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes only old local Rule records and their linked legacy HomeKit triggers when available.")
+        }
+    }
+
+    private func deleteRules(at offsets: IndexSet) {
+        let rules = offsets.map { ruleEngine.rules[$0] }
+        delete(rules)
+    }
+
+    private func deleteAllRules() {
+        delete(ruleEngine.rules)
+    }
+
+    private func delete(_ rules: [Rule]) {
+        guard !rules.isEmpty else { return }
+        isDeleting = true
+        Task {
+            for rule in rules {
+                try? await ruleEngine.deleteRule(rule, home: homeKit.currentHome)
+            }
+            isDeleting = false
+        }
+    }
+}
+
+private struct LegacyRuleCleanupRow: View {
+    let rule: Rule
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(rule.name)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                Text(rule.isEnabled ? "Enabled" : "Paused")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(rule.isEnabled ? .green : .secondary)
+            }
+
+            Text(rule.ruleDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            HStack(spacing: 8) {
+                Label(rule.triggerType, systemImage: "bolt.horizontal")
+                Label(rule.actionType, systemImage: "slider.horizontal.3")
+                if rule.homeKitTriggerID != nil {
+                    Label("HomeKit", systemImage: "house.fill")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 4)
+    }
+}
+#endif
 
 private extension Bundle {
     var appVersion: String {

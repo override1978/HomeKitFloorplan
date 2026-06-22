@@ -3,12 +3,18 @@ import SwiftUI
 // MARK: - DrawingTopBar
 
 /// Top navigation bar for the 2D drawing editor.
-/// Shows: cancel (X), undo, spacer, "Fatto" done button.
+/// Shows: cancel (X), undo/redo, spacer, "Fatto" done button.
 struct DrawingTopBar: View {
 
     var canUndo: Bool
+    var canRedo: Bool
+    var isExporting: Bool
+    var exportMode: DrawingExportMode
+    var onExportModeChange: (DrawingExportMode) -> Void
+    var onHelp: () -> Void
     var onCancel: () -> Void
     var onUndo: () -> Void
+    var onRedo: () -> Void
     var onDone: () -> Void
 
     var body: some View {
@@ -19,8 +25,18 @@ struct DrawingTopBar: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.primary)
                     .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .background(Color.primary.opacity(0.07), in: Circle())
             }
+            .buttonStyle(.plain)
+
+            Button(action: onHelp) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
+                    .background(Color.primary.opacity(0.07), in: Circle())
+            }
+            .buttonStyle(.plain)
 
             Spacer()
 
@@ -30,24 +46,172 @@ struct DrawingTopBar: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(canUndo ? .primary : .secondary)
                     .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .background(Color.primary.opacity(canUndo ? 0.07 : 0.035), in: Circle())
             }
             .disabled(!canUndo)
+            .buttonStyle(.plain)
+
+            // Redo
+            Button(action: onRedo) {
+                Image(systemName: "arrow.uturn.forward")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(canRedo ? .primary : .secondary)
+                    .frame(width: 36, height: 36)
+                    .background(Color.primary.opacity(canRedo ? 0.07 : 0.035), in: Circle())
+            }
+            .disabled(!canRedo)
+            .buttonStyle(.plain)
+
+            Menu {
+                ForEach(DrawingExportMode.allCases) { mode in
+                    Button {
+                        onExportModeChange(mode)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading) {
+                                Text(mode.localizedTitle)
+                                Text(mode.localizedSubtitle)
+                            }
+                        } icon: {
+                            Image(systemName: mode == exportMode ? "checkmark.circle.fill" : "circle")
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "rectangle.and.arrow.up.right.and.arrow.down.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(exportMode.localizedTitle)
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(exportMode == .legacy ? .secondary : BrandColor.primary)
+                .padding(.horizontal, 11)
+                .frame(height: 36)
+                .background(
+                    (exportMode == .legacy ? Color.primary.opacity(0.045) : BrandColor.primary.opacity(0.12)),
+                    in: Capsule()
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(isExporting)
 
             // Done
             Button(action: onDone) {
-                Text(String(localized: "drawing.topbar.done", defaultValue: "Done"))
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .background(BrandColor.primary, in: Capsule())
+                HStack(spacing: 7) {
+                    if isExporting {
+                        ProgressView()
+                            .tint(.white)
+                            .controlSize(.small)
+                    }
+                    Text(String(localized: "drawing.topbar.done", defaultValue: "Done"))
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(isExporting ? Color.secondary : BrandColor.primary, in: Capsule())
+            }
+            .disabled(isExporting)
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.14), radius: 18, x: 0, y: 8)
+    }
+}
+
+// MARK: - DrawingEditorHelpSheet
+
+struct DrawingEditorHelpSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private let sections: [DrawingHelpSection] = [
+        DrawingHelpSection(
+            icon: "pencil.tip",
+            title: String(localized: "drawing.help.wall.title", defaultValue: "Walls"),
+            message: String(localized: "drawing.help.wall.message", defaultValue: "Choose Wall, then drag on the canvas. Snap keeps endpoints aligned to the grid or nearby vertices.")
+        ),
+        DrawingHelpSection(
+            icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
+            title: String(localized: "drawing.help.select.title", defaultValue: "Select and edit"),
+            message: String(localized: "drawing.help.select.message", defaultValue: "Choose Select, tap an element, then drag it or use the inspector above the toolbar.")
+        ),
+        DrawingHelpSection(
+            icon: "door.left.hand.open",
+            title: String(localized: "drawing.help.openings.title", defaultValue: "Doors and windows"),
+            message: String(localized: "drawing.help.openings.message", defaultValue: "Choose Door or Window, then tap a wall. Select the opening to move it, resize it, or flip the door swing.")
+        ),
+        DrawingHelpSection(
+            icon: "square.dashed",
+            title: String(localized: "drawing.help.rooms.title", defaultValue: "Room areas"),
+            message: String(localized: "drawing.help.rooms.message", defaultValue: "Draw a room area, link it to a HomeKit room, then drag vertices to match the real shape.")
+        ),
+        DrawingHelpSection(
+            icon: "point.topleft.down.curvedto.point.bottomright.up",
+            title: String(localized: "drawing.help.vertices.title", defaultValue: "Polygon vertices"),
+            message: String(localized: "drawing.help.vertices.message", defaultValue: "With a room area selected, tap an edge to add a vertex. Double-tap a vertex to remove it.")
+        ),
+        DrawingHelpSection(
+            icon: "magnet",
+            title: String(localized: "drawing.help.snap.title", defaultValue: "Snap"),
+            message: String(localized: "drawing.help.snap.message", defaultValue: "Use the magnet to switch between grid-only snapping and smart snapping to nearby wall endpoints.")
+        ),
+        DrawingHelpSection(
+            icon: "rectangle.and.arrow.up.right.and.arrow.down.left",
+            title: String(localized: "drawing.help.export.title", defaultValue: "Export"),
+            message: String(localized: "drawing.help.export.message", defaultValue: "Legacy keeps the old screen-based export. Adaptive uses the newer stable landscape export for testing.")
+        )
+    ]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(sections) { section in
+                        HStack(alignment: .top, spacing: 14) {
+                            Image(systemName: section.icon)
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(BrandColor.primary)
+                                .frame(width: 28, height: 28)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(section.title)
+                                    .font(.subheadline.weight(.semibold))
+                                Text(section.message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } footer: {
+                    Text(String(localized: "drawing.help.footer", defaultValue: "You can reopen this guide from the info button in the top toolbar."))
+                }
+            }
+            .navigationTitle(String(localized: "drawing.help.title", defaultValue: "Drawing guide"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "common.done", defaultValue: "Done")) {
+                        dismiss()
+                    }
+                }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
     }
+}
+
+private struct DrawingHelpSection: Identifiable {
+    let id = UUID()
+    let icon: String
+    let title: String
+    let message: String
 }
 
 // MARK: - OpeningInspectorPanel

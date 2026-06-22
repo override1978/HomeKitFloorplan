@@ -21,7 +21,6 @@ struct EnvironmentDashboardView: View {
     @Environment(ActionExecutionService.self) private var executionService
 
     @State private var vm = EnvironmentViewModel()
-    @Environment(RuleEngineService.self) private var ruleEngine
 
     @Environment(WeatherKitService.self) private var weatherKit
 
@@ -33,8 +32,8 @@ struct EnvironmentDashboardView: View {
 
     /// Servizio AI per gli insight ambientali (app-scoped, iniettato dall'ambiente).
     @Environment(AmbientalAIService.self) private var aiService
-    /// Sheet per la creazione di una nuova regola da un RuleDraft AI.
-    @State private var pendingRuleDraft: RuleDraft?
+    /// Sheet per revisionare una proposta di automazione generata dagli insight ambientali.
+    @State private var pendingAutomationProposal: AutomationProposal?
 
     /// Timestamp dell'ultimo campionamento automatico (onAppear).
     /// Usato per evitare campionamenti ravvicinati che comprimerebbero la stdDev baseline.
@@ -123,22 +122,13 @@ struct EnvironmentDashboardView: View {
                 sampleIfNeeded()
             }
         }
-        // Sheet regola — sul NavigationStack per evitare conflitti con gli altri sheet.
-        .sheet(item: $pendingRuleDraft) { draft in
-            RuleEditorView(draft: draft) { updatedDraft in
-                guard let updatedDraft, let home = homeKit.currentHome else { return }
-                Task { try? await ruleEngine.createRule(from: updatedDraft, home: home) }
-            } onExecuteNow: { executedDraft in
-                guard let home = homeKit.currentHome else { return }
-                let tempAction = AINextAction(
-                    label: executedDraft.name,
-                    actionType: "executeNow",
-                    accessoryID: executedDraft.actionAccessoryID,
-                    accessoryActionType: executedDraft.actionType,
-                    accessoryValue: executedDraft.actionValue
-                )
-                Task { await executionService.executeRaw(tempAction, in: home) }
+        // Sheet automazione — sul NavigationStack per evitare conflitti con gli altri sheet.
+        .sheet(item: $pendingAutomationProposal) { proposal in
+            AutomationWizardSheet(proposal: proposal) { _ in
+                pendingAutomationProposal = nil
             }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -180,8 +170,8 @@ struct EnvironmentDashboardView: View {
                                 guard let home = homeKit.currentHome else { return false }
                                 return await executionService.execute(action, insight: insight, in: home)
                             },
-                            onCreateRule: { draft, _ in
-                                openRuleEditor(draft: draft)
+                            onReviewAutomation: { proposal, _ in
+                                openAutomationBuilder(proposal)
                             }
                         )
                     }
@@ -212,8 +202,8 @@ struct EnvironmentDashboardView: View {
                                 guard let home = homeKit.currentHome else { return false }
                                 return await executionService.execute(action, insight: insight, in: home)
                             },
-                            onCreateRule: { draft, _ in
-                                openRuleEditor(draft: draft)
+                            onReviewAutomation: { proposal, _ in
+                                openAutomationBuilder(proposal)
                             }
                         )
                     }
@@ -240,19 +230,12 @@ struct EnvironmentDashboardView: View {
         .accessibilityElement(children: .combine)
     }
 
-    // MARK: - Rule editor helper
+    // MARK: - Automation proposal helper
 
-    /// Risolve il nome accessorio e apre RuleEditorView con un piccolo delay
-    /// per evitare conflitti con il gesture recognizer della LazyVGrid.
-    private func openRuleEditor(draft: RuleDraft) {
-        var resolved = draft
-        if resolved.actionAccessoryName.isEmpty,
-           let uuid = UUID(uuidString: resolved.actionAccessoryID),
-           let name = homeKit.accessory(for: uuid)?.name {
-            resolved.actionAccessoryName = name
-        }
+    /// Apre il builder con un piccolo delay per evitare conflitti con il gesture recognizer della LazyVGrid.
+    private func openAutomationBuilder(_ proposal: AutomationProposal) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            pendingRuleDraft = resolved
+            pendingAutomationProposal = proposal
         }
     }
 
@@ -425,7 +408,7 @@ private struct EnvironmentRoomReorderSheet: View {
                     ],
                     onDismissInsight: { _, _ in },
                     onExecuteAction: { _, _ in true },
-                    onCreateRule: { _, _ in }
+                    onReviewAutomation: { _, _ in }
                 )
 
                 HStack {

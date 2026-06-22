@@ -76,6 +76,7 @@ enum AutomationProposalCondition: Codable, Hashable {
 enum AutomationProposalAction: Codable, Hashable {
     case scene(AutomationProposalSceneReference)
     case accessoryPower(AutomationProposalPowerAction)
+    case accessory(AutomationProposalAccessoryAction)
 }
 
 struct AutomationProposalCapabilitySelection: Codable, Hashable {
@@ -218,4 +219,39 @@ struct AutomationProposalPowerAction: Codable, Hashable {
     var accessoryID: UUID?
     var characteristicID: UUID?
     var powerOn: Bool
+}
+
+struct AutomationProposalAccessoryAction: Codable, Hashable {
+    var accessoryID: UUID
+    var kind: AutomationProposalAccessoryActionKind
+    var value: Double?
+    var secondaryValue: Double?
+
+    init(
+        accessoryID: UUID,
+        kind: AutomationProposalAccessoryActionKind,
+        value: Double? = nil,
+        secondaryValue: Double? = nil
+    ) {
+        self.accessoryID = accessoryID
+        self.kind = kind
+        self.value = value
+        self.secondaryValue = secondaryValue
+    }
+}
+
+enum AutomationProposalAccessoryActionKind: String, Codable, Hashable {
+    case turnOn
+    case turnOff
+    case dim
+    case activate
+    case deactivate
+    case setMode
+    case setTemperature
+    case setFanSpeed
+    case setHumidity
+    case open
+    case close
+    case lock
+    case unlock
 }

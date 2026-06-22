@@ -33,61 +33,6 @@ final class RuleEngineService {
         loadRules()
     }
 
-    // MARK: - Rule Creation
-
-    /// Crea una regola da un HabitPattern approvato.
-    /// Decide automaticamente executionMode in base alla complessità del trigger.
-    func createRule(from pattern: HabitPattern, home: HMHome) async throws {
-        guard let ruleData = pattern.suggestedRuleJSON.data(using: .utf8),
-              let ruleDict = try? JSONSerialization.jsonObject(with: ruleData) as? [String: Any]
-        else {
-            // Fallback: crea regola inApp minimale
-            try createFallbackRule(from: pattern)
-            return
-        }
-
-        let triggerType = ruleDict["triggerType"] as? String ?? "calendar"
-        let time        = ruleDict["time"] as? String
-        let weekdays    = ruleDict["weekdays"] as? [Int] ?? []
-        let action      = ruleDict["action"] as? String ?? "on"
-        let value       = ruleDict["value"] as? Double
-
-        // Parsing azione: "dim:30" → actionType = "dim", actionValue = 0.30
-        let (parsedAction, parsedValue) = parseAction(action, explicitValue: value)
-
-        let weekdaysStr = weekdays.map(String.init).joined(separator: ",")
-
-        let rule = Rule(
-            name: pattern.accessoryName,
-            ruleDescription: pattern.description,
-            triggerType: triggerType,
-            triggerTime: time,
-            triggerWeekdays: weekdaysStr.isEmpty ? nil : weekdaysStr,
-            actionAccessoryID: pattern.accessoryID.uuidString,
-            actionType: parsedAction,
-            actionValue: parsedValue,
-            executionMode: shouldDelegateToHomeKit(triggerType: triggerType) ? "homeKit" : "inApp",
-            isEnabled: false,
-            confidenceScore: pattern.confidence,
-            generatedByAI: true
-        )
-
-        // Tenta delega HomeKit
-        if rule.executionMode == "homeKit" {
-            if let triggerID = await tryCreateHomeKitTrigger(rule: rule, home: home, enabled: rule.isEnabled) {
-                rule.homeKitTriggerID = triggerID
-            } else {
-                // Fallback a inApp se HomeKit non riesce
-                rule.executionMode = "inApp"
-            }
-        }
-
-        let context = modelContainer.mainContext
-        context.insert(rule)
-        try context.save()
-        rules.append(rule)
-    }
-
     /// Crea una regola da un RuleDraft (proveniente da AINextAction o RuleEditorView).
     func createRule(from draft: RuleDraft, home: HMHome) async throws {
         let weekdaysStr = (draft.triggerWeekdays ?? []).map(String.init).joined(separator: ",")
@@ -146,7 +91,7 @@ final class RuleEngineService {
             guard let accessory = home.accessories.first(where: {
                 $0.uniqueIdentifier.uuidString == rule.actionAccessoryID
             }) else {
-                print("[HK] ❌ accessorio non trovato: \(rule.actionAccessoryID)")
+                dprint("[HK] ❌ accessorio non trovato: \(rule.actionAccessoryID)")
                 return nil
             }
 
@@ -196,7 +141,10 @@ final class RuleEngineService {
                 }
             case "open", "close":
                 if let posChar = char(positionUUID) {
-                    let pos = rule.actionType == "open" ? 100 : 0
+                    let pos = WindowCoveringPositionMapper.rawTarget(
+                        forActionType: rule.actionType,
+                        accessoryID: accessory.uniqueIdentifier
+                    ) ?? (rule.actionType == "open" ? 100 : 0)
                     writeActions.append(HMCharacteristicWriteAction(characteristic: posChar,
                                                                     targetValue: pos as NSNumber))
                 }
@@ -251,12 +199,12 @@ final class RuleEngineService {
                                                                     targetValue: mode as NSNumber))
                 }
             default:
-                print("[HK] ❌ actionType non delegabile: \(rule.actionType)")
+                dprint("[HK] ❌ actionType non delegabile: \(rule.actionType)")
                 return nil
             }
 
             guard !writeActions.isEmpty else {
-                print("[HK] ❌ writeActions vuoto per \(accessory.name)")
+                dprint("[HK] ❌ writeActions vuoto per \(accessory.name)")
                 return nil
             }
 
@@ -272,7 +220,7 @@ final class RuleEngineService {
             case "calendar":
                 guard let timeStr = rule.triggerTime,
                       let t = parseTimeComponents(timeStr) else {
-                    print("[HK] ❌ calendar: triggerTime mancante o non parsabile")
+                    dprint("[HK] ❌ calendar: triggerTime mancante o non parsabile")
                     return nil
                 }
                 var components = DateComponents()
@@ -288,7 +236,7 @@ final class RuleEngineService {
                 // correttamente da Apple Home come "> 28°C" invece di un range senza etichette.
                 guard let conditionStr = rule.triggerCharacteristicID,
                       let threshold = rule.triggerThreshold else {
-                    print("[HK] ❌ characteristic: conditionStr o threshold mancante")
+                    dprint("[HK] ❌ characteristic: conditionStr o threshold mancante")
                     return nil
                 }
                 let parts         = conditionStr.split(separator: "|").map(String.init)
@@ -298,7 +246,7 @@ final class RuleEngineService {
                 guard let sensorChar = findSensorCharacteristic(typeRaw: sensorTypeRaw,
                                                                  room: sensorRoom,
                                                                  in: home) else {
-                    print("[HK] ❌ characteristic: nessun sensore HomeKit '\(sensorTypeRaw)' in room=\(sensorRoom ?? "any") → fallback inApp")
+                    dprint("[HK] ❌ characteristic: nessun sensore HomeKit '\(sensorTypeRaw)' in room=\(sensorRoom ?? "any") → fallback inApp")
                     return nil
                 }
                 hmEvent = HMCharacteristicEvent<NSNumber>(characteristic: sensorChar, triggerValue: nil)
@@ -307,7 +255,7 @@ final class RuleEngineService {
                 characteristicDirection  = direction
 
             default:
-                print("[HK] ❌ triggerType non supportato: \(rule.triggerType)")
+                dprint("[HK] ❌ triggerType non supportato: \(rule.triggerType)")
                 return nil
             }
 
@@ -332,10 +280,10 @@ final class RuleEngineService {
             return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
                 let actionSetName = homeKitSafeName(for: rule)
                 let recurrences = homeKitRecurrences(for: rule)
-                print("[HK] addActionSet: '\(actionSetName)'")
+                dprint("[HK] addActionSet: '\(actionSetName)'")
                 home.addActionSet(withName: actionSetName) { [weak home] actionSet, error in
                     guard error == nil, let actionSet, let home else {
-                        print("[HK] ❌ addActionSet fallito: \(error?.localizedDescription ?? "home nil")")
+                        dprint("[HK] ❌ addActionSet fallito: \(error?.localizedDescription ?? "home nil")")
                         continuation.resume(returning: nil)
                         return
                     }
@@ -347,16 +295,16 @@ final class RuleEngineService {
                                                          end: nil,
                                                          recurrences: recurrences,
                                                          predicate: nil)
-                            print("[HK] addTrigger: '\(actionSetName)'")
+                            dprint("[HK] addTrigger: '\(actionSetName)'")
                             home.addTrigger(trigger) { error in
                                 guard error == nil else {
-                                    print("[HK] ❌ addTrigger fallito: \(error!.localizedDescription)")
+                                    dprint("[HK] ❌ addTrigger fallito: \(error!.localizedDescription)")
                                     continuation.resume(returning: nil)
                                     return
                                 }
                                 trigger.addActionSet(actionSet) { error in
                                     guard error == nil else {
-                                        print("[HK] ❌ trigger.addActionSet fallito: \(error!.localizedDescription)")
+                                        dprint("[HK] ❌ trigger.addActionSet fallito: \(error!.localizedDescription)")
                                         continuation.resume(returning: nil)
                                         return
                                     }
@@ -415,7 +363,7 @@ final class RuleEngineService {
         guard let actionSet = home.actionSets.first(where: {
             $0.name.lowercased() == sceneName.lowercased()
         }) else {
-            print("[HK] ❌ scena '\(sceneName)' non trovata — fallback inApp")
+            dprint("[HK] ❌ scena '\(sceneName)' non trovata — fallback inApp")
             return nil
         }
 
@@ -428,7 +376,7 @@ final class RuleEngineService {
         switch rule.triggerType {
         case "calendar":
             guard let timeStr = rule.triggerTime, let t = parseTimeComponents(timeStr) else {
-                print("[HK] ❌ calendar: triggerTime mancante per scena")
+                dprint("[HK] ❌ calendar: triggerTime mancante per scena")
                 return nil
             }
             var components = DateComponents()
@@ -439,7 +387,7 @@ final class RuleEngineService {
         case "characteristic":
             guard let conditionStr = rule.triggerCharacteristicID,
                   let threshold = rule.triggerThreshold else {
-                print("[HK] ❌ characteristic: conditionStr o threshold mancante per scena")
+                dprint("[HK] ❌ characteristic: conditionStr o threshold mancante per scena")
                 return nil
             }
             let parts         = conditionStr.split(separator: "|").map(String.init)
@@ -449,7 +397,7 @@ final class RuleEngineService {
             guard let sensorChar = findSensorCharacteristic(typeRaw: sensorTypeRaw,
                                                              room: sensorRoom,
                                                              in: home) else {
-                print("[HK] ❌ sensore non trovato per scena '\(sceneName)'")
+                dprint("[HK] ❌ sensore non trovato per scena '\(sceneName)'")
                 return nil
             }
             hmEvent = HMCharacteristicEvent<NSNumber>(characteristic: sensorChar, triggerValue: nil)
@@ -458,13 +406,13 @@ final class RuleEngineService {
             characteristicDirection  = direction
 
         default:
-            print("[HK] ❌ triggerType non supportato per scena: \(rule.triggerType)")
+            dprint("[HK] ❌ triggerType non supportato per scena: \(rule.triggerType)")
             return nil
         }
 
         let triggerName = homeKitSafeName(for: rule)
         let recurrences = homeKitRecurrences(for: rule)
-        print("[HK] addTrigger (scene): '\(triggerName)' → scena '\(sceneName)'")
+        dprint("[HK] addTrigger (scene): '\(triggerName)' → scena '\(sceneName)'")
 
         return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             let trigger = HMEventTrigger(name: triggerName,
@@ -474,13 +422,13 @@ final class RuleEngineService {
                                          predicate: nil)
             home.addTrigger(trigger) { error in
                 guard error == nil else {
-                    print("[HK] ❌ addTrigger(scena) fallito: \(error!.localizedDescription)")
+                    dprint("[HK] ❌ addTrigger(scena) fallito: \(error!.localizedDescription)")
                     continuation.resume(returning: nil)
                     return
                 }
                 trigger.addActionSet(actionSet) { error in
                     guard error == nil else {
-                        print("[HK] ❌ addActionSet(scena) fallito: \(error!.localizedDescription)")
+                        dprint("[HK] ❌ addActionSet(scena) fallito: \(error!.localizedDescription)")
                         continuation.resume(returning: nil)
                         return
                     }
@@ -663,10 +611,18 @@ final class RuleEngineService {
             try? await char("00000008-0000-1000-8000-0026bb765291")?.writeValue(Int((rule.actionValue ?? 0.3) * 100))
 
         case "open":
-            try? await char("0000007c-0000-1000-8000-0026bb765291")?.writeValue(100)
+            let rawPosition = WindowCoveringPositionMapper.rawTarget(
+                forActionType: rule.actionType,
+                accessoryID: accessory.uniqueIdentifier
+            ) ?? 100
+            try? await char("0000007c-0000-1000-8000-0026bb765291")?.writeValue(rawPosition)
 
         case "close":
-            try? await char("0000007c-0000-1000-8000-0026bb765291")?.writeValue(0)
+            let rawPosition = WindowCoveringPositionMapper.rawTarget(
+                forActionType: rule.actionType,
+                accessoryID: accessory.uniqueIdentifier
+            ) ?? 0
+            try? await char("0000007c-0000-1000-8000-0026bb765291")?.writeValue(rawPosition)
 
         case "setSpeed":
             try? await char("00000029-0000-1000-8000-0026bb765291")?.writeValue(Int((rule.actionValue ?? 0.5) * 100))
@@ -844,24 +800,6 @@ final class RuleEngineService {
         let parts = timeStr.split(separator: ":").compactMap { Int($0) }
         guard parts.count == 2 else { return nil }
         return (parts[0], parts[1])
-    }
-
-    private func createFallbackRule(from pattern: HabitPattern) throws {
-        let rule = Rule(
-            name: pattern.accessoryName,
-            ruleDescription: pattern.description,
-            triggerType: "inApp",
-            actionAccessoryID: pattern.accessoryID.uuidString,
-            actionType: "on",
-            executionMode: "inApp",
-            isEnabled: false,
-            confidenceScore: pattern.confidence,
-            generatedByAI: true
-        )
-        let context = modelContainer.mainContext
-        context.insert(rule)
-        try context.save()
-        rules.append(rule)
     }
 
     /// Inserts an already-built Rule into SwiftData and the in-memory list.

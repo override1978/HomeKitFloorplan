@@ -19,9 +19,7 @@
 	<key>NSWeatherKitUsageDescription</key>
 	<string>HomeFloorplan usa WeatherKit per ottenere le previsioni meteo locali e adattare i suggerimenti ambientali alle condizioni climatiche esterne.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>HomeFloorplan usa la tua posizione per rilevare quando arrivi o parti da casa, migliorando le previsioni di occupazione.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>HomeFloorplan usa la tua posizione anche in background per rilevare arrivi e partenze da casa in modo affidabile.</string>
+	<string>HomeFloorplan usa la tua posizione per impostare la posizione di casa, ottenere il meteo locale e configurare automazioni geofence.</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.homefloorplan.sensorSample</string>

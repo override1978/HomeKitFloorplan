@@ -6,6 +6,8 @@ import HomeKit
 /// Sheet per creare o modificare una regola automatica.
 /// Supporta sia RuleDraft (nuovo) che Rule esistente.
 /// Il callback `onSave` riceve il RuleDraft aggiornato con tutte le modifiche utente.
+/// Legacy: prefer `AutomationWizardSheet(proposal:)` for new automation creation.
+@available(*, deprecated, message: "Use AutomationWizardSheet(proposal:) for new automation creation.")
 struct RuleEditorView: View {
 
     /// Callback: nil = regola esclusa/annullata, non-nil = salva il draft modificato.

@@ -259,6 +259,10 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable, MarkerRuntimeS
         case temperature        // Temperatura
         case humidity           // Umidità
         case airQuality         // Qualità aria
+        case carbonDioxide      // CO2
+        case vocDensity         // Composti organici volatili
+        case pm25               // Particolato PM2.5
+        case pm10               // Particolato PM10
         case lightLevel         // Luminosità ambiente
         
         var characteristicType: String {
@@ -272,6 +276,10 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable, MarkerRuntimeS
             case .temperature: return HMCharacteristicTypeCurrentTemperature
             case .humidity: return HMCharacteristicTypeCurrentRelativeHumidity
             case .airQuality: return HMCharacteristicTypeAirQuality
+            case .carbonDioxide: return HMCharacteristicTypeCarbonDioxideLevel
+            case .vocDensity: return HMCharacteristicTypeVolatileOrganicCompoundDensity
+            case .pm25: return HMCharacteristicTypePM2_5Density
+            case .pm10: return HMCharacteristicTypePM10Density
             case .lightLevel: return HMCharacteristicTypeCurrentLightLevel
             }
         }
@@ -280,7 +288,7 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable, MarkerRuntimeS
             switch self {
             case .smoke, .carbonMonoxide, .leak, .contact, .motion, .occupancy:
                 return true
-            case .temperature, .humidity, .airQuality, .lightLevel:
+            case .temperature, .humidity, .airQuality, .carbonDioxide, .vocDensity, .pm25, .pm10, .lightLevel:
                 return false
             }
         }
@@ -296,6 +304,10 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable, MarkerRuntimeS
             case .temperature: return "thermometer.medium"
             case .humidity: return "humidity"
             case .airQuality: return "aqi.medium"
+            case .carbonDioxide: return "carbon.dioxide.cloud.fill"
+            case .vocDensity: return "flask.fill"
+            case .pm25: return "microbe.fill"
+            case .pm10: return "microbe"
             case .lightLevel: return "sun.max"
             }
         }
@@ -342,6 +354,18 @@ final class SensorAdapter: AccessoryAdapter, EnvironmentReadable, MarkerRuntimeS
                     case 5: return String(localized: "sensor.airQuality.poor",      defaultValue: "Poor")
                     default: return nil
                     }
+                }
+            case .carbonDioxide:
+                if let v = Self.doubleValueStatic(raw) {
+                    return "\(Int(v.rounded()))ppm"
+                }
+            case .vocDensity:
+                if let v = Self.doubleValueStatic(raw) {
+                    return "\(Int(v.rounded()))µg/m³"
+                }
+            case .pm25, .pm10:
+                if let v = Self.doubleValueStatic(raw) {
+                    return "\(Int(v.rounded()))µg/m³"
                 }
             case .lightLevel:
                 if let v = Self.doubleValueStatic(raw) {

@@ -34,7 +34,7 @@ struct HomeFloorplanApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     @AppStorage("securityMonitoredUUIDs") private var securityMonitoredUUIDsRaw: String = ""
-    @AppStorage(AppLanguage.appStorageKey) private var appLanguageRaw = AppLanguage.system.rawValue
+    @AppStorage(AppLanguage.appStorageKey) private var appLanguageRaw = AppLanguage.english.rawValue
     /// Set to true when a SwiftData migration failure forces a store wipe.
     /// The WindowGroup shows a one-time alert on the next launch.
     @AppStorage("com.homefloorplan.migrationWipedStore") private var migrationWipedStore = false
@@ -80,6 +80,9 @@ struct HomeFloorplanApp: App {
     }()
 
     init() {
+        AppLanguage.apply(rawValue: AppLanguage.english.rawValue)
+        UserDefaults.standard.set(AppLanguage.english.rawValue, forKey: AppLanguage.appStorageKey)
+
         // Consent safety guard: if AI was enabled before 26.B (upgrade edge case),
         // reset isEnabled so the user sees the consent screen before AI resumes.
         let ud = UserDefaults.standard
@@ -186,6 +189,7 @@ struct HomeFloorplanApp: App {
 
         // Registra categorie UNUserNotificationCenter per la Proactive Intelligence
         NotificationDeliveryOrchestrator.registerCategories()
+        SmartLightingIntentBridge.register(engine: lightingEngine)
 
     }
 

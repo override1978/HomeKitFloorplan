@@ -19,7 +19,7 @@ Internal TestFlight is possible after a clean Archive and a short release smoke 
 | --- | --- | --- | --- |
 | Debug build | OK | Xcode build completed successfully. | Keep building after each release-readiness patch. |
 | Release archive | Verify | Normal build is not enough for TestFlight. | Run an Xcode Archive using the Release configuration. |
-| Bundle identifier | OK | `com.override1978.Homefloorplan`/project value should be verified in App Store Connect. | Confirm exact bundle ID and capitalization in Apple Developer/App Store Connect. |
+| Bundle identifier | OK | Project value is `com.override1978.HomeFloorplan`. | Confirm exact bundle ID exists in Apple Developer/App Store Connect. |
 | Version/build | Verify | `MARKETING_VERSION = 1.0`, `CURRENT_PROJECT_VERSION = 1`. | Increment build number for each TestFlight upload. |
 | Deployment target | Verify | Project currently shows iOS `26.2`. | Confirm this is intentional and compatible with target devices/App Store plan. |
 | iPad-only target | OK/Verify | `TARGETED_DEVICE_FAMILY = 2`. | Confirm product is intentionally iPad-only for first release. |
@@ -29,7 +29,7 @@ Internal TestFlight is possible after a clean Archive and a short release smoke 
 
 | Area | Status | Notes | Action |
 | --- | --- | --- | --- |
-| Privacy manifest | Blocking | `PrivacyInfo.xcprivacy` currently declares generic `OtherDataTypes`. App handles home, sensor, location, activity, AI, and environment data. | Replace generic declaration with accurate data categories and purposes. |
+| Privacy manifest | OK/Verify | `PrivacyInfo.xcprivacy` now declares location, audio, photos/videos, environment scanning, user content, usage data, and other HomeKit/sensor data; required-reason APIs use UserDefaults `CA92.1` and FileTimestamp `C617.1`. | Generate Xcode privacy report from Archive and confirm third-party SDK manifests. |
 | App Privacy labels | Blocking | App Store Connect labels must match actual collection/use. | Prepare answers for HomeKit/home data, precise/coarse location, diagnostics, user content, identifiers if any. |
 | AI data disclosure | Blocking | App may send home/sensor/user prompt context to Claude/OpenAI when enabled. | Add clear in-app disclosure and privacy policy language. |
 | API keys | OK/Verify | API keys appear stored in Keychain. | Confirm keys are user-provided and never bundled. |
@@ -44,8 +44,8 @@ Internal TestFlight is possible after a clean Archive and a short release smoke 
 | Photo Library | OK | Needed to import floorplan images. | No immediate change. |
 | Microphone | Verify | Used by voice assistant. | Ensure voice assistant is optional and request is user-triggered. |
 | Speech Recognition | Verify | Used for voice-to-text. | Ensure request is user-triggered and copy is clear. |
-| Location When In Use | Verify | Used for home location/geofence setup. | Confirm behavior and copy. |
-| Always Location | Blocking/Verify | Sensitive permission. Used by `LocationPresenceService`. | Decide if first release truly needs Always. If yes, add strong UX explanation before prompt. |
+| Location When In Use | OK/Verify | Used for home location, WeatherKit, current-location map selection, and geofence setup. | Confirm archived Info.plist copy and geofence flows. |
+| Always Location | OK | Removed for first release; no `requestAlwaysAuthorization` or Always usage-description key remains. | Reintroduce only if app-managed background presence becomes a product requirement. |
 | Notifications | Verify | Multiple notification categories. | Ensure notification requests are user-triggered from settings/onboarding. |
 | WeatherKit | OK/Verify | Entitlement present. | Confirm WeatherKit is configured in Apple Developer portal. |
 
@@ -53,8 +53,8 @@ Internal TestFlight is possible after a clean Archive and a short release smoke 
 
 | Area | Status | Notes | Action |
 | --- | --- | --- | --- |
-| Debug views | Verify | `AITraceView` and `HabitsDiagnosticsView` are `#if DEBUG`; `HomeKitDebugView` appears reachable in normal UI. | Decide whether HomeKit diagnostics should be hidden in Release or renamed as support diagnostics. |
-| Raw `print` calls | Verify | `RuleEngineService.swift` has raw `print(...)` calls. | Convert to `dprint(...)` or wrap in `#if DEBUG`. |
+| Debug views | OK/Verify | `AITraceView`, `HabitsDiagnosticsView`, legacy cleanup, and `HomeKitDebugView` are now hidden from Release UI. | Confirm in archived Release build that diagnostics are not reachable. |
+| Raw `print` calls | OK/Verify | HomeKit rule logs now use `dprint`; remaining raw prints are DEBUG-only or inside debug logging helpers. | Confirm with Release archive if needed. |
 | `dprint` | OK | `DebugLog.swift` compiles `dprint` out in Release. | Keep using `dprint` for diagnostics. |
 | Fatal errors | Verify | ModelContainer creation can `fatalError` after wipe failure. | Consider user-facing recovery or crash rationale before App Store. |
 
@@ -114,14 +114,11 @@ Internal TestFlight is possible after a clean Archive and a short release smoke 
 
 ## Recommended Order
 
-1. Fix release/debug exposure: raw prints and HomeKit diagnostics visibility.
-2. Review and correct `PrivacyInfo.xcprivacy`.
-3. Decide on Always Location for first release.
-4. Run Archive Release and inspect archived Info.plist/entitlements.
-5. Localize only visible release surfaces, using small batches and placeholder checks.
-6. Run HomeKit/Automation regression smoke test.
-7. Upload internal TestFlight.
-8. Prepare privacy policy, App Store privacy labels, screenshots, and review notes.
+1. Run Archive Release and inspect archived Info.plist/entitlements/privacy report.
+2. Localize only visible release surfaces, using small batches and placeholder checks.
+3. Run HomeKit/Automation regression smoke test.
+4. Upload internal TestFlight.
+5. Prepare privacy policy, App Store privacy labels, screenshots, and review notes.
 
 ## Smoke Test Checklist
 

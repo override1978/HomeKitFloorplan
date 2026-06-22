@@ -366,7 +366,9 @@ private struct SecurityHealthHeroView: View {
                 SecurityScoreRingView(score: animatedScore, state: state)
                     .frame(width: 96, height: 96)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Indice di sicurezza \(score) su 100")
+                    .accessibilityLabel(String(format: String(localized: "security.accessibility.score",
+                                                              defaultValue: "Security score %d out of 100"),
+                                               score))
 
                 // Testo stato
                 VStack(alignment: .leading, spacing: 4) {

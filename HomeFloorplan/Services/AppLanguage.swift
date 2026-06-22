@@ -6,6 +6,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     case italian = "it"
 
     static let appStorageKey = "app.languageOverride"
+    static let isSelectionLocked = true
 
     var id: String { rawValue }
 
@@ -32,11 +33,12 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     }
 
     static func resolved(from rawValue: String) -> AppLanguage {
-        AppLanguage(rawValue: rawValue) ?? .system
+        if isSelectionLocked { return .english }
+        return AppLanguage(rawValue: rawValue) ?? .system
     }
 
     static func apply(rawValue: String) {
-        let language = resolved(from: rawValue)
+        let language = isSelectionLocked ? .english : resolved(from: rawValue)
         let defaults = UserDefaults.standard
 
         switch language {

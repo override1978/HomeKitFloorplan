@@ -10,7 +10,7 @@ struct ChatMessage: Identifiable {
     let role:     Role
     let content:  String
     /// Bottone azione strutturato allegato al messaggio (solo assistant).
-    /// `.executeNow` → proposta, `.undo` → annullamento, `.createRule` → crea automazione.
+    /// `.executeNow` → proposta, `.undo` → annullamento, `.reviewAutomation` → crea automazione.
     var actionPayload: AgentActionPayload? = nil
 }
 
@@ -43,6 +43,7 @@ struct ChatBotView: View {
     @Environment(AISettings.self)               private var aiSettings
     @Environment(SmartLightingEngine.self)       private var smartLightingEngine
     @Environment(HomeKitScenesService.self)      private var scenesService
+    @Environment(HomeKitAutomationsService.self) private var automationsService
     @Environment(\.modelContext)                private var modelContext
 
     @State private var messages:        [ChatMessage] = []
@@ -57,6 +58,8 @@ struct ChatBotView: View {
     @State private var executingActionID: UUID?
     /// UUID stringa dell'accessorio pill attualmente in esecuzione (loading state per pills).
     @State private var executingPillID: String?
+    @State private var reviewingProposal: AutomationProposal?
+    @State private var reviewingMessageID: UUID?
     /// Controls the entry animation (scale + fade on appear).
     @State private var appeared      = false
     /// True once setupViewModels() has run — gates the message list so the heavy
@@ -110,6 +113,23 @@ struct ChatBotView: View {
             }
         }
         .interactiveDismissDisabled(speechService.isRecording || isPreparing)
+        .sheet(item: $reviewingProposal, onDismiss: {
+            reviewingMessageID = nil
+        }) { proposal in
+            AutomationWizardSheet(proposal: proposal) { _ in
+                if let reviewingMessageID,
+                   let idx = messages.firstIndex(where: { $0.id == reviewingMessageID }) {
+                    messages[idx].actionPayload = nil
+                }
+                automationsService.refresh()
+                appendAssistantStatus(String(
+                    localized: "chat.automation.created",
+                    defaultValue: "Automazione creata e salvata in HomeKit."
+                ))
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
         .opacity(appeared ? 1 : 0)
         .scaleEffect(appeared ? 1 : 0.96, anchor: .top)
         .onAppear {
@@ -279,9 +299,9 @@ struct ChatBotView: View {
                 Task { @MainActor in await executeHomeKitAction(payload, messageID: messageID) }
             }
 
-        case .createRule(let opp):
-            automationPreviewCard(
-                opportunity: opp,
+        case .reviewAutomation(let proposal):
+            automationProposalPreviewCard(
+                proposal: proposal,
                 messageID: messageID,
                 isExecuting: isExecuting
             )
@@ -370,8 +390,8 @@ struct ChatBotView: View {
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func automationPreviewCard(
-        opportunity: AutomationOpportunity,
+    private func automationProposalPreviewCard(
+        proposal: AutomationProposal,
         messageID: UUID,
         isExecuting: Bool
     ) -> some View {
@@ -389,12 +409,12 @@ struct ChatBotView: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 previewRow(
-                    icon: opportunity.triggerIcon,
+                    icon: automationProposalTriggerIcon(for: proposal),
                     title: String(localized: "chat.automation.preview.when", defaultValue: "When"),
-                    value: automationTriggerSummary(for: opportunity)
+                    value: automationProposalTriggerSummary(for: proposal)
                 )
 
-                if let condition = automationConditionSummary(for: opportunity) {
+                if let condition = automationProposalConditionSummary(for: proposal) {
                     previewRow(
                         icon: "sensor.tag.radiowaves.forward",
                         title: String(localized: "chat.automation.preview.condition", defaultValue: "Condition"),
@@ -403,27 +423,27 @@ struct ChatBotView: View {
                 }
 
                 previewRow(
-                    icon: automationActionIcon(for: opportunity),
+                    icon: automationProposalActionIcon(for: proposal),
                     title: String(localized: "chat.automation.preview.action", defaultValue: "Action"),
-                    value: automationActionSummary(for: opportunity)
+                    value: automationProposalActionSummary(for: proposal)
                 )
 
-                if !opportunity.naturalLanguage.isEmpty {
+                if !proposal.explanation.isEmpty {
                     previewRow(
                         icon: "quote.bubble.fill",
                         title: String(localized: "chat.automation.preview.request", defaultValue: "Request"),
-                        value: opportunity.naturalLanguage
+                        value: proposal.explanation
                     )
                 }
             }
 
             actionButton(
                 icon: "checkmark.circle.fill",
-                label: String(localized: "chat.automation.createRule", defaultValue: "Crea regola"),
+                label: String(localized: "chat.automation.review", defaultValue: "Rivedi automazione"),
                 tint: BrandColor.secondary,
                 isExecuting: isExecuting
             ) {
-                createRuleAction(opportunity, messageID: messageID)
+                reviewAutomationProposal(proposal, messageID: messageID)
             }
         }
         .padding(12)
@@ -454,84 +474,209 @@ struct ChatBotView: View {
         }
     }
 
-    private func automationTriggerSummary(for opportunity: AutomationOpportunity) -> String {
-        switch opportunity.triggerType {
-        case "calendar":
-            let time = opportunity.triggerTime ?? "--:--"
-            let days = weekdaySummary(for: opportunity.triggerWeekdays)
-            return days.isEmpty ? time : "\(days) · \(time)"
-        case "characteristic":
-            return opportunity.scheduleSummary
-                ?? String(localized: "chat.automation.trigger.sensor", defaultValue: "Sensor threshold")
-        default:
+    private func automationProposalTriggerSummary(for proposal: AutomationProposal) -> String {
+        guard let startEvent = proposal.startEvents.first else {
             return String(localized: "chat.automation.trigger.manual", defaultValue: "Manual / in-app")
         }
+
+        switch startEvent {
+        case .schedule(let schedule):
+            return scheduleSummary(schedule)
+        case .accessory:
+            return String(localized: "chat.automation.trigger.sensor", defaultValue: "Sensor threshold")
+        case .presence(let trigger):
+            switch trigger.kind {
+            case .everyEntry, .firstEntry:
+                return String(localized: "chat.automation.trigger.arriveHome", defaultValue: "When someone arrives home")
+            case .everyExit, .lastExit:
+                return String(localized: "chat.automation.trigger.leaveHome", defaultValue: "When someone leaves home")
+            }
+        case .location(let trigger):
+            return trigger.kind == .arrive
+                ? String(localized: "chat.automation.trigger.arriveLocation", defaultValue: "When arriving")
+                : String(localized: "chat.automation.trigger.leaveLocation", defaultValue: "When leaving")
+        }
     }
 
-    private func automationConditionSummary(for opportunity: AutomationOpportunity) -> String? {
-        guard opportunity.triggerType == "calendar",
-              let sensor = opportunity.triggerSensorType,
-              let threshold = opportunity.triggerThreshold else {
-            return nil
+    private func automationProposalConditionSummary(for proposal: AutomationProposal) -> String? {
+        guard let condition = proposal.conditions.first else { return nil }
+
+        switch condition {
+        case .accessory(let selection):
+            return "\(selection.comparisonOperator.shortLabel) \(selection.targetValue.shortLabel)"
+        case .time(let condition):
+            return "\(condition.relation.shortLabel) \(scheduleSummary(condition))"
+        case .presence(let condition):
+            return condition.kind == .atHome
+                ? String(localized: "chat.automation.condition.atHome", defaultValue: "Someone is home")
+                : String(localized: "chat.automation.condition.notAtHome", defaultValue: "Nobody is home")
+        }
+    }
+
+    private func scheduleSummary(_ schedule: AutomationProposalSchedule) -> String {
+        let time: String
+        switch schedule.kind {
+        case .fixedTime:
+            time = String(format: "%02d:%02d", schedule.hour, schedule.minute)
+        case .sunrise:
+            time = offsetSummary(
+                base: String(localized: "automation.schedule.sunrise", defaultValue: "Sunrise"),
+                offset: schedule.offsetMinutes
+            )
+        case .sunset:
+            time = offsetSummary(
+                base: String(localized: "automation.schedule.sunset", defaultValue: "Sunset"),
+                offset: schedule.offsetMinutes
+            )
+        }
+        let days = weekdaySummary(for: Array(schedule.weekdays).sorted())
+        return days.isEmpty ? time : "\(days) · \(time)"
+    }
+
+    private func scheduleSummary(_ condition: AutomationProposalTimeCondition) -> String {
+        switch condition.kind {
+        case .fixedTime:
+            return String(format: "%02d:%02d", condition.hour, condition.minute)
+        case .sunrise:
+            return offsetSummary(
+                base: String(localized: "automation.schedule.sunrise", defaultValue: "Sunrise"),
+                offset: condition.offsetMinutes
+            )
+        case .sunset:
+            return offsetSummary(
+                base: String(localized: "automation.schedule.sunset", defaultValue: "Sunset"),
+                offset: condition.offsetMinutes
+            )
+        }
+    }
+
+    private func offsetSummary(base: String, offset: Int) -> String {
+        guard offset != 0 else { return base }
+        let relation = offset > 0
+            ? String(localized: "automation.schedule.after", defaultValue: "after")
+            : String(localized: "automation.schedule.before", defaultValue: "before")
+        return "\(base) \(relation) \(abs(offset))m"
+    }
+
+    private func automationProposalActionSummary(for proposal: AutomationProposal) -> String {
+        if proposal.actions.count > 1 {
+            return String(
+                format: String(localized: "chat.automation.action.multiple", defaultValue: "%d actions in Automation Builder"),
+                proposal.actions.count
+            )
         }
 
-        let sensorName = SensorServiceType(rawValue: sensor)?.displayName ?? sensor
-        let room = opportunity.roomName.isEmpty ? "" : " (\(opportunity.roomName))"
-        let symbol = opportunity.triggerDirection == "above" ? ">" : "<"
-        return "\(sensorName)\(room) \(symbol) \(String(format: "%.1f", threshold))"
-    }
+        guard let action = proposal.actions.first else {
+            return String(localized: "chat.automation.action.unsupported", defaultValue: "Action not supported")
+        }
 
-    private func automationActionSummary(for opportunity: AutomationOpportunity) -> String {
-        if let sceneName = opportunity.effectSceneName, !sceneName.isEmpty {
+        switch action {
+        case .scene(let scene):
             return String(
                 format: String(localized: "chat.automation.action.scene", defaultValue: "Run scene %@"),
-                sceneName
+                scene.name ?? String(localized: "chat.automation.action.sceneFallback", defaultValue: "selected")
             )
-        }
-
-        let action = opportunity.effectActionRaw
-        switch action {
-        case "on": return String(localized: "chat.automation.action.on", defaultValue: "Turn on accessory")
-        case "off": return String(localized: "chat.automation.action.off", defaultValue: "Turn off accessory")
-        case "dim":
-            let percent = Int((opportunity.effectValue ?? 0.3) * 100)
-            return String(
-                format: String(localized: "chat.automation.action.dim", defaultValue: "Set brightness to %d%%"),
-                percent
-            )
-        case "setSpeed":
-            let percent = Int((opportunity.effectValue ?? 0.5) * 100)
-            return String(
-                format: String(localized: "chat.automation.action.speed", defaultValue: "Set speed to %d%%"),
-                percent
-            )
-        case "setTemp":
-            let temp = Int(opportunity.effectValue ?? 22.0)
-            return String(
-                format: String(localized: "chat.automation.action.temp", defaultValue: "Set temperature to %d°C"),
-                temp
-            )
-        case "setMode":
-            return String(localized: "chat.automation.action.mode", defaultValue: "Set mode")
-        case "open": return String(localized: "chat.automation.action.open", defaultValue: "Open")
-        case "close": return String(localized: "chat.automation.action.close", defaultValue: "Close")
-        default: return action
+        case .accessoryPower(let action):
+            return action.powerOn
+                ? String(localized: "chat.automation.action.on", defaultValue: "Turn on accessory")
+                : String(localized: "chat.automation.action.off", defaultValue: "Turn off accessory")
+        case .accessory(let action):
+            return automationAccessoryActionSummary(action)
         }
     }
 
-    private func automationActionIcon(for opportunity: AutomationOpportunity) -> String {
-        if opportunity.effectSceneName != nil { return "sparkles" }
+    private func automationAccessoryActionSummary(_ action: AutomationProposalAccessoryAction) -> String {
+        switch action.kind {
+        case .turnOn, .activate:
+            return String(localized: "chat.automation.action.on", defaultValue: "Turn on accessory")
+        case .turnOff, .deactivate:
+            return String(localized: "chat.automation.action.off", defaultValue: "Turn off accessory")
+        case .dim:
+            let percent = Int((action.value ?? 0.3) * 100)
+            return String(format: String(localized: "chat.automation.action.dim", defaultValue: "Set brightness to %d%%"), percent)
+        case .setMode:
+            return automationAccessoryModeSummary(action)
+        case .setTemperature:
+            let temp = Int(action.value ?? 22.0)
+            return String(format: String(localized: "chat.automation.action.temp", defaultValue: "Set temperature to %d°C"), temp)
+        case .setFanSpeed:
+            let percent = Int((action.value ?? 0.5) * 100)
+            return String(format: String(localized: "chat.automation.action.speed", defaultValue: "Set speed to %d%%"), percent)
+        case .setHumidity:
+            let humidity = Int(action.value ?? 50.0)
+            return String(format: String(localized: "chat.automation.action.humidity", defaultValue: "Set humidity to %d%%"), humidity)
+        case .open:
+            return String(localized: "chat.automation.action.open", defaultValue: "Open")
+        case .close:
+            return String(localized: "chat.automation.action.close", defaultValue: "Close")
+        case .lock:
+            return String(localized: "chat.automation.action.lock", defaultValue: "Lock")
+        case .unlock:
+            return String(localized: "chat.automation.action.unlock", defaultValue: "Unlock")
+        }
+    }
 
-        switch opportunity.effectActionRaw {
-        case "on": return "power"
-        case "off": return "poweroff"
-        case "dim": return "sun.min.fill"
-        case "setSpeed": return "wind"
-        case "setTemp": return "thermometer.medium"
-        case "setMode": return "slider.horizontal.3"
-        case "open": return "arrow.up.square"
-        case "close": return "arrow.down.square"
-        default: return "bolt.fill"
+    private func automationAccessoryModeSummary(_ action: AutomationProposalAccessoryAction) -> String {
+        let mode: String
+        switch Int((action.value ?? 0).rounded()) {
+        case 1:
+            mode = String(localized: "chat.automation.mode.heat", defaultValue: "Heat")
+        case 2:
+            mode = String(localized: "chat.automation.mode.cool", defaultValue: "Cool")
+        case 3:
+            mode = String(localized: "chat.automation.mode.auto", defaultValue: "Auto")
+        default:
+            mode = String(localized: "chat.automation.mode.auto", defaultValue: "Auto")
+        }
+
+        if let target = action.secondaryValue {
+            return "\(mode) \(Int(target.rounded()))°C"
+        }
+        return mode
+    }
+
+    private func automationProposalTriggerIcon(for proposal: AutomationProposal) -> String {
+        switch proposal.startEvents.first {
+        case .schedule:
+            return "calendar.badge.clock"
+        case .accessory:
+            return "sensor.tag.radiowaves.forward"
+        case .presence, .location:
+            return "location.fill"
+        case nil:
+            return "wand.and.sparkles"
+        }
+    }
+
+    private func automationProposalActionIcon(for proposal: AutomationProposal) -> String {
+        guard let action = proposal.actions.first else { return "wand.and.sparkles" }
+
+        switch action {
+        case .scene:
+            return "sparkles"
+        case .accessoryPower(let action):
+            return action.powerOn ? "power" : "poweroff"
+        case .accessory(let action):
+            switch action.kind {
+            case .turnOn, .turnOff, .activate, .deactivate:
+                return "power"
+            case .dim:
+                return "sun.max.fill"
+            case .setMode, .setTemperature:
+                return "thermometer.medium"
+            case .setFanSpeed:
+                return "fan.fill"
+            case .setHumidity:
+                return "humidity.fill"
+            case .open:
+                return "arrow.up.square"
+            case .close:
+                return "arrow.down.square"
+            case .lock:
+                return "lock.fill"
+            case .unlock:
+                return "lock.open.fill"
+            }
         }
     }
 
@@ -634,7 +779,7 @@ struct ChatBotView: View {
             accessoryID = id; action = act; value = val
         case .undo(let id, let act, let val, _):
             accessoryID = id; action = act; value = val
-        case .createRule, .choose, .automationDiagnostics:
+        case .reviewAutomation, .choose, .automationDiagnostics:
             return
         }
 
@@ -676,7 +821,7 @@ struct ChatBotView: View {
             messages[idx].actionPayload = nil
         case .executeNow:
             messages[idx].actionPayload = undoPayload
-        case .createRule, .choose, .automationDiagnostics:
+        case .reviewAutomation, .choose, .automationDiagnostics:
             break
         }
     }
@@ -722,39 +867,13 @@ struct ChatBotView: View {
         messages[idx].actionPayload = undoPayload
     }
 
-    /// Approves a conversational opportunity and inserts the rule — one tap, no HabitsView needed.
-    private func createRuleAction(_ opportunity: AutomationOpportunity, messageID: UUID) {
-        executingActionID = messageID
-        let rule = opportunity.buildRule()
-        Task { @MainActor in
-            do {
-                let result = try await ruleEngine.insertRule(rule, home: homeKit.currentHome)
-                behavioralService.approve(opportunity)
-                if let idx = messages.firstIndex(where: { $0.id == messageID }) {
-                    messages[idx].actionPayload = nil
-                }
-                executingActionID = nil
-                let statusText: String
-                if result.didSyncHomeKit {
-                    statusText = String(
-                        localized: "chat.rule.created.homekit",
-                        defaultValue: "Regola creata e sincronizzata con HomeKit."
-                    )
-                } else {
-                    statusText = String(
-                        localized: "chat.rule.created.inapp",
-                        defaultValue: "Regola creata nell'app. HomeKit non l'ha accettata, quindi verrà gestita internamente quando l'app può valutarla."
-                    )
-                }
-                appendAssistantStatus(statusText)
-            } catch {
-                executingActionID = nil
-                appendAssistantStatus(String(
-                    localized: "chat.rule.create.failed",
-                    defaultValue: "Non sono riuscito a creare la regola. La proposta resta disponibile: puoi riprovare tra poco."
-                ))
-            }
-        }
+    /// Opens the unified automation builder with a native proposal from the chatbot.
+    private func reviewAutomationProposal(
+        _ proposal: AutomationProposal,
+        messageID: UUID
+    ) {
+        reviewingMessageID = messageID
+        reviewingProposal = proposal
     }
 
     private func appendAssistantStatus(_ content: String) {
@@ -1315,12 +1434,13 @@ struct ChatBotView: View {
             isRunning = false
             switch result {
             case .success(let response):
-                var msg = ChatMessage(role: .assistant, content: response.text)
+                let assistantText = displayText(for: response)
+                var msg = ChatMessage(role: .assistant, content: assistantText)
                 msg.actionPayload = response.actionPayload
                 messages.append(msg)
                 // A1 — aggiorna history (max 4 turni)
                 var updated = turnHistory
-                updated.append(ConversationTurn(userText: trimmed, assistantText: response.text))
+                updated.append(ConversationTurn(userText: trimmed, assistantText: assistantText))
                 if updated.count > 4 { updated.removeFirst() }
                 turnHistory = updated
                 ChatSessionStore.save(messages: messages, turns: updated)
@@ -1328,6 +1448,37 @@ struct ChatBotView: View {
                 messages.append(ChatMessage(role: .assistant, content: "⚠️ \(error.localizedDescription)"))
             }
         }
+    }
+
+    private func displayText(for response: AgentResponse) -> String {
+        guard case .reviewAutomation(let proposal) = response.actionPayload else {
+            return response.text
+        }
+
+        let trigger = automationProposalTriggerSummary(for: proposal)
+        let condition = automationProposalConditionSummary(for: proposal)
+        let action = automationProposalActionSummary(for: proposal)
+
+        if let condition {
+            return String(
+                format: String(
+                    localized: "chat.automation.prepared.withCondition",
+                    defaultValue: "Ho preparato l'automazione: %@, se %@. Azione: %@. Rivedila prima di salvarla in HomeKit."
+                ),
+                trigger,
+                condition,
+                action
+            )
+        }
+
+        return String(
+            format: String(
+                localized: "chat.automation.prepared",
+                defaultValue: "Ho preparato l'automazione: %@. Azione: %@. Rivedila prima di salvarla in HomeKit."
+            ),
+            trigger,
+            action
+        )
     }
 }
 
@@ -1395,6 +1546,49 @@ private struct RainbowBorderView: View {
                     lineWidth: lineWidth
                 )
                 .blur(radius: 0.8)
+        }
+    }
+}
+
+private extension AutomationProposalOperator {
+    var shortLabel: String {
+        switch self {
+        case .becomesActive:
+            return String(localized: "automation.operator.active", defaultValue: "Becomes active")
+        case .becomesInactive:
+            return String(localized: "automation.operator.inactive", defaultValue: "Becomes inactive")
+        case .equals:
+            return "="
+        case .greaterThan:
+            return ">"
+        case .lessThan:
+            return "<"
+        }
+    }
+}
+
+private extension AutomationProposalTargetValue {
+    var shortLabel: String {
+        switch self {
+        case .bool(let value):
+            return value
+                ? String(localized: "automation.value.on", defaultValue: "On")
+                : String(localized: "automation.value.off", defaultValue: "Off")
+        case .number(let value):
+            return String(format: "%.1f", value)
+        case .state(let value):
+            return "\(value)"
+        }
+    }
+}
+
+private extension AutomationProposalTimeRelation {
+    var shortLabel: String {
+        switch self {
+        case .after:
+            return String(localized: "automation.schedule.after", defaultValue: "after")
+        case .before:
+            return String(localized: "automation.schedule.before", defaultValue: "before")
         }
     }
 }

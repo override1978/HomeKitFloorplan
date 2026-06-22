@@ -30,8 +30,9 @@ struct HomeIntelligenceDashboardView: View {
 
     @Environment(HabitAnalysisService.self)          private var habitService
     @Environment(BehavioralAnalysisService.self)     private var behavioralService
-    @Environment(RuleEngineService.self)             private var ruleEngine
     @Environment(HomeKitService.self)                private var homeKit
+    @Environment(HomeKitScenesService.self)          private var scenesService
+    @Environment(HomeKitAutomationsService.self)     private var automationsService
     @Environment(ActionExecutionService.self)        private var executionService
     @Environment(ProactiveIntelligenceService.self)  private var proactiveService
     @Environment(OccupancyPredictionService.self)    private var occupancyService
@@ -42,6 +43,9 @@ struct HomeIntelligenceDashboardView: View {
 
     @State private var service: HomeKnowledgeService?
     @State private var isRefreshing: Bool = false
+    @State private var reviewingProposal: AutomationProposal?
+    @State private var reviewingOpportunity: AutomationOpportunity?
+    @State private var reviewingHabitPattern: HabitPattern?
     @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
 
     // Static formatters — created once, reused on every render.
@@ -64,6 +68,22 @@ struct HomeIntelligenceDashboardView: View {
             .navigationBarTitleDisplayMode(.large)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .toolbar { toolbarContent }
+            .sheet(item: $reviewingProposal, onDismiss: {
+                reviewingOpportunity = nil
+                reviewingHabitPattern = nil
+            }) { proposal in
+                AutomationWizardSheet(proposal: proposal) { _ in
+                    if let reviewingOpportunity {
+                        behavioralService.markApproved(reviewingOpportunity)
+                    }
+                    if let reviewingHabitPattern {
+                        habitService.approve(reviewingHabitPattern)
+                    }
+                    automationsService.refresh()
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
         }
         .onAppear {
             // Create service synchronously on first appear so the view never
@@ -73,6 +93,44 @@ struct HomeIntelligenceDashboardView: View {
             }
         }
         .task { await performRefresh() }
+    }
+
+    private func reviewOpportunity(_ opportunity: AutomationOpportunity) {
+        reviewingHabitPattern = nil
+        reviewingOpportunity = opportunity
+        reviewingProposal = proposal(from: opportunity)
+    }
+
+    private func reviewHabitPattern(_ pattern: HabitPattern) {
+        reviewingOpportunity = nil
+        reviewingHabitPattern = pattern
+        reviewingProposal = proposal(from: pattern)
+    }
+
+    private func proposal(from opportunity: AutomationOpportunity) -> AutomationProposal {
+        scenesService.refresh()
+        let capabilities = homeKit.currentHome.map {
+            AutomationCapabilityCatalog.capabilities(in: $0)
+        } ?? []
+
+        return AutomationProposalMapper.proposal(
+            from: opportunity,
+            capabilities: capabilities,
+            scenes: scenesService.scenes
+        )
+    }
+
+    private func proposal(from pattern: HabitPattern) -> AutomationProposal {
+        scenesService.refresh()
+        let capabilities = homeKit.currentHome.map {
+            AutomationCapabilityCatalog.capabilities(in: $0)
+        } ?? []
+
+        return AutomationProposalMapper.proposal(
+            from: pattern,
+            capabilities: capabilities,
+            scenes: scenesService.scenes
+        )
     }
 
     // MARK: - Scroll content
@@ -397,15 +455,7 @@ struct HomeIntelligenceDashboardView: View {
                     BehavioralOpportunityCard(
                         opportunity: opp,
                         onApprove: {
-                            let rule = opp.buildRule()
-                            Task {
-                                do {
-                                    _ = try await ruleEngine.insertRule(rule, home: homeKit.currentHome)
-                                    behavioralService.approve(opp)
-                                } catch {
-                                    dprint("HomeIntelligence: failed to create rule from opportunity \(opp.id): \(error.localizedDescription)")
-                                }
-                            }
+                            reviewOpportunity(opp)
                         },
                         onSnooze:  { behavioralService.snooze(opp) },
                         onDismiss: { behavioralService.dismiss(opp) }
@@ -416,16 +466,7 @@ struct HomeIntelligenceDashboardView: View {
                     AISuggestionCard(
                         pattern: pattern,
                         onApprove: {
-                            Task {
-                                if let home = homeKit.currentHome {
-                                    do {
-                                        try await ruleEngine.createRule(from: pattern, home: home)
-                                        habitService.approve(pattern)
-                                    } catch {
-                                        dprint("HomeIntelligence: failed to create rule from habit pattern \(pattern.id): \(error.localizedDescription)")
-                                    }
-                                }
-                            }
+                            reviewHabitPattern(pattern)
                         },
                         onDismiss: { habitService.dismiss(pattern) }
                     )
@@ -526,10 +567,9 @@ struct HomeIntelligenceDashboardView: View {
         let pendingHabits     = Array(habitService.pendingPatterns.prefix(3))
         let pendingBehavioral = Array(behavioralService.pendingOpportunities.prefix(3))
         let visibleCount      = behavioralService.visiblePatternCount
-        let activeRules       = ruleEngine.rules
         let isAnalyzing       = habitService.isAnalyzing || behavioralService.isAnalyzing
         let hasContent        = !pendingHabits.isEmpty || !pendingBehavioral.isEmpty
-                             || visibleCount > 0 || !activeRules.isEmpty
+                             || visibleCount > 0
 
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center) {
@@ -592,15 +632,7 @@ struct HomeIntelligenceDashboardView: View {
                         BehavioralOpportunityCard(
                             opportunity: opp,
                             onApprove: {
-                                let rule = opp.buildRule()
-                                Task {
-                                    do {
-                                        _ = try await ruleEngine.insertRule(rule, home: homeKit.currentHome)
-                                        behavioralService.approve(opp)
-                                    } catch {
-                                        dprint("HomeIntelligence: failed to create rule from opportunity \(opp.id): \(error.localizedDescription)")
-                                    }
-                                }
+                                reviewOpportunity(opp)
                             },
                             onSnooze:  { behavioralService.snooze(opp) },
                             onDismiss: { behavioralService.dismiss(opp) }
@@ -610,16 +642,7 @@ struct HomeIntelligenceDashboardView: View {
                         AISuggestionCard(
                             pattern: pattern,
                             onApprove: {
-                                Task {
-                                    if let home = homeKit.currentHome {
-                                        do {
-                                            try await ruleEngine.createRule(from: pattern, home: home)
-                                            habitService.approve(pattern)
-                                        } catch {
-                                            dprint("HomeIntelligence: failed to create rule from habit pattern \(pattern.id): \(error.localizedDescription)")
-                                        }
-                                    }
-                                }
+                                reviewHabitPattern(pattern)
                             },
                             onDismiss: { habitService.dismiss(pattern) }
                         )
@@ -670,14 +693,6 @@ struct HomeIntelligenceDashboardView: View {
                     )
                 }
 
-                // ── Tier 3: Attive ────────────────────────────────
-                if !activeRules.isEmpty {
-                    abitudiniTierLabel(
-                        title: String(localized: "abitudini.tier.attive", defaultValue: "Active"),
-                        icon: "checkmark.seal.fill"
-                    )
-                    abitudiniActiveRulesCard(rules: activeRules)
-                }
             }
         }
     }
@@ -690,71 +705,6 @@ struct HomeIntelligenceDashboardView: View {
             .tracking(0.3)
             .padding(.horizontal, 2)
             .padding(.top, 4)
-    }
-
-    @ViewBuilder
-    private func abitudiniActiveRulesCard(rules: [Rule]) -> some View {
-        let capped = Array(rules.prefix(3))
-        VStack(spacing: 0) {
-            ForEach(Array(capped.enumerated()), id: \.element.id) { idx, rule in
-                HStack(spacing: 12) {
-                    Image(systemName: abitudiniActionIcon(for: rule.actionType))
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(BrandColor.primary)
-                        .frame(width: 24)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(rule.name)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        Text(rule.ruleDescription)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    Toggle("", isOn: Binding(
-                        get: { rule.isEnabled },
-                        set: { _ in ruleEngine.toggleRule(rule, home: homeKit.currentHome) }
-                    ))
-                    .labelsHidden()
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                if idx < capped.count - 1 {
-                    Divider().padding(.leading, 50)
-                }
-            }
-            if rules.count > 3 {
-                Divider()
-                Text(
-                    String(
-                        format: String(localized: "abitudini.rules.more",
-                                       defaultValue: "+ %d more"),
-                        rules.count - 3
-                    )
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-            }
-        }
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial))
-    }
-
-    private func abitudiniActionIcon(for actionType: String) -> String {
-        switch actionType {
-        case "on":       return "lightbulb.fill"
-        case "off":      return "lightbulb.slash"
-        case "dim":      return "sun.min.fill"
-        case "open":     return "arrow.up.square"
-        case "close":    return "arrow.down.square"
-        case "setMode":  return "slider.horizontal.3"
-        case "setTemp":  return "thermometer.medium"
-        case "setSpeed": return "wind"
-        default:         return "bolt.fill"
-        }
     }
 
     // MARK: - Owner Indicator
@@ -1196,7 +1146,7 @@ struct HomeIntelligenceDashboardView: View {
         }
         await service?.refresh(
             habitPatterns: habitService.patterns,
-            rules: ruleEngine.rules,
+            rules: [],
             tracker: executionService.tracker,
             aiIsOperational: AISettings().isOperational
         )
@@ -1411,7 +1361,7 @@ private struct IntelligenceAssistantSummaryCard: View {
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("intelligence.assistant.eyebrow")
+                    Text(String(localized: "intelligence.assistant.eyebrow", defaultValue: "Assistant"))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
@@ -1750,7 +1700,7 @@ private struct AISuggestionCard: View {
                 Button(action: onApprove) {
                     Label(
                         String(localized: "intelligence.suggestions.approve",
-                               defaultValue: "Create rule"),
+                               defaultValue: "Review automation"),
                         systemImage: "plus.circle.fill"
                     )
                     .font(.subheadline.weight(.medium))
@@ -1876,7 +1826,7 @@ private struct BehavioralOpportunityCard: View {
                 Button(action: onApprove) {
                     Label(
                         String(localized: "behavioral.opportunity.approve",
-                               defaultValue: "Create automation"),
+                               defaultValue: "Review automation"),
                         systemImage: "plus.circle.fill"
                     )
                     .font(.subheadline.weight(.medium))

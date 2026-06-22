@@ -360,6 +360,10 @@ final class AlertNotificationService {
             return "\(prefix): \(String(localized: "alert.title.smoke",          defaultValue: "Smoke detected"))"
         case .vocDensity:
             return "\(prefix): \(String(localized: "alert.title.vocDensity",     defaultValue: "High VOC"))"
+        case .pm25:
+            return "\(prefix): \(String(localized: "alert.title.pm25",           defaultValue: "High PM2.5"))"
+        case .pm10:
+            return "\(prefix): \(String(localized: "alert.title.pm10",           defaultValue: "High PM10"))"
         case .lightSensor:
             return "\(prefix): \(String(localized: "alert.title.lightSensor",    defaultValue: "High brightness"))"
         case .outdoorTemperature, .outdoorHumidity:
@@ -409,6 +413,14 @@ final class AlertNotificationService {
             let tmpl = String(localized: "alert.body.vocDensity",
                               defaultValue: "In %1$@ VOC concentration is %2$@ (%3$@).")
             return String(format: tmpl, roomName, formattedValue, levelText)
+        case .pm25:
+            let tmpl = String(localized: "alert.body.pm25",
+                              defaultValue: "In %1$@ PM2.5 concentration is %2$@ (%3$@).")
+            return String(format: tmpl, roomName, formattedValue, levelText)
+        case .pm10:
+            let tmpl = String(localized: "alert.body.pm10",
+                              defaultValue: "In %1$@ PM10 concentration is %2$@ (%3$@).")
+            return String(format: tmpl, roomName, formattedValue, levelText)
         case .lightSensor:
             let tmpl = String(localized: "alert.body.lightSensor",
                               defaultValue: "In %1$@ brightness reached %2$@ (%3$@).")
@@ -433,6 +445,8 @@ final class AlertNotificationService {
                 ? String(localized: "smoke.detected",    defaultValue: "rilevato")
                 : String(localized: "smoke.notDetected", defaultValue: "non rilevato")
         case .vocDensity:     return String(format: "%.0f µg/m³", value)
+        case .pm25:           return String(format: "%.0f µg/m³", value)
+        case .pm10:           return String(format: "%.0f µg/m³", value)
         case .lightSensor:    return String(format: "%.0f lux", value)
         case .outdoorTemperature: return unit.format(value)
         case .outdoorHumidity:    return String(format: "%.0f%%", value)

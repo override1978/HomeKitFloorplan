@@ -24,7 +24,7 @@ final class ToolDispatcher {
     /// Executor used for controlAccessory. NOT wrapped in performWithRetry (A3).
     private let executor = NextActionExecutor()
 
-    /// Set by controlAccessory (undo), proposeAction (executeNow), or proposeOpportunity (createRule).
+    /// Set by controlAccessory (undo), proposeAction (executeNow), or proposeOpportunity (reviewAutomation).
     /// Read by AgentLoopService after the text response to attach to AgentResponse.
     private(set) var lastActionPayload: AgentActionPayload?
 
@@ -99,6 +99,9 @@ final class ToolDispatcher {
             return chars.contains("00000029-0000-1000-8000-0026bb765291")
         case "setTemp":
             return chars.contains("00000035-0000-1000-8000-0026bb765291")
+        case "setHumidity":
+            return chars.contains("000000ca-0000-1000-8000-0026bb765291")
+                || chars.contains("000000c9-0000-1000-8000-0026bb765291")
         case "setMode":
             return chars.contains("000000b2-0000-1000-8000-0026bb765291")
                 || chars.contains("00000033-0000-1000-8000-0026bb765291")
@@ -109,17 +112,56 @@ final class ToolDispatcher {
         }
     }
 
+    private func supportsAutomationAction(_ action: String, accessory: HMAccessory) -> Bool {
+        if supportsAction(action, accessory: accessory) {
+            return true
+        }
+
+        let services = Set(accessory.services.map { $0.serviceType.lowercased() })
+        let chars = Set(accessory.services
+            .flatMap(\.characteristics)
+            .map { $0.characteristicType.lowercased() })
+
+        let lock = HMServiceTypeLockMechanism.lowercased()
+        let garage = HMServiceTypeGarageDoorOpener.lowercased()
+        let security = Self.securitySystemServiceType.lowercased()
+
+        switch action {
+        case "lock", "unlock":
+            return services.contains(lock) && chars.contains("0000001e-0000-1000-8000-0026bb765291")
+        case "open", "close", "openGarage", "closeGarage":
+            return services.contains(garage) && chars.contains("00000032-0000-1000-8000-0026bb765291")
+        case "armStay", "armAway", "armNight", "disarm", "setMode":
+            return services.contains(security) && chars.contains("00000067-0000-1000-8000-0026bb765291")
+        default:
+            return false
+        }
+    }
+
     // MARK: - Capability helpers
 
     /// Returns a compact capability string for an accessory, e.g. "on/off+dim" or "on/off+setTemp".
     /// Used by listAccessories so the LLM knows what actions make sense without tool-round-trips.
     private func accessoryCapabilities(_ accessory: HMAccessory) -> String {
-        guard !isSecurityAccessory(accessory) else { return "readOnly" }
-
         let serviceTypes = Set(accessory.services.map { $0.serviceType.lowercased() })
         let charTypes = accessory.services
             .flatMap(\.characteristics)
             .map { $0.characteristicType.lowercased() }
+
+        let lock = HMServiceTypeLockMechanism.lowercased()
+        let garage = HMServiceTypeGarageDoorOpener.lowercased()
+        let security = Self.securitySystemServiceType.lowercased()
+
+        if serviceTypes.contains(lock) {
+            return "automation:lock/unlock"
+        }
+        if serviceTypes.contains(garage) {
+            return "automation:openGarage/closeGarage"
+        }
+        if serviceTypes.contains(security) {
+            return "automation:armStay/armAway/armNight/disarm"
+        }
+
         var caps: [String] = ["on/off"]
 
         let lightbulb  = "00000043-0000-1000-8000-0026bb765291"
@@ -155,12 +197,12 @@ final class ToolDispatcher {
         let airPurif   = "000000bb-0000-1000-8000-0026bb765291"
         let humidifier = "000000bd-0000-1000-8000-0026bb765291"
         let services   = Set(accessory.services.map { $0.serviceType.lowercased() })
-        if isSecurityAccessory(accessory)                   { return "sicurezza" }
         if services.contains(humidifier)                    { return "umidificatore" }
         if services.contains(airPurif)                      { return "purificatore" }
         if services.contains(thermostat)                    { return "termostato" }
         if services.contains(lock)                          { return "serratura" }
         if services.contains(garage)                        { return "portone" }
+        if services.contains(Self.securitySystemServiceType.lowercased()) { return "sicurezza" }
         if services.contains(lightbulb)                     { return "luce" }
         if services.contains(outlet)                        { return "presa" }
         if services.contains(switchSvc)                     { return "interruttore" }
@@ -283,7 +325,7 @@ final class ToolDispatcher {
     static let tools: [ToolSchema] = [
         ToolSchema(
             name: "readSensor",
-            description: "Legge il valore corrente di un sensore ambientale (temperatura, umidità, qualità aria, CO₂, ecc.). Se 'room' è omesso restituisce tutti i sensori di quel tipo in tutte le stanze — utile per trovare il sensore esterno senza conoscere la stanza.",
+            description: "Legge il valore corrente di un sensore ambientale (temperatura, umidità, qualità aria, CO₂, PM2.5, PM10, ecc.). Se 'room' è omesso restituisce tutti i sensori di quel tipo in tutte le stanze — utile per trovare il sensore esterno senza conoscere la stanza.",
             inputSchema: [
                 "type": "object",
                 "properties": [
@@ -293,7 +335,7 @@ final class ToolDispatcher {
                     ],
                     "type": [
                         "type": "string",
-                        "description": "Tipo sensore: temperature | humidity | airQuality | carbonMonoxide | carbonDioxide | smoke | vocDensity | lightSensor"
+                        "description": "Tipo sensore: temperature | humidity | airQuality | carbonMonoxide | carbonDioxide | smoke | vocDensity | pm25 | pm10 | lightSensor"
                     ]
                 ],
                 "required": ["type"]
@@ -499,8 +541,8 @@ final class ToolDispatcher {
             description: """
             Crea una scena HomeKit (un insieme di azioni su più accessori eseguibili insieme). \
             Usa quando l'utente chiede di creare una scena ("crea una scena Cinema", \
-            "imposta le luci in cucina a 2700K", ecc.) oppure come PRIMO PASSO prima di proposeOpportunity \
-            per automazioni multi-azione (AC con modalità+velocità, valvole termostatiche, purificatori). \
+            "imposta le luci in cucina a 2700K", ecc.). Per automazioni multi-azione native \
+            usa proposeOpportunity con actions[] invece di creare una scena. \
             Prima chiama listAccessories per ottenere gli UUID e verificare le capabilities. \
             Includi SOLO gli accessori che supportano l'azione richiesta (controlla caps in listAccessories). \
             Valori per le azioni: \
@@ -551,8 +593,7 @@ final class ToolDispatcher {
             name: "listScenes",
             description: """
             Elenca le scene HomeKit personalizzate esistenti con il dettaglio delle azioni di ciascuna. \
-            Usa PRIMA di createScene per automazioni multi-azione: se esiste già una scena compatibile \
-            riusala direttamente in proposeOpportunity invece di crearne una nuova. \
+            Usa quando l'utente vuole vedere, riusare o verificare una scena HomeKit esistente. \
             Parametro opzionale 'query': filtra per nome scena.
             """,
             inputSchema: [
@@ -652,17 +693,20 @@ final class ToolDispatcher {
         ToolSchema(
             name: "proposeOpportunity",
             description: """
-            Crea una opportunità di automazione dalla conversazione e la mostra all'utente \
-            come bottone "Crea regola" nella chat e nella sezione Abitudini. \
-            Usa SOLO quando l'utente chiede di creare una regola o un'automazione \
-            ("ogni sera alle 22 spegni le luci", "automatizza questo", ecc.). \
+            Crea una proposta di automazione dalla conversazione e la mostra all'utente \
+            come bottone di revisione nel nuovo Automation Builder e nella sezione Abitudini. \
+            Usa quando l'utente chiede una regola/automazione oppure usa un comando con trigger \
+            temporale o condizionale anche senza dire "automazione" \
+            ("ogni sera alle 22 spegni le luci", "quando la porta si apre accendi i faretti", \
+            "al tramonto attiva Relax", "20 minuti dopo il tramonto accendi le luci"). \
             NON usare per esecuzioni immediate — usa controlAccessory o proposeAction. \
             \
-            Per automazioni multi-azione (es. "accendi AC in modalità freddo a ventilazione 5"): \
-            1) Usa createScene per creare una scena con tutte le azioni necessarie. \
-            2) Poi usa proposeOpportunity con sceneName (il nome della scena appena creata) \
-               invece di accessoryID+action. In questo modo la regola attiva l'intera scena. \
-            NON inventare sceneName: usa SOLO il nome esatto passato a createScene.
+            Per azioni avanzate singole puoi usare direttamente accessoryID+action \
+            (es. setMode value=2 value2=24 per clima in freddo a 24°C, lock/unlock, closeGarage, armAway). \
+            Per automazioni multi-azione vere (es. "accendi AC in freddo e chiudi tende") usa \
+            actions=[{accessoryID, action, value, value2}, ...] così il nuovo Automation Builder \
+            riceve tutte le azioni native. Usa sceneName solo quando l'utente chiede esplicitamente \
+            una scena o quando vuoi riusare una scena HomeKit esistente.
             """,
             inputSchema: [
                 "type": "object",
@@ -673,15 +717,45 @@ final class ToolDispatcher {
                     ],
                     "action": [
                         "type": "string",
-                        "description": "on | off | dim | open | close | setSpeed | setTemp | setMode. Obbligatorio se sceneName è assente."
+                        "description": "on | off | dim | open | close | openGarage | closeGarage | lock | unlock | setSpeed | setTemp | setMode | setHumidity | armStay | armAway | armNight | disarm. Obbligatorio se sceneName è assente."
                     ],
                     "sceneName": [
                         "type": "string",
-                        "description": "Nome esatto della scena HomeKit creata da createScene. Usa questo invece di accessoryID+action per automazioni multi-azione (AC, scene complesse). NON inventare il nome: copia quello passato a createScene."
+                        "description": "Nome esatto di una scena HomeKit esistente o appena creata. Non usarlo per multi-azione native: in quel caso usa actions."
+                    ],
+                    "actions": [
+                        "type": "array",
+                        "description": "Azioni multiple native per Automation Builder. Usa per automazioni multi-azione senza creare scene.",
+                        "items": [
+                            "type": "object",
+                            "properties": [
+                                "accessoryID": [
+                                    "type": "string",
+                                    "description": "UUID accessorio da listAccessories."
+                                ],
+                                "action": [
+                                    "type": "string",
+                                    "description": "on | off | dim | open | close | openGarage | closeGarage | lock | unlock | setSpeed | setTemp | setMode | setHumidity | armStay | armAway | armNight | disarm."
+                                ],
+                                "value": [
+                                    "type": "number",
+                                    "description": "Valore primario opzionale."
+                                ],
+                                "value2": [
+                                    "type": "number",
+                                    "description": "Valore secondario opzionale, es. target °C per setMode."
+                                ]
+                            ],
+                            "required": ["accessoryID", "action"]
+                        ]
                     ],
                     "value": [
                         "type": "number",
-                        "description": "Valore numerico (dim 0.0–1.0, setTemp °C). Ometti per on/off o quando si usa sceneName."
+                        "description": "Valore primario: dim/setSpeed 0.0–1.0, setTemp °C, setMode mode int. Ometti per on/off/open/close/lock/unlock o quando si usa sceneName."
+                    ],
+                    "value2": [
+                        "type": "number",
+                        "description": "Valore secondario opzionale. Per setMode su climatizzatori/termostati usa la temperatura target in °C (es. setMode value=2, value2=24)."
                     ],
                     "label": [
                         "type": "string",
@@ -693,11 +767,19 @@ final class ToolDispatcher {
                     ],
                     "triggerType": [
                         "type": "string",
-                        "description": "calendar (a un'ora fissa) | characteristic (su soglia sensore) | inApp. Per 'alle 22:20' usa calendar."
+                        "description": "calendar (orario fisso, alba/tramonto) | characteristic (sensore/stato) | presence (arrivo/uscita casa) | inApp. Per 'alle 22:20', 'al tramonto', 'ogni mattina' usa calendar. Per 'quando arrivo a casa' o 'quando esco di casa' usa presence."
+                    ],
+                    "triggerScheduleKind": [
+                        "type": "string",
+                        "description": "fixedTime | sunrise | sunset. Usa sunset per 'al tramonto' e sunrise per 'all'alba'. Ometti o fixedTime per triggerTime HH:mm."
+                    ],
+                    "triggerOffsetMinutes": [
+                        "type": "integer",
+                        "description": "Offset in minuti rispetto ad alba/tramonto. Esempio: 20 minuti dopo il tramonto = 20, 15 minuti prima = -15."
                     ],
                     "triggerTime": [
                         "type": "string",
-                        "description": "Ora in formato HH:mm (es. '22:20'). Obbligatorio se triggerType=calendar."
+                        "description": "Ora in formato HH:mm (es. '22:20'). Obbligatorio se triggerType=calendar e triggerScheduleKind è fixedTime/omesso. Per 'mattino' senza ora usa 08:00."
                     ],
                     "triggerWeekdays": [
                         "type": "string",
@@ -705,19 +787,31 @@ final class ToolDispatcher {
                     ],
                     "triggerSensorType": [
                         "type": "string",
-                        "description": "Tipo sensore che attiva la regola: temperature | humidity | airQuality | carbonDioxide | carbonMonoxide | vocDensity | lightSensor. Obbligatorio se triggerType=characteristic."
+                        "description": "Tipo sensore che attiva la regola: temperature | humidity | airQuality | carbonDioxide | carbonMonoxide | vocDensity | pm25 | pm10 | lightSensor | contact | motion | occupancy | smoke | leak. Obbligatorio se triggerType=characteristic."
                     ],
                     "triggerSensorRoom": [
                         "type": "string",
                         "description": "Nome stanza del sensore trigger (es. 'Balcone'). Obbligatorio se triggerType=characteristic."
                     ],
+                    "triggerSensorAccessoryName": [
+                        "type": "string",
+                        "description": "Nome o parola chiave dell'accessorio sensore da usare come trigger quando l'utente cita un target specifico, es. 'finestra', 'porta ingresso', 'sensore finestra Mansarda'. Serve a non scegliere un contatto qualsiasi nella stanza."
+                    ],
                     "triggerThreshold": [
                         "type": "number",
-                        "description": "Valore soglia numerica per il trigger (es. 30.0 per 30°C). Obbligatorio se triggerType=characteristic."
+                        "description": "Valore soglia numerica per il trigger (es. 30.0 per 30°C, 1200 per CO2 ppm). Obbligatorio per sensori numerici; omettere per contact/motion/occupancy/smoke/leak quando basta aperto/attivo."
                     ],
                     "triggerDirection": [
                         "type": "string",
-                        "description": "above (si attiva quando il sensore supera la soglia) | below (si attiva quando il sensore scende sotto la soglia)."
+                        "description": "above/open/active (sopra soglia o sensore attivo/aperto) | below/closed/inactive (sotto soglia o sensore chiuso/inattivo)."
+                    ],
+                    "triggerPresenceKind": [
+                        "type": "string",
+                        "description": "Per triggerType=presence: everyEntry quando arrivo a casa, everyExit quando esco di casa, firstEntry quando arriva la prima persona, lastExit quando esce l'ultima persona."
+                    ],
+                    "triggerPresenceUserScope": [
+                        "type": "string",
+                        "description": "Per triggerType=presence: currentUser per io/me, homeUsers per chiunque/tutti gli utenti della casa."
                     ],
                 ],
                 "required": ["label", "naturalLanguage", "triggerType"]
@@ -760,7 +854,7 @@ final class ToolDispatcher {
         guard let typeStr = input["type"] as? String else {
             return "Parametro mancante: 'type' è obbligatorio."
         }
-        let typeNeedle = typeStr.lowercased()
+        let typeNeedle = normalizedSensorType(typeStr).lowercased()
 
         // Senza stanza → restituisce tutti i sensori di quel tipo in ogni stanza.
         if let room = input["room"] as? String, !room.isEmpty {
@@ -1254,7 +1348,219 @@ final class ToolDispatcher {
 
     // MARK: - proposeOpportunity (Phase 3 — create automation rule from chat)
 
+    private func applyTriggerFallbacks(
+        text: String,
+        triggerType: inout String,
+        scheduleKind: inout String?,
+        offsetMinutes: inout Int,
+        triggerTime: inout String?,
+        sensorType: inout String?,
+        sensorRoom: inout String?,
+        sensorAccessoryName: inout String?,
+        sensorThreshold: inout Double?,
+        sensorDirection: inout String?,
+        presenceKind: inout String?,
+        presenceUserScope: inout String?
+    ) {
+        let normalized = text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+
+        if normalized.contains("esco di casa") || normalized.contains("quando esco") || normalized.contains("leave home") || normalized.contains("leaves home") {
+            triggerType = "presence"
+            presenceKind = "everyExit"
+            presenceUserScope = "currentUser"
+        } else if normalized.contains("arrivo a casa") || normalized.contains("quando arrivo") || normalized.contains("arrive home") || normalized.contains("arrives home") {
+            triggerType = "presence"
+            presenceKind = "everyEntry"
+            presenceUserScope = "currentUser"
+        } else if normalized.contains("tramonto") || normalized.contains("sunset") {
+            triggerType = "calendar"
+            scheduleKind = "sunset"
+            offsetMinutes = inferredEventOffsetMinutes(from: normalized) ?? offsetMinutes
+        } else if normalized.contains("alba") || normalized.contains("sunrise") {
+            triggerType = "calendar"
+            scheduleKind = "sunrise"
+            offsetMinutes = inferredEventOffsetMinutes(from: normalized) ?? offsetMinutes
+        } else if normalized.contains("ogni") || normalized.contains(" alle ") || normalized.contains(" al mattino") || normalized.contains(" la mattina") {
+            if triggerType == "inApp" {
+                triggerType = "calendar"
+            }
+            if triggerTime == nil, normalized.contains("mattin") {
+                triggerTime = "08:00"
+            }
+        }
+
+        let mentionsSensorTrigger = normalized.contains("quando")
+            || normalized.contains(" se ")
+            || normalized.contains("supera")
+            || normalized.contains("superiore")
+            || normalized.contains("sotto")
+            || normalized.contains("inferiore")
+
+        guard mentionsSensorTrigger else { return }
+
+        if triggerType == "inApp" {
+            triggerType = "characteristic"
+        }
+
+        if sensorType == nil {
+            if normalized.contains("pm2.5") || normalized.contains("pm 2.5") || normalized.contains("pm25") {
+                sensorType = "pm25"
+            } else if normalized.contains("pm10") || normalized.contains("pm 10") {
+                sensorType = "pm10"
+            } else if normalized.contains("polveri sottili") || normalized.contains("particolato") || normalized.contains("particulate") {
+                sensorType = normalized.contains("10") ? "pm10" : "pm25"
+            } else if normalized.contains("co2") || normalized.contains("co₂") || normalized.contains("carbon dioxide") || normalized.contains("anidride carbonica") {
+                sensorType = "carbonDioxide"
+            } else if normalized.contains("temperatura") || normalized.contains("temperature") || normalized.contains("°") {
+                sensorType = "temperature"
+            } else if normalized.contains("umidita") || normalized.contains("humidity") {
+                sensorType = "humidity"
+            } else if normalized.contains("porta") || normalized.contains("finestra") || normalized.contains("door") || normalized.contains("window") {
+                sensorType = "contact"
+            } else if normalized.contains("movimento") || normalized.contains("motion") {
+                sensorType = "motion"
+            } else if normalized.contains("presenza") || normalized.contains("presence") || normalized.contains("occupancy") {
+                sensorType = "occupancy"
+            } else if normalized.contains("fumo") || normalized.contains("smoke") {
+                sensorType = "smoke"
+            } else if normalized.contains("perdita") || normalized.contains("leak") || normalized.contains("acqua") {
+                sensorType = "leak"
+            }
+        }
+
+        if sensorRoom == nil || sensorRoom?.isEmpty == true {
+            sensorRoom = inferredRoomName(from: normalized)
+        }
+
+        if sensorAccessoryName == nil || sensorAccessoryName?.isEmpty == true {
+            sensorAccessoryName = inferredSensorAccessoryName(from: normalized, sensorType: sensorType)
+        }
+
+        if sensorThreshold == nil, let type = sensorType, !isBooleanSensorType(type) {
+            sensorThreshold = firstThresholdNumber(in: normalized, sensorType: type)
+        }
+
+        if sensorDirection == nil {
+            if normalized.contains("sotto") || normalized.contains("inferiore") || normalized.contains("below") {
+                sensorDirection = "below"
+            } else if normalized.contains("chiusa") || normalized.contains("chiuso") || normalized.contains("closed") {
+                sensorDirection = "closed"
+            } else if normalized.contains("aperta") || normalized.contains("aperto") || normalized.contains("open") {
+                sensorDirection = "open"
+            } else if normalized.contains("spento") || normalized.contains("inattiv") || normalized.contains("inactive") {
+                sensorDirection = "inactive"
+            } else {
+                sensorDirection = "above"
+            }
+        }
+    }
+
+    private func inferredEventOffsetMinutes(from text: String) -> Int? {
+        guard let number = firstNumber(in: text) else { return nil }
+        let minutes = Int(number.rounded())
+        if text.contains("prima") || text.contains("before") {
+            return -minutes
+        }
+        if text.contains("dopo") || text.contains("after") {
+            return minutes
+        }
+        return nil
+    }
+
+    private func firstNumber(in text: String) -> Double? {
+        let pattern = #"[-+]?\d+(?:[\.,]\d+)?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let matchRange = Range(match.range, in: text) else {
+            return nil
+        }
+        return Double(text[matchRange].replacingOccurrences(of: ",", with: "."))
+    }
+
+    private func firstThresholdNumber(in text: String, sensorType: String) -> Double? {
+        var cleaned = text
+        switch sensorType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "carbondioxide":
+            cleaned = cleaned
+                .replacingOccurrences(of: "co2", with: " ")
+                .replacingOccurrences(of: "co₂", with: " ")
+        case "pm25":
+            cleaned = cleaned
+                .replacingOccurrences(of: "pm2.5", with: " ")
+                .replacingOccurrences(of: "pm 2.5", with: " ")
+                .replacingOccurrences(of: "pm25", with: " ")
+        case "pm10":
+            cleaned = cleaned
+                .replacingOccurrences(of: "pm10", with: " ")
+                .replacingOccurrences(of: "pm 10", with: " ")
+        default:
+            break
+        }
+        return firstNumber(in: cleaned)
+    }
+
+    private func normalizedSensorType(_ raw: String) -> String {
+        let normalized = raw
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        switch normalized {
+        case "co2", "co₂", "carbon dioxide", "anidride carbonica":
+            return "carbonDioxide"
+        case "voc", "volatile organic compounds", "composti organici volatili":
+            return "vocDensity"
+        case "pm2.5", "pm 2.5", "pm25", "particolato fine":
+            return "pm25"
+        case "pm10", "pm 10", "particolato grossolano":
+            return "pm10"
+        case "lux", "luce", "luminosita", "light":
+            return "lightSensor"
+        default:
+            return raw
+        }
+    }
+
+    private func inferredRoomName(from text: String) -> String? {
+        let rooms = homeKit.currentHome?.rooms.map(\.name) ?? []
+        return rooms.first { room in
+            text.localizedCaseInsensitiveContains(room)
+        }
+    }
+
+    private func inferredSensorAccessoryName(from text: String, sensorType: String?) -> String? {
+        let normalizedType = sensorType?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalizedType == "contact" || normalizedType == "contactsensor" else { return nil }
+
+        if text.contains("finestra") || text.contains("window") {
+            return text.contains("mansarda") ? "finestra" : "finestra"
+        }
+        if text.contains("porta") || text.contains("door") {
+            return "porta"
+        }
+        return nil
+    }
+
+    private func isBooleanSensorType(_ sensorType: String) -> Bool {
+        [
+            "contact", "contactsensor", "door", "doorstate", "window",
+            "motion", "motionsensor", "movement", "occupancy", "presence",
+            "smoke", "leak", "water"
+        ].contains(sensorType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
     private func proposeOpportunity(input: [String: Any]) -> String {
+        func doubleFromRaw(_ raw: Any?) -> Double? {
+            guard let raw else { return nil }
+            if let value = raw as? Double { return value }
+            if let value = raw as? Int { return Double(value) }
+            if let value = raw as? NSNumber { return value.doubleValue }
+            if let value = raw as? String { return Double(value.replacingOccurrences(of: ",", with: ".")) }
+            return nil
+        }
+
         guard let label       = input["label"]           as? String,
               let naturalLang = input["naturalLanguage"] as? String else {
             return "Parametri mancanti: label e naturalLanguage sono obbligatori."
@@ -1263,46 +1569,134 @@ final class ToolDispatcher {
         let sceneName      = input["sceneName"] as? String
         let accessoryIDStr = input["accessoryID"] as? String ?? ""
         let action         = input["action"] as? String ?? "scene"
+        let rawActions     = input["actions"] as? [[String: Any]] ?? []
+        let hasNativeActions = !rawActions.isEmpty
+        let parsedActions: [(accessoryID: String, action: String, value: Double?, value2: Double?)]
+        if hasNativeActions {
+            parsedActions = rawActions.compactMap { item in
+                guard let id = item["accessoryID"] as? String,
+                      let action = item["action"] as? String else {
+                    return nil
+                }
+                return (id, action, doubleFromRaw(item["value"]), doubleFromRaw(item["value2"]))
+            }
+            guard parsedActions.count == rawActions.count else {
+                return "Parametri non validi: ogni elemento di actions deve includere accessoryID e action."
+            }
+        } else {
+            parsedActions = []
+        }
 
-        // Validate: either sceneName OR accessoryID+action must be provided
+        // Validate: either sceneName, actions[], or accessoryID+action must be provided.
         if let sn = sceneName, !sn.isEmpty {
+            guard !hasNativeActions else {
+                return "Parametri non validi: usa sceneName oppure actions, non entrambi."
+            }
             // Scene-based: no accessory validation needed
+        } else if hasNativeActions {
+            for item in parsedActions {
+                guard UUID(uuidString: item.accessoryID) != nil,
+                      let accessory = homeKit.allAccessories.first(where: { $0.uniqueIdentifier.uuidString == item.accessoryID }) else {
+                    return "Accessorio non trovato con ID '\(item.accessoryID)'. Usa listAccessories per ottenere gli UUID corretti."
+                }
+                guard supportsAutomationAction(item.action, accessory: accessory) else {
+                    return "Automazione non creata: azione '\(item.action)' non consentita o non supportata per '\(accessory.name)'."
+                }
+            }
         } else {
             guard !accessoryIDStr.isEmpty, action != "scene" else {
-                return "Parametri mancanti: fornisci sceneName oppure accessoryID + action."
+                return "Parametri mancanti: fornisci sceneName, actions oppure accessoryID + action."
             }
             guard UUID(uuidString: accessoryIDStr) != nil,
                   let accessory = homeKit.allAccessories.first(where: { $0.uniqueIdentifier.uuidString == accessoryIDStr }) else {
                 return "Accessorio non trovato con ID '\(accessoryIDStr)'. Usa listAccessories per ottenere gli UUID corretti."
             }
-            guard supportsAction(action, accessory: accessory) else {
+            guard supportsAutomationAction(action, accessory: accessory) else {
                 return "Automazione non creata: azione '\(action)' non consentita o non supportata per '\(accessory.name)'."
             }
         }
 
-        let triggerType     = (input["triggerType"] as? String) ?? "inApp"
-        let triggerTime     = input["triggerTime"] as? String
+        func stringValue(_ key: String) -> String? {
+            guard let raw = input[key] else { return nil }
+            if let value = raw as? String { return value }
+            if let value = raw as? NSNumber { return value.stringValue }
+            return nil
+        }
+
+        func doubleValue(_ key: String) -> Double? {
+            doubleFromRaw(input[key])
+        }
+
+        func intValue(_ key: String) -> Int? {
+            guard let raw = input[key] else { return nil }
+            if let value = raw as? Int { return value }
+            if let value = raw as? Double { return Int(value) }
+            if let value = raw as? NSNumber { return value.intValue }
+            if let value = raw as? String { return Int(value) }
+            return nil
+        }
+
+        var triggerType     = stringValue("triggerType") ?? "inApp"
+        var scheduleKind    = stringValue("triggerScheduleKind")
+        var offsetMinutes   = intValue("triggerOffsetMinutes") ?? 0
+        var triggerTime     = input["triggerTime"] as? String
         let triggerWeekdays = input["triggerWeekdays"] as? String
-        let sensorType      = input["triggerSensorType"] as? String
-        let sensorRoom      = input["triggerSensorRoom"] as? String
-        let sensorThreshold = input["triggerThreshold"] as? Double
-        let sensorDirection = input["triggerDirection"] as? String
-        let value           = input["value"] as? Double
+        var sensorType      = stringValue("triggerSensorType")
+        var sensorRoom      = stringValue("triggerSensorRoom")
+        var sensorAccessoryName = stringValue("triggerSensorAccessoryName")
+        var sensorThreshold = doubleValue("triggerThreshold")
+        var sensorDirection = stringValue("triggerDirection")
+        var presenceKind    = stringValue("triggerPresenceKind")
+        var presenceScope   = stringValue("triggerPresenceUserScope")
+        let value           = doubleValue("value")
+        let value2          = doubleValue("value2")
+        sensorType = sensorType.map(normalizedSensorType)
+
+        applyTriggerFallbacks(
+            text: "\(label) \(naturalLang)",
+            triggerType: &triggerType,
+            scheduleKind: &scheduleKind,
+            offsetMinutes: &offsetMinutes,
+            triggerTime: &triggerTime,
+            sensorType: &sensorType,
+            sensorRoom: &sensorRoom,
+            sensorAccessoryName: &sensorAccessoryName,
+            sensorThreshold: &sensorThreshold,
+            sensorDirection: &sensorDirection,
+            presenceKind: &presenceKind,
+            presenceUserScope: &presenceScope
+        )
 
         // Validazione: calendar senza ora non è schedulabile
-        if triggerType == "calendar", (triggerTime?.isEmpty ?? true) {
+        let usesSignificantEvent = ["sunrise", "sunset", "alba", "tramonto"].contains(
+            scheduleKind?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        )
+        if triggerType == "calendar", !usesSignificantEvent, (triggerTime?.isEmpty ?? true) {
             return "Per un'automazione a orario serve triggerTime in formato HH:mm. Chiedi all'utente a che ora."
         }
         // Validazione: characteristic senza sensore non è valutabile
         if triggerType == "characteristic" {
-            guard sensorType != nil, sensorRoom != nil, sensorThreshold != nil else {
-                return "Per trigger=characteristic servono: triggerSensorType, triggerSensorRoom e triggerThreshold. Chiama readSensor prima per confermare il sensore e leggere le soglie."
+            guard let sensorType, !sensorType.isEmpty, let sensorRoom, !sensorRoom.isEmpty else {
+                return "Per trigger=characteristic servono almeno triggerSensorType e triggerSensorRoom. Chiama readSensor o getSecurityState prima per confermare il sensore."
+            }
+
+            let booleanSensorTypes = [
+                "contact", "contactsensor", "door", "doorstate", "window",
+                "motion", "motionsensor", "movement", "occupancy", "presence",
+                "smoke", "leak", "water"
+            ]
+            let isBooleanSensor = booleanSensorTypes.contains(sensorType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            if !isBooleanSensor, sensorThreshold == nil {
+                return "Per trigger=characteristic su sensori numerici serve triggerThreshold. Chiama readSensor prima per confermare il sensore e leggere le soglie."
             }
         }
 
         // B2 — intra-session semantic dedup
         let valueKey = value.map { String($0) } ?? ""
+        let value2Key = value2.map { String($0) } ?? ""
         let thresholdKey = sensorThreshold.map { String($0) } ?? ""
+        let presenceKindKey = presenceKind ?? ""
+        let presenceScopeKey = presenceScope ?? ""
         let semanticKey: String
         if let sn = sceneName, !sn.isEmpty {
             semanticKey = [
@@ -1313,47 +1707,112 @@ final class ToolDispatcher {
                 triggerWeekdays ?? "",
                 sensorType ?? "",
                 sensorRoom ?? "",
+                sensorAccessoryName ?? "",
                 thresholdKey,
-                sensorDirection ?? ""
+                sensorDirection ?? "",
+                scheduleKind ?? "",
+                String(offsetMinutes),
+                presenceKindKey,
+                presenceScopeKey
+            ].joined(separator: ":")
+        } else if hasNativeActions {
+            let actionKey = parsedActions
+                .map { item -> String in
+                    let value = item.value.map { String($0) } ?? ""
+                    let value2 = item.value2.map { String($0) } ?? ""
+                    return "\(item.accessoryID):\(item.action):\(value):\(value2)"
+                }
+                .joined(separator: "|")
+            semanticKey = [
+                actionKey,
+                triggerType,
+                triggerTime ?? "",
+                triggerWeekdays ?? "",
+                sensorType ?? "",
+                sensorRoom ?? "",
+                sensorAccessoryName ?? "",
+                thresholdKey,
+                sensorDirection ?? "",
+                scheduleKind ?? "",
+                String(offsetMinutes),
+                presenceKindKey,
+                presenceScopeKey
             ].joined(separator: ":")
         } else {
             semanticKey = [
                 accessoryIDStr,
                 action,
                 valueKey,
+                value2Key,
                 triggerType,
                 triggerTime ?? "",
                 triggerWeekdays ?? "",
                 sensorType ?? "",
                 sensorRoom ?? "",
+                sensorAccessoryName ?? "",
                 thresholdKey,
-                sensorDirection ?? ""
+                sensorDirection ?? "",
+                scheduleKind ?? "",
+                String(offsetMinutes),
+                presenceKindKey,
+                presenceScopeKey
             ].joined(separator: ":")
         }
         if proposedSemanticKeys.contains(semanticKey) {
             return "Opportunità per questa azione già proposta in questa sessione."
         }
         proposedSemanticKeys.insert(semanticKey)
-        let opp = AutomationOpportunity.fromConversation(
-            accessoryID:        accessoryIDStr,
-            action:             action,
-            value:              value,
-            label:              label,
-            naturalLanguage:    naturalLang,
-            triggerType:        triggerType,
-            triggerTime:        triggerTime,
-            triggerWeekdaysRaw: triggerWeekdays,
-            triggerSensorType:  sensorType,
-            triggerSensorRoom:  sensorRoom,
-            triggerThreshold:   sensorThreshold,
-            triggerDirection:   sensorDirection,
-            sceneName:          sceneName,
-            semanticKey:        semanticKey
-        )
+        scenesService.refresh()
+        let capabilities = homeKit.currentHome.map {
+            AutomationCapabilityCatalog.capabilities(in: $0)
+        } ?? []
 
-        behavioralService.addConversationalOpportunity(opp)
-        lastActionPayload = .createRule(opportunity: opp)
-        return "Opportunità '\(label)' creata. Il bottone 'Crea regola' sarà mostrato all'utente."
+        let primaryAccessoryID = hasNativeActions ? (parsedActions.first?.accessoryID ?? accessoryIDStr) : accessoryIDStr
+        let primaryAction = hasNativeActions ? (parsedActions.first?.action ?? action) : action
+        let primaryValue = hasNativeActions ? parsedActions.first?.value ?? value : value
+        let primaryValue2 = hasNativeActions ? parsedActions.first?.value2 ?? value2 : value2
+
+        var proposal = AutomationProposalMapper.chatbotProposal(
+            label: label,
+            naturalLanguage: naturalLang,
+            accessoryID: primaryAccessoryID,
+            action: primaryAction,
+            value: primaryValue,
+            value2: primaryValue2,
+            triggerType: triggerType,
+            triggerTime: triggerTime,
+            triggerWeekdaysRaw: triggerWeekdays,
+            triggerSensorType: sensorType,
+            triggerSensorRoom: sensorRoom,
+            triggerSensorAccessoryName: sensorAccessoryName,
+            triggerThreshold: sensorThreshold,
+            triggerDirection: sensorDirection,
+            sceneName: sceneName,
+            triggerScheduleKind: scheduleKind,
+            triggerOffsetMinutes: offsetMinutes,
+            triggerPresenceKind: presenceKind,
+            triggerPresenceUserScope: presenceScope,
+            semanticKey: semanticKey,
+            capabilities: capabilities,
+            scenes: scenesService.scenes
+        )
+        if hasNativeActions {
+            let nativeActions = parsedActions.compactMap {
+                AutomationProposalMapper.chatbotAction(
+                    accessoryID: $0.accessoryID,
+                    action: $0.action,
+                    value: $0.value,
+                    value2: $0.value2
+                )
+            }
+            guard nativeActions.count == parsedActions.count else {
+                return "Proposta non creata: una o più azioni non sono convertibili nel nuovo Automation Builder."
+            }
+            proposal.actions = nativeActions
+        }
+
+        lastActionPayload = .reviewAutomation(proposal: proposal)
+        return "Proposta '\(label)' creata. Il bottone aprirà il nuovo Automation Builder."
     }
 
     // MARK: - getOutdoor
@@ -1462,11 +1921,19 @@ final class ToolDispatcher {
                 }
             case "open":
                 if let c = ch(positionUUID) {
-                    pending.append(PendingAction(characteristic: c, value: 100 as NSNumber))
+                    let rawPosition = WindowCoveringPositionMapper.rawTarget(
+                        forActionType: action,
+                        accessoryID: accessory.uniqueIdentifier
+                    ) ?? 100
+                    pending.append(PendingAction(characteristic: c, value: rawPosition as NSNumber))
                 }
             case "close":
                 if let c = ch(positionUUID) {
-                    pending.append(PendingAction(characteristic: c, value: 0 as NSNumber))
+                    let rawPosition = WindowCoveringPositionMapper.rawTarget(
+                        forActionType: action,
+                        accessoryID: accessory.uniqueIdentifier
+                    ) ?? 0
+                    pending.append(PendingAction(characteristic: c, value: rawPosition as NSNumber))
                 }
             case "setTemp":
                 if let c = ch(targetTempUUID), let v = value {

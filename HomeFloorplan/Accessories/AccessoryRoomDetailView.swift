@@ -373,7 +373,7 @@ private struct RoomScenesStrip: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.purple)
                     .frame(width: 20)
-                Text("Scene")
+                Text(String(localized: "common.scenes", defaultValue: "Scenes"))
                     .font(.headline)
                     .foregroundStyle(.primary)
                 Spacer()

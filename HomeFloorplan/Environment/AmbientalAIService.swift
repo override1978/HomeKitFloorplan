@@ -667,7 +667,7 @@ final class AmbientalAIService {
         let suspect = languageSuspect(message: message)
         #if DEBUG
         if suspect {
-            print("⚠️ [AI] Language suspect in \(roomName): message appears to be in English instead of Italian")
+            dprint("⚠️ [AI] Language suspect in \(roomName): message appears to be in English instead of Italian")
         }
         #endif
 

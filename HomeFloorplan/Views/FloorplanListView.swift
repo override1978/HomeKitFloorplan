@@ -88,12 +88,14 @@ struct FloorplanListView: View {
             }
             .fullScreenCover(item: $drawingEditFloorplan) { floorplan in
                 DrawingFloorplanSheet(initialDocument: floorplan.drawingDocument) { image, rooms, doc in
+                    let previousRooms = floorplan.linkedRooms
                     ImageStorageService.delete(filename: floorplan.imageFilename)
                     if let newFilename = try? ImageStorageService.save(image) {
                         floorplan.imageFilename = newFilename
                     }
                     floorplan.drawingDocument = doc
                     if !rooms.isEmpty {
+                        preserveMarkerPositions(on: floorplan, from: previousRooms, to: rooms)
                         floorplan.linkedRooms = rooms
                     }
                     floorplan.updatedAt = .now
@@ -178,7 +180,7 @@ struct FloorplanListView: View {
                     }
                     
                     GlassTitlePill {
-                        Text("Planimetrie")
+                        Text(String(localized: "floorplans.title", defaultValue: "Floorplans"))
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .padding(.horizontal, 16)
@@ -509,8 +511,8 @@ struct FloorplanListView: View {
         try? modelContext.save()
     }
 
-    /// Crea una copia della planimetria: stessa immagine (file separato), stesso disegno 2D,
-    /// stesse stanze collegate. I marker degli accessori NON vengono copiati.
+    /// Crea una copia completa della planimetria: immagine separata, disegno 2D,
+    /// stanze collegate e marker accessori.
     private func duplicate(_ floorplan: Floorplan) {
         // Copia l'immagine su disco (file separato, così le due planimetrie sono indipendenti)
         let newImageFilename: String
@@ -530,7 +532,58 @@ struct FloorplanListView: View {
         copy.linkedRoomsJSON    = floorplan.linkedRoomsJSON
         copy.drawingDocumentJSON = floorplan.drawingDocumentJSON
 
+        for marker in floorplan.accessories {
+            let copiedMarker = PlacedAccessory(
+                homeKitAccessoryUUID: marker.homeKitAccessoryUUID,
+                position: marker.position,
+                customLabel: marker.customLabel,
+                linkedRoomUUID: marker.linkedRoomUUID
+            )
+            copy.accessories.append(copiedMarker)
+        }
+
         modelContext.insert(copy)
         try? modelContext.save()
+    }
+
+    private func preserveMarkerPositions(on floorplan: Floorplan,
+                                         from previousRooms: [LinkedRoom],
+                                         to newRooms: [LinkedRoom]) {
+        guard !previousRooms.isEmpty, !newRooms.isEmpty else { return }
+
+        let previousByID = Dictionary(uniqueKeysWithValues: previousRooms.map { ($0.hmRoomUUID, $0) })
+        let newByID = Dictionary(uniqueKeysWithValues: newRooms.map { ($0.hmRoomUUID, $0) })
+
+        for marker in floorplan.accessories {
+            let markerPoint = NormalizedPoint(x: marker.positionX, y: marker.positionY)
+            guard let roomID = marker.linkedRoomUUID ?? roomID(containing: markerPoint, in: previousRooms),
+                  let previousRoom = previousByID[roomID],
+                  let newRoom = newByID[roomID] else { continue }
+
+            let previousRect = previousRoom.normalizedRect
+            let newRect = newRoom.normalizedRect
+            guard previousRect.width > 0, previousRect.height > 0 else { continue }
+
+            let localX = (marker.positionX - previousRect.x) / previousRect.width
+            let localY = (marker.positionY - previousRect.y) / previousRect.height
+
+            marker.positionX = clamped(newRect.x + localX * newRect.width)
+            marker.positionY = clamped(newRect.y + localY * newRect.height)
+            marker.linkedRoomUUID = roomID
+        }
+    }
+
+    private func roomID(containing point: NormalizedPoint, in rooms: [LinkedRoom]) -> UUID? {
+        rooms.first { room in
+            let rect = room.normalizedRect
+            return point.x >= rect.x &&
+                point.x <= rect.x + rect.width &&
+                point.y >= rect.y &&
+                point.y <= rect.y + rect.height
+        }?.hmRoomUUID
+    }
+
+    private func clamped(_ value: Double) -> Double {
+        min(1, max(0, value))
     }
 }

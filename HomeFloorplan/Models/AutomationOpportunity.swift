@@ -23,7 +23,7 @@ enum OpportunityOrigin: String, Codable {
 
 /// A ranked, explainable automation opportunity derived from a BehavioralPattern
 /// or from a conversational user request.
-/// Carries everything needed to explain itself and build a Rule when approved.
+/// Carries everything needed to explain itself and map into an AutomationProposal.
 struct AutomationOpportunity: Identifiable, Codable {
     var id:            UUID
     var createdAt:     Date
@@ -45,7 +45,7 @@ struct AutomationOpportunity: Identifiable, Codable {
     var dayTypeLabel:           String
     var patternType:            BehavioralPatternType
 
-    // — Trigger (for Rule generation) —
+    // — Trigger (for proposal generation) —
     var triggerType:           String    // "calendar" | "characteristic" | "inApp"
     var triggerTime:           String?   // "23:15"
     var triggerWeekdaysRaw:    String?   // "2,3,4,5,6"
@@ -53,10 +53,11 @@ struct AutomationOpportunity: Identifiable, Codable {
     var triggerThreshold:      Double?
     var triggerDirection:      String?
 
-    // — Effect (for Rule generation) —
+    // — Effect (for proposal generation) —
     var effectAccessoryIDString: String?
     var effectActionRaw:         String
     var effectValue:             Double?
+    var effectValue2:            Double?
     var effectSceneName:         String?
 
     // — Status —
@@ -130,7 +131,7 @@ struct AutomationOpportunity: Identifiable, Codable {
         case timeDeviationMinutes, dayTypeLabel, patternType
         case triggerType, triggerTime, triggerWeekdaysRaw
         case triggerSensorType, triggerThreshold, triggerDirection
-        case effectAccessoryIDString, effectActionRaw, effectValue, effectSceneName
+        case effectAccessoryIDString, effectActionRaw, effectValue, effectValue2, effectSceneName
         case status, snoozedUntil, dismissedAt, approvedAt
         case origin
     }
@@ -161,6 +162,7 @@ struct AutomationOpportunity: Identifiable, Codable {
         effectAccessoryIDString  = try c.decodeIfPresent(String.self,       forKey: .effectAccessoryIDString)
         effectActionRaw          = try c.decode(String.self,                forKey: .effectActionRaw)
         effectValue              = try c.decodeIfPresent(Double.self,       forKey: .effectValue)
+        effectValue2             = try c.decodeIfPresent(Double.self,       forKey: .effectValue2)
         effectSceneName          = try c.decodeIfPresent(String.self,       forKey: .effectSceneName)
         status                   = try c.decode(OpportunityStatus.self,     forKey: .status)
         snoozedUntil             = try c.decodeIfPresent(Date.self,         forKey: .snoozedUntil)
@@ -170,46 +172,6 @@ struct AutomationOpportunity: Identifiable, Codable {
         origin = try c.decodeIfPresent(OpportunityOrigin.self, forKey: .origin) ?? .detected
     }
 
-    /// Builds a Rule from this opportunity — call after user approval.
-    func buildRule() -> Rule {
-        // For characteristic triggers, encode "sensorType|sensorRoom|direction" so the
-        // in-app evaluation engine can identify both the sensor and the direction.
-        let charID: String?
-        if let st = triggerSensorType {
-            var parts = [st]
-            if !roomName.isEmpty { parts.append(roomName) }
-            if let dir = triggerDirection { parts.append(dir) }
-            charID = parts.joined(separator: "|")
-        } else {
-            charID = nil
-        }
-
-        // Delegate to HomeKit for calendar triggers and for characteristic triggers
-        // that have a physical sensor (triggerSensorType set). The HomeKit path will
-        // fall back to inApp automatically if the sensor isn't found as an HMCharacteristic.
-        // Scene-based rules are always delegatable — the HMActionSet already exists in HomeKit.
-        let canDelegate = effectSceneName != nil
-            || triggerType == "calendar"
-            || (triggerType == "characteristic" && triggerSensorType != nil)
-
-        return Rule(
-            name:                    title,
-            ruleDescription:         naturalLanguage,
-            triggerType:             triggerType,
-            triggerTime:             triggerTime,
-            triggerWeekdays:         triggerWeekdaysRaw,
-            triggerCharacteristicID: charID,
-            triggerThreshold:        triggerThreshold,
-            actionAccessoryID:       effectAccessoryIDString ?? "",
-            actionType:              effectActionRaw,
-            actionValue:             effectValue,
-            actionSceneName:         effectSceneName,
-            executionMode:           canDelegate ? "homeKit" : "inApp",
-            isEnabled:               true,
-            confidenceScore:         confidence,
-            generatedByAI:           true
-        )
-    }
 }
 
 // MARK: - AutomationOpportunity Equatable (identity-based)
@@ -271,6 +233,7 @@ extension AutomationOpportunity {
         self.effectAccessoryIDString = matchedSceneName == nil ? pattern.accessoryID?.uuidString : nil
         self.effectActionRaw         = pattern.action.rawValue
         self.effectValue             = pattern.numericValue
+        self.effectValue2            = nil
         self.effectSceneName         = matchedSceneName
 
         self.status      = .pending
@@ -356,6 +319,7 @@ extension AutomationOpportunity {
         accessoryID:     String,
         action:          String,
         value:           Double?,
+        value2:          Double? = nil,
         label:           String,
         naturalLanguage: String,
         triggerType:     String,
@@ -371,7 +335,7 @@ extension AutomationOpportunity {
         let patternID = uuidFromSeed(semanticKey)
         let now       = Date()
 
-        // roomName holds the sensor room so buildRule() can encode it in triggerCharacteristicID.
+        // roomName holds the sensor room for proposal mapping and card summaries.
         let roomName = triggerSensorRoom ?? ""
 
         let opp = AutomationOpportunity(
@@ -399,6 +363,7 @@ extension AutomationOpportunity {
             effectAccessoryIDString: accessoryID,
             effectActionRaw:         action,
             effectValue:             value,
+            effectValue2:            value2,
             effectSceneName:         sceneName,
             status:                  .pending,
             snoozedUntil:            nil,
@@ -418,7 +383,7 @@ extension AutomationOpportunity {
         timeDeviationMinutes: Int, dayTypeLabel: String, patternType: BehavioralPatternType,
         triggerType: String, triggerTime: String?, triggerWeekdaysRaw: String?,
         triggerSensorType: String?, triggerThreshold: Double?, triggerDirection: String?,
-        effectAccessoryIDString: String?, effectActionRaw: String, effectValue: Double?,
+        effectAccessoryIDString: String?, effectActionRaw: String, effectValue: Double?, effectValue2: Double?,
         effectSceneName: String? = nil,
         status: OpportunityStatus, snoozedUntil: Date?, dismissedAt: Date?, approvedAt: Date?,
         origin: OpportunityOrigin
@@ -447,6 +412,7 @@ extension AutomationOpportunity {
         self.effectAccessoryIDString = effectAccessoryIDString
         self.effectActionRaw         = effectActionRaw
         self.effectValue             = effectValue
+        self.effectValue2            = effectValue2
         self.effectSceneName         = effectSceneName
         self.status                  = status
         self.snoozedUntil            = snoozedUntil

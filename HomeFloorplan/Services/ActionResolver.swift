@@ -266,12 +266,23 @@ final class ActionResolver {
         case .coolRoom:
             let isBlind = categorize(accessory) == "windowCovering"
             if isBlind {
-                // In this app's HomeKit convention: close = TargetPosition 0, open = 100.
-                // A cooling shade action must therefore be treated as already active when closed.
                 // CurrentPosition is more reliable than a stale TargetPosition.
                 // Active/PowerState on blind controllers means "device powered", not "blind closed".
-                if let pos = numericValue(currentPositionUUID) { return pos <= 5 }
-                if let pos = numericValue(targetPositionUUID) { return pos <= 5 }
+                // Position mapping can be reversed per accessory, so compare the logical position.
+                if let pos = numericValue(currentPositionUUID) {
+                    let logicalPosition = WindowCoveringPositionMapper.logicalPosition(
+                        fromRaw: Int(pos),
+                        accessoryID: accessory.uniqueIdentifier
+                    )
+                    return logicalPosition <= 5
+                }
+                if let pos = numericValue(targetPositionUUID) {
+                    let logicalPosition = WindowCoveringPositionMapper.logicalPosition(
+                        fromRaw: Int(pos),
+                        accessoryID: accessory.uniqueIdentifier
+                    )
+                    return logicalPosition <= 5
+                }
                 return false
             }
             if let active: Int = typedValue(activeUUID), active == 1 { return true }

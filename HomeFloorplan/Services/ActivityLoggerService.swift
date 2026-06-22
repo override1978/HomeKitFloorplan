@@ -231,9 +231,15 @@ extension ActivityLoggerService {
             if let v = doubleVal(value) { return String(format: "%.0f%%", v) }
         case targetPositionUUID:
             if let v = intVal(value) {
-                return v == 0
+                let logicalPosition = characteristic.service?.accessory.map {
+                    WindowCoveringPositionMapper.logicalPosition(
+                        fromRaw: v,
+                        accessoryID: $0.uniqueIdentifier
+                    )
+                } ?? v
+                return logicalPosition == 0
                     ? String(localized: "accessory.position.closed", defaultValue: "Closed")
-                    : (v == 100 ? String(localized: "accessory.position.open", defaultValue: "Open") : "\(v)%")
+                    : (logicalPosition == 100 ? String(localized: "accessory.position.open", defaultValue: "Open") : "\(logicalPosition)%")
             }
         case lockTargetUUID:
             return intVal(value) == 1

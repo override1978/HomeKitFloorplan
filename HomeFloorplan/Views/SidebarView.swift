@@ -146,7 +146,7 @@ struct SidebarView: View {
                 }
             }
 
-            // MARK: Scene & Automazioni — con Accessori e Log
+            // MARK: Scene & Automazioni — con Accessori
             Section {
                 DisclosureGroup(isExpanded: $scenesExpanded) {
                     NavigationLink(value: SidebarSelection.allAccessories) {
@@ -157,9 +157,6 @@ struct SidebarView: View {
                     }
                     NavigationLink(value: SidebarSelection.automations) {
                         Label(String(localized: "sidebar.automations", defaultValue: "Automations"), systemImage: "gearshape.2")
-                    }
-                    NavigationLink(value: SidebarSelection.activityLog) {
-                        Label(String(localized: "sidebar.activityLog", defaultValue: "Activity Log"), systemImage: "clock.arrow.circlepath")
                     }
                 } label: {
                     Text(String(localized: "sidebar.section.scenesAndAutomations", defaultValue: "Scenes & Automations"))
@@ -174,9 +171,11 @@ struct SidebarView: View {
                     NavigationLink(value: SidebarSelection.settings) {
                         Label(String(localized: "sidebar.settings", defaultValue: "Settings"), systemImage: "gearshape")
                     }
+#if DEBUG
                     NavigationLink(value: SidebarSelection.debugHomeKit) {
-                        Label("Debug HomeKit", systemImage: "stethoscope")
+                        Label(String(localized: "sidebar.debugHomeKit", defaultValue: "HomeKit Debug"), systemImage: "stethoscope")
                     }
+#endif
                 } label: {
                     Text(String(localized: "sidebar.section.settings", defaultValue: "Settings"))
                         .font(.subheadline.weight(.semibold))

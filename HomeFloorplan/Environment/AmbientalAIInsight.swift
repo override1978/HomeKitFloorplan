@@ -86,15 +86,15 @@ enum IntelligenceLevel: String, Codable, CaseIterable {
 // MARK: - AINextAction
 
 /// Azione generata dall'AI assieme a un insight.
-/// Tre forme:
-///   "suggest" — controllo accessorio HomeKit (ha accessoryID + accessoryActionType)
+/// Forme correnti:
+///   "suggest" — controllo accessorio HomeKit immediato (ha accessoryID + accessoryActionType)
 ///   "tip"     — consiglio manuale senza accessorio ("Apri la finestra", "Arieggia la stanza")
-///   "executeNow" / "createRule" — forme legacy ancora usate dal RuleEditor
+///   altri tipi storici vengono trattati come proposta da revisionare nel nuovo Automation Builder.
 struct AINextAction: Identifiable, Codable {
     let id: UUID
     /// Testo del pulsante/chip localizzato (max ~25 caratteri).
     let label: String
-    /// "suggest" | "tip" | "executeNow" | "createRule"
+    /// "suggest" | "tip" | legacy values mapped to AutomationProposal review.
     let actionType: String
 
     /// True se è un suggerimento manuale senza accessorio associato.
@@ -110,8 +110,7 @@ struct AINextAction: Identifiable, Codable {
     /// Temperatura secondaria in °C per setMode su termostati/climatizzatori.
     let accessoryValue2: Double?
 
-    // Per createRule
-    /// JSON della RuleDraft pre-compilata dall'AI.
+    /// JSON legacy di automazione. Conservato per compatibilità con insight persistiti.
     let ruleJSON: String?
 
     /// SF Symbol override per le tip manuali. Nil → usa "lightbulb.fill" come fallback.
@@ -142,6 +141,130 @@ struct AINextAction: Identifiable, Codable {
         self.ruleJSON = ruleJSON
         self.iconName = iconName
         self.accessoryName = accessoryName
+    }
+}
+
+// MARK: - Ambiental Automation Proposal Factory
+
+enum AmbientalAutomationProposalFactory {
+    static func proposal(
+        from action: AINextAction,
+        insight: AmbientalAIInsight,
+        fallbackAccessoryID: String?
+    ) -> AutomationProposal? {
+        let legacy = legacyRulePayload(from: action.ruleJSON)
+        let accessoryID = action.accessoryID
+            ?? legacy.accessoryID
+            ?? fallbackAccessoryID
+        let actionType = action.accessoryActionType
+            ?? legacy.actionType
+            ?? "on"
+
+        guard let accessoryID,
+              let proposalAction = AutomationProposalMapper.chatbotAction(
+                accessoryID: accessoryID,
+                action: actionType,
+                value: action.accessoryValue ?? legacy.actionValue,
+                value2: action.accessoryValue2 ?? legacy.actionValue2
+              ) else {
+            return nil
+        }
+
+        let startEvents = startEvents(from: legacy)
+        let unsupportedReason = startEvents.isEmpty
+            ? String(localized: "automation.proposal.unsupported.trigger", defaultValue: "This opportunity cannot be converted because its trigger is not supported by the automation builder yet.")
+            : nil
+
+        return AutomationProposal(
+            source: .manual,
+            title: actionLabel(action, insight: insight),
+            explanation: insight.message,
+            confidence: insight.confidence,
+            startEvents: startEvents,
+            actions: [proposalAction],
+            limitations: unsupportedReason.map { [$0] } ?? [],
+            requiresUserReview: true,
+            unsupportedReason: unsupportedReason,
+            shouldEnableAutomation: true
+        )
+    }
+
+    private static func actionLabel(_ action: AINextAction, insight: AmbientalAIInsight) -> String {
+        let label = action.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !label.isEmpty { return label }
+        return String(
+            format: String(localized: "environment.automation.proposal.title", defaultValue: "Automation for %@"),
+            insight.roomName
+        )
+    }
+
+    private static func startEvents(from legacy: LegacyRulePayload) -> [AutomationProposalStartEvent] {
+        switch legacy.triggerType {
+        case "calendar":
+            guard let time = legacy.triggerTime,
+                  let components = timeComponents(from: time) else { return [] }
+            return [.schedule(AutomationProposalSchedule(
+                hour: components.hour,
+                minute: components.minute,
+                weekdays: normalizedWeekdays(from: legacy.weekdays)
+            ))]
+        case "characteristic":
+            guard let threshold = legacy.triggerThreshold else { return [] }
+            return [.accessory(AutomationProposalCapabilitySelection(
+                characteristicID: legacy.triggerCharacteristicID.flatMap(UUID.init(uuidString:)),
+                comparisonOperator: .greaterThan,
+                targetValue: .number(threshold)
+            ))]
+        default:
+            return []
+        }
+    }
+
+    private struct LegacyRulePayload {
+        var triggerType: String?
+        var triggerTime: String?
+        var weekdays: [Int]
+        var triggerCharacteristicID: String?
+        var triggerThreshold: Double?
+        var accessoryID: String?
+        var actionType: String?
+        var actionValue: Double?
+        var actionValue2: Double?
+    }
+
+    private static func legacyRulePayload(from json: String?) -> LegacyRulePayload {
+        guard let json,
+              let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return LegacyRulePayload(weekdays: [])
+        }
+
+        return LegacyRulePayload(
+            triggerType: dict["triggerType"] as? String,
+            triggerTime: dict["triggerTime"] as? String ?? dict["time"] as? String,
+            weekdays: dict["triggerWeekdays"] as? [Int] ?? dict["weekdays"] as? [Int] ?? [],
+            triggerCharacteristicID: dict["triggerCharacteristicID"] as? String,
+            triggerThreshold: dict["triggerThreshold"] as? Double,
+            accessoryID: dict["actionAccessoryID"] as? String ?? dict["accessoryID"] as? String,
+            actionType: dict["actionType"] as? String ?? dict["action"] as? String,
+            actionValue: dict["actionValue"] as? Double ?? dict["value"] as? Double,
+            actionValue2: dict["actionValue2"] as? Double
+        )
+    }
+
+    private static func timeComponents(from text: String) -> (hour: Int, minute: Int)? {
+        let parts = text.split(separator: ":")
+        guard parts.count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1]),
+              (0...23).contains(hour),
+              (0...59).contains(minute) else { return nil }
+        return (hour, minute)
+    }
+
+    private static func normalizedWeekdays(from values: [Int]) -> Set<Int> {
+        let normalized = values.filter { (1...7).contains($0) }
+        return normalized.isEmpty ? Set(1...7) : Set(normalized)
     }
 }
 

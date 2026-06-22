@@ -25,7 +25,7 @@ struct EnvironmentAIDigestCard: View {
     let insights: [AmbientalAIInsight]
     let onDismissInsight: (AmbientalAIInsight, DismissalReason) -> Void
     let onExecuteAction: (AINextAction, AmbientalAIInsight) async -> Bool
-    let onCreateRule: (RuleDraft, AmbientalAIInsight) -> Void
+    let onReviewAutomation: (AutomationProposal, AmbientalAIInsight) -> Void
 
     @State private var currentPage: Int = 0
 
@@ -74,7 +74,7 @@ struct EnvironmentAIDigestCard: View {
                             }
                         },
                         onExecuteAction: { action in await onExecuteAction(action, insight) },
-                        onCreateRule: { draft in onCreateRule(draft, insight) }
+                        onReviewAutomation: { proposal in onReviewAutomation(proposal, insight) }
                     )
                     .tag(idx)
                 }
@@ -124,7 +124,7 @@ private struct InsightPageView: View {
     let insight: AmbientalAIInsight
     let onDismiss: (DismissalReason) -> Void
     let onExecuteAction: (AINextAction) async -> Bool
-    let onCreateRule: (RuleDraft) -> Void
+    let onReviewAutomation: (AutomationProposal) -> Void
 
     @State private var showDismissDialog = false
 
@@ -235,8 +235,9 @@ private struct InsightPageView: View {
                                 action: action,
                                 color: severityColor,
                                 fallbackAccessoryID: nil,
+                                insight: insight,
                                 onExecuteAction: onExecuteAction,
-                                onCreateRule: onCreateRule
+                                onReviewAutomation: onReviewAutomation
                             )
                         }
                     }
@@ -260,8 +261,9 @@ private struct DigestActionButton: View {
     let action: AINextAction
     let color: Color
     let fallbackAccessoryID: String?
+    let insight: AmbientalAIInsight
     let onExecuteAction: (AINextAction) async -> Bool
-    let onCreateRule: (RuleDraft) -> Void
+    let onReviewAutomation: (AutomationProposal) -> Void
 
     enum ButtonState { case idle, executing, completed, error }
     @State private var state: ButtonState = .idle
@@ -394,18 +396,11 @@ private struct DigestActionButton: View {
             return
         }
 
-        // "createRule" / legacy path
-        let resolvedID = action.accessoryID ?? fallbackAccessoryID
-        let rawType    = action.accessoryActionType ?? "on"
-        let resolvedActionType: String
-        switch rawType {
-        case "setMode", "setSpeed", "setTemp", "on", "off", "dim", "open", "close":
-            resolvedActionType = rawType
-        default:
-            resolvedActionType = "on"
-        }
-
-        guard let accessoryID = resolvedID else {
+        guard let proposal = AmbientalAutomationProposalFactory.proposal(
+            from: action,
+            insight: insight,
+            fallbackAccessoryID: fallbackAccessoryID
+        ) else {
             state = .error
             Task {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -414,18 +409,7 @@ private struct DigestActionButton: View {
             return
         }
 
-        let draft = RuleDraft(
-            name: action.label,
-            description: action.label,
-            triggerType: "inApp",
-            actionAccessoryID: accessoryID,
-            actionAccessoryName: "",
-            actionType: resolvedActionType,
-            actionValue: action.accessoryValue,
-            confidenceScore: 0.8,
-            generatedByAI: true
-        )
-        onCreateRule(draft)
+        onReviewAutomation(proposal)
     }
 }
 
@@ -481,7 +465,7 @@ private extension InsightSeverity {
             insights: insights,
             onDismissInsight: { _, _ in },
             onExecuteAction: { _, _ in true },
-            onCreateRule: { _, _ in }
+            onReviewAutomation: { _, _ in }
         )
         .padding()
     }

@@ -102,7 +102,10 @@ struct SmartLightingSettingsView: View {
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 if let sr = weatherKit.todaySunrise, let ss = weatherKit.todaySunset {
-                    Text("Sunrise \(Self.timeFmt.string(from: sr)) · Sunset \(Self.timeFmt.string(from: ss))")
+                    Text(String(format: String(localized: "smartlighting.sunStatus",
+                                               defaultValue: "Sunrise %@ · Sunset %@"),
+                                Self.timeFmt.string(from: sr),
+                                Self.timeFmt.string(from: ss)))
                         .font(.subheadline)
                     if let at = engine.lastEvaluationAt {
                         Text(String(format: String(localized: "smartlighting.lastEvalAt",
@@ -373,7 +376,7 @@ struct LightingProfileEditView: View {
                 }
             } header: {
                 Text(String(localized: "smartlighting.edit.scenes.header",
-                            defaultValue: "Scene per Phase"))
+                            defaultValue: "Scenes per Phase"))
             } footer: {
                 Text(String(localized: "smartlighting.edit.scenes.footer",
                             defaultValue: "\"None\" skips that phase — the engine makes no change. Only custom HomeKit scenes are listed. Times are based on today's sunrise/sunset."))
@@ -464,7 +467,7 @@ struct LightingProfileEditView: View {
                             defaultValue: "Lux Sensor"))
             } footer: {
                 Text(String(localized: "smartlighting.edit.lux.footer",
-                            defaultValue: "If a lux sensor in this room reads above the threshold, the engine skips activation. If natural light returns after the engine already activated a scene, the selected scene will be triggered after 20 minutes."))
+                            defaultValue: "If a lux sensor reads above the threshold, the engine skips activation. The return-light scene is triggered only when the lux sensor is assigned to a different room, so room lights do not create an on/off loop."))
             }
 
             // MARK: Override manuale
@@ -487,10 +490,14 @@ struct LightingProfileEditView: View {
                     }
                 } else {
                     Menu {
-                        Button("1 ora") { applyOverride(hours: 1) }
-                        Button("2 ore") { applyOverride(hours: 2) }
-                        Button("4 ore") { applyOverride(hours: 4) }
-                        Button("Fino al mattino (07:00)") { applyOverrideUntilMorning() }
+                        Button(String(localized: "smartlighting.edit.override.1h",
+                                      defaultValue: "1 hour")) { applyOverride(hours: 1) }
+                        Button(String(localized: "smartlighting.edit.override.2h",
+                                      defaultValue: "2 hours")) { applyOverride(hours: 2) }
+                        Button(String(localized: "smartlighting.edit.override.4h",
+                                      defaultValue: "4 hours")) { applyOverride(hours: 4) }
+                        Button(String(localized: "smartlighting.edit.override.untilMorning",
+                                      defaultValue: "Until morning (07:00)")) { applyOverrideUntilMorning() }
                     } label: {
                         Label(String(localized: "smartlighting.edit.override.pause",
                                      defaultValue: "Pause engine…"),

@@ -13,6 +13,7 @@ struct SmartLightingFloorplanStatus {
     var state: State
     var activeCount: Int
     var pausedRooms: [(roomName: String, until: Date)]
+    var isUserPaused: Bool
     var issueCount: Int
     var nextResumeAt: Date?
 }
@@ -42,10 +43,25 @@ final class SmartLightingEngine {
     /// Usato per spegnere le luci quando il lux risale sopra soglia dopo il cooldown.
     private var engineActivatedAt: [UUID: Date] = [:]
     private var engineMutationSuppressionUntilByRoom: [String: Date] = [:]
+    private var lastEngineSceneRunAtByRoom: [String: Date] = [:]
+
+    /// Guardrail anti-oscillazione: Smart Lighting non deve alternare scene sulla stessa stanza
+    /// a distanza di pochi secondi, anche se arrivano valutazioni concorrenti o profili duplicati.
+    private static let minimumRoomSceneInterval: TimeInterval = 2 * 60
 
     var isGloballyEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: "smartLighting.globalEnabled") }
         set { UserDefaults.standard.set(newValue, forKey: "smartLighting.globalEnabled") }
+    }
+
+    var isUserPaused: Bool {
+        get { UserDefaults.standard.bool(forKey: "smartLighting.userPaused") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "smartLighting.userPaused")
+            lastEvaluationLog = newValue
+                ? "Smart Lighting paused from the floorplan."
+                : "Smart Lighting resumed from the floorplan."
+        }
     }
 
     // MARK: - Dependencies
@@ -74,6 +90,10 @@ final class SmartLightingEngine {
                 : "Smart Lighting disabilitato globalmente"
             return
         }
+        guard !isUserPaused else {
+            lastEvaluationLog = "Smart Lighting paused by user from the floorplan."
+            return
+        }
         guard let home = homeKit.currentHome else {
             lastEvaluationLog = "Casa HomeKit non disponibile"
             return
@@ -88,9 +108,16 @@ final class SmartLightingEngine {
 
         scenesService.refresh()
         let availableScenes = scenesService.scenes
+        var actedRoomKeys: Set<String> = []
 
         for i in 0..<profiles.count where profiles[i].isEnabled {
             let profile = profiles[i]
+            let roomKey = normalizedRoomName(profile.roomName)
+
+            if actedRoomKeys.contains(roomKey) {
+                log.append("• \(profile.roomName): skipped — this room was already handled in this evaluation")
+                continue
+            }
 
             // Override manuale: l'utente ha disabilitato questa stanza temporaneamente
             if let overrideUntil = profile.manualOverrideUntil, now < overrideUntil {
@@ -116,12 +143,20 @@ final class SmartLightingEngine {
                         if let activatedAt = engineActivatedAt[profile.id],
                            now.timeIntervalSince(activatedAt) >= 20 * 60 {
                             let offName = profile.luxOffSceneName ?? ""
-                            if !offName.isEmpty,
+                            if !usesIndependentLuxSensor(for: profile) {
+                                log.append("• \(profile.roomName): \(Int(lux)) lx > soglia — auto-off saltato: il sensore lux è nella stessa stanza e potrebbe leggere la luce artificiale")
+                            } else if !offName.isEmpty,
                                let offScene = availableScenes.first(where: {
                                    $0.name.lowercased() == offName.lowercased()
                                }) {
+                                guard canRunScene(forRoomKey: roomKey, at: now) else {
+                                    log.append("• \(profile.roomName): '\(offName)' skipped — anti-loop guard active")
+                                    continue
+                                }
                                 suppressManualPause(for: profile.roomName)
                                 try? await scenesService.run(offScene)
+                                markSceneRun(forRoomKey: roomKey, at: now)
+                                actedRoomKeys.insert(roomKey)
                                 log.append("• \(profile.roomName): \(Int(lux)) lx > soglia — '\(offName)' attivata (luce rientrata)")
                             } else {
                                 log.append("• \(profile.roomName): \(Int(lux)) lx > soglia — luce rientrata, nessuna scena off configurata")
@@ -175,9 +210,16 @@ final class SmartLightingEngine {
                 continue
             }
 
+            guard canRunScene(forRoomKey: roomKey, at: now) else {
+                log.append("• \(profile.roomName): '\(sceneName)' skipped — anti-loop guard active")
+                continue
+            }
+
             do {
                 suppressManualPause(for: profile.roomName)
                 try await scenesService.run(scene)
+                markSceneRun(forRoomKey: roomKey, at: now)
+                actedRoomKeys.insert(roomKey)
                 markApplied(profileID: profile.id, phase: phase, at: now)
                 engineActivatedAt[profile.id] = now
                 log.append("• \(profile.roomName): ✅ '\(sceneName)' attivata (\(phase.displayName))")
@@ -245,6 +287,23 @@ final class SmartLightingEngine {
         return nil
     }
 
+    private func usesIndependentLuxSensor(for profile: LightingProfile) -> Bool {
+        guard let luxSensorRoomName = profile.luxSensorRoomName,
+              !luxSensorRoomName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return normalizedRoomName(luxSensorRoomName) != normalizedRoomName(profile.roomName)
+    }
+
+    private func canRunScene(forRoomKey roomKey: String, at now: Date) -> Bool {
+        guard let last = lastEngineSceneRunAtByRoom[roomKey] else { return true }
+        return now.timeIntervalSince(last) >= Self.minimumRoomSceneInterval
+    }
+
+    private func markSceneRun(forRoomKey roomKey: String, at now: Date) {
+        lastEngineSceneRunAtByRoom[roomKey] = now
+    }
+
     // MARK: - Profile Management
 
     func addOrUpdateProfile(_ profile: LightingProfile) {
@@ -289,29 +348,13 @@ final class SmartLightingEngine {
         }
     }
 
-    @discardableResult
-    func pauseAfterManualChange(roomName: String?, hours: Double = 1) -> Bool {
-        guard isGloballyEnabled,
-              let roomName,
-              let idx = profiles.firstIndex(where: {
-                  $0.roomName.lowercased() == roomName.lowercased()
-              }),
-              profiles[idx].isEnabled else { return false }
+    func pauseFromFloorplan() {
+        isUserPaused = true
+    }
 
-        if let lastApplied = profiles[idx].lastAppliedAt,
-           Date().timeIntervalSince(lastApplied) < 45 {
-            return false
-        }
-
-        if isSuppressingManualPause(for: profiles[idx].roomName) {
-            return false
-        }
-
-        let until = Date().addingTimeInterval(hours * 3_600)
-        profiles[idx].manualOverrideUntil = until
-        saveProfiles()
-        lastEvaluationLog = "Smart Lighting paused in \(profiles[idx].roomName) until \(timeString(until)) after a manual light change."
-        return true
+    func resumeFromFloorplan() {
+        isUserPaused = false
+        clearAllManualOverrides()
     }
 
     var floorplanStatus: SmartLightingFloorplanStatus? {
@@ -332,6 +375,8 @@ final class SmartLightingEngine {
             state = .needsAttention
         } else if !isGloballyEnabled {
             state = .disabled
+        } else if isUserPaused {
+            state = .paused
         } else if !pausedRooms.isEmpty {
             state = .paused
         } else {
@@ -342,6 +387,7 @@ final class SmartLightingEngine {
             state: state,
             activeCount: enabledProfiles.count,
             pausedRooms: pausedRooms,
+            isUserPaused: isUserPaused,
             issueCount: issueCount,
             nextResumeAt: pausedRooms.first?.until
         )
@@ -425,6 +471,7 @@ final class SmartLightingEngine {
 
     var statusSummary: String {
         guard isGloballyEnabled else { return "Smart Lighting disabilitato." }
+        guard !isUserPaused else { return "Smart Lighting in pausa manuale dal floorplan." }
         let phase = currentPhase(at: Date())
         var lines: [String] = ["Fase attuale: \(phase.displayName)"]
         if let sr = weatherKit.todaySunrise, let ss = weatherKit.todaySunset {

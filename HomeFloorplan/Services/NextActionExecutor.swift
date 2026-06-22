@@ -46,7 +46,7 @@ final class NextActionExecutor {
         guard let characteristic = characteristic(for: actionType, accessory: accessory)
         else { return false }
 
-        let value = targetValue(for: actionType, accessoryValue: action.accessoryValue)
+        let value = targetValue(for: actionType, accessoryValue: action.accessoryValue, accessory: accessory)
 
         do {
             try await characteristic.writeValue(value)
@@ -118,13 +118,16 @@ final class NextActionExecutor {
     }
 
     /// Converte il tipo di azione + valore opzionale nel valore da scrivere su HomeKit.
-    private func targetValue(for actionType: String, accessoryValue: Double?) -> Any {
+    private func targetValue(for actionType: String, accessoryValue: Double?, accessory: HMAccessory) -> Any {
         switch actionType {
         case "on":       return 1
         case "off":      return 0
         case "dim":      return Int((accessoryValue ?? 0.5) * 100)
-        case "open":     return 100
-        case "close":    return 0
+        case "open", "close":
+            return WindowCoveringPositionMapper.rawTarget(
+                forActionType: actionType,
+                accessoryID: accessory.uniqueIdentifier
+            ) ?? (actionType == "open" ? 100 : 0)
         case "setSpeed": return Int((accessoryValue ?? 0.5) * 100)
         case "setMode":       return Int(accessoryValue ?? 0)   // intero modalità (0=Auto, 1=Caldo, 2=Freddo, ecc.)
         case "setTemp":       return accessoryValue ?? 22.0
