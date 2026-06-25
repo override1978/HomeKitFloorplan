@@ -1,5 +1,415 @@
 import SwiftUI
 import HomeKit
+import AVKit
+#if canImport(Lottie)
+import Lottie
+#endif
+
+private enum SmartLightingSceneValidator {
+    static func warnings(for scene: SceneItem, targetRoomName: String) -> [String] {
+        let targetKey = normalizedRoomName(targetRoomName)
+        let roomNames = Set(scene.actionSet.actions.compactMap { action -> String? in
+            guard let write = action.homeFloorplanCharacteristicWrite,
+                  let roomName = write.characteristic.service?.accessory?.room?.name else {
+                return nil
+            }
+            return roomName
+        })
+        var warnings: [String] = []
+        let outsideRooms = roomNames
+            .filter { normalizedRoomName($0) != targetKey }
+            .sorted()
+        if !outsideRooms.isEmpty {
+            warnings.append(String(format: String(localized: "smartlighting.warning.sceneOutsideRooms",
+                                                  defaultValue: "Scene also affects: %@"),
+                                   outsideRooms.joined(separator: ", ")))
+        }
+        if containsOffWrites(scene) {
+            warnings.append(String(localized: "smartlighting.warning.sceneContainsOff",
+                                   defaultValue: "Scene contains off commands"))
+        }
+        if roomNames.count > 2 {
+            warnings.append(String(format: String(localized: "smartlighting.warning.sceneManyRooms",
+                                                  defaultValue: "Scene spans %d rooms"),
+                                   roomNames.count))
+        }
+        return warnings
+    }
+
+    private static func containsOffWrites(_ scene: SceneItem) -> Bool {
+        scene.actionSet.actions.contains { action in
+            guard let write = action.homeFloorplanCharacteristicWrite else { return false }
+            let type = write.characteristic.characteristicType
+            guard type == HMCharacteristicTypePowerState || type == HMCharacteristicTypeActive else {
+                return false
+            }
+            return boolValue(write.targetValue) == false || intValue(write.targetValue) == 0
+        }
+    }
+
+    private static func normalizedRoomName(_ roomName: String) -> String {
+        roomName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private static func boolValue(_ raw: Any?) -> Bool? {
+        if let b = raw as? Bool { return b }
+        if let n = raw as? NSNumber { return n.boolValue }
+        if let i = raw as? Int { return i != 0 }
+        return nil
+    }
+
+    private static func intValue(_ raw: Any?) -> Int? {
+        if let i = raw as? Int { return i }
+        if let n = raw as? NSNumber { return n.intValue }
+        return nil
+    }
+}
+
+private struct SmartLightingSceneReviewItem: Identifiable {
+    let id = UUID()
+    let label: String
+    let sceneName: String
+    let isMissing: Bool
+    let warnings: [String]
+}
+
+private struct SmartLightingPresenceSensorInfo: Identifiable {
+    let id: UUID
+    let accessoryName: String
+    let kind: String
+    let isActive: Bool
+}
+
+private enum SmartLightingExplainerStyle {
+    case emptyState
+    case compact
+}
+
+private struct SmartLightingExplainerView: View {
+    let style: SmartLightingExplainerStyle
+
+    private var isCompact: Bool {
+        style == .compact
+    }
+
+    var body: some View {
+        Group {
+            if isCompact {
+                VStack(alignment: .leading, spacing: 10) {
+                    SmartLightingExplainerMediaView(width: 260, height: 152)
+                        .frame(maxWidth: .infinity)
+                    textStack
+                }
+                .padding(.vertical, 8)
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    SmartLightingExplainerMediaView(width: 300, height: 176)
+                        .frame(maxWidth: .infinity)
+                    textStack
+                }
+                .padding(.vertical, 10)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var textStack: some View {
+        VStack(alignment: .leading, spacing: isCompact ? 4 : 6) {
+            Text(String(localized: "smartlighting.explainer.title",
+                        defaultValue: "Room-aware lighting"))
+                .font(isCompact ? .subheadline.weight(.semibold) : .headline)
+            Text(String(localized: "smartlighting.explainer.subtitle",
+                        defaultValue: "Scenes follow the day phase, then daylight, weather and room sensors decide whether a change is actually needed."))
+                .font(isCompact ? .caption : .subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct SmartLightingExplainerMediaView: View {
+    let width: CGFloat
+    let height: CGFloat
+
+    private let lottieName = "adaptive-lighting-v2.lottie"
+    private let lottieExtension = "json"
+    private let videoName = "smart_lighting_ios_card_loop"
+    private let videoExtension = "mp4"
+
+    var body: some View {
+        Group {
+            #if canImport(Lottie)
+            if Bundle.main.url(forResource: lottieName, withExtension: lottieExtension) != nil {
+                SmartLightingLottieView(animationName: lottieName)
+                    .frame(width: width, height: height)
+            } else if Bundle.main.url(forResource: videoName, withExtension: videoExtension) != nil {
+                SmartLightingLoopingVideoView(resourceName: videoName, fileExtension: videoExtension)
+                    .frame(width: width, height: height)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                    )
+            } else {
+                SmartLightingExplainerArtwork(size: width)
+            }
+            #else
+            if Bundle.main.url(forResource: videoName, withExtension: videoExtension) != nil {
+                SmartLightingLoopingVideoView(resourceName: videoName, fileExtension: videoExtension)
+                    .frame(width: width, height: height)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                    )
+            } else {
+                SmartLightingExplainerArtwork(size: width)
+            }
+            #endif
+        }
+        .frame(width: width, height: height)
+    }
+}
+
+#if canImport(Lottie)
+private struct SmartLightingLottieView: View {
+    let animationName: String
+
+    var body: some View {
+        LottieView(animation: .named(animationName))
+            .playing(loopMode: .loop)
+            .resizable()
+            .scaledToFit()
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+            )
+            .accessibilityHidden(true)
+    }
+}
+#endif
+
+private struct SmartLightingLoopingVideoView: UIViewRepresentable {
+    let resourceName: String
+    let fileExtension: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(resourceName: resourceName, fileExtension: fileExtension)
+    }
+
+    func makeUIView(context: Context) -> LoopingVideoContainerView {
+        let view = LoopingVideoContainerView()
+        view.backgroundColor = .clear
+        view.playerLayer?.videoGravity = .resizeAspectFill
+        context.coordinator.attach(to: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: LoopingVideoContainerView, context: Context) {
+        context.coordinator.attach(to: uiView)
+        context.coordinator.play()
+    }
+
+    final class Coordinator {
+        private let resourceName: String
+        private let fileExtension: String
+        private var player: AVQueuePlayer?
+        private var looper: AVPlayerLooper?
+
+        init(resourceName: String, fileExtension: String) {
+            self.resourceName = resourceName
+            self.fileExtension = fileExtension
+        }
+
+        func attach(to view: LoopingVideoContainerView) {
+            if player == nil {
+                configurePlayer()
+            }
+            view.playerLayer?.player = player
+            play()
+        }
+
+        func play() {
+            player?.play()
+        }
+
+        private func configurePlayer() {
+            guard let url = Bundle.main.url(forResource: resourceName, withExtension: fileExtension) else {
+                return
+            }
+            let item = AVPlayerItem(url: url)
+            let queue = AVQueuePlayer()
+            queue.isMuted = true
+            queue.actionAtItemEnd = .none
+            queue.preventsDisplaySleepDuringVideoPlayback = false
+            player = queue
+            looper = AVPlayerLooper(player: queue, templateItem: item)
+        }
+    }
+}
+
+private final class LoopingVideoContainerView: UIView {
+    override static var layerClass: AnyClass {
+        AVPlayerLayer.self
+    }
+
+    var playerLayer: AVPlayerLayer? {
+        layer as? AVPlayerLayer
+    }
+}
+
+private struct SmartLightingExplainerArtwork: View {
+    let size: CGFloat
+    @State private var isAnimating = false
+    @State private var step = 0
+
+    private var compactScale: CGFloat {
+        size < 120 ? 0.82 : 1.0
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(.systemBlue).opacity(0.14),
+                            Color(.systemYellow).opacity(0.18),
+                            Color(.systemGreen).opacity(0.12)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                )
+
+            Circle()
+                .fill(Color.yellow.opacity(isAnimating ? 0.34 : 0.18))
+                .frame(width: size * 0.62, height: size * 0.62)
+                .blur(radius: size * 0.08)
+                .offset(x: size * 0.08, y: size * 0.1)
+
+            VStack(spacing: size * 0.08) {
+                HStack(spacing: size * 0.055) {
+                    explainerSignal(
+                        icon: "sun.max.fill",
+                        label: String(localized: "smartlighting.explainer.phase", defaultValue: "Phase"),
+                        color: .orange,
+                        isActive: step == 0
+                    )
+                    explainerArrow(isActive: step == 0)
+                    explainerSignal(
+                        icon: "cloud.sun.fill",
+                        label: String(localized: "smartlighting.explainer.light", defaultValue: "Light"),
+                        color: .yellow,
+                        isActive: step == 1
+                    )
+                    explainerArrow(isActive: step == 1)
+                    explainerSignal(
+                        icon: "figure.walk.motion",
+                        label: String(localized: "smartlighting.explainer.presence", defaultValue: "Presence"),
+                        color: .green,
+                        isActive: step == 2
+                    )
+                }
+
+                ZStack(alignment: .bottom) {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.primary.opacity(0.18), lineWidth: 1.5)
+                        .frame(height: size * 0.38)
+
+                    HStack(alignment: .bottom, spacing: size * 0.13) {
+                        VStack(spacing: size * 0.025) {
+                            Image(systemName: "sensor.fill")
+                                .font(.system(size: size * 0.14, weight: .semibold))
+                                .foregroundStyle(step == 2 ? Color.green : Color.secondary)
+                            Circle()
+                                .fill(step == 2 ? Color.green.opacity(0.7) : Color.secondary.opacity(0.3))
+                                .frame(width: size * 0.025, height: size * 0.025)
+                        }
+                        VStack(spacing: size * 0.035) {
+                            Image(systemName: "lamp.floor.fill")
+                                .font(.system(size: size * 0.2, weight: .medium))
+                                .foregroundStyle(Color.primary.opacity(0.78))
+                            Capsule()
+                                .fill(Color.primary.opacity(0.16))
+                                .frame(width: size * 0.22, height: 3)
+                        }
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: size * 0.16, weight: .semibold))
+                            .foregroundStyle(step == 1 || step == 2 ? Color.yellow : Color.secondary)
+                            .shadow(color: .yellow.opacity(step == 1 || step == 2 ? 0.55 : 0), radius: 8)
+                            .scaleEffect(step == 1 ? 1.16 : 1)
+                    }
+                    .padding(.bottom, size * 0.06)
+                }
+            }
+            .padding(size * 0.12)
+        }
+        .frame(width: size, height: size * 0.72)
+        .overlay(alignment: .bottomTrailing) {
+            Text(decisionLabel)
+                .font(.system(size: max(9, 11 * compactScale), weight: .semibold))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, max(7, size * 0.055))
+                .padding(.vertical, max(4, size * 0.032))
+                .background(.thinMaterial, in: Capsule())
+                .padding(max(6, size * 0.045))
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.65).repeatForever(autoreverses: true)) {
+                isAnimating = true
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(1150))
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    step = (step + 1) % 3
+                }
+            }
+        }
+    }
+
+    private var decisionLabel: String {
+        switch step {
+        case 0:
+            return String(localized: "smartlighting.explainer.decision.phase", defaultValue: "Day phase")
+        case 1:
+            return String(localized: "smartlighting.explainer.decision.light", defaultValue: "Need light?")
+        default:
+            return String(localized: "smartlighting.explainer.decision.scene", defaultValue: "Apply scene")
+        }
+    }
+
+    private func explainerSignal(icon: String, label: String, color: Color, isActive: Bool) -> some View {
+        VStack(spacing: max(2, size * 0.015)) {
+            Image(systemName: icon)
+                .font(.system(size: size * 0.115, weight: .semibold))
+                .foregroundStyle(isActive ? color : Color.secondary)
+                .scaleEffect(isActive ? 1.14 : 0.94)
+            if size >= 120 {
+                Text(label)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(isActive ? color : Color.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .opacity(isActive ? 1 : 0.55)
+    }
+
+    private func explainerArrow(isActive: Bool) -> some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: size * 0.075, weight: .bold))
+            .foregroundStyle(isActive ? Color.accentColor : Color.secondary.opacity(0.45))
+            .offset(x: isActive && isAnimating ? 3 : 0)
+    }
+}
 
 // MARK: - SmartLightingSettingsView
 
@@ -74,10 +484,7 @@ struct SmartLightingSettingsView: View {
             // MARK: Stanze configurate
             Section {
                 if engine.profiles.isEmpty {
-                    Text(String(localized: "smartlighting.rooms.empty",
-                                defaultValue: "No rooms configured. Tap + to add one."))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    SmartLightingExplainerView(style: .emptyState)
                 } else {
                     ForEach(engine.profiles) { profile in
                         NavigationLink {
@@ -154,6 +561,7 @@ struct SmartLightingSettingsView: View {
             .compactMap { profile.sceneName(for: $0) }
             .count
         let missingCount = missingScenes(for: profile).count
+        let warningCount = sceneWarningCount(for: profile)
 
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -163,6 +571,10 @@ struct SmartLightingSettingsView: View {
                         Text(String(format: String(localized: "smartlighting.row.missingScenes",
                                                    defaultValue: "%d missing scene(s)"),
                                     missingCount))
+                    } else if warningCount > 0 {
+                        Text(String(format: String(localized: "smartlighting.row.sceneWarnings",
+                                                   defaultValue: "%d scene warning(s)"),
+                                    warningCount))
                     } else if configuredCount == 0 {
                         Text(String(localized: "smartlighting.row.noScenes",
                                     defaultValue: "No scenes assigned"))
@@ -173,10 +585,10 @@ struct SmartLightingSettingsView: View {
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(missingCount > 0 ? .orange : .secondary)
+                .foregroundStyle(missingCount > 0 || warningCount > 0 ? .orange : .secondary)
             }
             Spacer()
-            if missingCount > 0 {
+            if missingCount > 0 || warningCount > 0 {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                     .font(.subheadline)
@@ -198,6 +610,17 @@ struct SmartLightingSettingsView: View {
         return LightingPhase.allCases
             .compactMap { profile.sceneName(for: $0) }
             .filter { !available.contains($0.lowercased()) }
+    }
+
+    private func sceneWarningCount(for profile: LightingProfile) -> Int {
+        let sceneNames = LightingPhase.allCases
+            .compactMap { profile.sceneName(for: $0) } + [profile.luxOffSceneName].compactMap { $0 }
+        return sceneNames.reduce(0) { count, sceneName in
+            guard let scene = scenesService.scenes.first(where: { $0.name.lowercased() == sceneName.lowercased() }) else {
+                return count
+            }
+            return count + SmartLightingSceneValidator.warnings(for: scene, targetRoomName: profile.roomName).count
+        }
     }
 
     private func decisionLine(_ decision: SmartLightingDecisionRecord) -> String {
@@ -271,6 +694,7 @@ struct LightingProfileEditView: View {
     @Environment(SmartLightingEngine.self)  private var engine
     @Environment(HomeKitScenesService.self) private var scenesService
     @Environment(WeatherKitService.self)    private var weatherKit
+    @Environment(HomeKitService.self)        private var homeKit
 
     let profileID: UUID
     @State private var draft: LightingProfile
@@ -320,12 +744,44 @@ struct LightingProfileEditView: View {
             .filter { !available.contains($0.lowercased()) }
     }
 
+    private var sceneReviewItems: [SmartLightingSceneReviewItem] {
+        var items: [SmartLightingSceneReviewItem] = []
+        for item in configuredSceneNames {
+            items.append(reviewItem(label: item.phase.displayName, sceneName: item.name))
+        }
+        if let luxOffSceneName = draft.luxOffSceneName, !luxOffSceneName.isEmpty {
+            items.append(reviewItem(
+                label: String(localized: "smartlighting.review.naturalLightReturn",
+                              defaultValue: "Natural light return"),
+                sceneName: luxOffSceneName
+            ))
+        }
+        return items.filter { !$0.warnings.isEmpty || $0.isMissing }
+    }
+
     private var luxActivationThreshold: Int {
         max(80, Int((draft.luxBypassThreshold * 0.8).rounded()))
     }
 
     private var luxDeactivationThreshold: Int {
         max(120, Int((draft.luxBypassThreshold * 1.2).rounded()))
+    }
+
+    private var presenceSensors: [SmartLightingPresenceSensorInfo] {
+        guard let home = homeKit.currentHome else { return [] }
+        let roomKey = normalizedRoomName(draft.roomName)
+        let targetRooms = home.rooms.filter {
+            normalizedRoomName($0.name) == roomKey || normalizedRoomName($0.name).contains(roomKey)
+        }
+        return targetRooms
+            .flatMap(\.accessories)
+            .flatMap(presenceSensors(in:))
+            .sorted {
+                if $0.isActive != $1.isActive {
+                    return $0.isActive && !$1.isActive
+                }
+                return $0.accessoryName.localizedCaseInsensitiveCompare($1.accessoryName) == .orderedAscending
+            }
     }
 
     private var sleepTimeOptions: [Int] {
@@ -376,8 +832,63 @@ struct LightingProfileEditView: View {
         String(format: "%02d:%02d", minutes / 60, minutes % 60)
     }
 
+    private func reviewItem(label: String, sceneName: String) -> SmartLightingSceneReviewItem {
+        let scene = scenesService.scenes.first { $0.name.lowercased() == sceneName.lowercased() }
+        return SmartLightingSceneReviewItem(
+            label: label,
+            sceneName: sceneName,
+            isMissing: scene == nil,
+            warnings: scene.map {
+                SmartLightingSceneValidator.warnings(for: $0, targetRoomName: draft.roomName)
+            } ?? []
+        )
+    }
+
+    private func presenceSensors(in accessory: HMAccessory) -> [SmartLightingPresenceSensorInfo] {
+        accessory.services.flatMap { service in
+            service.characteristics.compactMap { characteristic in
+                let kind: String
+                if characteristic.characteristicType == HMCharacteristicTypeMotionDetected {
+                    kind = String(localized: "smartlighting.presence.motion", defaultValue: "Motion sensor")
+                } else if characteristic.characteristicType == HMCharacteristicTypeOccupancyDetected {
+                    kind = String(localized: "smartlighting.presence.occupancy", defaultValue: "Occupancy sensor")
+                } else {
+                    return nil
+                }
+                let rawValue = homeKit.value(for: characteristic) ?? characteristic.value
+                return SmartLightingPresenceSensorInfo(
+                    id: characteristic.uniqueIdentifier,
+                    accessoryName: accessory.name,
+                    kind: kind,
+                    isActive: boolValue(rawValue) == true || intValue(rawValue) == 1
+                )
+            }
+        }
+    }
+
+    private func normalizedRoomName(_ roomName: String) -> String {
+        roomName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func boolValue(_ raw: Any?) -> Bool? {
+        if let b = raw as? Bool { return b }
+        if let n = raw as? NSNumber { return n.boolValue }
+        if let i = raw as? Int { return i != 0 }
+        return nil
+    }
+
+    private func intValue(_ raw: Any?) -> Int? {
+        if let i = raw as? Int { return i }
+        if let n = raw as? NSNumber { return n.intValue }
+        return nil
+    }
+
     var body: some View {
         Form {
+            Section {
+                SmartLightingExplainerView(style: .compact)
+            }
+
             // MARK: Generale
             Section {
                 Toggle(String(localized: "smartlighting.edit.enabled",
@@ -504,6 +1015,20 @@ struct LightingProfileEditView: View {
                             defaultValue: "Shows today's phase windows and the scene Smart Lighting will apply in each one."))
             }
 
+            if !sceneReviewItems.isEmpty {
+                Section {
+                    ForEach(sceneReviewItems) { item in
+                        sceneReviewRow(item)
+                    }
+                } header: {
+                    Text(String(localized: "smartlighting.review.header",
+                                defaultValue: "Scene Review"))
+                } footer: {
+                    Text(String(localized: "smartlighting.review.footer",
+                                defaultValue: "Warnings are informational. Scenes can still be used for open areas or grouped zones."))
+                }
+            }
+
             // MARK: Lux bypass
             Section {
                 Toggle(String(localized: "smartlighting.edit.luxBypass",
@@ -556,6 +1081,46 @@ struct LightingProfileEditView: View {
             } footer: {
                 Text(String(localized: "smartlighting.edit.lux.footer",
                             defaultValue: "Smart Lighting uses a stability band around the lux threshold, so small sensor changes do not cause repeated on/off changes."))
+            }
+
+            // MARK: Presence guard
+            Section {
+                if presenceSensors.isEmpty {
+                    Label(String(localized: "smartlighting.presence.none",
+                                 defaultValue: "No motion or occupancy sensors found in this room"),
+                          systemImage: "sensor")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(presenceSensors) { sensor in
+                        HStack(spacing: 12) {
+                            Image(systemName: sensor.isActive ? "person.fill.checkmark" : "person")
+                                .foregroundStyle(sensor.isActive ? Color.green : Color.secondary)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(sensor.accessoryName)
+                                Text(sensor.kind)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(sensor.isActive
+                                 ? String(localized: "smartlighting.presence.active", defaultValue: "Active")
+                                 : String(localized: "smartlighting.presence.idle", defaultValue: "Idle"))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(sensor.isActive ? Color.green : Color.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text(String(localized: "smartlighting.presence.header",
+                            defaultValue: "Presence Guard"))
+            } footer: {
+                Text(presenceSensors.isEmpty
+                     ? String(localized: "smartlighting.presence.footer.none",
+                              defaultValue: "Smart Lighting still works without presence sensors. Auto-off remains conservative.")
+                     : String(localized: "smartlighting.presence.footer.active",
+                              defaultValue: "These sensors are used only to prevent automatic turn-off while activity is detected."))
             }
 
             // MARK: Override manuale
@@ -643,6 +1208,49 @@ struct LightingProfileEditView: View {
         }
     }
 
+    @ViewBuilder
+    private func sceneReviewRow(_ item: SmartLightingSceneReviewItem) -> some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                if item.isMissing {
+                    Label(String(localized: "smartlighting.review.missing",
+                                 defaultValue: "Scene not found in HomeKit"),
+                          systemImage: "xmark.circle.fill")
+                }
+                ForEach(item.warnings, id: \.self) { warning in
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.orange)
+            .padding(.top, 6)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: item.isMissing ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.label)
+                        .font(.subheadline.weight(.medium))
+                    Text(item.sceneName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(item.isMissing
+                     ? String(localized: "smartlighting.review.badge.missing", defaultValue: "Missing")
+                     : String(format: String(localized: "smartlighting.review.badge.warningCount",
+                                             defaultValue: "%d warning(s)"),
+                              item.warnings.count))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.12), in: Capsule())
+            }
+        }
+    }
+
     // MARK: - Phase time range (computed from today's sunrise/sunset)
 
     private func phaseTimeRange(for phase: LightingPhase) -> String? {
@@ -665,8 +1273,9 @@ struct LightingProfileEditView: View {
 
     @ViewBuilder
     private func scenePicker(for phase: LightingPhase) -> some View {
+        let selectedSceneName = draft.sceneName(for: phase)
         let binding = Binding<String>(
-            get: { draft.sceneName(for: phase) ?? "" },
+            get: { selectedSceneName ?? "" },
             set: { val in
                 let v = val.isEmpty ? nil : val
                 switch phase {

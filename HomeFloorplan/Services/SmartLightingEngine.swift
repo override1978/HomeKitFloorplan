@@ -50,6 +50,15 @@ private struct SmartLightingLuxSample {
     let source: Source
 }
 
+private struct SmartLightingWeatherContext {
+    let naturalLightScore: Double
+    let reason: String
+
+    var isBrightEnoughForDaytimeFallback: Bool {
+        naturalLightScore >= 0.70
+    }
+}
+
 // MARK: - SmartLightingEngine
 //
 // Valuta periodicamente le condizioni di luce per ogni stanza configurata e
@@ -214,8 +223,10 @@ final class SmartLightingEngine {
             // vicino alla soglia configurata.
             // Se il motore aveva acceso le luci e il cooldown (20 min) è scaduto,
             // attiva la scena off configurata solo sopra la soglia alta.
+            var latestLuxSample: SmartLightingLuxSample?
             if profile.luxBypassThreshold > 0 {
                 if let luxSample = readTrustedLux(for: profile, in: home, at: now) {
+                    latestLuxSample = luxSample
                     let lux = luxSample.value
                     let activationThreshold = luxActivationThreshold(for: profile)
                     let deactivationThreshold = luxDeactivationThreshold(for: profile)
@@ -274,6 +285,21 @@ final class SmartLightingEngine {
                                     phase: nil,
                                     sceneName: nil,
                                     reason: "Auto-off skipped: natural light not stable",
+                                    luxSample: luxSample,
+                                    at: now
+                                )
+                            } else if let presenceSensorName = activePresenceSensorName(for: profile, in: home) {
+                                log.append(String(format: String(localized: "smartlighting.log.luxAutoOffPresenceSkipped",
+                                                                 defaultValue: "• %@: %d lx > high threshold — auto-off skipped: presence detected by %@"),
+                                                  profile.roomName,
+                                                  Int(lux),
+                                                  presenceSensorName))
+                                recordDecision(
+                                    roomName: profile.roomName,
+                                    action: .keep,
+                                    phase: nil,
+                                    sceneName: nil,
+                                    reason: "Auto-off skipped: active presence sensor \(presenceSensorName)",
                                     luxSample: luxSample,
                                     at: now
                                 )
@@ -378,6 +404,37 @@ final class SmartLightingEngine {
                                       profile.roomName,
                                       timeString(hour: sleepH, minute: profile.sleepMinute ?? 0)))
                     continue
+                }
+            }
+
+            if latestLuxSample == nil,
+               shouldSkipForWeatherFallback(phase: phase) {
+                if let weatherContext = weatherContext(at: now) {
+                    if weatherContext.isBrightEnoughForDaytimeFallback {
+                        log.append(String(format: String(localized: "smartlighting.log.weatherBrightSkip",
+                                                         defaultValue: "• %@: weather suggests enough natural light (%@) — skipped"),
+                                          profile.roomName,
+                                          weatherContext.reason))
+                        recordDecision(
+                            roomName: profile.roomName,
+                            action: .keep,
+                            phase: phase,
+                            sceneName: nil,
+                            reason: "Weather fallback skipped lighting: \(weatherContext.reason)",
+                            luxSample: nil,
+                            at: now
+                        )
+                        continue
+                    } else {
+                        log.append(String(format: String(localized: "smartlighting.log.weatherLowLightProceed",
+                                                         defaultValue: "• %@: weather does not confirm enough natural light (%@) — proceeding"),
+                                          profile.roomName,
+                                          weatherContext.reason))
+                    }
+                } else {
+                    log.append(String(format: String(localized: "smartlighting.log.weatherUnavailable",
+                                                     defaultValue: "• %@: weather fallback unavailable — proceeding"),
+                                      profile.roomName))
                 }
             }
 
@@ -530,6 +587,91 @@ final class SmartLightingEngine {
         return h >= profile.nightHour ? .night : .evening
     }
 
+    // MARK: - Weather Fallback
+
+    private func shouldSkipForWeatherFallback(phase: LightingPhase) -> Bool {
+        switch phase {
+        case .morning, .preSunset:
+            return true
+        case .dawn, .sunset, .evening, .night:
+            return false
+        }
+    }
+
+    private func weatherContext(at now: Date) -> SmartLightingWeatherContext? {
+        guard let snapshot = weatherKit.currentWeather else { return nil }
+        if let updated = weatherKit.lastUpdated,
+           now.timeIntervalSince(updated) > 2 * 60 * 60 {
+            return nil
+        }
+
+        var score = 0.45
+        var notes: [String] = []
+        let condition = snapshot.condition.lowercased()
+        let symbol = snapshot.symbolName.lowercased()
+
+        if condition.contains("clear") || symbol.contains("sun.max") {
+            score += 0.30
+            notes.append(String(localized: "smartlighting.weather.clear",
+                                defaultValue: "clear sky"))
+        } else if condition.contains("mostlyclear") || condition.contains("partlycloudy") || symbol.contains("cloud.sun") {
+            score += 0.18
+            notes.append(String(localized: "smartlighting.weather.partialCloud",
+                                defaultValue: "partial cloud"))
+        } else if condition.contains("cloud") || condition.contains("overcast") {
+            score -= 0.22
+            notes.append(String(localized: "smartlighting.weather.cloudy",
+                                defaultValue: "cloudy"))
+        }
+
+        if condition.contains("rain") ||
+            condition.contains("drizzle") ||
+            condition.contains("thunder") ||
+            condition.contains("snow") ||
+            condition.contains("sleet") ||
+            condition.contains("fog") ||
+            symbol.contains("rain") ||
+            symbol.contains("snow") ||
+            symbol.contains("fog") {
+            score -= 0.30
+            notes.append(String(localized: "smartlighting.weather.lowVisibility",
+                                defaultValue: "low visibility"))
+        }
+
+        switch snapshot.uvIndex {
+        case 6...:
+            score += 0.22
+            notes.append(String(format: String(localized: "smartlighting.weather.uvHigh",
+                                               defaultValue: "UV %d"),
+                                snapshot.uvIndex))
+        case 3...5:
+            score += 0.10
+            notes.append(String(format: String(localized: "smartlighting.weather.uvMedium",
+                                               defaultValue: "UV %d"),
+                                snapshot.uvIndex))
+        default:
+            score -= 0.12
+            notes.append(String(format: String(localized: "smartlighting.weather.uvLow",
+                                               defaultValue: "UV %d"),
+                                snapshot.uvIndex))
+        }
+
+        if let (_, sunset) = validSunTimes(at: now),
+           now > sunset.addingTimeInterval(-90 * 60) {
+            score -= 0.18
+            notes.append(String(localized: "smartlighting.weather.nearSunset",
+                                defaultValue: "near sunset"))
+        }
+
+        let boundedScore = min(1.0, max(0.0, score))
+        let reason = notes.isEmpty
+            ? String(format: String(localized: "smartlighting.weather.score",
+                                    defaultValue: "score %.0f%%"),
+                     boundedScore * 100)
+            : notes.joined(separator: ", ")
+        return SmartLightingWeatherContext(naturalLightScore: boundedScore, reason: reason)
+    }
+
     // MARK: - Lux Reading
 
     private func readTrustedLux(for profile: LightingProfile, in home: HMHome, at now: Date) -> SmartLightingLuxSample? {
@@ -598,6 +740,30 @@ final class SmartLightingEngine {
                     if ch.characteristicType.lowercased() == luxUUID,
                        let val = ch.value as? NSNumber {
                         return val.doubleValue
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    private func activePresenceSensorName(for profile: LightingProfile, in home: HMHome) -> String? {
+        let sensorTypes = Set([
+            HMCharacteristicTypeMotionDetected.lowercased(),
+            HMCharacteristicTypeOccupancyDetected.lowercased()
+        ])
+        let roomKey = normalizedRoomName(profile.roomName)
+        let accessories = home.rooms
+            .filter { normalizedRoomName($0.name) == roomKey || normalizedRoomName($0.name).contains(roomKey) }
+            .flatMap { $0.accessories }
+
+        for accessory in accessories {
+            for service in accessory.services {
+                for characteristic in service.characteristics
+                where sensorTypes.contains(characteristic.characteristicType.lowercased()) {
+                    let rawValue = homeKit.value(for: characteristic) ?? characteristic.value
+                    if boolValue(rawValue) == true || intValue(rawValue) == 1 {
+                        return accessory.name
                     }
                 }
             }
