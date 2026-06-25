@@ -11,6 +11,8 @@ struct DrawingTopBar: View {
     var isExporting: Bool
     var exportMode: DrawingExportMode
     var onExportModeChange: (DrawingExportMode) -> Void
+    var exteriorFillColorIndex: Int
+    var onExteriorFillChange: (Int) -> Void
     var onHelp: () -> Void
     var onCancel: () -> Void
     var onUndo: () -> Void
@@ -91,6 +93,40 @@ struct DrawingTopBar: View {
                     (exportMode == .legacy ? Color.primary.opacity(0.045) : BrandColor.primary.opacity(0.12)),
                     in: Capsule()
                 )
+            }
+            .buttonStyle(.plain)
+            .disabled(isExporting)
+
+            Menu {
+                Button {
+                    onExteriorFillChange(-1)
+                } label: {
+                    Label {
+                        Text(String(localized: "exterior.fill.none", defaultValue: "None"))
+                    } icon: {
+                        Image(systemName: exteriorFillColorIndex < 0 ? "checkmark.circle.fill" : "circle")
+                    }
+                }
+                ForEach(ExteriorFillPalette.allCases, id: \.rawValue) { preset in
+                    Button {
+                        onExteriorFillChange(preset.rawValue)
+                    } label: {
+                        Label {
+                            Text(preset.localizedName)
+                        } icon: {
+                            Image(systemName: exteriorFillColorIndex == preset.rawValue ? "checkmark.circle.fill" : "circle")
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: exteriorFillColorIndex >= 0 ? "building.2.fill" : "building.2")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(exteriorFillColorIndex >= 0 ? BrandColor.primary : .primary)
+                    .frame(width: 36, height: 36)
+                    .background(
+                        exteriorFillColorIndex >= 0 ? BrandColor.primary.opacity(0.12) : Color.primary.opacity(0.07),
+                        in: Circle()
+                    )
             }
             .buttonStyle(.plain)
             .disabled(isExporting)
@@ -212,6 +248,55 @@ private struct DrawingHelpSection: Identifiable {
     let icon: String
     let title: String
     let message: String
+}
+
+// MARK: - DrawingRoomLinkStatusPill
+
+struct DrawingRoomLinkStatusPill: View {
+    let linkedCount: Int
+    let totalCount: Int
+    let isActive: Bool
+
+    private var tint: Color {
+        linkedCount > 0 ? BrandColor.primary : .orange
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: linkedCount > 0 ? "checkmark.circle.fill" : "house.badge.exclamationmark")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+
+            Text(statusText)
+                .font(.caption.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+
+            if isActive {
+                Text(String(localized: "drawing.roomLink.active", defaultValue: "Draw area"))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(tint, in: Capsule())
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(tint.opacity(0.28), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.10), radius: 10, y: 4)
+    }
+
+    private var statusText: String {
+        guard totalCount > 0 else {
+            return String(localized: "drawing.roomLink.noHomeRooms", defaultValue: "HomeKit Rooms: \(linkedCount) linked")
+        }
+        return String(localized: "drawing.roomLink.count", defaultValue: "HomeKit Rooms: \(linkedCount)/\(totalCount) linked")
+    }
 }
 
 // MARK: - OpeningInspectorPanel
@@ -422,7 +507,7 @@ struct DrawingToolbar: View {
 
             Spacer()
 
-            // ── Centre: Porta, Finestra, Stanza, Area, Arredo ────────────────
+            // ── Centre: Door, Window, HomeKit Room Area, Furniture ───────────
             HStack(spacing: 8) {
                 openingButton(kind: .door,
                               icon: "door.left.hand.open",
@@ -430,7 +515,6 @@ struct DrawingToolbar: View {
                 openingButton(kind: .window,
                               icon: "rectangle.split.2x1",
                               label: String(localized: "drawing.toolbar.window",    defaultValue: "Window"))
-                roomLabelButton()
                 roomAreaButton()
                 furnitureButton()
             }
@@ -565,7 +649,7 @@ struct DrawingToolbar: View {
             VStack(spacing: 3) {
                 Image(systemName: "rectangle.dashed.badge.plus")
                     .font(.system(size: 18, weight: isActive ? .semibold : .regular))
-                Text(String(localized: "drawing.toolbar.area", defaultValue: "Area"))
+                Text(String(localized: "drawing.toolbar.roomArea", defaultValue: "Room"))
                     .font(.system(size: 10, weight: isActive ? .semibold : .regular))
             }
             .foregroundStyle(isActive ? BrandColor.primary : .primary)
@@ -695,11 +779,11 @@ struct DrawRoomAreaBanner: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(localized: "drawing.banner.roomArea.title",
-                            defaultValue: "Drag to draw the room area"))
+                            defaultValue: "Drag to draw a HomeKit room area"))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                 Text(String(localized: "drawing.banner.roomArea.subtitle",
-                            defaultValue: "Link to HomeKit to enable the Environment layer"))
+                            defaultValue: "Choose the matching HomeKit room after drawing"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

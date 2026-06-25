@@ -7,6 +7,7 @@ import SwiftData
 /// Swipe-to-delete su lista.
 struct FloorplanListView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(HomeKitService.self) private var homeKit
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var floorplans: [Floorplan]
     @Namespace private var namespace
     @Binding var columnVisibility: NavigationSplitViewVisibility
@@ -86,22 +87,10 @@ struct FloorplanListView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
-            .fullScreenCover(item: $drawingEditFloorplan) { floorplan in
-                DrawingFloorplanSheet(initialDocument: floorplan.drawingDocument) { image, rooms, doc in
-                    let previousRooms = floorplan.linkedRooms
-                    ImageStorageService.delete(filename: floorplan.imageFilename)
-                    if let newFilename = try? ImageStorageService.save(image) {
-                        floorplan.imageFilename = newFilename
-                    }
-                    floorplan.drawingDocument = doc
-                    if !rooms.isEmpty {
-                        preserveMarkerPositions(on: floorplan, from: previousRooms, to: rooms)
-                        floorplan.linkedRooms = rooms
-                    }
-                    floorplan.updatedAt = .now
-                    try? modelContext.save()
-                }
-                .ignoresSafeArea()
+            .fullScreenCover(item: fullScreenDrawingEditBinding) { floorplan in
+                drawingEditor(for: floorplan)
+                    .environment(homeKit)
+                    .ignoresSafeArea()
             }
             .alert(String(localized: "floorplan.delete.title", defaultValue: "Delete floorplan?"),
                    isPresented: Binding(
@@ -116,6 +105,34 @@ struct FloorplanListView: View {
             } message: { _ in
                 Text(String(localized: "floorplan.delete.message", defaultValue: "The image and all placed markers will be lost."))
             }
+        }
+    }
+
+    private var fullScreenDrawingEditBinding: Binding<Floorplan?> {
+        Binding(
+            get: { drawingEditFloorplan },
+            set: { if $0 == nil { drawingEditFloorplan = nil } }
+        )
+    }
+
+    private func drawingEditor(for floorplan: Floorplan) -> some View {
+        DrawingFloorplanSheet(
+            initialDocument: floorplan.drawingDocument,
+            initialExteriorFillColorIndex: floorplan.exteriorFillColorIndex
+        ) { image, rooms, doc, colorIndex in
+            let previousRooms = floorplan.linkedRooms
+            ImageStorageService.delete(filename: floorplan.imageFilename)
+            if let newFilename = try? ImageStorageService.save(image) {
+                floorplan.imageFilename = newFilename
+            }
+            floorplan.drawingDocument = doc
+            floorplan.exteriorFillColorIndex = colorIndex
+            if !rooms.isEmpty {
+                preserveMarkerPositions(on: floorplan, from: previousRooms, to: rooms)
+                floorplan.linkedRooms = rooms
+            }
+            floorplan.updatedAt = .now
+            try? modelContext.save()
         }
     }
 
@@ -311,20 +328,13 @@ struct FloorplanListView: View {
                 .padding(8)
             }
             .overlay(alignment: .topLeading) {
-                // Badge pin/stella
-                if primaryFloorplanID == floorplan.id.uuidString {
-                    Image(systemName: "star.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.yellow)
-                        .padding(6)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .padding(8)
-                } else if isPinned(floorplan) {
-                    Image(systemName: "pin.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .padding(6)
-                        .background(.ultraThinMaterial, in: Circle())
+                if let badge = floorplanQuickAccessBadge(for: floorplan) {
+                    Label(badge.title, systemImage: badge.icon)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(badge.tint)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(.ultraThinMaterial, in: Capsule())
                         .padding(8)
                 }
             }
@@ -390,6 +400,14 @@ struct FloorplanListView: View {
                             }
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            if let badge = floorplanQuickAccessBadge(for: floorplan) {
+                                Label(badge.title, systemImage: badge.icon)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(badge.tint)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(badge.tint.opacity(0.12), in: Capsule())
+                            }
                         }
                         Spacer()
                     }
@@ -425,6 +443,24 @@ struct FloorplanListView: View {
                 }
             }
         }
+    }
+
+    private func floorplanQuickAccessBadge(for floorplan: Floorplan) -> (title: String, icon: String, tint: Color)? {
+        if primaryFloorplanID == floorplan.id.uuidString {
+            return (
+                String(localized: "floorplan.badge.primary", defaultValue: "Primary"),
+                "star.fill",
+                .yellow
+            )
+        }
+        if isPinned(floorplan) {
+            return (
+                String(localized: "floorplan.badge.quickAccess", defaultValue: "Quick Access"),
+                "pin.fill",
+                BrandColor.primary
+            )
+        }
+        return nil
     }
     
     // MARK: - Context menu

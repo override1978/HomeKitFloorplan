@@ -6,7 +6,8 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     case italian = "it"
 
     static let appStorageKey = "app.languageOverride"
-    static let isSelectionLocked = true
+    static let isSelectionLocked = false
+    static let selectableLanguages: [AppLanguage] = [.english, .italian]
 
     var id: String { rawValue }
 
@@ -24,7 +25,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     var locale: Locale {
         switch self {
         case .system:
-            return .autoupdatingCurrent
+            return Locale(identifier: "en")
         case .english:
             return Locale(identifier: "en")
         case .italian:
@@ -34,19 +35,15 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 
     static func resolved(from rawValue: String) -> AppLanguage {
         if isSelectionLocked { return .english }
-        return AppLanguage(rawValue: rawValue) ?? .system
+        let language = AppLanguage(rawValue: rawValue) ?? .english
+        return language == .system ? .english : language
     }
 
     static func apply(rawValue: String) {
         let language = isSelectionLocked ? .english : resolved(from: rawValue)
         let defaults = UserDefaults.standard
 
-        switch language {
-        case .system:
-            defaults.removeObject(forKey: "AppleLanguages")
-        case .english, .italian:
-            defaults.set([language.rawValue], forKey: "AppleLanguages")
-        }
+        defaults.set([language.rawValue], forKey: "AppleLanguages")
 
         defaults.synchronize()
     }

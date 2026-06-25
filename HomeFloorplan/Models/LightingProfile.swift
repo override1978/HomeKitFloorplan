@@ -12,12 +12,18 @@ enum LightingPhase: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .dawn:      return "Alba"
-        case .morning:   return "Mattino"
-        case .preSunset: return "Pre-tramonto"
-        case .sunset:    return "Tramonto"
-        case .evening:   return "Sera"
-        case .night:     return "Notte"
+        case .dawn:
+            return String(localized: "lighting.phase.dawn", defaultValue: "Dawn")
+        case .morning:
+            return String(localized: "lighting.phase.morning", defaultValue: "Morning")
+        case .preSunset:
+            return String(localized: "lighting.phase.preSunset", defaultValue: "Pre-sunset")
+        case .sunset:
+            return String(localized: "lighting.phase.sunset", defaultValue: "Sunset")
+        case .evening:
+            return String(localized: "lighting.phase.evening", defaultValue: "Evening")
+        case .night:
+            return String(localized: "lighting.phase.night", defaultValue: "Night")
         }
     }
 }
@@ -46,11 +52,13 @@ struct LightingProfile: Codable, Identifiable, Equatable {
     // Gestisce il crossing di mezzanotte: se sleepHour < nightHour (es. 1 < 23),
     // il silenzio scatta nelle prime ore del mattino (01:00-22:59).
     var sleepHour: Int? = nil
+    var sleepMinute: Int? = nil
 
     // Ora (0-23) prima della quale l'engine non attiva alcuna scena (incluse alba/mattino).
     // nil = nessun vincolo (l'engine parte già dalla fase alba).
     // Evita che l'alba accenda le luci prima del risveglio dell'utente.
     var wakeHour: Int? = nil
+    var wakeMinute: Int? = nil
 
     // Nomi delle scene HomeKit da attivare per ogni fase (nil = skip questa fase).
     var sceneDawn: String?
@@ -85,8 +93,8 @@ struct LightingProfile: Codable, Identifiable, Equatable {
         var parts: [String] = ["Stanza: \(roomName)", "Abilitato: \(isEnabled ? "sì" : "no")"]
         if luxBypassThreshold > 0 { parts.append("Bypass lux: >\(Int(luxBypassThreshold)) lx") }
         parts.append("Orario notte: \(nightHour):00")
-        if let sh = sleepHour { parts.append("Sleep hour: \(sh):00 (engine silenzioso dopo)") }
-        if let wh = wakeHour  { parts.append("Wake hour: \(wh):00 (engine attivo da)") }
+        if let sh = sleepHour { parts.append("Sleep hour: \(Self.formatTime(hour: sh, minute: sleepMinute ?? 0)) (engine silenzioso dopo)") }
+        if let wh = wakeHour  { parts.append("Wake hour: \(Self.formatTime(hour: wh, minute: wakeMinute ?? 0)) (engine attivo da)") }
         for phase in LightingPhase.allCases {
             if let s = sceneName(for: phase) { parts.append("\(phase.displayName): \(s)") }
         }
@@ -95,5 +103,9 @@ struct LightingProfile: Codable, Identifiable, Equatable {
             parts.append("Override manuale fino alle \(f.string(from: until))")
         }
         return parts.joined(separator: "\n")
+    }
+
+    private static func formatTime(hour: Int, minute: Int) -> String {
+        String(format: "%02d:%02d", hour, minute)
     }
 }

@@ -42,8 +42,9 @@ enum DrawingExportMode: String, CaseIterable, Identifiable {
 /// ```
 struct DrawingFloorplanSheet: View {
 
-    /// Called when the user taps "Fatto" — provides the rendered PNG, linked rooms, and the drawing document.
-    var onComplete: (UIImage, [LinkedRoom], DrawingDocument) -> Void
+    /// Called when the user taps "Fatto" — provides the rendered PNG, linked rooms, the drawing document,
+    /// and the exterior-fill color index so the caller can persist it on the floorplan.
+    var onComplete: (UIImage, [LinkedRoom], DrawingDocument, Int) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
@@ -53,9 +54,11 @@ struct DrawingFloorplanSheet: View {
     @State private var document: DrawingDocument
 
     init(initialDocument: DrawingDocument? = nil,
-         onComplete: @escaping (UIImage, [LinkedRoom], DrawingDocument) -> Void) {
+         initialExteriorFillColorIndex: Int = -1,
+         onComplete: @escaping (UIImage, [LinkedRoom], DrawingDocument, Int) -> Void) {
         self.onComplete = onComplete
         _document = State(initialValue: initialDocument ?? DrawingDocument())
+        _exteriorFillColorIndex = State(initialValue: initialExteriorFillColorIndex)
     }
 
     @State private var mode: DrawingMode = .draw
@@ -63,6 +66,7 @@ struct DrawingFloorplanSheet: View {
     @State private var wallKind: WallKind = .exterior
     @AppStorage("drawing.export.mode") private var exportModeRaw: String = DrawingExportMode.legacy.rawValue
     @AppStorage("drawing.help.hasSeen") private var hasSeenDrawingHelp = false
+    @State private var exteriorFillColorIndex: Int = -1
     /// When false, wall drawing snaps only to the 20pt grid (no vertex snapping).
     @State private var vertexSnapEnabled: Bool = true
 
@@ -91,10 +95,19 @@ struct DrawingFloorplanSheet: View {
     @State private var showCancelConfirm = false
     @State private var isExporting = false
     @State private var showHelpSheet = false
+    @State private var showNoLinkedRoomsConfirm = false
 
     private var exportMode: DrawingExportMode {
         get { DrawingExportMode(rawValue: exportModeRaw) ?? .legacy }
         nonmutating set { exportModeRaw = newValue.rawValue }
+    }
+
+    private var linkedRoomAreaCount: Int {
+        Set(document.roomAreas.compactMap(\.hmRoomUUID)).count
+    }
+
+    private var availableHomeKitRoomCount: Int {
+        homeKit.currentHome?.rooms.count ?? 0
     }
 
     // MARK: Body
@@ -232,18 +245,28 @@ struct DrawingFloorplanSheet: View {
             // covers can report a small/zero safe inset while the system menu bar
             // is still visually present.
             VStack(spacing: 0) {
-                DrawingTopBar(
-                    canUndo: !undoStack.isEmpty,
-                    canRedo: !redoStack.isEmpty,
-                    isExporting: isExporting,
-                    exportMode: exportMode,
-                    onExportModeChange: { exportMode = $0 },
-                    onHelp: { showHelpSheet = true },
-                    onCancel: { showCancelConfirm = true },
-                    onUndo: performUndo,
-                    onRedo: performRedo,
-                    onDone: exportAndFinish
-                )
+                VStack(spacing: 8) {
+                    DrawingTopBar(
+                        canUndo: !undoStack.isEmpty,
+                        canRedo: !redoStack.isEmpty,
+                        isExporting: isExporting,
+                        exportMode: exportMode,
+                        onExportModeChange: { exportMode = $0 },
+                        exteriorFillColorIndex: exteriorFillColorIndex,
+                        onExteriorFillChange: { exteriorFillColorIndex = $0 },
+                        onHelp: { showHelpSheet = true },
+                        onCancel: { showCancelConfirm = true },
+                        onUndo: performUndo,
+                        onRedo: performRedo,
+                        onDone: handleDoneTap
+                    )
+
+                    DrawingRoomLinkStatusPill(
+                        linkedCount: linkedRoomAreaCount,
+                        totalCount: availableHomeKitRoomCount,
+                        isActive: mode == .drawRoomArea
+                    )
+                }
                 .frame(maxWidth: 640)
                 .padding(.horizontal, 18)
                 .padding(.top, max(geo.safeAreaInsets.top + 12, 28))
@@ -274,6 +297,18 @@ struct DrawingFloorplanSheet: View {
                             titleVisibility: .visible) {
             Button(String(localized: "drawing.cancelDialog.discard", defaultValue: "Discard drawing"), role: .destructive) { dismiss() }
             Button(String(localized: "drawing.cancelDialog.continue", defaultValue: "Continue drawing"), role: .cancel) {}
+        }
+        .confirmationDialog(String(localized: "drawing.noRoomsDialog.title", defaultValue: "No HomeKit rooms linked"),
+                            isPresented: $showNoLinkedRoomsConfirm,
+                            titleVisibility: .visible) {
+            Button(String(localized: "drawing.noRoomsDialog.export", defaultValue: "Export anyway")) {
+                exportAndFinish()
+            }
+            Button(String(localized: "drawing.noRoomsDialog.addRoom", defaultValue: "Draw Room Area"), role: .cancel) {
+                mode = .drawRoomArea
+            }
+        } message: {
+            Text(String(localized: "drawing.noRoomsDialog.message", defaultValue: "Room areas connect this floorplan to HomeKit rooms. Environment overlays and room-based accessory placement work better when at least one area is linked."))
         }
         .sheet(isPresented: $showRoomPicker) {
             RoomPickerSheet(
@@ -335,7 +370,7 @@ struct DrawingFloorplanSheet: View {
                 .presentationDragIndicator(.visible)
         }
         .onAppear {
-            guard !hasSeenDrawingHelp else { return }
+            guard !ProcessInfo.processInfo.isiOSAppOnMac, !hasSeenDrawingHelp else { return }
             hasSeenDrawingHelp = true
             showHelpSheet = true
         }
@@ -620,13 +655,21 @@ struct DrawingFloorplanSheet: View {
 
     // MARK: - Export
 
+    private func handleDoneTap() {
+        guard linkedRoomAreaCount > 0 else {
+            showNoLinkedRoomsConfirm = true
+            return
+        }
+        exportAndFinish()
+    }
+
     private func exportAndFinish() {
         guard !isExporting else { return }
         isExporting = true
         Task { @MainActor in
             await Task.yield()
             let (image, linkedRooms) = renderToImage(document, mode: exportMode)
-            onComplete(image, linkedRooms, document)
+            onComplete(image, linkedRooms, document, exteriorFillColorIndex)
             dismiss()
         }
     }
@@ -745,7 +788,7 @@ struct DrawingFloorplanSheet: View {
             cgCtx.translateBy(x: -originX * scaleFactor, y: -originY * scaleFactor)
             cgCtx.scaleBy(x: scaleFactor, y: scaleFactor)
 
-            renderDocument(doc, in: cgCtx, canvasSize: DrawingDocument.canvasSize)
+            renderDocument(doc, in: cgCtx, canvasSize: DrawingDocument.canvasSize, exteriorFillColorIndex: exteriorFillColorIndex)
         }
         return (image, linkedRooms)
     }
@@ -834,7 +877,7 @@ struct DrawingFloorplanSheet: View {
             cgCtx.fill(CGRect(origin: .zero, size: outputSize))
             cgCtx.translateBy(x: -originX * scaleFactor, y: -originY * scaleFactor)
             cgCtx.scaleBy(x: scaleFactor, y: scaleFactor)
-            renderDocument(doc, in: cgCtx, canvasSize: DrawingDocument.canvasSize)
+            renderDocument(doc, in: cgCtx, canvasSize: DrawingDocument.canvasSize, exteriorFillColorIndex: exteriorFillColorIndex)
         }
         return (image, linkedRooms)
     }
@@ -843,5 +886,5 @@ struct DrawingFloorplanSheet: View {
 // MARK: - Preview
 
 #Preview {
-    DrawingFloorplanSheet { _, _, _ in }
+    DrawingFloorplanSheet { _, _, _, _ in }
 }

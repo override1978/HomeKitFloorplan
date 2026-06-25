@@ -72,7 +72,8 @@ struct FloorplanModePill: View {
                         context: FloorplanOverlayContext(
                             hasEnvironmentData: true,
                             hasSecurityDevices: true,
-                            hasAIService: true
+                            hasAIService: true,
+                            hasIntelligenceSuggestions: true
                         )
                     )
                     .padding(.bottom, 40)

@@ -379,12 +379,12 @@ private struct AddThresholdSheet: View {
 
                 Section(String(localized: "alertThresholds.values.section", defaultValue: "Thresholds")) {
                     LabeledContent(String(localized: "alertThresholds.warning", defaultValue: "Warning")) {
-                        TextField("Warning", value: $warningValue, format: .number)
+                        TextField(String(localized: "alertThresholds.warning", defaultValue: "Warning"), value: $warningValue, format: .number)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }
                     LabeledContent(String(localized: "alertThresholds.critical", defaultValue: "Critical")) {
-                        TextField("Danger", value: $dangerValue, format: .number)
+                        TextField(String(localized: "alertThresholds.critical", defaultValue: "Critical"), value: $dangerValue, format: .number)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }

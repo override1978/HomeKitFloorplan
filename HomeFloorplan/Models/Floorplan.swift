@@ -67,6 +67,8 @@ final class Floorplan {
     var linkedRoomsJSON: Data?
     /// JSON-encoded `DrawingDocument` — the 2D drawing associated with this floorplan, if any.
     var drawingDocumentJSON: Data?
+    /// Index into ExteriorFillPalette (-1 = disabled, 0-4 = color preset).
+    var exteriorFillColorIndex: Int = -1
 
     init(name: String, imageFilename: String, homeUUID: UUID? = nil) {
         self.id = UUID()

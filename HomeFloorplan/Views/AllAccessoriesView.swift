@@ -462,11 +462,3 @@ struct AllAccessoriesView: View {
 extension UUID {
     static let zero = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 }
-#if !canImport(RoomPlan)
-private struct RoomPlanCaptureFallbackView: View {
-    var body: some View {
-        ContentUnavailableView(String(localized: "roomplan.unavailable.title", defaultValue: "RoomPlan Unavailable"), systemImage: "exclamationmark.triangle", description: Text(String(localized: "roomplan.unavailable.description", defaultValue: "This feature requires a device with LiDAR.")))
-            .navigationTitle(String(localized: "roomplan.scan.navigationTitle", defaultValue: "Room Scan"))
-    }
-}
-#endif

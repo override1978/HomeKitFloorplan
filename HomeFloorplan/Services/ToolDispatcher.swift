@@ -680,11 +680,19 @@ final class ToolDispatcher {
                     ],
                     "sleepHour": [
                         "type": "integer",
-                        "description": "Ora (0-23) in cui l'engine smette completamente di agire su questa stanza durante la notte. Dopo quest'ora le luci non vengono più toccate (rimangono nello stato manuale). Esempio: nightHour=23, sleepHour=1 → scena Notte attiva 23:00-01:00, poi silenzio fino al mattino."
+                        "description": "Ora (0-23) in cui l'engine smette completamente di agire su questa stanza durante la notte. Per mezz'ore usa anche sleepMinute=30. Esempio: sleepHour=1, sleepMinute=30."
+                    ],
+                    "sleepMinute": [
+                        "type": "integer",
+                        "description": "Minuto della sleep window: 0 oppure 30."
                     ],
                     "wakeHour": [
                         "type": "integer",
-                        "description": "Ora (0-23) prima della quale l'engine non attiva scene per questa stanza. Esempio: 7 evita accensioni prima delle 07:00."
+                        "description": "Ora (0-23) prima della quale l'engine non attiva scene per questa stanza. Per mezz'ore usa anche wakeMinute=30."
+                    ],
+                    "wakeMinute": [
+                        "type": "integer",
+                        "description": "Minuto della ripresa: 0 oppure 30."
                     ]
                 ],
                 "required": ["roomName"]
@@ -807,11 +815,11 @@ final class ToolDispatcher {
                     ],
                     "triggerPresenceKind": [
                         "type": "string",
-                        "description": "Per triggerType=presence: everyEntry quando arrivo a casa, everyExit quando esco di casa, firstEntry quando arriva la prima persona, lastExit quando esce l'ultima persona."
+                        "description": "Per triggerType=presence: everyEntry quando arrivo a casa, everyExit quando esco di casa, firstEntry quando arriva la prima persona, lastExit quando esce l'ultima persona. Per presenza come condizione su trigger calendar/characteristic: atHome quando qualcuno/io è in casa, notAtHome quando nessuno/io non è in casa."
                     ],
                     "triggerPresenceUserScope": [
                         "type": "string",
-                        "description": "Per triggerType=presence: currentUser per io/me, homeUsers per chiunque/tutti gli utenti della casa."
+                        "description": "currentUser per io/me, homeUsers per chiunque/tutti gli utenti della casa; vale sia per triggerType=presence sia per presenza come condizione."
                     ],
                 ],
                 "required": ["label", "naturalLanguage", "triggerType"]
@@ -1390,6 +1398,16 @@ final class ToolDispatcher {
             }
         }
 
+        if presenceKind == nil {
+            if mentionsNotAtHomeCondition(in: normalized) {
+                presenceKind = "notAtHome"
+                presenceUserScope = mentionsCurrentUserPresence(in: normalized) ? "currentUser" : "homeUsers"
+            } else if mentionsAtHomeCondition(in: normalized) {
+                presenceKind = "atHome"
+                presenceUserScope = mentionsCurrentUserPresence(in: normalized) ? "currentUser" : "homeUsers"
+            }
+        }
+
         let mentionsSensorTrigger = normalized.contains("quando")
             || normalized.contains(" se ")
             || normalized.contains("supera")
@@ -1454,6 +1472,45 @@ final class ToolDispatcher {
                 sensorDirection = "above"
             }
         }
+    }
+
+    private func mentionsAtHomeCondition(in text: String) -> Bool {
+        text.contains("qualcuno e in casa")
+            || text.contains("qualcuno in casa")
+            || text.contains("sono a casa")
+            || text.contains("siamo a casa")
+            || text.contains("c'e qualcuno")
+            || text.contains("ce qualcuno")
+            || text.contains("someone is home")
+            || text.contains("somebody is home")
+            || text.contains("i am home")
+            || text.contains("i'm home")
+            || text.contains("we are home")
+    }
+
+    private func mentionsNotAtHomeCondition(in text: String) -> Bool {
+        text.contains("nessuno e in casa")
+            || text.contains("nessuno in casa")
+            || text.contains("non c'e nessuno")
+            || text.contains("non ce nessuno")
+            || text.contains("casa vuota")
+            || text.contains("non sono a casa")
+            || text.contains("nobody is home")
+            || text.contains("no one is home")
+            || text.contains("empty home")
+            || text.contains("i am not home")
+            || text.contains("i'm not home")
+    }
+
+    private func mentionsCurrentUserPresence(in text: String) -> Bool {
+        text.contains("sono a casa")
+            || text.contains("non sono a casa")
+            || text.contains("quando sono")
+            || text.contains("se sono")
+            || text.contains("i am home")
+            || text.contains("i'm home")
+            || text.contains("i am not home")
+            || text.contains("i'm not home")
     }
 
     private func inferredEventOffsetMinutes(from text: String) -> Int? {
@@ -2069,9 +2126,17 @@ final class ToolDispatcher {
         if let v = input["luxOffSceneName"] as? String { profile.luxOffSceneName = v.isEmpty ? nil : v }
         if let v = input["nightHour"] as? Int         { profile.nightHour = v }
         if let v = input["sleepHour"] as? Int         { profile.sleepHour = v }
-        else if (input["sleepHour"] as? NSNull) != nil { profile.sleepHour = nil }
+        else if (input["sleepHour"] as? NSNull) != nil {
+            profile.sleepHour = nil
+            profile.sleepMinute = nil
+        }
+        if let v = input["sleepMinute"] as? Int       { profile.sleepMinute = v }
         if let v = input["wakeHour"] as? Int          { profile.wakeHour = v }
-        else if (input["wakeHour"] as? NSNull) != nil { profile.wakeHour = nil }
+        else if (input["wakeHour"] as? NSNull) != nil {
+            profile.wakeHour = nil
+            profile.wakeMinute = nil
+        }
+        if let v = input["wakeMinute"] as? Int        { profile.wakeMinute = v }
 
         smartLightingEngine.addOrUpdateProfile(profile)
         let verb = existing == nil ? "creato" : "aggiornato"

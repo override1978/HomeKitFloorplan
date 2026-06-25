@@ -395,15 +395,23 @@ struct OnboardingView: View {
                 VStack(spacing: 10) {
                     onboardingFeatureRow(
                         icon: "pencil.and.ruler.fill",
-                        text: String(localized: "onboarding.floorplan.bullet.draw", defaultValue: "Draw or update the floorplan anytime")
+                        text: String(localized: "onboarding.floorplan.bullet.draw", defaultValue: "Visualize your home on an interactive floorplan")
                     )
                     onboardingFeatureRow(
                         icon: "rectangle.3.group.fill",
-                        text: String(localized: "onboarding.floorplan.bullet.rooms", defaultValue: "Link rooms for cleaner environment and security views")
+                        text: String(localized: "onboarding.floorplan.bullet.rooms", defaultValue: "Get smarter environment and security insights, room by room")
                     )
                     onboardingFeatureRow(
                         icon: "dot.circle.and.hand.point.up.left.fill",
-                        text: String(localized: "onboarding.floorplan.bullet.markers", defaultValue: "Tap markers to control accessories")
+                        text: String(localized: "onboarding.floorplan.bullet.markers", defaultValue: "Control every accessory with a tap, right on the map")
+                    )
+                    onboardingFeatureRow(
+                        icon: "theatermask.and.paintbrush.fill",
+                        text: String(localized: "onboarding.floorplan.bullet.scenes", defaultValue: "Design and activate scenes in seconds")
+                    )
+                    onboardingFeatureRow(
+                        icon: "bolt.horizontal.fill",
+                        text: String(localized: "onboarding.floorplan.bullet.automations", defaultValue: "Build powerful automations with a guided wizard")
                     )
                 }
                 .frame(maxWidth: 430)

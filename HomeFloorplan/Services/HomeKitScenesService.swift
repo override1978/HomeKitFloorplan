@@ -16,6 +16,7 @@ struct SceneActionDraftBundle {
     var windowCoveringDrafts: [SceneWindowCoveringActionDraft] = []
     var thermostatDrafts: [SceneThermostatActionDraft] = []
     var airPurifierDrafts: [SceneAirPurifierActionDraft] = []
+    var fanDrafts: [SceneFanActionDraft] = []
     var humidifierDrafts: [SceneHumidifierActionDraft] = []
     var securitySystemDrafts: [SceneSecuritySystemActionDraft] = []
     var doorLockDrafts: [SceneDoorLockActionDraft] = []
@@ -28,6 +29,7 @@ struct SceneActionDraftBundle {
         windowCoveringDrafts.filter(\.isIncluded).count +
         thermostatDrafts.filter(\.isIncluded).count +
         airPurifierDrafts.filter(\.isIncluded).count +
+        fanDrafts.filter(\.isIncluded).count +
         humidifierDrafts.filter(\.isIncluded).count +
         securitySystemDrafts.filter(\.isIncluded).count +
         doorLockDrafts.filter(\.isIncluded).count +
@@ -329,6 +331,20 @@ final class HomeKitScenesService {
         }
     }
 
+    func fanActionDrafts(for scene: SceneItem? = nil) -> [SceneFanActionDraft] {
+        let existingValues = existingSceneValues(for: scene)
+
+        return homeKit.allAccessories.compactMap { accessory in
+            makeFanDraft(for: accessory, existingValues: existingValues)
+        }
+        .sorted {
+            if $0.roomName != $1.roomName {
+                return $0.roomName.localizedCaseInsensitiveCompare($1.roomName) == .orderedAscending
+            }
+            return $0.accessoryName.localizedCaseInsensitiveCompare($1.accessoryName) == .orderedAscending
+        }
+    }
+
     func humidifierActionDrafts(for scene: SceneItem? = nil) -> [SceneHumidifierActionDraft] {
         let existingValues = existingSceneValues(for: scene)
 
@@ -393,6 +409,7 @@ final class HomeKitScenesService {
             windowCoveringDrafts: windowCoveringActionDrafts(for: scene),
             thermostatDrafts: thermostatActionDrafts(for: scene),
             airPurifierDrafts: airPurifierActionDrafts(for: scene),
+            fanDrafts: fanActionDrafts(for: scene),
             humidifierDrafts: humidifierActionDrafts(for: scene),
             securitySystemDrafts: securitySystemActionDrafts(for: scene),
             doorLockDrafts: doorLockActionDrafts(for: scene),
@@ -407,6 +424,7 @@ final class HomeKitScenesService {
         + makeActions(from: bundle.windowCoveringDrafts.filter(\.isIncluded))
         + makeActions(from: bundle.thermostatDrafts.filter(\.isIncluded))
         + makeActions(from: bundle.airPurifierDrafts.filter(\.isIncluded))
+        + makeActions(from: bundle.fanDrafts.filter(\.isIncluded))
         + makeActions(from: bundle.humidifierDrafts.filter(\.isIncluded))
         + makeActions(from: bundle.securitySystemDrafts.filter(\.isIncluded))
         + makeActions(from: bundle.doorLockDrafts.filter(\.isIncluded))
@@ -422,6 +440,7 @@ final class HomeKitScenesService {
         windowCoveringDrafts: [SceneWindowCoveringActionDraft] = [],
         thermostatDrafts: [SceneThermostatActionDraft] = [],
         airPurifierDrafts: [SceneAirPurifierActionDraft] = [],
+        fanDrafts: [SceneFanActionDraft] = [],
         humidifierDrafts: [SceneHumidifierActionDraft] = [],
         securitySystemDrafts: [SceneSecuritySystemActionDraft] = [],
         doorLockDrafts: [SceneDoorLockActionDraft] = [],
@@ -437,6 +456,7 @@ final class HomeKitScenesService {
                 windowCoveringDrafts: windowCoveringDrafts,
                 thermostatDrafts: thermostatDrafts,
                 airPurifierDrafts: airPurifierDrafts,
+                fanDrafts: fanDrafts,
                 humidifierDrafts: humidifierDrafts,
                 securitySystemDrafts: securitySystemDrafts,
                 doorLockDrafts: doorLockDrafts,
@@ -468,6 +488,7 @@ final class HomeKitScenesService {
             windowCoveringDrafts: actionBundle.windowCoveringDrafts,
             thermostatDrafts: actionBundle.thermostatDrafts,
             airPurifierDrafts: actionBundle.airPurifierDrafts,
+            fanDrafts: actionBundle.fanDrafts,
             humidifierDrafts: actionBundle.humidifierDrafts,
             securitySystemDrafts: actionBundle.securitySystemDrafts,
             doorLockDrafts: actionBundle.doorLockDrafts,
@@ -636,6 +657,26 @@ final class HomeKitScenesService {
         return actions
     }
 
+    private func makeActions(from drafts: [SceneFanActionDraft]) -> [HMAction] {
+        var actions: [HMAction] = []
+        for draft in drafts {
+            if let power = draft.powerCharacteristic {
+                let targetValue: NSNumber = power.characteristicType == HMCharacteristicTypeActive
+                    ? NSNumber(value: draft.powerOn ? 1 : 0)
+                    : NSNumber(value: draft.powerOn)
+                actions.append(HMCharacteristicWriteAction(characteristic: power, targetValue: targetValue))
+            }
+
+            guard draft.powerOn else { continue }
+            let value = max(draft.speedRange.lowerBound, min(draft.speedRange.upperBound, draft.speed))
+            actions.append(HMCharacteristicWriteAction(
+                characteristic: draft.rotationSpeedCharacteristic,
+                targetValue: NSNumber(value: value)
+            ))
+        }
+        return actions
+    }
+
     private func makeActions(from drafts: [SceneHumidifierActionDraft]) -> [HMAction] {
         var actions: [HMAction] = []
         for draft in drafts {
@@ -751,6 +792,7 @@ final class HomeKitScenesService {
         windowCoveringDrafts: [SceneWindowCoveringActionDraft],
         thermostatDrafts: [SceneThermostatActionDraft],
         airPurifierDrafts: [SceneAirPurifierActionDraft],
+        fanDrafts: [SceneFanActionDraft],
         humidifierDrafts: [SceneHumidifierActionDraft],
         securitySystemDrafts: [SceneSecuritySystemActionDraft],
         doorLockDrafts: [SceneDoorLockActionDraft],
@@ -792,6 +834,15 @@ final class HomeKitScenesService {
                 Optional(draft.activeCharacteristic),
                 Optional(draft.targetStateCharacteristic),
                 draft.rotationSpeedCharacteristic
+            ]
+                .compactMap { $0?.uniqueIdentifier }
+                .forEach { ids.insert($0) }
+        }
+
+        for draft in fanDrafts {
+            [
+                draft.powerCharacteristic,
+                Optional(draft.rotationSpeedCharacteristic)
             ]
                 .compactMap { $0?.uniqueIdentifier }
                 .forEach { ids.insert($0) }
@@ -967,6 +1018,44 @@ final class HomeKitScenesService {
             fanStep: airPurifierFanStep(source: rotationSpeed),
             activeCharacteristic: active,
             targetStateCharacteristic: targetState,
+            rotationSpeedCharacteristic: rotationSpeed
+        )
+    }
+
+    private func makeFanDraft(for accessory: HMAccessory, existingValues: [UUID: Any?]) -> SceneFanActionDraft? {
+        let rotationSpeedUUID = "00000029-0000-1000-8000-0026BB765291"
+        let airPurifierServiceUUID = "000000BB-0000-1000-8000-0026BB765291"
+        let heaterCoolerServiceUUID = "000000BC-0000-1000-8000-0026BB765291"
+
+        guard accessory.services.contains(where: { $0.serviceType == HMServiceTypeFan }) ||
+                accessory.category.categoryType == HMAccessoryCategoryTypeFan ||
+                accessory.name.localizedCaseInsensitiveContains("fan") ||
+                accessory.name.localizedCaseInsensitiveContains("ventola") ||
+                accessory.name.localizedCaseInsensitiveContains("ventilatore"),
+              !accessory.services.contains(where: { $0.serviceType == airPurifierServiceUUID }),
+              !accessory.services.contains(where: { $0.serviceType == heaterCoolerServiceUUID }),
+              HumidifierAdapter(accessory: accessory, homeKit: homeKit) == nil,
+              let rotationSpeed = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: rotationSpeedUUID)
+        else { return nil }
+
+        let power = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: HMCharacteristicTypeActive)
+            ?? AccessoryAdapterFactory.findCharacteristic(in: accessory, type: HMCharacteristicTypePowerState)
+        let existingPower = power.flatMap { existingValues[$0.uniqueIdentifier] }.flatMap(Self.boolValue)
+        let currentPower = power.flatMap { Self.boolValue(homeKit.value(for: $0) ?? $0.value) }
+        let existingSpeed = existingValues[rotationSpeed.uniqueIdentifier].flatMap(Self.intValue)
+        let currentSpeed = Self.intValue(homeKit.value(for: rotationSpeed) ?? rotationSpeed.value) ?? 50
+        let speedRange = airPurifierFanRange(source: rotationSpeed)
+
+        return SceneFanActionDraft(
+            id: accessory.uniqueIdentifier,
+            accessoryName: accessory.name,
+            roomName: accessory.room?.name ?? String(localized: "scene.action.noRoom", defaultValue: "No Room"),
+            isIncluded: [power, Optional(rotationSpeed)].compactMap { $0?.uniqueIdentifier }.contains { existingValues[$0] != nil },
+            powerOn: existingPower ?? currentPower ?? ((existingSpeed ?? currentSpeed) > 0),
+            speed: min(max(existingSpeed ?? currentSpeed, speedRange.lowerBound), speedRange.upperBound),
+            speedRange: speedRange,
+            speedStep: airPurifierFanStep(source: rotationSpeed),
+            powerCharacteristic: power,
             rotationSpeedCharacteristic: rotationSpeed
         )
     }
@@ -1407,6 +1496,19 @@ struct SceneAirPurifierActionDraft: Identifiable {
     let activeCharacteristic: HMCharacteristic
     let targetStateCharacteristic: HMCharacteristic
     let rotationSpeedCharacteristic: HMCharacteristic?
+}
+
+struct SceneFanActionDraft: Identifiable {
+    let id: UUID
+    let accessoryName: String
+    let roomName: String
+    var isIncluded: Bool
+    var powerOn: Bool
+    var speed: Int
+    let speedRange: ClosedRange<Int>
+    let speedStep: Int
+    let powerCharacteristic: HMCharacteristic?
+    let rotationSpeedCharacteristic: HMCharacteristic
 }
 
 struct SceneHumidifierActionDraft: Identifiable {

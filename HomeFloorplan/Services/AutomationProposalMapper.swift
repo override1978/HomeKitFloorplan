@@ -195,6 +195,11 @@ enum AutomationProposalMapper {
             conditions.append(.accessory(sensorCondition))
         }
 
+        if draft.triggerType != "presence",
+           draft.presenceKind?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            conditions.append(.presence(presenceCondition(from: draft)))
+        }
+
         if let action = action(from: draft, capabilities: capabilities, scenes: scenes, limitations: &limitations) {
             actions.append(action)
         }
@@ -283,6 +288,27 @@ enum AutomationProposalMapper {
         }
 
         return AutomationProposalPresenceTrigger(kind: kind, userScope: userScope)
+    }
+
+    private static func presenceCondition(from draft: Draft) -> AutomationProposalPresenceCondition {
+        let kind: AutomationProposalPresenceConditionKind
+        switch draft.presenceKind?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "notathome", "away", "empty", "nobody", "noone", "nessuno", "fuori", "assente",
+             "everyexit", "exit", "leave", "leaves", "esco", "uscita", "lastexit", "last", "lastleaves":
+            kind = .notAtHome
+        default:
+            kind = .atHome
+        }
+
+        let userScope: AutomationProposalPresenceUserScope
+        switch draft.presenceUserScope?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "currentuser", "me", "io":
+            userScope = .currentUser
+        default:
+            userScope = .homeUsers
+        }
+
+        return AutomationProposalPresenceCondition(kind: kind, userScope: userScope)
     }
 
     private static func schedule(from draft: Draft) -> AutomationProposalSchedule? {

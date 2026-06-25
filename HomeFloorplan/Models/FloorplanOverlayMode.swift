@@ -21,7 +21,7 @@ enum FloorplanOverlayMode: String, CaseIterable, Identifiable {
         case .controls:     return true
         case .environment:  return context.hasEnvironmentData
         case .security:     return context.hasSecurityDevices
-        case .intelligence: return context.hasAIService
+        case .intelligence: return context.hasIntelligenceSuggestions
         }
     }
 }
@@ -34,11 +34,13 @@ struct FloorplanOverlayContext {
     var hasEnvironmentData: Bool
     var hasSecurityDevices: Bool
     var hasAIService: Bool
+    var hasIntelligenceSuggestions: Bool
 
     static let none = FloorplanOverlayContext(
         hasEnvironmentData: false,
         hasSecurityDevices: false,
-        hasAIService: false
+        hasAIService: false,
+        hasIntelligenceSuggestions: false
     )
 }
 

@@ -269,15 +269,9 @@ struct ContentView: View {
         case .homeIntelligence:
             HomeIntelligenceDashboardView()
         case .debugHomeKit:
-#if DEBUG
             NavigationStack {
                 HomeKitDebugView()
             }
-#else
-            NavigationStack {
-                SettingsView()
-            }
-#endif
         case .settings:
             NavigationStack {
                 SettingsView()

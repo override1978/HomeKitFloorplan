@@ -82,6 +82,11 @@ enum AccessoryAdapterFactory {
         if let dimmer = DimmableLightAdapter(accessory: accessory, homeKit: homeKit) {
             return dimmer
         }
+
+        // 3.5 Ventole con velocità regolabile (DEVE precedere OnOffAdapter)
+        if let fan = FanAdapter(accessory: accessory, homeKit: homeKit) {
+            return fan
+        }
         
         // PRIMA di OnOffAdapter
         let outletServices = accessory.services.filter { $0.serviceType == MultiOutletAdapter.outletServiceType }

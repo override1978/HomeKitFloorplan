@@ -6,8 +6,6 @@
 	<string>HomeFloorplan</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>NSCameraUsageDescription</key>
-	<string>HomeFloorplan usa la fotocamera per scansionare le stanze con RoomPlan e generare planimetrie 3D.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>HomeFloorplan usa il microfono per trascrivere in testo le domande vocali all'assistente Home AI.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

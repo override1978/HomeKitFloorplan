@@ -445,7 +445,7 @@ private struct AIInsightRow: View {
                     .foregroundStyle(insightColor)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("AI")
+                    Text(String(localized: "ai.short", defaultValue: "AI"))
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(insightColor)
                     Text(insight.message)

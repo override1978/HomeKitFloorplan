@@ -80,9 +80,6 @@ struct HomeFloorplanApp: App {
     }()
 
     init() {
-        AppLanguage.apply(rawValue: AppLanguage.english.rawValue)
-        UserDefaults.standard.set(AppLanguage.english.rawValue, forKey: AppLanguage.appStorageKey)
-
         // Consent safety guard: if AI was enabled before 26.B (upgrade edge case),
         // reset isEnabled so the user sees the consent screen before AI resumes.
         let ud = UserDefaults.standard
@@ -134,6 +131,7 @@ struct HomeFloorplanApp: App {
             container = try? ModelContainer(for: schema, configurations: [config])
         }
         guard let container else { fatalError("Could not create ModelContainer after store wipe") }
+        lightingEngine.modelContainer = container
         let logger = ActivityLoggerService(modelContainer: container)
         kit.activityLogger = logger
         scenes.activityLogger = logger
@@ -181,8 +179,6 @@ struct HomeFloorplanApp: App {
             IdleTimerService.shared.timeout = .infinity
         }
         // If key doesn't exist yet, the default (90s) in IdleTimerService remains.
-
-        dprint("🏠 RoomPlan supported: \(RoomPlanSupport.isSupported)")
 
         // Registra il task di campionamento sensori in background
         registerBackgroundTasks()

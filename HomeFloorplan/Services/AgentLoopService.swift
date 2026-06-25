@@ -98,6 +98,10 @@ final class AgentLoopService {
                 triggerOffsetMinutes (20 minuti dopo il tramonto = 20, 15 minuti prima = -15). \
                 Se c'è anche una condizione sensore, includi: triggerSensorType, \
                 triggerSensorRoom, triggerThreshold, triggerDirection (predicato HomeKit). \
+                Se c'è anche una condizione di presenza ("solo se qualcuno è in casa", \
+                "se sono a casa", "se non c'è nessuno"), NON cambiare il trigger primario: \
+                mantieni triggerType=calendar e aggiungi triggerPresenceKind=atHome o notAtHome \
+                con triggerPresenceUserScope=homeUsers oppure currentUser. \
               · characteristic → trigger su soglia sensore SENZA ora fissa. Imposta: \
                 triggerSensorType (es. temperature, humidity, carbonDioxide, vocDensity, pm25, pm10, contact, motion, occupancy), \
                 triggerSensorRoom (es. Balcone), triggerDirection (above|below|open|closed|active|inactive). \
@@ -110,6 +114,9 @@ final class AgentLoopService {
               · presence → arrivo/uscita casa. Imposta triggerPresenceKind=everyEntry per \
                 "quando arrivo a casa", triggerPresenceKind=everyExit per "quando esco di casa"; \
                 triggerPresenceUserScope=currentUser salvo richiesta esplicita su tutti/chiunque. \
+                Usa triggerType=presence solo quando arrivo/uscita è l'evento che scatena l'automazione. \
+                Se la presenza è una condizione su un trigger orario/sensore, usa invece \
+                triggerPresenceKind=atHome/notAtHome mantenendo triggerType=calendar/characteristic. \
               · inApp → trigger manuale/sequenziale.
             - createScene: crea una scena HomeKit con più azioni su più accessori. \
               Usa quando l'utente chiede di creare una scena \
@@ -205,9 +212,13 @@ final class AgentLoopService {
               Se c'è anche una condizione sensore ("se la luminosità è bassa", \
               "quando la temperatura supera X°C"), includi ANCHE i campi: \
               triggerSensorType, triggerSensorRoom, triggerThreshold, triggerDirection. \
+              Se c'è anche una condizione presenza ("solo se qualcuno è in casa", \
+              "se sono a casa", "se non c'è nessuno"), includi ANCHE: \
+              triggerPresenceKind=atHome oppure notAtHome e triggerPresenceUserScope=homeUsers \
+              o currentUser. \
               Chiama readSensor prima per ottenere il valore attuale e le soglie. \
               La condizione viene aggiunta come predicato HomeKit: l'automazione \
-              scatta ALL'ORA stabilita SOLO SE il sensore soddisfa la soglia.
+              scatta ALL'ORA stabilita SOLO SE le condizioni soddisfano la soglia/presenza.
               Esempi: \
               · "Accendi luce soggiorno ogni giorno alle 20:30" → listAccessories luce soggiorno, \
                 poi proposeOpportunity triggerType=calendar triggerTime=20:30 action=on. \
@@ -219,6 +230,11 @@ final class AgentLoopService {
                 readSensor temperature Balcone, listAccessories tenda, poi proposeOpportunity \
                 triggerType=calendar triggerTime=08:00 triggerSensorType=temperature \
                 triggerSensorRoom=Balcone triggerThreshold=26 triggerDirection=above action=close.
+              · "Ogni giorno alle 8 se la temperatura esterna supera 26° e qualcuno è in casa chiudi la tenda" → \
+                readSensor temperature Esterno/Balcone, listAccessories tenda, poi proposeOpportunity \
+                triggerType=calendar triggerTime=08:00 triggerSensorType=temperature \
+                triggerSensorRoom=Balcone triggerThreshold=26 triggerDirection=above \
+                triggerPresenceKind=atHome triggerPresenceUserScope=homeUsers action=close.
             - Richiesta su soglia sensore SENZA ora fissa ("quando supera 30°C…", "se l'umidità scende sotto…"): \
               1) readSensor per confermare il sensore e leggere le soglie. \
               2) listAccessories per l'UUID dell'accessorio da controllare. \
@@ -337,6 +353,10 @@ final class AgentLoopService {
                 triggerOffsetMinutes (20 minutes after sunset = 20, 15 minutes before = -15). \
                 If there is also a sensor condition, also include: triggerSensorType, \
                 triggerSensorRoom, triggerThreshold, triggerDirection (HomeKit predicate). \
+                If there is also a presence condition ("only if someone is home", \
+                "if I am home", "if nobody is home"), do NOT change the primary trigger: \
+                keep triggerType=calendar and add triggerPresenceKind=atHome or notAtHome \
+                with triggerPresenceUserScope=homeUsers or currentUser. \
               · characteristic → sensor-threshold trigger with NO fixed time. Set: \
                 triggerSensorType (e.g. temperature, humidity, carbonDioxide, vocDensity, pm25, pm10, contact, motion, occupancy), \
                 triggerSensorRoom (e.g. Balcone), triggerDirection (above|below|open|closed|active|inactive). \
@@ -349,6 +369,9 @@ final class AgentLoopService {
               · presence → arrival/departure home. Set triggerPresenceKind=everyEntry for \
                 "when I arrive home", triggerPresenceKind=everyExit for "when I leave home"; \
                 triggerPresenceUserScope=currentUser unless the user explicitly says anyone/everyone. \
+                Use triggerType=presence only when arrival/departure is the event that starts the automation. \
+                If presence is a condition on a time/sensor trigger, use triggerPresenceKind=atHome/notAtHome \
+                while keeping triggerType=calendar/characteristic. \
               · inApp → manual/sequential trigger.
             - createScene: creates a HomeKit scene with multiple actions across multiple accessories. \
               Use when the user asks to create a scene \
@@ -456,6 +479,11 @@ final class AgentLoopService {
                 readSensor temperature Balcone, listAccessories blind, then proposeOpportunity \
                 triggerType=calendar triggerTime=08:00 triggerSensorType=temperature \
                 triggerSensorRoom=Balcone triggerThreshold=26 triggerDirection=above action=close.
+              · "Every day at 8 if outside temperature is above 26° and someone is home close the blind" → \
+                readSensor temperature Outside/Balcone, listAccessories blind, then proposeOpportunity \
+                triggerType=calendar triggerTime=08:00 triggerSensorType=temperature \
+                triggerSensorRoom=Balcone triggerThreshold=26 triggerDirection=above \
+                triggerPresenceKind=atHome triggerPresenceUserScope=homeUsers action=close.
             - Sensor-threshold automation with NO fixed time ("when it exceeds 30°C…", "if humidity drops below…"): \
               1) readSensor to confirm the sensor exists and read thresholds. \
               2) listAccessories for the UUID of the accessory to control. \
@@ -579,7 +607,7 @@ final class AgentLoopService {
                         messages.append([
                             "role": "user",
                             "content": """
-                            La richiesta contiene un trigger temporale o condizionale e un'azione. Non rispondere solo con testo: devi chiamare proposeOpportunity con i dati necessari per creare una AutomationProposal. Se manca un dettaglio indispensabile, fai una sola domanda breve.
+                            La richiesta contiene un trigger temporale o condizionale e un'azione. Non rispondere solo con testo: devi chiamare proposeOpportunity con i dati necessari per creare una AutomationProposal. Se include un vincolo di presenza ("solo se qualcuno è in casa", "only if someone is home"), mantieni il trigger principale e aggiungi triggerPresenceKind=atHome/notAtHome con triggerPresenceUserScope corretto. Se manca un dettaglio indispensabile, fai una sola domanda breve.
                             """
                         ])
                         continue

@@ -48,6 +48,29 @@ struct SmartLightingSettingsView: View {
                 }
             }
 
+            if engine.isGloballyEnabled && !engine.recentDecisions.isEmpty {
+                Section {
+                    ForEach(Array(engine.recentDecisions.prefix(8))) { decision in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(decision.roomName)
+                                    .font(.subheadline.weight(.medium))
+                                Spacer()
+                                Text(Self.timeFmt.string(from: decision.evaluatedAt))
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Text(decisionLine(decision))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text(String(localized: "smartlighting.section.decisions",
+                                defaultValue: "Decision History"))
+                }
+            }
+
             // MARK: Stanze configurate
             Section {
                 if engine.profiles.isEmpty {
@@ -176,6 +199,18 @@ struct SmartLightingSettingsView: View {
             .compactMap { profile.sceneName(for: $0) }
             .filter { !available.contains($0.lowercased()) }
     }
+
+    private func decisionLine(_ decision: SmartLightingDecisionRecord) -> String {
+        var parts = [decision.action.rawValue]
+        if let sceneName = decision.sceneName {
+            parts.append(sceneName)
+        }
+        parts.append(decision.reason)
+        if let lux = decision.luxValue {
+            parts.append("\(Int(lux)) lx")
+        }
+        return parts.joined(separator: " · ")
+    }
 }
 
 // MARK: - AddLightingRoomSheet
@@ -245,20 +280,22 @@ struct LightingProfileEditView: View {
         self._draft    = State(initialValue: initial)
     }
 
-    private var generalFooter: String {
+    private var scheduleFooter: String {
         if let sh = draft.sleepHour, let wh = draft.wakeHour {
-            return String(format: String(localized: "smartlighting.edit.general.footer.window",
-                                         defaultValue: "Engine silent from %1$02d:00 to %2$02d:00 — no scene will be activated in that window."),
-                          sh, wh)
+            return String(format: String(localized: "smartlighting.edit.schedule.footer.window",
+                                         defaultValue: "Engine silent from %1$@ to %2$@ — no scene will be activated in that window."),
+                          formattedTime(minutes: minutesSinceMidnight(hour: sh, minute: draft.sleepMinute ?? 0)),
+                          formattedTime(minutes: minutesSinceMidnight(hour: wh, minute: draft.wakeMinute ?? 0)))
         } else if draft.sleepHour != nil || draft.wakeHour != nil {
             let sh = draft.sleepHour ?? 1
             let wh = draft.wakeHour  ?? 7
-            return String(format: String(localized: "smartlighting.edit.general.footer.window",
-                                         defaultValue: "Engine silent from %1$02d:00 to %2$02d:00 — no scene will be activated in that window."),
-                          sh, wh)
+            return String(format: String(localized: "smartlighting.edit.schedule.footer.window",
+                                         defaultValue: "Engine silent from %1$@ to %2$@ — no scene will be activated in that window."),
+                          formattedTime(minutes: minutesSinceMidnight(hour: sh, minute: draft.sleepMinute ?? 0)),
+                          formattedTime(minutes: minutesSinceMidnight(hour: wh, minute: draft.wakeMinute ?? 0)))
         } else {
-            return String(localized: "smartlighting.edit.general.footer",
-                          defaultValue: "\"Night starts at\" sets when the Evening phase transitions to Night for this room. Enable \"Silence Window\" to define a time range during which no scene is activated — useful to avoid lights turning on before you wake up.")
+            return String(localized: "smartlighting.edit.schedule.footer",
+                          defaultValue: "Set when Evening becomes Night. The silence window prevents automatic scene activation while you want manual control.")
         }
     }
 
@@ -283,6 +320,22 @@ struct LightingProfileEditView: View {
             .filter { !available.contains($0.lowercased()) }
     }
 
+    private var luxActivationThreshold: Int {
+        max(80, Int((draft.luxBypassThreshold * 0.8).rounded()))
+    }
+
+    private var luxDeactivationThreshold: Int {
+        max(120, Int((draft.luxBypassThreshold * 1.2).rounded()))
+    }
+
+    private var sleepTimeOptions: [Int] {
+        stride(from: 0, through: 6 * 60 + 30, by: 30).map { $0 }
+    }
+
+    private var wakeTimeOptions: [Int] {
+        stride(from: 5 * 60, through: 10 * 60, by: 30).map { $0 }
+    }
+
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
     }()
@@ -305,6 +358,24 @@ struct LightingProfileEditView: View {
         engine.addOrUpdateProfile(draft)
     }
 
+    private func minutesSinceMidnight(hour: Int?, minute: Int?) -> Int {
+        (hour ?? 0) * 60 + (minute ?? 0)
+    }
+
+    private func setSleepTime(minutes: Int) {
+        draft.sleepHour = minutes / 60
+        draft.sleepMinute = minutes % 60
+    }
+
+    private func setWakeTime(minutes: Int) {
+        draft.wakeHour = minutes / 60
+        draft.wakeMinute = minutes % 60
+    }
+
+    private func formattedTime(minutes: Int) -> String {
+        String(format: "%02d:%02d", minutes / 60, minutes % 60)
+    }
+
     var body: some View {
         Form {
             // MARK: Generale
@@ -312,7 +383,26 @@ struct LightingProfileEditView: View {
                 Toggle(String(localized: "smartlighting.edit.enabled",
                               defaultValue: "Enabled"),
                        isOn: $draft.isEnabled)
+                Label(
+                    draft.isEnabled
+                    ? String(localized: "smartlighting.edit.general.enabledStatus",
+                             defaultValue: "Automatic lighting is active for this room.")
+                    : String(localized: "smartlighting.edit.general.disabledStatus",
+                             defaultValue: "This room is skipped by Smart Lighting."),
+                    systemImage: draft.isEnabled ? "checkmark.circle.fill" : "pause.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(draft.isEnabled ? Color.green : Color.secondary)
+            } header: {
+                Text(String(localized: "smartlighting.edit.general.header",
+                            defaultValue: "General"))
+            } footer: {
+                Text(String(localized: "smartlighting.edit.general.footer",
+                            defaultValue: "Enable or disable Smart Lighting for this room without changing its configuration."))
+            }
 
+            // MARK: Schedule
+            Section {
                 Picker(String(localized: "smartlighting.edit.nightHour",
                               defaultValue: "Night starts at"),
                        selection: $draft.nightHour) {
@@ -329,10 +419,14 @@ struct LightingProfileEditView: View {
                            set: {
                                if $0 {
                                    draft.sleepHour = draft.sleepHour ?? 1
+                                   draft.sleepMinute = draft.sleepMinute ?? 0
                                    draft.wakeHour  = draft.wakeHour  ?? 7
+                                   draft.wakeMinute = draft.wakeMinute ?? 0
                                } else {
                                    draft.sleepHour = nil
+                                   draft.sleepMinute = nil
                                    draft.wakeHour  = nil
+                                   draft.wakeMinute = nil
                                }
                            }
                        ))
@@ -341,11 +435,11 @@ struct LightingProfileEditView: View {
                     Picker(String(localized: "smartlighting.edit.silenceWindow.from",
                                   defaultValue: "Silent from"),
                            selection: Binding(
-                               get: { draft.sleepHour ?? 1 },
-                               set: { draft.sleepHour = $0 }
+                               get: { minutesSinceMidnight(hour: draft.sleepHour ?? 1, minute: draft.sleepMinute ?? 0) },
+                               set: { setSleepTime(minutes: $0) }
                            )) {
-                        ForEach([0, 1, 2, 3, 4, 5, 6], id: \.self) { h in
-                            Text(String(format: "%02d:00", h)).tag(h)
+                        ForEach(sleepTimeOptions, id: \.self) { minutes in
+                            Text(formattedTime(minutes: minutes)).tag(minutes)
                         }
                     }
                     .pickerStyle(.menu)
@@ -353,20 +447,20 @@ struct LightingProfileEditView: View {
                     Picker(String(localized: "smartlighting.edit.silenceWindow.to",
                                   defaultValue: "Resume at"),
                            selection: Binding(
-                               get: { draft.wakeHour ?? 7 },
-                               set: { draft.wakeHour = $0 }
+                               get: { minutesSinceMidnight(hour: draft.wakeHour ?? 7, minute: draft.wakeMinute ?? 0) },
+                               set: { setWakeTime(minutes: $0) }
                            )) {
-                        ForEach(Array(5...10), id: \.self) { h in
-                            Text(String(format: "%02d:00", h)).tag(h)
+                        ForEach(wakeTimeOptions, id: \.self) { minutes in
+                            Text(formattedTime(minutes: minutes)).tag(minutes)
                         }
                     }
                     .pickerStyle(.menu)
                 }
             } header: {
-                Text(String(localized: "smartlighting.edit.general.header",
-                            defaultValue: "General"))
+                Text(String(localized: "smartlighting.edit.schedule.header",
+                            defaultValue: "Schedule"))
             } footer: {
-                Text(generalFooter)
+                Text(scheduleFooter)
             }
 
             // MARK: Scene per fase
@@ -382,48 +476,32 @@ struct LightingProfileEditView: View {
                             defaultValue: "\"None\" skips that phase — the engine makes no change. Only custom HomeKit scenes are listed. Times are based on today's sunrise/sunset."))
             }
 
-            // MARK: Profile preview
+            // MARK: Today timeline
             Section {
-                if configuredSceneNames.isEmpty {
+                if customSceneNames.isEmpty {
                     Label(
-                        String(localized: "smartlighting.preview.noScenes",
-                               defaultValue: "No scenes configured yet. This profile will not activate anything."),
+                        String(localized: "smartlighting.timeline.noScenes",
+                               defaultValue: "No custom HomeKit scenes available yet."),
                         systemImage: "info.circle"
                     )
                     .foregroundStyle(.secondary)
                 } else {
-                    ForEach(configuredSceneNames, id: \.phase) { item in
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: missingSceneNames.contains(item.name) ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                                .foregroundStyle(missingSceneNames.contains(item.name) ? .orange : .green)
-                                .frame(width: 22)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.phase.displayName)
-                                    .font(.subheadline.weight(.medium))
-                                Text(item.name)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                if let range = phaseTimeRange(for: item.phase) {
-                                    Text(range)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                }
-                            }
-                        }
+                    ForEach(LightingPhase.allCases, id: \.self) { phase in
+                        timelineRow(for: phase)
                     }
                     if !missingSceneNames.isEmpty {
-                        Text(String(localized: "smartlighting.preview.missing.footer",
-                                    defaultValue: "Missing scenes will be skipped until they are restored or replaced."))
+                        Text(String(localized: "smartlighting.timeline.missing.footer",
+                                    defaultValue: "Missing scenes are skipped until they are restored or replaced."))
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
                 }
             } header: {
-                Text(String(localized: "smartlighting.preview.header",
-                            defaultValue: "Activation Preview"))
+                Text(String(localized: "smartlighting.timeline.header",
+                            defaultValue: "Today's Timeline"))
             } footer: {
-                Text(String(localized: "smartlighting.preview.footer",
-                            defaultValue: "Review what this room can do before enabling the profile."))
+                Text(String(localized: "smartlighting.timeline.footer",
+                            defaultValue: "Shows today's phase windows and the scene Smart Lighting will apply in each one."))
             }
 
             // MARK: Lux bypass
@@ -446,6 +524,16 @@ struct LightingProfileEditView: View {
                         }
                     }
 
+                    Label(
+                        String(format: String(localized: "smartlighting.edit.luxHysteresis",
+                                              defaultValue: "Acts below %1$d lx · pauses above %2$d lx"),
+                               luxActivationThreshold,
+                               luxDeactivationThreshold),
+                        systemImage: "arrow.left.and.right"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                     Picker(selection: Binding(
                         get: { draft.luxOffSceneName ?? "" },
                         set: { draft.luxOffSceneName = $0.isEmpty ? nil : $0 }
@@ -464,10 +552,10 @@ struct LightingProfileEditView: View {
                 }
             } header: {
                 Text(String(localized: "smartlighting.edit.lux.header",
-                            defaultValue: "Lux Sensor"))
+                            defaultValue: "Natural Light"))
             } footer: {
                 Text(String(localized: "smartlighting.edit.lux.footer",
-                            defaultValue: "If a lux sensor reads above the threshold, the engine skips activation. The return-light scene is triggered only when the lux sensor is assigned to a different room, so room lights do not create an on/off loop."))
+                            defaultValue: "Smart Lighting uses a stability band around the lux threshold, so small sensor changes do not cause repeated on/off changes."))
             }
 
             // MARK: Override manuale
@@ -490,6 +578,8 @@ struct LightingProfileEditView: View {
                     }
                 } else {
                     Menu {
+                        Button(String(localized: "smartlighting.edit.override.30m",
+                                      defaultValue: "30 minutes")) { applyOverride(hours: 0.5) }
                         Button(String(localized: "smartlighting.edit.override.1h",
                                       defaultValue: "1 hour")) { applyOverride(hours: 1) }
                         Button(String(localized: "smartlighting.edit.override.2h",
@@ -521,6 +611,35 @@ struct LightingProfileEditView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear {
             engine.addOrUpdateProfile(draft)
+        }
+    }
+
+    @ViewBuilder
+    private func timelineRow(for phase: LightingPhase) -> some View {
+        let sceneName = draft.sceneName(for: phase)
+        let hasScene = sceneName?.isEmpty == false
+        let isMissing = sceneName.map { missingSceneNames.contains($0) } ?? false
+
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: isMissing ? "exclamationmark.triangle.fill" : (hasScene ? "checkmark.circle.fill" : "minus.circle"))
+                .foregroundStyle(isMissing ? Color.orange : (hasScene ? Color.green : Color.secondary))
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(phase.displayName)
+                        .font(.subheadline.weight(.medium))
+                    Spacer()
+                    if let range = phaseTimeRange(for: phase) {
+                        Text(range)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                Text(sceneName ?? String(localized: "smartlighting.timeline.noSceneForPhase",
+                                         defaultValue: "No scene"))
+                    .font(.caption)
+                    .foregroundStyle(hasScene ? .secondary : .tertiary)
+            }
         }
     }
 

@@ -51,7 +51,7 @@ struct FloorplanEditorView: View {
     @State private var editHighlightedRoomID: UUID?
     @State private var suppressNextMarkerTapID: UUID?
     @State private var executingMarkerID: UUID?
-    @State private var isSmartLightingBannerExpanded = false
+
     @State private var showFloorplanHelp = false
     @AppStorage("floorplan.help.hasSeen.v1")
     private var hasSeenFloorplanHelp = false
@@ -154,7 +154,8 @@ struct FloorplanEditorView: View {
         return FloorplanOverlayContext(
             hasEnvironmentData: hasEnv,
             hasSecurityDevices: hasSecure,
-            hasAIService: isAIEnabled
+            hasAIService: isAIEnabled,
+            hasIntelligenceSuggestions: isAIEnabled && !habitService.pendingPatterns.isEmpty
         )
     }
 
@@ -194,7 +195,7 @@ struct FloorplanEditorView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                Color.white
+                (ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex).map { $0.swiftUIColor } ?? Color.white)
                     .ignoresSafeArea()
 
                 if let image = cachedFloorplanImage {
@@ -213,7 +214,7 @@ struct FloorplanEditorView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ContentUnavailableView(
-                        "Immagine non disponibile",
+                        String(localized: "floorplan.image.unavailable", defaultValue: "Image not available"),
                         systemImage: "photo.badge.exclamationmark"
                     )
                 }
@@ -541,7 +542,7 @@ struct FloorplanEditorView: View {
         .frame(maxWidth: .infinity, alignment: .top)
         .animation(.spring(response: 0.35), value: overlayVM?.activeMode)
         .animation(.spring(response: 0.35), value: floorplan.linkedRooms.isEmpty)
-        .animation(.spring(response: 0.35), value: isSmartLightingBannerExpanded)
+
         // Misura l'altezza reale della top bar (senza Spacer espanso)
         .background(
             GeometryReader { geo in
@@ -557,121 +558,57 @@ struct FloorplanEditorView: View {
 
     @ViewBuilder
     private func smartLightingFloorplanStatus(_ status: SmartLightingFloorplanStatus) -> some View {
-        VStack(spacing: 6) {
-            Button {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                    isSmartLightingBannerExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: smartLightingStatusIcon(status.state))
-                        .font(.caption.weight(.semibold))
-                    Text(smartLightingStatusTitle(status))
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
-                    Image(systemName: isSmartLightingBannerExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
-                }
-                .foregroundStyle(smartLightingStatusColor(status.state))
-                .padding(.horizontal, 13)
-                .padding(.vertical, 7)
-            }
-            .buttonStyle(.plain)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(
-                Capsule()
-                    .strokeBorder(smartLightingStatusColor(status.state).opacity(0.28), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.10), radius: 10, x: 0, y: 3)
-
-            if status.state == .active || status.isUserPaused {
-                HStack(spacing: 8) {
-                    Button {
-                        smartLightingEngine.pauseFromFloorplan()
-                    } label: {
-                        Label(String(localized: "common.pause", defaultValue: "Pause"), systemImage: "pause.fill")
-                            .labelStyle(.iconOnly)
-                    }
-                    .disabled(status.isUserPaused)
-
-                    Button {
-                        smartLightingEngine.resumeFromFloorplan()
-                    } label: {
-                        Label(String(localized: "common.play", defaultValue: "Play"), systemImage: "play.fill")
-                            .labelStyle(.iconOnly)
-                    }
-                    .disabled(!status.isUserPaused)
-                }
-                .font(.caption.weight(.semibold))
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(smartLightingStatusColor(status.state))
-                .background(.regularMaterial, in: Capsule())
-            }
-
-            if isSmartLightingBannerExpanded {
-                smartLightingFloorplanBanner(status)
-            }
-        }
-    }
-
-    private func smartLightingFloorplanBanner(_ status: SmartLightingFloorplanStatus) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
+        HStack(spacing: 0) {
+            HStack(spacing: 8) {
                 Image(systemName: smartLightingStatusIcon(status.state))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(smartLightingStatusColor(status.state))
-                    .frame(width: 22, height: 22)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(smartLightingBannerTitle(status))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Text(smartLightingBannerMessage(status))
+                    .font(.caption.weight(.semibold))
+                Text(smartLightingStatusTitle(status))
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                if status.state == .active, status.activeCount > 0 {
+                    Text("·")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 8)
-
-                if status.state == .paused {
-                    Button(String(localized: "common.resume", defaultValue: "Resume")) {
-                        smartLightingEngine.resumeFromFloorplan()
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                            isSmartLightingBannerExpanded = false
-                        }
-                    }
-                    .font(.caption.weight(.semibold))
-                    .buttonStyle(.borderedProminent)
-                    .tint(BrandColor.primary)
-                    .controlSize(.small)
+                    Text("\(status.activeCount)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
             }
+            .foregroundStyle(smartLightingStatusColor(status.state))
+            .padding(.horizontal, 13)
+            .padding(.vertical, 7)
 
-            if !status.pausedRooms.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(status.pausedRooms.prefix(3), id: \.roomName) { item in
-                        Text(String(format: String(localized: "smartlighting.floorplan.pausedRoomUntil",
-                                                   defaultValue: "%@ until %@"),
-                                    item.roomName,
-                                    shortTime(item.until)))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+            if status.state == .active || status.isUserPaused {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.15))
+                    .frame(width: 1, height: 16)
+
+                Button {
+                    smartLightingEngine.pauseFromFloorplan()
+                } label: {
+                    Image(systemName: "pause.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(status.isUserPaused ? Color.secondary.opacity(0.4) : smartLightingStatusColor(status.state))
+                        .frame(width: 34, height: 34)
                 }
+                .disabled(status.isUserPaused)
+                .buttonStyle(.plain)
+
+                Button {
+                    smartLightingEngine.resumeFromFloorplan()
+                } label: {
+                    Image(systemName: "play.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(status.isUserPaused ? smartLightingStatusColor(status.state) : Color.secondary.opacity(0.4))
+                        .frame(width: 34, height: 34)
+                        .padding(.trailing, 4)
+                }
+                .disabled(!status.isUserPaused)
+                .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: 360, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(smartLightingStatusColor(status.state).opacity(0.18), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.12), radius: 14, x: 0, y: 5)
+        .background(.regularMaterial, in: Capsule())
+        .shadow(color: .black.opacity(0.10), radius: 10, x: 0, y: 3)
     }
 
     private func smartLightingStatusTitle(_ status: SmartLightingFloorplanStatus) -> String {
@@ -694,38 +631,6 @@ struct FloorplanEditorView: View {
             return String(format: String(localized: "smartlighting.floorplan.status.issues",
                                          defaultValue: "%d Smart Lighting issues"),
                           status.issueCount)
-        }
-    }
-
-    private func smartLightingBannerTitle(_ status: SmartLightingFloorplanStatus) -> String {
-        switch status.state {
-        case .active:
-            return String(format: String(localized: "smartlighting.floorplan.banner.active",
-                                         defaultValue: "%d rooms following Smart Lighting"),
-                          status.activeCount)
-        case .paused:
-            return status.isUserPaused
-                ? String(localized: "smartlighting.floorplan.status.paused", defaultValue: "Smart Lighting paused")
-                : String(localized: "smartlighting.floorplan.banner.roomPauseActive", defaultValue: "Room pause active")
-        case .disabled:
-            return String(localized: "smartlighting.floorplan.banner.disabled", defaultValue: "Configured rooms are on hold")
-        case .needsAttention:
-            return String(localized: "smartlighting.floorplan.banner.needsAttention", defaultValue: "Scene configuration needs attention")
-        }
-    }
-
-    private func smartLightingBannerMessage(_ status: SmartLightingFloorplanStatus) -> String {
-        switch status.state {
-        case .active:
-            return String(localized: "smartlighting.floorplan.message.active", defaultValue: "The engine can adjust configured rooms when home context changes.")
-        case .paused:
-            return status.isUserPaused
-                ? String(localized: "smartlighting.floorplan.message.userPaused", defaultValue: "Smart Lighting will stay paused until you press Play.")
-                : String(localized: "smartlighting.floorplan.message.roomPaused", defaultValue: "One or more rooms are paused from their room profile. Press Play to resume everything now.")
-        case .disabled:
-            return String(localized: "smartlighting.floorplan.message.disabled", defaultValue: "Room profiles exist, but the global Smart Lighting switch is off.")
-        case .needsAttention:
-            return String(localized: "smartlighting.floorplan.message.needsAttention", defaultValue: "Some configured scenes are missing from HomeKit. Review Smart Lighting settings before relying on automation.")
         }
     }
 

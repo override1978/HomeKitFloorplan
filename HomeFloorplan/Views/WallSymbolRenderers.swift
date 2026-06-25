@@ -39,6 +39,44 @@ enum DrawingStyle {
     static let furnitureText: Color      = Color(UIColor { t in t.userInterfaceStyle == .dark ? UIColor(white: 0.80, alpha: 1) : UIColor(white: 0.35, alpha: 1) })
 }
 
+// MARK: - Exterior fill palette
+
+enum ExteriorFillPalette: Int, CaseIterable {
+    case warmGray = 0
+    case tortora  = 1
+    case sand     = 2
+    case stone    = 3
+    case sage     = 4
+    case peach    = 5
+    case brandGlow = 6
+
+    var cgColor: CGColor {
+        switch self {
+        case .warmGray: return CGColor(red: 0.91, green: 0.91, blue: 0.88, alpha: 1.0)
+        case .tortora:  return CGColor(red: 0.84, green: 0.81, blue: 0.77, alpha: 1.0)
+        case .sand:     return CGColor(red: 0.91, green: 0.87, blue: 0.80, alpha: 1.0)
+        case .stone:    return CGColor(red: 0.80, green: 0.82, blue: 0.84, alpha: 1.0)
+        case .sage:     return CGColor(red: 0.82, green: 0.86, blue: 0.81, alpha: 1.0)
+        case .peach:    return CGColor(red: 0.96, green: 0.90, blue: 0.86, alpha: 1.0)
+        case .brandGlow: return CGColor(red: 1.00, green: 0.94, blue: 0.86, alpha: 1.0)
+        }
+    }
+
+    var swiftUIColor: Color { Color(cgColor: cgColor) }
+
+    var localizedName: String {
+        switch self {
+        case .warmGray: return String(localized: "exterior.fill.warmGray", defaultValue: "Warm Gray")
+        case .tortora:  return String(localized: "exterior.fill.tortora",  defaultValue: "Tortora")
+        case .sand:     return String(localized: "exterior.fill.sand",     defaultValue: "Sand")
+        case .stone:    return String(localized: "exterior.fill.stone",    defaultValue: "Stone")
+        case .sage:     return String(localized: "exterior.fill.sage",     defaultValue: "Sage")
+        case .peach:    return String(localized: "exterior.fill.peach",    defaultValue: "Peach")
+        case .brandGlow: return String(localized: "exterior.fill.brandGlow", defaultValue: "Brand Glow")
+        }
+    }
+}
+
 // MARK: - SwiftUI GraphicsContext renderers
 
 /// Draws a single wall segment on a SwiftUI `GraphicsContext`.
@@ -218,10 +256,14 @@ func drawGrid(in rect: CGRect,
 /// The export has a plain white background — no grid — so the result is clean
 /// when used as a floorplan background image.
 /// Call from inside a `UIGraphicsImageRenderer` block.
-func renderDocument(_ doc: DrawingDocument, in cgContext: CGContext, canvasSize: CGFloat) {
+func renderDocument(_ doc: DrawingDocument, in cgContext: CGContext, canvasSize: CGFloat, exteriorFillColorIndex: Int = -1) {
     // White background only — no grid in the exported image
     cgContext.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
     cgContext.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
+
+    if exteriorFillColorIndex >= 0 {
+        drawExteriorFillCG(doc, context: cgContext, canvasSize: canvasSize, colorIndex: exteriorFillColorIndex)
+    }
 
     // Room areas (behind walls and depth shadow)
     for area in doc.roomAreas {
@@ -471,6 +513,22 @@ private func drawRoomLabelCG(_ label: RoomLabel, context: CGContext) {
 }
 
 // MARK: - Wall depth shadow helpers (PNG export only)
+
+/// Fills the area outside the building footprint with a soft tint.
+/// Even-odd clipping makes the footprint a transparent hole so only the exterior gets colored.
+private func drawExteriorFillCG(_ doc: DrawingDocument, context: CGContext, canvasSize: CGFloat, colorIndex: Int) {
+    guard let palette = ExteriorFillPalette(rawValue: colorIndex) else { return }
+    let footprint = buildFootprintPath(for: doc)
+    guard footprint.bounds.width > 0 else { return }
+    context.saveGState()
+    let canvasPath = UIBezierPath(rect: CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
+    canvasPath.append(footprint)
+    context.addPath(canvasPath.cgPath)
+    context.clip(using: .evenOdd)
+    context.setFillColor(palette.cgColor)
+    context.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
+    context.restoreGState()
+}
 
 /// Builds a `UIBezierPath` from all room areas in the document.
 /// Falls back to the wall bounding box when no room areas exist.

@@ -9,6 +9,9 @@ struct NewFloorplanSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(HomeKitService.self) private var homeKit
+    @Query(sort: \Floorplan.createdAt, order: .reverse) private var existingFloorplans: [Floorplan]
+    @AppStorage("primaryFloorplanID") private var primaryFloorplanID: String = ""
+    @AppStorage("pinnedFloorplanIDs") private var pinnedFloorplanIDsRaw: String = "[]"
 
     @State private var name: String = ""
     @State private var selectedImage: UIImage?
@@ -18,6 +21,7 @@ struct NewFloorplanSheet: View {
     @State private var showDrawingEditor = false
     @State private var linkedRooms: [LinkedRoom] = []
     @State private var savedDrawingDocument: DrawingDocument?
+    @State private var savedExteriorFillColorIndex: Int = -1
 
     var body: some View {
         NavigationStack {
@@ -76,19 +80,39 @@ struct NewFloorplanSheet: View {
                         .disabled(!canSave || isSaving)
                 }
             }
-            .fullScreenCover(isPresented: $showDrawingEditor) {
-                DrawingFloorplanSheet(initialDocument: savedDrawingDocument) { drawnImage, rooms, doc in
-                    selectedImage = drawnImage
-                    linkedRooms = rooms
-                    savedDrawingDocument = doc
-                    if name.trimmingCharacters(in: .whitespaces).isEmpty {
-                        name = String(localized: "floorplan.drawn.defaultName", defaultValue: "Drawn floorplan")
-                    }
-                }
-                .ignoresSafeArea()
+            .fullScreenCover(isPresented: fullScreenDrawingEditorBinding) {
+                drawingEditor
+                    .environment(homeKit)
+                    .ignoresSafeArea()
             }
         }
         .suppressesIdleScreensaver(.modalPresentation)
+    }
+
+    private var usesMacModalPresentation: Bool {
+        ProcessInfo.processInfo.isiOSAppOnMac
+    }
+
+    private var fullScreenDrawingEditorBinding: Binding<Bool> {
+        Binding(
+            get: { showDrawingEditor },
+            set: { if !$0 { showDrawingEditor = false } }
+        )
+    }
+
+    private var drawingEditor: some View {
+        DrawingFloorplanSheet(
+            initialDocument: savedDrawingDocument,
+            initialExteriorFillColorIndex: savedExteriorFillColorIndex
+        ) { drawnImage, rooms, doc, colorIndex in
+            selectedImage = drawnImage
+            linkedRooms = rooms
+            savedDrawingDocument = doc
+            savedExteriorFillColorIndex = colorIndex
+            if name.trimmingCharacters(in: .whitespaces).isEmpty {
+                name = String(localized: "floorplan.drawn.defaultName", defaultValue: "Drawn floorplan")
+            }
+        }
     }
 
     private var canSave: Bool {
@@ -111,14 +135,43 @@ struct NewFloorplanSheet: View {
             if let doc = savedDrawingDocument {
                 floorplan.drawingDocument = doc
             }
+            floorplan.exteriorFillColorIndex = savedExteriorFillColorIndex
             modelContext.insert(floorplan)
             try modelContext.save()
             let savedID = floorplan.id
+            pinAfterCreation(floorplan)
             dismiss()
             onSaved?(savedID)
         } catch {
             errorMessage = error.localizedDescription
             isSaving = false
         }
+    }
+
+    private func pinAfterCreation(_ floorplan: Floorplan) {
+        var ids = decodePinnedIDs()
+        let key = floorplan.id.uuidString
+        if !ids.contains(key) {
+            ids.append(key)
+            encodePinnedIDs(ids)
+        }
+
+        if primaryFloorplanID.isEmpty || isFirstFloorplanInCurrentHome(excluding: floorplan) {
+            primaryFloorplanID = key
+        }
+    }
+
+    private func isFirstFloorplanInCurrentHome(excluding floorplan: Floorplan) -> Bool {
+        existingFloorplans.allSatisfy { existing in
+            existing.id == floorplan.id || existing.homeUUID != floorplan.homeUUID
+        }
+    }
+
+    private func decodePinnedIDs() -> [String] {
+        (try? JSONDecoder().decode([String].self, from: Data(pinnedFloorplanIDsRaw.utf8))) ?? []
+    }
+
+    private func encodePinnedIDs(_ ids: [String]) {
+        pinnedFloorplanIDsRaw = (try? String(data: JSONEncoder().encode(ids), encoding: .utf8)) ?? "[]"
     }
 }

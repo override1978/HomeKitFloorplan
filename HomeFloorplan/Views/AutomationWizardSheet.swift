@@ -141,6 +141,7 @@ struct AutomationWizardSheet: View {
         appendIncluded(inlineActionBundle.windowCoveringDrafts, to: &parts)
         appendIncluded(inlineActionBundle.thermostatDrafts, to: &parts)
         appendIncluded(inlineActionBundle.airPurifierDrafts, to: &parts)
+        appendIncluded(inlineActionBundle.fanDrafts, to: &parts)
         appendIncluded(inlineActionBundle.humidifierDrafts, to: &parts)
         appendIncluded(inlineActionBundle.securitySystemDrafts, to: &parts)
         appendIncluded(inlineActionBundle.doorLockDrafts, to: &parts)
@@ -227,6 +228,7 @@ struct AutomationWizardSheet: View {
                    inlineActionBundle.windowCoveringDrafts.isEmpty,
                    inlineActionBundle.thermostatDrafts.isEmpty,
                    inlineActionBundle.airPurifierDrafts.isEmpty,
+                   inlineActionBundle.fanDrafts.isEmpty,
                    inlineActionBundle.humidifierDrafts.isEmpty,
                    inlineActionBundle.securitySystemDrafts.isEmpty,
                    inlineActionBundle.doorLockDrafts.isEmpty,
@@ -250,7 +252,7 @@ struct AutomationWizardSheet: View {
                     set: { if !$0 { errorMessage = nil } }
                    ),
                    presenting: errorMessage) { _ in
-                Button("OK") {}
+                Button(String(localized: "button.ok", defaultValue: "OK")) {}
             } message: { message in
                 Text(message)
             }
@@ -3352,6 +3354,9 @@ struct AutomationWizardSheet: View {
         for index in inlineActionBundle.airPurifierDrafts.indices {
             inlineActionBundle.airPurifierDrafts[index].isIncluded = false
         }
+        for index in inlineActionBundle.fanDrafts.indices {
+            inlineActionBundle.fanDrafts[index].isIncluded = false
+        }
         for index in inlineActionBundle.humidifierDrafts.indices {
             inlineActionBundle.humidifierDrafts[index].isIncluded = false
         }
@@ -3638,6 +3643,12 @@ struct AutomationWizardSheet: View {
             return true
         }
 
+        if let index = inlineActionBundle.fanDrafts.firstIndex(where: { $0.id == action.accessoryID }) {
+            inlineActionBundle.fanDrafts[index].isIncluded = true
+            inlineActionBundle.fanDrafts[index].powerOn = powerOn
+            return true
+        }
+
         if let index = inlineActionBundle.humidifierDrafts.firstIndex(where: { $0.id == action.accessoryID }) {
             inlineActionBundle.humidifierDrafts[index].isIncluded = true
             inlineActionBundle.humidifierDrafts[index].powerOn = powerOn
@@ -3750,16 +3761,27 @@ struct AutomationWizardSheet: View {
             return true
         }
 
-        guard let index = inlineActionBundle.airPurifierDrafts.firstIndex(where: { $0.id == action.accessoryID }) else {
+        if let index = inlineActionBundle.airPurifierDrafts.firstIndex(where: { $0.id == action.accessoryID }) {
+            let percent = normalizedPercent(value, defaultValue: inlineActionBundle.airPurifierDrafts[index].fanSpeed)
+            inlineActionBundle.airPurifierDrafts[index].isIncluded = true
+            inlineActionBundle.airPurifierDrafts[index].powerOn = true
+            inlineActionBundle.airPurifierDrafts[index].mode = .manual
+            inlineActionBundle.airPurifierDrafts[index].fanSpeed = max(
+                inlineActionBundle.airPurifierDrafts[index].fanRange.lowerBound,
+                min(inlineActionBundle.airPurifierDrafts[index].fanRange.upperBound, percent)
+            )
+            return true
+        }
+
+        guard let index = inlineActionBundle.fanDrafts.firstIndex(where: { $0.id == action.accessoryID }) else {
             return false
         }
-        let percent = normalizedPercent(value, defaultValue: inlineActionBundle.airPurifierDrafts[index].fanSpeed)
-        inlineActionBundle.airPurifierDrafts[index].isIncluded = true
-        inlineActionBundle.airPurifierDrafts[index].powerOn = true
-        inlineActionBundle.airPurifierDrafts[index].mode = .manual
-        inlineActionBundle.airPurifierDrafts[index].fanSpeed = max(
-            inlineActionBundle.airPurifierDrafts[index].fanRange.lowerBound,
-            min(inlineActionBundle.airPurifierDrafts[index].fanRange.upperBound, percent)
+        let percent = normalizedPercent(value, defaultValue: inlineActionBundle.fanDrafts[index].speed)
+        inlineActionBundle.fanDrafts[index].isIncluded = true
+        inlineActionBundle.fanDrafts[index].powerOn = true
+        inlineActionBundle.fanDrafts[index].speed = max(
+            inlineActionBundle.fanDrafts[index].speedRange.lowerBound,
+            min(inlineActionBundle.fanDrafts[index].speedRange.upperBound, percent)
         )
         return true
     }
@@ -4217,7 +4239,10 @@ private struct AutomationWizardEditDraft {
         self.preservedConditionPredicate = visibleConditionCount == 0
             ? preservedPredicate ?? fallbackPredicate
             : nil
-        self.conditionJoinMode = Self.conditionJoinMode(from: preservedConditionPredicate)
+        self.conditionJoinMode = Self.conditionJoinMode(
+            in: eventTrigger.predicate,
+            triggerPredicates: triggerPredicates
+        )
     }
 
     private static func startEventDraft(
@@ -4538,7 +4563,7 @@ private struct AutomationWizardEditDraft {
         return []
     }
 
-    private static func presenceEvent(in predicate: NSPredicate) -> HMPresenceEvent? {
+    nonisolated private static func presenceEvent(in predicate: NSPredicate) -> HMPresenceEvent? {
         if let comparison = predicate as? NSComparisonPredicate {
             return [comparison.leftExpression, comparison.rightExpression]
                 .compactMap(constantExpressionValue)
@@ -4577,6 +4602,11 @@ private struct AutomationWizardEditDraft {
     }
 
     nonisolated private static func predicatesMatch(_ lhs: NSPredicate, _ rhs: NSPredicate) -> Bool {
+        if let lhsPresence = presenceEvent(in: lhs),
+           let rhsPresence = presenceEvent(in: rhs) {
+            return lhsPresence.matches(rhsPresence)
+        }
+
         let lhsCharacteristics = allCharacteristics(in: lhs).map(\.uniqueIdentifier)
         let rhsCharacteristics = allCharacteristics(in: rhs).map(\.uniqueIdentifier)
         guard !lhsCharacteristics.isEmpty,
@@ -4643,12 +4673,46 @@ private struct AutomationWizardEditDraft {
         }
     }
 
-    private static func conditionJoinMode(from predicate: NSPredicate?) -> AutomationConditionJoinMode {
-        guard let compound = predicate as? NSCompoundPredicate,
-              compound.compoundPredicateType == .or else {
+    private static func conditionJoinMode(
+        in predicate: NSPredicate?,
+        triggerPredicates: [NSPredicate]
+    ) -> AutomationConditionJoinMode {
+        guard let predicate else {
             return .all
         }
-        return .any
+
+        if triggerPredicates.contains(where: { predicatesMatch($0, predicate) }) {
+            return .all
+        }
+
+        guard let compound = predicate as? NSCompoundPredicate else {
+            return .all
+        }
+
+        switch compound.compoundPredicateType {
+        case .or:
+            let conditionPredicates = compound.subpredicates.compactMap { subpredicate -> NSPredicate? in
+                guard let predicate = subpredicate as? NSPredicate,
+                      !triggerPredicates.contains(where: { predicatesMatch($0, predicate) }) else {
+                    return nil
+                }
+                return predicate
+            }
+            return conditionPredicates.count > 1 ? .any : .all
+
+        case .and:
+            let containsNestedAny = compound.subpredicates.contains { subpredicate in
+                guard let predicate = subpredicate as? NSPredicate else { return false }
+                return conditionJoinMode(in: predicate, triggerPredicates: triggerPredicates) == .any
+            }
+            return containsNestedAny ? .any : .all
+
+        case .not:
+            return .all
+
+        @unknown default:
+            return .all
+        }
     }
 
     private static func selection(
@@ -4840,7 +4904,7 @@ private extension AutomationTimeCondition {
 }
 
 private extension HMPresenceEvent {
-    func matches(_ other: HMPresenceEvent) -> Bool {
+    nonisolated func matches(_ other: HMPresenceEvent) -> Bool {
         presenceEventType == other.presenceEventType &&
         presenceUserType == other.presenceUserType
     }

@@ -82,8 +82,8 @@ enum FloorplanHealthAnalyzer {
         for marker in missingMarkers {
             issues.append(FloorplanHealthIssue(
                 severity: .critical,
-                title: "Accessorio non trovato",
-                detail: "Un marker punta a un accessorio HomeKit non più disponibile: \(marker.homeKitAccessoryUUID.uuidString)."
+                title: String(localized: "floorplan.health.missingAccessory.title", defaultValue: "Accessory not found"),
+                detail: String(localized: "floorplan.health.missingAccessory.detail", defaultValue: "A marker points to a HomeKit accessory that is no longer available.")
             ))
         }
 
@@ -94,8 +94,8 @@ enum FloorplanHealthAnalyzer {
         if !linkableUnplaced.isEmpty {
             issues.append(FloorplanHealthIssue(
                 severity: .warning,
-                title: "Accessori non piazzati",
-                detail: "\(linkableUnplaced.count) accessori HomeKit supportati non sono ancora presenti sulla planimetria."
+                title: String(localized: "floorplan.health.unplaced.title", defaultValue: "Accessories not placed"),
+                detail: String(format: String(localized: "floorplan.health.unplaced.detail", defaultValue: "%d supported HomeKit accessories are not yet on the floorplan."), linkableUnplaced.count)
             ))
         }
 
@@ -141,8 +141,8 @@ enum FloorplanHealthAnalyzer {
         if linkedRooms.isEmpty {
             issues.append(FloorplanHealthIssue(
                 severity: .warning,
-                title: "Stanze non collegate",
-                detail: "Disegna e collega le aree stanza per abilitare overlay Ambiente, Sicurezza e Intelligenza contestuale."
+                title: String(localized: "floorplan.health.noRooms.title", defaultValue: "No rooms linked"),
+                detail: String(localized: "floorplan.health.noRooms.detail", defaultValue: "Draw and link room areas to enable the Environment, Security, and Intelligence overlays.")
             ))
         }
 
@@ -155,8 +155,8 @@ enum FloorplanHealthAnalyzer {
             if roomAccessories.isEmpty {
                 issues.append(FloorplanHealthIssue(
                     severity: .info,
-                    title: "Stanza senza accessori",
-                    detail: "\(room.name) è collegata al floorplan, ma non contiene accessori HomeKit."
+                    title: String(localized: "floorplan.health.emptyRoom.title", defaultValue: "Room without accessories"),
+                    detail: String(format: String(localized: "floorplan.health.emptyRoom.detail", defaultValue: "%@ is linked to the floorplan but contains no HomeKit accessories."), room.name)
                 ))
             }
 
@@ -166,8 +166,8 @@ enum FloorplanHealthAnalyzer {
             if !hasSensor {
                 issues.append(FloorplanHealthIssue(
                     severity: .info,
-                    title: "Nessun sensore ambientale",
-                    detail: "\(room.name) non ha sensori ambientali associati: l'overlay Ambiente potrebbe avere meno contesto."
+                    title: String(localized: "floorplan.health.noSensor.title", defaultValue: "No environmental sensor"),
+                    detail: String(format: String(localized: "floorplan.health.noSensor.detail", defaultValue: "%@ has no environmental sensors — the Environment overlay may have less context."), room.name)
                 ))
             }
         }
@@ -190,8 +190,8 @@ enum FloorplanHealthAnalyzer {
         if !markersWithoutLinkedRoom.isEmpty && !linkedRooms.isEmpty {
             issues.append(FloorplanHealthIssue(
                 severity: .info,
-                title: "Marker fuori stanza",
-                detail: "\(markersWithoutLinkedRoom.count) marker non risultano dentro un'area stanza collegata."
+                title: String(localized: "floorplan.health.markerOutside.title", defaultValue: "Markers outside rooms"),
+                detail: String(format: String(localized: "floorplan.health.markerOutside.detail", defaultValue: "%d markers are not inside a linked room area."), markersWithoutLinkedRoom.count)
             ))
         }
 

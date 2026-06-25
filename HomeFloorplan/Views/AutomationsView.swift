@@ -135,7 +135,7 @@ struct AutomationsView: View {
                 set: { if !$0 { toggleError = nil } }
                ),
                presenting: toggleError) { _ in
-            Button("OK") {}
+            Button(String(localized: "button.ok", defaultValue: "OK")) {}
         } message: { msg in
             Text(msg)
         }
@@ -639,7 +639,7 @@ private struct ExistingAutomationSheet: View {
                     set: { if !$0 { errorMessage = nil } }
                    ),
                    presenting: errorMessage) { _ in
-                Button("OK") {}
+                Button(String(localized: "button.ok", defaultValue: "OK")) {}
             } message: { message in
                 Text(message)
             }

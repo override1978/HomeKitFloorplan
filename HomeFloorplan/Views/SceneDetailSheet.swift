@@ -79,7 +79,7 @@ struct SceneDetailSheet: View {
                 if nameFieldFocused {
                     ToolbarItemGroup(placement: .keyboard) {
                         Spacer()
-                        Button("OK") {
+                        Button(String(localized: "button.ok", defaultValue: "OK")) {
                             commitRename()
                             nameFieldFocused = false
                         }
@@ -100,7 +100,7 @@ struct SceneDetailSheet: View {
                     set: { if !$0 { renameError = nil } }
                    ),
                    presenting: renameError) { _ in
-                Button("OK") {}
+                Button(String(localized: "button.ok", defaultValue: "OK")) {}
             } message: { msg in
                 Text(msg)
             }
@@ -235,6 +235,7 @@ struct SceneEditorSheet: View {
     @State private var windowCoveringDrafts: [SceneWindowCoveringActionDraft] = []
     @State private var thermostatDrafts: [SceneThermostatActionDraft] = []
     @State private var airPurifierDrafts: [SceneAirPurifierActionDraft] = []
+    @State private var fanDrafts: [SceneFanActionDraft] = []
     @State private var humidifierDrafts: [SceneHumidifierActionDraft] = []
     @State private var securitySystemDrafts: [SceneSecuritySystemActionDraft] = []
     @State private var doorLockDrafts: [SceneDoorLockActionDraft] = []
@@ -252,6 +253,7 @@ struct SceneEditorSheet: View {
         windowCoveringDrafts.filter(\.isIncluded).count +
         thermostatDrafts.filter(\.isIncluded).count +
         airPurifierDrafts.filter(\.isIncluded).count +
+        fanDrafts.filter(\.isIncluded).count +
         humidifierDrafts.filter(\.isIncluded).count +
         securitySystemDrafts.filter(\.isIncluded).count +
         doorLockDrafts.filter(\.isIncluded).count +
@@ -264,6 +266,7 @@ struct SceneEditorSheet: View {
             .union(windowCoveringDrafts.map(\.roomName))
             .union(thermostatDrafts.map(\.roomName))
             .union(airPurifierDrafts.map(\.roomName))
+            .union(fanDrafts.map(\.roomName))
             .union(humidifierDrafts.map(\.roomName))
             .union(securitySystemDrafts.map(\.roomName))
             .union(doorLockDrafts.map(\.roomName))
@@ -290,6 +293,9 @@ struct SceneEditorSheet: View {
                     airPurifierIndices: airPurifierDrafts.indices
                         .filter { airPurifierDrafts[$0].roomName == roomName }
                         .sorted { airPurifierDrafts[$0].accessoryName.localizedCaseInsensitiveCompare(airPurifierDrafts[$1].accessoryName) == .orderedAscending },
+                    fanIndices: fanDrafts.indices
+                        .filter { fanDrafts[$0].roomName == roomName }
+                        .sorted { fanDrafts[$0].accessoryName.localizedCaseInsensitiveCompare(fanDrafts[$1].accessoryName) == .orderedAscending },
                     humidifierIndices: humidifierDrafts.indices
                         .filter { humidifierDrafts[$0].roomName == roomName }
                         .sorted { humidifierDrafts[$0].accessoryName.localizedCaseInsensitiveCompare(humidifierDrafts[$1].accessoryName) == .orderedAscending },
@@ -333,7 +339,7 @@ struct SceneEditorSheet: View {
                     VStack(alignment: .leading, spacing: 18) {
                         editorHero
 
-                        if drafts.isEmpty && outletDrafts.isEmpty && switchDrafts.isEmpty && windowCoveringDrafts.isEmpty && thermostatDrafts.isEmpty && airPurifierDrafts.isEmpty && humidifierDrafts.isEmpty && securitySystemDrafts.isEmpty && doorLockDrafts.isEmpty && garageDoorDrafts.isEmpty {
+                        if drafts.isEmpty && outletDrafts.isEmpty && switchDrafts.isEmpty && windowCoveringDrafts.isEmpty && thermostatDrafts.isEmpty && airPurifierDrafts.isEmpty && fanDrafts.isEmpty && humidifierDrafts.isEmpty && securitySystemDrafts.isEmpty && doorLockDrafts.isEmpty && garageDoorDrafts.isEmpty {
                             ContentUnavailableView(
                                 String(localized: "scene.editor.noDevices.title", defaultValue: "No compatible accessories"),
                                 systemImage: "slider.horizontal.3",
@@ -381,7 +387,7 @@ struct SceneEditorSheet: View {
                     set: { if !$0 { errorMessage = nil } }
                    ),
                    presenting: errorMessage) { _ in
-                Button("OK") {}
+                Button(String(localized: "button.ok", defaultValue: "OK")) {}
             } message: { message in
                 Text(message)
             }
@@ -393,6 +399,7 @@ struct SceneEditorSheet: View {
                 windowCoveringDrafts = scenesService.windowCoveringActionDrafts(for: scene)
                 thermostatDrafts = scenesService.thermostatActionDrafts(for: scene)
                 airPurifierDrafts = scenesService.airPurifierActionDrafts(for: scene)
+                fanDrafts = scenesService.fanActionDrafts(for: scene)
                 humidifierDrafts = scenesService.humidifierActionDrafts(for: scene)
                 securitySystemDrafts = scenesService.securitySystemActionDrafts(for: scene)
                 doorLockDrafts = scenesService.doorLockActionDrafts(for: scene)
@@ -566,6 +573,7 @@ struct SceneEditorSheet: View {
             windowCoveringDrafts.count +
             thermostatDrafts.count +
             airPurifierDrafts.count +
+            fanDrafts.count +
             humidifierDrafts.count +
             securitySystemDrafts.count +
             doorLockDrafts.count +
@@ -584,6 +592,8 @@ struct SceneEditorSheet: View {
             return thermostatDrafts.count
         case .air:
             return airPurifierDrafts.count + humidifierDrafts.count
+        case .fans:
+            return fanDrafts.count
         case .security:
             return securitySystemDrafts.count + doorLockDrafts.count + garageDoorDrafts.count
         }
@@ -598,6 +608,7 @@ struct SceneEditorSheet: View {
             windowCoveringIndices: group.windowCoveringIndices.filter { windowCoveringDrafts[$0].isIncluded },
             thermostatIndices: group.thermostatIndices.filter { thermostatDrafts[$0].isIncluded },
             airPurifierIndices: group.airPurifierIndices.filter { airPurifierDrafts[$0].isIncluded },
+            fanIndices: group.fanIndices.filter { fanDrafts[$0].isIncluded },
             humidifierIndices: group.humidifierIndices.filter { humidifierDrafts[$0].isIncluded },
             securitySystemIndices: group.securitySystemIndices.filter { securitySystemDrafts[$0].isIncluded },
             doorLockIndices: group.doorLockIndices.filter { doorLockDrafts[$0].isIncluded },
@@ -645,6 +656,10 @@ struct SceneEditorSheet: View {
                     SceneAirPurifierActionEditorRow(draft: $airPurifierDrafts[index])
                 }
 
+                ForEach(group.fanIndices, id: \.self) { index in
+                    SceneFanActionEditorRow(draft: $fanDrafts[index])
+                }
+
                 ForEach(group.humidifierIndices, id: \.self) { index in
                     SceneHumidifierActionEditorRow(draft: $humidifierDrafts[index])
                 }
@@ -671,6 +686,7 @@ struct SceneEditorSheet: View {
         group.windowCoveringIndices.filter { windowCoveringDrafts[$0].isIncluded }.count +
         group.thermostatIndices.filter { thermostatDrafts[$0].isIncluded }.count +
         group.airPurifierIndices.filter { airPurifierDrafts[$0].isIncluded }.count +
+        group.fanIndices.filter { fanDrafts[$0].isIncluded }.count +
         group.humidifierIndices.filter { humidifierDrafts[$0].isIncluded }.count +
         group.securitySystemIndices.filter { securitySystemDrafts[$0].isIncluded }.count +
         group.doorLockIndices.filter { doorLockDrafts[$0].isIncluded }.count +
@@ -684,6 +700,7 @@ struct SceneEditorSheet: View {
         group.windowCoveringIndices.count +
         group.thermostatIndices.count +
         group.airPurifierIndices.count +
+        group.fanIndices.count +
         group.humidifierIndices.count +
         group.securitySystemIndices.count +
         group.doorLockIndices.count +
@@ -756,6 +773,7 @@ struct SceneEditorSheet: View {
                     windowCoveringDrafts: windowCoveringDrafts,
                     thermostatDrafts: thermostatDrafts,
                     airPurifierDrafts: airPurifierDrafts,
+                    fanDrafts: fanDrafts,
                     humidifierDrafts: humidifierDrafts,
                     securitySystemDrafts: securitySystemDrafts,
                     doorLockDrafts: doorLockDrafts,
@@ -816,6 +834,7 @@ struct SceneActionDraftEditorSheet: View {
             .union(actionBundle.windowCoveringDrafts.map(\.roomName))
             .union(actionBundle.thermostatDrafts.map(\.roomName))
             .union(actionBundle.airPurifierDrafts.map(\.roomName))
+            .union(actionBundle.fanDrafts.map(\.roomName))
             .union(actionBundle.humidifierDrafts.map(\.roomName))
             .union(actionBundle.securitySystemDrafts.map(\.roomName))
             .union(actionBundle.doorLockDrafts.map(\.roomName))
@@ -830,6 +849,7 @@ struct SceneActionDraftEditorSheet: View {
                 windowCoveringIndices: sortedIndices(actionBundle.windowCoveringDrafts, roomName: roomName),
                 thermostatIndices: sortedIndices(actionBundle.thermostatDrafts, roomName: roomName),
                 airPurifierIndices: sortedIndices(actionBundle.airPurifierDrafts, roomName: roomName),
+                fanIndices: sortedIndices(actionBundle.fanDrafts, roomName: roomName),
                 humidifierIndices: sortedIndices(actionBundle.humidifierDrafts, roomName: roomName),
                 securitySystemIndices: sortedIndices(actionBundle.securitySystemDrafts, roomName: roomName),
                 doorLockIndices: sortedIndices(actionBundle.doorLockDrafts, roomName: roomName),
@@ -1008,6 +1028,9 @@ struct SceneActionDraftEditorSheet: View {
             ForEach(group.airPurifierIndices, id: \.self) { index in
                 SceneAirPurifierActionEditorRow(draft: $actionBundle.airPurifierDrafts[index])
             }
+            ForEach(group.fanIndices, id: \.self) { index in
+                SceneFanActionEditorRow(draft: $actionBundle.fanDrafts[index])
+            }
             ForEach(group.humidifierIndices, id: \.self) { index in
                 SceneHumidifierActionEditorRow(draft: $actionBundle.humidifierDrafts[index])
             }
@@ -1045,6 +1068,7 @@ struct SceneActionDraftEditorSheet: View {
             actionBundle.windowCoveringDrafts.count +
             actionBundle.thermostatDrafts.count +
             actionBundle.airPurifierDrafts.count +
+            actionBundle.fanDrafts.count +
             actionBundle.humidifierDrafts.count +
             actionBundle.securitySystemDrafts.count +
             actionBundle.doorLockDrafts.count +
@@ -1063,6 +1087,8 @@ struct SceneActionDraftEditorSheet: View {
             return actionBundle.thermostatDrafts.count
         case .air:
             return actionBundle.airPurifierDrafts.count + actionBundle.humidifierDrafts.count
+        case .fans:
+            return actionBundle.fanDrafts.count
         case .security:
             return actionBundle.securitySystemDrafts.count + actionBundle.doorLockDrafts.count + actionBundle.garageDoorDrafts.count
         }
@@ -1077,6 +1103,7 @@ struct SceneActionDraftEditorSheet: View {
             windowCoveringIndices: group.windowCoveringIndices.filter { actionBundle.windowCoveringDrafts[$0].isIncluded },
             thermostatIndices: group.thermostatIndices.filter { actionBundle.thermostatDrafts[$0].isIncluded },
             airPurifierIndices: group.airPurifierIndices.filter { actionBundle.airPurifierDrafts[$0].isIncluded },
+            fanIndices: group.fanIndices.filter { actionBundle.fanDrafts[$0].isIncluded },
             humidifierIndices: group.humidifierIndices.filter { actionBundle.humidifierDrafts[$0].isIncluded },
             securitySystemIndices: group.securitySystemIndices.filter { actionBundle.securitySystemDrafts[$0].isIncluded },
             doorLockIndices: group.doorLockIndices.filter { actionBundle.doorLockDrafts[$0].isIncluded },
@@ -1091,6 +1118,7 @@ struct SceneActionDraftEditorSheet: View {
         group.windowCoveringIndices.filter { actionBundle.windowCoveringDrafts[$0].isIncluded }.count +
         group.thermostatIndices.filter { actionBundle.thermostatDrafts[$0].isIncluded }.count +
         group.airPurifierIndices.filter { actionBundle.airPurifierDrafts[$0].isIncluded }.count +
+        group.fanIndices.filter { actionBundle.fanDrafts[$0].isIncluded }.count +
         group.humidifierIndices.filter { actionBundle.humidifierDrafts[$0].isIncluded }.count +
         group.securitySystemIndices.filter { actionBundle.securitySystemDrafts[$0].isIncluded }.count +
         group.doorLockIndices.filter { actionBundle.doorLockDrafts[$0].isIncluded }.count +
@@ -1104,6 +1132,7 @@ struct SceneActionDraftEditorSheet: View {
         group.windowCoveringIndices.count +
         group.thermostatIndices.count +
         group.airPurifierIndices.count +
+        group.fanIndices.count +
         group.humidifierIndices.count +
         group.securitySystemIndices.count +
         group.doorLockIndices.count +
@@ -1130,6 +1159,9 @@ struct SceneActionDraftEditorSheet: View {
         }
         for index in group.airPurifierIndices {
             append(index, kind: .airPurifier, draft: actionBundle.airPurifierDrafts[index], to: &groupsByID)
+        }
+        for index in group.fanIndices {
+            append(index, kind: .fan, draft: actionBundle.fanDrafts[index], to: &groupsByID)
         }
         for index in group.humidifierIndices {
             append(index, kind: .humidifier, draft: actionBundle.humidifierDrafts[index], to: &groupsByID)
@@ -1168,6 +1200,7 @@ struct SceneActionDraftEditorSheet: View {
             windowCoveringIndices: [],
             thermostatIndices: [],
             airPurifierIndices: [],
+            fanIndices: [],
             humidifierIndices: [],
             securitySystemIndices: [],
             doorLockIndices: [],
@@ -1209,6 +1242,9 @@ extension SceneThermostatActionDraft: SceneActionDraftDisplayable {
 extension SceneAirPurifierActionDraft: SceneActionDraftDisplayable {
     var accessoryGroupID: UUID { id }
 }
+extension SceneFanActionDraft: SceneActionDraftDisplayable {
+    var accessoryGroupID: UUID { id }
+}
 extension SceneHumidifierActionDraft: SceneActionDraftDisplayable {
     var accessoryGroupID: UUID { id }
 }
@@ -1229,6 +1265,7 @@ private enum SceneEditorActionKind {
     case windowCovering
     case thermostat
     case airPurifier
+    case fan
     case humidifier
     case securitySystem
     case doorLock
@@ -1244,6 +1281,7 @@ private struct SceneEditorAccessoryGroup: Identifiable {
     var windowCoveringIndices: [Int]
     var thermostatIndices: [Int]
     var airPurifierIndices: [Int]
+    var fanIndices: [Int]
     var humidifierIndices: [Int]
     var securitySystemIndices: [Int]
     var doorLockIndices: [Int]
@@ -1256,6 +1294,7 @@ private struct SceneEditorAccessoryGroup: Identifiable {
         windowCoveringIndices.count +
         thermostatIndices.count +
         airPurifierIndices.count +
+        fanIndices.count +
         humidifierIndices.count +
         securitySystemIndices.count +
         doorLockIndices.count +
@@ -1276,6 +1315,8 @@ private struct SceneEditorAccessoryGroup: Identifiable {
             thermostatIndices.append(index)
         case .airPurifier:
             airPurifierIndices.append(index)
+        case .fan:
+            fanIndices.append(index)
         case .humidifier:
             humidifierIndices.append(index)
         case .securitySystem:
@@ -1296,6 +1337,7 @@ private struct SceneEditorRoomGroup: Identifiable {
     let windowCoveringIndices: [Int]
     let thermostatIndices: [Int]
     let airPurifierIndices: [Int]
+    let fanIndices: [Int]
     let humidifierIndices: [Int]
     let securitySystemIndices: [Int]
     let doorLockIndices: [Int]
@@ -1310,6 +1352,7 @@ private struct SceneEditorRoomGroup: Identifiable {
         windowCoveringIndices.isEmpty &&
         thermostatIndices.isEmpty &&
         airPurifierIndices.isEmpty &&
+        fanIndices.isEmpty &&
         humidifierIndices.isEmpty &&
         securitySystemIndices.isEmpty &&
         doorLockIndices.isEmpty &&
@@ -1329,6 +1372,7 @@ private struct SceneEditorRoomGroup: Identifiable {
                 windowCoveringIndices: [],
                 thermostatIndices: [],
                 airPurifierIndices: [],
+                fanIndices: [],
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
@@ -1343,6 +1387,7 @@ private struct SceneEditorRoomGroup: Identifiable {
                 windowCoveringIndices: [],
                 thermostatIndices: [],
                 airPurifierIndices: [],
+                fanIndices: [],
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
@@ -1357,6 +1402,7 @@ private struct SceneEditorRoomGroup: Identifiable {
                 windowCoveringIndices: [],
                 thermostatIndices: [],
                 airPurifierIndices: [],
+                fanIndices: [],
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
@@ -1371,6 +1417,7 @@ private struct SceneEditorRoomGroup: Identifiable {
                 windowCoveringIndices: windowCoveringIndices,
                 thermostatIndices: [],
                 airPurifierIndices: [],
+                fanIndices: [],
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
@@ -1385,6 +1432,7 @@ private struct SceneEditorRoomGroup: Identifiable {
                 windowCoveringIndices: [],
                 thermostatIndices: thermostatIndices,
                 airPurifierIndices: [],
+                fanIndices: [],
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
@@ -1399,7 +1447,23 @@ private struct SceneEditorRoomGroup: Identifiable {
                 windowCoveringIndices: [],
                 thermostatIndices: [],
                 airPurifierIndices: airPurifierIndices,
+                fanIndices: [],
                 humidifierIndices: humidifierIndices,
+                securitySystemIndices: [],
+                doorLockIndices: [],
+                garageDoorIndices: []
+            )
+        case .fans:
+            return SceneEditorRoomGroup(
+                roomName: roomName,
+                lightIndices: [],
+                outletIndices: [],
+                switchIndices: [],
+                windowCoveringIndices: [],
+                thermostatIndices: [],
+                airPurifierIndices: [],
+                fanIndices: fanIndices,
+                humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
                 garageDoorIndices: []
@@ -1413,6 +1477,7 @@ private struct SceneEditorRoomGroup: Identifiable {
                 windowCoveringIndices: [],
                 thermostatIndices: [],
                 airPurifierIndices: [],
+                fanIndices: [],
                 humidifierIndices: [],
                 securitySystemIndices: securitySystemIndices,
                 doorLockIndices: doorLockIndices,
@@ -1431,6 +1496,7 @@ private enum SceneEditorAccessoryFilter: CaseIterable, Identifiable {
     case windowCoverings
     case climate
     case air
+    case fans
     case security
 
     var id: Self { self }
@@ -1453,6 +1519,8 @@ private enum SceneEditorAccessoryFilter: CaseIterable, Identifiable {
             return String(localized: "scene.editor.filter.climate", defaultValue: "Clima")
         case .air:
             return String(localized: "scene.editor.filter.air", defaultValue: "Aria")
+        case .fans:
+            return String(localized: "scene.editor.filter.fans", defaultValue: "Ventole")
         case .security:
             return String(localized: "scene.editor.filter.security", defaultValue: "Sicurezza")
         }
@@ -1476,6 +1544,8 @@ private enum SceneEditorAccessoryFilter: CaseIterable, Identifiable {
             return "thermometer.medium"
         case .air:
             return "air.purifier.fill"
+        case .fans:
+            return "fan.fill"
         case .security:
             return "shield.lefthalf.filled"
         }
@@ -1491,7 +1561,8 @@ private enum SceneEditorAccessoryFilter: CaseIterable, Identifiable {
         case .windowCoverings: return 5
         case .climate: return 6
         case .air: return 7
-        case .security: return 8
+        case .fans: return 8
+        case .security: return 9
         }
     }
 }
@@ -2200,6 +2271,129 @@ private struct SceneAirPurifierActionEditorRow: View {
             return "\(draft.mode.displayName) • \(draft.fanSpeed)%"
         }
         return draft.mode.displayName
+    }
+}
+
+private struct SceneFanActionEditorRow: View {
+    @Binding var draft: SceneFanActionDraft
+
+    private var accentColor: Color {
+        guard draft.isIncluded else { return .secondary }
+        return draft.powerOn ? .cyan : .secondary
+    }
+
+    private var speedBinding: Binding<Double> {
+        Binding(
+            get: { Double(draft.speed) },
+            set: { draft.speed = Int($0.rounded()) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Button {
+                    withAnimation(.spring(response: 0.25)) {
+                        draft.isIncluded.toggle()
+                    }
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(draft.isIncluded ? accentColor : Color(.tertiarySystemFill))
+                            .frame(width: 34, height: 34)
+                        Image(systemName: draft.isIncluded ? "checkmark" : "plus")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(draft.isIncluded ? .white : .secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(draft.powerOn ? accentColor.opacity(0.16) : Color(.tertiarySystemFill))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: draft.powerOn ? "fan.fill" : "fan")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(accentColor)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(draft.accessoryName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(statusText)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if draft.isIncluded {
+                    Button {
+                        withAnimation(.spring(response: 0.25)) {
+                            draft.powerOn.toggle()
+                        }
+                    } label: {
+                        Image(systemName: draft.powerOn ? "power.circle.fill" : "power.circle")
+                            .font(.title2)
+                            .foregroundStyle(draft.powerOn ? accentColor : Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if draft.isIncluded && draft.powerOn {
+                speedControl
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(draft.isIncluded ? accentColor.opacity(0.24) : Color(.separator).opacity(0.35), lineWidth: 1)
+                )
+        )
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: draft.isIncluded)
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: draft.powerOn)
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: draft.speed)
+    }
+
+    private var speedControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(String(localized: "scene.editor.fanSpeed", defaultValue: "Fan speed"), systemImage: "fan.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(draft.speed)%")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(accentColor)
+                    .contentTransition(.numericText())
+            }
+
+            SceneFilledValueSlider(
+                value: speedBinding,
+                range: Double(draft.speedRange.lowerBound)...Double(draft.speedRange.upperBound),
+                step: Double(draft.speedStep),
+                tint: accentColor,
+                valueText: "\(draft.speed)%"
+            )
+        }
+        .padding(10)
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var statusText: String {
+        guard draft.isIncluded else {
+            return String(localized: "scene.editor.fan.notIncluded", defaultValue: "Not in scene")
+        }
+        guard draft.powerOn else {
+            return String(localized: "accessory.state.off", defaultValue: "Off")
+        }
+        return "\(String(localized: "accessory.state.on", defaultValue: "On")) • \(draft.speed)%"
     }
 }
 

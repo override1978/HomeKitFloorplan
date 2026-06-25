@@ -585,7 +585,10 @@ struct EnvironmentContextDashboard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(actionVerb) \(sensor.serviceType.displayName)")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
-                    Text("\(sensor.formattedValue) in \(sensor.roomName)" + (isHighlightedRoom ? " · " + String(localized: "environment.panel.selectedRoom", defaultValue: "selected room") : ""))
+                    Text(String(format: String(localized: "environment.panel.sensorLocation", defaultValue: "%1$@ in %2$@%3$@"),
+                                sensor.formattedValue,
+                                sensor.roomName,
+                                isHighlightedRoom ? " · " + String(localized: "environment.panel.selectedRoom", defaultValue: "selected room") : ""))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

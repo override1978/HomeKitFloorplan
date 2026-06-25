@@ -98,20 +98,6 @@
             </array>
         </dict>
 
-        <!-- RoomPlan scans and derived room geometry. -->
-        <dict>
-            <key>NSPrivacyCollectedDataType</key>
-            <string>NSPrivacyCollectedDataTypeEnvironmentScanning</string>
-            <key>NSPrivacyCollectedDataTypeLinked</key>
-            <false/>
-            <key>NSPrivacyCollectedDataTypeTracking</key>
-            <false/>
-            <key>NSPrivacyCollectedDataTypePurposes</key>
-            <array>
-                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
-            </array>
-        </dict>
-
         <!-- User-created floorplans, rooms, names, automations, scenes, and prompts. -->
         <dict>
             <key>NSPrivacyCollectedDataType</key>
