@@ -69,6 +69,8 @@ final class Floorplan {
     var drawingDocumentJSON: Data?
     /// Index into ExteriorFillPalette (-1 = disabled, 0-4 = color preset).
     var exteriorFillColorIndex: Int = -1
+    /// Raw value of the visual export style used for drawing-based floorplans.
+    var drawingVisualExportStyleRaw: String = "standard"
 
     init(name: String, imageFilename: String, homeUUID: UUID? = nil) {
         self.id = UUID()
@@ -108,5 +110,4 @@ final class Floorplan {
         }
     }
 }
-
 

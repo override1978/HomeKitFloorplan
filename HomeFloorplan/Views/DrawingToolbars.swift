@@ -9,8 +9,8 @@ struct DrawingTopBar: View {
     var canUndo: Bool
     var canRedo: Bool
     var isExporting: Bool
-    var exportMode: DrawingExportMode
-    var onExportModeChange: (DrawingExportMode) -> Void
+    var visualExportStyle: DrawingVisualExportStyle
+    var onVisualExportStyleChange: (DrawingVisualExportStyle) -> Void
     var exteriorFillColorIndex: Int
     var onExteriorFillChange: (Int) -> Void
     var onHelp: () -> Void
@@ -65,71 +65,73 @@ struct DrawingTopBar: View {
             .buttonStyle(.plain)
 
             Menu {
-                ForEach(DrawingExportMode.allCases) { mode in
+                ForEach(DrawingVisualExportStyle.toolbarVisibleStyles) { style in
                     Button {
-                        onExportModeChange(mode)
+                        onVisualExportStyleChange(style)
                     } label: {
                         Label {
                             VStack(alignment: .leading) {
-                                Text(mode.localizedTitle)
-                                Text(mode.localizedSubtitle)
+                                Text(style.localizedTitle)
+                                Text(style.localizedSubtitle)
                             }
                         } icon: {
-                            Image(systemName: mode == exportMode ? "checkmark.circle.fill" : "circle")
+                            Image(systemName: style == visualExportStyle ? "checkmark.circle.fill" : "circle")
                         }
                     }
                 }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "rectangle.and.arrow.up.right.and.arrow.down.left")
+                    Image(systemName: visualExportStyle.toolbarIconName)
                         .font(.system(size: 14, weight: .semibold))
-                    Text(exportMode.localizedTitle)
+                    Text(visualExportStyle.localizedTitle)
                         .font(.caption.weight(.semibold))
                 }
-                .foregroundStyle(exportMode == .legacy ? .secondary : BrandColor.primary)
+                .foregroundStyle(visualExportStyle == .standard ? .secondary : BrandColor.primary)
                 .padding(.horizontal, 11)
                 .frame(height: 36)
                 .background(
-                    (exportMode == .legacy ? Color.primary.opacity(0.045) : BrandColor.primary.opacity(0.12)),
+                    visualExportStyle == .standard ? Color.primary.opacity(0.045) : BrandColor.primary.opacity(0.12),
                     in: Capsule()
                 )
             }
             .buttonStyle(.plain)
             .disabled(isExporting)
 
-            Menu {
-                Button {
-                    onExteriorFillChange(-1)
-                } label: {
-                    Label {
-                        Text(String(localized: "exterior.fill.none", defaultValue: "None"))
-                    } icon: {
-                        Image(systemName: exteriorFillColorIndex < 0 ? "checkmark.circle.fill" : "circle")
-                    }
-                }
-                ForEach(ExteriorFillPalette.allCases, id: \.rawValue) { preset in
+            if visualExportStyle != .architecturalDark {
+                Menu {
                     Button {
-                        onExteriorFillChange(preset.rawValue)
+                        onExteriorFillChange(-1)
                     } label: {
                         Label {
-                            Text(preset.localizedName)
+                            Text(String(localized: "exterior.fill.none", defaultValue: "None"))
                         } icon: {
-                            Image(systemName: exteriorFillColorIndex == preset.rawValue ? "checkmark.circle.fill" : "circle")
+                            Image(systemName: exteriorFillColorIndex < 0 ? "checkmark.circle.fill" : "circle")
                         }
                     }
+                    ForEach(ExteriorFillPalette.allCases, id: \.rawValue) { preset in
+                        Button {
+                            onExteriorFillChange(preset.rawValue)
+                        } label: {
+                            Label {
+                                Text(preset.localizedName)
+                            } icon: {
+                                Image(systemName: exteriorFillColorIndex == preset.rawValue ? "checkmark.circle.fill" : "circle")
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: exteriorFillColorIndex >= 0 ? "building.2.fill" : "building.2")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(exteriorFillColorIndex >= 0 ? BrandColor.primary : .primary)
+                        .frame(width: 36, height: 36)
+                        .background(
+                            exteriorFillColorIndex >= 0 ? BrandColor.primary.opacity(0.12) : Color.primary.opacity(0.07),
+                            in: Circle()
+                        )
                 }
-            } label: {
-                Image(systemName: exteriorFillColorIndex >= 0 ? "building.2.fill" : "building.2")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(exteriorFillColorIndex >= 0 ? BrandColor.primary : .primary)
-                    .frame(width: 36, height: 36)
-                    .background(
-                        exteriorFillColorIndex >= 0 ? BrandColor.primary.opacity(0.12) : Color.primary.opacity(0.07),
-                        in: Circle()
-                    )
+                .buttonStyle(.plain)
+                .disabled(isExporting)
             }
-            .buttonStyle(.plain)
-            .disabled(isExporting)
 
             // Done
             Button(action: onDone) {
@@ -158,6 +160,23 @@ struct DrawingTopBar: View {
                 .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.14), radius: 18, x: 0, y: 8)
+    }
+}
+
+private extension DrawingVisualExportStyle {
+    static var toolbarVisibleStyles: [DrawingVisualExportStyle] {
+        [.standard, .architecturalDark]
+    }
+
+    var toolbarIconName: String {
+        switch self {
+        case .standard:
+            return "square"
+        case .architectural:
+            return "cube.transparent.fill"
+        case .architecturalDark:
+            return "moon.stars.fill"
+        }
     }
 }
 

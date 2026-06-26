@@ -118,8 +118,9 @@ struct FloorplanListView: View {
     private func drawingEditor(for floorplan: Floorplan) -> some View {
         DrawingFloorplanSheet(
             initialDocument: floorplan.drawingDocument,
-            initialExteriorFillColorIndex: floorplan.exteriorFillColorIndex
-        ) { image, rooms, doc, colorIndex in
+            initialExteriorFillColorIndex: floorplan.exteriorFillColorIndex,
+            initialVisualExportStyle: DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard
+        ) { image, rooms, doc, colorIndex, visualStyle in
             let previousRooms = floorplan.linkedRooms
             ImageStorageService.delete(filename: floorplan.imageFilename)
             if let newFilename = try? ImageStorageService.save(image) {
@@ -127,6 +128,7 @@ struct FloorplanListView: View {
             }
             floorplan.drawingDocument = doc
             floorplan.exteriorFillColorIndex = colorIndex
+            floorplan.drawingVisualExportStyleRaw = visualStyle.rawValue
             if !rooms.isEmpty {
                 preserveMarkerPositions(on: floorplan, from: previousRooms, to: rooms)
                 floorplan.linkedRooms = rooms

@@ -27,6 +27,36 @@ enum DrawingExportMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum DrawingVisualExportStyle: String, CaseIterable, Identifiable {
+    case standard
+    case architectural
+    case architecturalDark
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .standard:
+            return String(localized: "drawing.export.style.standard", defaultValue: "Standard")
+        case .architectural:
+            return String(localized: "drawing.export.style.architectural", defaultValue: "Architectural")
+        case .architecturalDark:
+            return String(localized: "drawing.export.style.architecturalDark", defaultValue: "Dark")
+        }
+    }
+
+    var localizedSubtitle: String {
+        switch self {
+        case .standard:
+            return String(localized: "drawing.export.style.standard.subtitle", defaultValue: "Clean export without extra depth effects")
+        case .architectural:
+            return String(localized: "drawing.export.style.architectural.subtitle", defaultValue: "Adds wall shadows and subtle bevels")
+        case .architecturalDark:
+            return String(localized: "drawing.export.style.architecturalDark.subtitle", defaultValue: "Dark blueprint-style export")
+        }
+    }
+}
+
 // MARK: - DrawingFloorplanSheet
 
 /// Full-screen 2D drawing editor.
@@ -42,9 +72,9 @@ enum DrawingExportMode: String, CaseIterable, Identifiable {
 /// ```
 struct DrawingFloorplanSheet: View {
 
-    /// Called when the user taps "Fatto" — provides the rendered PNG, linked rooms, the drawing document,
-    /// and the exterior-fill color index so the caller can persist it on the floorplan.
-    var onComplete: (UIImage, [LinkedRoom], DrawingDocument, Int) -> Void
+    /// Called when the user taps "Fatto" — provides the rendered PNG, linked rooms, drawing document,
+    /// exterior-fill color index, and visual export style so the caller can persist them on the floorplan.
+    var onComplete: (UIImage, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
@@ -55,16 +85,19 @@ struct DrawingFloorplanSheet: View {
 
     init(initialDocument: DrawingDocument? = nil,
          initialExteriorFillColorIndex: Int = -1,
-         onComplete: @escaping (UIImage, [LinkedRoom], DrawingDocument, Int) -> Void) {
+         initialVisualExportStyle: DrawingVisualExportStyle = .standard,
+         onComplete: @escaping (UIImage, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle) -> Void) {
         self.onComplete = onComplete
         _document = State(initialValue: initialDocument ?? DrawingDocument())
         _exteriorFillColorIndex = State(initialValue: initialExteriorFillColorIndex)
+        _visualExportStyleRaw = AppStorage(wrappedValue: initialVisualExportStyle.rawValue,
+                                           "drawing.export.visualStyle")
     }
 
     @State private var mode: DrawingMode = .draw
     @State private var selection: DrawingSelection = .none
     @State private var wallKind: WallKind = .exterior
-    @AppStorage("drawing.export.mode") private var exportModeRaw: String = DrawingExportMode.legacy.rawValue
+    @AppStorage("drawing.export.visualStyle") private var visualExportStyleRaw: String = DrawingVisualExportStyle.standard.rawValue
     @AppStorage("drawing.help.hasSeen") private var hasSeenDrawingHelp = false
     @State private var exteriorFillColorIndex: Int = -1
     /// When false, wall drawing snaps only to the 20pt grid (no vertex snapping).
@@ -97,9 +130,9 @@ struct DrawingFloorplanSheet: View {
     @State private var showHelpSheet = false
     @State private var showNoLinkedRoomsConfirm = false
 
-    private var exportMode: DrawingExportMode {
-        get { DrawingExportMode(rawValue: exportModeRaw) ?? .legacy }
-        nonmutating set { exportModeRaw = newValue.rawValue }
+    private var visualExportStyle: DrawingVisualExportStyle {
+        get { DrawingVisualExportStyle(rawValue: visualExportStyleRaw) ?? .standard }
+        nonmutating set { visualExportStyleRaw = newValue.rawValue }
     }
 
     private var linkedRoomAreaCount: Int {
@@ -250,8 +283,8 @@ struct DrawingFloorplanSheet: View {
                         canUndo: !undoStack.isEmpty,
                         canRedo: !redoStack.isEmpty,
                         isExporting: isExporting,
-                        exportMode: exportMode,
-                        onExportModeChange: { exportMode = $0 },
+                        visualExportStyle: visualExportStyle,
+                        onVisualExportStyleChange: { visualExportStyle = $0 },
                         exteriorFillColorIndex: exteriorFillColorIndex,
                         onExteriorFillChange: { exteriorFillColorIndex = $0 },
                         onHelp: { showHelpSheet = true },
@@ -665,21 +698,23 @@ struct DrawingFloorplanSheet: View {
 
     private func exportAndFinish() {
         guard !isExporting else { return }
-        isExporting = true
+            isExporting = true
         Task { @MainActor in
             await Task.yield()
-            let (image, linkedRooms) = renderToImage(document, mode: exportMode)
-            onComplete(image, linkedRooms, document, exteriorFillColorIndex)
+            let (image, linkedRooms) = renderToImage(document, mode: .adaptive, visualStyle: visualExportStyle)
+            onComplete(image, linkedRooms, document, exteriorFillColorIndex, visualExportStyle)
             dismiss()
         }
     }
 
-    private func renderToImage(_ doc: DrawingDocument, mode: DrawingExportMode) -> (UIImage, [LinkedRoom]) {
+    private func renderToImage(_ doc: DrawingDocument,
+                               mode: DrawingExportMode,
+                               visualStyle: DrawingVisualExportStyle) -> (UIImage, [LinkedRoom]) {
         switch mode {
         case .legacy:
-            return renderToImage(doc)
+            return renderToImage(doc, visualStyle: visualStyle)
         case .adaptive:
-            return renderAdaptiveToImage(doc)
+            return renderAdaptiveToImage(doc, visualStyle: visualStyle)
         }
     }
 
@@ -687,7 +722,8 @@ struct DrawingFloorplanSheet: View {
     /// the screen diagonal (width×height of the device screen), keeping the
     /// floorplan centred and well-proportioned.
     /// Also returns `[LinkedRoom]` with normalized rects relative to the exported image.
-    private func renderToImage(_ doc: DrawingDocument) -> (UIImage, [LinkedRoom]) {
+    private func renderToImage(_ doc: DrawingDocument,
+                               visualStyle: DrawingVisualExportStyle) -> (UIImage, [LinkedRoom]) {
         var allPoints: [CGPoint] = doc.walls.flatMap { [$0.start, $0.end] }
                                   + doc.roomLabels.map(\.position)
         // Include all effective polygon vertices for each room area in the bounding box
@@ -776,19 +812,25 @@ struct DrawingFloorplanSheet: View {
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = scale
         let renderer = UIGraphicsImageRenderer(size: outputSize, format: fmt)
+        let outputBackgroundColor = visualStyle == .architecturalDark
+            ? UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
+            : UIColor.white
 
         let image = renderer.image { ctx in
             let cgCtx = ctx.cgContext
 
-            // White background
-            cgCtx.setFillColor(UIColor.white.cgColor)
+            cgCtx.setFillColor(outputBackgroundColor.cgColor)
             cgCtx.fill(CGRect(origin: .zero, size: outputSize))
 
             // Transform: shift to crop origin, then scale to fit output size
             cgCtx.translateBy(x: -originX * scaleFactor, y: -originY * scaleFactor)
             cgCtx.scaleBy(x: scaleFactor, y: scaleFactor)
 
-            renderDocument(doc, in: cgCtx, canvasSize: DrawingDocument.canvasSize, exteriorFillColorIndex: exteriorFillColorIndex)
+            renderDocument(doc,
+                           in: cgCtx,
+                           canvasSize: DrawingDocument.canvasSize,
+                           exteriorFillColorIndex: exteriorFillColorIndex,
+                           visualStyle: visualStyle)
         }
         return (image, linkedRooms)
     }
@@ -796,7 +838,8 @@ struct DrawingFloorplanSheet: View {
     /// Parallel export pipeline for test floorplans. It keeps the same crop/fit
     /// strategy as legacy but renders into a deterministic landscape canvas so the
     /// result is not tied to the current device orientation or split-view size.
-    private func renderAdaptiveToImage(_ doc: DrawingDocument) -> (UIImage, [LinkedRoom]) {
+    private func renderAdaptiveToImage(_ doc: DrawingDocument,
+                                       visualStyle: DrawingVisualExportStyle) -> (UIImage, [LinkedRoom]) {
         var allPoints: [CGPoint] = doc.walls.flatMap { [$0.start, $0.end] }
                                   + doc.roomLabels.map(\.position)
         for area in doc.roomAreas {
@@ -870,14 +913,21 @@ struct DrawingFloorplanSheet: View {
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = scale
         let renderer = UIGraphicsImageRenderer(size: outputSize, format: fmt)
+        let outputBackgroundColor = visualStyle == .architecturalDark
+            ? UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
+            : UIColor.white
 
         let image = renderer.image { ctx in
             let cgCtx = ctx.cgContext
-            cgCtx.setFillColor(UIColor.white.cgColor)
+            cgCtx.setFillColor(outputBackgroundColor.cgColor)
             cgCtx.fill(CGRect(origin: .zero, size: outputSize))
             cgCtx.translateBy(x: -originX * scaleFactor, y: -originY * scaleFactor)
             cgCtx.scaleBy(x: scaleFactor, y: scaleFactor)
-            renderDocument(doc, in: cgCtx, canvasSize: DrawingDocument.canvasSize, exteriorFillColorIndex: exteriorFillColorIndex)
+            renderDocument(doc,
+                           in: cgCtx,
+                           canvasSize: DrawingDocument.canvasSize,
+                           exteriorFillColorIndex: exteriorFillColorIndex,
+                           visualStyle: visualStyle)
         }
         return (image, linkedRooms)
     }
@@ -886,5 +936,5 @@ struct DrawingFloorplanSheet: View {
 // MARK: - Preview
 
 #Preview {
-    DrawingFloorplanSheet { _, _, _, _ in }
+    DrawingFloorplanSheet { _, _, _, _, _ in }
 }

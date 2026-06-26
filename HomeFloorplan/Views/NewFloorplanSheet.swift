@@ -22,6 +22,7 @@ struct NewFloorplanSheet: View {
     @State private var linkedRooms: [LinkedRoom] = []
     @State private var savedDrawingDocument: DrawingDocument?
     @State private var savedExteriorFillColorIndex: Int = -1
+    @State private var savedVisualExportStyle: DrawingVisualExportStyle = .standard
 
     var body: some View {
         NavigationStack {
@@ -103,12 +104,14 @@ struct NewFloorplanSheet: View {
     private var drawingEditor: some View {
         DrawingFloorplanSheet(
             initialDocument: savedDrawingDocument,
-            initialExteriorFillColorIndex: savedExteriorFillColorIndex
-        ) { drawnImage, rooms, doc, colorIndex in
+            initialExteriorFillColorIndex: savedExteriorFillColorIndex,
+            initialVisualExportStyle: savedVisualExportStyle
+        ) { drawnImage, rooms, doc, colorIndex, visualStyle in
             selectedImage = drawnImage
             linkedRooms = rooms
             savedDrawingDocument = doc
             savedExteriorFillColorIndex = colorIndex
+            savedVisualExportStyle = visualStyle
             if name.trimmingCharacters(in: .whitespaces).isEmpty {
                 name = String(localized: "floorplan.drawn.defaultName", defaultValue: "Drawn floorplan")
             }
@@ -136,6 +139,7 @@ struct NewFloorplanSheet: View {
                 floorplan.drawingDocument = doc
             }
             floorplan.exteriorFillColorIndex = savedExteriorFillColorIndex
+            floorplan.drawingVisualExportStyleRaw = savedVisualExportStyle.rawValue
             modelContext.insert(floorplan)
             try modelContext.save()
             let savedID = floorplan.id

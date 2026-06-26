@@ -191,11 +191,19 @@ struct FloorplanEditorView: View {
             || showFloorplanHelp
             || pendingDelete != nil
     }
+
+    private var floorplanBackgroundColor: Color {
+        let visualStyle = DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard
+        if visualStyle == .architecturalDark {
+            return Color(red: 0.075, green: 0.095, blue: 0.120)
+        }
+        return ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex).map { $0.swiftUIColor } ?? Color.white
+    }
     
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                (ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex).map { $0.swiftUIColor } ?? Color.white)
+                floorplanBackgroundColor
                     .ignoresSafeArea()
 
                 if let image = cachedFloorplanImage {

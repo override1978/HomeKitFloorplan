@@ -256,7 +256,16 @@ func drawGrid(in rect: CGRect,
 /// The export has a plain white background — no grid — so the result is clean
 /// when used as a floorplan background image.
 /// Call from inside a `UIGraphicsImageRenderer` block.
-func renderDocument(_ doc: DrawingDocument, in cgContext: CGContext, canvasSize: CGFloat, exteriorFillColorIndex: Int = -1) {
+func renderDocument(_ doc: DrawingDocument,
+                    in cgContext: CGContext,
+                    canvasSize: CGFloat,
+                    exteriorFillColorIndex: Int = -1,
+                    visualStyle: DrawingVisualExportStyle = .standard) {
+    if visualStyle == .architecturalDark {
+        renderDarkArchitecturalDocument(doc, in: cgContext, canvasSize: canvasSize)
+        return
+    }
+
     // White background only — no grid in the exported image
     cgContext.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
     cgContext.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
@@ -278,7 +287,9 @@ func renderDocument(_ doc: DrawingDocument, in cgContext: CGContext, canvasSize:
     // Wall depth shadow: inner shadow on the interior side of perimeter walls,
     // drawn on top of room colors so it darkens the area near each wall.
     drawWallDepthShadowCG(doc, context: cgContext)
-    drawWallCastShadowsCG(doc, context: cgContext)
+    if visualStyle == .architectural {
+        drawWallCastShadowsCG(doc, context: cgContext)
+    }
 
     // Walls — draw order: balcony first, interior, exterior last.
     // Exterior walls paint over any overlapping balcony/interior segments.
@@ -288,7 +299,9 @@ func renderDocument(_ doc: DrawingDocument, in cgContext: CGContext, canvasSize:
             drawWallCG(wall, context: cgContext)
         }
     }
-    drawWallBevelsCG(doc, context: cgContext)
+    if visualStyle == .architectural {
+        drawWallBevelsCG(doc, context: cgContext)
+    }
 
     // Openings
     for opening in doc.openings {
@@ -303,6 +316,328 @@ func renderDocument(_ doc: DrawingDocument, in cgContext: CGContext, canvasSize:
     for label in doc.roomLabels {
         drawRoomLabelCG(label, context: cgContext)
     }
+}
+
+private enum DarkArchitecturalPalette {
+    static let background = UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
+    static let roomFill = UIColor(red: 0.115, green: 0.145, blue: 0.180, alpha: 0.92)
+    static let roomAlternateFill = UIColor(red: 0.095, green: 0.125, blue: 0.160, alpha: 0.92)
+    static let roomStroke = UIColor(red: 0.42, green: 0.50, blue: 0.58, alpha: 0.22)
+    static let wallExterior = UIColor(red: 0.45, green: 0.53, blue: 0.62, alpha: 1)
+    static let wallInterior = UIColor(red: 0.36, green: 0.43, blue: 0.51, alpha: 1)
+    static let wallBalcony = UIColor(red: 0.35, green: 0.43, blue: 0.51, alpha: 0.82)
+    static let openingLine = UIColor(red: 0.72, green: 0.78, blue: 0.84, alpha: 0.62)
+    static let furnitureStroke = UIColor(red: 0.62, green: 0.69, blue: 0.76, alpha: 0.52)
+    static let furnitureFill = UIColor(red: 0.10, green: 0.125, blue: 0.155, alpha: 0.62)
+    static let text = UIColor(red: 0.78, green: 0.82, blue: 0.86, alpha: 0.72)
+}
+
+private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
+                                             in context: CGContext,
+                                             canvasSize: CGFloat) {
+    context.setFillColor(DarkArchitecturalPalette.background.cgColor)
+    context.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
+
+    for (index, area) in doc.roomAreas.enumerated() {
+        drawDarkRoomAreaCG(area, index: index, context: context)
+    }
+
+    drawDarkFurnitureShadowsCG(doc, context: context)
+
+    for item in doc.furnitureItems {
+        drawDarkFurnitureItemCG(item, context: context)
+    }
+
+    drawDarkWallShadowsCG(doc, context: context)
+
+    let wallDrawOrder: [WallKind] = [.balcony, .interior, .exterior]
+    for kind in wallDrawOrder {
+        for wall in doc.walls where wall.kind == kind {
+            drawDarkWallCG(wall, context: context)
+        }
+    }
+
+    for opening in doc.openings {
+        guard let wall = doc.wall(for: opening.wallID) else { continue }
+        switch opening.kind {
+        case .door:
+            drawDarkDoorCG(opening, wall: wall, context: context)
+        case .window:
+            drawDarkWindowCG(opening, wall: wall, context: context)
+        }
+    }
+
+    for label in doc.roomLabels {
+        drawDarkRoomLabelCG(label, context: context)
+    }
+}
+
+private func drawDarkRoomAreaCG(_ area: RoomArea, index: Int, context: CGContext) {
+    let path = roomAreaPath(area)
+    let fillColor = index.isMultiple(of: 2)
+        ? DarkArchitecturalPalette.roomFill
+        : DarkArchitecturalPalette.roomAlternateFill
+
+    UIGraphicsPushContext(context)
+    fillColor.setFill()
+    path.fill()
+    DarkArchitecturalPalette.roomStroke.setStroke()
+    path.lineWidth = 1
+    path.stroke()
+
+    let attributes: [NSAttributedString.Key: Any] = [
+        .font: UIFont.systemFont(ofSize: 15, weight: .semibold),
+        .foregroundColor: DarkArchitecturalPalette.text
+    ]
+    let nsString = area.name.uppercased() as NSString
+    let textSize = nsString.size(withAttributes: attributes)
+    let center = polygonCentroid(area.effectivePoints) ?? CGPoint(x: area.rect.midX, y: area.rect.midY)
+    nsString.draw(at: CGPoint(x: center.x - textSize.width / 2,
+                              y: center.y - textSize.height / 2),
+                  withAttributes: attributes)
+    UIGraphicsPopContext()
+}
+
+private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGContext) {
+    context.saveGState()
+    context.setShadow(offset: CGSize(width: 4, height: 7),
+                      blur: 9,
+                      color: UIColor.black.withAlphaComponent(0.34).cgColor)
+    context.setFillColor(UIColor.black.withAlphaComponent(0.12).cgColor)
+    for item in doc.furnitureItems {
+        let path = UIBezierPath(roundedRect: item.rect, cornerRadius: 3)
+        context.addPath(path.cgPath)
+        context.fillPath()
+    }
+    context.restoreGState()
+}
+
+private func drawDarkFurnitureItemCG(_ item: FurnitureItem, context: CGContext) {
+    UIGraphicsPushContext(context)
+    let path = UIBezierPath(roundedRect: item.rect, cornerRadius: 3)
+    DarkArchitecturalPalette.furnitureFill.setFill()
+    path.fill()
+    DarkArchitecturalPalette.furnitureStroke.setStroke()
+    path.lineWidth = 1
+    path.stroke()
+
+    let attributes: [NSAttributedString.Key: Any] = [
+        .font: UIFont.systemFont(ofSize: 11, weight: .medium),
+        .foregroundColor: DarkArchitecturalPalette.text.withAlphaComponent(0.58)
+    ]
+    let nsString = item.name.uppercased() as NSString
+    let textSize = nsString.size(withAttributes: attributes)
+    nsString.draw(at: CGPoint(x: item.rect.midX - textSize.width / 2,
+                              y: item.rect.midY - textSize.height / 2),
+                  withAttributes: attributes)
+    UIGraphicsPopContext()
+}
+
+private func drawDarkWallShadowsCG(_ doc: DrawingDocument, context: CGContext) {
+    context.saveGState()
+    context.setLineCap(.square)
+    context.setLineDash(phase: 0, lengths: [])
+
+    for wall in doc.walls where wall.kind != .balcony {
+        let width = DrawingDocument.wallWidth(for: wall.kind)
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: width * 0.26, height: width * 0.30),
+                          blur: wall.kind == .exterior ? 10 : 6,
+                          color: UIColor.black.withAlphaComponent(wall.kind == .exterior ? 0.52 : 0.34).cgColor)
+        context.setStrokeColor(UIColor.black.withAlphaComponent(0.10).cgColor)
+        context.setLineWidth(width)
+        context.move(to: wall.start)
+        context.addLine(to: wall.end)
+        context.strokePath()
+        context.restoreGState()
+    }
+
+    context.restoreGState()
+}
+
+private func drawDarkWallCG(_ wall: WallSegment, context: CGContext) {
+    let width = DrawingDocument.wallWidth(for: wall.kind)
+    context.setLineDash(phase: 0, lengths: [])
+    context.setLineCap(.square)
+
+    if wall.kind == .balcony {
+        context.setStrokeColor(DarkArchitecturalPalette.wallBalcony.cgColor)
+        context.setLineWidth(width)
+        context.move(to: wall.start)
+        context.addLine(to: wall.end)
+        context.strokePath()
+
+        context.setStrokeColor(DarkArchitecturalPalette.background.withAlphaComponent(0.88).cgColor)
+        context.setLineWidth(width * 0.48)
+        context.move(to: wall.start)
+        context.addLine(to: wall.end)
+        context.strokePath()
+        return
+    }
+
+    context.setStrokeColor((wall.kind == .exterior
+                            ? DarkArchitecturalPalette.wallExterior
+                            : DarkArchitecturalPalette.wallInterior).cgColor)
+    context.setLineWidth(width)
+    context.move(to: wall.start)
+    context.addLine(to: wall.end)
+    context.strokePath()
+
+    drawDarkWallHighlightCG(wall, context: context)
+}
+
+private func drawDarkWallHighlightCG(_ wall: WallSegment, context: CGContext) {
+    let dx = wall.end.x - wall.start.x
+    let dy = wall.end.y - wall.start.y
+    let length = hypot(dx, dy)
+    guard length > 0 else { return }
+
+    let width = DrawingDocument.wallWidth(for: wall.kind)
+    let unitX = dx / length
+    let unitY = dy / length
+    let normal = CGPoint(x: -unitY, y: unitX)
+    let lightVector = CGPoint(x: -0.65, y: -0.76)
+    let litNormal = normal.x * lightVector.x + normal.y * lightVector.y >= 0
+        ? normal
+        : CGPoint(x: -normal.x, y: -normal.y)
+    let edgeOffset = width * 0.34
+    let inset = width * 0.16
+    let start = CGPoint(x: wall.start.x + unitX * inset, y: wall.start.y + unitY * inset)
+    let end = CGPoint(x: wall.end.x - unitX * inset, y: wall.end.y - unitY * inset)
+
+    context.setLineCap(.butt)
+    context.setLineWidth(max(1, width * 0.08))
+    context.setStrokeColor(UIColor.white.withAlphaComponent(wall.kind == .exterior ? 0.24 : 0.16).cgColor)
+    context.move(to: CGPoint(x: start.x + litNormal.x * edgeOffset,
+                             y: start.y + litNormal.y * edgeOffset))
+    context.addLine(to: CGPoint(x: end.x + litNormal.x * edgeOffset,
+                                y: end.y + litNormal.y * edgeOffset))
+    context.strokePath()
+}
+
+private func drawDarkDoorCG(_ opening: PlacedOpening, wall: WallSegment, context: CGContext) {
+    guard let eps = endpointsOf(opening: opening, wall: wall) else { return }
+
+    let dx = wall.end.x - wall.start.x
+    let dy = wall.end.y - wall.start.y
+    let len = hypot(dx, dy)
+    guard len > 0 else { return }
+    let ux = dx / len
+    let uy = dy / len
+    let flip: CGFloat = opening.flipSide ? -1 : 1
+    let nx = -uy * flip
+    let ny = ux * flip
+
+    let wallW = DrawingDocument.wallWidth(for: wall.kind)
+    eraseBandCG(from: eps.start,
+                to: eps.end,
+                halfWidth: wallW / 2 + 1,
+                fillColor: DarkArchitecturalPalette.roomFill.cgColor,
+                context: context)
+
+    context.setStrokeColor(DarkArchitecturalPalette.openingLine.cgColor)
+    context.setLineWidth(1.8)
+    context.setLineCap(.round)
+    context.setLineDash(phase: 0, lengths: [4, 3])
+
+    context.addArc(center: eps.start,
+                   radius: opening.width,
+                   startAngle: atan2(uy, ux),
+                   endAngle: atan2(ny, nx),
+                   clockwise: opening.flipSide)
+    context.strokePath()
+
+    context.setLineDash(phase: 0, lengths: [])
+    context.move(to: eps.start)
+    context.addLine(to: eps.end)
+    context.strokePath()
+}
+
+private func drawDarkWindowCG(_ opening: PlacedOpening, wall: WallSegment, context: CGContext) {
+    guard let eps = endpointsOf(opening: opening, wall: wall) else { return }
+
+    let dx = wall.end.x - wall.start.x
+    let dy = wall.end.y - wall.start.y
+    let len = hypot(dx, dy)
+    guard len > 0 else { return }
+    let nx = -dy / len
+    let ny = dx / len
+
+    let wallW = DrawingDocument.wallWidth(for: wall.kind)
+    eraseBandCG(from: eps.start,
+                to: eps.end,
+                halfWidth: wallW / 2 + 1,
+                fillColor: DarkArchitecturalPalette.roomFill.cgColor,
+                context: context)
+
+    context.setStrokeColor(DarkArchitecturalPalette.openingLine.cgColor)
+    context.setLineCap(.round)
+    let paneHalf = wallW * 0.62
+    for sign: CGFloat in [-1, 1] {
+        context.setLineWidth(1.6)
+        let ox = nx * paneHalf * sign
+        let oy = ny * paneHalf * sign
+        context.move(to: CGPoint(x: eps.start.x + ox, y: eps.start.y + oy))
+        context.addLine(to: CGPoint(x: eps.end.x + ox, y: eps.end.y + oy))
+        context.strokePath()
+    }
+    context.setLineWidth(2.4)
+    context.move(to: eps.start)
+    context.addLine(to: eps.end)
+    context.strokePath()
+}
+
+private func drawDarkRoomLabelCG(_ label: RoomLabel, context: CGContext) {
+    let attributes: [NSAttributedString.Key: Any] = [
+        .font: UIFont.systemFont(ofSize: 13, weight: .semibold),
+        .foregroundColor: DarkArchitecturalPalette.text
+    ]
+    let nsString = label.name.uppercased() as NSString
+    let textSize = nsString.size(withAttributes: attributes)
+
+    UIGraphicsPushContext(context)
+    nsString.draw(at: CGPoint(x: label.position.x - textSize.width / 2,
+                              y: label.position.y - textSize.height / 2),
+                  withAttributes: attributes)
+    UIGraphicsPopContext()
+}
+
+private func roomAreaPath(_ area: RoomArea) -> UIBezierPath {
+    let points = area.effectivePoints
+    guard points.count >= 3 else {
+        return UIBezierPath(roundedRect: area.rect, cornerRadius: 4)
+    }
+
+    let path = UIBezierPath()
+    path.move(to: points[0])
+    for point in points.dropFirst() {
+        path.addLine(to: point)
+    }
+    path.close()
+    return path
+}
+
+private func polygonCentroid(_ points: [CGPoint]) -> CGPoint? {
+    guard points.count >= 3 else { return nil }
+
+    var signedArea: CGFloat = 0
+    var centroidX: CGFloat = 0
+    var centroidY: CGFloat = 0
+
+    for index in points.indices {
+        let current = points[index]
+        let next = points[(index + 1) % points.count]
+        let cross = current.x * next.y - next.x * current.y
+        signedArea += cross
+        centroidX += (current.x + next.x) * cross
+        centroidY += (current.y + next.y) * cross
+    }
+
+    signedArea *= 0.5
+    guard abs(signedArea) > 0.001 else { return nil }
+
+    return CGPoint(x: centroidX / (6 * signedArea),
+                   y: centroidY / (6 * signedArea))
 }
 
 private func drawRoomAreaCG(_ area: RoomArea, context: CGContext) {
@@ -739,13 +1074,14 @@ private func eraseBand(from p1: CGPoint, to p2: CGPoint,
 /// Draws a white filled rectangle over the wall gap where an opening sits (CGContext).
 private func eraseBandCG(from p1: CGPoint, to p2: CGPoint,
                           halfWidth: CGFloat,
+                          fillColor: CGColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1),
                           context: CGContext) {
     let dx = p2.x - p1.x, dy = p2.y - p1.y
     let len = hypot(dx, dy)
     guard len > 0 else { return }
     let nx = -dy / len * halfWidth, ny = dx / len * halfWidth
 
-    context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+    context.setFillColor(fillColor)
     context.beginPath()
     context.move(to: CGPoint(x: p1.x + nx, y: p1.y + ny))
     context.addLine(to: CGPoint(x: p2.x + nx, y: p2.y + ny))
