@@ -13,10 +13,9 @@ struct HomeKitGuardView<Content: View>: View {
     @ViewBuilder let content: () -> Content
     
     @State private var loadingTooLong: Bool = false
+    @State private var lastLoggedHomeKitState: String?
 
     var body: some View {
-        let _ = { dprint("🔐 status: \(String(describing: homeKit.authorizationStatus)) | denied: \(homeKit.isAuthorizationDenied) | unknown: \(homeKit.isAuthorizationUnknown) | ready: \(homeKit.isReady)") }()
-        
         Group {
             if homeKit.isAuthorizationDenied {
                         deniedView
@@ -31,6 +30,9 @@ struct HomeKitGuardView<Content: View>: View {
             if newPhase == .active {
                 homeKit.reloadAuthorizationStatus()
             }
+        }
+        .task(id: homeKitStateSignature) {
+            logHomeKitStateIfNeeded()
         }
         .task {
             // Se dopo 4 secondi siamo ancora in loading, mostra messaggio di pazienza
@@ -53,6 +55,21 @@ struct HomeKitGuardView<Content: View>: View {
                     loadingTooLong = true
                 }
             }
+    }
+
+    private var homeKitStateSignature: String {
+        [
+            "status=\(String(describing: homeKit.authorizationStatus))",
+            "denied=\(homeKit.isAuthorizationDenied)",
+            "unknown=\(homeKit.isAuthorizationUnknown)",
+            "ready=\(homeKit.isReady)"
+        ].joined(separator: "|")
+    }
+
+    private func logHomeKitStateIfNeeded() {
+        guard lastLoggedHomeKitState != homeKitStateSignature else { return }
+        lastLoggedHomeKitState = homeKitStateSignature
+        dprint("🔐 \(homeKitStateSignature)")
     }
 
     private var loadingView: some View {

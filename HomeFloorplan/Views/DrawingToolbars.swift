@@ -491,7 +491,7 @@ struct DrawingToolbar: View {
                     vertexSnapEnabled.toggle()
                 } label: {
                     VStack(spacing: 3) {
-                        Image(systemName: vertexSnapEnabled ? "magnet.fill" : "magnet")
+                        Image(systemName: "magnet")
                             .font(.system(size: 16, weight: vertexSnapEnabled ? .semibold : .regular))
                         Text(String(localized: "drawing.toolbar.snap", defaultValue: "Snap"))
                             .font(.system(size: 10, weight: vertexSnapEnabled ? .semibold : .regular))
@@ -647,7 +647,7 @@ struct DrawingToolbar: View {
             mode = isActive ? .select : .drawRoomArea
         } label: {
             VStack(spacing: 3) {
-                Image(systemName: "rectangle.dashed.badge.plus")
+                Image(systemName: "rectangle.dashed")
                     .font(.system(size: 18, weight: isActive ? .semibold : .regular))
                 Text(String(localized: "drawing.toolbar.roomArea", defaultValue: "Room"))
                     .font(.system(size: 10, weight: isActive ? .semibold : .regular))
@@ -773,7 +773,7 @@ struct DrawRoomAreaBanner: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "rectangle.dashed.badge.plus")
+            Image(systemName: "rectangle.dashed")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(BrandColor.primary)
 

@@ -1524,7 +1524,7 @@ struct FloorplanEditorView: View {
     private var emptyMarkersHint: some View {
         let hasAreas = !floorplan.linkedRooms.isEmpty
         return VStack(spacing: 14) {
-            Image(systemName: hasAreas ? "rectangle.dashed.badge.plus" : "plus.circle.fill")
+            Image(systemName: hasAreas ? "rectangle.dashed" : "plus.circle.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.tint)
 
@@ -2087,7 +2087,7 @@ private struct FloorplanHelpSheet: View {
                             message: String(localized: "floorplan.help.edit.message", defaultValue: "Tap Edit to place and manage accessory markers on the floorplan.")
                         )
                         helpRow(
-                            icon: "rectangle.dashed.badge.plus",
+                            icon: "rectangle.dashed",
                             title: String(localized: "floorplan.help.add.title", defaultValue: "Add markers"),
                             message: String(localized: "floorplan.help.add.message", defaultValue: "In edit mode, tap a room area to add an accessory there. If no room areas exist, use + in the top-right corner.")
                         )

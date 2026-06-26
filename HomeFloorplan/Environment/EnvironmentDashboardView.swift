@@ -253,7 +253,7 @@ struct EnvironmentDashboardView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label(String(localized: "environment.dashboard.empty.title", defaultValue: "No sensors found"), systemImage: "sensor.tag.radiowaves.forward.slash")
+            Label(String(localized: "environment.dashboard.empty.title", defaultValue: "No sensors found"), systemImage: "sensor")
         } description: {
             Text(String(localized: "environment.dashboard.empty.description", defaultValue: "Connect environmental sensors in HomeKit. Temperature, humidity, air quality, and more will appear here."))
         }
