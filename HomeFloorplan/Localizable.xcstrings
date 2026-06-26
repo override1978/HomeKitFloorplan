@@ -42657,7 +42657,7 @@
       }
     },
     "smartlighting.timeline.footer" : {
-      "extractionState" : "stale",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -42674,7 +42674,7 @@
       }
     },
     "smartlighting.timeline.header" : {
-      "extractionState" : "stale",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -42691,7 +42691,7 @@
       }
     },
     "smartlighting.timeline.missing.footer" : {
-      "extractionState" : "stale",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -42708,7 +42708,7 @@
       }
     },
     "smartlighting.timeline.noSceneForPhase" : {
-      "extractionState" : "stale",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -42725,7 +42725,7 @@
       }
     },
     "smartlighting.timeline.noScenes" : {
-      "extractionState" : "stale",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
