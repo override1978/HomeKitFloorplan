@@ -25,6 +25,7 @@ final class NextActionExecutor {
     private static let lockTargetStateUUID     = "0000001e-0000-1000-8000-0026bb765291"
     private static let garageDoorTargetUUID    = "00000032-0000-1000-8000-0026bb765291"
     private static let securitySystemServiceType = "0000007E-0000-1000-8000-0026BB765291"
+    private static let valveServiceType = ValveAdapter.serviceType.lowercased()
 
     // MARK: - Execute
 
@@ -97,6 +98,9 @@ final class NextActionExecutor {
         case "dim":
             return find(Self.brightnessUUID)
         case "open", "close":
+            if accessory.services.contains(where: { $0.serviceType.lowercased() == Self.valveServiceType }) {
+                return find(Self.activeUUID)
+            }
             return find(Self.positionUUID)
         case "setSpeed":
             return find(Self.rotationSpeedUUID)
@@ -124,6 +128,9 @@ final class NextActionExecutor {
         case "off":      return 0
         case "dim":      return Int((accessoryValue ?? 0.5) * 100)
         case "open", "close":
+            if accessory.services.contains(where: { $0.serviceType.lowercased() == Self.valveServiceType }) {
+                return actionType == "open" ? 1 : 0
+            }
             return WindowCoveringPositionMapper.rawTarget(
                 forActionType: actionType,
                 accessoryID: accessory.uniqueIdentifier

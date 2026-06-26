@@ -21,6 +21,7 @@ struct SceneActionDraftBundle {
     var securitySystemDrafts: [SceneSecuritySystemActionDraft] = []
     var doorLockDrafts: [SceneDoorLockActionDraft] = []
     var garageDoorDrafts: [SceneGarageDoorActionDraft] = []
+    var valveDrafts: [SceneValveActionDraft] = []
 
     var selectedCount: Int {
         lightDrafts.filter(\.isIncluded).count +
@@ -33,7 +34,8 @@ struct SceneActionDraftBundle {
         humidifierDrafts.filter(\.isIncluded).count +
         securitySystemDrafts.filter(\.isIncluded).count +
         doorLockDrafts.filter(\.isIncluded).count +
-        garageDoorDrafts.filter(\.isIncluded).count
+        garageDoorDrafts.filter(\.isIncluded).count +
+        valveDrafts.filter(\.isIncluded).count
     }
 
     var isEmpty: Bool {
@@ -401,6 +403,20 @@ final class HomeKitScenesService {
         }
     }
 
+    func valveActionDrafts(for scene: SceneItem? = nil) -> [SceneValveActionDraft] {
+        let existingValues = existingSceneValues(for: scene)
+
+        return homeKit.allAccessories.compactMap { accessory in
+            makeValveDraft(for: accessory, existingValues: existingValues)
+        }
+        .sorted {
+            if $0.roomName != $1.roomName {
+                return $0.roomName.localizedCaseInsensitiveCompare($1.roomName) == .orderedAscending
+            }
+            return $0.accessoryName.localizedCaseInsensitiveCompare($1.accessoryName) == .orderedAscending
+        }
+    }
+
     func actionDraftBundle(for scene: SceneItem? = nil) -> SceneActionDraftBundle {
         SceneActionDraftBundle(
             lightDrafts: lightActionDrafts(for: scene),
@@ -413,7 +429,8 @@ final class HomeKitScenesService {
             humidifierDrafts: humidifierActionDrafts(for: scene),
             securitySystemDrafts: securitySystemActionDrafts(for: scene),
             doorLockDrafts: doorLockActionDrafts(for: scene),
-            garageDoorDrafts: garageDoorActionDrafts(for: scene)
+            garageDoorDrafts: garageDoorActionDrafts(for: scene),
+            valveDrafts: valveActionDrafts(for: scene)
         )
     }
 
@@ -429,6 +446,7 @@ final class HomeKitScenesService {
         + makeActions(from: bundle.securitySystemDrafts.filter(\.isIncluded))
         + makeActions(from: bundle.doorLockDrafts.filter(\.isIncluded))
         + makeActions(from: bundle.garageDoorDrafts.filter(\.isIncluded))
+        + makeActions(from: bundle.valveDrafts.filter(\.isIncluded))
     }
 
     @discardableResult
@@ -445,6 +463,7 @@ final class HomeKitScenesService {
         securitySystemDrafts: [SceneSecuritySystemActionDraft] = [],
         doorLockDrafts: [SceneDoorLockActionDraft] = [],
         garageDoorDrafts: [SceneGarageDoorActionDraft] = [],
+        valveDrafts: [SceneValveActionDraft] = [],
         editing scene: SceneItem?
     ) async throws -> SceneItem {
         try await saveUserScene(
@@ -460,7 +479,8 @@ final class HomeKitScenesService {
                 humidifierDrafts: humidifierDrafts,
                 securitySystemDrafts: securitySystemDrafts,
                 doorLockDrafts: doorLockDrafts,
-                garageDoorDrafts: garageDoorDrafts
+                garageDoorDrafts: garageDoorDrafts,
+                valveDrafts: valveDrafts
             ),
             editing: scene
         )
@@ -492,7 +512,8 @@ final class HomeKitScenesService {
             humidifierDrafts: actionBundle.humidifierDrafts,
             securitySystemDrafts: actionBundle.securitySystemDrafts,
             doorLockDrafts: actionBundle.doorLockDrafts,
-            garageDoorDrafts: actionBundle.garageDoorDrafts
+            garageDoorDrafts: actionBundle.garageDoorDrafts,
+            valveDrafts: actionBundle.valveDrafts
         )
 
         let actionSet: HMActionSet
@@ -731,6 +752,15 @@ final class HomeKitScenesService {
         }
     }
 
+    private func makeActions(from drafts: [SceneValveActionDraft]) -> [HMAction] {
+        drafts.map {
+            HMCharacteristicWriteAction(
+                characteristic: $0.activeCharacteristic,
+                targetValue: NSNumber(value: $0.open ? 1 : 0)
+            )
+        }
+    }
+
     private func appendThermostatTemperatureActions(for draft: SceneThermostatActionDraft, to actions: inout [HMAction]) {
         let value = min(max(draft.targetTemperature, draft.targetRange.lowerBound), draft.targetRange.upperBound)
         switch draft.mode {
@@ -796,7 +826,8 @@ final class HomeKitScenesService {
         humidifierDrafts: [SceneHumidifierActionDraft],
         securitySystemDrafts: [SceneSecuritySystemActionDraft],
         doorLockDrafts: [SceneDoorLockActionDraft],
-        garageDoorDrafts: [SceneGarageDoorActionDraft]
+        garageDoorDrafts: [SceneGarageDoorActionDraft],
+        valveDrafts: [SceneValveActionDraft]
     ) -> Set<UUID> {
         var ids = Set<UUID>()
 
@@ -862,8 +893,30 @@ final class HomeKitScenesService {
         securitySystemDrafts.forEach { ids.insert($0.targetStateCharacteristic.uniqueIdentifier) }
         doorLockDrafts.forEach { ids.insert($0.targetStateCharacteristic.uniqueIdentifier) }
         garageDoorDrafts.forEach { ids.insert($0.targetStateCharacteristic.uniqueIdentifier) }
+        valveDrafts.forEach { ids.insert($0.activeCharacteristic.uniqueIdentifier) }
 
         return ids
+    }
+
+    private func makeValveDraft(for accessory: HMAccessory, existingValues: [UUID: Any?]) -> SceneValveActionDraft? {
+        guard accessory.services.contains(where: { $0.serviceType == ValveAdapter.serviceType }),
+              let active = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: HMCharacteristicTypeActive)
+        else { return nil }
+
+        let existingValue = existingValues[active.uniqueIdentifier].flatMap(Self.intValue)
+        let currentValue = Self.intValue(homeKit.value(for: active) ?? active.value) ?? 0
+        let typeCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: "000000D5-0000-1000-8000-0026BB765291")
+        let valveTypeRaw = typeCharacteristic.flatMap { Self.intValue(homeKit.value(for: $0) ?? $0.value) } ?? 0
+
+        return SceneValveActionDraft(
+            id: accessory.uniqueIdentifier,
+            accessoryName: accessory.name,
+            roomName: accessory.room?.name ?? String(localized: "scene.action.noRoom", defaultValue: "No Room"),
+            isIncluded: existingValue != nil,
+            open: (existingValue ?? currentValue) == 1,
+            valveType: ValveType(rawValue: valveTypeRaw) ?? .generic,
+            activeCharacteristic: active
+        )
     }
 
     private func outletDisplayName(for service: HMService, fallbackIndex: Int) -> String {
@@ -1554,6 +1607,16 @@ struct SceneGarageDoorActionDraft: Identifiable {
     var isIncluded: Bool
     var open: Bool
     let targetStateCharacteristic: HMCharacteristic
+}
+
+struct SceneValveActionDraft: Identifiable {
+    let id: UUID
+    let accessoryName: String
+    let roomName: String
+    var isIncluded: Bool
+    var open: Bool
+    let valveType: ValveType
+    let activeCharacteristic: HMCharacteristic
 }
 
 /// Modello UI per una scena HomeKit.

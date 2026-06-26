@@ -5,9 +5,9 @@ import HomeKit
 /// e ChargingState in tutti i servizi dell'accessorio.
 enum BatteryReader {
     
-    private static let statusLowBatteryUUID = "00000079-0000-1000-8000-0026BB765291"
-    private static let batteryLevelUUID = "00000068-0000-1000-8000-0026BB765291"
-    private static let chargingStateUUID = "0000008F-0000-1000-8000-0026BB765291"
+    private static let statusLowBatteryUUID = normalized("00000079-0000-1000-8000-0026BB765291")
+    private static let batteryLevelUUID = normalized("00000068-0000-1000-8000-0026BB765291")
+    private static let chargingStateUUID = normalized("0000008F-0000-1000-8000-0026BB765291")
     
     /// Restituisce BatteryInfo se l'accessorio espone almeno UNA delle 3
     /// caratteristiche di batteria standard. Altrimenti nil.
@@ -54,12 +54,17 @@ enum BatteryReader {
     // MARK: - Helpers
     
     private static func findCharacteristic(in accessory: HMAccessory, type: String) -> HMCharacteristic? {
+        let target = normalized(type)
         for service in accessory.services {
-            for ch in service.characteristics where ch.characteristicType == type {
+            for ch in service.characteristics where normalized(ch.characteristicType) == target {
                 return ch
             }
         }
         return nil
+    }
+
+    private static func normalized(_ type: String) -> String {
+        type.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
     
     private static func intValue(_ any: Any?) -> Int? {

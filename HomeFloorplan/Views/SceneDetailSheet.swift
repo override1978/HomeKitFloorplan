@@ -240,6 +240,7 @@ struct SceneEditorSheet: View {
     @State private var securitySystemDrafts: [SceneSecuritySystemActionDraft] = []
     @State private var doorLockDrafts: [SceneDoorLockActionDraft] = []
     @State private var garageDoorDrafts: [SceneGarageDoorActionDraft] = []
+    @State private var valveDrafts: [SceneValveActionDraft] = []
     @State private var selectedAccessoryFilter: SceneEditorAccessoryFilter = .all
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -257,7 +258,8 @@ struct SceneEditorSheet: View {
         humidifierDrafts.filter(\.isIncluded).count +
         securitySystemDrafts.filter(\.isIncluded).count +
         doorLockDrafts.filter(\.isIncluded).count +
-        garageDoorDrafts.filter(\.isIncluded).count
+        garageDoorDrafts.filter(\.isIncluded).count +
+        valveDrafts.filter(\.isIncluded).count
     }
     private var roomGroups: [SceneEditorRoomGroup] {
         let roomNames = Set(drafts.map(\.roomName))
@@ -271,6 +273,7 @@ struct SceneEditorSheet: View {
             .union(securitySystemDrafts.map(\.roomName))
             .union(doorLockDrafts.map(\.roomName))
             .union(garageDoorDrafts.map(\.roomName))
+            .union(valveDrafts.map(\.roomName))
         return roomNames
             .map { roomName in
                 SceneEditorRoomGroup(
@@ -307,7 +310,10 @@ struct SceneEditorSheet: View {
                         .sorted { doorLockDrafts[$0].accessoryName.localizedCaseInsensitiveCompare(doorLockDrafts[$1].accessoryName) == .orderedAscending },
                     garageDoorIndices: garageDoorDrafts.indices
                         .filter { garageDoorDrafts[$0].roomName == roomName }
-                        .sorted { garageDoorDrafts[$0].accessoryName.localizedCaseInsensitiveCompare(garageDoorDrafts[$1].accessoryName) == .orderedAscending }
+                        .sorted { garageDoorDrafts[$0].accessoryName.localizedCaseInsensitiveCompare(garageDoorDrafts[$1].accessoryName) == .orderedAscending },
+                    valveIndices: valveDrafts.indices
+                        .filter { valveDrafts[$0].roomName == roomName }
+                        .sorted { valveDrafts[$0].accessoryName.localizedCaseInsensitiveCompare(valveDrafts[$1].accessoryName) == .orderedAscending }
                 )
             }
             .sorted { $0.roomName.localizedCaseInsensitiveCompare($1.roomName) == .orderedAscending }
@@ -404,6 +410,7 @@ struct SceneEditorSheet: View {
                 securitySystemDrafts = scenesService.securitySystemActionDrafts(for: scene)
                 doorLockDrafts = scenesService.doorLockActionDrafts(for: scene)
                 garageDoorDrafts = scenesService.garageDoorActionDrafts(for: scene)
+                valveDrafts = scenesService.valveActionDrafts(for: scene)
                 selectedAccessoryFilter = scene == nil ? .all : .selected
             }
         }
@@ -577,7 +584,8 @@ struct SceneEditorSheet: View {
             humidifierDrafts.count +
             securitySystemDrafts.count +
             doorLockDrafts.count +
-            garageDoorDrafts.count
+            garageDoorDrafts.count +
+            valveDrafts.count
         case .selected:
             return selectedCount
         case .lights:
@@ -591,7 +599,7 @@ struct SceneEditorSheet: View {
         case .climate:
             return thermostatDrafts.count
         case .air:
-            return airPurifierDrafts.count + humidifierDrafts.count
+            return airPurifierDrafts.count + humidifierDrafts.count + valveDrafts.count
         case .fans:
             return fanDrafts.count
         case .security:
@@ -612,7 +620,8 @@ struct SceneEditorSheet: View {
             humidifierIndices: group.humidifierIndices.filter { humidifierDrafts[$0].isIncluded },
             securitySystemIndices: group.securitySystemIndices.filter { securitySystemDrafts[$0].isIncluded },
             doorLockIndices: group.doorLockIndices.filter { doorLockDrafts[$0].isIncluded },
-            garageDoorIndices: group.garageDoorIndices.filter { garageDoorDrafts[$0].isIncluded }
+            garageDoorIndices: group.garageDoorIndices.filter { garageDoorDrafts[$0].isIncluded },
+            valveIndices: group.valveIndices.filter { valveDrafts[$0].isIncluded }
         )
     }
 
@@ -675,6 +684,10 @@ struct SceneEditorSheet: View {
                 ForEach(group.garageDoorIndices, id: \.self) { index in
                     SceneGarageDoorActionEditorRow(draft: $garageDoorDrafts[index])
                 }
+
+                ForEach(group.valveIndices, id: \.self) { index in
+                    SceneValveActionEditorRow(draft: $valveDrafts[index])
+                }
             }
         }
     }
@@ -690,7 +703,8 @@ struct SceneEditorSheet: View {
         group.humidifierIndices.filter { humidifierDrafts[$0].isIncluded }.count +
         group.securitySystemIndices.filter { securitySystemDrafts[$0].isIncluded }.count +
         group.doorLockIndices.filter { doorLockDrafts[$0].isIncluded }.count +
-        group.garageDoorIndices.filter { garageDoorDrafts[$0].isIncluded }.count
+        group.garageDoorIndices.filter { garageDoorDrafts[$0].isIncluded }.count +
+        group.valveIndices.filter { valveDrafts[$0].isIncluded }.count
     }
 
     private func accessoryCount(in group: SceneEditorRoomGroup) -> Int {
@@ -704,7 +718,8 @@ struct SceneEditorSheet: View {
         group.humidifierIndices.count +
         group.securitySystemIndices.count +
         group.doorLockIndices.count +
-        group.garageDoorIndices.count
+        group.garageDoorIndices.count +
+        group.valveIndices.count
     }
 
     private var bottomSaveBar: some View {
@@ -778,6 +793,7 @@ struct SceneEditorSheet: View {
                     securitySystemDrafts: securitySystemDrafts,
                     doorLockDrafts: doorLockDrafts,
                     garageDoorDrafts: garageDoorDrafts,
+                    valveDrafts: valveDrafts,
                     editing: scene
                 )
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -839,6 +855,7 @@ struct SceneActionDraftEditorSheet: View {
             .union(actionBundle.securitySystemDrafts.map(\.roomName))
             .union(actionBundle.doorLockDrafts.map(\.roomName))
             .union(actionBundle.garageDoorDrafts.map(\.roomName))
+            .union(actionBundle.valveDrafts.map(\.roomName))
 
         return roomNames.map { roomName in
             SceneEditorRoomGroup(
@@ -853,7 +870,8 @@ struct SceneActionDraftEditorSheet: View {
                 humidifierIndices: sortedIndices(actionBundle.humidifierDrafts, roomName: roomName),
                 securitySystemIndices: sortedIndices(actionBundle.securitySystemDrafts, roomName: roomName),
                 doorLockIndices: sortedIndices(actionBundle.doorLockDrafts, roomName: roomName),
-                garageDoorIndices: sortedIndices(actionBundle.garageDoorDrafts, roomName: roomName)
+                garageDoorIndices: sortedIndices(actionBundle.garageDoorDrafts, roomName: roomName),
+                valveIndices: sortedIndices(actionBundle.valveDrafts, roomName: roomName)
             )
         }
         .sorted { $0.roomName.localizedCaseInsensitiveCompare($1.roomName) == .orderedAscending }
@@ -893,7 +911,7 @@ struct SceneActionDraftEditorSheet: View {
                         ContentUnavailableView(
                             String(localized: "scene.editor.noDevices.title", defaultValue: "No compatible accessories"),
                             systemImage: "slider.horizontal.3",
-                            description: Text(String(localized: "scene.editor.noDevices.description", defaultValue: "This editor supports dimmable lights, outlets, switches, window coverings, climate, air purifiers, diffusers, security systems, locks and garage doors. Other accessory types can still be managed from Apple Home."))
+            description: Text(String(localized: "scene.editor.noDevices.description", defaultValue: "This editor supports dimmable lights, outlets, switches, window coverings, climate, air purifiers, diffusers, security systems, locks and garage doors. Other accessory types can still be managed from Apple Home."))
                         )
                         .frame(maxWidth: .infinity)
                         .padding(.top, 28)
@@ -1043,6 +1061,9 @@ struct SceneActionDraftEditorSheet: View {
             ForEach(group.garageDoorIndices, id: \.self) { index in
                 SceneGarageDoorActionEditorRow(draft: $actionBundle.garageDoorDrafts[index])
             }
+            ForEach(group.valveIndices, id: \.self) { index in
+                SceneValveActionEditorRow(draft: $actionBundle.valveDrafts[index])
+            }
         }
         .padding(group.actionCount > 1 ? 10 : 0)
         .background {
@@ -1072,7 +1093,8 @@ struct SceneActionDraftEditorSheet: View {
             actionBundle.humidifierDrafts.count +
             actionBundle.securitySystemDrafts.count +
             actionBundle.doorLockDrafts.count +
-            actionBundle.garageDoorDrafts.count
+            actionBundle.garageDoorDrafts.count +
+            actionBundle.valveDrafts.count
         case .selected:
             return actionBundle.selectedCount
         case .lights:
@@ -1086,7 +1108,7 @@ struct SceneActionDraftEditorSheet: View {
         case .climate:
             return actionBundle.thermostatDrafts.count
         case .air:
-            return actionBundle.airPurifierDrafts.count + actionBundle.humidifierDrafts.count
+            return actionBundle.airPurifierDrafts.count + actionBundle.humidifierDrafts.count + actionBundle.valveDrafts.count
         case .fans:
             return actionBundle.fanDrafts.count
         case .security:
@@ -1107,7 +1129,8 @@ struct SceneActionDraftEditorSheet: View {
             humidifierIndices: group.humidifierIndices.filter { actionBundle.humidifierDrafts[$0].isIncluded },
             securitySystemIndices: group.securitySystemIndices.filter { actionBundle.securitySystemDrafts[$0].isIncluded },
             doorLockIndices: group.doorLockIndices.filter { actionBundle.doorLockDrafts[$0].isIncluded },
-            garageDoorIndices: group.garageDoorIndices.filter { actionBundle.garageDoorDrafts[$0].isIncluded }
+            garageDoorIndices: group.garageDoorIndices.filter { actionBundle.garageDoorDrafts[$0].isIncluded },
+            valveIndices: group.valveIndices.filter { actionBundle.valveDrafts[$0].isIncluded }
         )
     }
 
@@ -1122,7 +1145,8 @@ struct SceneActionDraftEditorSheet: View {
         group.humidifierIndices.filter { actionBundle.humidifierDrafts[$0].isIncluded }.count +
         group.securitySystemIndices.filter { actionBundle.securitySystemDrafts[$0].isIncluded }.count +
         group.doorLockIndices.filter { actionBundle.doorLockDrafts[$0].isIncluded }.count +
-        group.garageDoorIndices.filter { actionBundle.garageDoorDrafts[$0].isIncluded }.count
+        group.garageDoorIndices.filter { actionBundle.garageDoorDrafts[$0].isIncluded }.count +
+        group.valveIndices.filter { actionBundle.valveDrafts[$0].isIncluded }.count
     }
 
     private func accessoryCount(in group: SceneEditorRoomGroup) -> Int {
@@ -1136,7 +1160,8 @@ struct SceneActionDraftEditorSheet: View {
         group.humidifierIndices.count +
         group.securitySystemIndices.count +
         group.doorLockIndices.count +
-        group.garageDoorIndices.count
+        group.garageDoorIndices.count +
+        group.valveIndices.count
     }
 
     private func accessoryGroups(in group: SceneEditorRoomGroup) -> [SceneEditorAccessoryGroup] {
@@ -1175,6 +1200,9 @@ struct SceneActionDraftEditorSheet: View {
         for index in group.garageDoorIndices {
             append(index, kind: .garageDoor, draft: actionBundle.garageDoorDrafts[index], to: &groupsByID)
         }
+        for index in group.valveIndices {
+            append(index, kind: .valve, draft: actionBundle.valveDrafts[index], to: &groupsByID)
+        }
 
         return groupsByID.values.sorted {
             if $0.accessoryName == $1.accessoryName {
@@ -1204,7 +1232,8 @@ struct SceneActionDraftEditorSheet: View {
             humidifierIndices: [],
             securitySystemIndices: [],
             doorLockIndices: [],
-            garageDoorIndices: []
+            garageDoorIndices: [],
+            valveIndices: []
         )
         group.append(index, kind: kind)
         groupsByID[groupID] = group
@@ -1257,6 +1286,9 @@ extension SceneDoorLockActionDraft: SceneActionDraftDisplayable {
 extension SceneGarageDoorActionDraft: SceneActionDraftDisplayable {
     var accessoryGroupID: UUID { id }
 }
+extension SceneValveActionDraft: SceneActionDraftDisplayable {
+    var accessoryGroupID: UUID { id }
+}
 
 private enum SceneEditorActionKind {
     case light
@@ -1270,6 +1302,7 @@ private enum SceneEditorActionKind {
     case securitySystem
     case doorLock
     case garageDoor
+    case valve
 }
 
 private struct SceneEditorAccessoryGroup: Identifiable {
@@ -1286,6 +1319,7 @@ private struct SceneEditorAccessoryGroup: Identifiable {
     var securitySystemIndices: [Int]
     var doorLockIndices: [Int]
     var garageDoorIndices: [Int]
+    var valveIndices: [Int]
 
     var actionCount: Int {
         lightIndices.count +
@@ -1298,7 +1332,8 @@ private struct SceneEditorAccessoryGroup: Identifiable {
         humidifierIndices.count +
         securitySystemIndices.count +
         doorLockIndices.count +
-        garageDoorIndices.count
+        garageDoorIndices.count +
+        valveIndices.count
     }
 
     mutating func append(_ index: Int, kind: SceneEditorActionKind) {
@@ -1325,6 +1360,8 @@ private struct SceneEditorAccessoryGroup: Identifiable {
             doorLockIndices.append(index)
         case .garageDoor:
             garageDoorIndices.append(index)
+        case .valve:
+            valveIndices.append(index)
         }
     }
 }
@@ -1342,6 +1379,7 @@ private struct SceneEditorRoomGroup: Identifiable {
     let securitySystemIndices: [Int]
     let doorLockIndices: [Int]
     let garageDoorIndices: [Int]
+    let valveIndices: [Int]
 
     var id: String { roomName }
 
@@ -1356,7 +1394,8 @@ private struct SceneEditorRoomGroup: Identifiable {
         humidifierIndices.isEmpty &&
         securitySystemIndices.isEmpty &&
         doorLockIndices.isEmpty &&
-        garageDoorIndices.isEmpty
+        garageDoorIndices.isEmpty &&
+        valveIndices.isEmpty
     }
 
     func filtered(for filter: SceneEditorAccessoryFilter) -> SceneEditorRoomGroup {
@@ -1376,7 +1415,8 @@ private struct SceneEditorRoomGroup: Identifiable {
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
-                garageDoorIndices: []
+                garageDoorIndices: [],
+                valveIndices: []
             )
         case .outlets:
             return SceneEditorRoomGroup(
@@ -1391,7 +1431,8 @@ private struct SceneEditorRoomGroup: Identifiable {
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
-                garageDoorIndices: []
+                garageDoorIndices: [],
+                valveIndices: []
             )
         case .switches:
             return SceneEditorRoomGroup(
@@ -1406,7 +1447,8 @@ private struct SceneEditorRoomGroup: Identifiable {
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
-                garageDoorIndices: []
+                garageDoorIndices: [],
+                valveIndices: []
             )
         case .windowCoverings:
             return SceneEditorRoomGroup(
@@ -1421,7 +1463,8 @@ private struct SceneEditorRoomGroup: Identifiable {
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
-                garageDoorIndices: []
+                garageDoorIndices: [],
+                valveIndices: []
             )
         case .climate:
             return SceneEditorRoomGroup(
@@ -1436,7 +1479,8 @@ private struct SceneEditorRoomGroup: Identifiable {
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
-                garageDoorIndices: []
+                garageDoorIndices: [],
+                valveIndices: []
             )
         case .air:
             return SceneEditorRoomGroup(
@@ -1451,7 +1495,8 @@ private struct SceneEditorRoomGroup: Identifiable {
                 humidifierIndices: humidifierIndices,
                 securitySystemIndices: [],
                 doorLockIndices: [],
-                garageDoorIndices: []
+                garageDoorIndices: [],
+                valveIndices: valveIndices
             )
         case .fans:
             return SceneEditorRoomGroup(
@@ -1466,7 +1511,8 @@ private struct SceneEditorRoomGroup: Identifiable {
                 humidifierIndices: [],
                 securitySystemIndices: [],
                 doorLockIndices: [],
-                garageDoorIndices: []
+                garageDoorIndices: [],
+                valveIndices: []
             )
         case .security:
             return SceneEditorRoomGroup(
@@ -1481,7 +1527,8 @@ private struct SceneEditorRoomGroup: Identifiable {
                 humidifierIndices: [],
                 securitySystemIndices: securitySystemIndices,
                 doorLockIndices: doorLockIndices,
-                garageDoorIndices: garageDoorIndices
+                garageDoorIndices: garageDoorIndices,
+                valveIndices: []
             )
         }
     }
@@ -1692,6 +1739,71 @@ private struct SceneGarageDoorActionEditorRow: View {
         return draft.open
             ? String(localized: "accessory.door.open", defaultValue: "Open")
             : String(localized: "accessory.door.close", defaultValue: "Close")
+    }
+}
+
+private struct SceneValveActionEditorRow: View {
+    @Binding var draft: SceneValveActionDraft
+
+    private var accentColor: Color {
+        guard draft.isIncluded else { return .secondary }
+        return draft.open ? .blue : .green
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            accessHeader(
+                accessoryName: draft.accessoryName,
+                iconName: draft.valveType.iconName,
+                statusText: statusText,
+                accentColor: accentColor,
+                isIncluded: draft.isIncluded,
+                toggleIncluded: {
+                    withAnimation(.spring(response: 0.25)) {
+                        draft.isIncluded.toggle()
+                    }
+                }
+            )
+
+            if draft.isIncluded {
+                HStack(spacing: 8) {
+                    accessModeButton(
+                        title: String(localized: "valve.action.close", defaultValue: "Close"),
+                        iconName: "xmark",
+                        tint: .green,
+                        isSelected: !draft.open
+                    ) {
+                        withAnimation(.spring(response: 0.25)) {
+                            draft.open = false
+                        }
+                    }
+                    accessModeButton(
+                        title: String(localized: "valve.action.open", defaultValue: "Open"),
+                        iconName: draft.valveType.iconName,
+                        tint: .blue,
+                        isSelected: draft.open
+                    ) {
+                        withAnimation(.spring(response: 0.25)) {
+                            draft.open = true
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(accessCardBackground(isIncluded: draft.isIncluded, accentColor: accentColor))
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: draft.isIncluded)
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: draft.open)
+    }
+
+    private var statusText: String {
+        guard draft.isIncluded else {
+            return String(localized: "scene.editor.valve.notIncluded", defaultValue: "Not in scene")
+        }
+        let action = draft.open
+            ? String(localized: "valve.action.open", defaultValue: "Open")
+            : String(localized: "valve.action.close", defaultValue: "Close")
+        return "\(draft.valveType.localizedLabel) · \(action)"
     }
 }
 

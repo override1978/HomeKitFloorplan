@@ -17,10 +17,13 @@ struct DoorLockControl: View {
     var body: some View {
         VStack(spacing: 16) {
             statusHeader
+            if adapter.autoSecureTimeoutSeconds != nil {
+                autoSecureRow
+            }
             if adapter.currentState == .jammed {
                 jammedBanner
             }
-            actionButton
+            actionButtons
             if adapter.hasLowBattery {
                 batteryWarning
             }
@@ -80,6 +83,36 @@ struct DoorLockControl: View {
     }
     
     // MARK: - Jammed banner
+
+    private var autoSecureRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "timer")
+                .foregroundStyle(.secondary)
+            Text(String(localized: "doorlock.autoSecure.label", defaultValue: "Auto secure"))
+                .font(.subheadline.weight(.medium))
+            Spacer()
+            Text(autoSecureText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
+
+    private var autoSecureText: String {
+        guard let seconds = adapter.autoSecureTimeoutSeconds, seconds > 0 else {
+            return String(localized: "doorlock.autoSecure.off", defaultValue: "Off")
+        }
+        if seconds < 60 {
+            return String(format: String(localized: "doorlock.autoSecure.seconds", defaultValue: "%d sec"), seconds)
+        }
+        let minutes = seconds / 60
+        return String(format: String(localized: "doorlock.autoSecure.minutes", defaultValue: "%d min"), minutes)
+    }
     
     private var jammedBanner: some View {
         HStack(spacing: 10) {
@@ -100,35 +133,57 @@ struct DoorLockControl: View {
     
     // MARK: - Action button
     
-    private var actionButton: some View {
-        let wantsToLock = adapter.currentState == .unsecured
-        let label = wantsToLock
-            ? String(localized: "doorlock.action.lock",   defaultValue: "Lock")
-            : String(localized: "doorlock.action.unlock", defaultValue: "Unlock")
-        let symbol = wantsToLock ? "lock.fill" : "lock.open.fill"
-        let tint: Color = wantsToLock ? .green : .orange
-        
+    private var actionButtons: some View {
+        HStack(spacing: 10) {
+            actionButton(
+                title: String(localized: "doorlock.action.unlock", defaultValue: "Unlock"),
+                symbol: "lock.open.fill",
+                tint: .orange,
+                target: .unsecured,
+                isCurrentState: adapter.currentState == .unsecured
+            )
+            actionButton(
+                title: String(localized: "doorlock.action.lock", defaultValue: "Lock"),
+                symbol: "lock.fill",
+                tint: .green,
+                target: .secured,
+                isCurrentState: adapter.currentState == .secured
+            )
+        }
+        .animation(.spring(response: 0.3), value: adapter.currentState)
+    }
+
+    private func actionButton(
+        title: String,
+        symbol: String,
+        tint: Color,
+        target: DoorLockTargetState,
+        isCurrentState: Bool
+    ) -> some View {
+        let disabled = !isReachable || adapter.isTransitioning || adapter.currentState == .jammed || isCurrentState
+
         return Button {
-            performAction()
+            performAction(target: target)
         } label: {
-            HStack(spacing: 10) {
+            VStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.title2)
-                Text(label)
-                    .font(.title3.weight(.semibold))
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(tint)
+                    .fill(disabled ? Color.secondary.opacity(0.35) : tint)
             )
         }
         .buttonStyle(.plain)
-        .disabled(!isReachable || adapter.isTransitioning || adapter.currentState == .jammed)
+        .disabled(disabled)
         .opacity((!isReachable || adapter.isTransitioning) ? 0.5 : 1.0)
-        .animation(.spring(response: 0.3), value: adapter.currentState)
     }
     
     // MARK: - Battery warning
@@ -153,11 +208,11 @@ struct DoorLockControl: View {
         }
     }
 
-    private func performAction() {
-        let wantsToLock = adapter.currentState == .unsecured
-        pendingTarget = wantsToLock ? .secured : .unsecured
+    private func performAction(target: DoorLockTargetState) {
+        pendingTarget = target
         
         // Haptic forte per "apri" (azione di sicurezza), medio per "chiudi"
+        let wantsToLock = target == .secured
         let haptic = UIImpactFeedbackGenerator(style: wantsToLock ? .medium : .heavy)
         haptic.impactOccurred()
         

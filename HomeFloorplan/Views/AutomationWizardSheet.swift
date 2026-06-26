@@ -146,6 +146,7 @@ struct AutomationWizardSheet: View {
         appendIncluded(inlineActionBundle.securitySystemDrafts, to: &parts)
         appendIncluded(inlineActionBundle.doorLockDrafts, to: &parts)
         appendIncluded(inlineActionBundle.garageDoorDrafts, to: &parts)
+        appendIncluded(inlineActionBundle.valveDrafts, to: &parts)
 
         return parts.prefix(6).joined(separator: " • ") +
         (parts.count > 6 ? " • \(String(localized: "automation.composer.actions.inline.more", defaultValue: "and more"))" : "")

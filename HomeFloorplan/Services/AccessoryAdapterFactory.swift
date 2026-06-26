@@ -87,6 +87,11 @@ enum AccessoryAdapterFactory {
         if let fan = FanAdapter(accessory: accessory, homeKit: homeKit) {
             return fan
         }
+
+        // 3.6 Valvole HomeKit: usano Active, quindi devono precedere OnOffAdapter.
+        if let valve = ValveAdapter(accessory: accessory, homeKit: homeKit) {
+            return valve
+        }
         
         // PRIMA di OnOffAdapter
         let outletServices = accessory.services.filter { $0.serviceType == MultiOutletAdapter.outletServiceType }

@@ -222,6 +222,7 @@ struct SettingsView: View {
                 Text(String(localized: "settings.language.restartAlert.message", defaultValue: "Close and reopen Home Floorplan on this iPad to apply the selected language everywhere."))
             }
 
+#if DEBUG
             // MARK: - Developer
 
             Section {
@@ -240,7 +241,6 @@ struct SettingsView: View {
                         subtitle: String(localized: "settings.diagnostics.activityLog.subtitle", defaultValue: "Review recent app actions for troubleshooting.")
                     )
                 }
-#if DEBUG
                 NavigationLink {
                     AITraceView()
                 } label: {
@@ -260,12 +260,12 @@ struct SettingsView: View {
                         subtitle: "\(ruleEngine.rules.count) local legacy rules"
                     )
                 }
-                #endif
             } header: {
                 Text(String(localized: "settings.developer.header", defaultValue: "Developer"))
             } footer: {
                 Text(String(localized: "settings.developer.footer", defaultValue: "Reset the first-run experience. Close and reopen the app to see the onboarding."))
             }
+#endif
         }
         .tint(BrandColor.primary)
         .navigationTitle(String(localized: "settings.title", defaultValue: "Settings"))

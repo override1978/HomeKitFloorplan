@@ -17,12 +17,13 @@ struct GarageDoorControl: View {
     var body: some View {
         VStack(spacing: 16) {
             statusHeader
+            obstructionStatusRow
             if adapter.obstructionDetected {
                 obstructionBanner
             } else if adapter.currentState == .stopped {
                 stoppedBanner
             }
-            actionButton
+            actionButtons
             if adapter.hasLowBattery {
                 batteryWarning
             }
@@ -82,6 +83,27 @@ struct GarageDoorControl: View {
     }
     
     // MARK: - Banners
+
+    private var obstructionStatusRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: adapter.obstructionDetected ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(adapter.obstructionDetected ? Color.red : Color.green)
+            Text(String(localized: "garage.obstruction.label", defaultValue: "Obstruction"))
+                .font(.subheadline.weight(.medium))
+            Spacer()
+            Text(adapter.obstructionDetected
+                 ? String(localized: "garage.obstruction.detected", defaultValue: "Detected")
+                 : String(localized: "garage.obstruction.clear", defaultValue: "Clear"))
+                .font(.subheadline)
+                .foregroundStyle(adapter.obstructionDetected ? Color.red : Color.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+        )
+    }
     
     private var obstructionBanner: some View {
         HStack(spacing: 10) {
@@ -121,35 +143,57 @@ struct GarageDoorControl: View {
     
     // MARK: - Action button
     
-    private var actionButton: some View {
-        let wantsToClose = (adapter.currentState == .open || adapter.currentState == .opening)
-        let label = wantsToClose
-            ? String(localized: "garage.action.close", defaultValue: "Close")
-            : String(localized: "garage.action.open",  defaultValue: "Open")
-        let symbol = wantsToClose ? "arrow.down.to.line" : "arrow.up.to.line"
-        let tint: Color = wantsToClose ? .green : .orange
-        
+    private var actionButtons: some View {
+        HStack(spacing: 10) {
+            actionButton(
+                title: String(localized: "garage.action.open", defaultValue: "Open"),
+                symbol: "arrow.up.to.line",
+                tint: .orange,
+                target: .open,
+                isCurrentState: adapter.currentState == .open || adapter.currentState == .opening
+            )
+            actionButton(
+                title: String(localized: "garage.action.close", defaultValue: "Close"),
+                symbol: "arrow.down.to.line",
+                tint: .green,
+                target: .closed,
+                isCurrentState: adapter.currentState == .closed || adapter.currentState == .closing
+            )
+        }
+        .animation(.spring(response: 0.3), value: adapter.currentState)
+    }
+
+    private func actionButton(
+        title: String,
+        symbol: String,
+        tint: Color,
+        target: GarageDoorTargetState,
+        isCurrentState: Bool
+    ) -> some View {
+        let disabled = !isReachable || adapter.isTransitioning || adapter.obstructionDetected || isCurrentState
+
         return Button {
-            performAction()
+            performAction(target: target)
         } label: {
-            HStack(spacing: 10) {
+            VStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.title2)
-                Text(label)
-                    .font(.title3.weight(.semibold))
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(tint)
+                    .fill(disabled ? Color.secondary.opacity(0.35) : tint)
             )
         }
         .buttonStyle(.plain)
-        .disabled(!isReachable || adapter.isTransitioning || adapter.obstructionDetected)
+        .disabled(disabled)
         .opacity((!isReachable || adapter.isTransitioning) ? 0.5 : 1.0)
-        .animation(.spring(response: 0.3), value: adapter.currentState)
     }
     
     // MARK: - Battery warning
@@ -174,16 +218,16 @@ struct GarageDoorControl: View {
         }
     }
 
-    private func performAction() {
-        let wantsToClose = (adapter.currentState == .open || adapter.currentState == .opening)
-        pendingTarget = wantsToClose ? .closed : .open
+    private func performAction(target: GarageDoorTargetState) {
+        pendingTarget = target
         
+        let wantsToClose = target == .closed
         let haptic = UIImpactFeedbackGenerator(style: wantsToClose ? .medium : .heavy)
         haptic.impactOccurred()
         
         Task {
             do {
-                try await adapter.setOpen(!wantsToClose)
+                try await adapter.setOpen(target == .open)
             } catch {
                 pendingTarget = nil
                 triggerWriteError()

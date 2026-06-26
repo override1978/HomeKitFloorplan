@@ -1,6 +1,7 @@
 import Foundation
 import HomeKit
 import Observation
+import UserNotifications
 
 /// Service centrale per l'interazione con HomeKit.
 /// - Esposto come `@Observable` (iOS 17+): le View che leggono le sue
@@ -115,6 +116,9 @@ final class HomeKitService: NSObject {
     weak var smartLightingEngine: SmartLightingEngine?
     
     private var observedAccessoryUUIDs: Set<UUID> = []
+    private var knownAccessoryUUIDsForNotifications: Set<UUID> = []
+    private var accessoryNotificationBaselineHomeUUID: UUID?
+    private var hasSeededAccessoryNotificationBaseline = false
 
     // Pending characteristic values waiting to be flushed into `characteristicValues`.
     // Only accessed on MainActor (via Task { @MainActor in } in queueCharacteristicUpdate).
@@ -445,6 +449,9 @@ final class HomeKitService: NSObject {
 
     private func refreshAccessoriesList() {
         let fresh = currentHome?.accessories ?? []
+        let homeUUID = currentHome?.uniqueIdentifier
+        currentHome?.delegate = self
+
         // Re-imposta il delegate su ogni accessorio ad ogni refresh:
         // HomeKit può ricreare internamente gli oggetti HMAccessory (il delegate
         // è weak), quindi questa è l'unica garanzia che accessoryDidUpdateReachability
@@ -455,6 +462,72 @@ final class HomeKitService: NSObject {
             }
         }
         allAccessories = fresh
+        notifyAddedAccessoriesIfNeeded(fresh, homeUUID: homeUUID)
+    }
+
+    private func notifyAddedAccessoriesIfNeeded(_ accessories: [HMAccessory], homeUUID: UUID?) {
+        let currentUUIDs = Set(accessories.map(\.uniqueIdentifier))
+
+        guard isReady,
+              hasSeededAccessoryNotificationBaseline,
+              accessoryNotificationBaselineHomeUUID == homeUUID else {
+            knownAccessoryUUIDsForNotifications = currentUUIDs
+            accessoryNotificationBaselineHomeUUID = homeUUID
+            hasSeededAccessoryNotificationBaseline = true
+            return
+        }
+
+        let addedUUIDs = currentUUIDs.subtracting(knownAccessoryUUIDsForNotifications)
+        knownAccessoryUUIDsForNotifications = currentUUIDs
+
+        guard !addedUUIDs.isEmpty else { return }
+        for accessory in accessories where addedUUIDs.contains(accessory.uniqueIdentifier) {
+            sendAccessoryAddedNotification(for: accessory)
+        }
+    }
+
+    private func sendAccessoryAddedNotification(for accessory: HMAccessory) {
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized ||
+                  settings.authorizationStatus == .provisional ||
+                  settings.authorizationStatus == .ephemeral else {
+                return
+            }
+
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "homekit.accessory.added.notification.title",
+                                   defaultValue: "New accessory added")
+            if let roomName = accessory.room?.name, !roomName.isEmpty {
+                content.body = String(
+                    format: String(localized: "homekit.accessory.added.notification.body.room",
+                                   defaultValue: "%1$@ is now available in %2$@."),
+                    accessory.name,
+                    roomName
+                )
+            } else {
+                content.body = String(
+                    format: String(localized: "homekit.accessory.added.notification.body",
+                                   defaultValue: "%@ is now available in HomeFloorplan."),
+                    accessory.name
+                )
+            }
+            content.sound = .default
+            content.categoryIdentifier = NotificationCategory.deviceHealth.unCategoryIdentifier
+            content.threadIdentifier = "com.homefloorplan.accessory.lifecycle"
+            content.targetContentIdentifier = accessory.uniqueIdentifier.uuidString
+
+            let request = UNNotificationRequest(
+                identifier: "accessory-added-\(accessory.uniqueIdentifier.uuidString)",
+                content: content,
+                trigger: nil
+            )
+            center.add(request) { error in
+                if let error {
+                    dprint("🔔 Notifica accessorio aggiunto fallita per \(accessory.name): \(error)")
+                }
+            }
+        }
     }
 }
 
@@ -530,6 +603,19 @@ extension HomeKitService: HMHomeManagerDelegate {
         }
     }
 }
+
+// MARK: - HMHomeDelegate
+
+extension HomeKitService: HMHomeDelegate {
+    func home(_ home: HMHome, didAdd accessory: HMAccessory) {
+        refreshAccessoriesList()
+    }
+
+    func home(_ home: HMHome, didRemove accessory: HMAccessory) {
+        refreshAccessoriesList()
+    }
+}
+
 // MARK: - HMAccessoryDelegate
 
 extension HomeKitService: HMAccessoryDelegate {

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		173EE2A82FD8AFBF0024A44B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 173EE2A72FD8AFBF0024A44B /* PrivacyInfo.xcprivacy */; };
+		17777E022FEDE936003F18FB /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = 17777E012FEDE936003F18FB /* Lottie */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +42,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				17777E022FEDE936003F18FB /* Lottie in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +86,7 @@
 			);
 			name = HomeFloorplan;
 			packageProductDependencies = (
+				17777E012FEDE936003F18FB /* Lottie */,
 			);
 			productName = HomeFloorplan;
 			productReference = 174C63AA2FBA5556004752B5 /* HomeFloorplan.app */;
@@ -114,6 +117,9 @@
 			);
 			mainGroup = 174C63A12FBA5556004752B5;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				17777E002FEDE936003F18FB /* XCRemoteSwiftPackageReference "lottie-spm" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 174C63AB2FBA5556004752B5 /* Products */;
 			projectDirPath = "";
@@ -393,6 +399,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		17777E002FEDE936003F18FB /* XCRemoteSwiftPackageReference "lottie-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/airbnb/lottie-spm.git";
+			requirement = {
+				kind = exactVersion;
+				version = 4.6.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		17777E012FEDE936003F18FB /* Lottie */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 17777E002FEDE936003F18FB /* XCRemoteSwiftPackageReference "lottie-spm" */;
+			productName = Lottie;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 174C63A22FBA5556004752B5 /* Project object */;
 }

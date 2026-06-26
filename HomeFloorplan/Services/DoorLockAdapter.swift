@@ -27,11 +27,13 @@ final class DoorLockAdapter: AccessoryAdapter, MarkerRuntimeStateProviding {
     private let currentStateCharacteristic: HMCharacteristic
     private let targetStateCharacteristic: HMCharacteristic
     private let lowBatteryCharacteristic: HMCharacteristic?
+    private let autoSecureTimeoutCharacteristic: HMCharacteristic?
     
     init?(accessory: HMAccessory, homeKit: HomeKitService) {
         let currentStateUUID = "0000001D-0000-1000-8000-0026BB765291"
         let targetStateUUID = "0000001E-0000-1000-8000-0026BB765291"
         let lowBatteryUUID = "00000079-0000-1000-8000-0026BB765291"
+        let autoSecureTimeoutUUID = "0000001A-0000-1000-8000-0026BB765291"
         let lockServiceUUID = "00000045-0000-1000-8000-0026BB765291"
         
         guard let current = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: currentStateUUID),
@@ -46,6 +48,7 @@ final class DoorLockAdapter: AccessoryAdapter, MarkerRuntimeStateProviding {
         self.currentStateCharacteristic = current
         self.targetStateCharacteristic = target
         self.lowBatteryCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: lowBatteryUUID)
+        self.autoSecureTimeoutCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: autoSecureTimeoutUUID)
     }
     
     // MARK: - AccessoryAdapter
@@ -135,6 +138,11 @@ final class DoorLockAdapter: AccessoryAdapter, MarkerRuntimeStateProviding {
     var hasLowBattery: Bool {
         guard let c = lowBatteryCharacteristic else { return false }
         return intValue(homeKit.value(for: c) ?? c.value) == 1
+    }
+
+    var autoSecureTimeoutSeconds: Int? {
+        guard let c = autoSecureTimeoutCharacteristic else { return nil }
+        return intValue(homeKit.value(for: c) ?? c.value)
     }
     
     // MARK: - Writes

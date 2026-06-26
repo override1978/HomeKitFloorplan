@@ -267,8 +267,9 @@ struct AllAccessoriesView: View {
                         filterPill(
                             title: state.displayName,
                             symbol: state.symbolName,
-                            count: nil,
-                            isSelected: selectedStateFilter == state
+                            count: countForStateFilter(state),
+                            isSelected: selectedStateFilter == state,
+                            showsZeroCount: true
                         ) {
                             selectedStateFilter = state
                         }
@@ -284,14 +285,21 @@ struct AllAccessoriesView: View {
         )
     }
 
-    private func filterPill(title: String, symbol: String, count: Int?, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    private func filterPill(
+        title: String,
+        symbol: String,
+        count: Int?,
+        isSelected: Bool,
+        showsZeroCount: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: symbol)
                     .font(.caption.weight(.semibold))
                 Text(title)
                     .font(.subheadline.weight(.medium))
-                if let count, count > 0 {
+                if let count, count > 0 || showsZeroCount {
                     Text("\(count)")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
@@ -347,6 +355,15 @@ struct AllAccessoriesView: View {
         return homeKit.allAccessories.filter { accessory in
             let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
             return AccessoryCategory.classify(adapter: adapter) == category
+        }.count
+    }
+
+    private func countForStateFilter(_ state: AccessoryStateFilter) -> Int {
+        guard state != .all else { return homeKit.allAccessories.count }
+        return homeKit.allAccessories.filter { accessory in
+            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+            let isOffline = !homeKit.isReachable(accessory)
+            return state.matches(adapter: adapter, isOffline: isOffline)
         }.count
     }
     

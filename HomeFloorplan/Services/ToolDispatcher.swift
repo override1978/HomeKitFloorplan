@@ -79,6 +79,7 @@ final class ToolDispatcher {
         let lightbulb = "00000043-0000-1000-8000-0026bb765291"
         let cover = "0000008c-0000-1000-8000-0026bb765291"
         let humidifier = "000000bd-0000-1000-8000-0026bb765291"
+        let valve = ValveAdapter.serviceType.lowercased()
 
         switch action {
         case "on", "off":
@@ -93,8 +94,8 @@ final class ToolDispatcher {
                 && !services.contains(humidifier)
                 && chars.contains("000000ce-0000-1000-8000-0026bb765291")
         case "open", "close":
-            return services.contains(cover)
-                && chars.contains("0000007c-0000-1000-8000-0026bb765291")
+            return (services.contains(cover) && chars.contains("0000007c-0000-1000-8000-0026bb765291"))
+                || (services.contains(valve) && chars.contains("000000b0-0000-1000-8000-0026bb765291"))
         case "setSpeed":
             return chars.contains("00000029-0000-1000-8000-0026bb765291")
         case "setTemp":
@@ -166,9 +167,13 @@ final class ToolDispatcher {
 
         let lightbulb  = "00000043-0000-1000-8000-0026bb765291"
         let humidifier = "000000bd-0000-1000-8000-0026bb765291"
+        let valve      = ValveAdapter.serviceType.lowercased()
         if serviceTypes.contains(lightbulb), !serviceTypes.contains(humidifier) {
             if charTypes.contains("00000008-0000-1000-8000-0026bb765291") { caps.append("dim") }
             if charTypes.contains("000000ce-0000-1000-8000-0026bb765291") { caps.append("setColorTemp") }
+        }
+        if serviceTypes.contains(valve), charTypes.contains("000000b0-0000-1000-8000-0026bb765291") {
+            caps.append("open/close")
         }
         if charTypes.contains("00000035-0000-1000-8000-0026bb765291") { caps.append("setTemp") }
         if charTypes.contains("00000029-0000-1000-8000-0026bb765291") { caps.append("setSpeed") }
@@ -194,6 +199,7 @@ final class ToolDispatcher {
         let thermostat = "0000004a-0000-1000-8000-0026bb765291"
         let lock       = "00000045-0000-1000-8000-0026bb765291"
         let garage     = "00000041-0000-1000-8000-0026bb765291"
+        let valve      = ValveAdapter.serviceType.lowercased()
         let airPurif   = "000000bb-0000-1000-8000-0026bb765291"
         let humidifier = "000000bd-0000-1000-8000-0026bb765291"
         let services   = Set(accessory.services.map { $0.serviceType.lowercased() })
@@ -202,6 +208,7 @@ final class ToolDispatcher {
         if services.contains(thermostat)                    { return "termostato" }
         if services.contains(lock)                          { return "serratura" }
         if services.contains(garage)                        { return "portone" }
+        if services.contains(valve)                         { return "valvola" }
         if services.contains(Self.securitySystemServiceType.lowercased()) { return "sicurezza" }
         if services.contains(lightbulb)                     { return "luce" }
         if services.contains(outlet)                        { return "presa" }
@@ -458,7 +465,7 @@ final class ToolDispatcher {
                     ],
                     "type": [
                         "type": "string",
-                        "description": "Tipo accessori da colpire nella stanza: luci | prese | ventilatore | tende. Il tool risolve da solo gli accessori; non serve listAccessories prima."
+                        "description": "Tipo accessori da colpire nella stanza: luci | prese | ventilatore | tende | valvola. Il tool risolve da solo gli accessori; non serve listAccessories prima."
                     ]
                 ],
                 "required": ["action"]
@@ -1983,6 +1990,9 @@ final class ToolDispatcher {
                         accessoryID: accessory.uniqueIdentifier
                     ) ?? 100
                     pending.append(PendingAction(characteristic: c, value: rawPosition as NSNumber))
+                } else if accessory.services.contains(where: { $0.serviceType.caseInsensitiveCompare(ValveAdapter.serviceType) == .orderedSame }),
+                          let c = ch(activeUUID) {
+                    pending.append(PendingAction(characteristic: c, value: 1 as NSNumber))
                 }
             case "close":
                 if let c = ch(positionUUID) {
@@ -1991,6 +2001,9 @@ final class ToolDispatcher {
                         accessoryID: accessory.uniqueIdentifier
                     ) ?? 0
                     pending.append(PendingAction(characteristic: c, value: rawPosition as NSNumber))
+                } else if accessory.services.contains(where: { $0.serviceType.caseInsensitiveCompare(ValveAdapter.serviceType) == .orderedSame }),
+                          let c = ch(activeUUID) {
+                    pending.append(PendingAction(characteristic: c, value: 0 as NSNumber))
                 }
             case "setTemp":
                 if let c = ch(targetTempUUID), let v = value {
@@ -2167,6 +2180,7 @@ final class ToolDispatcher {
         let thermostat = "0000004a-0000-1000-8000-0026bb765291"
         let airPurif   = "000000bb-0000-1000-8000-0026bb765291"
         let humidifier = "000000bd-0000-1000-8000-0026bb765291"
+        let valve      = ValveAdapter.serviceType.lowercased()
         let services   = Set(acc.services.map { $0.serviceType.lowercased() })
         switch type {
         case "luci", "luce", "light", "lights":          return services.contains(lightbulb)
@@ -2183,6 +2197,8 @@ final class ToolDispatcher {
                                                           return services.contains(airPurif)
         case "umidificatore", "umidificatori", "humidifier", "humidifiers", "diffusore", "diffusori", "diffuser", "diffusers":
                                                           return services.contains(humidifier)
+        case "valvola", "valvole", "valve", "valves", "irrigazione", "irrigation", "rubinetto", "rubinetti", "faucet", "faucets":
+                                                          return services.contains(valve)
         default:                                          return true
         }
     }

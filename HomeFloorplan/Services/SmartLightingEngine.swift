@@ -87,6 +87,8 @@ final class SmartLightingEngine {
     private var engineActivatedAt: [UUID: Date] = [:]
     private var engineMutationSuppressionUntilByRoom: [String: Date] = [:]
     private var lastEngineSceneRunAtByRoom: [String: Date] = [:]
+    private var firstVacantSeenAtByRoom: [String: Date] = [:]
+    private var lastVacancyDiagnosticAtByRoom: [String: Date] = [:]
 
     /// Guardrail anti-oscillazione: Smart Lighting non deve alternare scene sulla stessa stanza
     /// a distanza di pochi secondi, anche se arrivano valutazioni concorrenti o profili duplicati.
@@ -98,6 +100,8 @@ final class SmartLightingEngine {
     private static let minimumAutoOffDelay: TimeInterval = 45 * 60
     private static let naturalLightStabilityWindow: TimeInterval = 20 * 60
     private static let minimumNaturalLightStableDuration: TimeInterval = 10 * 60
+    private static let vacantRoomDiagnosticDelay: TimeInterval = 30 * 60
+    private static let vacantRoomDiagnosticRepeatInterval: TimeInterval = 60 * 60
     private static let maximumDecisionHistoryCount = 50
 
     var isGloballyEnabled: Bool {
@@ -205,6 +209,8 @@ final class SmartLightingEngine {
                                   timeString(overrideUntil)))
                 continue
             }
+
+            appendVacancyDiagnosticIfNeeded(for: profile, in: home, roomKey: roomKey, at: now, log: &log)
 
             // Wake hour: nessuna scena (incluse alba/mattino) prima dell'ora di risveglio
             if let wakeH = profile.wakeHour {
@@ -769,6 +775,121 @@ final class SmartLightingEngine {
             }
         }
         return nil
+    }
+
+    private struct PresenceSnapshot {
+        let hasSensors: Bool
+        let activeSensorName: String?
+
+        var isVacant: Bool {
+            hasSensors && activeSensorName == nil
+        }
+    }
+
+    private func appendVacancyDiagnosticIfNeeded(
+        for profile: LightingProfile,
+        in home: HMHome,
+        roomKey: String,
+        at now: Date,
+        log: inout [String]
+    ) {
+        let presence = presenceSnapshot(for: profile, in: home)
+        guard presence.hasSensors else {
+            firstVacantSeenAtByRoom.removeValue(forKey: roomKey)
+            return
+        }
+
+        if let activeSensorName = presence.activeSensorName {
+            firstVacantSeenAtByRoom.removeValue(forKey: roomKey)
+            log.append(String(format: String(localized: "smartlighting.log.presenceActive",
+                                             defaultValue: "• %@: presence detected by %@ — vacancy diagnostic reset"),
+                              profile.roomName,
+                              activeSensorName))
+            return
+        }
+
+        let firstVacantAt = firstVacantSeenAtByRoom[roomKey] ?? now
+        firstVacantSeenAtByRoom[roomKey] = firstVacantAt
+
+        guard now.timeIntervalSince(firstVacantAt) >= Self.vacantRoomDiagnosticDelay,
+              roomHasAnyLightOn(profile, in: home) else {
+            return
+        }
+
+        if let lastDiagnosticAt = lastVacancyDiagnosticAtByRoom[roomKey],
+           now.timeIntervalSince(lastDiagnosticAt) < Self.vacantRoomDiagnosticRepeatInterval {
+            return
+        }
+
+        lastVacancyDiagnosticAtByRoom[roomKey] = now
+        let minutes = Int(now.timeIntervalSince(firstVacantAt) / 60)
+        log.append(String(format: String(localized: "smartlighting.log.vacantLightsOn",
+                                         defaultValue: "• %@: no presence for %d min and lights appear on — diagnostic only, no auto-off"),
+                          profile.roomName,
+                          minutes))
+        recordDecision(
+            roomName: profile.roomName,
+            action: .keep,
+            phase: nil,
+            sceneName: nil,
+            reason: "Vacancy diagnostic: no presence for \(minutes) min while lights appear on",
+            luxSample: nil,
+            at: now
+        )
+    }
+
+    private func presenceSnapshot(for profile: LightingProfile, in home: HMHome) -> PresenceSnapshot {
+        let sensorTypes = Set([
+            HMCharacteristicTypeMotionDetected.lowercased(),
+            HMCharacteristicTypeOccupancyDetected.lowercased()
+        ])
+        var hasSensors = false
+
+        for accessory in roomAccessories(for: profile, in: home) {
+            for service in accessory.services {
+                for characteristic in service.characteristics
+                where sensorTypes.contains(characteristic.characteristicType.lowercased()) {
+                    hasSensors = true
+                    let rawValue = homeKit.value(for: characteristic) ?? characteristic.value
+                    if boolValue(rawValue) == true || intValue(rawValue) == 1 {
+                        return PresenceSnapshot(hasSensors: true, activeSensorName: accessory.name)
+                    }
+                }
+            }
+        }
+
+        return PresenceSnapshot(hasSensors: hasSensors, activeSensorName: nil)
+    }
+
+    private func roomHasAnyLightOn(_ profile: LightingProfile, in home: HMHome) -> Bool {
+        for accessory in roomAccessories(for: profile, in: home) {
+            let isLightAccessory = accessory.category.categoryType == HMAccessoryCategoryTypeLightbulb
+            for service in accessory.services where isLightAccessory || service.serviceType == HMServiceTypeLightbulb {
+                if service.characteristics.contains(where: isLightOnCharacteristic) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private func isLightOnCharacteristic(_ characteristic: HMCharacteristic) -> Bool {
+        let rawValue = homeKit.value(for: characteristic) ?? characteristic.value
+        switch characteristic.characteristicType {
+        case HMCharacteristicTypePowerState:
+            return boolValue(rawValue) == true || intValue(rawValue) == 1
+        case HMCharacteristicTypeBrightness:
+            return (intValue(rawValue) ?? 0) > 0
+        default:
+            return false
+        }
+    }
+
+    private func roomAccessories(for profile: LightingProfile, in home: HMHome) -> [HMAccessory] {
+        let roomKey = normalizedRoomName(profile.roomName)
+        return home.rooms
+            .filter { normalizedRoomName($0.name) == roomKey || normalizedRoomName($0.name).contains(roomKey) }
+            .flatMap(\.accessories)
     }
 
     private func usesIndependentLuxSensor(for profile: LightingProfile) -> Bool {

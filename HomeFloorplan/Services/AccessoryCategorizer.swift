@@ -20,7 +20,8 @@ enum AccessoryCategorizer {
     private static let humidifierDehumidifierServiceType = "000000BD-0000-1000-8000-0026BB765291"
     private static let heaterCoolerType          = "000000BC-0000-1000-8000-0026BB765291"
     private static let thermostatType            = "0000004A-0000-1000-8000-0026BB765291"
-    private static let valveType                 = "00000081-0000-1000-8000-0026BB765291"
+    private static let irrigationSystemType      = "00000081-0000-1000-8000-0026BB765291"
+    private static let valveType                 = "000000D0-0000-1000-8000-0026BB765291"
     private static let windowCoveringServiceType     = "0000008C-0000-1000-8000-0026BB765291"
     private static let televisionServiceType         = TelevisionAdapter.televisionServiceUUID
     /// HAP UUID for the Programmable Switch Event characteristic (stateless button presses).
@@ -67,8 +68,8 @@ enum AccessoryCategorizer {
             return "thermostat"
         }
 
-        // Valve (TRV)
-        if services.contains(where: { $0.serviceType == valveType }) {
+        // Valve / irrigation controller
+        if services.contains(where: { $0.serviceType == valveType || $0.serviceType == irrigationSystemType }) {
             return "valve"
         }
 

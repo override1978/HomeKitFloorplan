@@ -170,7 +170,7 @@ struct DrawingEditorHelpSheet: View {
         DrawingHelpSection(
             icon: "pencil.tip",
             title: String(localized: "drawing.help.wall.title", defaultValue: "Walls"),
-            message: String(localized: "drawing.help.wall.message", defaultValue: "Choose Wall, then drag on the canvas. Snap keeps endpoints aligned to the grid or nearby vertices.")
+            message: String(localized: "drawing.help.wall.message", defaultValue: "Choose Wall, then drag on the canvas or tap two points. Snap keeps endpoints aligned to the grid or nearby vertices.")
         ),
         DrawingHelpSection(
             icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
@@ -195,7 +195,7 @@ struct DrawingEditorHelpSheet: View {
         DrawingHelpSection(
             icon: "magnet",
             title: String(localized: "drawing.help.snap.title", defaultValue: "Snap"),
-            message: String(localized: "drawing.help.snap.message", defaultValue: "Use the magnet to switch between grid-only snapping and smart snapping to nearby wall endpoints.")
+            message: String(localized: "drawing.help.snap.message", defaultValue: "Use the magnet to switch between grid-only snapping and smart snapping to nearby wall endpoints. Wall drawing also aligns to the nearest 45-degree angle.")
         ),
         DrawingHelpSection(
             icon: "rectangle.and.arrow.up.right.and.arrow.down.left",

@@ -81,6 +81,7 @@ struct HomeKitDebugAccessoryDetail: View {
             kvRow("Firmware", accessoryInfoValue(for: "00000052-0000-1000-8000-0026BB765291") ?? "—")
             kvRow("Serial", accessoryInfoValue(for: "00000030-0000-1000-8000-0026BB765291") ?? "—")
             kvRow("Hardware", accessoryInfoValue(for: HMCharacteristicTypeHardwareVersion) ?? "—")
+            kvRow(String(localized: "homekit.debug.battery", defaultValue: "Battery"), batteryText)
             kvRow(String(localized: "homekit.debug.reachableRaw", defaultValue: "Reachable raw"), yesNo(accessory.isReachable))
             kvRow(String(localized: "homekit.debug.reachableApp", defaultValue: "Reachable app"), yesNo(homeKit.isReachable(accessory)))
             kvRow(String(localized: "homekit.debug.reachabilitySettled", defaultValue: "Reachability settled"), yesNo(homeKit.reachabilitySettled))
@@ -195,6 +196,18 @@ struct HomeKitDebugAccessoryDetail: View {
         ? String(localized: "common.yes", defaultValue: "Yes")
         : String(localized: "common.no", defaultValue: "No")
     }
+
+    private var batteryText: String {
+        guard let battery = BatteryReader.read(from: accessory, via: homeKit) else {
+            return "—"
+        }
+        if let level = battery.level {
+            return battery.isLow
+            ? "\(level)% low"
+            : "\(level)%"
+        }
+        return battery.isLow ? "Low" : "OK"
+    }
     
     // MARK: Diagnostic dump (clipboard)
     
@@ -213,6 +226,7 @@ struct HomeKitDebugAccessoryDetail: View {
         out.append("Model: \(accessoryInfoValue(for: "00000021-0000-1000-8000-0026BB765291") ?? "—")")
         out.append("Firmware: \(accessoryInfoValue(for: "00000052-0000-1000-8000-0026BB765291") ?? "—")")
         out.append("Hardware: \(accessoryInfoValue(for: HMCharacteristicTypeHardwareVersion) ?? "—")")
+        out.append("Battery: \(batteryText)")
         out.append("Reachable raw: \(accessory.isReachable)")
         out.append("Reachable app: \(homeKit.isReachable(accessory))")
         out.append("Reachability settled: \(homeKit.reachabilitySettled)")

@@ -1,9 +1,6 @@
 import SwiftUI
 import HomeKit
 import AVKit
-#if canImport(Lottie)
-import Lottie
-#endif
 
 private enum SmartLightingSceneValidator {
     static func warnings(for scene: SceneItem, targetRoomName: String) -> [String] {
@@ -95,19 +92,17 @@ private struct SmartLightingExplainerView: View {
     var body: some View {
         Group {
             if isCompact {
+                VStack(alignment: .leading, spacing: 8) {
+                    SmartLightingExplainerMediaView(height: 120)
+                    textStack
+                }
+                .padding(.vertical, 6)
+            } else {
                 VStack(alignment: .leading, spacing: 10) {
-                    SmartLightingExplainerMediaView(width: 260, height: 152)
-                        .frame(maxWidth: .infinity)
+                    SmartLightingExplainerMediaView(height: 140)
                     textStack
                 }
                 .padding(.vertical, 8)
-            } else {
-                VStack(alignment: .leading, spacing: 14) {
-                    SmartLightingExplainerMediaView(width: 300, height: 176)
-                        .frame(maxWidth: .infinity)
-                    textStack
-                }
-                .padding(.vertical, 10)
             }
         }
         .accessibilityElement(children: .combine)
@@ -128,67 +123,28 @@ private struct SmartLightingExplainerView: View {
 }
 
 private struct SmartLightingExplainerMediaView: View {
-    let width: CGFloat
     let height: CGFloat
 
-    private let lottieName = "adaptive-lighting-v2.lottie"
-    private let lottieExtension = "json"
     private let videoName = "smart_lighting_ios_card_loop"
     private let videoExtension = "mp4"
 
     var body: some View {
-        Group {
-            #if canImport(Lottie)
-            if Bundle.main.url(forResource: lottieName, withExtension: lottieExtension) != nil {
-                SmartLightingLottieView(animationName: lottieName)
-                    .frame(width: width, height: height)
-            } else if Bundle.main.url(forResource: videoName, withExtension: videoExtension) != nil {
-                SmartLightingLoopingVideoView(resourceName: videoName, fileExtension: videoExtension)
-                    .frame(width: width, height: height)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                    )
-            } else {
-                SmartLightingExplainerArtwork(size: width)
-            }
-            #else
+        ZStack {
             if Bundle.main.url(forResource: videoName, withExtension: videoExtension) != nil {
                 SmartLightingLoopingVideoView(resourceName: videoName, fileExtension: videoExtension)
-                    .frame(width: width, height: height)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-                    )
             } else {
-                SmartLightingExplainerArtwork(size: width)
+                SmartLightingExplainerArtwork(size: height)
             }
-            #endif
         }
-        .frame(width: width, height: height)
+        .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        )
+        .clipped()
     }
 }
-
-#if canImport(Lottie)
-private struct SmartLightingLottieView: View {
-    let animationName: String
-
-    var body: some View {
-        LottieView(animation: .named(animationName))
-            .playing(loopMode: .loop)
-            .resizable()
-            .scaledToFit()
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
-            )
-            .accessibilityHidden(true)
-    }
-}
-#endif
 
 private struct SmartLightingLoopingVideoView: UIViewRepresentable {
     let resourceName: String

@@ -171,6 +171,10 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         // Draw wall state
         private var drawStartPoint: CGPoint?
+        private var drawTouchStartPoint: CGPoint?
+        private var didExceedDrawDragThreshold = false
+        private var pendingTapWallStart: CGPoint?
+        private var pendingTapWallKind: WallKind?
         private var currentPreviewWall: WallSegment?
         private var currentCursor: CGPoint?
         private var currentIsVertexSnap: Bool = false
@@ -223,11 +227,39 @@ struct DrawingCanvasView: UIViewRepresentable {
             }
         }
 
+        private func angleSnappedEnd(from start: CGPoint, to end: CGPoint, snapResult: SnapResult) -> CGPoint {
+            guard !snapResult.isVertex else { return end }
+
+            let dx = end.x - start.x
+            let dy = end.y - start.y
+            guard hypot(dx, dy) >= DrawingDocument.gridSpacing else { return end }
+
+            let angle = atan2(dy, dx)
+            let octant = CGFloat(Int(round(angle / (.pi / 4))))
+            let snappedAngle = octant * (.pi / 4)
+            let directionX = cos(snappedAngle)
+            let directionY = sin(snappedAngle)
+
+            if abs(directionY) < 0.001 {
+                return CGPoint(x: end.x, y: start.y)
+            }
+            if abs(directionX) < 0.001 {
+                return CGPoint(x: start.x, y: end.y)
+            }
+
+            let diagonalLength = max(abs(dx), abs(dy))
+            return CGPoint(x: start.x + (directionX > 0 ? diagonalLength : -diagonalLength),
+                           y: start.y + (directionY > 0 ? diagonalLength : -diagonalLength))
+        }
+
         func makeHostingController() -> UIHostingController<DrawingContentWrapper> {
             UIHostingController(rootView: DrawingContentWrapper(state: contentState))
         }
 
         func updateContent(document: DrawingDocument, mode: DrawingMode, selection: DrawingSelection) {
+            if mode != .draw {
+                clearPendingTapWall()
+            }
             contentState.document     = document
             contentState.mode         = mode
             contentState.selection    = selection
@@ -274,32 +306,85 @@ struct DrawingCanvasView: UIViewRepresentable {
             switch gr.state {
             case .began:
                 drawStartPoint      = snapped
+                drawTouchStartPoint = rawPoint
+                didExceedDrawDragThreshold = false
                 currentCursor       = snapped
                 currentIsVertexSnap = snapResult.isVertex
                 refreshPreview()
             case .changed:
-                currentCursor       = snapped
+                let constrained = drawStartPoint.map {
+                    angleSnappedEnd(from: $0, to: snapped, snapResult: snapResult)
+                } ?? snapped
+                currentCursor       = constrained
                 currentIsVertexSnap = snapResult.isVertex
-                if let start = drawStartPoint {
-                    currentPreviewWall = WallSegment(start: start, end: snapped,
+                if let touchStart = drawTouchStartPoint,
+                   hypot(rawPoint.x - touchStart.x, rawPoint.y - touchStart.y) > canvasThreshold(10) {
+                    didExceedDrawDragThreshold = true
+                }
+                if didExceedDrawDragThreshold, let start = drawStartPoint {
+                    pendingTapWallStart = nil
+                    pendingTapWallKind  = nil
+                    currentPreviewWall = WallSegment(start: start, end: constrained,
                                                      kind: parent.wallKind)
                 }
                 refreshPreview()
             case .ended, .cancelled, .failed:
-                if let start = drawStartPoint, start != snapped {
-                    var newDoc = parent.document
-                    newDoc.walls.append(WallSegment(start: start, end: snapped,
-                                                    kind: parent.wallKind))
-                    parent.onCommit(newDoc)
+                if gr.state == .ended {
+                    if didExceedDrawDragThreshold {
+                        if let start = drawStartPoint {
+                            let constrained = angleSnappedEnd(from: start, to: snapped, snapResult: snapResult)
+                            if start != constrained {
+                                commitWall(start: start, end: constrained, kind: parent.wallKind)
+                            }
+                        }
+                        clearPendingTapWall()
+                    } else {
+                        handleTapWallPoint(snapped, snapResult: snapResult)
+                    }
+                } else if didExceedDrawDragThreshold {
+                    clearPendingTapWall()
                 }
                 drawStartPoint      = nil
+                drawTouchStartPoint = nil
+                didExceedDrawDragThreshold = false
                 currentPreviewWall  = nil
-                currentCursor       = nil
-                currentIsVertexSnap = false
+                if pendingTapWallStart == nil {
+                    currentCursor       = nil
+                    currentIsVertexSnap = false
+                }
                 refreshPreview()
             default:
                 break
             }
+        }
+
+        private func handleTapWallPoint(_ point: CGPoint, snapResult: SnapResult) {
+            if let start = pendingTapWallStart {
+                let constrained = angleSnappedEnd(from: start, to: point, snapResult: snapResult)
+                if start != constrained {
+                    commitWall(start: start, end: constrained, kind: pendingTapWallKind ?? parent.wallKind)
+                }
+                clearPendingTapWall()
+            } else {
+                pendingTapWallStart = point
+                pendingTapWallKind  = parent.wallKind
+                currentCursor       = point
+                currentIsVertexSnap = snapResult.isVertex
+            }
+        }
+
+        private func commitWall(start: CGPoint, end: CGPoint, kind: WallKind) {
+            var newDoc = parent.document
+            newDoc.walls.append(WallSegment(start: start, end: end, kind: kind))
+            parent.onCommit(newDoc)
+        }
+
+        private func clearPendingTapWall() {
+            pendingTapWallStart = nil
+            pendingTapWallKind  = nil
+            currentCursor       = nil
+            currentIsVertexSnap = false
+            currentPreviewWall  = nil
         }
 
         // MARK: Draw room area
@@ -462,7 +547,12 @@ struct DrawingCanvasView: UIViewRepresentable {
                 }
                 // Move wall endpoint
                 if let id = draggingWallEndpointID, let epIdx = draggingEndpointIndex {
-                    let snapped = performSnap(rawPoint).point
+                    let snapResult = performSnap(rawPoint)
+                    var snapped = snapResult.point
+                    if let wall = parent.document.wall(for: id) {
+                        let anchor = epIdx == 0 ? wall.end : wall.start
+                        snapped = angleSnappedEnd(from: anchor, to: snapped, snapResult: snapResult)
+                    }
                     parent.onMoveWallEndpoint?(id, epIdx, snapped)
                 }
                 // Move whole wall

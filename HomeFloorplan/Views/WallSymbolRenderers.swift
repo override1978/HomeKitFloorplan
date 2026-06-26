@@ -278,6 +278,7 @@ func renderDocument(_ doc: DrawingDocument, in cgContext: CGContext, canvasSize:
     // Wall depth shadow: inner shadow on the interior side of perimeter walls,
     // drawn on top of room colors so it darkens the area near each wall.
     drawWallDepthShadowCG(doc, context: cgContext)
+    drawWallCastShadowsCG(doc, context: cgContext)
 
     // Walls — draw order: balcony first, interior, exterior last.
     // Exterior walls paint over any overlapping balcony/interior segments.
@@ -287,6 +288,7 @@ func renderDocument(_ doc: DrawingDocument, in cgContext: CGContext, canvasSize:
             drawWallCG(wall, context: cgContext)
         }
     }
+    drawWallBevelsCG(doc, context: cgContext)
 
     // Openings
     for opening in doc.openings {
@@ -408,6 +410,81 @@ private func drawWallCG(_ wall: WallSegment, context: CGContext) {
         context.addLine(to: wall.end)
         context.strokePath()
     }
+}
+
+private func drawWallCastShadowsCG(_ doc: DrawingDocument, context: CGContext) {
+    context.saveGState()
+    context.setLineCap(.square)
+    context.setLineJoin(.bevel)
+    context.setLineDash(phase: 0, lengths: [])
+
+    for wall in doc.walls where wall.kind != .balcony {
+        let width = DrawingDocument.wallWidth(for: wall.kind)
+        let alpha: CGFloat = wall.kind == .exterior ? 0.16 : 0.10
+        let blur: CGFloat = wall.kind == .exterior ? 5.5 : 3.5
+        let offset = CGSize(width: width * 0.16, height: width * 0.20)
+
+        context.saveGState()
+        context.setShadow(offset: offset,
+                          blur: blur,
+                          color: UIColor.black.withAlphaComponent(alpha).cgColor)
+        context.setStrokeColor(UIColor.black.withAlphaComponent(0.03).cgColor)
+        context.setLineWidth(width)
+        context.move(to: wall.start)
+        context.addLine(to: wall.end)
+        context.strokePath()
+        context.restoreGState()
+    }
+
+    context.restoreGState()
+}
+
+private func drawWallBevelsCG(_ doc: DrawingDocument, context: CGContext) {
+    for wall in doc.walls where wall.kind != .balcony {
+        drawWallBevelCG(wall, context: context)
+    }
+}
+
+private func drawWallBevelCG(_ wall: WallSegment, context: CGContext) {
+    let dx = wall.end.x - wall.start.x
+    let dy = wall.end.y - wall.start.y
+    let length = hypot(dx, dy)
+    guard length > 0 else { return }
+
+    let width = DrawingDocument.wallWidth(for: wall.kind)
+    let unitX = dx / length
+    let unitY = dy / length
+    let normal = CGPoint(x: -unitY, y: unitX)
+    let lightVector = CGPoint(x: -0.65, y: -0.76)
+    let firstSideLit = normal.x * lightVector.x + normal.y * lightVector.y >= 0
+    let litNormal = firstSideLit ? normal : CGPoint(x: -normal.x, y: -normal.y)
+    let shadedNormal = CGPoint(x: -litNormal.x, y: -litNormal.y)
+
+    let edgeOffset = width * 0.39
+    let lineWidth = max(1.0, width * 0.10)
+    let inset = width * 0.18
+    let start = CGPoint(x: wall.start.x + unitX * inset, y: wall.start.y + unitY * inset)
+    let end = CGPoint(x: wall.end.x - unitX * inset, y: wall.end.y - unitY * inset)
+
+    context.saveGState()
+    context.setLineCap(.butt)
+    context.setLineDash(phase: 0, lengths: [])
+    context.setLineWidth(lineWidth)
+
+    context.setStrokeColor(UIColor.white.withAlphaComponent(wall.kind == .exterior ? 0.34 : 0.26).cgColor)
+    context.move(to: CGPoint(x: start.x + litNormal.x * edgeOffset,
+                             y: start.y + litNormal.y * edgeOffset))
+    context.addLine(to: CGPoint(x: end.x + litNormal.x * edgeOffset,
+                                y: end.y + litNormal.y * edgeOffset))
+    context.strokePath()
+
+    context.setStrokeColor(UIColor.black.withAlphaComponent(wall.kind == .exterior ? 0.30 : 0.20).cgColor)
+    context.move(to: CGPoint(x: start.x + shadedNormal.x * edgeOffset,
+                             y: start.y + shadedNormal.y * edgeOffset))
+    context.addLine(to: CGPoint(x: end.x + shadedNormal.x * edgeOffset,
+                                y: end.y + shadedNormal.y * edgeOffset))
+    context.strokePath()
+    context.restoreGState()
 }
 
 private func drawDoorCG(_ opening: PlacedOpening, wall: WallSegment, context: CGContext) {
