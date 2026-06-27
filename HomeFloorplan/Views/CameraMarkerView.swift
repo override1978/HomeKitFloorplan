@@ -57,8 +57,14 @@ struct CameraMarkerView: View {
     var body: some View {
         VStack(spacing: 2) {
             thumbnailFrame
-                .shadow(color: .black.opacity(isOffline ? 0.12 : 0.22),
-                        radius: 6, y: 2)
+                .shadow(color: .black.opacity(isOffline ? 0.16 : 0.30),
+                        radius: isOffline ? 6 : 10,
+                        x: 0,
+                        y: isOffline ? 2 : 4)
+                .shadow(color: .white.opacity(isOffline ? 0.08 : 0.16),
+                        radius: 1,
+                        x: 0,
+                        y: -1)
                 .opacity(isOffline ? 0.6 : 1.0)
 
             // Label pill (mirrors AccessoryMarkerView)
@@ -163,6 +169,22 @@ struct CameraMarkerView: View {
                     .tint(.white)
                     .scaleEffect(0.7)
             }
+
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .white.opacity(0.22), location: 0.0),
+                            .init(color: .white.opacity(0.06), location: 0.38),
+                            .init(color: .clear, location: 0.72)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: size.width, height: size.height)
+                .blendMode(.screen)
+                .allowsHitTesting(false)
 
             // Border: selected (brand) or normal
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)

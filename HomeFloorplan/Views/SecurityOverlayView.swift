@@ -18,10 +18,18 @@ struct SecurityOverlayView: View {
 
     @Environment(HomeKitService.self) private var homeKit
 
-    /// Telecamera selezionata dall'utente → apre AccessoryDetailView.
-    @State private var selectedCamera: HMAccessory?
+    /// Accessorio security selezionato dall'utente → apre AccessoryDetailView.
+    @State private var selectedSecurityAccessory: HMAccessory?
     /// Camera adapters per room UUID — rebuilt only when accessory count changes.
     @State private var camerasPerRoom: [UUID: [CameraAdapter]] = [:]
+    /// Contact sensor adapters per room UUID — used to show protected/open window-door coverage.
+    @State private var contactSensorsPerRoom: [UUID: [SensorAdapter]] = [:]
+    /// Mirrors SecurityView — contact coverage should only include configured monitored sensors.
+    @AppStorage("securityMonitoredUUIDs") private var monitoredUUIDsRaw: String = ""
+
+    private var monitoredAccessoryIDs: Set<String> {
+        Set(monitoredUUIDsRaw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+    }
 
     var body: some View {
         let h = FloorplanCoordinateHelper(imageRect: imageRect)
@@ -52,11 +60,12 @@ struct SecurityOverlayView: View {
             ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
                 let status = statusByRoom[room.hmRoomUUID] ?? .none
                 let center = h.centroid(for: room)
+                let contactSensors = contactSensorsPerRoom[room.hmRoomUUID] ?? []
 
                 Button {
                     overlayVM.selectRoom(room.hmRoomUUID)
                 } label: {
-                    securityBadge(room: room, status: status)
+                    securityBadge(room: room, status: status, contactSensorCount: contactSensors.count)
                         .scaleEffect(inverseScale)
                 }
                 .buttonStyle(.plain)
@@ -70,7 +79,7 @@ struct SecurityOverlayView: View {
                 ForEach(Array(cameras.enumerated()), id: \.element.accessory.uniqueIdentifier) { idx, adapter in
                     let xOffset = CGFloat(idx) * (120 * inverseScale + 8 * inverseScale)
                     Button {
-                        selectedCamera = adapter.accessory
+                        selectedSecurityAccessory = adapter.accessory
                     } label: {
                         CameraMarkerView(
                             adapter: adapter,
@@ -90,28 +99,58 @@ struct SecurityOverlayView: View {
                     ))
                 }
             }
+
+            // Contact sensor markers — compact coverage chips near the room badge.
+            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+                let sensors = contactSensorsPerRoom[room.hmRoomUUID] ?? []
+                let center = h.centroid(for: room)
+                if !sensors.isEmpty {
+                    ContactSensorCoverageChip(
+                        count: sensors.count,
+                        hasOpenContact: sensors.contains { $0.contactDetected == true }
+                    )
+                    .scaleEffect(inverseScale)
+                    .position(CGPoint(
+                        x: center.x,
+                        y: center.y - 42 * inverseScale
+                    ))
+                    .allowsHitTesting(false)
+                }
+            }
         }
-        .sheet(item: $selectedCamera) { accessory in
+        .sheet(item: $selectedSecurityAccessory) { accessory in
             AccessoryDetailView(accessory: accessory)
         }
-        .onAppear { refreshCameraCache() }
-        .task(id: homeKit.allAccessories.count) { refreshCameraCache() }
+        .onAppear { refreshSecurityDeviceCache() }
+        .task(id: homeKit.allAccessories.count) { refreshSecurityDeviceCache() }
     }
 
-    private func refreshCameraCache() {
-        var result: [UUID: [CameraAdapter]] = [:]
+    private func refreshSecurityDeviceCache() {
+        var cameraResult: [UUID: [CameraAdapter]] = [:]
+        var contactResult: [UUID: [SensorAdapter]] = [:]
+        let monitoredIDs = monitoredAccessoryIDs
         for room in floorplan.linkedRooms {
-            result[room.hmRoomUUID] = homeKit.allAccessories
-                .filter { $0.room?.uniqueIdentifier == room.hmRoomUUID }
-                .compactMap { AccessoryAdapterFactory.adapter(for: $0, homeKit: homeKit) as? CameraAdapter }
+            let roomAccessories = homeKit.allAccessories.filter { $0.room?.uniqueIdentifier == room.hmRoomUUID }
+            cameraResult[room.hmRoomUUID] = roomAccessories.compactMap {
+                AccessoryAdapterFactory.adapter(for: $0, homeKit: homeKit) as? CameraAdapter
+            }
+            contactResult[room.hmRoomUUID] = roomAccessories.compactMap {
+                guard let sensor = AccessoryAdapterFactory.adapter(for: $0, homeKit: homeKit) as? SensorAdapter,
+                      sensor.primarySensorKind == .contact,
+                      monitoredIDs.contains($0.uniqueIdentifier.uuidString) else {
+                    return nil
+                }
+                return sensor
+            }
         }
-        camerasPerRoom = result
+        camerasPerRoom = cameraResult
+        contactSensorsPerRoom = contactResult
     }
 
     // MARK: Badge
 
     @ViewBuilder
-    private func securityBadge(room: LinkedRoom, status: RoomSecurityStatus) -> some View {
+    private func securityBadge(room: LinkedRoom, status: RoomSecurityStatus, contactSensorCount: Int) -> some View {
         let accent = badgeAccentColor(status)
         let bg = badgeBackgroundColor(status)
 
@@ -131,6 +170,16 @@ struct SecurityOverlayView: View {
                 Text(status.label)
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.white.opacity(0.85))
+            }
+
+            if contactSensorCount > 0 {
+                HStack(spacing: 3) {
+                    Image(systemName: "sensor.tag.radiowaves.forward.fill")
+                        .font(.system(size: 8, weight: .bold))
+                    Text(String(format: String(localized: "security.overlay.contactSensors.count", defaultValue: "%lld sensors"), contactSensorCount))
+                        .font(.system(size: 8, weight: .semibold))
+                }
+                .foregroundStyle(status == .none ? Color.secondary : .white.opacity(0.88))
             }
         }
         .padding(.horizontal, 10)
@@ -154,6 +203,7 @@ struct SecurityOverlayView: View {
     private func badgeBackgroundColor(_ status: RoomSecurityStatus) -> Color {
         switch status {
         case .none:     return Color(.systemBackground).opacity(0.80)
+        case .protected: return Color.green.opacity(0.86)
         case .locked:   return Color.purple.opacity(0.85)
         case .unlocked: return Color.orange.opacity(0.90)
         case .disarmed: return Color.gray.opacity(0.75)
@@ -166,6 +216,7 @@ struct SecurityOverlayView: View {
     private func badgeAccentColor(_ status: RoomSecurityStatus) -> Color {
         switch status {
         case .none:     return Color.secondary
+        case .protected: return Color.green
         case .locked:   return Color.purple
         case .unlocked: return Color.orange
         case .disarmed: return Color.purple.opacity(0.5)
@@ -186,12 +237,15 @@ struct SecurityOverlayView: View {
     // MARK: Security status
 
     private func securityStatus(for room: LinkedRoom) -> RoomSecurityStatus {
+        let monitoredIDs = monitoredAccessoryIDs
         let roomAccessories = homeKit.allAccessories.filter {
             $0.room?.uniqueIdentifier == room.hmRoomUUID
         }
 
         var hasLock = false
         var hasAlarm = false
+        var hasContactSensor = false
+        var hasOpenContact = false
         var isTriggered = false
         var isArmed = false
         var isLocked = false
@@ -218,6 +272,17 @@ struct SecurityOverlayView: View {
                     }
                 case HMServiceTypeGarageDoorOpener, HMServiceTypeDoorbell:
                     hasLock = true
+                case HMServiceTypeContactSensor:
+                    guard monitoredIDs.contains(accessory.uniqueIdentifier.uuidString) else { break }
+                    hasContactSensor = true
+                    if let char = service.characteristics.first(where: {
+                        $0.characteristicType == HMCharacteristicTypeContactState
+                    }) {
+                        let raw = homeKit.value(for: char) ?? char.value
+                        if let value = Self.intValue(raw), value != 0 {
+                            hasOpenContact = true
+                        }
+                    }
                 default:
                     break
                 }
@@ -227,14 +292,25 @@ struct SecurityOverlayView: View {
         if isTriggered  { return .alarmed }
         if isArmed      { return .armed }
         if hasAlarm     { return .disarmed }
+        if hasOpenContact { return .unlocked }
         if isLocked     { return .locked }
         if hasLock      { return .unlocked }
+        if hasContactSensor { return .protected }
         return .none
+    }
+
+    private static func intValue(_ raw: Any?) -> Int? {
+        if let value = raw as? Int { return value }
+        if let value = raw as? UInt8 { return Int(value) }
+        if let value = raw as? NSNumber { return value.intValue }
+        if let value = raw as? Bool { return value ? 1 : 0 }
+        return nil
     }
 
     private func fillColor(_ status: RoomSecurityStatus) -> Color {
         switch status {
         case .none:      return Color(.systemPurple).opacity(0.05)
+        case .protected: return Color.green.opacity(0.16)
         case .locked:    return Color(.systemPurple).opacity(0.14)
         case .unlocked:  return Color.orange.opacity(0.18)
         case .disarmed:  return Color(.systemPurple).opacity(0.09)
@@ -246,6 +322,7 @@ struct SecurityOverlayView: View {
     private func borderColor(_ status: RoomSecurityStatus) -> Color {
         switch status {
         case .none:      return Color(.systemPurple).opacity(0.20)
+        case .protected: return Color.green
         case .locked:    return Color(.systemPurple)
         case .unlocked:  return Color.orange
         case .disarmed:  return Color(.systemPurple).opacity(0.35)
@@ -259,6 +336,7 @@ struct SecurityOverlayView: View {
 
 enum RoomSecurityStatus {
     case none       // no security devices
+    case protected  // contact sensors present and closed
     case locked     // lock present and locked
     case unlocked   // lock present but open
     case disarmed   // alarm present and disarmed
@@ -268,6 +346,7 @@ enum RoomSecurityStatus {
     var icon: String {
         switch self {
         case .none:      return "lock.shield"
+        case .protected: return "checkmark.shield.fill"
         case .locked:    return "lock.fill"
         case .unlocked:  return "lock.open.fill"
         case .disarmed:  return "shield.slash"
@@ -279,12 +358,53 @@ enum RoomSecurityStatus {
     var label: String {
         switch self {
         case .none:      return ""
+        case .protected: return String(localized: "security.status.protected", defaultValue: "Protected")
         case .locked:    return String(localized: "security.status.locked",   defaultValue: "Locked")
         case .unlocked:  return String(localized: "security.status.unlocked", defaultValue: "Unlocked")
         case .disarmed:  return String(localized: "security.status.disarmed", defaultValue: "Disarmed")
         case .armed:     return String(localized: "security.status.armed",    defaultValue: "Armed")
         case .alarmed:   return String(localized: "security.status.alarmed",  defaultValue: "ALARM")
         }
+    }
+}
+
+// MARK: - ContactSensorCoverageChip
+
+private struct ContactSensorCoverageChip: View {
+    let count: Int
+    let hasOpenContact: Bool
+
+    private var color: Color {
+        hasOpenContact ? .orange : .green
+    }
+
+    private var label: String {
+        if hasOpenContact {
+            return String(localized: "security.overlay.contactSensors.open", defaultValue: "Open")
+        }
+        return count == 1
+            ? String(localized: "security.overlay.contactSensors.one", defaultValue: "Protected")
+            : String(format: String(localized: "security.overlay.contactSensors.many", defaultValue: "%lld protected"), count)
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: hasOpenContact ? "sensor.tag.radiowaves.forward.fill" : "checkmark.shield.fill")
+                .font(.system(size: 10, weight: .bold))
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.92), in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(.white.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: color.opacity(0.35), radius: 6, y: 2)
+        .shadow(color: .black.opacity(0.16), radius: 2, y: 1)
     }
 }
 

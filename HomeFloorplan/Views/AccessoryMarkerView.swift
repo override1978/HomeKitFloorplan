@@ -84,7 +84,7 @@ struct AccessoryMarkerView: View {
     }
     
     private var shadowOpacity: Double {
-        urgency == .normal ? 0.18 : 0.30
+        urgency == .normal ? 0.24 : 0.36
     }
     
     /// True se l'accessorio dichiara di non essere raggiungibile.
@@ -143,8 +143,13 @@ struct AccessoryMarkerView: View {
         VStack(spacing: 2) {
             shape
                 .shadow(color: .black.opacity(shadowOpacity),
-                        radius: urgency != .normal ? 5 : 3,
-                        y: 1)
+                        radius: urgency != .normal ? 9 : 7,
+                        x: 0,
+                        y: urgency != .normal ? 4 : 3)
+                .shadow(color: .white.opacity(0.18),
+                        radius: 1,
+                        x: 0,
+                        y: -1)
                 .opacity(isLikelyOffline ? 0.6 : 1.0)
                 .scaleEffect(runtimeState == .sensorTriggered && runtimePulse ? 1.16 : 1.0)
                 .animation(
@@ -239,6 +244,7 @@ struct AccessoryMarkerView: View {
             Circle()
                 .fill(fillStyle)
                 .overlay(controllableStrokeOverlay)
+                .overlay(markerDepthHighlight.clipShape(Circle()))
                 .frame(width: size.controllableDiameter, height: size.controllableDiameter)
             
             if isExecuting {
@@ -289,6 +295,7 @@ struct AccessoryMarkerView: View {
                 .overlay(
                     Circle().stroke(sensorBorderColor, lineWidth: 1.5)
                 )
+                .overlay(markerDepthHighlight.clipShape(Circle()))
                 .frame(width: size.sensorBoolDiameter, height: size.sensorBoolDiameter)
             
             AccessoryIconView(iconName: effectiveIconName)
@@ -311,6 +318,7 @@ struct AccessoryMarkerView: View {
                 .overlay(
                     Capsule().stroke(sensorBorderColor, lineWidth: 1.5)
                 )
+                .overlay(markerDepthHighlight.clipShape(Capsule()))
                 .frame(width: pillSize.width, height: pillSize.height)
             
             Text(value)
@@ -411,7 +419,7 @@ struct AccessoryMarkerView: View {
         switch urgency {
         case .normal:  return Color.secondary.opacity(0.5)
         case .ok:      return .green
-        case .active:  return .yellow
+        case .active:  return adapter?.markerTint ?? .yellow
         case .warning: return Color(.systemOrange)
         case .alarm:   return .red
         }
@@ -431,5 +439,19 @@ struct AccessoryMarkerView: View {
     private var iconColor: Color {
         if adapter == nil { return .red }
         return appearance.markerIconColor
+    }
+
+    private var markerDepthHighlight: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .white.opacity(urgency == .normal ? 0.24 : 0.34), location: 0.0),
+                .init(color: .white.opacity(urgency == .normal ? 0.08 : 0.12), location: 0.34),
+                .init(color: .clear, location: 0.58),
+                .init(color: .black.opacity(urgency == .normal ? 0.06 : 0.13), location: 1.0)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .allowsHitTesting(false)
     }
 }

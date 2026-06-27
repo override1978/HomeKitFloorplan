@@ -149,6 +149,7 @@ struct FloorplanEditorView: View {
                     || svc.serviceType == HMServiceTypeSecuritySystem
                     || svc.serviceType == HMServiceTypeGarageDoorOpener
                     || svc.serviceType == HMServiceTypeDoorbell
+                    || svc.serviceType == HMServiceTypeContactSensor
             }
         }
         return FloorplanOverlayContext(
@@ -490,7 +491,9 @@ struct FloorplanEditorView: View {
             .padding(.horizontal, 20)
             .padding(.top, 12)
 
-            if !isEditing, let status = smartLightingEngine.floorplanStatus {
+            if !isEditing,
+               overlayVM?.activeMode == .controls,
+               let status = smartLightingEngine.floorplanStatus {
                 smartLightingFloorplanStatus(status)
                     .padding(.top, 6)
                     .transition(.move(edge: .top).combined(with: .opacity))
