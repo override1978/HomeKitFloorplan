@@ -260,9 +260,10 @@ func renderDocument(_ doc: DrawingDocument,
                     in cgContext: CGContext,
                     canvasSize: CGFloat,
                     exteriorFillColorIndex: Int = -1,
-                    visualStyle: DrawingVisualExportStyle = .standard) {
+                    visualStyle: DrawingVisualExportStyle = .standard,
+                    drawText: Bool = true) {
     if visualStyle == .architecturalDark {
-        renderDarkArchitecturalDocument(doc, in: cgContext, canvasSize: canvasSize)
+        renderDarkArchitecturalDocument(doc, in: cgContext, canvasSize: canvasSize, drawText: drawText)
         return
     }
 
@@ -276,12 +277,12 @@ func renderDocument(_ doc: DrawingDocument,
 
     // Room areas (behind walls and depth shadow)
     for area in doc.roomAreas {
-        drawRoomAreaCG(area, context: cgContext)
+        drawRoomAreaCG(area, context: cgContext, drawText: drawText)
     }
 
     // Furniture items (after room areas, before walls)
     for item in doc.furnitureItems {
-        drawFurnitureItemCG(item, context: cgContext)
+        drawFurnitureItemCG(item, context: cgContext, drawText: drawText)
     }
 
     // Wall depth shadow: inner shadow on the interior side of perimeter walls,
@@ -312,9 +313,11 @@ func renderDocument(_ doc: DrawingDocument,
         }
     }
 
-    // Room labels
-    for label in doc.roomLabels {
-        drawRoomLabelCG(label, context: cgContext)
+    if drawText {
+        // Room labels
+        for label in doc.roomLabels {
+            drawRoomLabelCG(label, context: cgContext)
+        }
     }
 }
 
@@ -334,18 +337,19 @@ private enum DarkArchitecturalPalette {
 
 private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
                                              in context: CGContext,
-                                             canvasSize: CGFloat) {
+                                             canvasSize: CGFloat,
+                                             drawText: Bool = true) {
     context.setFillColor(DarkArchitecturalPalette.background.cgColor)
     context.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
 
     for (index, area) in doc.roomAreas.enumerated() {
-        drawDarkRoomAreaCG(area, index: index, context: context)
+        drawDarkRoomAreaCG(area, index: index, context: context, drawText: drawText)
     }
 
     drawDarkFurnitureShadowsCG(doc, context: context)
 
     for item in doc.furnitureItems {
-        drawDarkFurnitureItemCG(item, context: context)
+        drawDarkFurnitureItemCG(item, context: context, drawText: drawText)
     }
 
     drawDarkWallShadowsCG(doc, context: context)
@@ -367,12 +371,14 @@ private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
         }
     }
 
-    for label in doc.roomLabels {
-        drawDarkRoomLabelCG(label, context: context)
+    if drawText {
+        for label in doc.roomLabels {
+            drawDarkRoomLabelCG(label, context: context)
+        }
     }
 }
 
-private func drawDarkRoomAreaCG(_ area: RoomArea, index: Int, context: CGContext) {
+private func drawDarkRoomAreaCG(_ area: RoomArea, index: Int, context: CGContext, drawText: Bool = true) {
     let path = roomAreaPath(area)
     let fillColor = index.isMultiple(of: 2)
         ? DarkArchitecturalPalette.roomFill
@@ -385,16 +391,18 @@ private func drawDarkRoomAreaCG(_ area: RoomArea, index: Int, context: CGContext
     path.lineWidth = 1
     path.stroke()
 
-    let attributes: [NSAttributedString.Key: Any] = [
-        .font: UIFont.systemFont(ofSize: 15, weight: .semibold),
-        .foregroundColor: DarkArchitecturalPalette.text
-    ]
-    let nsString = area.name.uppercased() as NSString
-    let textSize = nsString.size(withAttributes: attributes)
-    let center = polygonCentroid(area.effectivePoints) ?? CGPoint(x: area.rect.midX, y: area.rect.midY)
-    nsString.draw(at: CGPoint(x: center.x - textSize.width / 2,
-                              y: center.y - textSize.height / 2),
-                  withAttributes: attributes)
+    if drawText {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 15, weight: .semibold),
+            .foregroundColor: DarkArchitecturalPalette.text
+        ]
+        let nsString = area.name.uppercased() as NSString
+        let textSize = nsString.size(withAttributes: attributes)
+        let center = polygonCentroid(area.effectivePoints) ?? CGPoint(x: area.rect.midX, y: area.rect.midY)
+        nsString.draw(at: CGPoint(x: center.x - textSize.width / 2,
+                                  y: center.y - textSize.height / 2),
+                      withAttributes: attributes)
+    }
     UIGraphicsPopContext()
 }
 
@@ -412,24 +420,27 @@ private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGConte
     context.restoreGState()
 }
 
-private func drawDarkFurnitureItemCG(_ item: FurnitureItem, context: CGContext) {
+private func drawDarkFurnitureItemCG(_ item: FurnitureItem, context: CGContext, drawText: Bool = true) {
     UIGraphicsPushContext(context)
-    let path = UIBezierPath(roundedRect: item.rect, cornerRadius: 3)
-    DarkArchitecturalPalette.furnitureFill.setFill()
-    path.fill()
-    DarkArchitecturalPalette.furnitureStroke.setStroke()
-    path.lineWidth = 1
-    path.stroke()
+    drawFurnitureBlueprintCG(
+        item,
+        context: context,
+        fillColor: DarkArchitecturalPalette.furnitureFill,
+        strokeColor: DarkArchitecturalPalette.furnitureStroke,
+        detailColor: DarkArchitecturalPalette.text.withAlphaComponent(0.44)
+    )
 
-    let attributes: [NSAttributedString.Key: Any] = [
-        .font: UIFont.systemFont(ofSize: 11, weight: .medium),
-        .foregroundColor: DarkArchitecturalPalette.text.withAlphaComponent(0.58)
-    ]
-    let nsString = item.name.uppercased() as NSString
-    let textSize = nsString.size(withAttributes: attributes)
-    nsString.draw(at: CGPoint(x: item.rect.midX - textSize.width / 2,
-                              y: item.rect.midY - textSize.height / 2),
-                  withAttributes: attributes)
+    if drawText, item.showsName {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: DarkArchitecturalPalette.text.withAlphaComponent(0.58)
+        ]
+        let nsString = item.name.uppercased() as NSString
+        let textSize = nsString.size(withAttributes: attributes)
+        nsString.draw(at: CGPoint(x: item.rect.midX - textSize.width / 2,
+                                  y: item.rect.midY - textSize.height / 2),
+                      withAttributes: attributes)
+    }
     UIGraphicsPopContext()
 }
 
@@ -640,7 +651,7 @@ private func polygonCentroid(_ points: [CGPoint]) -> CGPoint? {
                    y: centroidY / (6 * signedArea))
 }
 
-private func drawRoomAreaCG(_ area: RoomArea, context: CGContext) {
+private func drawRoomAreaCG(_ area: RoomArea, context: CGContext, drawText: Bool = true) {
     let cgColor = RoomLabelPalette.color(at: area.colorIndex)
 
     // Fill with low opacity
@@ -650,49 +661,287 @@ private func drawRoomAreaCG(_ area: RoomArea, context: CGContext) {
         UIGraphicsPushContext(context)
         path.fill()
 
-        // Room name centered
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 14, weight: .semibold),
-            .foregroundColor: UIColor(cgColor: cgColor.copy(alpha: 0.55) ?? cgColor)
-        ]
-        let nsString = area.name.uppercased() as NSString
-        let textSize = nsString.size(withAttributes: attributes)
-        let drawPoint = CGPoint(
-            x: area.rect.midX - textSize.width / 2,
-            y: area.rect.midY - textSize.height / 2
-        )
-        nsString.draw(at: drawPoint, withAttributes: attributes)
+        if drawText {
+            // Room name centered
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 14, weight: .semibold),
+                .foregroundColor: UIColor(cgColor: cgColor.copy(alpha: 0.55) ?? cgColor)
+            ]
+            let nsString = area.name.uppercased() as NSString
+            let textSize = nsString.size(withAttributes: attributes)
+            let drawPoint = CGPoint(
+                x: area.rect.midX - textSize.width / 2,
+                y: area.rect.midY - textSize.height / 2
+            )
+            nsString.draw(at: drawPoint, withAttributes: attributes)
+        }
         UIGraphicsPopContext()
     }
 }
 
-private func drawFurnitureItemCG(_ item: FurnitureItem, context: CGContext) {
+private func drawFurnitureItemCG(_ item: FurnitureItem, context: CGContext, drawText: Bool = true) {
     UIGraphicsPushContext(context)
-
-    // Fill: opaque light gray
-    let fillPath = UIBezierPath(roundedRect: item.rect, cornerRadius: 4)
-    UIColor(white: 0.92, alpha: 1).setFill()
-    fillPath.fill()
-
-    // Border: solid gray, 1pt
-    UIColor(white: 0.55, alpha: 1).setStroke()
-    fillPath.lineWidth = 1
-    fillPath.stroke()
-
-    // Name label centered in rect
-    let attributes: [NSAttributedString.Key: Any] = [
-        .font: UIFont.systemFont(ofSize: 12, weight: .medium),
-        .foregroundColor: UIColor(white: 0.35, alpha: 1)
-    ]
-    let nsString = item.name as NSString
-    let textSize = nsString.size(withAttributes: attributes)
-    let drawPoint = CGPoint(
-        x: item.rect.midX - textSize.width / 2,
-        y: item.rect.midY - textSize.height / 2
+    drawFurnitureBlueprintCG(
+        item,
+        context: context,
+        fillColor: UIColor(white: 0.92, alpha: 1),
+        strokeColor: UIColor(white: 0.55, alpha: 1),
+        detailColor: UIColor(white: 0.35, alpha: 0.46)
     )
-    nsString.draw(at: drawPoint, withAttributes: attributes)
+
+    if drawText, item.showsName {
+        // Name label centered in rect
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: UIColor(white: 0.35, alpha: 1)
+        ]
+        let nsString = item.name as NSString
+        let textSize = nsString.size(withAttributes: attributes)
+        let drawPoint = CGPoint(
+            x: item.rect.midX - textSize.width / 2,
+            y: item.rect.midY - textSize.height / 2
+        )
+        nsString.draw(at: drawPoint, withAttributes: attributes)
+    }
 
     UIGraphicsPopContext()
+}
+
+private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
+                                      context: CGContext,
+                                      fillColor: UIColor,
+                                      strokeColor: UIColor,
+                                      detailColor: UIColor) {
+    let rect = item.rect
+    context.saveGState()
+    context.translateBy(x: rect.midX, y: rect.midY)
+    context.rotate(by: CGFloat(item.rotationDegrees * .pi / 180))
+    context.translateBy(x: -rect.midX, y: -rect.midY)
+    defer { context.restoreGState() }
+
+    func rounded(_ r: CGRect, radius: CGFloat = 5) -> UIBezierPath {
+        UIBezierPath(roundedRect: r, cornerRadius: min(radius, min(r.width, r.height) / 2))
+    }
+
+    func fillStroke(_ path: UIBezierPath) {
+        fillColor.setFill()
+        path.fill()
+        strokeColor.setStroke()
+        path.lineWidth = 1
+        path.stroke()
+    }
+
+    func line(_ a: CGPoint, _ b: CGPoint, color: UIColor = detailColor) {
+        color.setStroke()
+        let path = UIBezierPath()
+        path.move(to: a)
+        path.addLine(to: b)
+        path.lineWidth = 1
+        path.lineCapStyle = .round
+        path.stroke()
+    }
+
+    switch item.kind {
+    case .sofa:
+        let frame = rect.insetBy(dx: rect.width * 0.07, dy: rect.height * 0.10)
+        let armWidth = frame.width * 0.15
+        let backHeight = frame.height * 0.18
+        let pillowHeight = frame.height * 0.28
+        let seatY = frame.minY + backHeight + pillowHeight * 0.62
+        let seatHeight = frame.maxY - seatY
+        let innerX = frame.minX + armWidth
+        let innerW = frame.width - armWidth * 2
+        let structuralFill = strokeColor.withAlphaComponent(0.20)
+        let cushionStroke = strokeColor.withAlphaComponent(0.58)
+
+        func fillStrokeCustom(_ path: UIBezierPath, fill: UIColor, stroke: UIColor) {
+            fill.setFill()
+            path.fill()
+            stroke.setStroke()
+            path.lineWidth = 1
+            path.stroke()
+        }
+
+        let back = CGRect(x: frame.minX + armWidth * 0.20, y: frame.minY, width: frame.width - armWidth * 0.40, height: backHeight)
+        let leftArm = CGRect(x: frame.minX, y: frame.minY + backHeight * 0.30, width: armWidth, height: frame.height - backHeight * 0.55)
+        let rightArm = CGRect(x: frame.maxX - armWidth, y: leftArm.minY, width: armWidth, height: leftArm.height)
+        fillStrokeCustom(rounded(back, radius: 6), fill: structuralFill, stroke: cushionStroke)
+        fillStrokeCustom(rounded(leftArm, radius: 8), fill: structuralFill, stroke: cushionStroke)
+        fillStrokeCustom(rounded(rightArm, radius: 8), fill: structuralFill, stroke: cushionStroke)
+
+        let pillowY = frame.minY + backHeight * 0.72
+        let pillowW = innerW / 2
+        let leftPillow = CGRect(x: innerX, y: pillowY, width: pillowW, height: pillowHeight)
+        let rightPillow = CGRect(x: innerX + pillowW, y: pillowY, width: pillowW, height: pillowHeight)
+        fillStroke(rounded(leftPillow, radius: 7))
+        fillStroke(rounded(rightPillow, radius: 7))
+
+        let leftSeat = CGRect(x: innerX, y: seatY, width: pillowW, height: seatHeight)
+        let rightSeat = CGRect(x: innerX + pillowW, y: seatY, width: pillowW, height: seatHeight)
+        fillStroke(rounded(leftSeat, radius: 6))
+        fillStroke(rounded(rightSeat, radius: 6))
+        line(CGPoint(x: innerX + pillowW, y: pillowY), CGPoint(x: innerX + pillowW, y: frame.maxY))
+        strokeColor.withAlphaComponent(0.42).setStroke()
+        let framePath = rounded(frame, radius: 10)
+        framePath.lineWidth = 1
+        framePath.stroke()
+
+    case .armchair:
+        let frame = rect.insetBy(dx: rect.width * 0.11, dy: rect.height * 0.10)
+        let armWidth = frame.width * 0.22
+        let backHeight = frame.height * 0.20
+        let pillowHeight = frame.height * 0.26
+        let seatY = frame.minY + backHeight + pillowHeight * 0.58
+        let seatHeight = frame.maxY - seatY
+        let innerX = frame.minX + armWidth
+        let innerW = frame.width - armWidth * 2
+        let structuralFill = strokeColor.withAlphaComponent(0.20)
+        let cushionStroke = strokeColor.withAlphaComponent(0.58)
+
+        func fillStrokeCustom(_ path: UIBezierPath, fill: UIColor, stroke: UIColor) {
+            fill.setFill()
+            path.fill()
+            stroke.setStroke()
+            path.lineWidth = 1
+            path.stroke()
+        }
+
+        let back = CGRect(x: frame.minX + armWidth * 0.18, y: frame.minY, width: frame.width - armWidth * 0.36, height: backHeight)
+        let leftArm = CGRect(x: frame.minX, y: frame.minY + backHeight * 0.30, width: armWidth, height: frame.height - backHeight * 0.55)
+        let rightArm = CGRect(x: frame.maxX - armWidth, y: leftArm.minY, width: armWidth, height: leftArm.height)
+        fillStrokeCustom(rounded(back, radius: 6), fill: structuralFill, stroke: cushionStroke)
+        fillStrokeCustom(rounded(leftArm, radius: 8), fill: structuralFill, stroke: cushionStroke)
+        fillStrokeCustom(rounded(rightArm, radius: 8), fill: structuralFill, stroke: cushionStroke)
+
+        let pillow = CGRect(x: innerX, y: frame.minY + backHeight * 0.72, width: innerW, height: pillowHeight)
+        let seat = CGRect(x: innerX, y: seatY, width: innerW, height: seatHeight)
+        fillStroke(rounded(pillow, radius: 7))
+        fillStroke(rounded(seat, radius: 6))
+        line(CGPoint(x: innerX, y: seatY), CGPoint(x: innerX + innerW, y: seatY))
+        strokeColor.withAlphaComponent(0.42).setStroke()
+        let framePath = rounded(frame, radius: 10)
+        framePath.lineWidth = 1
+        framePath.stroke()
+
+    case .diningTable:
+        let table = rect.insetBy(dx: rect.width * 0.12, dy: rect.height * 0.14)
+        fillStroke(UIBezierPath(ovalIn: table))
+        line(CGPoint(x: table.minX + table.width * 0.22, y: table.midY), CGPoint(x: table.maxX - table.width * 0.22, y: table.midY))
+        line(CGPoint(x: table.midX, y: table.minY + table.height * 0.22), CGPoint(x: table.midX, y: table.maxY - table.height * 0.22))
+
+    case .chair:
+        let seat = CGRect(x: rect.minX + rect.width * 0.23, y: rect.minY + rect.height * 0.34, width: rect.width * 0.54, height: rect.height * 0.42)
+        let back = CGRect(x: seat.minX - rect.width * 0.03, y: rect.minY + rect.height * 0.15, width: seat.width + rect.width * 0.06, height: rect.height * 0.16)
+        fillStroke(rounded(seat, radius: 4))
+        strokeColor.withAlphaComponent(0.22).setFill()
+        rounded(back, radius: 3).fill()
+        strokeColor.setStroke()
+        let backPath = rounded(back, radius: 3)
+        backPath.lineWidth = 1
+        backPath.stroke()
+        line(CGPoint(x: back.minX + back.width * 0.14, y: back.maxY), CGPoint(x: seat.minX + seat.width * 0.18, y: seat.minY))
+        line(CGPoint(x: back.maxX - back.width * 0.14, y: back.maxY), CGPoint(x: seat.maxX - seat.width * 0.18, y: seat.minY))
+        line(CGPoint(x: seat.minX + 3, y: seat.maxY), CGPoint(x: seat.minX - rect.width * 0.08, y: rect.maxY - rect.height * 0.10), color: strokeColor.withAlphaComponent(0.65))
+        line(CGPoint(x: seat.maxX - 3, y: seat.maxY), CGPoint(x: seat.maxX + rect.width * 0.08, y: rect.maxY - rect.height * 0.10), color: strokeColor.withAlphaComponent(0.65))
+
+    case .bed:
+        let body = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.06)
+        fillStroke(rounded(body, radius: 7))
+        fillStroke(rounded(CGRect(x: body.minX + body.width * 0.08, y: body.minY + body.height * 0.07, width: body.width * 0.36, height: body.height * 0.22), radius: 4))
+        fillStroke(rounded(CGRect(x: body.maxX - body.width * 0.44, y: body.minY + body.height * 0.07, width: body.width * 0.36, height: body.height * 0.22), radius: 4))
+        line(CGPoint(x: body.minX, y: body.minY + body.height * 0.36), CGPoint(x: body.maxX, y: body.minY + body.height * 0.36))
+
+    case .wardrobe:
+        let body = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.10)
+        fillStroke(rounded(body, radius: 4))
+        line(CGPoint(x: body.midX, y: body.minY), CGPoint(x: body.midX, y: body.maxY))
+        detailColor.setFill()
+        UIBezierPath(ovalIn: CGRect(x: body.midX - 6, y: body.midY - 2, width: 4, height: 4)).fill()
+        UIBezierPath(ovalIn: CGRect(x: body.midX + 2, y: body.midY - 2, width: 4, height: 4)).fill()
+
+    case .toilet:
+        let tank = CGRect(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.12, width: rect.width * 0.56, height: rect.height * 0.24)
+        let bowl = CGRect(x: rect.minX + rect.width * 0.18, y: rect.minY + rect.height * 0.34, width: rect.width * 0.64, height: rect.height * 0.46)
+        fillStroke(rounded(tank, radius: 3))
+        fillStroke(UIBezierPath(ovalIn: bowl))
+        detailColor.setStroke()
+        UIBezierPath(ovalIn: bowl.insetBy(dx: bowl.width * 0.23, dy: bowl.height * 0.22)).stroke()
+
+    case .sink:
+        let basin = rect.insetBy(dx: rect.width * 0.16, dy: rect.height * 0.18)
+        fillStroke(UIBezierPath(ovalIn: basin))
+        detailColor.setStroke()
+        UIBezierPath(ovalIn: basin.insetBy(dx: basin.width * 0.22, dy: basin.height * 0.22)).stroke()
+        line(CGPoint(x: rect.midX, y: basin.minY), CGPoint(x: rect.midX, y: basin.minY - rect.height * 0.12), color: strokeColor)
+
+    case .inductionCooktop:
+        let cooktop = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.10)
+        fillStroke(rounded(cooktop, radius: 5))
+
+        let zoneRadius = min(cooktop.width, cooktop.height) * 0.15
+        let zoneCenters = [
+            CGPoint(x: cooktop.minX + cooktop.width * 0.30, y: cooktop.minY + cooktop.height * 0.34),
+            CGPoint(x: cooktop.maxX - cooktop.width * 0.30, y: cooktop.minY + cooktop.height * 0.34),
+            CGPoint(x: cooktop.minX + cooktop.width * 0.30, y: cooktop.maxY - cooktop.height * 0.34),
+            CGPoint(x: cooktop.maxX - cooktop.width * 0.30, y: cooktop.maxY - cooktop.height * 0.34)
+        ]
+        detailColor.setStroke()
+        for center in zoneCenters {
+            let zone = CGRect(x: center.x - zoneRadius, y: center.y - zoneRadius, width: zoneRadius * 2, height: zoneRadius * 2)
+            let zonePath = UIBezierPath(ovalIn: zone)
+            zonePath.lineWidth = 1
+            zonePath.stroke()
+            let innerPath = UIBezierPath(ovalIn: zone.insetBy(dx: zoneRadius * 0.38, dy: zoneRadius * 0.38))
+            innerPath.lineWidth = 1
+            innerPath.stroke()
+        }
+        line(
+            CGPoint(x: cooktop.midX - cooktop.width * 0.18, y: cooktop.maxY - cooktop.height * 0.12),
+            CGPoint(x: cooktop.midX + cooktop.width * 0.18, y: cooktop.maxY - cooktop.height * 0.12)
+        )
+
+    case .washingMachine:
+        let body = rect.insetBy(dx: rect.width * 0.10, dy: rect.height * 0.08)
+        let panel = CGRect(x: body.minX, y: body.minY, width: body.width, height: body.height * 0.22)
+        let doorRadius = min(body.width, body.height) * 0.24
+        let doorCenter = CGPoint(x: body.midX, y: body.minY + body.height * 0.58)
+        let door = CGRect(x: doorCenter.x - doorRadius, y: doorCenter.y - doorRadius, width: doorRadius * 2, height: doorRadius * 2)
+
+        fillStroke(rounded(body, radius: 6))
+        detailColor.setStroke()
+        let panelPath = rounded(panel, radius: 3)
+        panelPath.lineWidth = 1
+        panelPath.stroke()
+        strokeColor.setStroke()
+        let doorPath = UIBezierPath(ovalIn: door)
+        doorPath.lineWidth = 1
+        doorPath.stroke()
+        detailColor.setStroke()
+        let innerDoor = UIBezierPath(ovalIn: door.insetBy(dx: doorRadius * 0.28, dy: doorRadius * 0.28))
+        innerDoor.lineWidth = 1
+        innerDoor.stroke()
+        detailColor.setFill()
+        UIBezierPath(ovalIn: CGRect(x: panel.maxX - panel.width * 0.20, y: panel.midY - 3, width: 6, height: 6)).fill()
+        line(CGPoint(x: panel.minX + panel.width * 0.12, y: panel.midY), CGPoint(x: panel.minX + panel.width * 0.34, y: panel.midY))
+
+    case .bathtub:
+        let tub = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.18)
+        fillStroke(rounded(tub, radius: tub.height / 2))
+        detailColor.setStroke()
+        rounded(tub.insetBy(dx: tub.width * 0.10, dy: tub.height * 0.20), radius: tub.height / 3).stroke()
+        line(CGPoint(x: tub.minX + tub.width * 0.12, y: tub.minY), CGPoint(x: tub.minX + tub.width * 0.12, y: tub.minY - rect.height * 0.10), color: strokeColor)
+
+    case .shower:
+        let base = rect.insetBy(dx: rect.width * 0.12, dy: rect.height * 0.12)
+        fillStroke(rounded(base, radius: 4))
+        line(CGPoint(x: base.minX, y: base.minY), CGPoint(x: base.maxX, y: base.maxY))
+        line(CGPoint(x: base.maxX, y: base.minY), CGPoint(x: base.minX, y: base.maxY))
+        detailColor.setFill()
+        UIBezierPath(ovalIn: CGRect(x: base.midX - 4, y: base.midY - 4, width: 8, height: 8)).fill()
+
+    case .generic:
+        fillStroke(rounded(rect, radius: 4))
+    }
 }
 
 private func drawGridCG(in rect: CGRect, spacing: CGFloat, context: CGContext) {

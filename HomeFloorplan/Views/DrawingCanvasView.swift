@@ -200,6 +200,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         private var resizingFurnitureID: UUID?
         private var resizingFurnitureCornerIndex: Int?
         private var resizeFurnitureOriginalRect: CGRect?
+        private var resizeFurnitureRotationDegrees: Double = 0
 
         // Drag wall endpoint state
         private var draggingWallEndpointID: UUID?
@@ -443,14 +444,15 @@ struct DrawingCanvasView: UIViewRepresentable {
                 // Check furniture item corners first (resize), then body (move)
                 if case .furniture(let id) = parent.selection,
                    let item = parent.document.furnitureItem(for: id) {
-                    if let cornerIdx = hitCorner(point: rawPoint, rect: item.rect) {
+                    if let cornerIdx = hitCorner(point: rawPoint, in: item) {
                         resizingFurnitureID = id
                         resizingFurnitureCornerIndex = cornerIdx
                         resizeFurnitureOriginalRect  = item.rect
+                        resizeFurnitureRotationDegrees = item.rotationDegrees
                         parent.onBeginResizeFurniture(id)
                         return
                     }
-                    if item.rect.contains(rawPoint) {
+                    if item.containsVisualPoint(rawPoint) {
                         draggingFurnitureID = id
                         dragFurnitureTouchStart = rawPoint
                         parent.onBeginMoveFurniture(id)
@@ -506,7 +508,12 @@ struct DrawingCanvasView: UIViewRepresentable {
                 if let id = resizingFurnitureID,
                    let cornerIdx = resizingFurnitureCornerIndex,
                    let originalRect = resizeFurnitureOriginalRect {
-                    let snapped = DrawingDocument.fineSnap(rawPoint)
+                    let unrotatedPoint = FurnitureItem.rotate(
+                        rawPoint,
+                        around: originalRect.center,
+                        degrees: -resizeFurnitureRotationDegrees
+                    )
+                    let snapped = DrawingDocument.fineSnap(unrotatedPoint)
                     let newRect = computeResizedRect(original: originalRect,
                                                      cornerIndex: cornerIdx,
                                                      newCornerPosition: snapped,
@@ -574,6 +581,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 resizingFurnitureID          = nil
                 resizingFurnitureCornerIndex = nil
                 resizeFurnitureOriginalRect  = nil
+                resizeFurnitureRotationDegrees = 0
                 draggingWallEndpointID       = nil
                 draggingEndpointIndex        = nil
                 draggingWallID               = nil
@@ -609,16 +617,10 @@ struct DrawingCanvasView: UIViewRepresentable {
         }
 
         /// Returns the corner index (0=TL, 1=TR, 2=BL, 3=BR) if `point` is within
-        /// `threshold` of any corner of `rect`, else nil.
-        private func hitCorner(point: CGPoint, rect: CGRect, threshold: CGFloat? = nil) -> Int? {
+        /// `threshold` of any visual corner of a furniture item, else nil.
+        private func hitCorner(point: CGPoint, in item: FurnitureItem, threshold: CGFloat? = nil) -> Int? {
             let t = threshold ?? canvasThreshold()
-            let corners: [CGPoint] = [
-                CGPoint(x: rect.minX, y: rect.minY),  // 0: topLeft
-                CGPoint(x: rect.maxX, y: rect.minY),  // 1: topRight
-                CGPoint(x: rect.minX, y: rect.maxY),  // 2: bottomLeft
-                CGPoint(x: rect.maxX, y: rect.maxY)   // 3: bottomRight
-            ]
-            for (i, corner) in corners.enumerated() {
+            for (i, corner) in item.visualCorners.enumerated() {
                 if hypot(point.x - corner.x, point.y - corner.y) < t {
                     return i
                 }
@@ -725,13 +727,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 }
             case .furniture(let id):
                 guard let item = doc.furnitureItem(for: id) else { return false }
-                let corners: [CGPoint] = [
-                    CGPoint(x: item.rect.minX, y: item.rect.minY),
-                    CGPoint(x: item.rect.maxX, y: item.rect.minY),
-                    CGPoint(x: item.rect.minX, y: item.rect.maxY),
-                    CGPoint(x: item.rect.maxX, y: item.rect.maxY)
-                ]
-                return corners.contains { hypot(point.x - $0.x, point.y - $0.y) < t }
+                return item.visualCorners.contains { hypot(point.x - $0.x, point.y - $0.y) < t }
             case .wall(let id):
                 guard let wall = doc.wall(for: id) else { return false }
                 return hypot(point.x - wall.start.x, point.y - wall.start.y) < t
@@ -759,7 +755,7 @@ struct DrawingCanvasView: UIViewRepresentable {
             }
             // Furniture items (checked before walls, last-added wins)
             for item in doc.furnitureItems.reversed() {
-                if item.rect.contains(point) {
+                if item.containsVisualPoint(point) {
                     return .furniture(item.id)
                 }
             }

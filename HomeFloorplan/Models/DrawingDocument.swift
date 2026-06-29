@@ -294,6 +294,91 @@ struct RoomArea: Identifiable, Equatable, Codable {
 
 // MARK: - FurnitureItem
 
+enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
+    case generic
+    case sofa
+    case armchair
+    case diningTable
+    case chair
+    case bed
+    case wardrobe
+    case toilet
+    case sink
+    case inductionCooktop
+    case washingMachine
+    case bathtub
+    case shower
+
+    var id: String { rawValue }
+
+    var localizedName: String {
+        switch self {
+        case .generic:
+            return String(localized: "drawing.furniture.generic", defaultValue: "Furniture")
+        case .sofa:
+            return String(localized: "drawing.furniture.sofa", defaultValue: "Sofa")
+        case .armchair:
+            return String(localized: "drawing.furniture.armchair", defaultValue: "Armchair")
+        case .diningTable:
+            return String(localized: "drawing.furniture.table", defaultValue: "Table")
+        case .chair:
+            return String(localized: "drawing.furniture.chair", defaultValue: "Chair")
+        case .bed:
+            return String(localized: "drawing.furniture.bed", defaultValue: "Bed")
+        case .wardrobe:
+            return String(localized: "drawing.furniture.wardrobe", defaultValue: "Wardrobe")
+        case .toilet:
+            return String(localized: "drawing.furniture.toilet", defaultValue: "Toilet")
+        case .sink:
+            return String(localized: "drawing.furniture.sink", defaultValue: "Sink")
+        case .inductionCooktop:
+            return String(localized: "drawing.furniture.inductionCooktop", defaultValue: "Induction cooktop")
+        case .washingMachine:
+            return String(localized: "drawing.furniture.washingMachine", defaultValue: "Washing machine")
+        case .bathtub:
+            return String(localized: "drawing.furniture.bathtub", defaultValue: "Bathtub")
+        case .shower:
+            return String(localized: "drawing.furniture.shower", defaultValue: "Shower")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .generic: return "square.grid.2x2"
+        case .sofa: return "sofa.fill"
+        case .armchair: return "chair.lounge.fill"
+        case .diningTable: return "table.furniture.fill"
+        case .chair: return "chair.fill"
+        case .bed: return "bed.double.fill"
+        case .wardrobe: return "cabinet.fill"
+        case .toilet: return "toilet.fill"
+        case .sink: return "sink.fill"
+        case .inductionCooktop: return "circle.grid.2x2.fill"
+        case .washingMachine: return "washer.fill"
+        case .bathtub: return "bathtub.fill"
+        case .shower: return "shower.fill"
+        }
+    }
+
+    var defaultSize: CGSize {
+        switch self {
+        case .generic: return CGSize(width: 80, height: 60)
+        case .sofa: return CGSize(width: 140, height: 70)
+        case .armchair: return CGSize(width: 70, height: 70)
+        case .diningTable: return CGSize(width: 110, height: 80)
+        case .chair: return CGSize(width: 50, height: 50)
+        case .bed: return CGSize(width: 120, height: 160)
+        case .wardrobe: return CGSize(width: 140, height: 55)
+        case .toilet: return CGSize(width: 55, height: 70)
+        case .sink: return CGSize(width: 70, height: 50)
+        case .inductionCooktop: return CGSize(width: 90, height: 65)
+        case .washingMachine: return CGSize(width: 75, height: 75)
+        case .bathtub: return CGSize(width: 150, height: 75)
+        case .shower: return CGSize(width: 80, height: 80)
+        }
+    }
+}
+
 /// A named, resizable rectangular furniture element on the canvas.
 /// Purely decorative — no HomeKit room linking.
 struct FurnitureItem: Identifiable, Equatable, Codable {
@@ -302,11 +387,83 @@ struct FurnitureItem: Identifiable, Equatable, Codable {
     var name: String
     /// Rectangle in canvas coordinates.
     var rect: CGRect
+    /// Semantic furniture preset. Stored as raw value for backward-compatible decoding.
+    var kindRaw: String
+    /// Visual rotation in degrees around the rectangle center.
+    var rotationDegrees: Double
+    /// Controls whether the furniture name is rendered on the canvas/export.
+    var showsName: Bool
 
-    init(id: UUID = UUID(), name: String = "Mobile", rect: CGRect) {
+    init(id: UUID = UUID(), name: String? = nil, rect: CGRect, kind: FurnitureKind = .generic, rotationDegrees: Double = 0, showsName: Bool = true) {
         self.id = id
-        self.name = name
+        self.name = name ?? kind.localizedName
         self.rect = rect
+        self.kindRaw = kind.rawValue
+        self.rotationDegrees = rotationDegrees
+        self.showsName = showsName
+    }
+
+    var kind: FurnitureKind {
+        get { FurnitureKind(rawValue: kindRaw) ?? .generic }
+        set {
+            kindRaw = newValue.rawValue
+            name = newValue.localizedName
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, rect, kindRaw, rotationDegrees, showsName
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        rect = try c.decode(CGRect.self, forKey: .rect)
+        kindRaw = try c.decodeIfPresent(String.self, forKey: .kindRaw) ?? FurnitureKind.generic.rawValue
+        rotationDegrees = try c.decodeIfPresent(Double.self, forKey: .rotationDegrees) ?? 0
+        showsName = try c.decodeIfPresent(Bool.self, forKey: .showsName) ?? true
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(rect, forKey: .rect)
+        try c.encode(kindRaw, forKey: .kindRaw)
+        try c.encode(rotationDegrees, forKey: .rotationDegrees)
+        try c.encode(showsName, forKey: .showsName)
+    }
+
+    var visualCorners: [CGPoint] {
+        let corners = [
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.minX, y: rect.maxY),
+            CGPoint(x: rect.maxX, y: rect.maxY)
+        ]
+        return corners.map { Self.rotate($0, around: rect.center, degrees: rotationDegrees) }
+    }
+
+    func containsVisualPoint(_ point: CGPoint) -> Bool {
+        let unrotated = Self.rotate(point, around: rect.center, degrees: -rotationDegrees)
+        return rect.contains(unrotated)
+    }
+
+    static func rotate(_ point: CGPoint, around center: CGPoint, degrees: Double) -> CGPoint {
+        let radians = CGFloat(degrees * .pi / 180)
+        let dx = point.x - center.x
+        let dy = point.y - center.y
+        return CGPoint(
+            x: center.x + dx * cos(radians) - dy * sin(radians),
+            y: center.y + dx * sin(radians) + dy * cos(radians)
+        )
+    }
+}
+
+extension CGRect {
+    var center: CGPoint {
+        CGPoint(x: midX, y: midY)
     }
 }
 

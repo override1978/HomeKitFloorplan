@@ -505,6 +505,23 @@ struct ChatBotView: View {
         case .accessory(let selection):
             return "\(selection.comparisonOperator.shortLabel) \(selection.targetValue.shortLabel)"
         case .time(let condition):
+            if condition.relation == .between {
+                return String(
+                    format: String(localized: "chat.automation.condition.between", defaultValue: "between %@ and %@"),
+                    scheduleBoundarySummary(
+                        kind: condition.kind,
+                        hour: condition.hour,
+                        minute: condition.minute,
+                        offset: condition.offsetMinutes
+                    ),
+                    scheduleBoundarySummary(
+                        kind: condition.endKind,
+                        hour: condition.endHour,
+                        minute: condition.endMinute,
+                        offset: condition.endOffsetMinutes
+                    )
+                )
+            }
             return "\(condition.relation.shortLabel) \(scheduleSummary(condition))"
         case .presence(let condition):
             return condition.kind == .atHome
@@ -534,18 +551,32 @@ struct ChatBotView: View {
     }
 
     private func scheduleSummary(_ condition: AutomationProposalTimeCondition) -> String {
-        switch condition.kind {
+        scheduleBoundarySummary(
+            kind: condition.kind,
+            hour: condition.hour,
+            minute: condition.minute,
+            offset: condition.offsetMinutes
+        )
+    }
+
+    private func scheduleBoundarySummary(
+        kind: AutomationProposalScheduleKind,
+        hour: Int,
+        minute: Int,
+        offset: Int
+    ) -> String {
+        switch kind {
         case .fixedTime:
-            return String(format: "%02d:%02d", condition.hour, condition.minute)
+            return String(format: "%02d:%02d", hour, minute)
         case .sunrise:
             return offsetSummary(
                 base: String(localized: "automation.schedule.sunrise", defaultValue: "Sunrise"),
-                offset: condition.offsetMinutes
+                offset: offset
             )
         case .sunset:
             return offsetSummary(
                 base: String(localized: "automation.schedule.sunset", defaultValue: "Sunset"),
-                offset: condition.offsetMinutes
+                offset: offset
             )
         }
     }
@@ -1589,6 +1620,8 @@ private extension AutomationProposalTimeRelation {
             return String(localized: "automation.schedule.after", defaultValue: "after")
         case .before:
             return String(localized: "automation.schedule.before", defaultValue: "before")
+        case .between:
+            return String(localized: "automation.schedule.between", defaultValue: "between")
         }
     }
 }

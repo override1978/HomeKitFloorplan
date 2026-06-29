@@ -2783,43 +2783,127 @@ struct AutomationWizardSheet: View {
                 .buttonStyle(.bordered)
             }
 
-            Picker(String(localized: "automation.timeCondition.relation", defaultValue: "Relation"), selection: draft.relation) {
+            Picker(
+                String(localized: "automation.timeCondition.relation", defaultValue: "Relation"),
+                selection: Binding {
+                    draft.wrappedValue.relation
+                } set: { newValue in
+                    draft.wrappedValue.relation = newValue
+                    if newValue == .between {
+                        normalizeBetweenTimeCondition(draft)
+                    }
+                }
+            ) {
                 ForEach(AutomationTimeConditionRelation.allCases) { relation in
                     Text(relation.title).tag(relation)
                 }
             }
             .pickerStyle(.segmented)
 
-            Picker(String(localized: "automation.timeCondition.kind", defaultValue: "Time source"), selection: draft.kind) {
-                ForEach(AutomationTimeConditionKind.allCases) { kind in
-                    Label(kind.title, systemImage: kind.iconName).tag(kind)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            switch draft.wrappedValue.kind {
-            case .fixedTime:
-                DatePicker(
-                    String(localized: "automation.schedule.time", defaultValue: "Time"),
-                    selection: draft.time,
-                    displayedComponents: .hourAndMinute
+            if draft.wrappedValue.relation == .between {
+                betweenTimePicker(
+                    title: String(localized: "automation.timeCondition.boundary.start", defaultValue: "Start"),
+                    selection: draft.time
                 )
-                .datePickerStyle(.compact)
 
-            case .sunrise, .sunset:
-                Stepper(value: draft.offsetMinutes, in: -120...120, step: 5) {
-                    HStack {
-                        Label(String(localized: "automation.schedule.offset", defaultValue: "Offset"), systemImage: "plusminus")
-                        Spacer()
-                        Text(draft.wrappedValue.offsetSummary)
-                            .font(.subheadline.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(BrandColor.primary)
+                betweenTimePicker(
+                    title: String(localized: "automation.timeCondition.boundary.end", defaultValue: "End"),
+                    selection: draft.endTime
+                )
+            } else {
+                Picker(String(localized: "automation.timeCondition.kind", defaultValue: "Time source"), selection: draft.kind) {
+                    ForEach(AutomationTimeConditionKind.allCases) { kind in
+                        Label(kind.title, systemImage: kind.iconName).tag(kind)
                     }
                 }
+                .pickerStyle(.segmented)
+
+                timeBoundaryEditor(
+                    title: String(localized: "automation.schedule.time", defaultValue: "Time"),
+                    kind: draft.kind,
+                    time: draft.time,
+                    offsetMinutes: draft.offsetMinutes
+                )
+            }
+        }
+        .onAppear {
+            normalizeBetweenTimeCondition(draft)
+        }
+        .onChange(of: draft.wrappedValue.relation) { _, relation in
+            if relation == .between {
+                normalizeBetweenTimeCondition(draft)
             }
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func betweenTimePicker(title: String, selection: Binding<Date>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: "clock")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            DatePicker(
+                title,
+                selection: selection,
+                displayedComponents: .hourAndMinute
+            )
+            .datePickerStyle(.wheel)
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+            .frame(height: 118)
+            .clipped()
+        }
+    }
+
+    private func normalizeBetweenTimeCondition(_ draft: Binding<AutomationTimeCondition>) {
+        guard draft.wrappedValue.relation == .between else { return }
+        draft.wrappedValue.kind = .fixedTime
+        draft.wrappedValue.endKind = .fixedTime
+        draft.wrappedValue.offsetMinutes = 0
+        draft.wrappedValue.endOffsetMinutes = 0
+    }
+
+    @ViewBuilder
+    private func timeBoundaryEditor(
+        title: String,
+        kind: Binding<AutomationTimeConditionKind>,
+        time: Binding<Date>,
+        offsetMinutes: Binding<Int>
+    ) -> some View {
+        switch kind.wrappedValue {
+        case .fixedTime:
+            DatePicker(
+                title,
+                selection: time,
+                displayedComponents: .hourAndMinute
+            )
+            .datePickerStyle(.compact)
+
+        case .sunrise, .sunset:
+            Stepper(value: offsetMinutes, in: -120...120, step: 5) {
+                HStack {
+                    Label(title, systemImage: "plusminus")
+                    Spacer()
+                    Text(offsetText(for: offsetMinutes.wrappedValue))
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(BrandColor.primary)
+                }
+            }
+        }
+    }
+
+    private func offsetText(for offsetMinutes: Int) -> String {
+        if offsetMinutes == 0 {
+            return String(localized: "automation.schedule.offset.none", defaultValue: "No offset")
+        }
+
+        let absolute = abs(offsetMinutes)
+        if offsetMinutes < 0 {
+            return String(format: String(localized: "automation.schedule.offset.before", defaultValue: "%d min before"), absolute)
+        }
+        return String(format: String(localized: "automation.schedule.offset.after", defaultValue: "%d min after"), absolute)
     }
 
     private func presenceConditionEditorCard(_ draft: Binding<AutomationPresenceCondition>) -> some View {
@@ -4467,11 +4551,23 @@ private struct AutomationWizardEditDraft {
     ) -> [AutomationTimeCondition] {
         guard let predicate else { return [] }
         if let compound = predicate as? NSCompoundPredicate {
-            return compound.subpredicates.flatMap { subpredicate -> [AutomationTimeCondition] in
-                guard let predicate = subpredicate as? NSPredicate else { return [] }
+            let conditionPredicates = compound.subpredicates.compactMap { subpredicate -> NSPredicate? in
+                guard let predicate = subpredicate as? NSPredicate,
+                      !triggerPredicates.contains(where: { predicatesMatch($0, predicate) }) else {
+                    return nil
+                }
+                return predicate
+            }
+
+            if compound.compoundPredicateType == .and,
+               let betweenCondition = betweenTimeCondition(in: conditionPredicates) {
+                return [betweenCondition]
+            }
+
+            return conditionPredicates.flatMap { predicate -> [AutomationTimeCondition] in
                 return timeConditions(in: predicate, triggerPredicates: triggerPredicates)
             }
-            .uniquedBy { "\($0.kind.rawValue)-\($0.relation.rawValue)-\($0.offsetMinutes)-\(Calendar.current.component(.hour, from: $0.time))-\(Calendar.current.component(.minute, from: $0.time))" }
+            .uniquedBy(timeConditionIdentity)
         }
 
         if let condition = timeCondition(in: predicate),
@@ -4484,6 +4580,12 @@ private struct AutomationWizardEditDraft {
 
     private static func timeCondition(in predicate: NSPredicate) -> AutomationTimeCondition? {
         let constants = constantValues(in: predicate)
+        if let comparison = predicate as? NSComparisonPredicate,
+           comparison.predicateOperatorType == .between,
+           let condition = betweenTimeCondition(in: [comparison]) {
+            return condition
+        }
+
         if let significantEvent = constants.compactMap({ $0 as? HMSignificantTimeEvent }).first {
             var condition = AutomationTimeCondition()
             condition.kind = significantEvent.significantEvent == HMSignificantEvent.sunrise ? .sunrise : .sunset
@@ -4505,6 +4607,73 @@ private struct AutomationWizardEditDraft {
         }
 
         return nil
+    }
+
+    private static func betweenTimeCondition(in predicates: [NSPredicate]) -> AutomationTimeCondition? {
+        let directComparisons = predicates.flatMap(directComparisonPredicates)
+        let constants = directComparisons.flatMap(constantValues)
+
+        let significantEvents = constants.compactMap { $0 as? HMSignificantTimeEvent }
+        if significantEvents.count >= 2 {
+            var condition = AutomationTimeCondition()
+            condition.kind = timeConditionKind(for: significantEvents[0])
+            condition.relation = .between
+            condition.offsetMinutes = significantEvents[0].offset?.minute ?? 0
+            condition.endKind = timeConditionKind(for: significantEvents[1])
+            condition.endOffsetMinutes = significantEvents[1].offset?.minute ?? 0
+            return condition
+        }
+
+        let dateComponents = constants.compactMap { $0 as? DateComponents }
+            .filter { $0.hour != nil }
+        if dateComponents.count >= 2 {
+            var condition = AutomationTimeCondition()
+            condition.kind = .fixedTime
+            condition.relation = .between
+            condition.time = date(from: dateComponents[0])
+            condition.endKind = .fixedTime
+            condition.endTime = date(from: dateComponents[1])
+            return condition
+        }
+
+        guard directComparisons.count == 2,
+              let start = directComparisons.first(where: { timeRelation(from: $0) == .after }),
+              let end = directComparisons.first(where: { timeRelation(from: $0) == .before }),
+              var condition = timeCondition(in: start),
+              let endCondition = timeCondition(in: end) else {
+            return nil
+        }
+
+        condition.relation = .between
+        condition.endKind = endCondition.kind
+        condition.endTime = endCondition.time
+        condition.endOffsetMinutes = endCondition.offsetMinutes
+        return condition
+    }
+
+    private static func date(from components: DateComponents) -> Date {
+        var dateComponents = DateComponents()
+        dateComponents.hour = components.hour ?? 0
+        dateComponents.minute = components.minute ?? 0
+        return Calendar.current.date(from: dateComponents) ?? Date()
+    }
+
+    private static func timeConditionKind(for event: HMSignificantTimeEvent) -> AutomationTimeConditionKind {
+        event.significantEvent == HMSignificantEvent.sunrise ? .sunrise : .sunset
+    }
+
+    nonisolated private static func timeConditionIdentity(_ condition: AutomationTimeCondition) -> String {
+        [
+            condition.kind.rawValue,
+            condition.relation.rawValue,
+            "\(condition.offsetMinutes)",
+            "\(Calendar.current.component(.hour, from: condition.time))",
+            "\(Calendar.current.component(.minute, from: condition.time))",
+            condition.endKind.rawValue,
+            "\(condition.endOffsetMinutes)",
+            "\(Calendar.current.component(.hour, from: condition.endTime))",
+            "\(Calendar.current.component(.minute, from: condition.endTime))"
+        ].joined(separator: "-")
     }
 
     private static func timeRelation(from predicate: NSPredicate) -> AutomationTimeConditionRelation {
@@ -4747,7 +4916,7 @@ private struct AutomationWizardEditDraft {
         )
     }
 
-    private static func directComparisonPredicates(in predicate: NSPredicate) -> [NSComparisonPredicate] {
+    nonisolated private static func directComparisonPredicates(in predicate: NSPredicate) -> [NSComparisonPredicate] {
         if let comparison = predicate as? NSComparisonPredicate {
             return [comparison]
         }
@@ -4900,7 +5069,11 @@ private extension AutomationTimeCondition {
         relation == other.relation &&
         offsetMinutes == other.offsetMinutes &&
         Calendar.current.component(.hour, from: time) == Calendar.current.component(.hour, from: other.time) &&
-        Calendar.current.component(.minute, from: time) == Calendar.current.component(.minute, from: other.time)
+        Calendar.current.component(.minute, from: time) == Calendar.current.component(.minute, from: other.time) &&
+        endKind == other.endKind &&
+        endOffsetMinutes == other.endOffsetMinutes &&
+        Calendar.current.component(.hour, from: endTime) == Calendar.current.component(.hour, from: other.endTime) &&
+        Calendar.current.component(.minute, from: endTime) == Calendar.current.component(.minute, from: other.endTime)
     }
 }
 
@@ -5314,6 +5487,14 @@ private extension AutomationProposalTimeCondition {
             of: Date()
         ) ?? condition.time
         condition.offsetMinutes = offsetMinutes
+        condition.endKind = endKind.wizardTimeConditionKind
+        condition.endTime = Calendar.current.date(
+            bySettingHour: max(0, min(endHour, 23)),
+            minute: max(0, min(endMinute, 59)),
+            second: 0,
+            of: Date()
+        ) ?? condition.endTime
+        condition.endOffsetMinutes = endOffsetMinutes
         return condition
     }
 }
@@ -5341,6 +5522,7 @@ private extension AutomationProposalTimeRelation {
         switch self {
         case .after: return .after
         case .before: return .before
+        case .between: return .between
         }
     }
 }

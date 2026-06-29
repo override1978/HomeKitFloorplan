@@ -19,10 +19,12 @@ struct NewFloorplanSheet: View {
     @State private var errorMessage: String?
 
     @State private var showDrawingEditor = false
+    @State private var showImageDraftImport = false
     @State private var linkedRooms: [LinkedRoom] = []
     @State private var savedDrawingDocument: DrawingDocument?
     @State private var savedExteriorFillColorIndex: Int = -1
     @State private var savedVisualExportStyle: DrawingVisualExportStyle = .standard
+    @State private var savedExportRotation: DrawingExportRotation = .asDrawn
 
     var body: some View {
         NavigationStack {
@@ -62,6 +64,23 @@ struct NewFloorplanSheet: View {
                     Text(String(localized: "floorplan.draw.footer", defaultValue: "Draw rooms and link them to HomeKit rooms."))
                 }
 
+                Section {
+                    Button {
+                        showImageDraftImport = true
+                    } label: {
+                        HStack {
+                            Label(String(localized: "floorplan.imageDraft.title", defaultValue: "Detect wall draft from image"), systemImage: "wand.and.rays")
+                                .foregroundStyle(BrandColor.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundStyle(.tertiary)
+                                .font(.caption.weight(.semibold))
+                        }
+                    }
+                } footer: {
+                    Text(String(localized: "floorplan.imageDraft.footer", defaultValue: "Import an existing image and detect clear wall segments locally. Review the draft in the 2D editor before saving."))
+                }
+
                 if let errorMessage {
                     Section {
                         Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -86,6 +105,19 @@ struct NewFloorplanSheet: View {
                     .environment(homeKit)
                     .ignoresSafeArea()
             }
+            .sheet(isPresented: $showImageDraftImport) {
+                FloorplanImageDraftImportSheet { draftDocument in
+                    savedDrawingDocument = draftDocument
+                    linkedRooms = []
+                    savedExteriorFillColorIndex = -1
+                    savedVisualExportStyle = .standard
+                    savedExportRotation = .asDrawn
+                    if name.trimmingCharacters(in: .whitespaces).isEmpty {
+                        name = String(localized: "floorplan.imageDraft.defaultName", defaultValue: "Image wall draft")
+                    }
+                    showDrawingEditor = true
+                }
+            }
         }
         .suppressesIdleScreensaver(.modalPresentation)
     }
@@ -105,13 +137,15 @@ struct NewFloorplanSheet: View {
         DrawingFloorplanSheet(
             initialDocument: savedDrawingDocument,
             initialExteriorFillColorIndex: savedExteriorFillColorIndex,
-            initialVisualExportStyle: savedVisualExportStyle
-        ) { drawnImage, rooms, doc, colorIndex, visualStyle in
+            initialVisualExportStyle: savedVisualExportStyle,
+            initialExportRotation: savedExportRotation
+        ) { drawnImage, rooms, doc, colorIndex, visualStyle, exportRotation in
             selectedImage = drawnImage
             linkedRooms = rooms
             savedDrawingDocument = doc
             savedExteriorFillColorIndex = colorIndex
             savedVisualExportStyle = visualStyle
+            savedExportRotation = exportRotation
             if name.trimmingCharacters(in: .whitespaces).isEmpty {
                 name = String(localized: "floorplan.drawn.defaultName", defaultValue: "Drawn floorplan")
             }
@@ -140,6 +174,7 @@ struct NewFloorplanSheet: View {
             }
             floorplan.exteriorFillColorIndex = savedExteriorFillColorIndex
             floorplan.drawingVisualExportStyleRaw = savedVisualExportStyle.rawValue
+            floorplan.drawingExportRotation = savedExportRotation
             modelContext.insert(floorplan)
             try modelContext.save()
             let savedID = floorplan.id

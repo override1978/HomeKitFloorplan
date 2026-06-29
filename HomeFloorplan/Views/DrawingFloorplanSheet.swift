@@ -74,7 +74,7 @@ struct DrawingFloorplanSheet: View {
 
     /// Called when the user taps "Fatto" — provides the rendered PNG, linked rooms, drawing document,
     /// exterior-fill color index, and visual export style so the caller can persist them on the floorplan.
-    var onComplete: (UIImage, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle) -> Void
+    var onComplete: (UIImage, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle, DrawingExportRotation) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
@@ -86,10 +86,12 @@ struct DrawingFloorplanSheet: View {
     init(initialDocument: DrawingDocument? = nil,
          initialExteriorFillColorIndex: Int = -1,
          initialVisualExportStyle: DrawingVisualExportStyle = .standard,
-         onComplete: @escaping (UIImage, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle) -> Void) {
+         initialExportRotation: DrawingExportRotation = .asDrawn,
+         onComplete: @escaping (UIImage, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle, DrawingExportRotation) -> Void) {
         self.onComplete = onComplete
         _document = State(initialValue: initialDocument ?? DrawingDocument())
         _exteriorFillColorIndex = State(initialValue: initialExteriorFillColorIndex)
+        _exportRotation = State(initialValue: initialExportRotation)
         _visualExportStyleRaw = AppStorage(wrappedValue: initialVisualExportStyle.rawValue,
                                            "drawing.export.visualStyle")
     }
@@ -97,9 +99,11 @@ struct DrawingFloorplanSheet: View {
     @State private var mode: DrawingMode = .draw
     @State private var selection: DrawingSelection = .none
     @State private var wallKind: WallKind = .exterior
+    @State private var furnitureKind: FurnitureKind = .generic
     @AppStorage("drawing.export.visualStyle") private var visualExportStyleRaw: String = DrawingVisualExportStyle.standard.rawValue
     @AppStorage("drawing.help.hasSeen") private var hasSeenDrawingHelp = false
     @State private var exteriorFillColorIndex: Int = -1
+    @State private var exportRotation: DrawingExportRotation = .asDrawn
     /// When false, wall drawing snaps only to the 20pt grid (no vertex snapping).
     @State private var vertexSnapEnabled: Bool = true
 
@@ -228,6 +232,12 @@ struct DrawingFloorplanSheet: View {
                     FurnitureInspectorPanel(item: item) { newName in
                         guard let idx = document.furnitureItems.firstIndex(where: { $0.id == id }) else { return }
                         document.furnitureItems[idx].name = newName
+                    } onRotate: { delta in
+                        rotateFurniture(id: id, by: delta)
+                    } onDuplicate: {
+                        duplicateFurniture(id: id)
+                    } onToggleName: {
+                        toggleFurnitureName(id: id)
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -258,7 +268,7 @@ struct DrawingFloorplanSheet: View {
 
                 // Contextual banner while in placeFurniture mode
                 if mode == .placeFurniture {
-                    PlaceFurnitureBanner {
+                    PlaceFurnitureBanner(kind: furnitureKind) {
                         mode = .select
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -268,6 +278,7 @@ struct DrawingFloorplanSheet: View {
                     mode: $mode,
                     wallKind: $wallKind,
                     vertexSnapEnabled: $vertexSnapEnabled,
+                    furnitureKind: $furnitureKind,
                     hasSelection: selection != .none,
                     onDelete: deleteSelected
                 )
@@ -283,6 +294,8 @@ struct DrawingFloorplanSheet: View {
                         canUndo: !undoStack.isEmpty,
                         canRedo: !redoStack.isEmpty,
                         isExporting: isExporting,
+                        exportRotation: exportRotation,
+                        onExportRotationChange: { exportRotation = $0 },
                         visualExportStyle: visualExportStyle,
                         onVisualExportStyleChange: { visualExportStyle = $0 },
                         exteriorFillColorIndex: exteriorFillColorIndex,
@@ -558,18 +571,17 @@ struct DrawingFloorplanSheet: View {
     // MARK: - Furniture placement
 
     /// Called when the user taps the canvas in `.placeFurniture` mode.
-    /// Creates an 80×60pt rectangle centred on the tapped point, snapped to grid.
+    /// Creates a preset-sized furniture rectangle centred on the tapped point, snapped to grid.
     private func handlePlaceFurniture(at canvasPoint: CGPoint) {
         let snapped = DrawingDocument.snap(canvasPoint)
-        let defaultW: CGFloat = 80
-        let defaultH: CGFloat = 60
+        let defaultSize = furnitureKind.defaultSize
         let rect = CGRect(
-            x: snapped.x - defaultW / 2,
-            y: snapped.y - defaultH / 2,
-            width: defaultW,
-            height: defaultH
+            x: snapped.x - defaultSize.width / 2,
+            y: snapped.y - defaultSize.height / 2,
+            width: defaultSize.width,
+            height: defaultSize.height
         )
-        let item = FurnitureItem(name: "Mobile", rect: rect)
+        let item = FurnitureItem(rect: rect, kind: furnitureKind)
         pushUndo()
         document.furnitureItems.append(item)
         selection = .furniture(item.id)
@@ -601,6 +613,45 @@ struct DrawingFloorplanSheet: View {
     private func handleResizeFurniture(id: UUID, newRect: CGRect) {
         guard let idx = document.furnitureItems.firstIndex(where: { $0.id == id }) else { return }
         document.furnitureItems[idx].rect = newRect
+    }
+
+    private func rotateFurniture(id: UUID, by delta: Double) {
+        guard let idx = document.furnitureItems.firstIndex(where: { $0.id == id }) else { return }
+        pushUndo()
+        let next = document.furnitureItems[idx].rotationDegrees + delta
+        document.furnitureItems[idx].rotationDegrees = next.truncatingRemainder(dividingBy: 360)
+        selection = .furniture(id)
+    }
+
+    private func duplicateFurniture(id: UUID) {
+        guard let source = document.furnitureItem(for: id) else { return }
+        pushUndo()
+
+        let offset = DrawingDocument.gridSpacing
+        let maxOriginX = DrawingDocument.canvasSize - source.rect.width
+        let maxOriginY = DrawingDocument.canvasSize - source.rect.height
+        let shiftedOrigin = CGPoint(
+            x: min(max(source.rect.origin.x + offset, 0), maxOriginX),
+            y: min(max(source.rect.origin.y + offset, 0), maxOriginY)
+        )
+        let duplicate = FurnitureItem(
+            name: source.name,
+            rect: CGRect(origin: shiftedOrigin, size: source.rect.size),
+            kind: source.kind,
+            rotationDegrees: source.rotationDegrees,
+            showsName: source.showsName
+        )
+
+        document.furnitureItems.append(duplicate)
+        selection = .furniture(duplicate.id)
+        mode = .select
+    }
+
+    private func toggleFurnitureName(id: UUID) {
+        guard let idx = document.furnitureItems.firstIndex(where: { $0.id == id }) else { return }
+        pushUndo()
+        document.furnitureItems[idx].showsName.toggle()
+        selection = .furniture(id)
     }
 
     // MARK: - Wall endpoint movement
@@ -701,20 +752,26 @@ struct DrawingFloorplanSheet: View {
             isExporting = true
         Task { @MainActor in
             await Task.yield()
-            let (image, linkedRooms) = renderToImage(document, mode: .adaptive, visualStyle: visualExportStyle)
-            onComplete(image, linkedRooms, document, exteriorFillColorIndex, visualExportStyle)
+            let (image, linkedRooms) = renderToImage(
+                document,
+                mode: .adaptive,
+                visualStyle: visualExportStyle,
+                exportRotation: exportRotation
+            )
+            onComplete(image, linkedRooms, document, exteriorFillColorIndex, visualExportStyle, exportRotation)
             dismiss()
         }
     }
 
     private func renderToImage(_ doc: DrawingDocument,
                                mode: DrawingExportMode,
-                               visualStyle: DrawingVisualExportStyle) -> (UIImage, [LinkedRoom]) {
+                               visualStyle: DrawingVisualExportStyle,
+                               exportRotation: DrawingExportRotation) -> (UIImage, [LinkedRoom]) {
         switch mode {
         case .legacy:
             return renderToImage(doc, visualStyle: visualStyle)
         case .adaptive:
-            return renderAdaptiveToImage(doc, visualStyle: visualStyle)
+            return renderAdaptiveToImage(doc, visualStyle: visualStyle, exportRotation: exportRotation)
         }
     }
 
@@ -839,7 +896,8 @@ struct DrawingFloorplanSheet: View {
     /// strategy as legacy but renders into a deterministic landscape canvas so the
     /// result is not tied to the current device orientation or split-view size.
     private func renderAdaptiveToImage(_ doc: DrawingDocument,
-                                       visualStyle: DrawingVisualExportStyle) -> (UIImage, [LinkedRoom]) {
+                                       visualStyle: DrawingVisualExportStyle,
+                                       exportRotation: DrawingExportRotation) -> (UIImage, [LinkedRoom]) {
         var allPoints: [CGPoint] = doc.walls.flatMap { [$0.start, $0.end] }
                                   + doc.roomLabels.map(\.position)
         for area in doc.roomAreas {
@@ -874,37 +932,163 @@ struct DrawingFloorplanSheet: View {
 
         let drawingW = maxX - minX
         let drawingH = maxY - minY
-        let longestSide = max(drawingW, drawingH)
+        let rotatedDrawingW = exportRotation.quarterTurns.isMultiple(of: 2) ? drawingW : drawingH
+        let rotatedDrawingH = exportRotation.quarterTurns.isMultiple(of: 2) ? drawingH : drawingW
+        let longestSide = max(rotatedDrawingW, rotatedDrawingH)
         guard longestSide > 0 else { return (blankImage(), []) }
 
         let margin = longestSide * marginFraction
-        let paddedW = drawingW + margin * 2
-        let paddedH = drawingH + margin * 2
+        let paddedW = rotatedDrawingW + margin * 2
+        let paddedH = rotatedDrawingH + margin * 2
         let scaleFactor = min(outputW / paddedW, outputH / paddedH)
 
         let centerX = (minX + maxX) / 2
         let centerY = (minY + maxY) / 2
-        let cropW = outputW / scaleFactor
-        let cropH = outputH / scaleFactor
-        let originX = centerX - cropW / 2
-        let originY = centerY - cropH / 2
+        let rotationAngle = CGFloat(exportRotation.quarterTurns) * (.pi / 2)
+
+        func projectedPoint(_ point: CGPoint) -> CGPoint {
+            let dx = point.x - centerX
+            let dy = point.y - centerY
+            let rotatedX: CGFloat
+            let rotatedY: CGFloat
+
+            switch exportRotation {
+            case .asDrawn:
+                rotatedX = dx
+                rotatedY = dy
+            case .clockwise:
+                rotatedX = -dy
+                rotatedY = dx
+            case .upsideDown:
+                rotatedX = -dx
+                rotatedY = -dy
+            case .counterClockwise:
+                rotatedX = dy
+                rotatedY = -dx
+            }
+
+            return CGPoint(
+                x: outputW / 2 + rotatedX * scaleFactor,
+                y: outputH / 2 + rotatedY * scaleFactor
+            )
+        }
+
+        func normalizedPoint(_ point: CGPoint) -> CodablePoint {
+            let projected = projectedPoint(point)
+            return CodablePoint(
+                x: Double(projected.x / outputW),
+                y: Double(projected.y / outputH)
+            )
+        }
+
+        func normalizedRect(for points: [CGPoint]) -> CodableRect {
+            let projectedPoints = points.map(projectedPoint)
+            let xs = projectedPoints.map(\.x)
+            let ys = projectedPoints.map(\.y)
+            let minPX = xs.min() ?? 0
+            let maxPX = xs.max() ?? minPX
+            let minPY = ys.min() ?? 0
+            let maxPY = ys.max() ?? minPY
+            return CodableRect(
+                x: Double(minPX / outputW),
+                y: Double(minPY / outputH),
+                width: Double((maxPX - minPX) / outputW),
+                height: Double((maxPY - minPY) / outputH)
+            )
+        }
+
+        func drawCenteredText(_ text: String,
+                              at point: CGPoint,
+                              font: UIFont,
+                              color: UIColor,
+                              uppercased: Bool = false) {
+            let value = (uppercased ? text.uppercased() : text) as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: color
+            ]
+            let textSize = value.size(withAttributes: attributes)
+            value.draw(
+                at: CGPoint(x: point.x - textSize.width / 2, y: point.y - textSize.height / 2),
+                withAttributes: attributes
+            )
+        }
+
+        func drawUprightExportText(in context: CGContext) {
+            guard exportRotation != .asDrawn else { return }
+
+            UIGraphicsPushContext(context)
+            let isDark = visualStyle == .architecturalDark
+
+            for area in doc.roomAreas {
+                let color: UIColor
+                if isDark {
+                    color = UIColor(red: 0.78, green: 0.82, blue: 0.86, alpha: 0.72)
+                } else {
+                    let cgColor = RoomLabelPalette.color(at: area.colorIndex)
+                    color = UIColor(cgColor: cgColor.copy(alpha: 0.55) ?? cgColor)
+                }
+
+                drawCenteredText(
+                    area.name,
+                    at: projectedPoint(area.centroid),
+                    font: .systemFont(ofSize: (isDark ? 15 : 14) * scaleFactor, weight: .semibold),
+                    color: color,
+                    uppercased: true
+                )
+            }
+
+            for item in doc.furnitureItems where item.showsName {
+                let color = isDark
+                    ? UIColor(red: 0.78, green: 0.82, blue: 0.86, alpha: 0.58)
+                    : UIColor(white: 0.35, alpha: 1)
+                drawCenteredText(
+                    item.name,
+                    at: projectedPoint(CGPoint(x: item.rect.midX, y: item.rect.midY)),
+                    font: .systemFont(ofSize: (isDark ? 11 : 12) * scaleFactor, weight: .medium),
+                    color: color,
+                    uppercased: isDark
+                )
+            }
+
+            for label in doc.roomLabels {
+                let center = projectedPoint(label.position)
+                let font = UIFont.systemFont(ofSize: 13 * scaleFactor, weight: .bold)
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: UIColor.white
+                ]
+                let nsString = label.name.uppercased() as NSString
+                let textSize = nsString.size(withAttributes: attributes)
+                let hPad = 10 * scaleFactor
+                let vPad = 6 * scaleFactor
+                let pillSize = CGSize(width: textSize.width + hPad * 2, height: textSize.height + vPad * 2)
+                let pillRect = CGRect(
+                    x: center.x - pillSize.width / 2,
+                    y: center.y - pillSize.height / 2,
+                    width: pillSize.width,
+                    height: pillSize.height
+                )
+                UIColor(cgColor: RoomLabelPalette.color(at: label.colorIndex)).setFill()
+                UIBezierPath(roundedRect: pillRect, cornerRadius: pillSize.height / 2).fill()
+                nsString.draw(
+                    at: CGPoint(x: center.x - textSize.width / 2, y: center.y - textSize.height / 2),
+                    withAttributes: attributes
+                )
+            }
+
+            UIGraphicsPopContext()
+        }
 
         let linkedRooms: [LinkedRoom] = doc.roomAreas.compactMap { area in
             guard let hmUUID = area.hmRoomUUID else { return nil }
-            let normX = Double((area.rect.minX - originX) / cropW)
-            let normY = Double((area.rect.minY - originY) / cropH)
-            let normW = Double(area.rect.width / cropW)
-            let normH = Double(area.rect.height / cropH)
             let normalizedPoints: [CodablePoint]? = area.points.map { pts in
-                pts.map { CodablePoint(
-                    x: Double(($0.x - originX) / cropW),
-                    y: Double(($0.y - originY) / cropH)
-                )}
+                pts.map(normalizedPoint)
             }
             return LinkedRoom(
                 hmRoomUUID: hmUUID,
                 name: area.name,
-                normalizedRect: CodableRect(x: normX, y: normY, width: normW, height: normH),
+                normalizedRect: normalizedRect(for: area.effectivePoints),
                 normalizedPoints: normalizedPoints
             )
         }
@@ -921,13 +1105,19 @@ struct DrawingFloorplanSheet: View {
             let cgCtx = ctx.cgContext
             cgCtx.setFillColor(outputBackgroundColor.cgColor)
             cgCtx.fill(CGRect(origin: .zero, size: outputSize))
-            cgCtx.translateBy(x: -originX * scaleFactor, y: -originY * scaleFactor)
+            cgCtx.saveGState()
+            cgCtx.translateBy(x: outputW / 2, y: outputH / 2)
+            cgCtx.rotate(by: rotationAngle)
             cgCtx.scaleBy(x: scaleFactor, y: scaleFactor)
+            cgCtx.translateBy(x: -centerX, y: -centerY)
             renderDocument(doc,
                            in: cgCtx,
                            canvasSize: DrawingDocument.canvasSize,
                            exteriorFillColorIndex: exteriorFillColorIndex,
-                           visualStyle: visualStyle)
+                           visualStyle: visualStyle,
+                           drawText: exportRotation == .asDrawn)
+            cgCtx.restoreGState()
+            drawUprightExportText(in: cgCtx)
         }
         return (image, linkedRooms)
     }
@@ -936,5 +1126,5 @@ struct DrawingFloorplanSheet: View {
 // MARK: - Preview
 
 #Preview {
-    DrawingFloorplanSheet { _, _, _, _, _ in }
+    DrawingFloorplanSheet { _, _, _, _, _, _ in }
 }

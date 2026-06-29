@@ -292,42 +292,250 @@ func drawRoomArea(_ area: RoomArea,
 func drawFurnitureItem(_ item: FurnitureItem,
                        context: inout GraphicsContext,
                        selected: Bool) {
-    let cornerRadius: CGFloat = 4
-
-    context.fill(
-        Path(roundedRect: item.rect, cornerRadius: cornerRadius),
-        with: .color(DrawingStyle.furnitureFill)
-    )
+    var rotatedContext = context
+    rotatedContext.translateBy(x: item.rect.midX, y: item.rect.midY)
+    rotatedContext.rotate(by: .degrees(item.rotationDegrees))
+    rotatedContext.translateBy(x: -item.rect.midX, y: -item.rect.midY)
+    drawFurnitureShape(item, context: &rotatedContext)
 
     if selected {
         context.stroke(
-            Path(roundedRect: item.rect, cornerRadius: cornerRadius),
+            furnitureSelectionPath(item),
             with: .color(DrawingStyle.selectionColor),
-            style: StrokeStyle(lineWidth: 2)
+            style: StrokeStyle(lineWidth: 2, dash: [6, 4])
         )
-        let corners: [CGPoint] = [
-            CGPoint(x: item.rect.minX, y: item.rect.minY),
-            CGPoint(x: item.rect.maxX, y: item.rect.minY),
-            CGPoint(x: item.rect.minX, y: item.rect.maxY),
-            CGPoint(x: item.rect.maxX, y: item.rect.maxY)
-        ]
-        for corner in corners {
+        for corner in item.visualCorners {
             drawEndpointHandle(at: corner, context: &context)
         }
     } else {
         context.stroke(
-            Path(roundedRect: item.rect, cornerRadius: cornerRadius),
-            with: .color(DrawingStyle.furnitureBorder),
-            style: StrokeStyle(lineWidth: 1)
+            furnitureSelectionPath(item),
+            with: .color(DrawingStyle.furnitureBorder.opacity(0.28)),
+            style: StrokeStyle(lineWidth: 0.75, dash: [4, 4])
         )
     }
 
-    let font = Font.system(size: 12, weight: .medium)
-    let textColor = selected ? DrawingStyle.selectionColor : DrawingStyle.furnitureText
-    let resolvedText = context.resolve(
-        Text(item.name).font(font).foregroundColor(textColor)
-    )
-    context.draw(resolvedText, at: CGPoint(x: item.rect.midX, y: item.rect.midY), anchor: .center)
+    if item.showsName {
+        let font = Font.system(size: 12, weight: .medium)
+        let textColor = selected ? DrawingStyle.selectionColor : DrawingStyle.furnitureText
+        let resolvedText = context.resolve(
+            Text(item.name).font(font).foregroundColor(textColor)
+        )
+        context.draw(resolvedText, at: CGPoint(x: item.rect.midX, y: item.rect.midY), anchor: .center)
+    }
+}
+
+private func furnitureSelectionPath(_ item: FurnitureItem) -> Path {
+    let corners = item.visualCorners
+    var path = Path()
+    path.move(to: corners[0])
+    path.addLine(to: corners[1])
+    path.addLine(to: corners[3])
+    path.addLine(to: corners[2])
+    path.closeSubpath()
+    return path
+}
+
+private func drawFurnitureShape(_ item: FurnitureItem, context: inout GraphicsContext) {
+    let rect = item.rect
+    let fill = DrawingStyle.furnitureFill
+    let stroke = DrawingStyle.furnitureBorder
+    let detail = DrawingStyle.furnitureText.opacity(0.55)
+    let style = StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round)
+
+    func rounded(_ r: CGRect, radius: CGFloat = 5) -> Path {
+        Path(roundedRect: r, cornerRadius: min(radius, min(r.width, r.height) / 2))
+    }
+
+    func strokeLine(_ a: CGPoint, _ b: CGPoint, color: Color = DrawingStyle.furnitureText.opacity(0.45)) {
+        var path = Path()
+        path.move(to: a)
+        path.addLine(to: b)
+        context.stroke(path, with: .color(color), style: style)
+    }
+
+    switch item.kind {
+    case .sofa:
+        let frame = rect.insetBy(dx: rect.width * 0.07, dy: rect.height * 0.10)
+        let armWidth = frame.width * 0.15
+        let backHeight = frame.height * 0.18
+        let pillowHeight = frame.height * 0.28
+        let seatY = frame.minY + backHeight + pillowHeight * 0.62
+        let seatHeight = frame.maxY - seatY
+        let innerX = frame.minX + armWidth
+        let innerW = frame.width - armWidth * 2
+        let structuralFill = stroke.opacity(0.20)
+        let cushionStroke = stroke.opacity(0.58)
+
+        let back = CGRect(x: frame.minX + armWidth * 0.20, y: frame.minY, width: frame.width - armWidth * 0.40, height: backHeight)
+        let leftArm = CGRect(x: frame.minX, y: frame.minY + backHeight * 0.30, width: armWidth, height: frame.height - backHeight * 0.55)
+        let rightArm = CGRect(x: frame.maxX - armWidth, y: leftArm.minY, width: armWidth, height: leftArm.height)
+        context.fill(rounded(back, radius: 6), with: .color(structuralFill))
+        context.stroke(rounded(back, radius: 6), with: .color(cushionStroke), style: style)
+        context.fill(rounded(leftArm, radius: 8), with: .color(structuralFill))
+        context.stroke(rounded(leftArm, radius: 8), with: .color(cushionStroke), style: style)
+        context.fill(rounded(rightArm, radius: 8), with: .color(structuralFill))
+        context.stroke(rounded(rightArm, radius: 8), with: .color(cushionStroke), style: style)
+
+        let pillowY = frame.minY + backHeight * 0.72
+        let pillowW = innerW / 2
+        let leftPillow = CGRect(x: innerX, y: pillowY, width: pillowW, height: pillowHeight)
+        let rightPillow = CGRect(x: innerX + pillowW, y: pillowY, width: pillowW, height: pillowHeight)
+        context.fill(rounded(leftPillow, radius: 7), with: .color(fill))
+        context.stroke(rounded(leftPillow, radius: 7), with: .color(stroke), style: style)
+        context.fill(rounded(rightPillow, radius: 7), with: .color(fill))
+        context.stroke(rounded(rightPillow, radius: 7), with: .color(stroke), style: style)
+
+        let leftSeat = CGRect(x: innerX, y: seatY, width: pillowW, height: seatHeight)
+        let rightSeat = CGRect(x: innerX + pillowW, y: seatY, width: pillowW, height: seatHeight)
+        context.fill(rounded(leftSeat, radius: 6), with: .color(fill))
+        context.stroke(rounded(leftSeat, radius: 6), with: .color(stroke), style: style)
+        context.fill(rounded(rightSeat, radius: 6), with: .color(fill))
+        context.stroke(rounded(rightSeat, radius: 6), with: .color(stroke), style: style)
+        strokeLine(CGPoint(x: innerX + pillowW, y: pillowY), CGPoint(x: innerX + pillowW, y: frame.maxY), color: detail)
+        context.stroke(rounded(frame, radius: 10), with: .color(stroke.opacity(0.42)), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+
+    case .armchair:
+        let frame = rect.insetBy(dx: rect.width * 0.11, dy: rect.height * 0.10)
+        let armWidth = frame.width * 0.22
+        let backHeight = frame.height * 0.20
+        let pillowHeight = frame.height * 0.26
+        let seatY = frame.minY + backHeight + pillowHeight * 0.58
+        let seatHeight = frame.maxY - seatY
+        let innerX = frame.minX + armWidth
+        let innerW = frame.width - armWidth * 2
+        let structuralFill = stroke.opacity(0.20)
+        let cushionStroke = stroke.opacity(0.58)
+
+        let back = CGRect(x: frame.minX + armWidth * 0.18, y: frame.minY, width: frame.width - armWidth * 0.36, height: backHeight)
+        let leftArm = CGRect(x: frame.minX, y: frame.minY + backHeight * 0.30, width: armWidth, height: frame.height - backHeight * 0.55)
+        let rightArm = CGRect(x: frame.maxX - armWidth, y: leftArm.minY, width: armWidth, height: leftArm.height)
+        context.fill(rounded(back, radius: 6), with: .color(structuralFill))
+        context.stroke(rounded(back, radius: 6), with: .color(cushionStroke), style: style)
+        context.fill(rounded(leftArm, radius: 8), with: .color(structuralFill))
+        context.stroke(rounded(leftArm, radius: 8), with: .color(cushionStroke), style: style)
+        context.fill(rounded(rightArm, radius: 8), with: .color(structuralFill))
+        context.stroke(rounded(rightArm, radius: 8), with: .color(cushionStroke), style: style)
+
+        let pillow = CGRect(x: innerX, y: frame.minY + backHeight * 0.72, width: innerW, height: pillowHeight)
+        let seat = CGRect(x: innerX, y: seatY, width: innerW, height: seatHeight)
+        context.fill(rounded(pillow, radius: 7), with: .color(fill))
+        context.stroke(rounded(pillow, radius: 7), with: .color(stroke), style: style)
+        context.fill(rounded(seat, radius: 6), with: .color(fill))
+        context.stroke(rounded(seat, radius: 6), with: .color(stroke), style: style)
+        strokeLine(CGPoint(x: innerX, y: seatY), CGPoint(x: innerX + innerW, y: seatY), color: detail)
+        context.stroke(rounded(frame, radius: 10), with: .color(stroke.opacity(0.42)), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+
+    case .diningTable:
+        let table = rect.insetBy(dx: rect.width * 0.12, dy: rect.height * 0.14)
+        context.fill(Path(ellipseIn: table), with: .color(fill))
+        context.stroke(Path(ellipseIn: table), with: .color(stroke), style: style)
+        strokeLine(CGPoint(x: table.minX + table.width * 0.22, y: table.midY), CGPoint(x: table.maxX - table.width * 0.22, y: table.midY), color: detail)
+        strokeLine(CGPoint(x: table.midX, y: table.minY + table.height * 0.22), CGPoint(x: table.midX, y: table.maxY - table.height * 0.22), color: detail)
+
+    case .chair:
+        let seat = CGRect(x: rect.minX + rect.width * 0.23, y: rect.minY + rect.height * 0.34, width: rect.width * 0.54, height: rect.height * 0.42)
+        let back = CGRect(x: seat.minX - rect.width * 0.03, y: rect.minY + rect.height * 0.15, width: seat.width + rect.width * 0.06, height: rect.height * 0.16)
+        context.fill(rounded(seat, radius: 4), with: .color(fill))
+        context.stroke(rounded(seat, radius: 4), with: .color(stroke), style: style)
+        context.fill(rounded(back, radius: 3), with: .color(stroke.opacity(0.22)))
+        context.stroke(rounded(back, radius: 3), with: .color(stroke), style: style)
+        strokeLine(CGPoint(x: back.minX + back.width * 0.14, y: back.maxY), CGPoint(x: seat.minX + seat.width * 0.18, y: seat.minY), color: detail)
+        strokeLine(CGPoint(x: back.maxX - back.width * 0.14, y: back.maxY), CGPoint(x: seat.maxX - seat.width * 0.18, y: seat.minY), color: detail)
+        let legColor = stroke.opacity(0.65)
+        strokeLine(CGPoint(x: seat.minX + 3, y: seat.maxY), CGPoint(x: seat.minX - rect.width * 0.08, y: rect.maxY - rect.height * 0.10), color: legColor)
+        strokeLine(CGPoint(x: seat.maxX - 3, y: seat.maxY), CGPoint(x: seat.maxX + rect.width * 0.08, y: rect.maxY - rect.height * 0.10), color: legColor)
+
+    case .bed:
+        let body = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.06)
+        context.fill(rounded(body, radius: 7), with: .color(fill))
+        context.stroke(rounded(body, radius: 7), with: .color(stroke), style: style)
+        let pillowH = body.height * 0.22
+        context.fill(rounded(CGRect(x: body.minX + body.width * 0.08, y: body.minY + body.height * 0.07, width: body.width * 0.36, height: pillowH), radius: 4), with: .color(Color(.systemBackground).opacity(0.65)))
+        context.fill(rounded(CGRect(x: body.maxX - body.width * 0.44, y: body.minY + body.height * 0.07, width: body.width * 0.36, height: pillowH), radius: 4), with: .color(Color(.systemBackground).opacity(0.65)))
+        strokeLine(CGPoint(x: body.minX, y: body.minY + body.height * 0.36), CGPoint(x: body.maxX, y: body.minY + body.height * 0.36), color: detail)
+
+    case .wardrobe:
+        let body = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.10)
+        context.fill(rounded(body, radius: 4), with: .color(fill))
+        context.stroke(rounded(body, radius: 4), with: .color(stroke), style: style)
+        strokeLine(CGPoint(x: body.midX, y: body.minY), CGPoint(x: body.midX, y: body.maxY), color: detail)
+        context.fill(Path(ellipseIn: CGRect(x: body.midX - 6, y: body.midY - 2, width: 4, height: 4)), with: .color(detail))
+        context.fill(Path(ellipseIn: CGRect(x: body.midX + 2, y: body.midY - 2, width: 4, height: 4)), with: .color(detail))
+
+    case .toilet:
+        let tank = CGRect(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.12, width: rect.width * 0.56, height: rect.height * 0.24)
+        let bowl = CGRect(x: rect.minX + rect.width * 0.18, y: rect.minY + rect.height * 0.34, width: rect.width * 0.64, height: rect.height * 0.46)
+        context.fill(rounded(tank, radius: 3), with: .color(fill))
+        context.stroke(rounded(tank, radius: 3), with: .color(stroke), style: style)
+        context.fill(Path(ellipseIn: bowl), with: .color(fill))
+        context.stroke(Path(ellipseIn: bowl), with: .color(stroke), style: style)
+        context.stroke(Path(ellipseIn: bowl.insetBy(dx: bowl.width * 0.23, dy: bowl.height * 0.22)), with: .color(detail), style: style)
+
+    case .sink:
+        let basin = rect.insetBy(dx: rect.width * 0.16, dy: rect.height * 0.18)
+        context.fill(Path(ellipseIn: basin), with: .color(fill))
+        context.stroke(Path(ellipseIn: basin), with: .color(stroke), style: style)
+        context.stroke(Path(ellipseIn: basin.insetBy(dx: basin.width * 0.22, dy: basin.height * 0.22)), with: .color(detail), style: style)
+        strokeLine(CGPoint(x: rect.midX, y: basin.minY), CGPoint(x: rect.midX, y: basin.minY - rect.height * 0.12), color: stroke)
+
+    case .inductionCooktop:
+        let cooktop = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.10)
+        context.fill(rounded(cooktop, radius: 5), with: .color(fill))
+        context.stroke(rounded(cooktop, radius: 5), with: .color(stroke), style: style)
+
+        let zoneRadius = min(cooktop.width, cooktop.height) * 0.15
+        let zoneCenters = [
+            CGPoint(x: cooktop.minX + cooktop.width * 0.30, y: cooktop.minY + cooktop.height * 0.34),
+            CGPoint(x: cooktop.maxX - cooktop.width * 0.30, y: cooktop.minY + cooktop.height * 0.34),
+            CGPoint(x: cooktop.minX + cooktop.width * 0.30, y: cooktop.maxY - cooktop.height * 0.34),
+            CGPoint(x: cooktop.maxX - cooktop.width * 0.30, y: cooktop.maxY - cooktop.height * 0.34)
+        ]
+        for center in zoneCenters {
+            let zone = CGRect(x: center.x - zoneRadius, y: center.y - zoneRadius, width: zoneRadius * 2, height: zoneRadius * 2)
+            context.stroke(Path(ellipseIn: zone), with: .color(detail), style: style)
+            context.stroke(Path(ellipseIn: zone.insetBy(dx: zoneRadius * 0.38, dy: zoneRadius * 0.38)), with: .color(detail.opacity(0.7)), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+        }
+        strokeLine(
+            CGPoint(x: cooktop.midX - cooktop.width * 0.18, y: cooktop.maxY - cooktop.height * 0.12),
+            CGPoint(x: cooktop.midX + cooktop.width * 0.18, y: cooktop.maxY - cooktop.height * 0.12),
+            color: detail
+        )
+
+    case .washingMachine:
+        let body = rect.insetBy(dx: rect.width * 0.10, dy: rect.height * 0.08)
+        let panel = CGRect(x: body.minX, y: body.minY, width: body.width, height: body.height * 0.22)
+        let doorRadius = min(body.width, body.height) * 0.24
+        let doorCenter = CGPoint(x: body.midX, y: body.minY + body.height * 0.58)
+        let door = CGRect(x: doorCenter.x - doorRadius, y: doorCenter.y - doorRadius, width: doorRadius * 2, height: doorRadius * 2)
+
+        context.fill(rounded(body, radius: 6), with: .color(fill))
+        context.stroke(rounded(body, radius: 6), with: .color(stroke), style: style)
+        context.stroke(rounded(panel, radius: 3), with: .color(detail), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+        context.stroke(Path(ellipseIn: door), with: .color(stroke), style: style)
+        context.stroke(Path(ellipseIn: door.insetBy(dx: doorRadius * 0.28, dy: doorRadius * 0.28)), with: .color(detail), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+        context.fill(Path(ellipseIn: CGRect(x: panel.maxX - panel.width * 0.20, y: panel.midY - 3, width: 6, height: 6)), with: .color(detail))
+        strokeLine(CGPoint(x: panel.minX + panel.width * 0.12, y: panel.midY), CGPoint(x: panel.minX + panel.width * 0.34, y: panel.midY), color: detail)
+
+    case .bathtub:
+        let tub = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.18)
+        context.fill(rounded(tub, radius: tub.height / 2), with: .color(fill))
+        context.stroke(rounded(tub, radius: tub.height / 2), with: .color(stroke), style: style)
+        context.stroke(rounded(tub.insetBy(dx: tub.width * 0.10, dy: tub.height * 0.20), radius: tub.height / 3), with: .color(detail), style: style)
+        strokeLine(CGPoint(x: tub.minX + tub.width * 0.12, y: tub.minY), CGPoint(x: tub.minX + tub.width * 0.12, y: tub.minY - rect.height * 0.10), color: stroke)
+
+    case .shower:
+        let base = rect.insetBy(dx: rect.width * 0.12, dy: rect.height * 0.12)
+        context.fill(rounded(base, radius: 4), with: .color(fill))
+        context.stroke(rounded(base, radius: 4), with: .color(stroke), style: style)
+        strokeLine(CGPoint(x: base.minX, y: base.minY), CGPoint(x: base.maxX, y: base.maxY), color: detail)
+        strokeLine(CGPoint(x: base.maxX, y: base.minY), CGPoint(x: base.minX, y: base.maxY), color: detail)
+        context.fill(Path(ellipseIn: CGRect(x: base.midX - 4, y: base.midY - 4, width: 8, height: 8)), with: .color(detail))
+
+    case .generic:
+        context.fill(rounded(rect, radius: 4), with: .color(fill))
+        context.stroke(rounded(rect, radius: 4), with: .color(stroke), style: style)
+    }
 }
 
 /// Draws a small "+" circle at a polygon edge midpoint to indicate the edge is tappable

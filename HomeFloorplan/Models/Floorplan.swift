@@ -49,6 +49,24 @@ enum FloorplanTapMode: String, Codable, CaseIterable {
     }
 }
 
+enum DrawingExportRotation: String, Codable, CaseIterable, Identifiable {
+    case asDrawn
+    case clockwise
+    case counterClockwise
+    case upsideDown
+
+    var id: String { rawValue }
+
+    var quarterTurns: Int {
+        switch self {
+        case .asDrawn: return 0
+        case .clockwise: return 1
+        case .upsideDown: return 2
+        case .counterClockwise: return 3
+        }
+    }
+}
+
 @Model
 final class Floorplan {
     @Attribute(.unique) var id: UUID
@@ -71,6 +89,8 @@ final class Floorplan {
     var exteriorFillColorIndex: Int = -1
     /// Raw value of the visual export style used for drawing-based floorplans.
     var drawingVisualExportStyleRaw: String = "standard"
+    /// Raw value of the export-only rotation used for drawing-based floorplans.
+    var drawingExportRotationRaw: String = DrawingExportRotation.asDrawn.rawValue
 
     init(name: String, imageFilename: String, homeUUID: UUID? = nil) {
         self.id = UUID()
@@ -84,6 +104,11 @@ final class Floorplan {
     var tapMode: FloorplanTapMode {
         get { FloorplanTapMode(rawValue: tapModeRaw) ?? .openPanel }
         set { tapModeRaw = newValue.rawValue }
+    }
+
+    var drawingExportRotation: DrawingExportRotation {
+        get { DrawingExportRotation(rawValue: drawingExportRotationRaw) ?? .asDrawn }
+        set { drawingExportRotationRaw = newValue.rawValue }
     }
 
     /// Decoded list of rooms linked to this floorplan (from `linkedRoomsJSON`).
@@ -110,4 +135,3 @@ final class Floorplan {
         }
     }
 }
-

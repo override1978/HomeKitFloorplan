@@ -9,6 +9,8 @@ struct DrawingTopBar: View {
     var canUndo: Bool
     var canRedo: Bool
     var isExporting: Bool
+    var exportRotation: DrawingExportRotation
+    var onExportRotationChange: (DrawingExportRotation) -> Void
     var visualExportStyle: DrawingVisualExportStyle
     var onVisualExportStyleChange: (DrawingVisualExportStyle) -> Void
     var exteriorFillColorIndex: Int
@@ -63,6 +65,31 @@ struct DrawingTopBar: View {
             }
             .disabled(!canRedo)
             .buttonStyle(.plain)
+
+            Menu {
+                ForEach(DrawingExportRotation.allCases) { rotation in
+                    Button {
+                        onExportRotationChange(rotation)
+                    } label: {
+                        Label {
+                            Text(rotation.localizedTitle)
+                        } icon: {
+                            Image(systemName: rotation == exportRotation ? "checkmark.circle.fill" : rotation.iconName)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: exportRotation.iconName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(exportRotation == .asDrawn ? .primary : BrandColor.primary)
+                    .frame(width: 36, height: 36)
+                    .background(
+                        exportRotation == .asDrawn ? Color.primary.opacity(0.07) : BrandColor.primary.opacity(0.12),
+                        in: Circle()
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(isExporting)
 
             Menu {
                 ForEach(DrawingVisualExportStyle.toolbarVisibleStyles) { style in
@@ -163,6 +190,34 @@ struct DrawingTopBar: View {
     }
 }
 
+private extension DrawingExportRotation {
+    var localizedTitle: String {
+        switch self {
+        case .asDrawn:
+            return String(localized: "drawing.export.rotation.asDrawn", defaultValue: "As drawn")
+        case .clockwise:
+            return String(localized: "drawing.export.rotation.clockwise", defaultValue: "Rotate right")
+        case .counterClockwise:
+            return String(localized: "drawing.export.rotation.counterClockwise", defaultValue: "Rotate left")
+        case .upsideDown:
+            return String(localized: "drawing.export.rotation.upsideDown", defaultValue: "Upside down")
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .asDrawn:
+            return "rectangle"
+        case .clockwise:
+            return "rotate.right"
+        case .counterClockwise:
+            return "rotate.left"
+        case .upsideDown:
+            return "arrow.2.circlepath"
+        }
+    }
+}
+
 private extension DrawingVisualExportStyle {
     static var toolbarVisibleStyles: [DrawingVisualExportStyle] {
         [.standard, .architecturalDark]
@@ -212,7 +267,7 @@ struct DrawingEditorHelpSheet: View {
             message: String(localized: "drawing.help.vertices.message", defaultValue: "With a room area selected, tap an edge to add a vertex. Double-tap a vertex to remove it.")
         ),
         DrawingHelpSection(
-            icon: "magnet",
+            icon: "point.topleft.down.curvedto.point.bottomright.up",
             title: String(localized: "drawing.help.snap.title", defaultValue: "Snap"),
             message: String(localized: "drawing.help.snap.message", defaultValue: "Use the magnet to switch between grid-only snapping and smart snapping to nearby wall endpoints. Wall drawing also aligns to the nearest 45-degree angle.")
         ),
@@ -461,6 +516,7 @@ struct DrawingToolbar: View {
     @Binding var mode: DrawingMode
     @Binding var wallKind: WallKind
     @Binding var vertexSnapEnabled: Bool
+    @Binding var furnitureKind: FurnitureKind
     var hasSelection: Bool
     var onDelete: () -> Void
 
@@ -510,7 +566,7 @@ struct DrawingToolbar: View {
                     vertexSnapEnabled.toggle()
                 } label: {
                     VStack(spacing: 3) {
-                        Image(systemName: "magnet")
+                        Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
                             .font(.system(size: 16, weight: vertexSnapEnabled ? .semibold : .regular))
                         Text(String(localized: "drawing.toolbar.snap", defaultValue: "Snap"))
                             .font(.system(size: 10, weight: vertexSnapEnabled ? .semibold : .regular))
@@ -691,31 +747,48 @@ struct DrawingToolbar: View {
 
     private func furnitureButton() -> some View {
         let isActive = (mode == .placeFurniture)
-        return Button {
-            mode = isActive ? .select : .placeFurniture
-        } label: {
-            VStack(spacing: 3) {
-                Image(systemName: "sofa.fill")
-                    .font(.system(size: 18, weight: isActive ? .semibold : .regular))
-                Text(String(localized: "drawing.toolbar.furniture", defaultValue: "Furniture"))
-                    .font(.system(size: 10, weight: isActive ? .semibold : .regular))
+        return Menu {
+            ForEach(FurnitureKind.allCases) { kind in
+                Button {
+                    furnitureKind = kind
+                    mode = .placeFurniture
+                } label: {
+                    Label {
+                        Text(kind.localizedName)
+                    } icon: {
+                        Image(systemName: kind == furnitureKind ? "checkmark.circle.fill" : kind.systemImage)
+                    }
+                }
             }
-            .foregroundStyle(isActive ? BrandColor.primary : .primary)
-            .frame(width: 68, height: 52)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isActive
-                          ? BrandColor.primary.opacity(0.15)
-                          : Color(.systemFill))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isActive ? BrandColor.primary.opacity(0.5) : Color.clear,
-                                  lineWidth: 1.5)
-            )
+        } label: {
+            furnitureButtonLabel(isActive: isActive)
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.25), value: isActive)
+    }
+
+    private func furnitureButtonLabel(isActive: Bool) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: furnitureKind.systemImage)
+                .font(.system(size: 18, weight: isActive ? .semibold : .regular))
+            Text(furnitureKind.localizedName)
+                .font(.system(size: 10, weight: isActive ? .semibold : .regular))
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+        }
+        .foregroundStyle(isActive ? BrandColor.primary : .primary)
+        .frame(width: 68, height: 52)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isActive
+                      ? BrandColor.primary.opacity(0.15)
+                      : Color(.systemFill))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(isActive ? BrandColor.primary.opacity(0.5) : Color.clear,
+                              lineWidth: 1.5)
+        )
     }
 }
 
@@ -868,17 +941,23 @@ struct RoomAreaInspectorPanel: View {
 
 /// Contextual banner shown when mode == .placeFurniture.
 struct PlaceFurnitureBanner: View {
+    let kind: FurnitureKind
     var onCancel: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "sofa.fill")
+            Image(systemName: kind.systemImage)
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(BrandColor.primary)
 
-            Text(String(localized: "drawing.banner.furniture", defaultValue: "Tap to place the furniture item"))
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "drawing.banner.furniture", defaultValue: "Tap to place the furniture item"))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text(kind.localizedName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Spacer()
 
@@ -904,12 +983,15 @@ struct PlaceFurnitureBanner: View {
 struct FurnitureInspectorPanel: View {
     let item: FurnitureItem
     var onNameChange: (String) -> Void
+    var onRotate: (Double) -> Void
+    var onDuplicate: () -> Void
+    var onToggleName: () -> Void
 
     @State private var editingName: String = ""
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "sofa.fill")
+            Image(systemName: item.kind.systemImage)
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(BrandColor.primary)
                 .frame(width: 28)
@@ -926,12 +1008,61 @@ struct FurnitureInspectorPanel: View {
                     if !trimmed.isEmpty { onNameChange(trimmed) }
                 }
                 let w = Int(item.rect.width), h = Int(item.rect.height)
-                Text("\(w) × \(h) pt")
+                Text("\(w) × \(h) pt · \(Int(normalizedRotation(item.rotationDegrees)))°")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
+
+            HStack(spacing: 8) {
+                Button {
+                    onToggleName()
+                } label: {
+                    Image(systemName: item.showsName ? "textformat" : "eye.slash")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(item.showsName ? BrandColor.primary : .secondary)
+                        .frame(width: 34, height: 34)
+                        .background(
+                            item.showsName ? BrandColor.primary.opacity(0.12) : Color.primary.opacity(0.07),
+                            in: Circle()
+                        )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    onDuplicate()
+                } label: {
+                    Image(systemName: "plus.square.on.square")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 34, height: 34)
+                        .background(Color.primary.opacity(0.07), in: Circle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    onRotate(-90)
+                } label: {
+                    Image(systemName: "rotate.left")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 34, height: 34)
+                        .background(Color.primary.opacity(0.07), in: Circle())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    onRotate(90)
+                } label: {
+                    Image(systemName: "rotate.right")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 34, height: 34)
+                        .background(Color.primary.opacity(0.07), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -945,6 +1076,11 @@ struct FurnitureInspectorPanel: View {
             let trimmed = newValue.trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty { onNameChange(trimmed) }
         }
+    }
+
+    private func normalizedRotation(_ degrees: Double) -> Double {
+        let normalized = degrees.truncatingRemainder(dividingBy: 360)
+        return normalized < 0 ? normalized + 360 : normalized
     }
 }
 

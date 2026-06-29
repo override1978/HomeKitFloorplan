@@ -149,25 +149,56 @@ struct AutomationProposalTimeCondition: Codable, Hashable {
     var hour: Int
     var minute: Int
     var offsetMinutes: Int
+    var endKind: AutomationProposalScheduleKind
+    var endHour: Int
+    var endMinute: Int
+    var endOffsetMinutes: Int
 
     init(
         kind: AutomationProposalScheduleKind = .fixedTime,
         relation: AutomationProposalTimeRelation = .after,
         hour: Int = 8,
         minute: Int = 0,
-        offsetMinutes: Int = 0
+        offsetMinutes: Int = 0,
+        endKind: AutomationProposalScheduleKind? = nil,
+        endHour: Int = 18,
+        endMinute: Int = 0,
+        endOffsetMinutes: Int = 0
     ) {
         self.kind = kind
         self.relation = relation
         self.hour = hour
         self.minute = minute
         self.offsetMinutes = offsetMinutes
+        self.endKind = endKind ?? kind
+        self.endHour = endHour
+        self.endMinute = endMinute
+        self.endOffsetMinutes = endOffsetMinutes
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, relation, hour, minute, offsetMinutes
+        case endKind, endHour, endMinute, endOffsetMinutes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(AutomationProposalScheduleKind.self, forKey: .kind)
+        relation = try container.decode(AutomationProposalTimeRelation.self, forKey: .relation)
+        hour = try container.decode(Int.self, forKey: .hour)
+        minute = try container.decode(Int.self, forKey: .minute)
+        offsetMinutes = try container.decode(Int.self, forKey: .offsetMinutes)
+        endKind = try container.decodeIfPresent(AutomationProposalScheduleKind.self, forKey: .endKind) ?? kind
+        endHour = try container.decodeIfPresent(Int.self, forKey: .endHour) ?? 18
+        endMinute = try container.decodeIfPresent(Int.self, forKey: .endMinute) ?? 0
+        endOffsetMinutes = try container.decodeIfPresent(Int.self, forKey: .endOffsetMinutes) ?? 0
     }
 }
 
 enum AutomationProposalTimeRelation: String, Codable, Hashable {
     case after
     case before
+    case between
 }
 
 struct AutomationProposalPresenceTrigger: Codable, Hashable {

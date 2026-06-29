@@ -404,6 +404,7 @@ enum AutomationTimeConditionKind: String, CaseIterable, Identifiable {
 enum AutomationTimeConditionRelation: String, CaseIterable, Identifiable {
     case after
     case before
+    case between
 
     var id: String { rawValue }
 
@@ -413,6 +414,8 @@ enum AutomationTimeConditionRelation: String, CaseIterable, Identifiable {
             return String(localized: "automation.timeCondition.after", defaultValue: "After")
         case .before:
             return String(localized: "automation.timeCondition.before", defaultValue: "Before")
+        case .between:
+            return String(localized: "automation.timeCondition.between", defaultValue: "Between")
         }
     }
 }
@@ -423,20 +426,63 @@ struct AutomationTimeCondition: Identifiable {
     var relation: AutomationTimeConditionRelation = .after
     var time: Date = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: Date()) ?? Date()
     var offsetMinutes: Int = 0
+    var endKind: AutomationTimeConditionKind = .fixedTime
+    var endTime: Date = Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: Date()) ?? Date()
+    var endOffsetMinutes: Int = 0
 
     var summary: String {
         switch kind {
         case .fixedTime:
-            let formatter = DateFormatter()
-            formatter.timeStyle = .short
-            formatter.dateStyle = .none
-            return "\(relation.title) \(formatter.string(from: time))"
+            if relation == .between {
+                return String(
+                    format: String(localized: "automation.timeCondition.summary.between", defaultValue: "Between %@ and %@"),
+                    boundarySummary(kind: kind, time: time, offsetMinutes: offsetMinutes),
+                    boundarySummary(kind: endKind, time: endTime, offsetMinutes: endOffsetMinutes)
+                )
+            }
+            return "\(relation.title) \(boundarySummary(kind: kind, time: time, offsetMinutes: offsetMinutes))"
         case .sunrise, .sunset:
+            if relation == .between {
+                return String(
+                    format: String(localized: "automation.timeCondition.summary.between", defaultValue: "Between %@ and %@"),
+                    boundarySummary(kind: kind, time: time, offsetMinutes: offsetMinutes),
+                    boundarySummary(kind: endKind, time: endTime, offsetMinutes: endOffsetMinutes)
+                )
+            }
             return "\(relation.title) \(kind.title) \(offsetSummary)"
         }
     }
 
     var offsetSummary: String {
+        if offsetMinutes == 0 {
+            return String(localized: "automation.schedule.offset.none", defaultValue: "No offset")
+        }
+
+        let absolute = abs(offsetMinutes)
+        if offsetMinutes < 0 {
+            return String(format: String(localized: "automation.schedule.offset.before", defaultValue: "%d min before"), absolute)
+        }
+        return String(format: String(localized: "automation.schedule.offset.after", defaultValue: "%d min after"), absolute)
+    }
+
+    private func boundarySummary(
+        kind: AutomationTimeConditionKind,
+        time: Date,
+        offsetMinutes: Int
+    ) -> String {
+        switch kind {
+        case .fixedTime:
+            let formatter = DateFormatter()
+            formatter.timeStyle = .short
+            formatter.dateStyle = .none
+            return formatter.string(from: time)
+        case .sunrise, .sunset:
+            let offset = Self.offsetSummary(for: offsetMinutes)
+            return "\(kind.title) \(offset)"
+        }
+    }
+
+    private static func offsetSummary(for offsetMinutes: Int) -> String {
         if offsetMinutes == 0 {
             return String(localized: "automation.schedule.offset.none", defaultValue: "No offset")
         }
@@ -1169,6 +1215,10 @@ final class HomeKitAutomationsService {
     }
 
     private func timeConditionPredicate(_ condition: AutomationTimeCondition) -> NSPredicate {
+        if condition.relation == .between {
+            return betweenTimeConditionPredicate(condition)
+        }
+
         switch condition.kind {
         case .fixedTime:
             let components = Calendar.current.dateComponents([.hour, .minute], from: condition.time)
@@ -1177,6 +1227,8 @@ final class HomeKitAutomationsService {
                 return HMEventTrigger.predicateForEvaluatingTrigger(occurringAfter: components)
             case .before:
                 return HMEventTrigger.predicateForEvaluatingTrigger(occurringBefore: components)
+            case .between:
+                return betweenTimeConditionPredicate(condition)
             }
 
         case .sunrise, .sunset:
@@ -1192,8 +1244,82 @@ final class HomeKitAutomationsService {
                 return HMEventTrigger.predicateForEvaluatingTriggerOccurring(afterSignificantEvent: event)
             case .before:
                 return HMEventTrigger.predicateForEvaluatingTriggerOccurring(beforeSignificantEvent: event)
+            case .between:
+                return betweenTimeConditionPredicate(condition)
             }
         }
+    }
+
+    private func betweenTimeConditionPredicate(_ condition: AutomationTimeCondition) -> NSPredicate {
+        switch (condition.kind, condition.endKind) {
+        case (.fixedTime, .fixedTime):
+            return HMEventTrigger.predicateForEvaluatingTriggerOccurringBetweenDate(
+                with: Calendar.current.dateComponents([.hour, .minute], from: condition.time),
+                secondDateWith: Calendar.current.dateComponents([.hour, .minute], from: condition.endTime)
+            )
+
+        case (.sunrise, .sunrise), (.sunrise, .sunset), (.sunset, .sunrise), (.sunset, .sunset):
+            return HMEventTrigger.predicate(
+                forEvaluatingTriggerOccurringBetweenSignificantEvent: significantTimeEvent(
+                    kind: condition.kind,
+                    offsetMinutes: condition.offsetMinutes
+                ),
+                secondSignificantEvent: significantTimeEvent(
+                    kind: condition.endKind,
+                    offsetMinutes: condition.endOffsetMinutes
+                )
+            )
+
+        default:
+            return NSCompoundPredicate(andPredicateWithSubpredicates: [
+                afterPredicate(kind: condition.kind, time: condition.time, offsetMinutes: condition.offsetMinutes),
+                beforePredicate(kind: condition.endKind, time: condition.endTime, offsetMinutes: condition.endOffsetMinutes)
+            ])
+        }
+    }
+
+    private func afterPredicate(
+        kind: AutomationTimeConditionKind,
+        time: Date,
+        offsetMinutes: Int
+    ) -> NSPredicate {
+        switch kind {
+        case .fixedTime:
+            return HMEventTrigger.predicateForEvaluatingTrigger(
+                occurringAfter: Calendar.current.dateComponents([.hour, .minute], from: time)
+            )
+        case .sunrise, .sunset:
+            return HMEventTrigger.predicateForEvaluatingTriggerOccurring(
+                afterSignificantEvent: significantTimeEvent(kind: kind, offsetMinutes: offsetMinutes)
+            )
+        }
+    }
+
+    private func beforePredicate(
+        kind: AutomationTimeConditionKind,
+        time: Date,
+        offsetMinutes: Int
+    ) -> NSPredicate {
+        switch kind {
+        case .fixedTime:
+            return HMEventTrigger.predicateForEvaluatingTrigger(
+                occurringBefore: Calendar.current.dateComponents([.hour, .minute], from: time)
+            )
+        case .sunrise, .sunset:
+            return HMEventTrigger.predicateForEvaluatingTriggerOccurring(
+                beforeSignificantEvent: significantTimeEvent(kind: kind, offsetMinutes: offsetMinutes)
+            )
+        }
+    }
+
+    private func significantTimeEvent(
+        kind: AutomationTimeConditionKind,
+        offsetMinutes: Int
+    ) -> HMSignificantTimeEvent {
+        HMSignificantTimeEvent(
+            significantEvent: kind == .sunrise ? HMSignificantEvent.sunrise : HMSignificantEvent.sunset,
+            offset: offsetMinutes == 0 ? nil : DateComponents(minute: offsetMinutes)
+        )
     }
 
     private func timeConditionOffsetComponents(for condition: AutomationTimeCondition) -> DateComponents? {

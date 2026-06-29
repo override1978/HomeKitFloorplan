@@ -119,9 +119,11 @@ struct FloorplanListView: View {
         DrawingFloorplanSheet(
             initialDocument: floorplan.drawingDocument,
             initialExteriorFillColorIndex: floorplan.exteriorFillColorIndex,
-            initialVisualExportStyle: DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard
-        ) { image, rooms, doc, colorIndex, visualStyle in
+            initialVisualExportStyle: DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard,
+            initialExportRotation: floorplan.drawingExportRotation
+        ) { image, rooms, doc, colorIndex, visualStyle, exportRotation in
             let previousRooms = floorplan.linkedRooms
+            let previousRotation = floorplan.drawingExportRotation
             ImageStorageService.delete(filename: floorplan.imageFilename)
             if let newFilename = try? ImageStorageService.save(image) {
                 floorplan.imageFilename = newFilename
@@ -129,8 +131,15 @@ struct FloorplanListView: View {
             floorplan.drawingDocument = doc
             floorplan.exteriorFillColorIndex = colorIndex
             floorplan.drawingVisualExportStyleRaw = visualStyle.rawValue
+            floorplan.drawingExportRotation = exportRotation
             if !rooms.isEmpty {
-                preserveMarkerPositions(on: floorplan, from: previousRooms, to: rooms)
+                preserveMarkerPositions(
+                    on: floorplan,
+                    from: previousRooms,
+                    to: rooms,
+                    previousRotation: previousRotation,
+                    newRotation: exportRotation
+                )
                 floorplan.linkedRooms = rooms
             }
             floorplan.updatedAt = .now
@@ -569,6 +578,7 @@ struct FloorplanListView: View {
         copy.tapModeRaw         = floorplan.tapModeRaw
         copy.linkedRoomsJSON    = floorplan.linkedRoomsJSON
         copy.drawingDocumentJSON = floorplan.drawingDocumentJSON
+        copy.drawingExportRotationRaw = floorplan.drawingExportRotationRaw
 
         for marker in floorplan.accessories {
             let copiedMarker = PlacedAccessory(
@@ -586,11 +596,14 @@ struct FloorplanListView: View {
 
     private func preserveMarkerPositions(on floorplan: Floorplan,
                                          from previousRooms: [LinkedRoom],
-                                         to newRooms: [LinkedRoom]) {
+                                         to newRooms: [LinkedRoom],
+                                         previousRotation: DrawingExportRotation,
+                                         newRotation: DrawingExportRotation) {
         guard !previousRooms.isEmpty, !newRooms.isEmpty else { return }
 
         let previousByID = Dictionary(uniqueKeysWithValues: previousRooms.map { ($0.hmRoomUUID, $0) })
         let newByID = Dictionary(uniqueKeysWithValues: newRooms.map { ($0.hmRoomUUID, $0) })
+        let rotationDelta = (newRotation.quarterTurns - previousRotation.quarterTurns + 4) % 4
 
         for marker in floorplan.accessories {
             let markerPoint = NormalizedPoint(x: marker.positionX, y: marker.positionY)
@@ -604,10 +617,27 @@ struct FloorplanListView: View {
 
             let localX = (marker.positionX - previousRect.x) / previousRect.width
             let localY = (marker.positionY - previousRect.y) / previousRect.height
+            let rotatedLocal = rotatedLocalPoint(x: localX, y: localY, quarterTurns: rotationDelta)
 
-            marker.positionX = clamped(newRect.x + localX * newRect.width)
-            marker.positionY = clamped(newRect.y + localY * newRect.height)
-            marker.linkedRoomUUID = roomID
+            marker.positionX = clamped(newRect.x + rotatedLocal.x * newRect.width)
+            marker.positionY = clamped(newRect.y + rotatedLocal.y * newRect.height)
+            marker.linkedRoomUUID = FloorplanRoomMatcher.linkedRoomID(
+                containing: marker.position,
+                in: newRooms
+            ) ?? roomID
+        }
+    }
+
+    private func rotatedLocalPoint(x: Double, y: Double, quarterTurns: Int) -> (x: Double, y: Double) {
+        switch quarterTurns {
+        case 1:
+            return (1 - y, x)
+        case 2:
+            return (1 - x, 1 - y)
+        case 3:
+            return (y, 1 - x)
+        default:
+            return (x, y)
         }
     }
 
