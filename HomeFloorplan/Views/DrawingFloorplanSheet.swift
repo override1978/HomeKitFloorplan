@@ -106,6 +106,8 @@ struct DrawingFloorplanSheet: View {
     @State private var exportRotation: DrawingExportRotation = .asDrawn
     /// When false, wall drawing snaps only to the 20pt grid (no vertex snapping).
     @State private var vertexSnapEnabled: Bool = true
+    /// When false, wall dimension labels (metres) are hidden on the canvas.
+    @State private var showDimensions: Bool = false
 
     // MARK: Room label placement state
 
@@ -159,6 +161,7 @@ struct DrawingFloorplanSheet: View {
                 selection:         $selection,
                 wallKind:          $wallKind,
                 vertexSnapEnabled: vertexSnapEnabled,
+                showDimensions:    showDimensions,
                 onCommit: { newDoc in
                     pushUndo()
                     document = newDoc
@@ -242,6 +245,16 @@ struct DrawingFloorplanSheet: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
+                // Wall inspector — shown when a wall is selected in select mode
+                if case .select = mode,
+                   case .wall(let id) = selection,
+                   let wall = document.wall(for: id) {
+                    WallInspectorPanel(wall: wall) { newGridUnits in
+                        resizeWall(id: id, toGridUnits: newGridUnits)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
                 // Contextual banner while in placeOpening mode
                 if case .placeOpening(let kind) = mode {
                     PlaceOpeningBanner(kind: kind) {
@@ -279,6 +292,7 @@ struct DrawingFloorplanSheet: View {
                     wallKind: $wallKind,
                     vertexSnapEnabled: $vertexSnapEnabled,
                     furnitureKind: $furnitureKind,
+                    showDimensions: $showDimensions,
                     hasSelection: selection != .none,
                     onDelete: deleteSelected
                 )
@@ -665,6 +679,24 @@ struct DrawingFloorplanSheet: View {
         } else {
             document.walls[idx].end = point
         }
+    }
+
+    // MARK: - Wall resize (from inspector stepper)
+
+    /// Extends or shrinks the wall to `toGridUnits` grid units, anchoring the start endpoint.
+    private func resizeWall(id: UUID, toGridUnits: Int) {
+        guard let idx = document.walls.firstIndex(where: { $0.id == id }) else { return }
+        let wall = document.walls[idx]
+        guard wall.length > 0 else { return }
+        pushUndo()
+        let newLength = max(DrawingDocument.gridSpacing,
+                            CGFloat(toGridUnits) * DrawingDocument.gridSpacing)
+        let ux = (wall.end.x - wall.start.x) / wall.length
+        let uy = (wall.end.y - wall.start.y) / wall.length
+        document.walls[idx].end = DrawingDocument.snap(
+            CGPoint(x: wall.start.x + newLength * ux,
+                    y: wall.start.y + newLength * uy)
+        )
     }
 
     // MARK: - Wall body movement

@@ -29,6 +29,9 @@ struct SettingsView: View {
     @AppStorage(AppLanguage.appStorageKey)
     private var appLanguageRaw: String = AppLanguage.english.rawValue
 
+    @AppStorage(DimensionUnit.appStorageKey)
+    private var dimensionUnitRaw: String = DimensionUnit.metric.rawValue
+
     @AppStorage("alertNotificationsEnabled")
     private var alertNotificationsEnabled: Bool = false
 
@@ -58,6 +61,14 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                Picker(selection: $dimensionUnitRaw) {
+                    Text(String(localized: "settings.drawing.dimensionUnit.metric",   defaultValue: "m – Metric")).tag(DimensionUnit.metric.rawValue)
+                    Text(String(localized: "settings.drawing.dimensionUnit.imperial", defaultValue: "ft – Imperial")).tag(DimensionUnit.imperial.rawValue)
+                } label: {
+                    Label(String(localized: "settings.drawing.dimensionUnit", defaultValue: "Measurements"), systemImage: "ruler")
+                }
+                .pickerStyle(.menu)
 
 #if DEBUG
                 NavigationLink {

@@ -517,6 +517,7 @@ struct DrawingToolbar: View {
     @Binding var wallKind: WallKind
     @Binding var vertexSnapEnabled: Bool
     @Binding var furnitureKind: FurnitureKind
+    @Binding var showDimensions: Bool
     var hasSelection: Bool
     var onDelete: () -> Void
 
@@ -579,6 +580,23 @@ struct DrawingToolbar: View {
                 .buttonStyle(.plain)
                 .transition(.scale.combined(with: .opacity))
             }
+
+            // ── Dimension labels toggle ───────────────────────────────────────
+            Button {
+                showDimensions.toggle()
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: showDimensions ? "ruler.fill" : "ruler")
+                        .font(.system(size: 16, weight: showDimensions ? .semibold : .regular))
+                    Text(String(localized: "drawing.toolbar.dimensions", defaultValue: "Quote"))
+                        .font(.system(size: 10, weight: showDimensions ? .semibold : .regular))
+                }
+                .foregroundStyle(showDimensions ? BrandColor.primary : .secondary)
+                .frame(width: 52, height: 48)
+                .background(showDimensions ? BrandColor.primary.opacity(0.12) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
 
             Spacer()
 
@@ -1081,6 +1099,67 @@ struct FurnitureInspectorPanel: View {
     private func normalizedRotation(_ degrees: Double) -> Double {
         let normalized = degrees.truncatingRemainder(dividingBy: 360)
         return normalized < 0 ? normalized + 360 : normalized
+    }
+}
+
+// MARK: - WallInspectorPanel
+
+/// Panel shown above the toolbar when a wall is selected.
+/// Displays the wall length in metres and allows stepper-based resizing (start is anchored).
+struct WallInspectorPanel: View {
+    let wall: WallSegment
+    /// Called with the new length in grid units (each unit = 20 pt = 20 cm).
+    var onResize: (Int) -> Void
+
+    @AppStorage(DimensionUnit.appStorageKey)
+    private var dimensionUnitRaw: String = DimensionUnit.metric.rawValue
+
+    private var dimensionUnit: DimensionUnit {
+        DimensionUnit(rawValue: dimensionUnitRaw) ?? .metric
+    }
+
+    private var gridUnits: Int {
+        max(1, Int(round(wall.length / DrawingDocument.gridSpacing)))
+    }
+
+    private var kindLabel: String {
+        switch wall.kind {
+        case .exterior: return String(localized: "drawing.inspector.wall.kind.exterior", defaultValue: "Exterior wall")
+        case .interior: return String(localized: "drawing.inspector.wall.kind.interior", defaultValue: "Interior wall")
+        case .balcony:  return String(localized: "drawing.inspector.wall.kind.balcony",  defaultValue: "Balcony / terrace")
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "ruler")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(BrandColor.primary)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(dimensionUnit.format(pt: wall.length))
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                Text(kindLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Stepper(
+                value: Binding(get: { gridUnits }, set: { onResize($0) }),
+                in: 1...100,
+                step: 1
+            ) { EmptyView() }
+            .labelsHidden()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
     }
 }
 

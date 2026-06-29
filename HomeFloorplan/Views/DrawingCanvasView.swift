@@ -22,6 +22,8 @@ struct DrawingCanvasView: UIViewRepresentable {
     /// When true, wall drawing/endpoint dragging use vertex snap first (30pt radius).
     /// When false, only 20pt grid snap is applied.
     var vertexSnapEnabled: Bool
+    /// When false, wall dimension labels are hidden on the canvas.
+    var showDimensions: Bool
 
     var onCommit: (DrawingDocument) -> Void
     var onPlaceOpening: (OpeningKind, CGPoint) -> Void
@@ -154,6 +156,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         }
         context.coordinator.mainGesture?.isEnabled = gestureEnabled
         context.coordinator.vertexSnapEnabled = vertexSnapEnabled
+        context.coordinator.showDimensions    = showDimensions
 
         context.coordinator.updateContent(document: document, mode: mode, selection: selection)
     }
@@ -212,6 +215,8 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         /// Mirrors `DrawingCanvasView.vertexSnapEnabled`; updated in `updateUIView`.
         var vertexSnapEnabled: Bool = true
+        /// Mirrors `DrawingCanvasView.showDimensions`; updated in `updateUIView`.
+        var showDimensions: Bool = false
 
         private var contentState = DrawingContentState()
 
@@ -261,13 +266,14 @@ struct DrawingCanvasView: UIViewRepresentable {
             if mode != .draw {
                 clearPendingTapWall()
             }
-            contentState.document     = document
-            contentState.mode         = mode
-            contentState.selection    = selection
-            contentState.previewWall  = currentPreviewWall
-            contentState.previewArea  = currentPreviewArea
-            contentState.cursorPoint  = currentCursor
-            contentState.isVertexSnap = currentIsVertexSnap
+            contentState.document        = document
+            contentState.mode            = mode
+            contentState.selection       = selection
+            contentState.previewWall     = currentPreviewWall
+            contentState.previewArea     = currentPreviewArea
+            contentState.cursorPoint     = currentCursor
+            contentState.isVertexSnap    = currentIsVertexSnap
+            contentState.showDimensions  = showDimensions
         }
 
         // MARK: Zoom centering
@@ -556,10 +562,16 @@ struct DrawingCanvasView: UIViewRepresentable {
                 if let id = draggingWallEndpointID, let epIdx = draggingEndpointIndex {
                     let snapResult = performSnap(rawPoint)
                     var snapped = snapResult.point
-                    if let wall = parent.document.wall(for: id) {
+                    var axisGuide: (from: CGPoint, to: CGPoint)? = nil
+                    if !snapResult.isVertex, let axisResult = parent.document.axisSnap(rawPoint) {
+                        // Axis snap fires: lock one coordinate, grid-snap the free axis.
+                        snapped = DrawingDocument.snap(axisResult.point)
+                        axisGuide = (from: axisResult.referenceVertex, to: snapped)
+                    } else if let wall = parent.document.wall(for: id) {
                         let anchor = epIdx == 0 ? wall.end : wall.start
                         snapped = angleSnappedEnd(from: anchor, to: snapped, snapResult: snapResult)
                     }
+                    contentState.axisSnapGuide = axisGuide
                     parent.onMoveWallEndpoint?(id, epIdx, snapped)
                 }
                 // Move whole wall
@@ -586,6 +598,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 draggingEndpointIndex        = nil
                 draggingWallID               = nil
                 dragWallTouchStart           = nil
+                contentState.axisSnapGuide   = nil
             default:
                 break
             }
@@ -825,6 +838,10 @@ final class DrawingContentState {
     var previewArea: CGRect?
     var cursorPoint: CGPoint?
     var isVertexSnap: Bool          = false
+    /// Guide line shown during axis-snap (extension snap) of a wall endpoint.
+    var axisSnapGuide: (from: CGPoint, to: CGPoint)? = nil
+    /// When false, dimension labels (wall lengths in metres) are hidden on the canvas.
+    var showDimensions: Bool = true
 }
 
 struct DrawingContentWrapper: View {
@@ -832,13 +849,15 @@ struct DrawingContentWrapper: View {
 
     var body: some View {
         DrawingCanvasContent(
-            document:     state.document,
-            mode:         state.mode,
-            selection:    state.selection,
-            previewWall:  state.previewWall,
-            previewArea:  state.previewArea,
-            cursorPoint:  state.cursorPoint,
-            isVertexSnap: state.isVertexSnap
+            document:       state.document,
+            mode:           state.mode,
+            selection:      state.selection,
+            previewWall:    state.previewWall,
+            previewArea:    state.previewArea,
+            cursorPoint:    state.cursorPoint,
+            isVertexSnap:   state.isVertexSnap,
+            axisSnapGuide:  state.axisSnapGuide,
+            showDimensions: state.showDimensions
         )
     }
 }

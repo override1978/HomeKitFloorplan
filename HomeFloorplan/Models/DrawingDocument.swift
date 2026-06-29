@@ -467,6 +467,18 @@ extension CGRect {
     }
 }
 
+// MARK: - AxisSnapResult
+
+/// Result of an axis-aligned extension snap: one coordinate is constrained to align
+/// with a nearby vertex while the other remains free (grid-snapped by the caller).
+struct AxisSnapResult {
+    enum Axis { case horizontal, vertical }
+    var point: CGPoint
+    var axis: Axis
+    /// The vertex that triggered the snap — used to draw the guide line on canvas.
+    var referenceVertex: CGPoint
+}
+
 // MARK: - SnapResult
 
 /// Indicates whether a point was snapped to an existing wall vertex or to the grid.
@@ -511,6 +523,29 @@ enum DrawingMode: Equatable {
     case placeFurniture
 }
 
+// MARK: - DimensionUnit
+
+enum DimensionUnit: String, CaseIterable {
+    case metric   = "metric"
+    case imperial = "imperial"
+
+    static let appStorageKey = "drawing.dimensionUnit"
+
+    /// Converts canvas points to a human-readable distance string.
+    func format(pt: CGFloat) -> String {
+        let meters = pt / DrawingDocument.ptsPerMeter
+        switch self {
+        case .metric:
+            return String(format: "%.1f m", meters)
+        case .imperial:
+            let totalInches = meters / 0.0254
+            let feet   = Int(totalInches) / 12
+            let inches = Int(totalInches.rounded()) % 12
+            return inches == 0 ? "\(feet)'" : "\(feet)' \(inches)\""
+        }
+    }
+}
+
 // MARK: - DrawingDocument
 
 struct DrawingDocument: Equatable, Codable {
@@ -522,6 +557,8 @@ struct DrawingDocument: Equatable, Codable {
 
     static let canvasSize: CGFloat  = 2000
     static let gridSpacing: CGFloat = 20
+    /// Canvas points per metre. 1 grid = 20 pt = 20 cm.
+    static let ptsPerMeter: CGFloat = 100
 
     /// Stroke width in canvas points for each wall kind.
     static func wallWidth(for kind: WallKind) -> CGFloat {
@@ -582,6 +619,41 @@ struct DrawingDocument: Equatable, Codable {
             return .vertex(vertex)
         }
         return .grid(Self.snap(point))
+    }
+
+    /// Extension (axis-aligned) snap: snaps just the X or Y of `point` to match the
+    /// closest vertex within `maxDistance` along that axis. The winning axis is the one
+    /// with the smallest perpendicular distance. Returns nil if no vertex qualifies.
+    /// Call this only when `smartSnap` returned `.grid` (vertex snap takes priority).
+    func axisSnap(_ point: CGPoint, maxDistance: CGFloat = 30) -> AxisSnapResult? {
+        var bestX: (dist: CGFloat, vertex: CGPoint)?
+        var bestY: (dist: CGFloat, vertex: CGPoint)?
+        for wall in walls {
+            for ep in [wall.start, wall.end] {
+                let dx = abs(ep.x - point.x)
+                let dy = abs(ep.y - point.y)
+                if dx < maxDistance, bestX == nil || dx < bestX!.dist { bestX = (dx, ep) }
+                if dy < maxDistance, bestY == nil || dy < bestY!.dist { bestY = (dy, ep) }
+            }
+        }
+        if let bX = bestX, let bY = bestY {
+            if bX.dist <= bY.dist {
+                return AxisSnapResult(point: CGPoint(x: bX.vertex.x, y: point.y),
+                                      axis: .vertical, referenceVertex: bX.vertex)
+            } else {
+                return AxisSnapResult(point: CGPoint(x: point.x, y: bY.vertex.y),
+                                      axis: .horizontal, referenceVertex: bY.vertex)
+            }
+        }
+        if let bX = bestX {
+            return AxisSnapResult(point: CGPoint(x: bX.vertex.x, y: point.y),
+                                  axis: .vertical, referenceVertex: bX.vertex)
+        }
+        if let bY = bestY {
+            return AxisSnapResult(point: CGPoint(x: point.x, y: bY.vertex.y),
+                                  axis: .horizontal, referenceVertex: bY.vertex)
+        }
+        return nil
     }
 
     // MARK: Nearest wall for opening drop

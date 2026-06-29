@@ -27,6 +27,18 @@ struct DrawingCanvasContent: View {
     /// True when the cursor is snapped to an existing wall vertex (shows snap indicator).
     let isVertexSnap: Bool
 
+    /// Guide line shown during axis-snap of a wall endpoint (nil when not active).
+    let axisSnapGuide: (from: CGPoint, to: CGPoint)?
+    /// When false, dimension labels (wall lengths in metres) are not rendered.
+    let showDimensions: Bool
+
+    @AppStorage(DimensionUnit.appStorageKey)
+    private var dimensionUnitRaw: String = DimensionUnit.metric.rawValue
+
+    private var dimensionUnit: DimensionUnit {
+        DimensionUnit(rawValue: dimensionUnitRaw) ?? .metric
+    }
+
     // MARK: Body
 
     var body: some View {
@@ -104,6 +116,43 @@ struct DrawingCanvasContent: View {
                 drawRoomLabel(label, context: &ctx, selected: isSelected)
             }
 
+            // 4c. Dimension labels for exterior walls (scale: DrawingDocument.ptsPerMeter pt = 1 m)
+            if showDimensions {
+            for wall in document.walls where wall.kind == .exterior {
+                let len = wall.length
+                guard len >= 60 else { continue }
+                let label = dimensionUnit.format(pt: len)
+                let mid = CGPoint(x: (wall.start.x + wall.end.x) / 2,
+                                  y: (wall.start.y + wall.end.y) / 2)
+                let isHoriz = abs(wall.end.x - wall.start.x) >= abs(wall.end.y - wall.start.y)
+                let labelPt = isHoriz
+                    ? CGPoint(x: mid.x, y: mid.y - 26)
+                    : CGPoint(x: mid.x + 30, y: mid.y)
+                ctx.draw(
+                    Text(label)
+                        .font(.system(size: 22, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.secondary),
+                    at: labelPt, anchor: .center
+                )
+            }
+            // Also label the preview wall (if exterior) during draw
+            if let pw = previewWall, pw.kind == .exterior, pw.length >= 60 {
+                let label = dimensionUnit.format(pt: pw.length)
+                let mid = CGPoint(x: (pw.start.x + pw.end.x) / 2,
+                                  y: (pw.start.y + pw.end.y) / 2)
+                let isHoriz = abs(pw.end.x - pw.start.x) >= abs(pw.end.y - pw.start.y)
+                let labelPt = isHoriz
+                    ? CGPoint(x: mid.x, y: mid.y - 26)
+                    : CGPoint(x: mid.x + 30, y: mid.y)
+                ctx.draw(
+                    Text(label)
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.accentColor.opacity(0.85)),
+                    at: labelPt, anchor: .center
+                )
+            }
+            } // end if showDimensions
+
             // 5. Cursor crosshair (draw mode only)
             let isDrawMode: Bool
             if case .draw = mode { isDrawMode = true } else { isDrawMode = false }
@@ -112,6 +161,16 @@ struct DrawingCanvasContent: View {
                 if isVertexSnap {
                     drawVertexSnapIndicator(at: pt, context: &ctx)
                 }
+            }
+
+            // 5b. Axis snap guide line (shown while dragging a wall endpoint)
+            if let guide = axisSnapGuide {
+                var guidePath = Path()
+                guidePath.move(to: guide.from)
+                guidePath.addLine(to: guide.to)
+                ctx.stroke(guidePath,
+                           with: .color(.cyan.opacity(0.75)),
+                           style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [6, 4]))
             }
 
             // 6. Selection handles
