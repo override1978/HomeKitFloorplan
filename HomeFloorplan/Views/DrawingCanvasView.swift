@@ -738,6 +738,13 @@ struct DrawingCanvasView: UIViewRepresentable {
         }
 
         private func hitTest(_ point: CGPoint, in doc: DrawingDocument) -> DrawingSelection {
+            // B3: If a room area is currently selected and the tap lands inside it,
+            // keep the selection so that vertex handles are not intercepted by nearby walls.
+            if case .roomArea(let id) = parent.selection,
+               let area = doc.roomArea(for: id),
+               area.contains(point) {
+                return .roomArea(id)
+            }
             // Openings first
             for opening in doc.openings {
                 guard let eps = doc.openingEndpoints(opening) else { continue }
