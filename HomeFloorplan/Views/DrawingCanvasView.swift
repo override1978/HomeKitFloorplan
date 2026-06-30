@@ -219,6 +219,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         var showDimensions: Bool = false
 
         private var contentState = DrawingContentState()
+        private let snapHaptic = UIImpactFeedbackGenerator(style: .light)
 
         init(parent: DrawingCanvasView) { self.parent = parent }
 
@@ -322,8 +323,13 @@ struct DrawingCanvasView: UIViewRepresentable {
                 let constrained = drawStartPoint.map {
                     angleSnappedEnd(from: $0, to: snapped, snapResult: snapResult)
                 } ?? snapped
+                let didCursorMove   = constrained != currentCursor
+                let didSnapChange   = snapResult.isVertex != currentIsVertexSnap
                 currentCursor       = constrained
                 currentIsVertexSnap = snapResult.isVertex
+                if snapResult.isVertex && didSnapChange {
+                    snapHaptic.impactOccurred()
+                }
                 if let touchStart = drawTouchStartPoint,
                    hypot(rawPoint.x - touchStart.x, rawPoint.y - touchStart.y) > canvasThreshold(10) {
                     didExceedDrawDragThreshold = true
@@ -334,7 +340,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                     currentPreviewWall = WallSegment(start: start, end: constrained,
                                                      kind: parent.wallKind)
                 }
-                refreshPreview()
+                if didCursorMove || didSnapChange { refreshPreview() }
             case .ended, .cancelled, .failed:
                 if gr.state == .ended {
                     if didExceedDrawDragThreshold {
