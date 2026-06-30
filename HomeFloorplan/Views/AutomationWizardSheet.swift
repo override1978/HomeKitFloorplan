@@ -4318,11 +4318,8 @@ private struct AutomationWizardEditDraft {
             handledTimeConditions: timeConditions,
             handledPresenceConditions: presenceConditions
         )
-        let visibleConditionCount = conditionSelections.count + timeConditions.count + presenceConditions.count
-        let needsFallbackPredicate = !item.conditionSummaries.isEmpty && visibleConditionCount < item.conditionSummaries.count
-        let fallbackPredicate = needsFallbackPredicate ? eventTrigger.predicate : nil
-        self.preservedConditionPredicate = visibleConditionCount == 0
-            ? preservedPredicate ?? fallbackPredicate
+        self.preservedConditionPredicate = Self.shouldPreserveResidualPredicate(preservedPredicate)
+            ? preservedPredicate
             : nil
         self.conditionJoinMode = Self.conditionJoinMode(
             in: eventTrigger.predicate,
@@ -4611,6 +4608,10 @@ private struct AutomationWizardEditDraft {
 
     private static func betweenTimeCondition(in predicates: [NSPredicate]) -> AutomationTimeCondition? {
         let directComparisons = predicates.flatMap(directComparisonPredicates)
+        guard directComparisons.allSatisfy(isTimeComparisonPredicate) else {
+            return nil
+        }
+
         let constants = directComparisons.flatMap(constantValues)
 
         let significantEvents = constants.compactMap { $0 as? HMSignificantTimeEvent }
@@ -4649,6 +4650,20 @@ private struct AutomationWizardEditDraft {
         condition.endTime = endCondition.time
         condition.endOffsetMinutes = endCondition.offsetMinutes
         return condition
+    }
+
+    nonisolated private static func isTimeComparisonPredicate(_ predicate: NSComparisonPredicate) -> Bool {
+        let constants = constantValues(in: predicate)
+        if constants.contains(where: { $0 is HMSignificantTimeEvent }) {
+            return true
+        }
+        if constants.contains(where: { value in
+            guard let components = value as? DateComponents else { return false }
+            return components.hour != nil || components.minute != nil
+        }) {
+            return true
+        }
+        return false
     }
 
     private static func date(from components: DateComponents) -> Date {
@@ -5065,15 +5080,22 @@ private extension AutomationPresenceCondition {
 
 private extension AutomationTimeCondition {
     func matches(_ other: AutomationTimeCondition) -> Bool {
-        kind == other.kind &&
-        relation == other.relation &&
-        offsetMinutes == other.offsetMinutes &&
-        Calendar.current.component(.hour, from: time) == Calendar.current.component(.hour, from: other.time) &&
-        Calendar.current.component(.minute, from: time) == Calendar.current.component(.minute, from: other.time) &&
-        endKind == other.endKind &&
-        endOffsetMinutes == other.endOffsetMinutes &&
-        Calendar.current.component(.hour, from: endTime) == Calendar.current.component(.hour, from: other.endTime) &&
-        Calendar.current.component(.minute, from: endTime) == Calendar.current.component(.minute, from: other.endTime)
+        guard kind == other.kind,
+              relation == other.relation,
+              offsetMinutes == other.offsetMinutes,
+              Calendar.current.component(.hour, from: time) == Calendar.current.component(.hour, from: other.time),
+              Calendar.current.component(.minute, from: time) == Calendar.current.component(.minute, from: other.time) else {
+            return false
+        }
+
+        guard relation == .between else {
+            return true
+        }
+
+        return endKind == other.endKind &&
+            endOffsetMinutes == other.endOffsetMinutes &&
+            Calendar.current.component(.hour, from: endTime) == Calendar.current.component(.hour, from: other.endTime) &&
+            Calendar.current.component(.minute, from: endTime) == Calendar.current.component(.minute, from: other.endTime)
     }
 }
 
