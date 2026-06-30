@@ -380,13 +380,19 @@ private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
 
 private func drawDarkRoomAreaCG(_ area: RoomArea, index: Int, context: CGContext, drawText: Bool = true) {
     let path = roomAreaPath(area)
-    let fillColor = index.isMultiple(of: 2)
-        ? DarkArchitecturalPalette.roomFill
-        : DarkArchitecturalPalette.roomAlternateFill
 
     UIGraphicsPushContext(context)
-    fillColor.setFill()
-    path.fill()
+
+    if let kind = area.floorKind {
+        drawFloorPatternCG(kind, path: path, bounds: area.boundingRect, context: context, dark: true)
+    } else {
+        let fillColor = index.isMultiple(of: 2)
+            ? DarkArchitecturalPalette.roomFill
+            : DarkArchitecturalPalette.roomAlternateFill
+        fillColor.setFill()
+        path.fill()
+    }
+
     DarkArchitecturalPalette.roomStroke.setStroke()
     path.lineWidth = 1
     path.stroke()
@@ -651,32 +657,129 @@ private func polygonCentroid(_ points: [CGPoint]) -> CGPoint? {
                    y: centroidY / (6 * signedArea))
 }
 
-private func drawRoomAreaCG(_ area: RoomArea, context: CGContext, drawText: Bool = true) {
-    let cgColor = RoomLabelPalette.color(at: area.colorIndex)
+// MARK: - Floor pattern (CG)
 
-    // Fill with low opacity
-    if let fillColor = cgColor.copy(alpha: 0.12) {
-        context.setFillColor(fillColor)
-        let path = UIBezierPath(roundedRect: area.rect, cornerRadius: 8)
-        UIGraphicsPushContext(context)
+private func drawFloorPatternCG(_ kind: FloorKind,
+                                 path: UIBezierPath,
+                                 bounds: CGRect,
+                                 context: CGContext,
+                                 dark: Bool = false) {
+    // Caller must have already called UIGraphicsPushContext.
+    // saveGState/restoreGState isolates the clip region.
+    context.saveGState()
+    context.addPath(path.cgPath)
+    context.clip()
+
+    switch kind {
+    case .legno:
+        UIColor(red: dark ? 0.55 : 0.85,
+                green: dark ? 0.40 : 0.72,
+                blue:  dark ? 0.22 : 0.52,
+                alpha: dark ? 0.45 : 0.28).setFill()
         path.fill()
-
-        if drawText {
-            // Room name centered
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 14, weight: .semibold),
-                .foregroundColor: UIColor(cgColor: cgColor.copy(alpha: 0.55) ?? cgColor)
-            ]
-            let nsString = area.name.uppercased() as NSString
-            let textSize = nsString.size(withAttributes: attributes)
-            let drawPoint = CGPoint(
-                x: area.rect.midX - textSize.width / 2,
-                y: area.rect.midY - textSize.height / 2
-            )
-            nsString.draw(at: drawPoint, withAttributes: attributes)
+        UIColor(red: 0.58, green: 0.40, blue: 0.22,
+                alpha: dark ? 0.30 : 0.22).setStroke()
+        var y = (bounds.minY / 12).rounded(.down) * 12
+        while y <= bounds.maxY {
+            let line = UIBezierPath()
+            line.move(to: CGPoint(x: bounds.minX, y: y))
+            line.addLine(to: CGPoint(x: bounds.maxX, y: y))
+            line.lineWidth = 0.8
+            line.stroke()
+            y += 12
         }
-        UIGraphicsPopContext()
+
+    case .piastrelle:
+        UIColor(red: 0.93, green: 0.91, blue: 0.87,
+                alpha: dark ? 0.30 : 0.40).setFill()
+        path.fill()
+        drawFloorGridCG(bounds: bounds, spacing: 30,
+                        color: dark ? UIColor.white.withAlphaComponent(0.18)
+                                    : UIColor.gray.withAlphaComponent(0.28))
+
+    case .gres:
+        UIColor(red: 0.87, green: 0.85, blue: 0.80,
+                alpha: dark ? 0.28 : 0.38).setFill()
+        path.fill()
+        drawFloorGridCG(bounds: bounds, spacing: 60,
+                        color: dark ? UIColor.white.withAlphaComponent(0.20)
+                                    : UIColor.gray.withAlphaComponent(0.32))
+
+    case .marmo:
+        UIColor(red: 0.96, green: 0.95, blue: 0.92,
+                alpha: dark ? 0.30 : 0.45).setFill()
+        path.fill()
+        UIColor(red: 0.68, green: 0.65, blue: 0.62,
+                alpha: dark ? 0.22 : 0.18).setStroke()
+        let diag = max(bounds.width, bounds.height) * 2
+        var offset: CGFloat = -diag
+        while offset <= diag {
+            let line = UIBezierPath()
+            line.move(to: CGPoint(x: bounds.midX + offset - diag, y: bounds.midY - diag))
+            line.addLine(to: CGPoint(x: bounds.midX + offset + diag, y: bounds.midY + diag))
+            line.lineWidth = 0.7
+            line.stroke()
+            offset += 40
+        }
+
+    case .cemento:
+        UIColor(red: 0.70, green: 0.69, blue: 0.67,
+                alpha: dark ? 0.45 : 0.32).setFill()
+        path.fill()
     }
+
+    context.restoreGState()
+}
+
+private func drawFloorGridCG(bounds: CGRect, spacing: CGFloat, color: UIColor) {
+    color.setStroke()
+    var x = (bounds.minX / spacing).rounded(.down) * spacing
+    while x <= bounds.maxX {
+        let line = UIBezierPath()
+        line.move(to: CGPoint(x: x, y: bounds.minY))
+        line.addLine(to: CGPoint(x: x, y: bounds.maxY))
+        line.lineWidth = 0.8
+        line.stroke()
+        x += spacing
+    }
+    var y = (bounds.minY / spacing).rounded(.down) * spacing
+    while y <= bounds.maxY {
+        let line = UIBezierPath()
+        line.move(to: CGPoint(x: bounds.minX, y: y))
+        line.addLine(to: CGPoint(x: bounds.maxX, y: y))
+        line.lineWidth = 0.8
+        line.stroke()
+        y += spacing
+    }
+}
+
+private func drawRoomAreaCG(_ area: RoomArea, context: CGContext, drawText: Bool = true) {
+    let cgColor  = RoomLabelPalette.color(at: area.colorIndex)
+    let areaPath = roomAreaPath(area)
+
+    UIGraphicsPushContext(context)
+
+    if let kind = area.floorKind {
+        drawFloorPatternCG(kind, path: areaPath, bounds: area.boundingRect, context: context, dark: false)
+    } else if let fillColor = cgColor.copy(alpha: 0.12) {
+        context.setFillColor(fillColor)
+        UIBezierPath(roundedRect: area.rect, cornerRadius: 8).fill()
+    }
+
+    if drawText {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 14, weight: .semibold),
+            .foregroundColor: UIColor(cgColor: cgColor.copy(alpha: 0.55) ?? cgColor)
+        ]
+        let nsString = area.name.uppercased() as NSString
+        let textSize = nsString.size(withAttributes: attributes)
+        let center = polygonCentroid(area.effectivePoints)
+            ?? CGPoint(x: area.rect.midX, y: area.rect.midY)
+        nsString.draw(at: CGPoint(x: center.x - textSize.width / 2,
+                                   y: center.y - textSize.height / 2),
+                      withAttributes: attributes)
+    }
+    UIGraphicsPopContext()
 }
 
 private func drawFurnitureItemCG(_ item: FurnitureItem, context: CGContext, drawText: Bool = true) {

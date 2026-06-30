@@ -113,6 +113,38 @@ struct RoomLabel: Identifiable, Equatable, Codable {
     }
 }
 
+// MARK: - FloorKind
+
+enum FloorKind: String, Codable, CaseIterable, Identifiable {
+    case legno      = "legno"
+    case piastrelle = "piastrelle"
+    case gres       = "gres"
+    case marmo      = "marmo"
+    case cemento    = "cemento"
+
+    var id: String { rawValue }
+
+    var localizedName: String {
+        switch self {
+        case .legno:      return String(localized: "drawing.floor.legno",      defaultValue: "Legno")
+        case .piastrelle: return String(localized: "drawing.floor.piastrelle", defaultValue: "Piastrelle")
+        case .gres:       return String(localized: "drawing.floor.gres",       defaultValue: "Gres")
+        case .marmo:      return String(localized: "drawing.floor.marmo",      defaultValue: "Marmo")
+        case .cemento:    return String(localized: "drawing.floor.cemento",    defaultValue: "Cemento")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .legno:      return "square.fill.on.square.fill"
+        case .piastrelle: return "rectangle.split.3x3"
+        case .gres:       return "rectangle.split.2x2"
+        case .marmo:      return "diamond.fill"
+        case .cemento:    return "square.fill"
+        }
+    }
+}
+
 // MARK: - RoomArea
 
 /// A colored area on the canvas linked to a HomeKit room.
@@ -132,15 +164,18 @@ struct RoomArea: Identifiable, Equatable, Codable {
     /// `nil` means the area is a plain rectangle (legacy mode).
     /// When non-nil and count >= 3, the area is a free polygon.
     var points: [CGPoint]?
+    /// Optional floor material. `nil` = use the room palette colour fill (legacy behaviour).
+    var floorKind: FloorKind?
 
     init(id: UUID = UUID(), hmRoomUUID: UUID? = nil, name: String,
-         rect: CGRect, colorIndex: Int = 0, points: [CGPoint]? = nil) {
+         rect: CGRect, colorIndex: Int = 0, points: [CGPoint]? = nil, floorKind: FloorKind? = nil) {
         self.id = id
         self.hmRoomUUID = hmRoomUUID
         self.name = name
         self.rect = rect
         self.colorIndex = colorIndex
         self.points = points
+        self.floorKind = floorKind
     }
 
     // MARK: - Geometry helpers
@@ -268,7 +303,7 @@ struct RoomArea: Identifiable, Equatable, Codable {
     // MARK: - Backward-compatible Codable
 
     private enum CodingKeys: String, CodingKey {
-        case id, hmRoomUUID, name, rect, colorIndex, points
+        case id, hmRoomUUID, name, rect, colorIndex, points, floorKind
     }
 
     init(from decoder: Decoder) throws {
@@ -278,7 +313,8 @@ struct RoomArea: Identifiable, Equatable, Codable {
         name       = try c.decode(String.self,  forKey: .name)
         rect       = try c.decode(CGRect.self,  forKey: .rect)
         colorIndex = try c.decode(Int.self,     forKey: .colorIndex)
-        points     = try c.decodeIfPresent([CGPoint].self, forKey: .points)
+        points     = try c.decodeIfPresent([CGPoint].self,  forKey: .points)
+        floorKind  = try c.decodeIfPresent(FloorKind.self,  forKey: .floorKind)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -288,7 +324,8 @@ struct RoomArea: Identifiable, Equatable, Codable {
         try c.encode(name,       forKey: .name)
         try c.encode(rect,       forKey: .rect)
         try c.encode(colorIndex, forKey: .colorIndex)
-        try c.encodeIfPresent(points, forKey: .points)
+        try c.encodeIfPresent(points,    forKey: .points)
+        try c.encodeIfPresent(floorKind, forKey: .floorKind)
     }
 }
 

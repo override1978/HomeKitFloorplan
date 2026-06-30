@@ -306,12 +306,24 @@ struct FloorplanListView: View {
     }
     
     private func gridCard(for floorplan: Floorplan) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let image = ImageStorageService.load(filename: floorplan.imageFilename)
+        let exportStyle = DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard
+        let cardBackground: Color = {
+            guard image != nil else { return .secondary.opacity(0.1) }
+            if exportStyle == .architecturalDark {
+                return Color(red: 0.075, green: 0.095, blue: 0.120)
+            }
+            if let palette = ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex) {
+                return palette.swiftUIColor
+            }
+            return Color.white
+        }()
+        return VStack(alignment: .leading, spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(.secondary.opacity(0.1))
-                
-                if let image = ImageStorageService.load(filename: floorplan.imageFilename) {
+                    .fill(cardBackground)
+
+                if let image {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()

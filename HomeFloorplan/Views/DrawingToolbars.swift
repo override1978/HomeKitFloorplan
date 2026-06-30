@@ -107,17 +107,21 @@ struct DrawingTopBar: View {
                     }
                 }
             } label: {
+                let isDark = visualExportStyle == .architecturalDark
+                let isNonStandard = visualExportStyle != .standard
                 HStack(spacing: 6) {
                     Image(systemName: visualExportStyle.toolbarIconName)
                         .font(.system(size: 14, weight: .semibold))
                     Text(visualExportStyle.localizedTitle)
                         .font(.caption.weight(.semibold))
                 }
-                .foregroundStyle(visualExportStyle == .standard ? .secondary : BrandColor.primary)
+                .foregroundStyle(isDark ? Color.white : (isNonStandard ? BrandColor.primary : Color.primary))
                 .padding(.horizontal, 11)
                 .frame(height: 36)
                 .background(
-                    visualExportStyle == .standard ? Color.primary.opacity(0.045) : BrandColor.primary.opacity(0.12),
+                    isDark
+                        ? Color(red: 0.10, green: 0.13, blue: 0.18)
+                        : (isNonStandard ? BrandColor.primary.opacity(0.14) : Color.primary.opacity(0.10)),
                     in: Capsule()
                 )
             }
@@ -920,31 +924,69 @@ struct DrawRoomAreaBanner: View {
 /// Panel shown above the toolbar when a room area is selected.
 struct RoomAreaInspectorPanel: View {
     let area: RoomArea
+    var onFloorKindChange: (FloorKind?) -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: area.points != nil ? "pentagon.fill" : "rectangle.dashed")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(BrandColor.primary)
-                .frame(width: 28)
+        VStack(alignment: .leading, spacing: 10) {
+            // Top row: icon + name + dimensions
+            HStack(spacing: 12) {
+                Image(systemName: area.points != nil ? "pentagon.fill" : "rectangle.dashed")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(BrandColor.primary)
+                    .frame(width: 28)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(area.name)
-                    .font(.subheadline.weight(.semibold))
-                if let pts = area.points {
-                    let sqPt = Int(area.polygonArea)
-                    Text("\(pts.count) vertici • ~\(sqPt) pt²")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    let w = Int(area.rect.width), h = Int(area.rect.height)
-                    Text("\(w) × \(h) pt")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(area.name)
+                        .font(.subheadline.weight(.semibold))
+                    if let pts = area.points {
+                        let sqPt = Int(area.polygonArea)
+                        Text("\(pts.count) vertici • ~\(sqPt) pt²")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        let w = Int(area.rect.width), h = Int(area.rect.height)
+                        Text("\(w) × \(h) pt")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                if let kind = area.floorKind {
+                    Text(kind.localizedName)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BrandColor.primary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(BrandColor.primary.opacity(0.10), in: Capsule())
                 }
             }
 
-            Spacer()
+            // Floor picker row
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    // "Nessuno" tile — resets to colour fill
+                    floorTile(
+                        icon: "slash.circle",
+                        label: String(localized: "drawing.floor.none", defaultValue: "Nessuno"),
+                        swatch: Color.secondary.opacity(0.18),
+                        isActive: area.floorKind == nil
+                    ) { onFloorKindChange(nil) }
+
+                    ForEach(FloorKind.allCases) { kind in
+                        floorTile(
+                            icon: kind.systemImage,
+                            label: kind.localizedName,
+                            swatch: kind.swatchColor,
+                            isActive: area.floorKind == kind
+                        ) {
+                            onFloorKindChange(area.floorKind == kind ? nil : kind)
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -952,6 +994,47 @@ struct RoomAreaInspectorPanel: View {
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private func floorTile(icon: String, label: String, swatch: Color,
+                           isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(swatch)
+                        .frame(width: 40, height: 36)
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(isActive ? BrandColor.primary : Color.secondary)
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(isActive ? BrandColor.primary : Color.clear, lineWidth: 2)
+                )
+                Text(label)
+                    .font(.system(size: 9, weight: isActive ? .semibold : .regular))
+                    .foregroundStyle(isActive ? BrandColor.primary : Color.secondary)
+                    .lineLimit(1)
+            }
+            .frame(width: 44)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - FloorKind visual helpers
+
+extension FloorKind {
+    var swatchColor: Color {
+        switch self {
+        case .legno:      return Color(red: 0.85, green: 0.72, blue: 0.52).opacity(0.55)
+        case .piastrelle: return Color(red: 0.93, green: 0.91, blue: 0.87).opacity(0.80)
+        case .gres:       return Color(red: 0.80, green: 0.78, blue: 0.72).opacity(0.70)
+        case .marmo:      return Color(red: 0.96, green: 0.95, blue: 0.92).opacity(0.90)
+        case .cemento:    return Color(red: 0.70, green: 0.69, blue: 0.67).opacity(0.60)
+        }
     }
 }
 

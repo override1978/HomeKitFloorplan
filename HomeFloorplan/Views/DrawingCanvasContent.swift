@@ -314,7 +314,11 @@ func drawRoomArea(_ area: RoomArea,
         borderPath = Path(area.rect)
     }
 
-    context.fill(fillPath, with: .color(fillColor))
+    if let kind = area.floorKind {
+        drawFloorPattern(kind, in: fillPath, bounds: area.boundingRect, context: &context)
+    } else {
+        context.fill(fillPath, with: .color(fillColor))
+    }
 
     if selected {
         context.stroke(borderPath,
@@ -346,6 +350,72 @@ func drawRoomArea(_ area: RoomArea,
     )
     let labelPt = area.centroid
     context.draw(resolvedText, at: labelPt, anchor: .center)
+}
+
+// MARK: - Floor pattern rendering
+
+func drawFloorPattern(_ kind: FloorKind,
+                      in clipPath: Path,
+                      bounds: CGRect,
+                      context: inout GraphicsContext) {
+    // Copy context so the clip region stays local to this function.
+    var ctx = context
+    ctx.clip(to: clipPath)
+
+    switch kind {
+    case .legno:
+        ctx.fill(clipPath, with: .color(Color(red: 0.85, green: 0.72, blue: 0.52).opacity(0.28)))
+        var y = (bounds.minY / 12).rounded(.down) * 12
+        while y <= bounds.maxY {
+            var p = Path()
+            p.move(to: CGPoint(x: bounds.minX, y: y))
+            p.addLine(to: CGPoint(x: bounds.maxX, y: y))
+            ctx.stroke(p, with: .color(Color(red: 0.58, green: 0.40, blue: 0.22).opacity(0.22)), lineWidth: 0.8)
+            y += 12
+        }
+
+    case .piastrelle:
+        ctx.fill(clipPath, with: .color(Color(red: 0.93, green: 0.91, blue: 0.87).opacity(0.40)))
+        drawFloorGrid(bounds: bounds, spacing: 30, color: Color.gray.opacity(0.28), context: &ctx)
+
+    case .gres:
+        ctx.fill(clipPath, with: .color(Color(red: 0.87, green: 0.85, blue: 0.80).opacity(0.38)))
+        drawFloorGrid(bounds: bounds, spacing: 60, color: Color.gray.opacity(0.32), context: &ctx)
+
+    case .marmo:
+        ctx.fill(clipPath, with: .color(Color(red: 0.96, green: 0.95, blue: 0.92).opacity(0.45)))
+        let diag = max(bounds.width, bounds.height) * 2
+        var offset: CGFloat = -diag
+        while offset <= diag {
+            var p = Path()
+            p.move(to: CGPoint(x: bounds.midX + offset - diag, y: bounds.midY - diag))
+            p.addLine(to: CGPoint(x: bounds.midX + offset + diag, y: bounds.midY + diag))
+            ctx.stroke(p, with: .color(Color(red: 0.68, green: 0.65, blue: 0.62).opacity(0.18)), lineWidth: 0.7)
+            offset += 40
+        }
+
+    case .cemento:
+        ctx.fill(clipPath, with: .color(Color(red: 0.70, green: 0.69, blue: 0.67).opacity(0.32)))
+    }
+}
+
+func drawFloorGrid(bounds: CGRect, spacing: CGFloat, color: Color, context: inout GraphicsContext) {
+    var x = (bounds.minX / spacing).rounded(.down) * spacing
+    while x <= bounds.maxX {
+        var p = Path()
+        p.move(to: CGPoint(x: x, y: bounds.minY))
+        p.addLine(to: CGPoint(x: x, y: bounds.maxY))
+        context.stroke(p, with: .color(color), lineWidth: 0.8)
+        x += spacing
+    }
+    var y = (bounds.minY / spacing).rounded(.down) * spacing
+    while y <= bounds.maxY {
+        var p = Path()
+        p.move(to: CGPoint(x: bounds.minX, y: y))
+        p.addLine(to: CGPoint(x: bounds.maxX, y: y))
+        context.stroke(p, with: .color(color), lineWidth: 0.8)
+        y += spacing
+    }
 }
 
 func drawFurnitureItem(_ item: FurnitureItem,

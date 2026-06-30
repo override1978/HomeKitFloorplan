@@ -224,8 +224,12 @@ struct DrawingFloorplanSheet: View {
                 if case .select = mode,
                    case .roomArea(let id) = selection,
                    let area = document.roomArea(for: id) {
-                    RoomAreaInspectorPanel(area: area)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    RoomAreaInspectorPanel(area: area) { newKind in
+                        guard let idx = document.roomAreas.firstIndex(where: { $0.id == id }) else { return }
+                        pushUndo()
+                        document.roomAreas[idx].floorKind = newKind
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 // Furniture inspector — shown when a furniture item is selected in select mode
@@ -901,9 +905,16 @@ struct DrawingFloorplanSheet: View {
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = scale
         let renderer = UIGraphicsImageRenderer(size: outputSize, format: fmt)
-        let outputBackgroundColor = visualStyle == .architecturalDark
-            ? UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
-            : UIColor.white
+        let outputBackgroundColor: UIColor = {
+            if visualStyle == .architecturalDark {
+                return UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
+            }
+            if exteriorFillColorIndex >= 0,
+               let palette = ExteriorFillPalette(rawValue: exteriorFillColorIndex) {
+                return UIColor(cgColor: palette.cgColor)
+            }
+            return UIColor.white
+        }()
 
         let image = renderer.image { ctx in
             let cgCtx = ctx.cgContext
@@ -1129,9 +1140,16 @@ struct DrawingFloorplanSheet: View {
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = scale
         let renderer = UIGraphicsImageRenderer(size: outputSize, format: fmt)
-        let outputBackgroundColor = visualStyle == .architecturalDark
-            ? UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
-            : UIColor.white
+        let outputBackgroundColor: UIColor = {
+            if visualStyle == .architecturalDark {
+                return UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
+            }
+            if exteriorFillColorIndex >= 0,
+               let palette = ExteriorFillPalette(rawValue: exteriorFillColorIndex) {
+                return UIColor(cgColor: palette.cgColor)
+            }
+            return UIColor.white
+        }()
 
         let image = renderer.image { ctx in
             let cgCtx = ctx.cgContext
