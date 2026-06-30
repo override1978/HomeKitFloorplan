@@ -91,7 +91,8 @@ struct AutomationCapabilitySelection {
     }
 
     var triggerPredicate: NSPredicate? {
-        usesEventTriggerValue ? nil : predicate
+        if case .any = targetValue { return nil }
+        return usesEventTriggerValue ? nil : predicate
     }
 
     var usesEventTriggerValue: Bool {
@@ -103,6 +104,8 @@ enum AutomationCapabilityTargetValue: Hashable {
     case bool(Bool)
     case number(Double)
     case state(Int)
+    /// Represents a trigger that fires on any value change (triggerValue = nil in HomeKit).
+    case any
 
     var numberValue: NSNumber {
         switch self {
@@ -112,6 +115,8 @@ enum AutomationCapabilityTargetValue: Hashable {
             return NSNumber(value: value)
         case .state(let rawValue):
             return NSNumber(value: rawValue)
+        case .any:
+            return NSNumber(value: 0)
         }
     }
 

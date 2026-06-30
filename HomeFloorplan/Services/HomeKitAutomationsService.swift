@@ -775,6 +775,329 @@ final class HomeKitAutomationsService {
         refresh()
     }
 
+    /// Aggiorna in-place un'automazione HomeKit esistente senza creare un nuovo trigger.
+    ///
+    /// Evita il conflitto "oggetto già esistente" che si verifica quando il nuovo trigger
+    /// avrebbe lo stesso predicato di quello originale (tipico per trigger `.any`).
+    @discardableResult
+    func updateSceneAutomation(
+        _ automation: AutomationItem,
+        name: String,
+        startEvents: [AutomationStartEvent],
+        conditions: [AutomationCapabilitySelection] = [],
+        timeConditions: [AutomationTimeCondition] = [],
+        presenceConditions: [AutomationPresenceCondition] = [],
+        conditionJoinMode: AutomationConditionJoinMode = .all,
+        scene: SceneItem? = nil,
+        inlinePowerActions: [AutomationInlinePowerAction] = [],
+        inlineActions: [HMAction] = [],
+        preservedConditionPredicate: NSPredicate? = nil,
+        enabled: Bool = true
+    ) async throws -> AutomationItem {
+        guard let home = homeKit.currentHome else {
+            throw NSError(domain: "HomeKitAutomationsService", code: 60,
+                          userInfo: [NSLocalizedDescriptionKey: "HomeKit home not available"])
+        }
+        guard let trigger = home.triggers
+            .first(where: { $0.uniqueIdentifier.uuidString == automation.id }) as? HMEventTrigger else {
+            throw NSError(domain: "HomeKitAutomationsService", code: 61,
+                          userInfo: [NSLocalizedDescriptionKey: String(localized: "automation.editor.error.notFound", defaultValue: "Automation not found")])
+        }
+
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw NSError(domain: "HomeKitAutomationsService", code: 62,
+                          userInfo: [NSLocalizedDescriptionKey: String(localized: "automation.editor.error.emptyName", defaultValue: "Automation name is required")])
+        }
+        guard !startEvents.isEmpty else {
+            throw NSError(domain: "HomeKitAutomationsService", code: 63,
+                          userInfo: [NSLocalizedDescriptionKey: String(localized: "automation.editor.error.invalidTrigger", defaultValue: "Selected trigger is not valid for automations")])
+        }
+        guard scene != nil || !inlinePowerActions.isEmpty || !inlineActions.isEmpty else {
+            throw NSError(domain: "HomeKitAutomationsService", code: 64,
+                          userInfo: [NSLocalizedDescriptionKey: String(localized: "automation.editor.error.emptyAction", defaultValue: "Choose a scene or at least one accessory action")])
+        }
+
+        dprint("[UpdateAuto] ▶ START '\(trigger.name)' → '\(trimmed)'")
+        dprint("[UpdateAuto]   actionSets now: \(trigger.actionSets.map { "\($0.name)[\(isInlineActionSet($0) ? "inline" : "scene")]" })")
+        dprint("[UpdateAuto]   startEvents: \(startEvents.count), conditions: \(conditions.count)")
+
+        // 1. Rename first to catch name conflicts early before mutating anything else
+        if trigger.name != trimmed {
+            dprint("[UpdateAuto] Step 1: rename '\(trigger.name)' → '\(trimmed)'")
+            do {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    trigger.updateName(trimmed) { error in
+                        if let error { continuation.resume(throwing: error) }
+                        else { continuation.resume() }
+                    }
+                }
+                dprint("[UpdateAuto] Step 1: rename OK")
+            } catch {
+                dprint("[UpdateAuto] Step 1: rename FAILED — \(error)")
+                throw error
+            }
+        } else {
+            dprint("[UpdateAuto] Step 1: rename skipped (name unchanged)")
+        }
+
+        // 2. Update events
+        let events = startEvents.map { homeKitEvent(for: $0) }
+        dprint("[UpdateAuto] Step 2: updateEvents (\(events.count) events)")
+        do {
+            try await updateEvents(events, for: trigger)
+            dprint("[UpdateAuto] Step 2: updateEvents OK")
+        } catch let nsErr as NSError where isHomeKitObjectAlreadyExists(nsErr) {
+            // HomeKit returns objectAlreadyExists when the new events are identical to
+            // the existing ones (no actual change). Safe to treat as a no-op.
+            dprint("[UpdateAuto] Step 2: updateEvents objectAlreadyExists — events unchanged, continuing")
+        } catch {
+            dprint("[UpdateAuto] Step 2: updateEvents FAILED — \(error)")
+            throw error
+        }
+
+        // 3. Update predicate
+        let predicate = automationPredicate(
+            startEvents: startEvents,
+            conditions: conditions,
+            timeConditions: timeConditions,
+            presenceConditions: presenceConditions,
+            preservedConditionPredicate: preservedConditionPredicate,
+            conditionJoinMode: conditionJoinMode
+        )
+        dprint("[UpdateAuto] Step 3: updatePredicate \(predicate.map { "\($0)" } ?? "nil")")
+        do {
+            try await updatePredicate(predicate, for: trigger)
+            dprint("[UpdateAuto] Step 3: updatePredicate OK")
+        } catch let nsErr as NSError where isHomeKitObjectAlreadyExists(nsErr) {
+            // Same reasoning: predicate already set to this value — no-op.
+            dprint("[UpdateAuto] Step 3: updatePredicate objectAlreadyExists — predicate unchanged, continuing")
+        } catch {
+            dprint("[UpdateAuto] Step 3: updatePredicate FAILED — \(error)")
+            throw error
+        }
+
+        // 4. Replace action sets.
+        // Capture a snapshot BEFORE any removals so we don't iterate a mutating collection.
+        let snapshotActionSets = Array(trigger.actionSets)
+        let currentInlineActionSets = snapshotActionSets.filter(isInlineActionSet)
+        let currentSceneActionSets  = snapshotActionSets.filter { !isInlineActionSet($0) }
+        dprint("[UpdateAuto] Step 4: actionSets snapshot — scene:\(currentSceneActionSets.count) inline:\(currentInlineActionSets.count)")
+
+        // Only swap the scene action set when it actually changed.
+        // If the same scene is selected, skip the remove+add to avoid "objectAlreadyExists".
+        let newSceneActionSet = scene?.actionSet
+        let sceneIsUnchanged: Bool = {
+            guard let new = newSceneActionSet, currentSceneActionSets.count == 1 else { return false }
+            return currentSceneActionSets[0].uniqueIdentifier == new.uniqueIdentifier
+        }()
+
+        if sceneIsUnchanged {
+            dprint("[UpdateAuto] Step 4: scene action set unchanged — skipping remove+add")
+        } else {
+            for actionSet in currentSceneActionSets {
+                dprint("[UpdateAuto] Step 4: removing scene actionSet '\(actionSet.name)' from trigger")
+                if let err = await removeFromTriggerReturningError(actionSet, trigger: trigger) {
+                    dprint("[UpdateAuto] Step 4: remove scene WARN (ignored) — \(err)")
+                } else {
+                    dprint("[UpdateAuto] Step 4: remove scene OK")
+                }
+            }
+            if let newSceneActionSet {
+                dprint("[UpdateAuto] Step 4: adding scene actionSet '\(newSceneActionSet.name)' to trigger")
+                do {
+                    try await add(newSceneActionSet, to: trigger)
+                    dprint("[UpdateAuto] Step 4: add scene OK")
+                } catch {
+                    dprint("[UpdateAuto] Step 4: add scene FAILED — \(error)")
+                    throw error
+                }
+            }
+        }
+
+        // Inline action sets: update in-place to avoid the home.addActionSet "already present"
+        // error that occurs when HomeKit hasn't fully propagated a preceding home.removeActionSet.
+        let needsInlineActions = !inlinePowerActions.isEmpty || !inlineActions.isEmpty
+        if currentInlineActionSets.isEmpty {
+            // No existing inline action set — create one from scratch if needed
+            if needsInlineActions {
+                dprint("[UpdateAuto] Step 4: no inline actionSet exists — creating from scratch")
+                do {
+                    let actionSet = try await addActionSet(named: inlineActionSetName(for: trimmed), to: home)
+                    try await addInlinePowerActions(inlinePowerActions, to: actionSet)
+                    for action in inlineActions {
+                        try await add(action, to: actionSet)
+                    }
+                    try await add(actionSet, to: trigger)
+                    dprint("[UpdateAuto] Step 4: inline actionSet created OK")
+                } catch {
+                    dprint("[UpdateAuto] Step 4: inline actionSet create FAILED — \(error)")
+                    throw error
+                }
+            }
+        } else if !needsInlineActions {
+            // Have inline action set(s) but no longer need them — detach and delete
+            dprint("[UpdateAuto] Step 4: removing \(currentInlineActionSets.count) inline actionSet(s) — no longer needed")
+            for actionSet in currentInlineActionSets {
+                if let err = await removeFromTriggerReturningError(actionSet, trigger: trigger) {
+                    dprint("[UpdateAuto] Step 4: remove inline from trigger WARN — \(err)")
+                }
+                if let err = await removeActionSetReturningError(actionSet, from: home) {
+                    dprint("[UpdateAuto] Step 4: remove inline from home WARN — \(err)")
+                }
+            }
+        } else {
+            // Existing inline action set AND we still need one.
+            // Strategy: update actions IN-PLACE using updateTargetValue.
+            // NEVER remove+re-add an action for the same characteristic — HomeKit returns
+            // Code=1 "already present" even after a nominally-successful remove, especially
+            // when two saves happen in quick succession on automations sharing the same accessory.
+            let existingActionSet = currentInlineActionSets[0]
+            dprint("[UpdateAuto] Step 4: updating inline actionSet '\(existingActionSet.name)' in-place")
+
+            // Build a lookup: characteristicUUID → existing write action
+            let existingByChar = Dictionary(
+                existingActionSet.actions
+                    .compactMap { $0 as? HMCharacteristicWriteAction<NSNumber> }
+                    .map { ($0.characteristic.uniqueIdentifier, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+
+            // Collect all desired write actions: power actions + generic inline actions (cast to write)
+            // Both use updateTargetValue path so the same characteristic is never removed+re-added.
+            var processedCharUUIDs = Set<UUID>()
+
+            // Power on/off actions
+            for powerAction in inlinePowerActions {
+                let charUUID = powerAction.characteristic.uniqueIdentifier
+                processedCharUUIDs.insert(charUUID)
+                let newValue = NSNumber(value: powerAction.powerOn)
+                if let existing = existingByChar[charUUID] {
+                    if existing.targetValue != newValue {
+                        dprint("[UpdateAuto] Step 4:   updateTargetValue power \(charUUID)")
+                        do { try await updateTargetValue(newValue, for: existing) } catch {
+                            dprint("[UpdateAuto] Step 4:   updateTargetValue FAILED — \(error)"); throw error
+                        }
+                    } else {
+                        dprint("[UpdateAuto] Step 4:   power action unchanged \(charUUID)")
+                    }
+                } else {
+                    dprint("[UpdateAuto] Step 4:   adding power action \(charUUID)")
+                    let wa = HMCharacteristicWriteAction(characteristic: powerAction.characteristic, targetValue: newValue)
+                    do { try await add(wa, to: existingActionSet) } catch {
+                        dprint("[UpdateAuto] Step 4:   add power action FAILED — \(error)"); throw error
+                    }
+                }
+            }
+
+            // Generic inline actions: also use updateTargetValue when possible
+            for action in inlineActions {
+                if let writeAction = action as? HMCharacteristicWriteAction<NSNumber> {
+                    let charUUID = writeAction.characteristic.uniqueIdentifier
+                    processedCharUUIDs.insert(charUUID)
+                    let newValue = writeAction.targetValue
+                    if let existing = existingByChar[charUUID] {
+                        if existing.targetValue != newValue {
+                            dprint("[UpdateAuto] Step 4:   updateTargetValue inline \(charUUID)")
+                            do { try await updateTargetValue(newValue, for: existing) } catch {
+                                dprint("[UpdateAuto] Step 4:   updateTargetValue FAILED — \(error)"); throw error
+                            }
+                        } else {
+                            dprint("[UpdateAuto] Step 4:   inline action unchanged \(charUUID)")
+                        }
+                    } else {
+                        dprint("[UpdateAuto] Step 4:   adding inline action \(charUUID)")
+                        do { try await add(writeAction, to: existingActionSet) } catch {
+                            dprint("[UpdateAuto] Step 4:   add inline action FAILED — \(error)"); throw error
+                        }
+                    }
+                } else {
+                    // Non-write action: add, treating duplicates as no-op
+                    do {
+                        try await add(action, to: existingActionSet)
+                    } catch let nsErr as NSError where isHomeKitObjectAlreadyExists(nsErr) {
+                        dprint("[UpdateAuto] Step 4:   non-write inlineAction already present — skipping")
+                    } catch {
+                        dprint("[UpdateAuto] Step 4:   add non-write inlineAction FAILED — \(error)"); throw error
+                    }
+                }
+            }
+
+            // Remove actions for characteristics no longer in the desired list
+            for (charUUID, existing) in existingByChar where !processedCharUUIDs.contains(charUUID) {
+                dprint("[UpdateAuto] Step 4:   removing obsolete action \(charUUID)")
+                try? await removeAction(existing, from: existingActionSet)
+            }
+
+            dprint("[UpdateAuto] Step 4: inline actionSet updated in-place OK")
+
+            // Clean up any unexpected extra inline action sets
+            for actionSet in currentInlineActionSets.dropFirst() {
+                dprint("[UpdateAuto] Step 4: removing extra inline actionSet '\(actionSet.name)'")
+                if let err = await removeFromTriggerReturningError(actionSet, trigger: trigger) {
+                    dprint("[UpdateAuto] Step 4: remove extra inline from trigger WARN — \(err)")
+                }
+                if let err = await removeActionSetReturningError(actionSet, from: home) {
+                    dprint("[UpdateAuto] Step 4: remove extra inline from home WARN — \(err)")
+                }
+            }
+        }
+
+        // 5. Update enabled state
+        dprint("[UpdateAuto] Step 5: setEnabled \(enabled)")
+        do {
+            try await setEnabled(enabled, for: trigger)
+            dprint("[UpdateAuto] Step 5: setEnabled OK")
+        } catch {
+            dprint("[UpdateAuto] Step 5: setEnabled FAILED — \(error)")
+            throw error
+        }
+
+        dprint("[UpdateAuto] ✅ DONE '\(trimmed)'")
+        refresh()
+        return AutomationItem(trigger: trigger)
+    }
+
+    private func updateTargetValue(_ value: NSNumber, for action: HMCharacteristicWriteAction<NSNumber>) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            action.updateTargetValue(value) { error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume() }
+            }
+        }
+    }
+
+    private func removeAction(_ action: HMAction, from actionSet: HMActionSet) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            actionSet.removeAction(action) { error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume() }
+            }
+        }
+    }
+
+    private func isHomeKitObjectAlreadyExists(_ error: NSError) -> Bool {
+        // Code=1 "Oggetto già presente." and Code=11 are both seen in practice for "already exists".
+        error.domain == HMErrorDomain && (error.code == 1 || error.code == 11)
+    }
+
+    // Returns the error instead of throwing, so callers can log and ignore
+    private func removeFromTriggerReturningError(_ actionSet: HMActionSet, trigger: HMEventTrigger) async -> Error? {
+        await withCheckedContinuation { continuation in
+            trigger.removeActionSet(actionSet) { error in
+                continuation.resume(returning: error)
+            }
+        }
+    }
+
+    private func removeActionSetReturningError(_ actionSet: HMActionSet, from home: HMHome) async -> Error? {
+        await withCheckedContinuation { continuation in
+            home.removeActionSet(actionSet) { error in
+                continuation.resume(returning: error)
+            }
+        }
+    }
+
     /// Crea una nuova automazione HomeKit che esegue una scena esistente.
     ///
     /// Il trigger e le condizioni arrivano dal layer `AutomationCharacteristicCapability`.
@@ -1489,9 +1812,33 @@ final class HomeKitAutomationsService {
         }
     }
 
-    private func updatePredicate(_ predicate: NSPredicate, for trigger: HMEventTrigger) async throws {
+    private func updatePredicate(_ predicate: NSPredicate?, for trigger: HMEventTrigger) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             trigger.updatePredicate(predicate) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    private func updateEvents(_ events: [HMEvent], for trigger: HMEventTrigger) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            trigger.updateEvents(events) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    private func removeFromTrigger(_ actionSet: HMActionSet, trigger: HMEventTrigger) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            trigger.removeActionSet(actionSet) { error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else {

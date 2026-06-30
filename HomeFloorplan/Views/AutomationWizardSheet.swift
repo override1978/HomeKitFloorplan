@@ -2788,8 +2788,9 @@ struct AutomationWizardSheet: View {
                 selection: Binding {
                     draft.wrappedValue.relation
                 } set: { newValue in
+                    let oldRelation = draft.wrappedValue.relation
                     draft.wrappedValue.relation = newValue
-                    if newValue == .between {
+                    if newValue == .between && oldRelation != .between {
                         normalizeBetweenTimeCondition(draft)
                     }
                 }
@@ -2801,15 +2802,55 @@ struct AutomationWizardSheet: View {
             .pickerStyle(.segmented)
 
             if draft.wrappedValue.relation == .between {
-                betweenTimePicker(
-                    title: String(localized: "automation.timeCondition.boundary.start", defaultValue: "Start"),
-                    selection: draft.time
-                )
+                // Start boundary
+                Picker(String(localized: "automation.timeCondition.kind", defaultValue: "Start time"), selection: draft.kind) {
+                    ForEach(AutomationTimeConditionKind.allCases) { kind in
+                        Label(kind.title, systemImage: kind.iconName).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
 
-                betweenTimePicker(
-                    title: String(localized: "automation.timeCondition.boundary.end", defaultValue: "End"),
-                    selection: draft.endTime
-                )
+                if draft.wrappedValue.kind == .fixedTime {
+                    betweenTimePicker(
+                        title: String(localized: "automation.timeCondition.boundary.start", defaultValue: "Start"),
+                        selection: draft.time
+                    )
+                } else {
+                    Stepper(value: draft.offsetMinutes, in: -120...120, step: 5) {
+                        HStack {
+                            Label(String(localized: "automation.timeCondition.boundary.start", defaultValue: "Start"), systemImage: "clock")
+                            Spacer()
+                            Text(offsetText(for: draft.wrappedValue.offsetMinutes))
+                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandColor.primary)
+                        }
+                    }
+                }
+
+                // End boundary
+                Picker(String(localized: "automation.timeCondition.endKind", defaultValue: "End time"), selection: draft.endKind) {
+                    ForEach(AutomationTimeConditionKind.allCases) { kind in
+                        Label(kind.title, systemImage: kind.iconName).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                if draft.wrappedValue.endKind == .fixedTime {
+                    betweenTimePicker(
+                        title: String(localized: "automation.timeCondition.boundary.end", defaultValue: "End"),
+                        selection: draft.endTime
+                    )
+                } else {
+                    Stepper(value: draft.endOffsetMinutes, in: -120...120, step: 5) {
+                        HStack {
+                            Label(String(localized: "automation.timeCondition.boundary.end", defaultValue: "End"), systemImage: "clock")
+                            Spacer()
+                            Text(offsetText(for: draft.wrappedValue.endOffsetMinutes))
+                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandColor.primary)
+                        }
+                    }
+                }
             } else {
                 Picker(String(localized: "automation.timeCondition.kind", defaultValue: "Time source"), selection: draft.kind) {
                     ForEach(AutomationTimeConditionKind.allCases) { kind in
@@ -2824,14 +2865,6 @@ struct AutomationWizardSheet: View {
                     time: draft.time,
                     offsetMinutes: draft.offsetMinutes
                 )
-            }
-        }
-        .onAppear {
-            normalizeBetweenTimeCondition(draft)
-        }
-        .onChange(of: draft.wrappedValue.relation) { _, relation in
-            if relation == .between {
-                normalizeBetweenTimeCondition(draft)
             }
         }
         .padding(14)
@@ -2859,8 +2892,8 @@ struct AutomationWizardSheet: View {
 
     private func normalizeBetweenTimeCondition(_ draft: Binding<AutomationTimeCondition>) {
         guard draft.wrappedValue.relation == .between else { return }
-        draft.wrappedValue.kind = .fixedTime
-        draft.wrappedValue.endKind = .fixedTime
+        // On first switch to Between, reset offsets only — preserve kind/endKind so
+        // sunrise/sunset boundaries loaded from HomeKit survive intact.
         draft.wrappedValue.offsetMinutes = 0
         draft.wrappedValue.endOffsetMinutes = 0
     }
@@ -2966,26 +2999,36 @@ struct AutomationWizardSheet: View {
 
     private func capabilityValueEditor(selection: Binding<AutomationCapabilitySelection>) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(String(localized: "automation.wizard.operator", defaultValue: "Operator"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                operatorPicker(selection: selection)
-            }
-
-            switch selection.wrappedValue.capability.valueKind {
-            case .boolean(let activeLabel, let inactiveLabel):
-                booleanValueEditor(
-                    selection: selection,
-                    activeLabel: activeLabel,
-                    inactiveLabel: inactiveLabel
+            if case .any = selection.wrappedValue.targetValue {
+                Label(
+                    String(localized: "automation.trigger.anyValue.description",
+                           defaultValue: "Triggers on any value change"),
+                    systemImage: "arrow.2.circlepath"
                 )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(String(localized: "automation.wizard.operator", defaultValue: "Operator"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    operatorPicker(selection: selection)
+                }
 
-            case .numeric(let unit, let range, let step):
-                numericEditor(selection: selection, unit: unit, range: range, step: step)
+                switch selection.wrappedValue.capability.valueKind {
+                case .boolean(let activeLabel, let inactiveLabel):
+                    booleanValueEditor(
+                        selection: selection,
+                        activeLabel: activeLabel,
+                        inactiveLabel: inactiveLabel
+                    )
 
-            case .state(let options):
-                stateValueEditor(selection: selection, options: options)
+                case .numeric(let unit, let range, let step):
+                    numericEditor(selection: selection, unit: unit, range: range, step: step)
+
+                case .state(let options):
+                    stateValueEditor(selection: selection, options: options)
+                }
             }
         }
         .padding(12)
@@ -3457,30 +3500,48 @@ struct AutomationWizardSheet: View {
     }
 
     private func save() {
-        guard hasThenTarget else { return }
+        guard hasThenTarget, startEvents.compactMap(\.startEvent).isEmpty == false else { return }
         isSaving = true
         Task {
             do {
                 let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                let creationName = editingItem == nil
-                    ? finalName
-                    : "__HomeFloorplan_Edit_\(UUID().uuidString.prefix(8))"
-                let createdItem = try await automationsService.createSceneAutomation(
-                    name: creationName,
-                    startEvents: startEvents.compactMap(\.startEvent),
-                    conditions: conditionDrafts.map(\.selection),
-                    timeConditions: timeConditionDrafts,
-                    presenceConditions: presenceConditionDrafts,
-                    conditionJoinMode: conditionJoinMode,
-                    scene: selectedScene,
-                    inlinePowerActions: selectedScene == nil && inlineActionBundle.isEmpty ? inlinePowerActions : [],
-                    inlineActions: selectedScene == nil ? scenesService.makeActions(from: inlineActionBundle) : [],
-                    preservedConditionPredicate: preservedConditionPredicate,
-                    enabled: activateAutomation
-                )
-                if let editingItem, createdItem.id != editingItem.id {
-                    try await automationsService.delete(editingItem)
-                    try await automationsService.rename(finalName, for: createdItem)
+                let startEventsList = startEvents.compactMap(\.startEvent)
+                let conditionsList = conditionDrafts.map(\.selection)
+                let powerActions = selectedScene == nil && inlineActionBundle.isEmpty ? inlinePowerActions : []
+                let accessoryActions = selectedScene == nil ? scenesService.makeActions(from: inlineActionBundle) : []
+
+                let createdItem: AutomationItem
+                if let editingItem {
+                    // Update in-place to avoid "objectAlreadyExists" when the new predicate
+                    // would be identical to the existing trigger's predicate.
+                    createdItem = try await automationsService.updateSceneAutomation(
+                        editingItem,
+                        name: finalName,
+                        startEvents: startEventsList,
+                        conditions: conditionsList,
+                        timeConditions: timeConditionDrafts,
+                        presenceConditions: presenceConditionDrafts,
+                        conditionJoinMode: conditionJoinMode,
+                        scene: selectedScene,
+                        inlinePowerActions: powerActions,
+                        inlineActions: accessoryActions,
+                        preservedConditionPredicate: preservedConditionPredicate,
+                        enabled: activateAutomation
+                    )
+                } else {
+                    createdItem = try await automationsService.createSceneAutomation(
+                        name: finalName,
+                        startEvents: startEventsList,
+                        conditions: conditionsList,
+                        timeConditions: timeConditionDrafts,
+                        presenceConditions: presenceConditionDrafts,
+                        conditionJoinMode: conditionJoinMode,
+                        scene: selectedScene,
+                        inlinePowerActions: powerActions,
+                        inlineActions: accessoryActions,
+                        preservedConditionPredicate: preservedConditionPredicate,
+                        enabled: activateAutomation
+                    )
                 }
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 onSaved?(createdItem)
@@ -3952,9 +4013,17 @@ struct AutomationWizardSheet: View {
             return
         }
 
-        externalEditNotice = nil
         unmanagedActionNotice = nil
         startEvents = draft.startEvents
+        if draft.startEvents.isEmpty {
+            // Trigger encoded entirely in predicate — show read-only notice, block saving.
+            externalEditNotice = String(
+                localized: "automation.editor.unsupportedTrigger",
+                defaultValue: "Il tipo di trigger di questa automazione non è supportato dall'editor. Le condizioni sono mostrate in sola lettura — per modificarla usa Apple Home."
+            )
+        } else {
+            externalEditNotice = nil
+        }
         if let firstEvent = draft.startEvents.first {
             triggerSource = firstEvent.kind
             triggerSelection = firstEvent.selection
@@ -4267,7 +4336,10 @@ private struct AutomationWizardEditDraft {
         let trigger = item.trigger
         let sceneID = trigger.actionSets.first?.uniqueIdentifier
 
+        dprint("[EditDraft] init for '\(trigger.name)' triggerType=\(type(of: trigger))")
+
         if let timer = trigger as? HMTimerTrigger {
+            dprint("[EditDraft] → HMTimerTrigger, returning with empty conditions")
             self.startEvents = [AutomationStartEventDraft(schedule: Self.scheduleTrigger(from: timer))]
             self.conditionSelections = []
             self.timeConditions = []
@@ -4279,19 +4351,25 @@ private struct AutomationWizardEditDraft {
         }
 
         guard let eventTrigger = trigger as? HMEventTrigger else {
+            dprint("[EditDraft] ❌ not HMEventTrigger — returning nil")
             return nil
         }
+
+        dprint("[EditDraft] HMEventTrigger events=\(eventTrigger.events.count): \(eventTrigger.events.map { type(of: $0) })")
+        dprint("[EditDraft] predicate=\(eventTrigger.predicate?.description ?? "nil")")
 
         let decodedSelections = Self.selections(in: eventTrigger.predicate, capabilities: capabilities)
         self.sceneID = sceneID
 
         self.startEvents = eventTrigger.events.compactMap { event in
-            Self.startEventDraft(
+            let result = Self.startEventDraft(
                 from: event,
                 recurrences: eventTrigger.recurrences,
                 decodedSelections: decodedSelections,
                 capabilities: capabilities
             )
+            dprint("[EditDraft]   event \(type(of: event)) → \(result == nil ? "❌ nil" : "✅ decoded")")
+            return result
         }
 
         let triggerPredicates = Self.triggerPredicates(
@@ -4299,7 +4377,18 @@ private struct AutomationWizardEditDraft {
             triggerPresenceEvents: eventTrigger.events.compactMap { $0 as? HMPresenceEvent },
             triggerTimeEvents: eventTrigger.events.filter { $0 is HMCalendarEvent || $0 is HMSignificantTimeEvent }
         )
-        guard !startEvents.isEmpty else { return nil }
+        guard !startEvents.isEmpty else {
+            // events=[] automation: trigger is encoded only in predicate (non-standard HomeKit pattern).
+            // Load conditions for display but leave startEvents empty so the call site
+            // can show a read-only notice and prevent saving.
+            dprint("[EditDraft] ⚠️ startEvents is empty — loading conditions-only (no trigger events)")
+            self.conditionSelections = decodedSelections
+            self.timeConditions = Self.timeConditions(in: eventTrigger.predicate, triggerPredicates: [])
+            self.presenceConditions = Self.presenceConditions(in: eventTrigger.predicate, triggerPredicates: [])
+            self.preservedConditionPredicate = nil
+            self.conditionJoinMode = Self.conditionJoinMode(in: eventTrigger.predicate, triggerPredicates: [])
+            return
+        }
         self.conditionSelections = decodedSelections.filter { selection in
             !triggerPredicates.contains { Self.predicatesMatch($0, selection.predicate) }
         }
@@ -4325,6 +4414,21 @@ private struct AutomationWizardEditDraft {
             in: eventTrigger.predicate,
             triggerPredicates: triggerPredicates
         )
+
+        dprint("[EditDraft] ═══ DRAFT SUMMARY for '\(item.trigger.name)' ═══")
+        dprint("[EditDraft] trigger type: \(type(of: trigger))")
+        dprint("[EditDraft] startEvents: \(startEvents.count)")
+        dprint("[EditDraft] triggerPredicates: \(triggerPredicates.count)")
+        triggerPredicates.enumerated().forEach { i, p in dprint("[EditDraft]   triggerPred[\(i)]: \(p)") }
+        dprint("[EditDraft] decodedSelections: \(decodedSelections.count) total, \(conditionSelections.count) after trigger filter")
+        dprint("[EditDraft] timeConditions: \(timeConditions.count)")
+        timeConditions.enumerated().forEach { i, tc in
+            dprint("[EditDraft]   time[\(i)]: relation=\(tc.relation.rawValue) kind=\(tc.kind.rawValue) endKind=\(tc.endKind.rawValue) time=\(tc.time) endTime=\(tc.endTime) offsetMin=\(tc.offsetMinutes) endOffsetMin=\(tc.endOffsetMinutes)")
+        }
+        dprint("[EditDraft] presenceConditions: \(presenceConditions.count)")
+        dprint("[EditDraft] preservedConditionPredicate: \(self.preservedConditionPredicate.map { "SET → \($0)" } ?? "nil")")
+        dprint("[EditDraft] conditionJoinMode: \(conditionJoinMode)")
+        dprint("[EditDraft] ════════════════════════════════════════════")
     }
 
     private static func startEventDraft(
@@ -4345,7 +4449,10 @@ private struct AutomationWizardEditDraft {
                 )
             }
 
-            return AutomationStartEventDraft(selection: AutomationCapabilitySelection(capability: capability))
+            return AutomationStartEventDraft(selection: AutomationCapabilitySelection(
+                capability: capability,
+                targetValue: .any
+            ))
         }
 
         if let calendarEvent = event as? HMCalendarEvent {
@@ -4478,6 +4585,10 @@ private struct AutomationWizardEditDraft {
         }
 
         if let compound = predicate as? NSCompoundPredicate {
+            // Check if the entire compound matches a handled condition before recursing into children
+            if handledConditionSelections.contains(where: { isHandledAccessoryConditionPredicate(predicate, by: $0) }) {
+                return nil
+            }
             let filtered = compound.subpredicates.compactMap { subpredicate -> NSPredicate? in
                 guard let predicate = subpredicate as? NSPredicate else { return nil }
                 return conditionPredicate(
@@ -4556,8 +4667,69 @@ private struct AutomationWizardEditDraft {
                 return predicate
             }
 
-            if compound.compoundPredicateType == .and,
-               let betweenCondition = betweenTimeCondition(in: conditionPredicates) {
+            if compound.compoundPredicateType == .and {
+                dprint("[BetweenDetect] ── FULL PREDICATE TREE ──")
+                dumpPredicateTree(predicate, depth: 0)
+                dprint("[BetweenDetect] ── conditionPredicates (\(conditionPredicates.count) after trigger filter) ──")
+                conditionPredicates.enumerated().forEach { i, p in
+                    dprint("[BetweenDetect]   [\(i)] type=\(type(of: p))")
+                    dumpPredicateTree(p, depth: 2)
+                }
+                let timeOnlyPredicates = conditionPredicates.filter { predicate in
+                    let comparisons = directComparisonPredicates(in: predicate)
+                    return !comparisons.isEmpty && comparisons.allSatisfy(isTimeComparisonPredicate)
+                }
+                dprint("[BetweenDetect] timeOnlyPredicates count=\(timeOnlyPredicates.count)")
+                if !timeOnlyPredicates.isEmpty,
+                   let betweenCondition = betweenTimeCondition(in: timeOnlyPredicates) {
+                    dprint("[BetweenDetect] ✅ Between detected")
+                    // Also recurse into non-Between children (e.g. a separate "Before Sunrise" condition)
+                    let nonBetween = conditionPredicates.filter { cp in
+                        !timeOnlyPredicates.contains { $0 === cp }
+                    }
+                    dprint("[BetweenDetect] non-Between remaining: \(nonBetween.count)")
+                    nonBetween.forEach { p in
+                        let constants = constantValues(in: p)
+                        let tc = timeCondition(in: p)
+                        dprint("[BetweenDetect]   pred type=\(type(of: p)) constants=\(constants.count) timeCondition=\(String(describing: tc?.relation.rawValue))")
+                        if let cmp = p as? NSComparisonPredicate {
+                            dprint("[BetweenDetect]     left=\(cmp.leftExpression.expressionType.rawValue) right=\(cmp.rightExpression.expressionType.rawValue) op=\(cmp.predicateOperatorType.rawValue)")
+                        }
+                    }
+                    let rest = nonBetween.flatMap { timeConditions(in: $0, triggerPredicates: triggerPredicates) }
+                    return ([betweenCondition] + rest).uniquedBy(timeConditionIdentity)
+                }
+                dprint("[BetweenDetect] ⚠️ Between not detected — falling through")
+
+                // Detect Between from keyPath-based significant event predicates.
+                // HomeKit stores "Between Sunrise+X and Sunset+Y" as AND(sunrise<=now()+DC, sunset>now()+DC).
+                // These fail isTimeComparisonPredicate (no constantValue) but timeCondition(in:) handles them.
+                // If all conditionPredicates decode as time conditions with exactly one .after + one .before,
+                // treat the AND compound as a single Between condition.
+                let keyPathDecoded = conditionPredicates.compactMap { timeCondition(in: $0) }
+                if keyPathDecoded.count == conditionPredicates.count, keyPathDecoded.count >= 2 {
+                    let afterConds  = keyPathDecoded.filter { $0.relation == .after  }
+                    let beforeConds = keyPathDecoded.filter { $0.relation == .before }
+                    if afterConds.count == 1, beforeConds.count == 1 {
+                        var betweenCondition = AutomationTimeCondition()
+                        betweenCondition.relation         = .between
+                        betweenCondition.kind             = afterConds[0].kind
+                        betweenCondition.time             = afterConds[0].time
+                        betweenCondition.offsetMinutes    = afterConds[0].offsetMinutes
+                        betweenCondition.endKind          = beforeConds[0].kind
+                        betweenCondition.endTime          = beforeConds[0].time
+                        betweenCondition.endOffsetMinutes = beforeConds[0].offsetMinutes
+                        dprint("[BetweenDetect] ✅ keyPath-Between: \(afterConds[0].kind.rawValue)+\(afterConds[0].offsetMinutes) → \(beforeConds[0].kind.rawValue)+\(beforeConds[0].offsetMinutes)")
+                        return [betweenCondition]
+                    }
+                }
+            }
+
+            // HomeKit stores between time conditions as OR(now() > start, now() < end).
+            // Detect this pattern before recursing into children.
+            if compound.compoundPredicateType == .or,
+               let betweenCondition = betweenTimeCondition(in: [predicate]) {
+                dprint("[BetweenDetect] ✅ OR-Between detected")
                 return [betweenCondition]
             }
 
@@ -4576,6 +4748,42 @@ private struct AutomationWizardEditDraft {
     }
 
     private static func timeCondition(in predicate: NSPredicate) -> AutomationTimeCondition? {
+        // Handle keyPath-based significant event comparisons.
+        // HomeKit stores sunrise/sunset as NSExpression keyPaths (expressionType .keyPath = 3)
+        // in some predicate formats, rather than as HMSignificantTimeEvent constant values.
+        // e.g. "sunrise > now() + <DateComponents>" has left=.keyPath("sunrise"), right=.function
+        if let comparison = predicate as? NSComparisonPredicate {
+            let leftKP  = comparison.leftExpression.expressionType  == .keyPath ? comparison.leftExpression.keyPath.lowercased()  : nil
+            let rightKP = comparison.rightExpression.expressionType == .keyPath ? comparison.rightExpression.keyPath.lowercased() : nil
+
+            func sigKind(_ kp: String) -> AutomationTimeConditionKind? {
+                if kp.contains("sunrise") { return .sunrise }
+                if kp.contains("sunset")  { return .sunset  }
+                return nil
+            }
+
+            if let kp = leftKP, let kind = sigKind(kp) {
+                // "sunrise > now() + offset" → sunrise_time > now() + offset_DC
+                // Semantics: now() < sunrise - offset_DC → "before (sunrise - offset_DC)"
+                // If offset_DC = -120 min → "before (sunrise + 2h)" → offsetMinutes = +120
+                var condition = AutomationTimeCondition()
+                condition.kind = kind
+                let op = comparison.predicateOperatorType
+                condition.relation = (op == .greaterThan || op == .greaterThanOrEqualTo) ? .before : .after
+                condition.offsetMinutes = -offsetMinutesFromExpression(comparison.rightExpression)
+                return condition
+            }
+            if let kp = rightKP, let kind = sigKind(kp) {
+                // "now() + offset < sunset" → now() < sunset - offset_DC
+                var condition = AutomationTimeCondition()
+                condition.kind = kind
+                let op = comparison.predicateOperatorType
+                condition.relation = (op == .lessThan || op == .lessThanOrEqualTo) ? .before : .after
+                condition.offsetMinutes = -offsetMinutesFromExpression(comparison.leftExpression)
+                return condition
+            }
+        }
+
         let constants = constantValues(in: predicate)
         if let comparison = predicate as? NSComparisonPredicate,
            comparison.predicateOperatorType == .between,
@@ -4608,7 +4816,12 @@ private struct AutomationWizardEditDraft {
 
     private static func betweenTimeCondition(in predicates: [NSPredicate]) -> AutomationTimeCondition? {
         let directComparisons = predicates.flatMap(directComparisonPredicates)
+        dprint("[BetweenDetect] betweenTimeCondition: in=\(predicates.count) directComparisons=\(directComparisons.count)")
+        directComparisons.enumerated().forEach { i, c in
+            dprint("  cmp[\(i)] isTime=\(isTimeComparisonPredicate(c)) | \(c)")
+        }
         guard directComparisons.allSatisfy(isTimeComparisonPredicate) else {
+            dprint("[BetweenDetect] ❌ allSatisfyTime FAILED — non-time comparison present")
             return nil
         }
 
@@ -4625,18 +4838,10 @@ private struct AutomationWizardEditDraft {
             return condition
         }
 
-        let dateComponents = constants.compactMap { $0 as? DateComponents }
-            .filter { $0.hour != nil }
-        if dateComponents.count >= 2 {
-            var condition = AutomationTimeCondition()
-            condition.kind = .fixedTime
-            condition.relation = .between
-            condition.time = date(from: dateComponents[0])
-            condition.endKind = .fixedTime
-            condition.endTime = date(from: dateComponents[1])
-            return condition
-        }
-
+        // Skip the ambiguous dateComponents[0]/[1] ordering path and fall through to the
+        // after/before detection which uses relation semantics to determine start vs end.
+        let relations = directComparisons.map { timeRelation(from: $0) }
+        dprint("[BetweenDetect] relations=\(relations.map(\.rawValue)) | looking for .after + .before")
         guard directComparisons.count == 2,
               let start = directComparisons.first(where: { timeRelation(from: $0) == .after }),
               let end = directComparisons.first(where: { timeRelation(from: $0) == .before }),
@@ -4650,6 +4855,24 @@ private struct AutomationWizardEditDraft {
         condition.endTime = endCondition.time
         condition.endOffsetMinutes = endCondition.offsetMinutes
         return condition
+    }
+
+    private static func dumpPredicateTree(_ p: NSPredicate, depth: Int) {
+        let indent = String(repeating: "  ", count: depth)
+        if let compound = p as? NSCompoundPredicate {
+            let kind = compound.compoundPredicateType == .and ? "AND" :
+                       compound.compoundPredicateType == .or  ? "OR"  : "NOT"
+            dprint("[BetweenDetect]\(indent)[\(kind) \(compound.subpredicates.count) children]")
+            compound.subpredicates.compactMap { $0 as? NSPredicate }.forEach {
+                dumpPredicateTree($0, depth: depth + 1)
+            }
+        } else if let cmp = p as? NSComparisonPredicate {
+            let constants = constantValues(in: cmp)
+            let hasTime = constants.contains { $0 is DateComponents || $0 is HMSignificantTimeEvent }
+            dprint("[BetweenDetect]\(indent)[CMP isTime=\(hasTime) op=\(cmp.predicateOperatorType.rawValue)] \(cmp)")
+        } else {
+            dprint("[BetweenDetect]\(indent)[UNKNOWN \(type(of: p))] \(p)")
+        }
     }
 
     nonisolated private static func isTimeComparisonPredicate(_ predicate: NSComparisonPredicate) -> Bool {
@@ -4709,6 +4932,23 @@ private struct AutomationWizardEditDraft {
             .compactMap { $0 as? DateComponents }
             .first(where: { $0.minute != nil })?
             .minute ?? 0
+    }
+
+    // Recursively extracts DateComponents minutes from NSExpression function arguments.
+    // HomeKit stores "now() + offset" as a function expression; the offset DateComponents
+    // is embedded in the arguments tree rather than as a direct constant.
+    private static func offsetMinutesFromExpression(_ expr: NSExpression) -> Int {
+        if expr.expressionType == .constantValue,
+           let dc = expr.constantValue as? DateComponents {
+            return (dc.minute ?? 0) + (dc.hour ?? 0) * 60
+        }
+        if expr.expressionType == .function {
+            for arg in expr.arguments ?? [] {
+                let m = offsetMinutesFromExpression(arg)
+                if m != 0 { return m }
+            }
+        }
+        return 0
     }
 
     private static func timeEvent(_ event: HMEvent, matches condition: AutomationTimeCondition) -> Bool {
@@ -4876,6 +5116,12 @@ private struct AutomationWizardEditDraft {
 
         switch compound.compoundPredicateType {
         case .or:
+            // HomeKit stores between time conditions as OR(now() > start, now() < end).
+            // This OR is NOT a join-mode OR — treat it as .all to avoid false .any detection.
+            let orComparisons = compound.subpredicates.compactMap { $0 as? NSComparisonPredicate }
+            if orComparisons.count == compound.subpredicates.count && orComparisons.allSatisfy(isTimeComparisonPredicate) {
+                return .all
+            }
             let conditionPredicates = compound.subpredicates.compactMap { subpredicate -> NSPredicate? in
                 guard let predicate = subpredicate as? NSPredicate,
                       !triggerPredicates.contains(where: { predicatesMatch($0, predicate) }) else {
@@ -4935,12 +5181,9 @@ private struct AutomationWizardEditDraft {
         if let comparison = predicate as? NSComparisonPredicate {
             return [comparison]
         }
-
-        guard let compound = predicate as? NSCompoundPredicate,
-              compound.compoundPredicateType == .and else {
-            return []
-        }
-
+        // HomeKit stores between time conditions as OR(now() > start, now() < end),
+        // so we must extract comparisons from both AND and OR compounds.
+        guard let compound = predicate as? NSCompoundPredicate else { return [] }
         return compound.subpredicates.compactMap { $0 as? NSComparisonPredicate }
     }
 
@@ -4993,24 +5236,37 @@ private struct AutomationWizardEditDraft {
     }
 
     nonisolated private static func normalizedOperator(for predicate: NSComparisonPredicate) -> NSComparisonPredicate.Operator {
-        let leftHasValue = constantExpressionValue(predicate.leftExpression).map { !($0 is HMCharacteristic) } ?? false
-        let rightHasCharacteristic = (constantExpressionValue(predicate.rightExpression) as? HMCharacteristic) != nil
+        let leftConstant  = constantExpressionValue(predicate.leftExpression)
+        let rightConstant = constantExpressionValue(predicate.rightExpression)
 
-        guard leftHasValue && rightHasCharacteristic else {
-            return predicate.predicateOperatorType
+        // Case 1 — characteristic comparisons: value > HMCharacteristic → HMCharacteristic < value
+        if leftConstant.map({ !($0 is HMCharacteristic) }) == true,
+           rightConstant is HMCharacteristic {
+            return flippedOperator(predicate.predicateOperatorType)
         }
 
-        switch predicate.predicateOperatorType {
-        case .greaterThan:
-            return .lessThan
-        case .greaterThanOrEqualTo:
-            return .lessThanOrEqualTo
-        case .lessThan:
-            return .greaterThan
-        case .lessThanOrEqualTo:
-            return .greaterThanOrEqualTo
-        default:
-            return predicate.predicateOperatorType
+        // Case 2 — time comparisons with inverted operand order:
+        // HomeKit stores "before significant event" as: significantEvent > now()
+        // We normalize so that the "now()" side is always treated as left.
+        let leftIsTimeConstant: Bool = {
+            if leftConstant is HMSignificantTimeEvent { return true }
+            if let dc = leftConstant as? DateComponents { return dc.hour != nil || dc.minute != nil }
+            return false
+        }()
+        if leftIsTimeConstant {
+            return flippedOperator(predicate.predicateOperatorType)
+        }
+
+        return predicate.predicateOperatorType
+    }
+
+    nonisolated private static func flippedOperator(_ op: NSComparisonPredicate.Operator) -> NSComparisonPredicate.Operator {
+        switch op {
+        case .greaterThan:          return .lessThan
+        case .greaterThanOrEqualTo: return .lessThanOrEqualTo
+        case .lessThan:             return .greaterThan
+        case .lessThanOrEqualTo:    return .greaterThanOrEqualTo
+        default:                    return op
         }
     }
 
@@ -5673,6 +5929,8 @@ private extension AutomationConditionJoinMode {
 private extension AutomationCapabilityTargetValue {
     func displayText(for valueKind: AutomationCapabilityValueKind) -> String {
         switch (self, valueKind) {
+        case (.any, _):
+            return String(localized: "automation.trigger.anyValue", defaultValue: "Any change")
         case (.bool(let value), .boolean(let activeLabel, let inactiveLabel)):
             return value ? activeLabel : inactiveLabel
         case (.number(let value), .numeric(let unit, _, _)):
