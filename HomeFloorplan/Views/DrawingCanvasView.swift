@@ -219,7 +219,9 @@ struct DrawingCanvasView: UIViewRepresentable {
         var showDimensions: Bool = false
 
         private var contentState = DrawingContentState()
-        private let snapHaptic = UIImpactFeedbackGenerator(style: .light)
+        private let snapHaptic      = UIImpactFeedbackGenerator(style: .light)
+        private let commitHaptic    = UIImpactFeedbackGenerator(style: .medium)
+        private let selectionHaptic = UISelectionFeedbackGenerator()
 
         init(parent: DrawingCanvasView) { self.parent = parent }
 
@@ -387,6 +389,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         }
 
         private func commitWall(start: CGPoint, end: CGPoint, kind: WallKind) {
+            commitHaptic.impactOccurred()
             var newDoc = parent.document
             newDoc.walls.append(WallSegment(start: start, end: end, kind: kind))
             parent.onCommit(newDoc)
@@ -420,6 +423,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 contentState.previewArea = currentPreviewArea
             case .ended, .cancelled, .failed:
                 if let rect = currentPreviewArea, rect.width > 40, rect.height > 40 {
+                    commitHaptic.impactOccurred()
                     parent.onCommitRoomArea(rect)
                 }
                 drawAreaStart      = nil
@@ -712,7 +716,11 @@ struct DrawingCanvasView: UIViewRepresentable {
                     parent.onInsertRoomAreaVertex?(id, edge.edgeIndex, snapped)
                     return
                 }
-                parent.selection = hitTest(tapPoint, in: parent.document)
+                let newSelection = hitTest(tapPoint, in: parent.document)
+                if newSelection != .none && newSelection != parent.selection {
+                    selectionHaptic.selectionChanged()
+                }
+                parent.selection = newSelection
             case .draw, .drawRoomArea:
                 break
             }
