@@ -167,9 +167,17 @@ final class AccessoryEventStore {
             )
 
         case targetPositionUUID:
-            // Tapparella/blind
+            // TargetPosition is a command, not observed state. It is not reliable for state intervals.
+            return nil
+
+        case currentPositionUUID:
+            // Tapparella/blind observed position.
             guard let raw = intVal(value) else { return nil }
-            let state = raw > 0 // posizione > 0 = aperto
+            let logicalPosition = WindowCoveringPositionMapper.logicalPosition(
+                fromRaw: raw,
+                accessoryID: accessory.uniqueIdentifier
+            )
+            let state = logicalPosition > 0
             return AccessoryEventDTO(
                 accessoryID: accessory.uniqueIdentifier,
                 accessoryName: accessory.name,

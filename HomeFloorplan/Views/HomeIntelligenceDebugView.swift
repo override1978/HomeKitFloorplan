@@ -20,6 +20,7 @@ struct HomeIntelligenceDebugView: View {
         case baselines = "Baselines"
         case anomalies = "Anomalies"
         case coverage = "Coverage"
+        case intervals = "Intervals"
 
         var id: String { rawValue }
     }
@@ -47,6 +48,10 @@ struct HomeIntelligenceDebugView: View {
         sensorReadings.prefix(120).map(HomeSignalEventMapper.map)
     }
 
+    private var stateIntervals: [HomeStateInterval] {
+        HomeStateIntervalBuilder.build(from: accessoryEvents)
+    }
+
     private var baselineSamples: [HomeBaseline] {
         HomeBaselineEngine.buildMergedBaselines(
             dailySensorSummaries: dailySensorSummaries,
@@ -57,7 +62,12 @@ struct HomeIntelligenceDebugView: View {
     }
 
     private var anomalyInsights: [HomeInsight] {
-        anomalyEvaluations.compactMap(\.insight)
+        (anomalyEvaluations.compactMap(\.insight) + intervalAnomalyInsights)
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private var intervalAnomalyInsights: [HomeInsight] {
+        HomeAnomalyDetector.detect(intervals: stateIntervals)
     }
 
     private var anomalyEvaluations: [HomeAnomalyDetector.Evaluation] {
@@ -99,6 +109,8 @@ struct HomeIntelligenceDebugView: View {
                     anomalyList
                 case .coverage:
                     coverageList
+                case .intervals:
+                    intervalList
                 }
             }
             .padding(24)
@@ -124,8 +136,9 @@ struct HomeIntelligenceDebugView: View {
             SummaryTile(title: "Insights", value: insights.count.formatted(), subtitle: "\(activeInsightCount) active")
             SummaryTile(title: "Signals", value: signalSamples.count.formatted(), subtitle: "latest mapped samples")
             SummaryTile(title: "Baselines", value: baselineSamples.count.formatted(), subtitle: "persisted + live preview")
-            SummaryTile(title: "Anomalies", value: anomalyInsights.count.formatted(), subtitle: "baseline detector")
+            SummaryTile(title: "Anomalies", value: anomalyInsights.count.formatted(), subtitle: "baseline + intervals")
             SummaryTile(title: "Coverage", value: anomalyEvaluations.count.formatted(), subtitle: "evaluated signals")
+            SummaryTile(title: "Intervals", value: stateIntervals.count.formatted(), subtitle: "state durations")
             SummaryTile(title: "Sync", value: syncedInsightCount.formatted(), subtitle: "non-local insights")
         }
     }
@@ -190,6 +203,19 @@ struct HomeIntelligenceDebugView: View {
             VStack(spacing: 12) {
                 ForEach(anomalyEvaluations) { evaluation in
                     AnomalyCoverageDebugRow(evaluation: evaluation)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var intervalList: some View {
+        if stateIntervals.isEmpty {
+            emptyState("No state intervals", systemImage: "timer")
+        } else {
+            VStack(spacing: 12) {
+                ForEach(stateIntervals) { interval in
+                    StateIntervalDebugRow(interval: interval)
                 }
             }
         }
@@ -423,6 +449,82 @@ private struct AnomalyCoverageDebugRow: View {
     private static func value(_ value: Double?) -> String {
         guard let value else { return "-" }
         return String(format: "%.2f", value)
+    }
+}
+
+private struct StateIntervalDebugRow: View {
+    let interval: HomeStateInterval
+
+    var body: some View {
+        DebugCard(icon: icon, tint: tint) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title)
+                        .font(.headline)
+                    Spacer(minLength: 12)
+                    Text(statusLabel)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(tint.opacity(0.14), in: Capsule())
+                        .foregroundStyle(tint)
+                }
+
+                Text("\(interval.stateRaw) for \(duration)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                DebugMetadata(items: [
+                    "type: \(interval.signalType.rawValue)",
+                    "room: \(interval.roomName ?? "-")",
+                    "started: \(interval.startedAt.formatted(date: .abbreviated, time: .shortened))",
+                    "ended: \(interval.endedAt?.formatted(date: .abbreviated, time: .shortened) ?? "-")",
+                    "duration: \(duration)",
+                    "events: \(interval.sourceEventIDs.count)",
+                    "confidence: \(Int((interval.confidence * 100).rounded()))%"
+                ])
+            }
+        }
+    }
+
+    private var title: String {
+        if let roomName = interval.roomName, !roomName.isEmpty {
+            return "\(roomName) \(interval.entityName)"
+        }
+        return interval.entityName
+    }
+
+    private var icon: String {
+        if interval.stateRaw == "heating" {
+            return "thermometer"
+        }
+
+        switch interval.signalType {
+        case .contact: return "door.left.hand.open"
+        case .power: return "powerplug"
+        case .active: return "switch.2"
+        case .motion: return "figure.walk.motion"
+        default: return "timer"
+        }
+    }
+
+    private var tint: Color {
+        interval.isActive ? .orange : .blue
+    }
+
+    private var statusLabel: String {
+        guard interval.isActive else { return "closed" }
+        return interval.stateRaw
+    }
+
+    private var duration: String {
+        let seconds = max(0, interval.durationSeconds)
+        let hours = Int(seconds) / 3600
+        let minutes = (Int(seconds) % 3600) / 60
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        return "\(minutes)m"
     }
 }
 

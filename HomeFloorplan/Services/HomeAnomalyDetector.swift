@@ -9,7 +9,11 @@ enum HomeAnomalyDetector {
         var highStandardDeviationMultiplier: Double = 3.0
         var p95Multiplier: Double = 1.05
         var outputLimit: Int = 40
-
+        var minimumOpenContactDuration: TimeInterval = 15 * 60
+        var elevatedOpenContactDuration: TimeInterval = 45 * 60
+        var minimumHeatingDuration: TimeInterval = 90 * 60
+        var minimumSummerHeatingDuration: TimeInterval = 10 * 60
+        var minimumLongRunningPowerDuration: TimeInterval = 6 * 60 * 60
     }
 
     struct Evaluation: Identifiable {
@@ -42,6 +46,7 @@ enum HomeAnomalyDetector {
         signals: [HomeSignalEvent],
         baselines: [HomeBaseline],
         thresholds: [SensorAlertThreshold] = [],
+        stateIntervals: [HomeStateInterval] = [],
         configuration: Configuration? = nil
     ) -> [HomeInsight] {
         let configuration = configuration ?? Configuration()
@@ -50,7 +55,26 @@ enum HomeAnomalyDetector {
             baselines: baselines,
             thresholds: thresholds,
             configuration: configuration
-        ).compactMap(\.insight)
+        ).compactMap(\.insight) + detect(
+            intervals: stateIntervals,
+            configuration: configuration
+        )
+
+        return Array(insights.sorted {
+            if $0.severity == $1.severity { return $0.updatedAt > $1.updatedAt }
+            return $0.severity > $1.severity
+        }.prefix(configuration.outputLimit))
+    }
+
+    static func detect(
+        intervals: [HomeStateInterval],
+        configuration: Configuration? = nil
+    ) -> [HomeInsight] {
+        let configuration = configuration ?? Configuration()
+        let activeIntervals = intervals.filter(\.isActive)
+        let insights = activeIntervals.compactMap { interval in
+            intervalInsight(for: interval, configuration: configuration)
+        }
 
         return Array(insights.sorted {
             if $0.severity == $1.severity { return $0.updatedAt > $1.updatedAt }
@@ -439,6 +463,118 @@ enum HomeAnomalyDetector {
         }
     }
 
+    private static func intervalInsight(
+        for interval: HomeStateInterval,
+        configuration: Configuration
+    ) -> HomeInsight? {
+        let duration = interval.durationSeconds
+        let rule = intervalRule(for: interval, configuration: configuration)
+        guard let rule, duration >= rule.minimumDuration else { return nil }
+
+        let entityName = displayEntityName(for: interval)
+        let durationText = durationDescription(duration)
+        let message = "\(entityName) has been \(interval.stateRaw) for \(durationText)."
+        let why = "\(interval.stateRaw) duration \(durationText) exceeds \(durationDescription(rule.minimumDuration)) policy."
+
+        return HomeInsight(
+            id: UUID(),
+            kind: .anomaly,
+            category: rule.category,
+            severity: rule.severity,
+            status: .active,
+            title: rule.title,
+            message: message,
+            whyExplanation: why,
+            recommendation: rule.recommendation,
+            sourceEntityID: interval.entityID,
+            sourceEntityName: interval.entityName,
+            roomName: interval.roomName,
+            createdAt: interval.startedAt,
+            updatedAt: Date(),
+            startedAt: interval.startedAt,
+            confidence: rule.confidence,
+            score: HomeInsightScore(
+                relevance: rule.confidence,
+                confidence: rule.confidence,
+                urgency: rule.severity >= .high ? 0.85 : 0.55,
+                actionability: 0.75,
+                novelty: 0.7
+            ),
+            dedupeKey: "intervalAnomaly|\(interval.entityID ?? interval.entityName)|\(interval.stateRaw)",
+            sourceRecordType: String(describing: HomeStateInterval.self),
+            sourceRecordID: interval.id.uuidString,
+            syncPolicy: .localOnly
+        )
+    }
+
+    private static func intervalRule(
+        for interval: HomeStateInterval,
+        configuration: Configuration
+    ) -> IntervalRule? {
+        switch interval.signalType {
+        case .contact:
+            let isElevated = interval.durationSeconds >= configuration.elevatedOpenContactDuration
+            let isWindowLike = containsAny(
+                interval.entityName + " " + (interval.roomName ?? ""),
+                tokens: ["window", "finestra", "porta finestra", "balcone"]
+            )
+            return IntervalRule(
+                minimumDuration: configuration.minimumOpenContactDuration,
+                title: "Contact left open",
+                category: isWindowLike ? .security : .presence,
+                severity: isElevated ? .medium : .low,
+                recommendation: isWindowLike ? "Check the window or exterior door state." : "Monitor whether this contact remains open.",
+                confidence: isElevated ? 0.75 : 0.55
+            )
+        case .active where interval.stateRaw == "heating":
+            let isSummer = Calendar.current.component(.month, from: Date()).isSummerMonth
+            return IntervalRule(
+                minimumDuration: isSummer ? configuration.minimumSummerHeatingDuration : configuration.minimumHeatingDuration,
+                title: "Unexpected heating",
+                category: .environment,
+                severity: isSummer ? .high : .medium,
+                recommendation: "Check thermostat schedule and valve demand.",
+                confidence: isSummer ? 0.85 : 0.65
+            )
+        case .power:
+            return IntervalRule(
+                minimumDuration: configuration.minimumLongRunningPowerDuration,
+                title: "Long running power state",
+                category: .lighting,
+                severity: .low,
+                recommendation: "Review whether this device should still be on.",
+                confidence: 0.55
+            )
+        default:
+            return nil
+        }
+    }
+
+    private static func displayEntityName(for interval: HomeStateInterval) -> String {
+        if let roomName = interval.roomName, !roomName.isEmpty {
+            return "\(roomName) \(interval.entityName)"
+        }
+        return interval.entityName
+    }
+
+    private static func durationDescription(_ duration: TimeInterval) -> String {
+        let minutes = max(1, Int(duration.rounded()) / 60)
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        if hours > 0, remainingMinutes > 0 {
+            return "\(hours)h \(remainingMinutes)m"
+        }
+        if hours > 0 {
+            return "\(hours)h"
+        }
+        return "\(minutes)m"
+    }
+
+    private static func containsAny(_ value: String, tokens: [String]) -> Bool {
+        let normalized = value.lowercased()
+        return tokens.contains { normalized.contains($0) }
+    }
+
     private static func signalType(for sensorType: SensorServiceType) -> HomeSignalType {
         switch sensorType {
         case .temperature, .outdoorTemperature: return .temperature
@@ -464,8 +600,23 @@ enum HomeAnomalyDetector {
         var allowsRelativeBaseline: Bool = true
     }
 
+    private struct IntervalRule {
+        var minimumDuration: TimeInterval
+        var title: String
+        var category: HomeInsightCategory
+        var severity: HomeInsightSeverity
+        var recommendation: String
+        var confidence: Double
+    }
+
     private enum ThresholdLevel: String {
         case warning
         case danger
+    }
+}
+
+private extension Int {
+    var isSummerMonth: Bool {
+        (5...9).contains(self)
     }
 }
