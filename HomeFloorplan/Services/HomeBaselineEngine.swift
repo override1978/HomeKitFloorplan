@@ -81,7 +81,7 @@ enum HomeBaselineEngine {
             "\(event.accessoryID.uuidString)|\(event.eventType)"
         }
 
-        return grouped.compactMap { _, events in
+        let frequencyBaselines: [HomeBaseline] = grouped.compactMap { _, events in
             guard let first = events.first else { return nil }
             let timestamps = events.map(\.timestamp)
             let onCount = events.filter(\.state).count
@@ -104,6 +104,54 @@ enum HomeBaselineEngine {
                 contextKey: "preview.raw.accessory"
             )
         }
+
+        return frequencyBaselines + buildLiveAccessoryDurationBaselines(
+            recentEvents,
+            windowDays: windowDays
+        )
+    }
+
+    private static func buildLiveAccessoryDurationBaselines(
+        _ events: [AccessoryEvent],
+        windowDays: Int
+    ) -> [HomeBaseline] {
+        let intervals = HomeStateIntervalBuilder.build(
+            from: events,
+            configuration: HomeStateIntervalBuilder.Configuration(
+                eventLimit: 2_000,
+                outputLimit: 1_000,
+                includeMomentaryMotion: false
+            )
+        )
+
+        let closedIntervals = intervals.filter { !$0.isActive }
+        let grouped = Dictionary(grouping: closedIntervals) { interval in
+            "\(interval.entityID ?? interval.entityName)|\(interval.signalType.rawValue)|\(interval.stateRaw)"
+        }
+
+        return grouped.compactMap { _, intervals in
+            guard let first = intervals.first else { return nil }
+            let durations = intervals.map(\.durationSeconds).filter { $0 > 0 }
+            guard !durations.isEmpty else { return nil }
+
+            return HomeBaseline(
+                entityID: first.entityID,
+                entityName: first.entityName,
+                roomName: first.roomName,
+                signalType: first.signalType,
+                baselineKind: .duration,
+                windowRaw: "preview-\(windowDays)d",
+                mean: average(durations),
+                standardDeviation: standardDeviation(durations),
+                p90: percentile(durations, rank: 0.90),
+                p95: percentile(durations, rank: 0.95),
+                sampleCount: durations.count,
+                firstSampleAt: intervals.map(\.startedAt).min(),
+                lastSampleAt: intervals.compactMap(\.endedAt).max(),
+                confidence: durationConfidence(sampleCount: durations.count),
+                contextKey: "preview.raw.duration.\(first.stateRaw)"
+            )
+        }
     }
 
     private static func sortDate(for baseline: HomeBaseline) -> Date {
@@ -116,6 +164,10 @@ enum HomeBaselineEngine {
 
     private static func accessoryConfidence(sampleCount: Int) -> Double {
         min(1.0, Double(sampleCount) / 14.0)
+    }
+
+    private static func durationConfidence(sampleCount: Int) -> Double {
+        min(1.0, Double(sampleCount) / 6.0)
     }
 
     private static func average(_ values: [Double]) -> Double? {

@@ -67,7 +67,10 @@ struct HomeIntelligenceDebugView: View {
     }
 
     private var intervalAnomalyInsights: [HomeInsight] {
-        HomeAnomalyDetector.detect(intervals: stateIntervals)
+        HomeAnomalyDetector.detect(
+            intervals: stateIntervals,
+            baselines: baselineSamples
+        )
     }
 
     private var anomalyEvaluations: [HomeAnomalyDetector.Evaluation] {
@@ -371,8 +374,10 @@ private struct BaselineDebugRow: View {
                     "type: \(baseline.signalType.rawValue)",
                     "kind: \(baseline.baselineKind.rawValue)",
                     "samples: \(baseline.sampleCount)",
-                    "mean: \(Self.value(baseline.mean))",
-                    "std: \(Self.value(baseline.standardDeviation))",
+                    "mean: \(value(baseline.mean))",
+                    "p90: \(value(baseline.p90))",
+                    "p95: \(value(baseline.p95))",
+                    "std: \(value(baseline.standardDeviation))",
                     "confidence: \(Int((baseline.confidence * 100).rounded()))%",
                     "context: \(baseline.contextKey ?? "-")"
                 ])
@@ -380,9 +385,25 @@ private struct BaselineDebugRow: View {
         }
     }
 
-    private static func value(_ value: Double?) -> String {
+    private func value(_ value: Double?) -> String {
         guard let value else { return "-" }
+        if baseline.baselineKind == .duration {
+            return Self.duration(value)
+        }
         return String(format: "%.2f", value)
+    }
+
+    private static func duration(_ seconds: TimeInterval) -> String {
+        let minutes = max(1, Int(seconds.rounded()) / 60)
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        if hours > 0, remainingMinutes > 0 {
+            return "\(hours)h \(remainingMinutes)m"
+        }
+        if hours > 0 {
+            return "\(hours)h"
+        }
+        return "\(minutes)m"
     }
 }
 

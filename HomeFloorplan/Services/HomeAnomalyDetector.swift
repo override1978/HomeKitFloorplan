@@ -14,6 +14,8 @@ enum HomeAnomalyDetector {
         var minimumHeatingDuration: TimeInterval = 90 * 60
         var minimumSummerHeatingDuration: TimeInterval = 10 * 60
         var minimumLongRunningPowerDuration: TimeInterval = 6 * 60 * 60
+        var durationBaselineMultiplier: Double = 1.5
+        var minimumPowerDurationWithBaseline: TimeInterval = 30 * 60
     }
 
     struct Evaluation: Identifiable {
@@ -57,6 +59,7 @@ enum HomeAnomalyDetector {
             configuration: configuration
         ).compactMap(\.insight) + detect(
             intervals: stateIntervals,
+            baselines: baselines,
             configuration: configuration
         )
 
@@ -68,12 +71,17 @@ enum HomeAnomalyDetector {
 
     static func detect(
         intervals: [HomeStateInterval],
+        baselines: [HomeBaseline] = [],
         configuration: Configuration? = nil
     ) -> [HomeInsight] {
         let configuration = configuration ?? Configuration()
         let activeIntervals = intervals.filter(\.isActive)
         let insights = activeIntervals.compactMap { interval in
-            intervalInsight(for: interval, configuration: configuration)
+            intervalInsight(
+                for: interval,
+                durationBaseline: bestDurationBaseline(for: interval, in: baselines),
+                configuration: configuration
+            )
         }
 
         return Array(insights.sorted {
@@ -465,16 +473,21 @@ enum HomeAnomalyDetector {
 
     private static func intervalInsight(
         for interval: HomeStateInterval,
+        durationBaseline: HomeBaseline?,
         configuration: Configuration
     ) -> HomeInsight? {
         let duration = interval.durationSeconds
-        let rule = intervalRule(for: interval, configuration: configuration)
+        let rule = intervalRule(
+            for: interval,
+            durationBaseline: durationBaseline,
+            configuration: configuration
+        )
         guard let rule, duration >= rule.minimumDuration else { return nil }
 
         let entityName = displayEntityName(for: interval)
         let durationText = durationDescription(duration)
         let message = "\(entityName) has been \(interval.stateRaw) for \(durationText)."
-        let why = "\(interval.stateRaw) duration \(durationText) exceeds \(durationDescription(rule.minimumDuration)) policy."
+        let why = "\(interval.stateRaw) duration \(durationText) exceeds \(durationDescription(rule.minimumDuration)) \(rule.basis)."
 
         return HomeInsight(
             id: UUID(),
@@ -509,6 +522,7 @@ enum HomeAnomalyDetector {
 
     private static func intervalRule(
         for interval: HomeStateInterval,
+        durationBaseline: HomeBaseline?,
         configuration: Configuration
     ) -> IntervalRule? {
         switch interval.signalType {
@@ -524,7 +538,8 @@ enum HomeAnomalyDetector {
                 category: isWindowLike ? .security : .presence,
                 severity: isElevated ? .medium : .low,
                 recommendation: isWindowLike ? "Check the window or exterior door state." : "Monitor whether this contact remains open.",
-                confidence: isElevated ? 0.75 : 0.55
+                confidence: isElevated ? 0.75 : 0.55,
+                basis: "contact policy"
             )
         case .active where interval.stateRaw == "heating":
             let isSummer = Calendar.current.component(.month, from: Date()).isSummerMonth
@@ -534,16 +549,26 @@ enum HomeAnomalyDetector {
                 category: .environment,
                 severity: isSummer ? .high : .medium,
                 recommendation: "Check thermostat schedule and valve demand.",
-                confidence: isSummer ? 0.85 : 0.65
+                confidence: isSummer ? 0.85 : 0.65,
+                basis: isSummer ? "summer heating policy" : "heating policy"
             )
         case .power:
+            let baselineDuration = durationBaseline.flatMap { $0.p95 ?? $0.mean }
+            let minimumDuration = baselineDuration.map {
+                max(
+                    $0 * configuration.durationBaselineMultiplier,
+                    configuration.minimumPowerDurationWithBaseline
+                )
+            } ?? configuration.minimumLongRunningPowerDuration
+            let usesBaseline = baselineDuration != nil
             return IntervalRule(
-                minimumDuration: configuration.minimumLongRunningPowerDuration,
+                minimumDuration: minimumDuration,
                 title: "Long running power state",
                 category: .lighting,
                 severity: .low,
                 recommendation: "Review whether this device should still be on.",
-                confidence: 0.55
+                confidence: usesBaseline ? min(0.8, max(0.55, durationBaseline?.confidence ?? 0.55)) : 0.55,
+                basis: usesBaseline ? "duration baseline" : "fallback policy"
             )
         default:
             return nil
@@ -573,6 +598,38 @@ enum HomeAnomalyDetector {
     private static func containsAny(_ value: String, tokens: [String]) -> Bool {
         let normalized = value.lowercased()
         return tokens.contains { normalized.contains($0) }
+    }
+
+    private static func bestDurationBaseline(
+        for interval: HomeStateInterval,
+        in baselines: [HomeBaseline]
+    ) -> HomeBaseline? {
+        baselines
+            .filter { baseline in
+                baseline.baselineKind == .duration
+                    && baseline.signalType == interval.signalType
+                    && baseline.sampleCount > 0
+                    && (baseline.mean != nil || baseline.p95 != nil)
+                    && matchesScope(interval: interval, baseline: baseline)
+                    && (baseline.contextKey?.contains(interval.stateRaw) ?? true)
+            }
+            .sorted { lhs, rhs in
+                if lhs.confidence == rhs.confidence {
+                    return (lhs.sampleCount, lhs.p95 ?? lhs.mean ?? 0) > (rhs.sampleCount, rhs.p95 ?? rhs.mean ?? 0)
+                }
+                return lhs.confidence > rhs.confidence
+            }
+            .first
+    }
+
+    private static func matchesScope(interval: HomeStateInterval, baseline: HomeBaseline) -> Bool {
+        if let baselineEntityID = baseline.entityID, let intervalEntityID = interval.entityID {
+            return baselineEntityID == intervalEntityID
+        }
+        if let baselineRoom = baseline.roomName, let intervalRoom = interval.roomName {
+            return baselineRoom == intervalRoom
+        }
+        return false
     }
 
     private static func signalType(for sensorType: SensorServiceType) -> HomeSignalType {
@@ -607,6 +664,7 @@ enum HomeAnomalyDetector {
         var severity: HomeInsightSeverity
         var recommendation: String
         var confidence: Double
+        var basis: String
     }
 
     private enum ThresholdLevel: String {
