@@ -10,6 +10,7 @@ struct HomeIntelligenceDebugView: View {
     @Query(sort: \SensorReading.timestamp, order: .reverse) private var sensorReadings: [SensorReading]
     @Query(sort: \DailySensorSummary.date, order: .reverse) private var dailySensorSummaries: [DailySensorSummary]
     @Query(sort: \AccessoryUsageSummary.weekStartDate, order: .reverse) private var accessoryUsageSummaries: [AccessoryUsageSummary]
+    @Query private var sensorAlertThresholds: [SensorAlertThreshold]
 
     @State private var selectedTab: DebugTab = .insights
 
@@ -17,6 +18,8 @@ struct HomeIntelligenceDebugView: View {
         case insights = "Insights"
         case signals = "Signals"
         case baselines = "Baselines"
+        case anomalies = "Anomalies"
+        case coverage = "Coverage"
 
         var id: String { rawValue }
     }
@@ -40,12 +43,28 @@ struct HomeIntelligenceDebugView: View {
         return Array((accessorySignals + sensorSignals).sorted { $0.timestamp > $1.timestamp }.prefix(60))
     }
 
+    private var anomalySignals: [HomeSignalEvent] {
+        sensorReadings.prefix(120).map(HomeSignalEventMapper.map)
+    }
+
     private var baselineSamples: [HomeBaseline] {
         HomeBaselineEngine.buildMergedBaselines(
             dailySensorSummaries: dailySensorSummaries,
             accessoryUsageSummaries: accessoryUsageSummaries,
             sensorReadings: sensorReadings,
             accessoryEvents: accessoryEvents
+        )
+    }
+
+    private var anomalyInsights: [HomeInsight] {
+        anomalyEvaluations.compactMap(\.insight)
+    }
+
+    private var anomalyEvaluations: [HomeAnomalyDetector.Evaluation] {
+        HomeAnomalyDetector.evaluate(
+            signals: anomalySignals,
+            baselines: baselineSamples,
+            thresholds: sensorAlertThresholds
         )
     }
 
@@ -76,6 +95,10 @@ struct HomeIntelligenceDebugView: View {
                     signalList
                 case .baselines:
                     baselineList
+                case .anomalies:
+                    anomalyList
+                case .coverage:
+                    coverageList
                 }
             }
             .padding(24)
@@ -101,6 +124,8 @@ struct HomeIntelligenceDebugView: View {
             SummaryTile(title: "Insights", value: insights.count.formatted(), subtitle: "\(activeInsightCount) active")
             SummaryTile(title: "Signals", value: signalSamples.count.formatted(), subtitle: "latest mapped samples")
             SummaryTile(title: "Baselines", value: baselineSamples.count.formatted(), subtitle: "persisted + live preview")
+            SummaryTile(title: "Anomalies", value: anomalyInsights.count.formatted(), subtitle: "baseline detector")
+            SummaryTile(title: "Coverage", value: anomalyEvaluations.count.formatted(), subtitle: "evaluated signals")
             SummaryTile(title: "Sync", value: syncedInsightCount.formatted(), subtitle: "non-local insights")
         }
     }
@@ -139,6 +164,32 @@ struct HomeIntelligenceDebugView: View {
             VStack(spacing: 12) {
                 ForEach(baselineSamples) { baseline in
                     BaselineDebugRow(baseline: baseline)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var anomalyList: some View {
+        if anomalyInsights.isEmpty {
+            emptyState("No detected anomalies", systemImage: "exclamationmark.triangle")
+        } else {
+            VStack(spacing: 12) {
+                ForEach(anomalyInsights) { insight in
+                    InsightDebugRow(insight: insight)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var coverageList: some View {
+        if anomalyEvaluations.isEmpty {
+            emptyState("No anomaly coverage", systemImage: "list.bullet.clipboard")
+        } else {
+            VStack(spacing: 12) {
+                ForEach(anomalyEvaluations) { evaluation in
+                    AnomalyCoverageDebugRow(evaluation: evaluation)
                 }
             }
         }
@@ -300,6 +351,72 @@ private struct BaselineDebugRow: View {
                     "context: \(baseline.contextKey ?? "-")"
                 ])
             }
+        }
+    }
+
+    private static func value(_ value: Double?) -> String {
+        guard let value else { return "-" }
+        return String(format: "%.2f", value)
+    }
+}
+
+private struct AnomalyCoverageDebugRow: View {
+    let evaluation: HomeAnomalyDetector.Evaluation
+
+    var body: some View {
+        DebugCard(icon: icon, tint: tint) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title)
+                        .font(.headline)
+                    Spacer(minLength: 12)
+                    Text(evaluation.outcome.rawValue)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(tint.opacity(0.14), in: Capsule())
+                        .foregroundStyle(tint)
+                }
+
+                Text(evaluation.reason)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                DebugMetadata(items: [
+                    "value: \(Self.value(evaluation.value))",
+                    "type: \(evaluation.signal.signalType.rawValue)",
+                    "room: \(evaluation.signal.roomName ?? "-")",
+                    "baseline: \(evaluation.baseline == nil ? "no" : "yes")",
+                    "threshold: \(evaluation.threshold == nil ? "no" : "yes")",
+                    "breach: \(evaluation.thresholdBreachDescription ?? "-")",
+                    "delta: \(Self.value(evaluation.absoluteDelta))",
+                    "minDelta: \(Self.value(evaluation.minimumDelta))",
+                    "z: \(Self.value(evaluation.zScore))",
+                    "p95: \(evaluation.p95Exceeded ? "yes" : "no")",
+                    "relative: \(evaluation.allowsRelativeBaseline ? "yes" : "no")"
+                ])
+            }
+        }
+    }
+
+    private var title: String {
+        if let roomName = evaluation.signal.roomName, !roomName.isEmpty {
+            return "\(roomName) \(evaluation.signal.entityName)"
+        }
+        return evaluation.signal.entityName
+    }
+
+    private var icon: String {
+        evaluation.insight == nil ? "checklist.unchecked" : "exclamationmark.triangle.fill"
+    }
+
+    private var tint: Color {
+        switch evaluation.outcome {
+        case .emitted: return .orange
+        case .missingBaseline: return .red
+        case .smallDelta, .belowThreshold: return .blue
+        case .relativeDisabled: return .secondary
+        case .nonNumeric: return .gray
         }
     }
 
