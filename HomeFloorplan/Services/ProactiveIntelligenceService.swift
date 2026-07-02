@@ -145,6 +145,13 @@ final class ProactiveIntelligenceService {
             await processAnomaly(anom, context: context)
         }
 
+        // 8.5. Home intelligence anomalies (central baseline domain)
+        let homeInsightAnomalies = HomeInsightAnomalyPipeline.detect(modelContainer: modelContainer)
+        for insight in homeInsightAnomalies where !context.suppressNonCritical || insight.severity >= .high {
+            await processHomeInsightAnomaly(insight, context: context)
+        }
+        autoResolveHomeInsightAnomalies(currentInsights: homeInsightAnomalies)
+
         // 9. Maintenance prediction (usage pattern anomalies)
         if let maint = maintenanceService {
             for sig in maint.signals where sig.score.composite >= deliveryThreshold {
@@ -400,6 +407,52 @@ final class ProactiveIntelligenceService {
         }
     }
 
+    private func processHomeInsightAnomaly(_ insight: HomeInsight, context: ContextSnapshot) async {
+        let key = "homeInsight|\(insight.dedupeKey)"
+        let priority = notificationPriority(for: insight.severity)
+        let category = notificationCategory(for: insight)
+        let score = intelligenceScore(for: insight)
+
+        guard priority >= .medium else { return }
+        guard score.composite >= deliveryThreshold else { return }
+
+        if let existing = findLive(semanticKey: key) {
+            let oldPriority = existing.priority
+            existing.headline = insight.title
+            existing.body = insight.message
+            existing.priorityRaw = priority.rawValue
+            existing.recommendation = insight.recommendation
+            existing.whyExplanation = insight.whyExplanation
+            existing.sourceID = insight.sourceRecordID ?? insight.sourceEntityID
+            existing.status = .updated
+            existing.lastUpdatedAt = Date()
+            existing.scoreData = try? JSONEncoder().encode(score)
+            if priority > oldPriority && checkRateLimit(priority: priority, category: category) {
+                await NotificationDeliveryOrchestrator.deliver(existing, context: context)
+            }
+            return
+        }
+
+        guard !findRecentlyDismissed(semanticKey: key, withinHours: 12) else { return }
+
+        let notif = ProactiveNotification(
+            category: category,
+            priority: priority,
+            semanticKey: key,
+            headline: insight.title,
+            body: insight.message,
+            recommendation: insight.recommendation,
+            sourceID: insight.sourceRecordID ?? insight.sourceEntityID,
+            whyExplanation: insight.whyExplanation,
+            score: score
+        )
+        notif.statusRaw = ProactiveNotificationStatus.live.rawValue
+        modelContainer.mainContext.insert(notif)
+        if checkRateLimit(priority: priority, category: category) {
+            await NotificationDeliveryOrchestrator.deliver(notif, context: context)
+        }
+    }
+
     private func processMaintenance(_ signal: MaintenanceSignal, context: ContextSnapshot) async {
         let key = signal.semanticKey
         if let existing = findLive(semanticKey: key) {
@@ -582,6 +635,22 @@ final class ProactiveIntelligenceService {
         }
     }
 
+    private func autoResolveHomeInsightAnomalies(currentInsights: [HomeInsight]) {
+        let activeKeys = Set(currentInsights.map { "homeInsight|\($0.dedupeKey)" })
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<ProactiveNotification>(
+            predicate: #Predicate {
+                $0.statusRaw == "live" || $0.statusRaw == "updated"
+            }
+        )
+        let live = (try? ctx.fetch(descriptor)) ?? []
+        for notif in live where notif.semanticKey.hasPrefix("homeInsight|") && !activeKeys.contains(notif.semanticKey) {
+            notif.status = .resolved
+            notif.resolvedAt = Date()
+            notif.lastUpdatedAt = Date()
+        }
+    }
+
     private func autoExpire() {
         let ctx = modelContainer.mainContext
         let cutoff = Date().addingTimeInterval(-7 * 24 * 3600) // 7 day default TTL for low/info
@@ -738,6 +807,77 @@ final class ProactiveIntelligenceService {
 
     private func saveNotifiedPatternIDs(_ ids: Set<UUID>) {
         UserDefaults.standard.set(Array(ids).map { $0.uuidString }, forKey: notifiedPatternsKey)
+    }
+
+    // MARK: - Home insight anomaly helpers
+
+    private func notificationCategory(for insight: HomeInsight) -> NotificationCategory {
+        switch insight.category {
+        case .environment:
+            return insight.title.localizedCaseInsensitiveContains("heating") ? .hvac : .environment
+        case .security:
+            return .security
+        case .lighting:
+            return .lighting
+        case .presence:
+            return .presence
+        case .maintenance:
+            return .maintenance
+        case .deviceHealth:
+            return .deviceHealth
+        case .weather:
+            return .weather
+        case .automation:
+            return .automationOpportunity
+        case .habits:
+            return .behavioralAI
+        case .system:
+            return .aiDiscovery
+        }
+    }
+
+    private func notificationPriority(for severity: HomeInsightSeverity) -> NotificationPriority {
+        switch severity {
+        case .critical:
+            return .critical
+        case .high:
+            return .high
+        case .medium:
+            return .medium
+        case .low:
+            return .low
+        case .info:
+            return .info
+        }
+    }
+
+    private func intelligenceScore(for insight: HomeInsight) -> IntelligenceScore {
+        if let score = insight.score {
+            return IntelligenceScore(
+                relevance: score.relevance,
+                confidence: score.confidence,
+                urgency: score.urgency,
+                actionability: score.actionability,
+                novelty: score.novelty
+            )
+        }
+
+        let urgency: Double
+        switch insight.severity {
+        case .critical: urgency = 1.0
+        case .high: urgency = 0.85
+        case .medium: urgency = 0.65
+        case .low: urgency = 0.35
+        case .info: urgency = 0.15
+        }
+
+        return IntelligenceScore(
+            relevance: insight.confidence,
+            confidence: insight.confidence,
+            urgency: urgency,
+            actionability: insight.recommendation == nil ? 0.55 : 0.75,
+            novelty: 0.70
+        )
     }
 
     // MARK: - Opportunity helpers
