@@ -136,12 +136,12 @@ final class HomeKnowledgeService {
         let rulesCount    = rules.count
         let stableCount   = habitPatterns.filter { $0.status != .dismissed && $0.confidence >= 0.80 }.count
         let acceptedCount = habitPatterns.filter { $0.status == .approved }.count
-        let pendingDescs  = habitPatterns.filter { $0.status == .pending }.prefix(4).map(\.description)
+        let pendingDescs  = habitPatterns.filter { $0.status == .pending }.prefix(4).map(\.patternDescription)
         let topObs        = habitPatterns
             .filter  { $0.status != .dismissed }
             .sorted  { $0.confidence > $1.confidence }
             .prefix(6)
-            .map(\.description)
+            .map(\.patternDescription)
 
         let container = modelContainer
         let rawScene  = ActivityEventCategory.sceneExecution.rawValue

@@ -188,6 +188,18 @@ final class HomeKitService: NSObject {
     func resetToPrimaryHome() {
         selectedHomeUUID = nil
     }
+
+    /// Returns whether a floorplan should be considered part of the active home.
+    /// HomeKit UUIDs can differ across devices for the same household after CloudKit sync;
+    /// with a single local home, an unknown remote UUID is treated as belonging here.
+    func matchesActiveHome(_ floorplanHomeUUID: UUID?) -> Bool {
+        guard let floorplanHomeUUID else { return true }
+        guard let currentHomeUUID = currentHome?.uniqueIdentifier else { return true }
+        if floorplanHomeUUID == currentHomeUUID { return true }
+
+        let localHomeUUIDs = Set(availableHomes.map(\.uniqueIdentifier))
+        return availableHomes.count <= 1 && !localHomeUUIDs.contains(floorplanHomeUUID)
+    }
     
     // MARK: - Batched characteristic updates
 

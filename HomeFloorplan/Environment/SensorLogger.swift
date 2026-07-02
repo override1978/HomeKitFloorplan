@@ -163,6 +163,8 @@ final class SensorLogger {
 
     /// Elimina le letture più vecchie del numero di giorni specificato.
     func pruneOldReadings(olderThan days: Int = 30, modelContainer: ModelContainer) async {
+        guard !LocalDataProtection.shouldPreserveSwiftData else { return }
+
         let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
         let backgroundContext = ModelContext(modelContainer)
 

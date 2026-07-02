@@ -8,6 +8,7 @@ import SwiftData
 struct FloorplanListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(HomeKitService.self) private var homeKit
+    @Environment(CloudKitSyncService.self) private var cloudKitSync
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var floorplans: [Floorplan]
     @Namespace private var namespace
     @Binding var columnVisibility: NavigationSplitViewVisibility
@@ -51,6 +52,7 @@ struct FloorplanListView: View {
     @State private var showingNewSheet = false
     @State private var editingFloorplan: Floorplan?
     @State private var drawingEditFloorplan: Floorplan?
+    @State private var remoteFloorplanRefreshToken = UUID()
     
     enum GalleryLayout: String, CaseIterable {
         case grid, list
@@ -106,6 +108,10 @@ struct FloorplanListView: View {
                 Text(String(localized: "floorplan.delete.message", defaultValue: "The image and all placed markers will be lost."))
             }
         }
+        .id(remoteFloorplanRefreshToken)
+        .onReceive(NotificationCenter.default.publisher(for: .floorplansDidApplyRemoteChanges)) { _ in
+            remoteFloorplanRefreshToken = UUID()
+        }
     }
 
     private var fullScreenDrawingEditBinding: Binding<Floorplan?> {
@@ -124,9 +130,8 @@ struct FloorplanListView: View {
         ) { image, rooms, doc, colorIndex, visualStyle, exportRotation in
             let previousRooms = floorplan.linkedRooms
             let previousRotation = floorplan.drawingExportRotation
-            ImageStorageService.delete(filename: floorplan.imageFilename)
-            if let newFilename = try? ImageStorageService.save(image) {
-                floorplan.imageFilename = newFilename
+            if let newData = image.jpegData(compressionQuality: 0.85) {
+                floorplan.imageData = newData
             }
             floorplan.drawingDocument = doc
             floorplan.exteriorFillColorIndex = colorIndex
@@ -144,6 +149,7 @@ struct FloorplanListView: View {
             }
             floorplan.updatedAt = .now
             try? modelContext.save()
+            cloudKitSync.markFloorplanNeedsSync(floorplan.id)
         }
     }
 
@@ -306,7 +312,7 @@ struct FloorplanListView: View {
     }
     
     private func gridCard(for floorplan: Floorplan) -> some View {
-        let image = ImageStorageService.load(filename: floorplan.imageFilename)
+        let image = floorplan.currentImageData.flatMap { UIImage(data: $0) }
         let exportStyle = DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard
         let cardBackground: Color = {
             guard image != nil else { return .secondary.opacity(0.1) }
@@ -401,7 +407,7 @@ struct FloorplanListView: View {
                     editorPushed(for: floorplan)
                 } label: {
                     HStack(spacing: 12) {
-                        if let image = ImageStorageService.load(filename: floorplan.imageFilename) {
+                        if let imageData = floorplan.currentImageData, let image = UIImage(data: imageData) {
                             Image(uiImage: image)
                                 .resizable()
                                 .scaledToFill()
@@ -565,28 +571,20 @@ struct FloorplanListView: View {
     // MARK: - Actions
 
     private func delete(_ floorplan: Floorplan) {
-        ImageStorageService.delete(filename: floorplan.imageFilename)
+        let id = floorplan.id
         modelContext.delete(floorplan)
         try? modelContext.save()
+        cloudKitSync.markFloorplanDeleted(id)
     }
 
     /// Crea una copia completa della planimetria: immagine separata, disegno 2D,
     /// stanze collegate e marker accessori.
     private func duplicate(_ floorplan: Floorplan) {
-        // Copia l'immagine su disco (file separato, così le due planimetrie sono indipendenti)
-        let newImageFilename: String
-        if let image = ImageStorageService.load(filename: floorplan.imageFilename),
-           let filename = try? ImageStorageService.save(image) {
-            newImageFilename = filename
-        } else {
-            newImageFilename = floorplan.imageFilename
-        }
-
         let copy = Floorplan(
             name: "\(floorplan.name) (Copy)",
-            imageFilename: newImageFilename,
             homeUUID: floorplan.homeUUID
         )
+        copy.imageData = floorplan.imageData
         copy.tapModeRaw         = floorplan.tapModeRaw
         copy.linkedRoomsJSON    = floorplan.linkedRoomsJSON
         copy.drawingDocumentJSON = floorplan.drawingDocumentJSON
@@ -604,6 +602,7 @@ struct FloorplanListView: View {
 
         modelContext.insert(copy)
         try? modelContext.save()
+        cloudKitSync.markFloorplanNeedsSync(copy.id)
     }
 
     private func preserveMarkerPositions(on floorplan: Floorplan,

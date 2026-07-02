@@ -72,6 +72,8 @@ final class Floorplan {
     @Attribute(.unique) var id: UUID
     var name: String
     var imageFilename: String
+    /// Image data stored externally by SwiftData. Nil for records pending migration from imageFilename.
+    @Attribute(.externalStorage) var imageData: Data?
     var createdAt: Date
     var updatedAt: Date
     /// Modalità di interazione sui marker. Default: aprire il pannello.
@@ -96,6 +98,15 @@ final class Floorplan {
         self.id = UUID()
         self.name = name
         self.imageFilename = imageFilename
+        self.createdAt = .now
+        self.updatedAt = .now
+        self.homeUUID = homeUUID
+    }
+
+    init(name: String, homeUUID: UUID? = nil) {
+        self.id = UUID()
+        self.name = name
+        self.imageFilename = ""
         self.createdAt = .now
         self.updatedAt = .now
         self.homeUUID = homeUUID
@@ -133,5 +144,14 @@ final class Floorplan {
         set {
             drawingDocumentJSON = try? JSONEncoder().encode(newValue)
         }
+    }
+
+    /// Returns the image bytes for this floorplan.
+    /// Reads from `imageData` (SwiftData external storage) with a fallback to the legacy
+    /// `imageFilename` file for records not yet migrated by ImageMigrationService.
+    var currentImageData: Data? {
+        if let data = imageData { return data }
+        guard !imageFilename.isEmpty else { return nil }
+        return ImageStorageService.rawData(filename: imageFilename)
     }
 }

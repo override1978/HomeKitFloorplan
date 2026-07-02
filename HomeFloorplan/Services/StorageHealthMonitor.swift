@@ -157,13 +157,6 @@ struct StorageHealthMonitor {
             (try? ctx.fetchCount(FetchDescriptor<T>())) ?? 0
         }
 
-        let habitCount: Int = {
-            guard let data = UserDefaults.standard.data(forKey: "habitPatterns.persisted"),
-                  let patterns = try? JSONDecoder().decode([HabitPattern].self, from: data)
-            else { return 0 }
-            return patterns.count
-        }()
-
         return Snapshot(
             capturedAt: Date(),
             sensorReadingCount:         count(SensorReading.self),
@@ -178,7 +171,7 @@ struct StorageHealthMonitor {
             roomAnalysisStateCount:     count(RoomAnalysisState.self),
             ruleCount:                  count(Rule.self),
             floorplanCount:             count(Floorplan.self),
-            habitPatternCount:          habitCount,
+            habitPatternCount:          count(HabitPattern.self),
             lastLifecycleCycleDate:     UserDefaults.standard.object(
                 forKey: "dataLifecycle.lastCycleDate") as? Date
         )

@@ -8,6 +8,7 @@ import HomeKit
 struct IconPickerSheet: View {
     let accessory: HMAccessory
     let defaultIconName: String
+    var onIconChanged: (() -> Void)? = nil
     
     @Environment(IconOverrideStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -57,6 +58,7 @@ struct IconPickerSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(String(localized: "common.reset", defaultValue: "Reset")) {
                         store.removeIcon(for: accessory.uniqueIdentifier)
+                        onIconChanged?()
                         dismiss()
                     }
                     .disabled(store.icon(for: accessory.uniqueIdentifier) == nil)
@@ -98,6 +100,7 @@ struct IconPickerSheet: View {
         
         Button {
             store.setIcon(iconName, for: accessory.uniqueIdentifier)
+            onIconChanged?()
             dismiss()
         } label: {
             VStack(spacing: 4) {

@@ -9,6 +9,7 @@ struct NewFloorplanSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(HomeKitService.self) private var homeKit
+    @Environment(CloudKitSyncService.self) private var cloudKitSync
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var existingFloorplans: [Floorplan]
     @AppStorage("primaryFloorplanID") private var primaryFloorplanID: String = ""
     @AppStorage("pinnedFloorplanIDs") private var pinnedFloorplanIDsRaw: String = "[]"
@@ -157,27 +158,28 @@ struct NewFloorplanSheet: View {
     }
 
     private func save() {
-        guard let image = selectedImage else { return }
+        guard let image = selectedImage,
+              let imageData = image.jpegData(compressionQuality: 0.85) else { return }
         isSaving = true
+        let floorplan = Floorplan(
+            name: name.trimmingCharacters(in: .whitespaces),
+            homeUUID: homeKit.currentHome?.uniqueIdentifier
+        )
+        floorplan.imageData = imageData
+        if !linkedRooms.isEmpty {
+            floorplan.linkedRooms = linkedRooms
+        }
+        if let doc = savedDrawingDocument {
+            floorplan.drawingDocument = doc
+        }
+        floorplan.exteriorFillColorIndex = savedExteriorFillColorIndex
+        floorplan.drawingVisualExportStyleRaw = savedVisualExportStyle.rawValue
+        floorplan.drawingExportRotation = savedExportRotation
+        modelContext.insert(floorplan)
         do {
-            let filename = try ImageStorageService.save(image)
-            let floorplan = Floorplan(
-                name: name.trimmingCharacters(in: .whitespaces),
-                imageFilename: filename,
-                homeUUID: homeKit.currentHome?.uniqueIdentifier
-            )
-            if !linkedRooms.isEmpty {
-                floorplan.linkedRooms = linkedRooms
-            }
-            if let doc = savedDrawingDocument {
-                floorplan.drawingDocument = doc
-            }
-            floorplan.exteriorFillColorIndex = savedExteriorFillColorIndex
-            floorplan.drawingVisualExportStyleRaw = savedVisualExportStyle.rawValue
-            floorplan.drawingExportRotation = savedExportRotation
-            modelContext.insert(floorplan)
             try modelContext.save()
             let savedID = floorplan.id
+            cloudKitSync.markFloorplanNeedsSync(savedID)
             pinAfterCreation(floorplan)
             dismiss()
             onSaved?(savedID)

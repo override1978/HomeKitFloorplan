@@ -152,7 +152,7 @@ enum AutomationProposalMapper {
         let draft = Draft(
             source: .opportunity,
             title: pattern.displayTitle,
-            explanation: pattern.description,
+            explanation: pattern.patternDescription,
             confidence: pattern.confidence,
             triggerType: legacy.triggerType,
             triggerTime: legacy.triggerTime,

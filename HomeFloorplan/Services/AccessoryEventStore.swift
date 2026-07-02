@@ -55,7 +55,8 @@ final class AccessoryEventStore {
         // Batch delete throttled to once per hour — running a predicate-delete
         // on every HomeKit notification was blocking the main thread unnecessarily.
         let now = Date()
-        if now.timeIntervalSince(lastCleanupDate) > 3600 {
+        if !LocalDataProtection.shouldPreserveSwiftData,
+           now.timeIntervalSince(lastCleanupDate) > 3600 {
             let cutoff = Date(timeIntervalSinceNow: -30 * 24 * 3600)
             let predicate = #Predicate<AccessoryEvent> { $0.timestamp < cutoff }
             try? context.delete(model: AccessoryEvent.self, where: predicate)

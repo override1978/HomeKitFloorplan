@@ -80,6 +80,7 @@ private struct ThresholdRow: View {
 
     @Bindable var threshold: SensorAlertThreshold
     @Environment(\.modelContext) private var modelContext
+    @Environment(CloudKitSyncService.self) private var cloudKitSync
 
     var body: some View {
         VStack(spacing: 0) {
@@ -172,7 +173,10 @@ private struct ThresholdRow: View {
         }
     }
 
-    private func save() { try? modelContext.save() }
+    private func save() {
+        try? modelContext.save()
+        cloudKitSync.markThresholdNeedsSync(threshold.id)
+    }
 }
 
 // MARK: - ThresholdValueRow
@@ -349,6 +353,7 @@ private struct AddThresholdSheet: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(CloudKitSyncService.self) private var cloudKitSync
 
     @State private var selectedType: SensorServiceType = .temperature
     @State private var roomName: String = ""
@@ -413,6 +418,7 @@ private struct AddThresholdSheet: View {
         )
         modelContext.insert(t)
         try? modelContext.save()
+        cloudKitSync.syncAfterSave()
         dismiss()
     }
 }

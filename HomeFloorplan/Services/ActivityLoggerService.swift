@@ -131,6 +131,8 @@ final class ActivityLoggerService {
 
     /// Rimuove eventi vecchi o in eccesso rispetto ai limiti configurati.
     private func pruneIfNeeded() {
+        guard !LocalDataProtection.shouldPreserveSwiftData else { return }
+
         let cutoff = Calendar.current.date(byAdding: .day, value: -maxAgeDays, to: Date()) ?? Date()
 
         // Elimina per età

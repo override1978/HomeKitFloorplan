@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import HomeKit
 import CoreLocation
 import UserNotifications
@@ -10,6 +11,24 @@ struct SettingsView: View {
     @Environment(SmartLightingEngine.self)  private var smartLightingEngine
     @Environment(AISettings.self)           private var aiSettings
     @Environment(RuleEngineService.self)    private var ruleEngine
+    @Environment(CloudKitSyncService.self)  private var cloudKitSync
+
+    @Query(sort: \SyncableSettings.modifiedAt) var settingsArray: [SyncableSettings]
+    private var syncableSettings: SyncableSettings? { settingsArray.first }
+
+    private var deviceRole: String {
+        guard let s = syncableSettings, !s.masterDeviceID.isEmpty else {
+            return String(localized: "settings.device.role.master", defaultValue: "Primary")
+        }
+        return s.masterDeviceID == DeviceIdentity.id
+            ? String(localized: "settings.device.role.master", defaultValue: "Primary")
+            : String(localized: "settings.device.role.slave",  defaultValue: "Secondary")
+    }
+
+    private var isMasterDevice: Bool {
+        guard let s = syncableSettings else { return true }
+        return s.masterDeviceID.isEmpty || s.masterDeviceID == DeviceIdentity.id
+    }
 
     @AppStorage(MarkerSize.appStorageKey)
     private var markerSizeRaw: String = MarkerSize.regular.rawValue
@@ -180,6 +199,57 @@ struct SettingsView: View {
                 Text(String(localized: "settings.ai.footer", defaultValue: "Configure the AI provider and API keys to enable suggestions, anomalies, and predictive rules."))
             }
 
+            // MARK: - iCloud
+
+            Section {
+                iCloudSyncRow
+                ShareLink(item: SyncDiagnosticsLogger.fileURL) {
+                    Label(
+                        String(localized: "settings.icloud.diagnostics.export", defaultValue: "Export Sync Diagnostics"),
+                        systemImage: "square.and.arrow.up"
+                    )
+                }
+                Button(role: .destructive) {
+                    SyncDiagnosticsLogger.clear()
+                } label: {
+                    Label(
+                        String(localized: "settings.icloud.diagnostics.clear", defaultValue: "Clear Sync Diagnostics"),
+                        systemImage: "trash"
+                    )
+                }
+            } header: {
+                Text(String(localized: "settings.icloud.header", defaultValue: "iCloud"))
+            } footer: {
+                Text(String(localized: "settings.icloud.footer", defaultValue: "Floorplans, settings, and automation opportunities sync automatically via iCloud."))
+            }
+
+            // MARK: - Device Role
+
+            Section {
+                HStack {
+                    Label(String(localized: "settings.device.role.label", defaultValue: "Device Role"), systemImage: isMasterDevice ? "iphone.badge.play" : "iphone")
+                    Spacer()
+                    Text(deviceRole)
+                        .foregroundStyle(.secondary)
+                }
+                if !isMasterDevice {
+                    Button {
+                        cloudKitSync.becomeMaster()
+                    } label: {
+                        Label(String(localized: "settings.device.becomeMaster", defaultValue: "Become Primary Device"), systemImage: "crown")
+                            .foregroundStyle(.tint)
+                    }
+                }
+            } header: {
+                Text(String(localized: "settings.device.header", defaultValue: "This Device"))
+            } footer: {
+                if isMasterDevice {
+                    Text(String(localized: "settings.device.master.footer", defaultValue: "This device runs behavioral analysis and generates automation suggestions."))
+                } else {
+                    Text(String(localized: "settings.device.slave.footer", defaultValue: "This device receives data from iCloud. Tap \"Become Primary\" to run analysis here instead."))
+                }
+            }
+
             // MARK: - App
 
             Section {
@@ -291,9 +361,29 @@ struct SettingsView: View {
                 UserDefaults.standard.set(coord.latitude,  forKey: LocationPresenceService.homeLatKey)
                 UserDefaults.standard.set(coord.longitude, forKey: LocationPresenceService.homeLonKey)
                 homeLocationCityName = cityName ?? ""
+                cloudKitSync.markSettingsNeedsSync()
                 Task { await weatherKit.refresh() }
             }
         }
+        .onChange(of: aiSettings.selectedProvider) { _, _ in syncAISettingsToCloud() }
+        .onChange(of: aiSettings.isAIEnabled) { _, _ in syncAISettingsToCloud() }
+        .onChange(of: aiSettings.suggestionsEnabled) { _, _ in syncAISettingsToCloud() }
+        .onChange(of: aiSettings.anomalyDetectionEnabled) { _, _ in syncAISettingsToCloud() }
+        .onChange(of: aiSettings.ruleEngineEnabled) { _, _ in syncAISettingsToCloud() }
+        .onChange(of: aiSettings.hasAIDataConsent) { _, _ in syncAISettingsToCloud() }
+    }
+
+    private func syncAISettingsToCloud() {
+        guard !cloudKitSync.isApplyingRemoteSettings else { return }
+        guard let syncableSettings else { return }
+        syncableSettings.aiProviderRaw             = aiSettings.selectedProvider.rawValue
+        syncableSettings.aiIsEnabled               = aiSettings.isAIEnabled
+        syncableSettings.aiSuggestionsEnabled      = aiSettings.suggestionsEnabled
+        syncableSettings.aiAnomalyDetectionEnabled = aiSettings.anomalyDetectionEnabled
+        syncableSettings.aiRuleEngineEnabled       = aiSettings.ruleEngineEnabled
+        syncableSettings.aiHasDataConsent          = aiSettings.hasAIDataConsent
+        syncableSettings.modifiedAt                = .now
+        cloudKitSync.syncAfterSave()
     }
 
     // MARK: - Status helpers
@@ -426,6 +516,82 @@ struct SettingsView: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(color.opacity(0.12), in: Capsule())
+    }
+
+    // MARK: - iCloud Sync Row
+
+    @ViewBuilder
+    private var iCloudSyncRow: some View {
+        HStack(spacing: 12) {
+            if cloudKitSync.isSyncing {
+                ProgressView()
+                    .frame(width: 28)
+            } else if cloudKitSync.lastError != nil {
+                Image(systemName: "exclamationmark.icloud")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.red)
+                    .frame(width: 28)
+            } else {
+                Image(systemName: "checkmark.icloud")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(cloudKitSync.lastSyncedAt != nil ? .green : .secondary)
+                    .frame(width: 28)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(String(localized: "settings.icloud.sync.title", defaultValue: "Sync status"))
+                    .foregroundStyle(.primary)
+
+                if cloudKitSync.isSyncing {
+                    Text(String(localized: "settings.icloud.status.syncing", defaultValue: "Syncing…"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let error = cloudKitSync.lastError {
+                    Text(error.localizedDescription)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                } else if let date = cloudKitSync.lastSyncedAt {
+                    Text(String(
+                        format: String(localized: "settings.icloud.status.lastSync",
+                                       defaultValue: "Last synced %@"),
+                        date.formatted(.relative(presentation: .named))
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text(String(localized: "settings.icloud.status.notYet", defaultValue: "Not yet synced"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let settings = syncableSettings {
+                    Text("Settings: \(settings.masterDeviceID == DeviceIdentity.id ? "Primary" : "Secondary") · AI \(settings.aiIsEnabled ? "On" : "Off")")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer()
+
+            if cloudKitSync.lastError != nil {
+                statusPill(
+                    String(localized: "settings.icloud.status.error", defaultValue: "Error"),
+                    color: .red
+                )
+            } else if cloudKitSync.isSyncing {
+                statusPill(
+                    String(localized: "settings.icloud.status.active", defaultValue: "Active"),
+                    color: BrandColor.primary
+                )
+            } else if cloudKitSync.lastSyncedAt != nil {
+                statusPill(
+                    String(localized: "settings.icloud.status.ok", defaultValue: "In sync"),
+                    color: .green
+                )
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     // MARK: - Home Location

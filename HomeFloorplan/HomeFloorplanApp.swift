@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import BackgroundTasks
+import HomeKit
 
 @main
 struct HomeFloorplanApp: App {
@@ -30,11 +31,20 @@ struct HomeFloorplanApp: App {
     @State private var weatherKitService: WeatherKitService
     @State private var smartLightingEngine: SmartLightingEngine
     @State private var aiSettings: AISettings
+    @State private var cloudKitSync: CloudKitSyncService
 
     @Environment(\.scenePhase) private var scenePhase
 
     @AppStorage("securityMonitoredUUIDs") private var securityMonitoredUUIDsRaw: String = ""
     @AppStorage(AppLanguage.appStorageKey) private var appLanguageRaw = AppLanguage.english.rawValue
+    @AppStorage(MarkerSize.appStorageKey) private var markerSizeRaw = MarkerSize.regular.rawValue
+    @AppStorage("idleTimeout") private var idleTimeoutSeconds: Double = 90
+    @AppStorage(TemperatureUnit.appStorageKey) private var temperatureUnitRaw = TemperatureUnit.celsius.rawValue
+    @AppStorage(DimensionUnit.appStorageKey) private var dimensionUnitRaw = DimensionUnit.metric.rawValue
+    @AppStorage("alertNotificationsEnabled") private var alertNotificationsEnabled = false
+    @AppStorage(SecurityNotificationService.enabledKey) private var securityNotificationsEnabled = false
+    @AppStorage("proactiveIntelligenceNotificationsEnabled") private var proactiveNotificationsEnabled = false
+    @AppStorage("homeLocation.cityName") private var homeLocationCityName = ""
     /// Set to true when a SwiftData migration failure forces a store wipe.
     /// The WindowGroup shows a one-time alert on the next launch.
     @AppStorage("com.homefloorplan.migrationWipedStore") private var migrationWipedStore = false
@@ -63,20 +73,24 @@ struct HomeFloorplanApp: App {
             AccessoryUsageSummary.self,
             EffectivenessSummary.self,
             ProactiveNotification.self,
+            AutomationOpportunity.self,
+            PersistedBehavioralPattern.self,
+            HabitPattern.self,
+            SyncableSettings.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
-            isStoredInMemoryOnly: false
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: .none  // CloudKit managed manually via CKSyncEngine
         )
-        if let container = try? ModelContainer(for: schema, configurations: [modelConfiguration]) {
-            return container
+        do {
+            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+        } catch {
+            guard HomeFloorplanApp.isStoreCorruptionOrMigrationError(error) else {
+                fatalError("Could not create ModelContainer (non-corruption error): \(error)")
+            }
+            fatalError("Could not create ModelContainer due to migration/corruption error. Local store was preserved: \(error)")
         }
-        // Migration failed — wipe the store and start fresh
-        HomeFloorplanApp.wipeDefaultStore()
-        if let container = try? ModelContainer(for: schema, configurations: [modelConfiguration]) {
-            return container
-        }
-        fatalError("Could not create ModelContainer even after store wipe")
     }()
 
     init() {
@@ -93,6 +107,8 @@ struct HomeFloorplanApp: App {
 
         let kit = HomeKitService()
         self._homeKit = State(initialValue: kit)
+        let iconStore = IconOverrideStore()
+        self._iconOverrides = State(initialValue: iconStore)
         let scenes = HomeKitScenesService(homeKit: kit)
         self._scenesService = State(initialValue: scenes)
         let weather = WeatherKitService()
@@ -118,31 +134,100 @@ struct HomeFloorplanApp: App {
             AccessoryUsageSummary.self,
             EffectivenessSummary.self,
             ProactiveNotification.self,
+            AutomationOpportunity.self,
+            PersistedBehavioralPattern.self,
+            HabitPattern.self,
+            SyncableSettings.self,
         ])
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-        var container = try? ModelContainer(for: schema, configurations: [config])
-        if container == nil {
-            HomeFloorplanApp.wipeDefaultStore()
-            container = try? ModelContainer(for: schema, configurations: [config])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none)
+        var container: ModelContainer?
+        do {
+            container = try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            if HomeFloorplanApp.isStoreCorruptionOrMigrationError(error) {
+                fatalError("Could not create ModelContainer due to migration/corruption error. Local store was preserved: \(error)")
+            }
+            // Non-corruption errors (e.g. CloudKit config): do not wipe, let guard below handle it
         }
         // Integrity probe: catches stores that open without throwing but are corrupt.
         if let c = container, !SchemaVersionValidator.probeContainerIntegrity(container: c) {
-            HomeFloorplanApp.wipeDefaultStore()
-            container = try? ModelContainer(for: schema, configurations: [config])
+            fatalError("SwiftData integrity probe failed. Local store was preserved.")
         }
-        guard let container else { fatalError("Could not create ModelContainer after store wipe") }
+        guard let container else { fatalError("Could not create ModelContainer") }
         lightingEngine.modelContainer = container
         let logger = ActivityLoggerService(modelContainer: container)
         kit.activityLogger = logger
         scenes.activityLogger = logger
         self._activityLogger = State(initialValue: logger)
         self._automationsService = State(initialValue: HomeKitAutomationsService(homeKit: kit))
-        self._securityNotifier = State(initialValue: SecurityNotificationService(homeKit: kit))
+        let notifier = SecurityNotificationService(homeKit: kit)
+        self._securityNotifier = State(initialValue: notifier)
         let eventStore = AccessoryEventStore(modelContainer: container)
         kit.accessoryEventStore = eventStore
         self._accessoryEventStore = State(initialValue: eventStore)
         let aiSettings = AISettings()
         self._aiSettings = State(initialValue: aiSettings)
+        let cloudSync = CloudKitSyncService(modelContainer: container)
+        cloudSync.accessorySnapshotProvider = { uuid in
+            guard let accessory = kit.allAccessories.first(where: { $0.uniqueIdentifier == uuid }) else {
+                return (nil, nil)
+            }
+            return (accessory.name, accessory.room?.name)
+        }
+        cloudSync.markerIconOverrideProvider = { uuid in
+            iconStore.icon(for: uuid)
+        }
+        cloudSync.markerIconOverrideApplyCallback = { uuid, iconName in
+            if let iconName {
+                iconStore.setIcon(iconName, for: uuid)
+            } else {
+                iconStore.removeIcon(for: uuid)
+            }
+        }
+        cloudSync.accessoryUUIDResolver = { remoteUUID, accessoryName, roomName in
+            if kit.allAccessories.contains(where: { $0.uniqueIdentifier == remoteUUID }) {
+                return remoteUUID
+            }
+
+            let normalizedName = Self.normalizedHomeKitToken(accessoryName)
+            let normalizedRoom = Self.normalizedHomeKitToken(roomName)
+            guard let normalizedName else { return nil }
+
+            if let normalizedRoom,
+               let roomMatch = kit.allAccessories.first(where: {
+                   Self.normalizedHomeKitToken($0.name) == normalizedName &&
+                   Self.normalizedHomeKitToken($0.room?.name) == normalizedRoom
+               }) {
+                return roomMatch.uniqueIdentifier
+            }
+
+            return kit.allAccessories.first {
+                Self.normalizedHomeKitToken($0.name) == normalizedName
+            }?.uniqueIdentifier
+        }
+        cloudSync.remoteSettingsApplyCallback = { settings in
+            if let provider = AIProvider(rawValue: settings.aiProviderRaw),
+               provider.isPubliclyAvailable {
+                aiSettings.selectedProvider = provider
+            } else {
+                aiSettings.selectedProvider = .claude
+            }
+            aiSettings.isAIEnabled             = settings.aiIsEnabled
+            aiSettings.suggestionsEnabled      = settings.aiSuggestionsEnabled
+            aiSettings.anomalyDetectionEnabled = settings.aiAnomalyDetectionEnabled
+            aiSettings.ruleEngineEnabled       = settings.aiRuleEngineEnabled
+            aiSettings.hasAIDataConsent        = settings.aiHasDataConsent
+            UserDefaults.standard.set(settings.securityMonitoredUUIDsRaw, forKey: "securityMonitoredUUIDs")
+            notifier.updateMonitored(uuidsRaw: settings.securityMonitoredUUIDsRaw)
+
+            let savedTimeout = UserDefaults.standard.double(forKey: "idleTimeout")
+            if savedTimeout > 0 {
+                IdleTimerService.shared.timeout = savedTimeout
+            } else if savedTimeout == 0 && UserDefaults.standard.object(forKey: "idleTimeout") != nil {
+                IdleTimerService.shared.timeout = .infinity
+            }
+        }
+        self._cloudKitSync = State(initialValue: cloudSync)
         let habitSvc = HabitAnalysisService(aiSettings: aiSettings, modelContainer: container)
         self._habitAnalysisService = State(initialValue: habitSvc)
         self._ruleEngineService = State(initialValue: RuleEngineService(modelContainer: container))
@@ -212,8 +297,39 @@ struct HomeFloorplanApp: App {
                 .environment(weatherKitService)
                 .environment(smartLightingEngine)
                 .environment(aiSettings)
+                .environment(cloudKitSync)
                 .environment(\.locale, AppLanguage.resolved(from: appLanguageRaw).locale)
                 .task {
+                    await ImageMigrationService.runIfNeeded(context: sharedModelContainer.mainContext)
+                    await OpportunityMigrationService.runIfNeeded(context: sharedModelContainer.mainContext)
+                    await PatternMigrationService.runIfNeeded(context: sharedModelContainer.mainContext)
+                    await HabitPatternMigrationService.runIfNeeded(context: sharedModelContainer.mainContext)
+                    await SettingsMigrationService.runIfNeeded(
+                        context: sharedModelContainer.mainContext,
+                        aiSettings: aiSettings,
+                        securityMonitoredUUIDsRaw: securityMonitoredUUIDsRaw
+                    )
+                    if cloudKitSync.isMaster {
+                        cloudKitSync.updateSettingsFromRuntime(
+                            aiSettings: aiSettings,
+                            securityMonitoredUUIDsRaw: securityMonitoredUUIDsRaw
+                        )
+                    } else {
+                        cloudKitSync.applyStoredSettingsToRuntime()
+                    }
+                    // When CloudKit delivers settings from another device, auto-complete onboarding.
+                    cloudKitSync.onboardingAutoCompleteCallback = {
+                        guard onboarding.shouldShowOnboarding else { return }
+                        onboarding.markCompleted()
+                    }
+                    cloudKitSync.registerPendingLocalChanges()
+                    // Existing installs: claim master role only after the first CloudKit fetch,
+                    // so a second device can receive the current master before deciding.
+                    if !onboarding.shouldShowOnboarding {
+                        Task {
+                            await cloudKitSync.claimMasterAfterInitialSyncIfNeeded()
+                        }
+                    }
                     securityNotifier.start(monitoredUUIDsRaw: securityMonitoredUUIDsRaw)
                     SensorLogger.shared.effectivenessTracker = actionExecutionService.tracker
                     await weatherKitService.refreshIfNeeded()
@@ -250,7 +366,8 @@ struct HomeFloorplanApp: App {
                             await SensorLogger.shared.sampleOutdoor(snapshot: snapshot, modelContainer: container)
                         }
 
-                        if lastSmartLightingEvaluationAt == nil ||
+                        if cloudKitSync.isMaster,
+                           lastSmartLightingEvaluationAt == nil ||
                             now.timeIntervalSince(lastSmartLightingEvaluationAt ?? .distantPast) >= 5 * 60 {
                             await smartLightingEngine.evaluate()
                             lastSmartLightingEvaluationAt = Date()
@@ -263,15 +380,56 @@ struct HomeFloorplanApp: App {
                         }
                     }
                 }
+                .task(id: scenePhase) {
+                    guard scenePhase == .active else { return }
+                    while !Task.isCancelled {
+                        await cloudKitSync.fetchRemoteChangesIfNeeded(
+                            reason: "active-poll",
+                            minimumInterval: 20
+                        )
+                        await cloudKitSync.fetchZoneChangesDeterministicallyIfNeeded(
+                            reason: "active-poll",
+                            minimumInterval: 20
+                        )
+                        do {
+                            try await Task.sleep(for: .seconds(20))
+                        } catch {
+                            break
+                        }
+                    }
+                }
+                .modifier(CloudKitRemoteNotificationFetchModifier(cloudKitSync: cloudKitSync))
                 .onChange(of: securityMonitoredUUIDsRaw) { _, newValue in
                     securityNotifier.updateMonitored(uuidsRaw: newValue)
+                    guard !cloudKitSync.isApplyingRemoteSettings else { return }
+                    let context = ModelContext(sharedModelContainer)
+                    guard let settings = (try? context.fetch(FetchDescriptor<SyncableSettings>()))?.first else {
+                        return
+                    }
+                    settings.securityMonitoredUUIDsRaw = newValue
+                    settings.modifiedAt = .now
+                    try? context.save()
+                    cloudKitSync.syncAfterSave()
                 }
+                .onChange(of: markerSizeRaw) { _, _ in cloudKitSync.markSettingsNeedsSync() }
+                .onChange(of: idleTimeoutSeconds) { _, _ in cloudKitSync.markSettingsNeedsSync() }
+                .onChange(of: temperatureUnitRaw) { _, _ in cloudKitSync.markSettingsNeedsSync() }
+                .onChange(of: appLanguageRaw) { _, _ in cloudKitSync.markSettingsNeedsSync() }
+                .onChange(of: dimensionUnitRaw) { _, _ in cloudKitSync.markSettingsNeedsSync() }
+                .onChange(of: alertNotificationsEnabled) { _, _ in cloudKitSync.markSettingsNeedsSync() }
+                .onChange(of: securityNotificationsEnabled) { _, _ in cloudKitSync.markSettingsNeedsSync() }
+                .onChange(of: proactiveNotificationsEnabled) { _, _ in cloudKitSync.markSettingsNeedsSync() }
+                .onChange(of: homeLocationCityName) { _, _ in cloudKitSync.markSettingsNeedsSync() }
                 .onChange(of: homeKit.currentHome, initial: true) { _, newHome in
                     guard let home = newHome else { return }
                     familyPresenceService.autoActivateForCurrentUser(home: home)
                     let profileID = familyPresenceService.activeProfileID
                     behavioralAnalysisService.switchProfile(to: profileID)
                     occupancyPredictionService.switchProfile(to: profileID)
+                }
+                .onChange(of: homeKit.isReady, initial: true) { _, isReady in
+                    guard isReady else { return }
+                    cloudKitSync.remapPlacedAccessoriesToLocalHomeKitIDs()
                 }
                 .onChange(of: locationPresenceService.presenceState) { _, newState in
                     ambientalAIService.presenceOverride = newState
@@ -287,6 +445,12 @@ struct HomeFloorplanApp: App {
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
+                    Task {
+                        await cloudKitSync.fetchRemoteChangesIfNeeded(reason: "foreground")
+                    }
+                    // Only the master device runs behavioral analysis.
+                    // Slave devices receive opportunities via CloudKit sync.
+                    guard cloudKitSync.isMaster else { return }
                     let key = "behavioral.foregroundAnalysis.lastTriggered"
                     let last = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
                     guard Date().timeIntervalSince(last) >= 12 * 3600 else { return }
@@ -309,6 +473,12 @@ struct HomeFloorplanApp: App {
                 }
         }
         .modelContainer(sharedModelContainer)
+    }
+
+    private static func normalizedHomeKitToken(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty ? nil : normalized
     }
 
     // MARK: - Background Tasks
@@ -402,6 +572,7 @@ struct HomeFloorplanApp: App {
         let maintenance = maintenancePredictionService
         let weather     = weatherKitService
         let lighting    = smartLightingEngine
+        let cloudSync   = cloudKitSync
 
         task.expirationHandler = {
             dprint("⚠️ BGTask ruleEvaluation scaduto prima del completamento")
@@ -410,6 +581,10 @@ struct HomeFloorplanApp: App {
         Task { @MainActor in
             if let home = homeKitSvc.currentHome {
                 await engine.evaluateInAppRules(home: home)
+            }
+            guard cloudSync.isMaster else {
+                task.setTaskCompleted(success: true)
+                return
             }
             await lighting.evaluate()
             occupancy.updateNextArrival()
@@ -439,19 +614,23 @@ struct HomeFloorplanApp: App {
         }
     }
 
-    /// Deletes the default SwiftData store files so the container can be recreated from scratch.
-    /// Called only when a migration failure makes the store unloadable.
-    /// Sets a UserDefaults flag so the app can notify the user on next launch.
-    private static func wipeDefaultStore() {
-        guard let support = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        else { return }
-        let base = support.appendingPathComponent("default.store").path
-        for suffix in ["", "-wal", "-shm"] {
-            try? FileManager.default.removeItem(atPath: base + suffix)
-        }
-        UserDefaults.standard.set(true, forKey: "com.homefloorplan.migrationWipedStore")
-        dprint("⚠️ [Container] Store wiped due to migration failure — starting fresh")
+    /// Returns true only for CoreData/SwiftData error codes that indicate genuine store
+    /// corruption or migration incompatibility — the only cases where wiping is safe.
+    /// Code 134060 (NSPersistentStoreOperationError), which covers CloudKit config failures,
+    /// is intentionally excluded.
+    private static func isStoreCorruptionOrMigrationError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        let corruptionCodes: Set<Int> = [
+            134100, // NSPersistentStoreIncompatibleVersionHashError — model changed without migration
+            134110, // NSMigrationError
+            134111, // NSMigrationConstraintViolationError
+            134130, // NSMigrationMissingSourceModelError
+            134140, // NSMigrationMissingMappingModelError
+            134150, // NSMigrationManagerSourceStoreError
+            134160, // NSMigrationManagerDestinationStoreError
+        ]
+        if corruptionCodes.contains(nsError.code) { return true }
+        return nsError.underlyingErrors.contains { corruptionCodes.contains(($0 as NSError).code) }
     }
 
     /// Esegue aggregazione e pruning dei dati nel background task giornaliero.
@@ -463,6 +642,7 @@ struct HomeFloorplanApp: App {
         let container   = sharedModelContainer
         let occupancy   = occupancyPredictionService
         let maintenance = maintenancePredictionService
+        let cloudSync   = cloudKitSync
 
         task.expirationHandler = {
             dprint("⚠️ BGTask lifecycle scaduto prima del completamento")
@@ -470,6 +650,10 @@ struct HomeFloorplanApp: App {
 
         let behavioral = behavioralAnalysisService
         Task { @MainActor in
+            guard cloudSync.isMaster else {
+                task.setTaskCompleted(success: true)
+                return
+            }
             await lifecycle.runFullCycle()
             habits.cleanupStalePatterns()
             await behavioral.analyze()
@@ -483,5 +667,21 @@ struct HomeFloorplanApp: App {
             #endif
             task.setTaskCompleted(success: true)
         }
+    }
+}
+
+private struct CloudKitRemoteNotificationFetchModifier: ViewModifier {
+    let cloudKitSync: CloudKitSyncService
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .cloudKitRemoteNotificationReceived)) { _ in
+                Task {
+                    await cloudKitSync.fetchZoneChangesDeterministicallyIfNeeded(
+                        reason: "remote-notification",
+                        minimumInterval: 0
+                    )
+                }
+            }
     }
 }

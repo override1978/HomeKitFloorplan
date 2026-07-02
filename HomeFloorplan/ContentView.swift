@@ -44,6 +44,8 @@ struct ContentView: View {
     @Environment(OnboardingService.self) private var onboarding
     @Environment(IdleTimerService.self) private var idleTimer
     @Environment(HomeKitService.self) private var homeKit
+    @Environment(CloudKitSyncService.self) private var cloudKitSync
+    @Environment(AISettings.self) private var aiSettings
 
     @AppStorage("primaryFloorplanID") private var primaryFloorplanID: String = ""
 
@@ -59,9 +61,13 @@ struct ContentView: View {
     @State private var showChatPanel      = false
     @State private var chatKeyboardHeight: CGFloat = 0
 
+    /// True after the 8-second iCloud wait on fresh install has expired.
+    @State private var initialSyncTimedOut = false
+
     /// FAB is allowed only when NOT inside a non-controls floorplan overlay.
     /// (Environment and Security overlays already have their own panel buttons.)
     private var floorplanFabAllowed: Bool {
+        guard aiSettings.isAIEnabled else { return false }
         guard case .floorplan = selection else { return true }
         return (FloorplanOverlayMode(rawValue: floorplanActiveModeRaw) ?? .controls) == .controls
     }
@@ -69,7 +75,17 @@ struct ContentView: View {
     var body: some View {
         Group {
             if onboarding.shouldShowOnboarding {
-                OnboardingView()
+                if !cloudKitSync.hasCompletedInitialSync && !initialSyncTimedOut {
+                    // Fresh install: wait briefly for CloudKit to confirm whether
+                    // this account already has data (slave) or is truly new (master).
+                    iCloudConnectingView
+                        .task {
+                            try? await Task.sleep(for: .seconds(8))
+                            initialSyncTimedOut = true
+                        }
+                } else {
+                    OnboardingView()
+                }
             } else {
                 HomeKitGuardView {
                     mainContent
@@ -77,6 +93,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: onboarding.shouldShowOnboarding)
+        .animation(.easeInOut(duration: 0.4), value: cloudKitSync.hasCompletedInitialSync)
         // Overlay passthrough UIKit: osserva i tocchi senza catturarli,
         // resetta il timer screensaver su ogni interazione.
         .overlay {
@@ -129,7 +146,7 @@ struct ContentView: View {
             .navigationSplitViewStyle(.balanced)
             // Chat panel — fixed top-trailing, completely isolated from keyboard repositioning
             .overlay(alignment: .topTrailing) {
-                if showChatPanel {
+                if showChatPanel && aiSettings.isAIEnabled {
                     ChatBotView()
                         .frame(width: chatPanelWidth, height: chatPanelHeight)
                         .background(.regularMaterial)
@@ -173,6 +190,11 @@ struct ContentView: View {
             .onChange(of: showChatPanel) { _, visible in
                 if !visible { chatKeyboardHeight = 0 }
             }
+            .onChange(of: aiSettings.isAIEnabled) { _, isEnabled in
+                guard !isEnabled else { return }
+                showChatPanel = false
+                chatKeyboardHeight = 0
+            }
             .suppressesIdleScreensaver(.chatPanel, when: showChatPanel)
             .suppressesIdleScreensaver(.alarmOverlay, when: showAlarmOverlay)
             // Track docked keyboard height so the chat panel shrinks above it.
@@ -201,8 +223,7 @@ struct ContentView: View {
     private func resolveInitialSelectionIfNeeded() {
         guard selection == nil else { return }
 
-        let homeUUID = homeKit.currentHome?.uniqueIdentifier
-        let homeFiltered = floorplans.filter { $0.homeUUID == nil || $0.homeUUID == homeUUID }
+        let homeFiltered = floorplans.filter { homeKit.matchesActiveHome($0.homeUUID) }
         guard !homeFiltered.isEmpty else {
             selection = .allFloorplans
             return
@@ -292,6 +313,29 @@ struct ContentView: View {
             Text(message)
         }
     }
+
+    // MARK: - iCloud Connecting Screen
+
+    private var iCloudConnectingView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "icloud")
+                .font(.system(size: 56, weight: .light))
+                .foregroundStyle(.secondary)
+            ProgressView()
+                .scaleEffect(1.2)
+            Text(String(localized: "onboarding.icloud.connecting.title", defaultValue: "Connecting to iCloud…"))
+                .font(.headline)
+            Text(String(localized: "onboarding.icloud.connecting.subtitle", defaultValue: "Checking for existing data on this account."))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+    }
 }
 
 // MARK: - ChatFABButtonView
@@ -365,6 +409,6 @@ private struct ChatFABButtonView: View {
             Image(systemName: "bubble.left.and.text.bubble.right.fill")
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(gradient)
+            }
         }
     }
-}

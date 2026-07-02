@@ -2,27 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleDisplayName</key>
-	<string>HomeFloorplan</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>HomeFloorplan usa il microfono per trascrivere in testo le domande vocali all'assistente Home AI.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>HomeFloorplan usa il riconoscimento vocale per convertire la voce in testo nelle domande all'assistente Home AI.</string>
-	<key>NSHomeKitUsageDescription</key>
-	<string>HomeFloorplan accede ai tuoi dispositivi HomeKit per mostrarne lo stato sulla planimetria e permetterti di controllarli.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>HomeFloorplan accede alla Libreria Foto per importare un'immagine da usare come planimetria.</string>
-	<key>NSWeatherKitUsageDescription</key>
-	<string>HomeFloorplan usa WeatherKit per ottenere le previsioni meteo locali e adattare i suggerimenti ambientali alle condizioni climatiche esterne.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>HomeFloorplan usa la tua posizione per impostare la posizione di casa, ottenere il meteo locale e configurare automazioni geofence.</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.homefloorplan.sensorSample</string>
 		<string>com.homefloorplan.ruleEvaluation</string>
 		<string>com.homefloorplan.dataLifecycle</string>
+	</array>
+	<key>NSWeatherKitUsageDescription</key>
+	<string>HomeFloorplan usa WeatherKit per ottenere le previsioni meteo locali e adattare i suggerimenti ambientali alle condizioni climatiche esterne.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict>

@@ -71,6 +71,7 @@ final class BehavioralAnalysisService {
         opportunities
             .filter { opp in
                 opp.status == .pending &&
+                opp.isStructurallyConvertibleToAutomation &&
                 (opp.snoozedUntil == nil || opp.snoozedUntil! <= Date())
             }
             .sorted { $0.confidence > $1.confidence }
@@ -153,6 +154,14 @@ final class BehavioralAnalysisService {
 
     private let minAnalysisInterval: TimeInterval = 60 * 60  // 1 hour
 
+    /// Dedicated SwiftData context for opportunity CRUD. Lives as long as the service.
+    @ObservationIgnored
+    private lazy var opportunityContext = ModelContext(modelContainer)
+
+    /// Dedicated SwiftData context for pattern CRUD. Lives as long as the service.
+    @ObservationIgnored
+    private lazy var patternContext = ModelContext(modelContainer)
+
     // MARK: - Init
 
     init(modelContainer: ModelContainer) {
@@ -177,8 +186,7 @@ final class BehavioralAnalysisService {
             isAnalyzing = false
             lastAnalyzed = Date()
             persist()
-            let diskInfo = versionedStoreInfo(key: patternKey)
-            dprint("🧠 BehavioralAnalysis: persisted \(patterns.count) patterns → \(diskInfo.stored) bytes [\(patternKey)]")
+            dprint("🧠 BehavioralAnalysis: persisted \(patterns.count) patterns to SwiftData [\(patternKey)]")
         }
 
         let context = ModelContext(modelContainer)
@@ -367,9 +375,9 @@ final class BehavioralAnalysisService {
             ($0.status == .dismissed && ($0.dismissedAt ?? .distantPast) < dismissedCutoff) ||
             ($0.status == .dormant   && $0.lastObservedAt < dormantCutoff)
         }
-        opportunities.removeAll {
-            $0.status == .dismissed || $0.status == .expired
-        }
+        let toDelete = opportunities.filter { $0.status == .dismissed || $0.status == .expired }
+        toDelete.forEach { opportunityContext.delete($0) }
+        opportunities = opportunities.filter { $0.status != .dismissed && $0.status != .expired }
         persist()
     }
 
@@ -389,7 +397,11 @@ final class BehavioralAnalysisService {
 
     private func rebuildOpportunities() {
         let qualifying = patterns.filter {
-            $0.tier.isVisible && $0.status == .active && $0.confidence >= 0.60 && $0.observations >= 3
+            $0.tier.isVisible &&
+            $0.status == .active &&
+            $0.confidence >= 0.60 &&
+            $0.observations >= 3 &&
+            isAutomationConvertible($0)
         }
 
         // Preserve user decisions (dismissed / approved / snoozed) AND all conversational
@@ -400,44 +412,60 @@ final class BehavioralAnalysisService {
             $0.origin != .detected
         }
         let preservedPatternIDs = Set(preserved.map(\.patternID))
+        let activePatternIDs    = Set(qualifying.map(\.id))
 
-        var fresh: [AutomationOpportunity] = preserved
         for pattern in qualifying where !preservedPatternIDs.contains(pattern.id) {
             if let existing = opportunities.first(where: { $0.patternID == pattern.id && $0.status == .pending }) {
-                // Update confidence on existing pending opportunity
-                var updated = existing
-                updated.confidence    = pattern.confidence
-                updated.observations  = pattern.observations
-                updated.lastUpdatedAt = Date()
-                fresh.append(updated)
+                // Direct mutation — reference semantics on @Model
+                existing.confidence    = pattern.confidence
+                existing.observations  = pattern.observations
+                existing.lastUpdatedAt = Date()
+                existing.modifiedAt    = Date()
             } else {
-                fresh.append(AutomationOpportunity(from: pattern))
+                let newOpp = AutomationOpportunity(from: pattern, profileID: activeProfileID)
+                opportunityContext.insert(newOpp)
+                opportunities.append(newOpp)
             }
         }
 
         // Expire opportunities whose pattern has decayed or been dismissed
-        let activePatternIDs = Set(qualifying.map(\.id))
-        for i in fresh.indices where fresh[i].status == .pending {
-            if !activePatternIDs.contains(fresh[i].patternID) {
-                fresh[i].status = .expired
+        for opp in opportunities where opp.status == .pending {
+            if !activePatternIDs.contains(opp.patternID) {
+                opp.status     = .expired
+                opp.modifiedAt = Date()
             }
         }
 
-        opportunities = fresh.filter { $0.status != .expired }
+        // Remove expired from in-memory array (stay in SwiftData as .expired until cleanupStale())
+        opportunities = opportunities.filter { $0.status != .expired }
+    }
+
+    private func isAutomationConvertible(_ pattern: BehavioralPattern) -> Bool {
+        switch pattern.patternType {
+        case .temporal, .lighting:
+            return pattern.accessoryID != nil && isSupportedAutomationAction(pattern.action)
+
+        case .scene:
+            let sceneName = pattern.causeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return !sceneName.isEmpty
+
+        case .sequential, .contextual:
+            return false
+        }
+    }
+
+    private func isSupportedAutomationAction(_ action: BehavioralAction) -> Bool {
+        switch action {
+        case .on, .off, .dim, .activate, .lock, .unlock, .open, .close:
+            return true
+        }
     }
 
     // MARK: - Persistence
 
-    private func makeOpportunityStore() -> VersionedStore<[AutomationOpportunity]> {
-        VersionedStore(key: opportunityKey, version: 2, migrate: { _, payload in
-            // v1 → v2: origin field added; decodeIfPresent in AutomationOpportunity defaults to .detected
-            try? JSONDecoder().decode([AutomationOpportunity].self, from: payload)
-        })
-    }
-
     private func persist() {
-        VersionedStore<[BehavioralPattern]>(key: patternKey, version: 1).save(patterns)
-        makeOpportunityStore().save(opportunities)
+        persistPatternsToSwiftData()
+        try? opportunityContext.save()  // flush any pending opportunity mutations
         let decisionsRaw = burstClusterDecisions.mapValues(\.rawValue)
         VersionedStore<[String: String]>(key: decisionsKey, version: 1).save(decisionsRaw)
         if let date = lastAnalyzed {
@@ -446,11 +474,58 @@ final class BehavioralAnalysisService {
     }
 
     private func loadPersisted() {
-        patterns      = VersionedStore<[BehavioralPattern]>(key: patternKey, version: 1).load() ?? []
-        opportunities = makeOpportunityStore().load() ?? []
+        patterns      = fetchPersistedPatterns()
+        opportunities = fetchOpportunitiesFromContext()
         lastAnalyzed  = UserDefaults.standard.object(forKey: "behavioral.lastAnalyzed") as? Date
         let decisionsRaw = VersionedStore<[String: String]>(key: decisionsKey, version: 1).load() ?? [:]
         burstClusterDecisions = decisionsRaw.compactMapValues { BehavioralPatternStatus(rawValue: $0) }
+    }
+
+    private func fetchOpportunitiesFromContext() -> [AutomationOpportunity] {
+        let pid = activeProfileID
+        let descriptor = FetchDescriptor<AutomationOpportunity>()
+        let all = (try? opportunityContext.fetch(descriptor)) ?? []
+        return all.filter { $0.profileID == pid && $0.status != .expired }
+    }
+
+    private func persistPatternsToSwiftData() {
+        let existingDict = fetchPersistedPatternsDict()
+        let currentIDs   = Set(patterns.map(\.id))
+
+        for (id, persisted) in existingDict where !currentIDs.contains(id) {
+            patternContext.delete(persisted)
+        }
+        for pattern in patterns {
+            if let persisted = existingDict[pattern.id] {
+                persisted.update(from: pattern)
+            } else {
+                patternContext.insert(PersistedBehavioralPattern(from: pattern, profileID: activeProfileID))
+            }
+        }
+        try? patternContext.save()
+    }
+
+    private func fetchPersistedPatterns() -> [BehavioralPattern] {
+        fetchPersistedPatternsAll().map { $0.toBehavioralPattern() }
+    }
+
+    private func fetchPersistedPatternsAll() -> [PersistedBehavioralPattern] {
+        let pid = activeProfileID
+        let descriptor = FetchDescriptor<PersistedBehavioralPattern>()
+        let all = (try? patternContext.fetch(descriptor)) ?? []
+        return all.filter { $0.profileID == pid }
+    }
+
+    private func fetchPersistedPatternsDict() -> [UUID: PersistedBehavioralPattern] {
+        Dictionary(uniqueKeysWithValues: fetchPersistedPatternsAll().map { ($0.id, $0) })
+    }
+
+    /// Inserts a conversational opportunity into SwiftData and the in-memory array.
+    /// Call sites that previously appended directly to `opportunities` must use this instead.
+    func addOpportunity(_ opp: AutomationOpportunity) {
+        opportunityContext.insert(opp)
+        opportunities.append(opp)
+        try? opportunityContext.save()
     }
 
     // MARK: - Diagnostics

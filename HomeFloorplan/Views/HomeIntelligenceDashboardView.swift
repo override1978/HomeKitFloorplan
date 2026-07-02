@@ -1674,7 +1674,7 @@ private struct AISuggestionCard: View {
                     .frame(width: 28)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(pattern.description)
+                    Text(pattern.patternDescription)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)

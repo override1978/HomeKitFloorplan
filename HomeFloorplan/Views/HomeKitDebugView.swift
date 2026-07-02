@@ -37,6 +37,8 @@ struct HomeKitDebugAccessoryDetail: View {
     let accessory: HMAccessory
     @Environment(HomeKitService.self) private var homeKit
     @State private var copyConfirm: Bool = false
+    @State private var isRefreshingValues: Bool = false
+    @State private var refreshSummary: String?
     
     var body: some View {
         List {
@@ -46,6 +48,18 @@ struct HomeKitDebugAccessoryDetail: View {
         .navigationTitle(accessory.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await refreshReadableValues() }
+                } label: {
+                    if isRefreshingValues {
+                        ProgressView()
+                    } else {
+                        Label(String(localized: "homekit.debug.refreshValues", defaultValue: "Refresh Values"), systemImage: "arrow.clockwise")
+                    }
+                }
+                .disabled(isRefreshingValues)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     UIPasteboard.general.string = diagnosticDump()
@@ -97,6 +111,11 @@ struct HomeKitDebugAccessoryDetail: View {
     @ViewBuilder
     private var servicesSection: some View {
         Section(String(format: String(localized: "homekit.debug.services.count", defaultValue: "Services (%lld)"), accessory.services.count)) {
+            if let refreshSummary {
+                Text(refreshSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             ForEach(accessory.services, id: \.uniqueIdentifier) { service in
                 DisclosureGroup {
                     serviceBody(service)
@@ -128,6 +147,9 @@ struct HomeKitDebugAccessoryDetail: View {
     private func serviceBody(_ service: HMService) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             kvRow("serviceType (raw)", service.serviceType)
+            if let knownDescription = knownHomeKitDescription(forServiceType: service.serviceType) {
+                kvRow("known service", knownDescription)
+            }
             kvRow("uniqueIdentifier", service.uniqueIdentifier.uuidString)
             kvRow(String(localized: "homekit.debug.characteristics", defaultValue: "characteristics"), "\(service.characteristics.count)")
             
@@ -148,8 +170,19 @@ struct HomeKitDebugAccessoryDetail: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Text("value: \(String(describing: homeKit.value(for: ch) ?? ch.value))")
+            if let knownDescription = knownHomeKitDescription(forCharacteristicType: ch.characteristicType) {
+                Text(knownDescription)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
+            }
+            Text("value: \(diagnosticValueText(homeKit.value(for: ch) ?? ch.value))")
                 .font(.caption2)
+            if let dataSummary = dataDiagnosticSummary(homeKit.value(for: ch) ?? ch.value) {
+                Text(dataSummary)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
             Text("props: \(ch.properties.joined(separator: ", "))")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -191,6 +224,84 @@ struct HomeKitDebugAccessoryDetail: View {
         return n.stringValue
     }
 
+    private func knownHomeKitDescription(forServiceType type: String) -> String? {
+        switch normalizedUUID(type) {
+        case "00000236-0000-1000-8000-0026BB765291":
+            return "HomeKit Data Stream Transport Management"
+        case "E863F007-079E-48FF-8F27-9C2605A29F52":
+            return "Eve custom service"
+        case "E863F008-079E-48FF-8F27-9C2605A29F52":
+            return "Eve Energy custom service"
+        default:
+            return nil
+        }
+    }
+
+    private func knownHomeKitDescription(forCharacteristicType type: String) -> String? {
+        switch normalizedUUID(type) {
+        case "00000234-0000-1000-8000-0026BB765291":
+            return "HomeKit Data Stream transport configuration; not a power/energy reading."
+        case "00000235-0000-1000-8000-0026BB765291":
+            return "HomeKit Data Stream transport setup; not a power/energy reading."
+        case "E863F10A-079E-48FF-8F27-9C2605A29F52":
+            return "Eve voltage reading, likely volts (V)."
+        case "E863F10C-079E-48FF-8F27-9C2605A29F52":
+            return "Eve energy/power counter candidate; verify against Eve app."
+        case "E863F10D-079E-48FF-8F27-9C2605A29F52":
+            return "Eve power reading, likely watts (W)."
+        case "E863F116-079E-48FF-8F27-9C2605A29F52":
+            return "Eve history/status data payload."
+        case "E863F117-079E-48FF-8F27-9C2605A29F52":
+            return "Eve history request/response payload."
+        case "E863F11A-079E-48FF-8F27-9C2605A29F52":
+            return "Eve outlet-specific counter/state value; verify before product use."
+        case "E863F11C-079E-48FF-8F27-9C2605A29F52",
+             "E863F11D-079E-48FF-8F27-9C2605A29F52",
+             "E863F121-079E-48FF-8F27-9C2605A29F52":
+            return "Eve writable configuration/control payload."
+        case "E863F126-079E-48FF-8F27-9C2605A29F52":
+            return "Eve energy counter candidate; verify against Eve app."
+        case "E863F131-079E-48FF-8F27-9C2605A29F52":
+            return "Eve device/history metadata payload."
+        default:
+            return nil
+        }
+    }
+
+    private func normalizedUUID(_ value: String) -> String {
+        value.uppercased()
+    }
+
+    private func diagnosticValueText(_ value: Any?) -> String {
+        guard let value else { return "nil" }
+        if let data = value as? Data {
+            return "Data(\(data.count) bytes)"
+        }
+        if let data = value as? NSData {
+            return "Data(\(data.length) bytes)"
+        }
+        return String(describing: value)
+    }
+
+    private func dataDiagnosticSummary(_ value: Any?) -> String? {
+        if let data = value as? Data {
+            return dataDiagnosticSummary(data)
+        }
+        if let data = value as? NSData {
+            return dataDiagnosticSummary(Data(referencing: data))
+        }
+        return nil
+    }
+
+    private func dataDiagnosticSummary(_ data: Data) -> String {
+        guard !data.isEmpty else { return "data: 0 bytes · hex=—" }
+        let preview = data.prefix(64)
+            .map { String(format: "%02X", $0) }
+            .joined(separator: " ")
+        let suffix = data.count > 64 ? " …" : ""
+        return "data: \(data.count) bytes · hex=\(preview)\(suffix)"
+    }
+
     private func yesNo(_ value: Bool) -> String {
         value
         ? String(localized: "common.yes", defaultValue: "Yes")
@@ -207,6 +318,43 @@ struct HomeKitDebugAccessoryDetail: View {
             : "\(level)%"
         }
         return battery.isLow ? "Low" : "OK"
+    }
+
+    private func refreshReadableValues() async {
+        isRefreshingValues = true
+        defer { isRefreshingValues = false }
+
+        let readable = accessory.services
+            .flatMap(\.characteristics)
+            .filter { $0.properties.contains(HMCharacteristicPropertyReadable) }
+
+        var successCount = 0
+        var failureCount = 0
+
+        for characteristic in readable {
+            let succeeded = await readValue(characteristic)
+            if succeeded, let value = characteristic.value {
+                homeKit.characteristicValues[characteristic.uniqueIdentifier] = value
+                successCount += 1
+            } else {
+                failureCount += 1
+            }
+        }
+
+        refreshSummary = String(
+            format: String(localized: "homekit.debug.refreshSummary",
+                           defaultValue: "Refreshed %d characteristic(s), %d failed."),
+            successCount,
+            failureCount
+        )
+    }
+
+    private func readValue(_ characteristic: HMCharacteristic) async -> Bool {
+        await withCheckedContinuation { continuation in
+            characteristic.readValue { error in
+                continuation.resume(returning: error == nil)
+            }
+        }
     }
     
     // MARK: Diagnostic dump (clipboard)
@@ -238,11 +386,20 @@ struct HomeKitDebugAccessoryDetail: View {
         for service in accessory.services {
             out.append("─ Service: \(service.name.isEmpty ? "?" : service.name)  primary=\(service.isPrimaryService)")
             out.append("  serviceType: \(service.serviceType)")
+            if let knownDescription = knownHomeKitDescription(forServiceType: service.serviceType) {
+                out.append("  known: \(knownDescription)")
+            }
             for ch in service.characteristics {
                 let value = homeKit.value(for: ch) ?? ch.value
                 out.append("  • \(ch.localizedDescription)")
                 out.append("      type: \(ch.characteristicType)")
-                out.append("      value: \(String(describing: value))")
+                if let knownDescription = knownHomeKitDescription(forCharacteristicType: ch.characteristicType) {
+                    out.append("      known: \(knownDescription)")
+                }
+                out.append("      value: \(diagnosticValueText(value))")
+                if let dataSummary = dataDiagnosticSummary(value) {
+                    out.append("      \(dataSummary)")
+                }
                 out.append("      props: \(ch.properties.joined(separator: ", "))")
                 if let fmt = ch.metadata?.format {
                     out.append("      meta: format=\(fmt) min=\(metadataNumber(ch.metadata?.minimumValue)) max=\(metadataNumber(ch.metadata?.maximumValue)) step=\(metadataNumber(ch.metadata?.stepValue)) units=\(ch.metadata?.units ?? "—")")

@@ -314,7 +314,7 @@ struct IntelligenceContextDashboard: View {
     ) -> some View {
         FloorplanStatusSummaryCard(
             title: title,
-            message: pattern.description,
+            message: pattern.patternDescription,
             icon: pattern.sfSymbol,
             color: accent,
             metrics: metrics
@@ -333,7 +333,7 @@ struct IntelligenceContextDashboard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(pattern.displayTitle)
                         .font(.caption.weight(.semibold))
-                    Text(pattern.description)
+                    Text(pattern.patternDescription)
                         .font(.caption)
                         .foregroundStyle(highlighted ? .white.opacity(0.85) : .secondary)
                         .fixedSize(horizontal: false, vertical: true)

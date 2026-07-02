@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 // MARK: - PatternStatus
 
@@ -18,30 +19,70 @@ enum PatternType: String, Codable {
 // MARK: - HabitPattern
 
 /// Pattern di abitudine rilevato dall'AI sullo storico degli eventi.
-/// Può descrivere un comportamento su un accessorio o sull'attivazione di una scena.
-/// L'utente può approvarlo (crea una Rule) o ignorarlo.
-struct HabitPattern: Identifiable, Codable {
-    var id: UUID
-    /// Tipo di pattern: accessorio o scena.
-    let patternType: PatternType
-    /// Nome dell'accessorio (valido quando patternType == .accessory).
-    let accessoryName: String
-    /// UUID dell'accessorio (valido quando patternType == .accessory; UUID casuale per le scene).
-    let accessoryID: UUID
-    /// Nome della scena (valido quando patternType == .scene).
-    let sceneName: String?
-    let roomName: String
-    /// Descrizione leggibile generata dall'AI (es. "Luci soggiorno abbassate al 30% ogni sera").
-    let description: String
-    let detectedAt: Date
-    /// Confidenza 0.0–1.0 calcolata dall'AI.
-    let confidence: Double
-    /// JSON legacy della regola pre-generata dall'AI.
-    /// Conservato per compatibilità con pattern già persistiti e convertito in AutomationProposal dal mapper.
-    let suggestedRuleJSON: String
-    var status: PatternStatus
+/// Stored in SwiftData for backup and future CloudKit sync.
+@Model
+final class HabitPattern {
+
+    @Attribute(.unique) var id: UUID
+    var patternTypeRaw: String      // PatternType.rawValue
+    var accessoryName: String
+    var accessoryID: UUID
+    var sceneName: String?
+    var roomName: String
+    var patternDescription: String
+    var detectedAt: Date
+    var confidence: Double
+    var suggestedRuleJSON: String
+    var statusRaw: String           // PatternStatus.rawValue
+    var modifiedAt: Date
+
+    // MARK: - Enum Wrappers
+
+    var patternType: PatternType {
+        get { PatternType(rawValue: patternTypeRaw) ?? .accessory }
+        set { patternTypeRaw = newValue.rawValue }
+    }
+
+    var status: PatternStatus {
+        get { PatternStatus(rawValue: statusRaw) ?? .pending }
+        set { statusRaw = newValue.rawValue }
+    }
+
+    // MARK: - Designated Init
 
     init(
+        id: UUID,
+        patternTypeRaw: String,
+        accessoryName: String,
+        accessoryID: UUID,
+        sceneName: String?,
+        roomName: String,
+        patternDescription: String,
+        detectedAt: Date,
+        confidence: Double,
+        suggestedRuleJSON: String,
+        statusRaw: String
+    ) {
+        self.id                 = id
+        self.patternTypeRaw     = patternTypeRaw
+        self.accessoryName      = accessoryName
+        self.accessoryID        = accessoryID
+        self.sceneName          = sceneName
+        self.roomName           = roomName
+        self.patternDescription = patternDescription
+        self.detectedAt         = detectedAt
+        self.confidence         = confidence
+        self.suggestedRuleJSON  = suggestedRuleJSON
+        self.statusRaw          = statusRaw
+        self.modifiedAt         = .now
+    }
+}
+
+// MARK: - Convenience Init
+
+extension HabitPattern {
+    /// Factory-style convenience init matching the old struct initialiser signature.
+    convenience init(
         id: UUID = UUID(),
         patternType: PatternType = .accessory,
         accessoryName: String,
@@ -54,19 +95,25 @@ struct HabitPattern: Identifiable, Codable {
         suggestedRuleJSON: String,
         status: PatternStatus = .pending
     ) {
-        self.id = id
-        self.patternType = patternType
-        self.accessoryName = accessoryName
-        self.accessoryID = accessoryID
-        self.sceneName = sceneName
-        self.roomName = roomName
-        self.description = description
-        self.detectedAt = detectedAt
-        self.confidence = confidence
-        self.suggestedRuleJSON = suggestedRuleJSON
-        self.status = status
+        self.init(
+            id:                 id,
+            patternTypeRaw:     patternType.rawValue,
+            accessoryName:      accessoryName,
+            accessoryID:        accessoryID,
+            sceneName:          sceneName,
+            roomName:           roomName,
+            patternDescription: description,
+            detectedAt:         detectedAt,
+            confidence:         confidence,
+            suggestedRuleJSON:  suggestedRuleJSON,
+            statusRaw:          status.rawValue
+        )
     }
+}
 
+// MARK: - Computed UI helpers
+
+extension HabitPattern {
     /// Titolo da mostrare in UI: nome scena o nome accessorio.
     var displayTitle: String {
         sceneName ?? accessoryName

@@ -123,6 +123,9 @@ struct SecurityOverlayView: View {
         }
         .onAppear { refreshSecurityDeviceCache() }
         .task(id: homeKit.allAccessories.count) { refreshSecurityDeviceCache() }
+        .onChange(of: monitoredUUIDsRaw) { _, _ in
+            refreshSecurityDeviceCache()
+        }
     }
 
     private func refreshSecurityDeviceCache() {
@@ -130,7 +133,7 @@ struct SecurityOverlayView: View {
         var contactResult: [UUID: [SensorAdapter]] = [:]
         let monitoredIDs = monitoredAccessoryIDs
         for room in floorplan.linkedRooms {
-            let roomAccessories = homeKit.allAccessories.filter { $0.room?.uniqueIdentifier == room.hmRoomUUID }
+            let roomAccessories = accessories(in: room)
             cameraResult[room.hmRoomUUID] = roomAccessories.compactMap {
                 AccessoryAdapterFactory.adapter(for: $0, homeKit: homeKit) as? CameraAdapter
             }
@@ -145,6 +148,21 @@ struct SecurityOverlayView: View {
         }
         camerasPerRoom = cameraResult
         contactSensorsPerRoom = contactResult
+    }
+
+    private func accessories(in room: LinkedRoom) -> [HMAccessory] {
+        let exact = homeKit.allAccessories.filter { $0.room?.uniqueIdentifier == room.hmRoomUUID }
+        if !exact.isEmpty { return exact }
+
+        let linkedName = normalizedRoomName(room.name)
+        guard !linkedName.isEmpty else { return [] }
+        return homeKit.allAccessories.filter {
+            normalizedRoomName($0.room?.name ?? "") == linkedName
+        }
+    }
+
+    private func normalizedRoomName(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     // MARK: Badge
@@ -229,8 +247,7 @@ struct SecurityOverlayView: View {
 
     /// Returns all CameraAdapter instances whose HomeKit room matches the given LinkedRoom.
     private func cameraAdapters(for room: LinkedRoom) -> [CameraAdapter] {
-        homeKit.allAccessories
-            .filter { $0.room?.uniqueIdentifier == room.hmRoomUUID }
+        accessories(in: room)
             .compactMap { AccessoryAdapterFactory.adapter(for: $0, homeKit: homeKit) as? CameraAdapter }
     }
 
@@ -238,9 +255,7 @@ struct SecurityOverlayView: View {
 
     private func securityStatus(for room: LinkedRoom) -> RoomSecurityStatus {
         let monitoredIDs = monitoredAccessoryIDs
-        let roomAccessories = homeKit.allAccessories.filter {
-            $0.room?.uniqueIdentifier == room.hmRoomUUID
-        }
+        let roomAccessories = accessories(in: room)
 
         var hasLock = false
         var hasAlarm = false

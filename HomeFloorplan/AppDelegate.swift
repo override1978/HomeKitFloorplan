@@ -1,5 +1,10 @@
 import UIKit
 import UserNotifications
+import CloudKit
+
+extension Notification.Name {
+    static let cloudKitRemoteNotificationReceived = Notification.Name("cloudKitRemoteNotificationReceived")
+}
 
 // MARK: - AppDelegate
 
@@ -15,12 +20,45 @@ final class HomeFloorplanAppDelegate: NSObject, UIApplicationDelegate {
         // Imposta il delegate per le notifiche locali, necessario per
         // mostrarle anche con l'app in foreground.
         UNUserNotificationCenter.current().delegate = self
+        application.registerForRemoteNotifications()
+        SyncDiagnosticsLogger.log("App didFinishLaunching; registered for remote notifications")
         AlertNotificationService.shared.clearBadge()
         return true
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
+        SyncDiagnosticsLogger.log("App didBecomeActive")
         AlertNotificationService.shared.clearBadge()
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        SyncDiagnosticsLogger.log("Remote notifications registration succeeded")
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        SyncDiagnosticsLogger.log("Remote notifications registration failed: \(error.localizedDescription)")
+    }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        let keys = userInfo.keys.map { "\($0)" }.sorted().joined(separator: ",")
+        SyncDiagnosticsLogger.log("Remote notification received keys=[\(keys)]")
+        if CKNotification(fromRemoteNotificationDictionary: userInfo) != nil {
+            SyncDiagnosticsLogger.log("CloudKit remote notification accepted; posted deterministic fetch trigger")
+            NotificationCenter.default.post(name: .cloudKitRemoteNotificationReceived, object: nil)
+            completionHandler(.newData)
+        } else {
+            completionHandler(.noData)
+        }
     }
 }
 

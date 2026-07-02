@@ -70,6 +70,28 @@ struct ImageStorageService {
         return UIImage(data: data)
     }
     
+    /// Restituisce i byte grezzi del file immagine senza decodificarli tramite UIImage.
+    /// Usato da Floorplan.currentImageData per il fallback durante la migration window — Foundation-only.
+    nonisolated static func rawData(filename: String) -> Data? {
+        guard let url = try? floorplansDirectory.appendingPathComponent(filename) else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    /// Salva byte immagine già codificati e restituisce il filename.
+    /// Usato dal sync CloudKit per evitare di materializzare immagini remote dentro
+    /// SwiftData external storage, che può produrre riferimenti .interim mancanti.
+    @discardableResult
+    static func saveData(_ data: Data, preferredExtension: String = "jpg") throws -> String {
+        let filename = "\(UUID().uuidString).\(preferredExtension)"
+        let url = try floorplansDirectory.appendingPathComponent(filename)
+        do {
+            try data.write(to: url, options: .atomic)
+            return filename
+        } catch {
+            throw StorageError.writeFailed(underlying: error)
+        }
+    }
+
     /// Cancella un'immagine. Silente se il file non esiste.
     static func delete(filename: String) {
         guard let url = try? floorplansDirectory.appendingPathComponent(filename) else { return }

@@ -145,16 +145,18 @@ final class HabitAnalysisService {
         let now             = Date()
         let dismissedCutoff = now.addingTimeInterval(-60 * 24 * 3600)
         let pendingCutoff   = now.addingTimeInterval(-90 * 24 * 3600)
-        let before = patterns.count
-        patterns.removeAll {
+        let toDelete = patterns.filter {
             ($0.status == .dismissed && $0.detectedAt < dismissedCutoff)
             || ($0.status == .pending  && $0.detectedAt < pendingCutoff)
         }
-        let removed = before - patterns.count
-        if removed > 0 {
-            persistPatterns()
-            dprint("🗂 HabitAnalysis: removed \(removed) stale pattern(s)")
+        guard !toDelete.isEmpty else { return }
+        toDelete.forEach { habitContext.delete($0) }
+        patterns = patterns.filter {
+            !($0.status == .dismissed && $0.detectedAt < dismissedCutoff)
+            && !($0.status == .pending  && $0.detectedAt < pendingCutoff)
         }
+        try? habitContext.save()
+        dprint("🗂 HabitAnalysis: removed \(toDelete.count) stale pattern(s)")
     }
 
     // MARK: - Private: Naming pipeline
@@ -272,16 +274,20 @@ final class HabitAnalysisService {
 
     // MARK: - Persistence
 
-    private let persistKey = "habitPatterns.persisted"
+    /// Dedicated SwiftData context for HabitPattern CRUD. Lives as long as the service.
+    @ObservationIgnored
+    private lazy var habitContext = ModelContext(modelContainer)
+
     private var clusterNamesKey: String { "habit.clusterNames.v1.\(AILocale.languageCode)" }
     private var namingLastRunKey: String { "habit.clusterNaming.lastRun.\(AILocale.languageCode)" }
 
     private func persistPatterns() {
-        VersionedStore<[HabitPattern]>(key: persistKey, version: 1).save(patterns)
+        try? habitContext.save()
     }
 
     private func loadPersistedPatterns() {
-        patterns = VersionedStore<[HabitPattern]>(key: persistKey, version: 1).load() ?? []
+        let descriptor = FetchDescriptor<HabitPattern>()
+        patterns = (try? habitContext.fetch(descriptor)) ?? []
     }
 
     private func persistClusterNames() {
@@ -297,9 +303,10 @@ final class HabitAnalysisService {
     }
 
     private func updateStatus(id: UUID, status: PatternStatus) {
-        if let idx = patterns.firstIndex(where: { $0.id == id }) {
-            patterns[idx].status = status
+        if let pattern = patterns.first(where: { $0.id == id }) {
+            pattern.status     = status
+            pattern.modifiedAt = .now
         }
-        persistPatterns()
+        try? habitContext.save()
     }
 }

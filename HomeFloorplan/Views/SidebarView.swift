@@ -9,6 +9,7 @@ struct SidebarView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(HomeKitService.self) private var homeKit
     @Environment(IdleTimerService.self) private var idleTimer
+    @Environment(CloudKitSyncService.self) private var cloudKitSync
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var allFloorplans: [Floorplan]
 
     /// Selezione corrente, gestita dal parent (ContentView) tramite NavigationSplitView
@@ -34,10 +35,7 @@ struct SidebarView: View {
     /// Floorplan filtrati per la casa attiva.
     /// I floorplan "legacy" (homeUUID = nil) appaiono in tutte le case per compatibilità.
     private var floorplans: [Floorplan] {
-        guard let homeUUID = homeKit.currentHome?.uniqueIdentifier else {
-            return allFloorplans
-        }
-        return allFloorplans.filter { $0.homeUUID == nil || $0.homeUUID == homeUUID }
+        allFloorplans.filter { homeKit.matchesActiveHome($0.homeUUID) }
     }
 
     private func decodePinnedIDs() -> [String] {
@@ -344,10 +342,11 @@ struct SidebarView: View {
         if case .floorplan(let id) = selection, id == floorplan.id {
             selection = nil
         }
+        let id = floorplan.id
         unpinFloorplan(floorplan)
-        ImageStorageService.delete(filename: floorplan.imageFilename)
         modelContext.delete(floorplan)
         try? modelContext.save()
+        cloudKitSync.markFloorplanDeleted(id)
     }
 }
 

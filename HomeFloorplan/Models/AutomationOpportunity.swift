@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 // MARK: - OpportunityStatus
 
@@ -24,50 +25,72 @@ enum OpportunityOrigin: String, Codable {
 /// A ranked, explainable automation opportunity derived from a BehavioralPattern
 /// or from a conversational user request.
 /// Carries everything needed to explain itself and map into an AutomationProposal.
-struct AutomationOpportunity: Identifiable, Codable {
-    var id:            UUID
-    var createdAt:     Date
+@Model
+final class AutomationOpportunity {
+
+    @Attribute(.unique) var id: UUID
+    var profileID: UUID?
+    var modifiedAt: Date
+
+    var createdAt: Date
     var lastUpdatedAt: Date
 
     // — Presentation —
-    var title:           String
+    var title: String
     var naturalLanguage: String
-    var roomName:        String
+    var roomName: String
 
     // — Source —
-    var patternID:   UUID
-    var confidence:  Double
-    var observations:Int
-    var firstObservedAt:        Date
-    var lastObservedAt:         Date
-    var avgTimeString:          String?   // "22:43"
-    var timeDeviationMinutes:   Int
-    var dayTypeLabel:           String
-    var patternType:            BehavioralPatternType
+    var patternID: UUID
+    var confidence: Double
+    var observations: Int
+    var firstObservedAt: Date
+    var lastObservedAt: Date
+    var avgTimeString: String?
+    var timeDeviationMinutes: Int
+    var dayTypeLabel: String
+    var patternTypeRaw: String  // BehavioralPatternType.rawValue
 
     // — Trigger (for proposal generation) —
-    var triggerType:           String    // "calendar" | "characteristic" | "inApp"
-    var triggerTime:           String?   // "23:15"
-    var triggerWeekdaysRaw:    String?   // "2,3,4,5,6"
-    var triggerSensorType:     String?
-    var triggerThreshold:      Double?
-    var triggerDirection:      String?
+    var triggerType: String
+    var triggerTime: String?
+    var triggerWeekdaysRaw: String?
+    var triggerSensorType: String?
+    var triggerThreshold: Double?
+    var triggerDirection: String?
 
     // — Effect (for proposal generation) —
     var effectAccessoryIDString: String?
-    var effectActionRaw:         String
-    var effectValue:             Double?
-    var effectValue2:            Double?
-    var effectSceneName:         String?
+    var effectActionRaw: String
+    var effectValue: Double?
+    var effectValue2: Double?
+    var effectSceneName: String?
 
-    // — Status —
-    var status:      OpportunityStatus
-    var snoozedUntil:Date?
+    // — Status (rawValue strings for CloudKit field-level access) —
+    var statusRaw: String
+    var snoozedUntil: Date?
     var dismissedAt: Date?
-    var approvedAt:  Date?
+    var approvedAt: Date?
 
-    // — Origin —
-    var origin: OpportunityOrigin
+    // — Origin (rawValue string for CloudKit field-level access) —
+    var originRaw: String
+
+    // MARK: - Computed enum wrappers
+
+    var status: OpportunityStatus {
+        get { OpportunityStatus(rawValue: statusRaw) ?? .pending }
+        set { statusRaw = newValue.rawValue }
+    }
+
+    var origin: OpportunityOrigin {
+        get { OpportunityOrigin(rawValue: originRaw) ?? .detected }
+        set { originRaw = newValue.rawValue }
+    }
+
+    var patternType: BehavioralPatternType {
+        get { BehavioralPatternType(rawValue: patternTypeRaw) ?? .temporal }
+        set { patternTypeRaw = newValue.rawValue }
+    }
 
     // MARK: - Computed
 
@@ -81,6 +104,51 @@ struct AutomationOpportunity: Identifiable, Codable {
     var confidenceLabel: String { "\(Int(confidence * 100))%" }
 
     var isActionable: Bool { status == .pending || status == .snoozed }
+
+    /// True only when the opportunity has enough structured data to open the
+    /// unified HomeKit automation builder without producing an empty proposal.
+    var isStructurallyConvertibleToAutomation: Bool {
+        hasSupportedAutomationTrigger && hasSupportedAutomationEffect
+    }
+
+    private var hasSupportedAutomationTrigger: Bool {
+        switch triggerType {
+        case "calendar":
+            guard let triggerTime else { return false }
+            let parts = triggerTime.split(separator: ":")
+            guard parts.count == 2,
+                  let hour = Int(parts[0]),
+                  let minute = Int(parts[1]) else { return false }
+            return (0...23).contains(hour) && (0...59).contains(minute)
+
+        case "characteristic":
+            return triggerSensorType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+
+        case "presence", "people":
+            return true
+
+        default:
+            return false
+        }
+    }
+
+    private var hasSupportedAutomationEffect: Bool {
+        if effectSceneName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            return true
+        }
+
+        guard let rawID = effectAccessoryIDString,
+              UUID(uuidString: rawID) != nil else { return false }
+
+        switch effectActionRaw {
+        case "on", "activate", "off", "dim", "setMode", "setTemp", "setSpeed", "setHumidity",
+             "open", "openGarage", "close", "closeGarage", "lock", "unlock",
+             "armStay", "armAway", "armNight", "disarm":
+            return true
+        default:
+            return false
+        }
+    }
 
     /// SF Symbol for the trigger type, shown in opportunity cards.
     var triggerIcon: String {
@@ -121,57 +189,76 @@ struct AutomationOpportunity: Identifiable, Codable {
         }
     }
 
-    // MARK: - Codable (backward-compatible: origin missing → .detected)
+    // MARK: - Designated Init
 
-    enum CodingKeys: String, CodingKey {
-        case id, createdAt, lastUpdatedAt
-        case title, naturalLanguage, roomName
-        case patternID, confidence, observations
-        case firstObservedAt, lastObservedAt, avgTimeString
-        case timeDeviationMinutes, dayTypeLabel, patternType
-        case triggerType, triggerTime, triggerWeekdaysRaw
-        case triggerSensorType, triggerThreshold, triggerDirection
-        case effectAccessoryIDString, effectActionRaw, effectValue, effectValue2, effectSceneName
-        case status, snoozedUntil, dismissedAt, approvedAt
-        case origin
+    init(
+        id: UUID = UUID(),
+        profileID: UUID?,
+        createdAt: Date,
+        lastUpdatedAt: Date,
+        title: String,
+        naturalLanguage: String,
+        roomName: String,
+        patternID: UUID,
+        confidence: Double,
+        observations: Int,
+        firstObservedAt: Date,
+        lastObservedAt: Date,
+        avgTimeString: String?,
+        timeDeviationMinutes: Int,
+        dayTypeLabel: String,
+        patternTypeRaw: String,
+        triggerType: String,
+        triggerTime: String?,
+        triggerWeekdaysRaw: String?,
+        triggerSensorType: String?,
+        triggerThreshold: Double?,
+        triggerDirection: String?,
+        effectAccessoryIDString: String?,
+        effectActionRaw: String,
+        effectValue: Double?,
+        effectValue2: Double?,
+        effectSceneName: String?,
+        statusRaw: String,
+        snoozedUntil: Date?,
+        dismissedAt: Date?,
+        approvedAt: Date?,
+        originRaw: String
+    ) {
+        self.id                      = id
+        self.profileID               = profileID
+        self.modifiedAt              = .now
+        self.createdAt               = createdAt
+        self.lastUpdatedAt           = lastUpdatedAt
+        self.title                   = title
+        self.naturalLanguage         = naturalLanguage
+        self.roomName                = roomName
+        self.patternID               = patternID
+        self.confidence              = confidence
+        self.observations            = observations
+        self.firstObservedAt         = firstObservedAt
+        self.lastObservedAt          = lastObservedAt
+        self.avgTimeString           = avgTimeString
+        self.timeDeviationMinutes    = timeDeviationMinutes
+        self.dayTypeLabel            = dayTypeLabel
+        self.patternTypeRaw          = patternTypeRaw
+        self.triggerType             = triggerType
+        self.triggerTime             = triggerTime
+        self.triggerWeekdaysRaw      = triggerWeekdaysRaw
+        self.triggerSensorType       = triggerSensorType
+        self.triggerThreshold        = triggerThreshold
+        self.triggerDirection        = triggerDirection
+        self.effectAccessoryIDString = effectAccessoryIDString
+        self.effectActionRaw         = effectActionRaw
+        self.effectValue             = effectValue
+        self.effectValue2            = effectValue2
+        self.effectSceneName         = effectSceneName
+        self.statusRaw               = statusRaw
+        self.snoozedUntil            = snoozedUntil
+        self.dismissedAt             = dismissedAt
+        self.approvedAt              = approvedAt
+        self.originRaw               = originRaw
     }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id                       = try c.decode(UUID.self,                  forKey: .id)
-        createdAt                = try c.decode(Date.self,                  forKey: .createdAt)
-        lastUpdatedAt            = try c.decode(Date.self,                  forKey: .lastUpdatedAt)
-        title                    = try c.decode(String.self,                forKey: .title)
-        naturalLanguage          = try c.decode(String.self,                forKey: .naturalLanguage)
-        roomName                 = try c.decode(String.self,                forKey: .roomName)
-        patternID                = try c.decode(UUID.self,                  forKey: .patternID)
-        confidence               = try c.decode(Double.self,                forKey: .confidence)
-        observations             = try c.decode(Int.self,                   forKey: .observations)
-        firstObservedAt          = try c.decode(Date.self,                  forKey: .firstObservedAt)
-        lastObservedAt           = try c.decode(Date.self,                  forKey: .lastObservedAt)
-        avgTimeString            = try c.decodeIfPresent(String.self,       forKey: .avgTimeString)
-        timeDeviationMinutes     = try c.decode(Int.self,                   forKey: .timeDeviationMinutes)
-        dayTypeLabel             = try c.decode(String.self,                forKey: .dayTypeLabel)
-        patternType              = try c.decode(BehavioralPatternType.self, forKey: .patternType)
-        triggerType              = try c.decode(String.self,                forKey: .triggerType)
-        triggerTime              = try c.decodeIfPresent(String.self,       forKey: .triggerTime)
-        triggerWeekdaysRaw       = try c.decodeIfPresent(String.self,       forKey: .triggerWeekdaysRaw)
-        triggerSensorType        = try c.decodeIfPresent(String.self,       forKey: .triggerSensorType)
-        triggerThreshold         = try c.decodeIfPresent(Double.self,       forKey: .triggerThreshold)
-        triggerDirection         = try c.decodeIfPresent(String.self,       forKey: .triggerDirection)
-        effectAccessoryIDString  = try c.decodeIfPresent(String.self,       forKey: .effectAccessoryIDString)
-        effectActionRaw          = try c.decode(String.self,                forKey: .effectActionRaw)
-        effectValue              = try c.decodeIfPresent(Double.self,       forKey: .effectValue)
-        effectValue2             = try c.decodeIfPresent(Double.self,       forKey: .effectValue2)
-        effectSceneName          = try c.decodeIfPresent(String.self,       forKey: .effectSceneName)
-        status                   = try c.decode(OpportunityStatus.self,     forKey: .status)
-        snoozedUntil             = try c.decodeIfPresent(Date.self,         forKey: .snoozedUntil)
-        dismissedAt              = try c.decodeIfPresent(Date.self,         forKey: .dismissedAt)
-        approvedAt               = try c.decodeIfPresent(Date.self,         forKey: .approvedAt)
-        // Legacy JSON without `origin` defaults to .detected
-        origin = try c.decodeIfPresent(OpportunityOrigin.self, forKey: .origin) ?? .detected
-    }
-
 }
 
 // MARK: - AutomationOpportunity Equatable (identity-based)
@@ -187,60 +274,63 @@ extension AutomationOpportunity: Equatable {
 extension AutomationOpportunity {
 
     /// Constructs an opportunity from a qualified BehavioralPattern.
-    init(from pattern: BehavioralPattern) {
-        let title = AutomationOpportunity.buildTitle(pattern: pattern)
+    convenience init(from pattern: BehavioralPattern, profileID: UUID? = nil) {
+        let title      = AutomationOpportunity.buildTitle(pattern: pattern)
         let weekdayStr = pattern.weekdays.isEmpty
             ? nil
             : pattern.weekdays.map(String.init).joined(separator: ",")
 
-        self.id            = UUID()
-        self.createdAt     = Date()
-        self.lastUpdatedAt = Date()
-        self.title         = title
-        self.naturalLanguage = pattern.naturalLanguageDescription
-        self.roomName        = pattern.roomName
-        self.patternID       = pattern.id
-        self.confidence      = pattern.confidence
-        self.observations    = pattern.observations
-        self.firstObservedAt = pattern.firstObservedAt
-        self.lastObservedAt  = pattern.lastObservedAt
-        self.avgTimeString   = (pattern.patternType == .temporal || pattern.patternType == .scene)
-                                ? pattern.avgTimeString : nil
-        self.timeDeviationMinutes = pattern.timeDeviationMinutes
-        self.dayTypeLabel    = pattern.dayType?.localizedLabel ?? ""
-        self.patternType     = pattern.patternType
+        let triggerType: String
+        let triggerTime: String?
+        let triggerWeekdaysRaw: String?
 
-        // Trigger mapping
         switch pattern.patternType {
         case .temporal, .scene, .lighting:
-            self.triggerType        = "calendar"
-            self.triggerTime        = pattern.avgTimeString
-            self.triggerWeekdaysRaw = weekdayStr
-            self.triggerSensorType  = nil
-            self.triggerThreshold   = nil
-            self.triggerDirection   = nil
+            triggerType        = "calendar"
+            triggerTime        = pattern.avgTimeString
+            triggerWeekdaysRaw = weekdayStr
         case .sequential, .contextual:
-            self.triggerType        = "inApp"
-            self.triggerTime        = nil
-            self.triggerWeekdaysRaw = weekdayStr
-            self.triggerSensorType  = nil
-            self.triggerThreshold   = nil
-            self.triggerDirection   = nil
+            triggerType        = "inApp"
+            triggerTime        = nil
+            triggerWeekdaysRaw = weekdayStr
         }
 
         let matchedSceneName = pattern.patternType == .scene ? pattern.causeName : nil
 
-        self.effectAccessoryIDString = matchedSceneName == nil ? pattern.accessoryID?.uuidString : nil
-        self.effectActionRaw         = pattern.action.rawValue
-        self.effectValue             = pattern.numericValue
-        self.effectValue2            = nil
-        self.effectSceneName         = matchedSceneName
-
-        self.status      = .pending
-        self.snoozedUntil = nil
-        self.dismissedAt  = nil
-        self.approvedAt   = nil
-        self.origin       = .detected
+        self.init(
+            profileID:            profileID,
+            createdAt:            Date(),
+            lastUpdatedAt:        Date(),
+            title:                title,
+            naturalLanguage:      pattern.naturalLanguageDescription,
+            roomName:             pattern.roomName,
+            patternID:            pattern.id,
+            confidence:           pattern.confidence,
+            observations:         pattern.observations,
+            firstObservedAt:      pattern.firstObservedAt,
+            lastObservedAt:       pattern.lastObservedAt,
+            avgTimeString:        (pattern.patternType == .temporal || pattern.patternType == .scene)
+                                      ? pattern.avgTimeString : nil,
+            timeDeviationMinutes: pattern.timeDeviationMinutes,
+            dayTypeLabel:         pattern.dayType?.localizedLabel ?? "",
+            patternTypeRaw:       pattern.patternType.rawValue,
+            triggerType:          triggerType,
+            triggerTime:          triggerTime,
+            triggerWeekdaysRaw:   triggerWeekdaysRaw,
+            triggerSensorType:    nil,
+            triggerThreshold:     nil,
+            triggerDirection:     nil,
+            effectAccessoryIDString: matchedSceneName == nil ? pattern.accessoryID?.uuidString : nil,
+            effectActionRaw:      pattern.action.rawValue,
+            effectValue:          pattern.numericValue,
+            effectValue2:         nil,
+            effectSceneName:      matchedSceneName,
+            statusRaw:            OpportunityStatus.pending.rawValue,
+            snoozedUntil:         nil,
+            dismissedAt:          nil,
+            approvedAt:           nil,
+            originRaw:            OpportunityOrigin.detected.rawValue
+        )
     }
 
     private static func buildTitle(pattern: BehavioralPattern) -> String {
@@ -307,118 +397,61 @@ extension AutomationOpportunity {
     /// The patternID is derived deterministically from semanticKey so cross-session dedup in
     /// rebuildOpportunities() works — two equal requests yield the same patternID and the
     /// preserved filter (origin != .detected) keeps only one copy.
-    ///
-    /// - Parameters:
-    ///   - accessoryID: HomeKit UUID string of the target accessory.
-    ///   - action: Action string ("on", "off", "dim", …).
-    ///   - value: Numeric value for dim/setTemp/setSpeed; nil for on/off/open/close.
-    ///   - label: Short user-facing label for the button/opportunity title.
-    ///   - naturalLanguage: Full description shown in HabitsView.
-    ///   - semanticKey: Stable dedup key, typically "\(accessoryID):\(action)".
     static func fromConversation(
-        accessoryID:     String,
-        action:          String,
-        value:           Double?,
-        value2:          Double? = nil,
-        label:           String,
-        naturalLanguage: String,
-        triggerType:     String,
-        triggerTime:     String?,
+        accessoryID:        String,
+        action:             String,
+        value:              Double?,
+        value2:             Double? = nil,
+        label:              String,
+        naturalLanguage:    String,
+        triggerType:        String,
+        triggerTime:        String?,
         triggerWeekdaysRaw: String?,
         triggerSensorType:  String? = nil,
         triggerSensorRoom:  String? = nil,
         triggerThreshold:   Double? = nil,
         triggerDirection:   String? = nil,
         sceneName:          String? = nil,
-        semanticKey:     String
+        semanticKey:        String,
+        profileID:          UUID?   = nil
     ) -> AutomationOpportunity {
         let patternID = uuidFromSeed(semanticKey)
         let now       = Date()
+        let roomName  = triggerSensorRoom ?? ""
 
-        // roomName holds the sensor room for proposal mapping and card summaries.
-        let roomName = triggerSensorRoom ?? ""
-
-        let opp = AutomationOpportunity(
-            id:                      UUID(),
-            createdAt:               now,
-            lastUpdatedAt:           now,
-            title:                   label,
-            naturalLanguage:         naturalLanguage,
-            roomName:                roomName,
-            patternID:               patternID,
-            confidence:              0.0,
-            observations:            0,
-            firstObservedAt:         now,
-            lastObservedAt:          now,
-            avgTimeString:           nil,
-            timeDeviationMinutes:    0,
-            dayTypeLabel:            "",
-            patternType:             .temporal,
-            triggerType:             triggerType,
-            triggerTime:             triggerTime,
-            triggerWeekdaysRaw:      triggerWeekdaysRaw,
-            triggerSensorType:       triggerSensorType,
-            triggerThreshold:        triggerThreshold,
-            triggerDirection:        triggerDirection,
+        return AutomationOpportunity(
+            profileID:            profileID,
+            createdAt:            now,
+            lastUpdatedAt:        now,
+            title:                label,
+            naturalLanguage:      naturalLanguage,
+            roomName:             roomName,
+            patternID:            patternID,
+            confidence:           0.0,
+            observations:         0,
+            firstObservedAt:      now,
+            lastObservedAt:       now,
+            avgTimeString:        nil,
+            timeDeviationMinutes: 0,
+            dayTypeLabel:         "",
+            patternTypeRaw:       BehavioralPatternType.temporal.rawValue,
+            triggerType:          triggerType,
+            triggerTime:          triggerTime,
+            triggerWeekdaysRaw:   triggerWeekdaysRaw,
+            triggerSensorType:    triggerSensorType,
+            triggerThreshold:     triggerThreshold,
+            triggerDirection:     triggerDirection,
             effectAccessoryIDString: accessoryID,
-            effectActionRaw:         action,
-            effectValue:             value,
-            effectValue2:            value2,
-            effectSceneName:         sceneName,
-            status:                  .pending,
-            snoozedUntil:            nil,
-            dismissedAt:             nil,
-            approvedAt:              nil,
-            origin:                  .conversational
+            effectActionRaw:      action,
+            effectValue:          value,
+            effectValue2:         value2,
+            effectSceneName:      sceneName,
+            statusRaw:            OpportunityStatus.pending.rawValue,
+            snoozedUntil:         nil,
+            dismissedAt:          nil,
+            approvedAt:           nil,
+            originRaw:            OpportunityOrigin.conversational.rawValue
         )
-        return opp
-    }
-
-    /// Memberwise init used by fromConversation (keeps all fields explicit).
-    private init(
-        id: UUID, createdAt: Date, lastUpdatedAt: Date,
-        title: String, naturalLanguage: String, roomName: String,
-        patternID: UUID, confidence: Double, observations: Int,
-        firstObservedAt: Date, lastObservedAt: Date, avgTimeString: String?,
-        timeDeviationMinutes: Int, dayTypeLabel: String, patternType: BehavioralPatternType,
-        triggerType: String, triggerTime: String?, triggerWeekdaysRaw: String?,
-        triggerSensorType: String?, triggerThreshold: Double?, triggerDirection: String?,
-        effectAccessoryIDString: String?, effectActionRaw: String, effectValue: Double?, effectValue2: Double?,
-        effectSceneName: String? = nil,
-        status: OpportunityStatus, snoozedUntil: Date?, dismissedAt: Date?, approvedAt: Date?,
-        origin: OpportunityOrigin
-    ) {
-        self.id                      = id
-        self.createdAt               = createdAt
-        self.lastUpdatedAt           = lastUpdatedAt
-        self.title                   = title
-        self.naturalLanguage         = naturalLanguage
-        self.roomName                = roomName
-        self.patternID               = patternID
-        self.confidence              = confidence
-        self.observations            = observations
-        self.firstObservedAt         = firstObservedAt
-        self.lastObservedAt          = lastObservedAt
-        self.avgTimeString           = avgTimeString
-        self.timeDeviationMinutes    = timeDeviationMinutes
-        self.dayTypeLabel            = dayTypeLabel
-        self.patternType             = patternType
-        self.triggerType             = triggerType
-        self.triggerTime             = triggerTime
-        self.triggerWeekdaysRaw      = triggerWeekdaysRaw
-        self.triggerSensorType       = triggerSensorType
-        self.triggerThreshold        = triggerThreshold
-        self.triggerDirection        = triggerDirection
-        self.effectAccessoryIDString = effectAccessoryIDString
-        self.effectActionRaw         = effectActionRaw
-        self.effectValue             = effectValue
-        self.effectValue2            = effectValue2
-        self.effectSceneName         = effectSceneName
-        self.status                  = status
-        self.snoozedUntil            = snoozedUntil
-        self.dismissedAt             = dismissedAt
-        self.approvedAt              = approvedAt
-        self.origin                  = origin
     }
 
     /// Derives a stable UUID from an arbitrary seed string using a simple XOR fold of the

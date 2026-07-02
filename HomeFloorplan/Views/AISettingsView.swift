@@ -8,8 +8,7 @@ struct AISettingsView: View {
 
     // MARK: - State
 
-    @State private var settings = AISettings()
-    @State private var service: AIService
+    @Environment(AISettings.self) private var settings
 
     /// Testo della API key mostrato nel SecureField.
     @State private var apiKeyDraft: String = ""
@@ -21,14 +20,6 @@ struct AISettingsView: View {
     @State private var testError: String?
     /// True = mostra il consent sheet prima di attivare l'AI.
     @State private var showConsentSheet = false
-
-    // MARK: - Init
-
-    init() {
-        let s = AISettings()
-        _settings = State(initialValue: s)
-        _service = State(initialValue: AIService(settings: s))
-    }
 
     // MARK: - Body
 
@@ -49,13 +40,20 @@ struct AISettingsView: View {
         }
     }
 
+    private func binding(_ keyPath: ReferenceWritableKeyPath<AISettings, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { settings[keyPath: keyPath] },
+            set: { settings[keyPath: keyPath] = $0 }
+        )
+    }
+
     // MARK: - Provider section
 
     @ViewBuilder
     private var providerSection: some View {
         Section {
             // Master switch — intercetta la prima attivazione per mostrare il consent screen
-            Toggle(isOn: $settings.isAIEnabled) {
+            Toggle(isOn: binding(\.isAIEnabled)) {
                 Label(
                     String(localized: "ai.settings.masterToggle", defaultValue: "Enable AI"),
                     systemImage: "brain"
@@ -245,7 +243,7 @@ struct AISettingsView: View {
     @ViewBuilder
     private var featuresSection: some View {
         Section {
-            Toggle(isOn: $settings.suggestionsEnabled) {
+            Toggle(isOn: binding(\.suggestionsEnabled)) {
                 Label(
                     String(localized: "ai.settings.suggestions", defaultValue: "Habit Suggestions"),
                     systemImage: "lightbulb"
@@ -253,7 +251,7 @@ struct AISettingsView: View {
             }
             .disabled(!settings.isOperational)
 
-            Toggle(isOn: $settings.anomalyDetectionEnabled) {
+            Toggle(isOn: binding(\.anomalyDetectionEnabled)) {
                 Label(
                     String(localized: "ai.settings.anomaly", defaultValue: "Anomaly Detection"),
                     systemImage: "exclamationmark.triangle"
@@ -261,7 +259,7 @@ struct AISettingsView: View {
             }
             .disabled(!settings.isOperational)
 
-            Toggle(isOn: $settings.ruleEngineEnabled) {
+            Toggle(isOn: binding(\.ruleEngineEnabled)) {
                 Label(
                     String(localized: "ai.settings.ruleEngine", defaultValue: "Predictive Rules"),
                     systemImage: "gearshape.2"
@@ -364,6 +362,7 @@ struct AISettingsView: View {
     private func runConnectionTest() async {
         isTesting = true
         testError = nil
+        let service = AIService(settings: settings)
         let success = await service.testConnection()
         isTesting = false
         if !success {

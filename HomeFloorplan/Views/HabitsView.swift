@@ -22,6 +22,7 @@ struct HabitsView: View {
     @State private var reviewingProposal: AutomationProposal?
     @State private var reviewingOpportunity: AutomationOpportunity?
     @State private var reviewingHabitPattern: HabitPattern?
+    @State private var showManualAutomationWizard = false
     @State private var eligibleEvents: Int  = 0
 
     var body: some View {
@@ -46,6 +47,13 @@ struct HabitsView: View {
                         }
                         automationsService.refresh()
                     }
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                }
+                .sheet(isPresented: $showManualAutomationWizard, onDismiss: {
+                    automationsService.refresh()
+                }) {
+                    AutomationWizardSheet()
                         .presentationDetents([.large])
                         .presentationDragIndicator(.visible)
                 }
@@ -707,7 +715,7 @@ struct HabitsView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(pattern.displayTitle)
                         .font(.subheadline.weight(.semibold))
-                    Text(pattern.description)
+                    Text(pattern.patternDescription)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -787,9 +795,34 @@ struct HabitsView: View {
                 }
             }
             .frame(height: 4)
+
+            if !isPatternConvertibleToAutomation(pattern), pattern.confidence >= 0.45 {
+                Button {
+                    showManualAutomationWizard = true
+                } label: {
+                    Label(String(localized: "habits.learning.createManual",
+                                 defaultValue: "Create manually"),
+                          systemImage: "plus.circle")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(BrandColor.primary)
+            }
         }
         .padding(.vertical, 6)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            if !isPatternConvertibleToAutomation(pattern), pattern.confidence >= 0.45 {
+                Button {
+                    showManualAutomationWizard = true
+                } label: {
+                    Label(String(localized: "habits.learning.createManual",
+                                 defaultValue: "Create manually"),
+                          systemImage: "plus.circle")
+                }
+                .tint(BrandColor.primary)
+            }
+
             Button(role: .destructive) {
                 behavioralService.dismissPattern(pattern)
             } label: {
@@ -825,6 +858,11 @@ struct HabitsView: View {
     }
 
     private func learningStatusLabel(for pattern: BehavioralPattern) -> String {
+        if !isPatternConvertibleToAutomation(pattern), pattern.confidence >= 0.45 {
+            return String(localized: "habits.learning.statusInsightOnly",
+                          defaultValue: "Pattern observed — insight only for now")
+        }
+
         switch pattern.confidence {
         case ..<0.25:
             return String(localized: "habits.learning.statusLow",
@@ -835,6 +873,27 @@ struct HabitsView: View {
         default:
             return String(localized: "habits.learning.statusHigh",
                           defaultValue: "Almost ready to become a suggestion")
+        }
+    }
+
+    private func isPatternConvertibleToAutomation(_ pattern: BehavioralPattern) -> Bool {
+        switch pattern.patternType {
+        case .temporal, .lighting:
+            return pattern.accessoryID != nil && isSupportedAutomationAction(pattern.action)
+
+        case .scene:
+            let sceneName = pattern.causeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return !sceneName.isEmpty
+
+        case .sequential, .contextual:
+            return false
+        }
+    }
+
+    private func isSupportedAutomationAction(_ action: BehavioralAction) -> Bool {
+        switch action {
+        case .on, .off, .dim, .activate, .lock, .unlock, .open, .close:
+            return true
         }
     }
 

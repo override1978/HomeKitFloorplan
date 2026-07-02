@@ -114,10 +114,33 @@ final class SensorAlertThreshold {
     static func defaultThresholds() -> [SensorAlertThreshold] {
         SensorServiceType.allCases.filter(\.hasAlertThreshold).map { type in
             SensorAlertThreshold(
+                id: defaultID(for: type),
                 serviceType: type,
                 warningValue: type.defaultWarning,
                 dangerValue: type.defaultDanger
             )
+        }
+    }
+
+    private static func defaultID(for serviceType: SensorServiceType) -> UUID {
+        func uuid(_ value: String) -> UUID {
+            UUID(uuidString: value) ?? UUID()
+        }
+
+        switch serviceType {
+        case .temperature:        return uuid("F4F54862-7F06-4E7D-B58F-6454A2DE4D7E")
+        case .humidity:           return uuid("97679203-9E0B-4E34-9C9C-55A7F89B7A2B")
+        case .airQuality:         return uuid("B4039288-1F4E-4CC6-AF4D-4C17AC913C1E")
+        case .carbonMonoxide:     return uuid("28E1AB42-6218-4142-B0CE-A7D9A9573C94")
+        case .carbonDioxide:      return uuid("40EBFF5C-D273-47BF-A653-41496E2959FD")
+        case .smoke:              return uuid("DBB0A1D5-6F68-4580-A7B7-02BFB0F81D19")
+        case .vocDensity:         return uuid("55F2E76A-3B97-49F0-AB33-950B7D51A8C2")
+        case .pm25:               return uuid("3A08633E-127E-434A-B27D-9F50AA9B7B26")
+        case .pm10:               return uuid("B76A7411-3314-49C4-A515-BCE353DFB51B")
+        case .lightSensor,
+             .outdoorTemperature,
+             .outdoorHumidity:
+            return uuid("00000000-0000-0000-0000-000000000000")
         }
     }
 }

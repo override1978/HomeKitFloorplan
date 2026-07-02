@@ -34,6 +34,8 @@ struct FloorplanEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(HabitAnalysisService.self) private var habitService
     @Environment(SmartLightingEngine.self) private var smartLightingEngine
+    @Environment(CloudKitSyncService.self) private var cloudKitSync
+    @Environment(IconOverrideStore.self) private var iconOverrides
     
     @State private var isEditing: Bool = false
     @State private var showingPicker: Bool = false
@@ -48,6 +50,7 @@ struct FloorplanEditorView: View {
     @State private var pendingDelete: PlacedAccessory?
     @State private var iconPickerTarget: PlacedAccessory?
     @State private var showFloorplanDiagnostics = false
+    @State private var drawingEditFloorplan: Floorplan?
     @State private var editHighlightedRoomID: UUID?
     @State private var suppressNextMarkerTapID: UUID?
     @State private var executingMarkerID: UUID?
@@ -79,10 +82,10 @@ struct FloorplanEditorView: View {
     /// Shared environment view model used by both the overlay layer and the context panel.
     @State private var overlayEnvVM = EnvironmentViewModel()
 
-    /// Cached floorplan image — loaded once on appear and when imageFilename changes.
-    /// Avoids repeated disk I/O on every body re-evaluation.
+    /// Cached floorplan image — loaded once on appear and when the floorplan is updated.
+    /// Avoids repeated decoding on every body re-evaluation.
     @State private var cachedFloorplanImage: UIImage?
-    @State private var cachedFloorplanImageFilename: String = ""
+    @State private var cachedFloorplanImageDate: Date = .distantPast
     /// True while the image is being loaded from disk — prevents the "not available" state flash.
     @State private var isLoadingImage: Bool = false
 
@@ -120,10 +123,7 @@ struct FloorplanEditorView: View {
     }
 
     private var availableFloorplans: [Floorplan] {
-        guard let homeUUID = homeKit.currentHome?.uniqueIdentifier else {
-            return allFloorplans
-        }
-        return allFloorplans.filter { $0.homeUUID == nil || $0.homeUUID == homeUUID }
+        allFloorplans.filter { homeKit.matchesActiveHome($0.homeUUID) }
     }
 
     private var pinnedFloorplans: [Floorplan] {
@@ -144,7 +144,11 @@ struct FloorplanEditorView: View {
     private func buildOverlayContext() -> FloorplanOverlayContext {
         let hasEnv = !floorplan.linkedRooms.isEmpty
         let hasSecure = homeKit.allAccessories.contains { acc in
-            acc.services.contains { svc in
+            if acc.category.categoryType == HMAccessoryCategoryTypeIPCamera ||
+                acc.category.categoryType == HMAccessoryCategoryTypeVideoDoorbell {
+                return true
+            }
+            return acc.services.contains { svc in
                 svc.serviceType == HMServiceTypeLockMechanism
                     || svc.serviceType == HMServiceTypeSecuritySystem
                     || svc.serviceType == HMServiceTypeGarageDoorOpener
@@ -297,7 +301,12 @@ struct FloorplanEditorView: View {
                 let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
                 IconPickerSheet(
                     accessory: accessory,
-                    defaultIconName: adapter.iconName
+                    defaultIconName: adapter.iconName,
+                    onIconChanged: {
+                        floorplan.updatedAt = .now
+                        try? modelContext.save()
+                        cloudKitSync.markFloorplanNeedsSync(floorplan.id)
+                    }
                 )
                 .presentationDetents([.large])
             }
@@ -315,6 +324,15 @@ struct FloorplanEditorView: View {
                 hasSeenFloorplanHelp = true
                 showFloorplanHelp = false
             }
+        }
+        .fullScreenCover(item: $drawingEditFloorplan, onDismiss: {
+            refreshFloorplanImageCache()
+            refreshOverlayContext()
+            subscribeToAccessories()
+        }) { editingFloorplan in
+            drawingEditor(for: editingFloorplan)
+                .environment(homeKit)
+                .ignoresSafeArea()
         }
         .suppressesIdleScreensaver(.floorplanInteraction, when: shouldSuppressIdleScreensaver)
         
@@ -377,8 +395,17 @@ struct FloorplanEditorView: View {
         .onChange(of: isAIEnabled) { _, _ in
             refreshOverlayContext()
         }
-        .onChange(of: floorplan.imageFilename) { _, _ in
+        .onChange(of: floorplan.updatedAt) { _, _ in
             refreshFloorplanImageCache()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .floorplansDidApplyRemoteChanges)) { notification in
+            reconcileVisibleMarkersIfNeeded(from: notification)
+            SyncDiagnosticsLogger.log(
+                "Editor observed floorplan remote-change floorplan=\(floorplan.id.uuidString) markers=\(floorplan.accessories.count) positions=[\(markerPositionDigest())]"
+            )
+            refreshFloorplanImageCache()
+            refreshOverlayContext()
+            subscribeToAccessories()
         }
         .onDisappear {
             unsubscribeFromAccessories()
@@ -572,22 +599,22 @@ struct FloorplanEditorView: View {
         HStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: smartLightingStatusIcon(status.state))
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                 Text(smartLightingStatusTitle(status))
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 if status.state == .active, status.activeCount > 0 {
                     Text("·")
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Text("\(status.activeCount)")
-                        .font(.caption.weight(.medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
             }
             .foregroundStyle(smartLightingStatusColor(status.state))
-            .padding(.horizontal, 13)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
 
             if status.state == .active || status.isUserPaused {
                 Rectangle()
@@ -598,24 +625,28 @@ struct FloorplanEditorView: View {
                     smartLightingEngine.pauseFromFloorplan()
                 } label: {
                     Image(systemName: "pause.fill")
-                        .font(.caption.weight(.semibold))
+                        .font(.subheadline.weight(.bold))
                         .foregroundStyle(status.isUserPaused ? Color.secondary.opacity(0.4) : smartLightingStatusColor(status.state))
-                        .frame(width: 34, height: 34)
+                        .frame(width: 44, height: 38)
+                        .contentShape(Rectangle())
                 }
                 .disabled(status.isUserPaused)
                 .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "smartlighting.floorplan.pause", defaultValue: "Pause Smart Lighting"))
 
                 Button {
                     smartLightingEngine.resumeFromFloorplan()
                 } label: {
                     Image(systemName: "play.fill")
-                        .font(.caption.weight(.semibold))
+                        .font(.subheadline.weight(.bold))
                         .foregroundStyle(status.isUserPaused ? smartLightingStatusColor(status.state) : Color.secondary.opacity(0.4))
-                        .frame(width: 34, height: 34)
-                        .padding(.trailing, 4)
+                        .frame(width: 44, height: 38)
+                        .contentShape(Rectangle())
+                        .padding(.trailing, 2)
                 }
                 .disabled(!status.isUserPaused)
                 .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "smartlighting.floorplan.resume", defaultValue: "Resume Smart Lighting"))
             }
         }
         .background(.regularMaterial, in: Capsule())
@@ -926,32 +957,7 @@ struct FloorplanEditorView: View {
 
                 // Scene: visibile solo in modalità Controlli o in editing
                 if !hideEditButton {
-                    Button {
-                        hasSeenFloorplanHelp = true
-                        showFloorplanHelp = true
-                    } label: {
-                        Image(systemName: "info.circle")
-                            .font(.subheadline)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: "floorplan.help.open", defaultValue: "Floorplan help"))
-                    .help(String(localized: "floorplan.help.open", defaultValue: "Floorplan help"))
-
-                    Divider().frame(height: 20)
-
-                    Button {
-                        showFloorplanDiagnostics = true
-                    } label: {
-                        Image(systemName: "checklist")
-                            .font(.subheadline)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+                    floorplanToolsMenu
 
                     Divider().frame(height: 20)
 
@@ -1008,6 +1014,73 @@ struct FloorplanEditorView: View {
         .opacity(hideEditButton ? 0 : 1)
         .allowsHitTesting(!hideEditButton)
         .animation(.easeInOut(duration: 0.2), value: hideEditButton)
+    }
+
+    private var floorplanToolsMenu: some View {
+        Menu {
+            Button {
+                hasSeenFloorplanHelp = true
+                showFloorplanHelp = true
+            } label: {
+                Label(String(localized: "floorplan.help.open", defaultValue: "Floorplan help"), systemImage: "info.circle")
+            }
+
+            Button {
+                showFloorplanDiagnostics = true
+            } label: {
+                Label(String(localized: "floorplan.diagnostics.open", defaultValue: "Marker diagnostics"), systemImage: "checklist")
+            }
+
+            Button {
+                drawingEditFloorplan = floorplan
+            } label: {
+                Label(String(localized: "floorplan.drawing.edit", defaultValue: "Edit 2D drawing"), systemImage: "pencil.and.ruler")
+            }
+            .disabled(floorplan.drawingDocumentJSON == nil)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.subheadline)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "floorplan.tools.open", defaultValue: "Floorplan tools"))
+        .help(String(localized: "floorplan.tools.open", defaultValue: "Floorplan tools"))
+    }
+
+    private func drawingEditor(for floorplan: Floorplan) -> some View {
+        DrawingFloorplanSheet(
+            initialDocument: floorplan.drawingDocument,
+            initialExteriorFillColorIndex: floorplan.exteriorFillColorIndex,
+            initialVisualExportStyle: DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard,
+            initialExportRotation: floorplan.drawingExportRotation
+        ) { image, rooms, doc, colorIndex, visualStyle, exportRotation in
+            let previousRooms = floorplan.linkedRooms
+            let previousRotation = floorplan.drawingExportRotation
+            if let newData = image.jpegData(compressionQuality: 0.85) {
+                floorplan.imageData = newData
+            }
+            floorplan.drawingDocument = doc
+            floorplan.exteriorFillColorIndex = colorIndex
+            floorplan.drawingVisualExportStyleRaw = visualStyle.rawValue
+            floorplan.drawingExportRotation = exportRotation
+            if !rooms.isEmpty {
+                preserveMarkerPositions(
+                    on: floorplan,
+                    from: previousRooms,
+                    to: rooms,
+                    previousRotation: previousRotation,
+                    newRotation: exportRotation
+                )
+                floorplan.linkedRooms = rooms
+            }
+            floorplan.updatedAt = .now
+            try? modelContext.save()
+            cloudKitSync.markFloorplanNeedsSync(floorplan.id)
+            refreshFloorplanImageCache()
+            refreshOverlayContext()
+        }
     }
     
     // MARK: - Auto-hide
@@ -1187,15 +1260,18 @@ struct FloorplanEditorView: View {
     }
 
     private func refreshFloorplanImageCache() {
-        guard floorplan.imageFilename != cachedFloorplanImageFilename
-                || cachedFloorplanImage == nil else { return }
-        let filename = floorplan.imageFilename
-        cachedFloorplanImageFilename = filename
-        guard !filename.isEmpty else { return }
+        let stamp = floorplan.updatedAt
+        guard stamp != cachedFloorplanImageDate || cachedFloorplanImage == nil else { return }
+        cachedFloorplanImageDate = stamp
+        let data = floorplan.currentImageData
+        guard let data else {
+            isLoadingImage = false
+            return
+        }
         isLoadingImage = true
         Task {
             let image = await Task.detached(priority: .userInitiated) {
-                ImageStorageService.load(filename: filename)
+                UIImage(data: data)
             }.value
             withAnimation(.easeIn(duration: 0.2)) {
                 cachedFloorplanImage = image
@@ -1603,7 +1679,52 @@ struct FloorplanEditorView: View {
     }
     
     // MARK: - Marker
-    
+
+    private func reconcileVisibleMarkersIfNeeded(from notification: Notification) {
+        guard let snapshotsByFloorplanID = notification.userInfo?[FloorplanRemoteChangeNotification.markerSnapshotsByFloorplanIDKey] as? [UUID: [PlacedAccessorySnapshot]],
+              let snapshots = snapshotsByFloorplanID[floorplan.id] else {
+            return
+        }
+
+        let existingByID = Dictionary(uniqueKeysWithValues: floorplan.accessories.map { ($0.id, $0) })
+        var updatedCount = 0
+
+        for snapshot in snapshots {
+            guard let placed = existingByID[snapshot.id] else { continue }
+            if placed.positionX != snapshot.positionX || placed.positionY != snapshot.positionY {
+                updatedCount += 1
+            }
+            placed.positionX = snapshot.positionX
+            placed.positionY = snapshot.positionY
+            placed.linkedRoomUUID = snapshot.linkedRoomUUID
+            placed.customLabel = snapshot.customLabel
+            if let iconOverride = snapshot.iconOverride {
+                iconOverrides.setIcon(iconOverride, for: placed.homeKitAccessoryUUID)
+            } else {
+                iconOverrides.removeIcon(for: placed.homeKitAccessoryUUID)
+            }
+        }
+
+        if updatedCount > 0 {
+            SyncDiagnosticsLogger.log(
+                "Editor reconciled remote marker snapshot floorplan=\(floorplan.id.uuidString) updatedMarkers=\(updatedCount)"
+            )
+        }
+    }
+
+    private func markerPositionDigest() -> String {
+        floorplan.accessories
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+            .map {
+                "\($0.id.uuidString.prefix(8))=(\(formatCoordinate($0.positionX)),\(formatCoordinate($0.positionY)))"
+            }
+            .joined(separator: ",")
+    }
+
+    private func formatCoordinate(_ value: Double) -> String {
+        String(format: "%.4f", value)
+    }
+
     @ViewBuilder
     private func markerView(for placed: PlacedAccessory,
                             in imageRect: CGRect,
@@ -1961,11 +2082,12 @@ struct FloorplanEditorView: View {
                 )
                 floorplan.updatedAt = .now
                 try? modelContext.save()
+                cloudKitSync.markFloorplanNeedsSync(floorplan.id)
                 
                 dragDeltas[placed.id] = .zero
             }
     }
-    
+
     // MARK: - Marker actions
 
     private func startAssistedPlacement(for roomID: UUID) {
@@ -2015,32 +2137,35 @@ struct FloorplanEditorView: View {
         floorplan.accessories.append(placed)
         floorplan.updatedAt = .now
         try? modelContext.save()
+        cloudKitSync.markFloorplanNeedsSync(floorplan.id)
     }
-    
+
     private func deleteMarker(_ placed: PlacedAccessory) {
         let uuid = placed.homeKitAccessoryUUID
         floorplan.accessories.removeAll { $0.id == placed.id }
         modelContext.delete(placed)
         floorplan.updatedAt = .now
         try? modelContext.save()
-        
+        cloudKitSync.markFloorplanNeedsSync(floorplan.id)
         selectedMarkerID = nil
         homeKit.stopObserving(accessoryUUIDs: [uuid])
     }
-    
+
     private func recenterMarker(_ placed: PlacedAccessory) {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             placed.position = .center
         }
         floorplan.updatedAt = .now
         try? modelContext.save()
+        cloudKitSync.markFloorplanNeedsSync(floorplan.id)
     }
-    
+
     private func applyRename(to placed: PlacedAccessory, newLabel: String) {
         let trimmed = newLabel.trimmingCharacters(in: .whitespaces)
         placed.customLabel = trimmed.isEmpty ? nil : trimmed
         floorplan.updatedAt = .now
         try? modelContext.save()
+        cloudKitSync.markFloorplanNeedsSync(floorplan.id)
     }
 
     private func backfillMarkerRoomLinksIfNeeded() {
@@ -2061,6 +2186,67 @@ struct FloorplanEditorView: View {
             floorplan.updatedAt = .now
             try? modelContext.save()
         }
+    }
+
+    private func preserveMarkerPositions(on floorplan: Floorplan,
+                                         from previousRooms: [LinkedRoom],
+                                         to newRooms: [LinkedRoom],
+                                         previousRotation: DrawingExportRotation,
+                                         newRotation: DrawingExportRotation) {
+        guard !previousRooms.isEmpty, !newRooms.isEmpty else { return }
+
+        let previousByID = Dictionary(uniqueKeysWithValues: previousRooms.map { ($0.hmRoomUUID, $0) })
+        let newByID = Dictionary(uniqueKeysWithValues: newRooms.map { ($0.hmRoomUUID, $0) })
+        let rotationDelta = (newRotation.quarterTurns - previousRotation.quarterTurns + 4) % 4
+
+        for marker in floorplan.accessories {
+            let markerPoint = NormalizedPoint(x: marker.positionX, y: marker.positionY)
+            guard let roomID = marker.linkedRoomUUID ?? roomID(containing: markerPoint, in: previousRooms),
+                  let previousRoom = previousByID[roomID],
+                  let newRoom = newByID[roomID] else { continue }
+
+            let previousRect = previousRoom.normalizedRect
+            let newRect = newRoom.normalizedRect
+            guard previousRect.width > 0, previousRect.height > 0 else { continue }
+
+            let localX = (marker.positionX - previousRect.x) / previousRect.width
+            let localY = (marker.positionY - previousRect.y) / previousRect.height
+            let rotatedLocal = rotatedLocalPoint(x: localX, y: localY, quarterTurns: rotationDelta)
+
+            marker.positionX = clamped(markerPosition: newRect.x + rotatedLocal.x * newRect.width)
+            marker.positionY = clamped(markerPosition: newRect.y + rotatedLocal.y * newRect.height)
+            marker.linkedRoomUUID = FloorplanRoomMatcher.linkedRoomID(
+                containing: marker.position,
+                in: newRooms
+            ) ?? roomID
+        }
+    }
+
+    private func rotatedLocalPoint(x: Double, y: Double, quarterTurns: Int) -> (x: Double, y: Double) {
+        switch quarterTurns {
+        case 1:
+            return (1 - y, x)
+        case 2:
+            return (1 - x, 1 - y)
+        case 3:
+            return (y, 1 - x)
+        default:
+            return (x, y)
+        }
+    }
+
+    private func roomID(containing point: NormalizedPoint, in rooms: [LinkedRoom]) -> UUID? {
+        rooms.first { room in
+            let rect = room.normalizedRect
+            return point.x >= rect.x &&
+                point.x <= rect.x + rect.width &&
+                point.y >= rect.y &&
+                point.y <= rect.y + rect.height
+        }?.hmRoomUUID
+    }
+
+    private func clamped(markerPosition value: Double) -> Double {
+        min(1, max(0, value))
     }
     
     // MARK: - Top Bar Height PreferenceKey

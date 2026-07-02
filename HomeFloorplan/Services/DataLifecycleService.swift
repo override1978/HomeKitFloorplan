@@ -90,10 +90,14 @@ final class DataLifecycleService {
             Self.aggregateEffectivenessEvents(context: ctx)
 
             // ── Phase 2: Prune (remove expired raw data) ──────────────────────
-            Self.prunePersistedInsights(context: ctx)
-            Self.pruneSensorAlertEvents(context: ctx)
-            Self.pruneActionEffectivenessEvents(context: ctx)
-            Self.pruneRoomAnalysisStates(context: ctx)
+            // Local data preservation is the default. Cloud data can be rebuilt from
+            // the device, but local SwiftData records must not be removed silently.
+            if !LocalDataProtection.shouldPreserveSwiftData {
+                Self.prunePersistedInsights(context: ctx)
+                Self.pruneSensorAlertEvents(context: ctx)
+                Self.pruneActionEffectivenessEvents(context: ctx)
+                Self.pruneRoomAnalysisStates(context: ctx)
+            }
 
             // ── Phase 3: Persist all changes ──────────────────────────────────
             try? ctx.save()

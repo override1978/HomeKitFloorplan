@@ -41,14 +41,14 @@ struct FloorplanModePill: View {
         } label: {
             VStack(spacing: 3) {
                 Image(systemName: mode.pillIcon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                 Text(mode.label)
-                    .font(.caption2)
+                    .font(.subheadline)
                     .fontWeight(.medium)
             }
             .foregroundStyle(isActive ? mode.accentColor : Color.primary.opacity(0.55))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 7)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

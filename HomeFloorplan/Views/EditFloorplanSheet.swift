@@ -10,6 +10,7 @@ struct EditFloorplanSheet: View {
     
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(CloudKitSyncService.self) private var cloudKitSync
     
     @State private var nameDraft: String = ""
     @State private var pickerItem: PhotosPickerItem?
@@ -80,7 +81,8 @@ struct EditFloorplanSheet: View {
                     .resizable()
                     .scaledToFit()
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else if let current = ImageStorageService.load(filename: floorplan.imageFilename) {
+            } else if let currentData = floorplan.currentImageData,
+                      let current = UIImage(data: currentData) {
                 Image(uiImage: current)
                     .resizable()
                     .scaledToFit()
@@ -136,18 +138,14 @@ struct EditFloorplanSheet: View {
         }
         
         // Aggiorna immagine se cambiata
-        if let pendingImage {
-            do {
-                ImageStorageService.delete(filename: floorplan.imageFilename)
-                let newFilename = try ImageStorageService.save(pendingImage)
-                floorplan.imageFilename = newFilename
-            } catch {
-                dprint("Errore salvataggio nuova immagine: \(error)")
-            }
+        if let pendingImage,
+           let newData = pendingImage.jpegData(compressionQuality: 0.85) {
+            floorplan.imageData = newData
         }
         
         floorplan.updatedAt = .now
         try? modelContext.save()
+        cloudKitSync.markFloorplanNeedsSync(floorplan.id)
         dismiss()
     }
 }

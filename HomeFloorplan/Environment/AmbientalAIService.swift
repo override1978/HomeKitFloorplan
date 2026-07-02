@@ -1055,6 +1055,8 @@ final class AmbientalAIService {
 
     /// Deletes PersistedInsight records older than 30 days regardless of status.
     func pruneOldInsights() {
+        guard !LocalDataProtection.shouldPreserveSwiftData else { return }
+
         let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
         let descriptor = FetchDescriptor<PersistedInsight>(
             predicate: #Predicate { $0.generatedAt < cutoff }

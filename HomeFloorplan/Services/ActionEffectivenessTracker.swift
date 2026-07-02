@@ -312,6 +312,8 @@ final class ActionEffectivenessTracker {
 
     /// Elimina eventi più vecchi di `days` giorni per contenere la dimensione del DB.
     func cleanup(olderThan days: Int = 90) {
+        guard !LocalDataProtection.shouldPreserveSwiftData else { return }
+
         let cutoff = Date().addingTimeInterval(-Double(days) * 24 * 3600)
         let descriptor = FetchDescriptor<ActionEffectivenessEvent>(
             predicate: #Predicate { $0.suggestedAt < cutoff }
