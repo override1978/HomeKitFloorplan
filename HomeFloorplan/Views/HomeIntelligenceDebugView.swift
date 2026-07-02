@@ -1,0 +1,424 @@
+import SwiftData
+import SwiftUI
+
+@MainActor
+struct HomeIntelligenceDebugView: View {
+    @Query(sort: \PersistedInsight.generatedAt, order: .reverse) private var persistedInsights: [PersistedInsight]
+    @Query(sort: \AutomationOpportunity.lastUpdatedAt, order: .reverse) private var automationOpportunities: [AutomationOpportunity]
+    @Query(sort: \ProactiveNotification.lastUpdatedAt, order: .reverse) private var proactiveNotifications: [ProactiveNotification]
+    @Query(sort: \AccessoryEvent.timestamp, order: .reverse) private var accessoryEvents: [AccessoryEvent]
+    @Query(sort: \SensorReading.timestamp, order: .reverse) private var sensorReadings: [SensorReading]
+    @Query(sort: \DailySensorSummary.date, order: .reverse) private var dailySensorSummaries: [DailySensorSummary]
+    @Query(sort: \AccessoryUsageSummary.weekStartDate, order: .reverse) private var accessoryUsageSummaries: [AccessoryUsageSummary]
+
+    @State private var selectedTab: DebugTab = .insights
+
+    private enum DebugTab: String, CaseIterable, Identifiable {
+        case insights = "Insights"
+        case signals = "Signals"
+        case baselines = "Baselines"
+
+        var id: String { rawValue }
+    }
+
+    private var insights: [HomeInsight] {
+        let mapped = persistedInsights.map(HomeInsightMapper.map)
+            + automationOpportunities.map(HomeInsightMapper.map)
+            + proactiveNotifications.map(HomeInsightMapper.map)
+        return mapped.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private var signalSamples: [HomeSignalEvent] {
+        let accessorySignals = accessoryEvents.prefix(40).flatMap { event -> [HomeSignalEvent] in
+            var signals = [HomeSignalEventMapper.map(event)]
+            if let brightness = HomeSignalEventMapper.mapBrightness(event) {
+                signals.append(brightness)
+            }
+            return signals
+        }
+        let sensorSignals = sensorReadings.prefix(40).map(HomeSignalEventMapper.map)
+        return Array((accessorySignals + sensorSignals).sorted { $0.timestamp > $1.timestamp }.prefix(60))
+    }
+
+    private var baselineSamples: [HomeBaseline] {
+        HomeBaselineEngine.buildMergedBaselines(
+            dailySensorSummaries: dailySensorSummaries,
+            accessoryUsageSummaries: accessoryUsageSummaries,
+            sensorReadings: sensorReadings,
+            accessoryEvents: accessoryEvents
+        )
+    }
+
+    private var activeInsightCount: Int {
+        insights.filter { $0.status == .active }.count
+    }
+
+    private var syncedInsightCount: Int {
+        insights.filter { $0.syncPolicy != .localOnly }.count
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header
+                summaryGrid
+                Picker("Debug section", selection: $selectedTab) {
+                    ForEach(DebugTab.allCases) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                switch selectedTab {
+                case .insights:
+                    insightList
+                case .signals:
+                    signalList
+                case .baselines:
+                    baselineList
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 980, alignment: .leading)
+        }
+        .background(BrandColor.subtleGradient.ignoresSafeArea())
+        .navigationTitle("Intelligence Debug")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Home Intelligence Domain", systemImage: "point.3.connected.trianglepath.dotted")
+                .font(.title2.weight(.semibold))
+            Text("Read-only projection of existing SwiftData records into HomeSignalEvent, HomeBaseline and HomeInsight.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var summaryGrid: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+            SummaryTile(title: "Insights", value: insights.count.formatted(), subtitle: "\(activeInsightCount) active")
+            SummaryTile(title: "Signals", value: signalSamples.count.formatted(), subtitle: "latest mapped samples")
+            SummaryTile(title: "Baselines", value: baselineSamples.count.formatted(), subtitle: "persisted + live preview")
+            SummaryTile(title: "Sync", value: syncedInsightCount.formatted(), subtitle: "non-local insights")
+        }
+    }
+
+    @ViewBuilder
+    private var insightList: some View {
+        if insights.isEmpty {
+            emptyState("No mapped insights", systemImage: "sparkles.rectangle.stack")
+        } else {
+            VStack(spacing: 12) {
+                ForEach(insights.prefix(80)) { insight in
+                    InsightDebugRow(insight: insight)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var signalList: some View {
+        if signalSamples.isEmpty {
+            emptyState("No mapped signals", systemImage: "waveform.path.ecg")
+        } else {
+            VStack(spacing: 12) {
+                ForEach(signalSamples) { signal in
+                    SignalDebugRow(signal: signal)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var baselineList: some View {
+        if baselineSamples.isEmpty {
+            emptyState("No mapped baselines", systemImage: "chart.xyaxis.line")
+        } else {
+            VStack(spacing: 12) {
+                ForEach(baselineSamples) { baseline in
+                    BaselineDebugRow(baseline: baseline)
+                }
+            }
+        }
+    }
+
+    private func emptyState(_ title: String, systemImage: String) -> some View {
+        ContentUnavailableView {
+            Label(title, systemImage: systemImage)
+        } description: {
+            Text("Run the app long enough to collect telemetry, summaries or generated insights.")
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+    }
+}
+
+private struct SummaryTile: View {
+    let title: String
+    let value: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.weight(.bold))
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct InsightDebugRow: View {
+    let insight: HomeInsight
+
+    var body: some View {
+        DebugCard(icon: icon, tint: tint) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(insight.title)
+                        .font(.headline)
+                    Spacer(minLength: 12)
+                    Text(insight.severity.rawValue)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(tint.opacity(0.14), in: Capsule())
+                        .foregroundStyle(tint)
+                }
+
+                Text(insight.message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                DebugMetadata(items: [
+                    "kind: \(insight.kind.rawValue)",
+                    "category: \(insight.category.rawValue)",
+                    "status: \(insight.status.rawValue)",
+                    "sync: \(insight.syncPolicy.rawValue)",
+                    "confidence: \(Self.percent(insight.confidence))",
+                    "source: \(insight.sourceRecordType ?? "-")"
+                ])
+
+                Text("dedupe: \(insight.dedupeKey)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private var icon: String {
+        switch insight.category {
+        case .environment, .weather: return "leaf.fill"
+        case .security: return "shield.lefthalf.filled"
+        case .habits: return "brain.head.profile"
+        case .automation: return "wand.and.sparkles"
+        case .maintenance: return "wrench.and.screwdriver.fill"
+        case .deviceHealth: return "stethoscope"
+        case .presence: return "person.fill.viewfinder"
+        case .lighting: return "lightbulb.fill"
+        case .system: return "gearshape"
+        }
+    }
+
+    private var tint: Color {
+        switch insight.severity {
+        case .critical, .high: return .red
+        case .medium: return .orange
+        case .low: return .blue
+        case .info: return .secondary
+        }
+    }
+
+    private static func percent(_ value: Double) -> String {
+        "\(Int((value * 100).rounded()))%"
+    }
+}
+
+private struct SignalDebugRow: View {
+    let signal: HomeSignalEvent
+
+    var body: some View {
+        DebugCard(icon: "waveform.path.ecg", tint: .blue) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(signal.entityName)
+                        .font(.headline)
+                    Spacer(minLength: 12)
+                    Text(signal.value.displayValue)
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                }
+
+                DebugMetadata(items: [
+                    "type: \(signal.signalType.rawValue)",
+                    "source: \(signal.sourceKind.rawValue)",
+                    "entity: \(signal.entityKind.rawValue)",
+                    "room: \(signal.roomName ?? "-")",
+                    "raw: \(signal.rawSourceType)",
+                    "time: \(signal.timestamp.formatted(date: .abbreviated, time: .shortened))"
+                ])
+            }
+        }
+    }
+}
+
+private struct BaselineDebugRow: View {
+    let baseline: HomeBaseline
+
+    var body: some View {
+        DebugCard(icon: "chart.xyaxis.line", tint: .green) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(baseline.entityName ?? baseline.roomName ?? "Home baseline")
+                        .font(.headline)
+                    Spacer(minLength: 12)
+                    Text(baseline.windowRaw)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green.opacity(0.14), in: Capsule())
+                        .foregroundStyle(.green)
+                }
+
+                DebugMetadata(items: [
+                    "type: \(baseline.signalType.rawValue)",
+                    "kind: \(baseline.baselineKind.rawValue)",
+                    "samples: \(baseline.sampleCount)",
+                    "mean: \(Self.value(baseline.mean))",
+                    "std: \(Self.value(baseline.standardDeviation))",
+                    "confidence: \(Int((baseline.confidence * 100).rounded()))%",
+                    "context: \(baseline.contextKey ?? "-")"
+                ])
+            }
+        }
+    }
+
+    private static func value(_ value: Double?) -> String {
+        guard let value else { return "-" }
+        return String(format: "%.2f", value)
+    }
+}
+
+private struct DebugCard<Content: View>: View {
+    let icon: String
+    let tint: Color
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.headline)
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct DebugMetadata: View {
+    let items: [String]
+
+    var body: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(items, id: \.self) { item in
+                Text(item)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
+            }
+        }
+    }
+}
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = rows(in: proposal.width ?? 0, subviews: subviews)
+        return CGSize(
+            width: proposal.width ?? rows.map(\.width).max() ?? 0,
+            height: rows.map(\.height).reduce(0, +) + CGFloat(max(0, rows.count - 1)) * spacing
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var origin = bounds.origin
+        for row in rows(in: bounds.width, subviews: subviews) {
+            var x = origin.x
+            for item in row.items {
+                item.subview.place(
+                    at: CGPoint(x: x, y: origin.y),
+                    proposal: ProposedViewSize(item.size)
+                )
+                x += item.size.width + spacing
+            }
+            origin.y += row.height + spacing
+        }
+    }
+
+    private func rows(in maxWidth: CGFloat, subviews: Subviews) -> [Row] {
+        guard maxWidth > 0 else {
+            return [Row(items: subviews.map { RowItem(subview: $0, size: $0.sizeThatFits(.unspecified)) })]
+        }
+
+        var rows: [Row] = []
+        var currentItems: [RowItem] = []
+        var currentWidth: CGFloat = 0
+        var currentHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let additionalWidth = currentItems.isEmpty ? size.width : size.width + spacing
+            if currentWidth + additionalWidth > maxWidth, !currentItems.isEmpty {
+                rows.append(Row(items: currentItems, width: currentWidth, height: currentHeight))
+                currentItems = []
+                currentWidth = 0
+                currentHeight = 0
+            }
+
+            currentItems.append(RowItem(subview: subview, size: size))
+            currentWidth += currentItems.count == 1 ? size.width : size.width + spacing
+            currentHeight = max(currentHeight, size.height)
+        }
+
+        if !currentItems.isEmpty {
+            rows.append(Row(items: currentItems, width: currentWidth, height: currentHeight))
+        }
+
+        return rows
+    }
+
+    private struct Row {
+        var items: [RowItem]
+        var width: CGFloat
+        var height: CGFloat
+
+        init(items: [RowItem], width: CGFloat? = nil, height: CGFloat? = nil) {
+            self.items = items
+            self.width = width ?? items.map(\.size.width).reduce(0, +)
+            self.height = height ?? items.map(\.size.height).max() ?? 0
+        }
+    }
+
+    private struct RowItem {
+        var subview: LayoutSubview
+        var size: CGSize
+    }
+}

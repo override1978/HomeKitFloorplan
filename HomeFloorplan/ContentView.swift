@@ -293,6 +293,10 @@ struct ContentView: View {
             NavigationStack {
                 HomeKitDebugView()
             }
+        case .homeIntelligenceDebug:
+            NavigationStack {
+                HomeIntelligenceDebugView()
+            }
         case .settings:
             NavigationStack {
                 SettingsView()

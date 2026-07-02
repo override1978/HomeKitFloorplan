@@ -172,6 +172,9 @@ struct SidebarView: View {
                     NavigationLink(value: SidebarSelection.debugHomeKit) {
                         Label(String(localized: "sidebar.debugHomeKit", defaultValue: "HomeKit Debug"), systemImage: "stethoscope")
                     }
+                    NavigationLink(value: SidebarSelection.homeIntelligenceDebug) {
+                        Label("Intelligence Debug", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
                 } label: {
                     Text(String(localized: "sidebar.section.settings", defaultValue: "Settings"))
                         .font(.subheadline.weight(.semibold))
@@ -364,5 +367,6 @@ enum SidebarSelection: Hashable {
     case habits
     case homeIntelligence
     case debugHomeKit
+    case homeIntelligenceDebug
     case settings
 }
