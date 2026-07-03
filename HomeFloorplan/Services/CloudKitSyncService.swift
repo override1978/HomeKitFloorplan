@@ -631,7 +631,6 @@ final class CloudKitSyncService {
             settingsDescriptor,
             opportunityDescriptor,
             thresholdDescriptor,
-            insightDescriptor,
             behaviorDescriptor,
             habitDescriptor
         ]

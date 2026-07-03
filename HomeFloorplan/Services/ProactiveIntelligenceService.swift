@@ -722,14 +722,110 @@ final class ProactiveIntelligenceService {
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
         let activeInsights = (try? ctx.fetch(descriptor)) ?? []
-        for insight in notificationInsights(from: activeInsights.map { $0.toHomeInsight() }) {
+        let insights = notificationInsights(from: activeInsights.map { $0.toHomeInsight() })
+        resolveSuppressedHomeInsightNotifications(allowedInsights: insights)
+
+        for insight in insights {
             guard !context.suppressNonCritical || insight.severity >= .high else { continue }
             await processHomeInsightAnomaly(insight, context: context)
         }
     }
 
     private func notificationInsights(from insights: [HomeInsight]) -> [HomeInsight] {
-        insights
+        let canonicalEnvironmentKeys = Set(
+            insights
+                .filter(isCanonicalEnvironmentAnomaly)
+                .compactMap(environmentOverlapKey)
+        )
+
+        guard !canonicalEnvironmentKeys.isEmpty else { return insights }
+
+        return insights.filter { insight in
+            guard isAmbientalAIEnvironmentInsight(insight),
+                  let key = environmentOverlapKey(for: insight) else {
+                return true
+            }
+            return !canonicalEnvironmentKeys.contains(key)
+        }
+    }
+
+    private func resolveSuppressedHomeInsightNotifications(allowedInsights: [HomeInsight]) {
+        let allowedKeys = Set(allowedInsights.map { "homeInsight|\($0.dedupeKey)" })
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<ProactiveNotification>(
+            predicate: #Predicate {
+                $0.statusRaw == "live" || $0.statusRaw == "updated" || $0.statusRaw == "acknowledged"
+            }
+        )
+        let live = (try? ctx.fetch(descriptor)) ?? []
+        let now = Date()
+
+        for notification in live
+        where notification.semanticKey.hasPrefix("homeInsight|")
+            && !allowedKeys.contains(notification.semanticKey)
+            && (notification.categoryRaw == NotificationCategory.environment.rawValue
+                || notification.categoryRaw == NotificationCategory.hvac.rawValue) {
+            notification.status = .resolved
+            notification.resolvedAt = now
+            notification.lastUpdatedAt = now
+        }
+    }
+
+    private func isCanonicalEnvironmentAnomaly(_ insight: HomeInsight) -> Bool {
+        insight.category == .environment
+            && insight.kind == .anomaly
+            && (
+                insight.sourceRecordType == String(describing: HomeSignalEvent.self)
+                    || insight.sourceRecordType == String(describing: HomeStateInterval.self)
+            )
+    }
+
+    private func isAmbientalAIEnvironmentInsight(_ insight: HomeInsight) -> Bool {
+        insight.category == .environment
+            && (
+                insight.sourceRecordType == String(describing: AmbientalAIInsight.self)
+                    || insight.sourceRecordType == String(describing: PersistedInsight.self)
+            )
+    }
+
+    private func environmentOverlapKey(for insight: HomeInsight) -> String? {
+        guard insight.category == .environment else { return nil }
+        let room = normalizedOverlapComponent(insight.roomName ?? "home")
+        let text = [
+            insight.title,
+            insight.message,
+            insight.sourceEntityName ?? "",
+            insight.dedupeKey
+        ].joined(separator: " ")
+
+        guard let signal = environmentSignalGroup(from: text) else { return nil }
+        return "\(room)|\(signal)"
+    }
+
+    private func environmentSignalGroup(from text: String) -> String? {
+        let value = text
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+        if value.contains("co2") || value.contains("co₂") || value.contains("anidride carbonica") || value.contains("carbon dioxide") {
+            return "co2"
+        }
+        if value.contains("airquality") || value.contains("air quality") || value.contains("qualita aria") || value.contains("qualità aria") {
+            return "airQuality"
+        }
+        if value.contains("temperature") || value.contains("temperatura") || value.contains("caldo") || value.contains("heat") || value.contains("solar") {
+            return "temperature"
+        }
+        if value.contains("humidity") || value.contains("umidita") || value.contains("umidità") {
+            return "humidity"
+        }
+        return nil
+    }
+
+    private func normalizedOverlapComponent(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func resolveLegacySignalNotifications() {

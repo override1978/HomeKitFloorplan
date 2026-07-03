@@ -776,6 +776,7 @@ final class AmbientalAIService {
         let statusActive = HomeInsightStatus.active.rawValue
         let environmentCategory = HomeInsightCategory.environment.rawValue
         let legacySourceType = String(describing: PersistedInsight.self)
+        let ambientalSourceType = String(describing: AmbientalAIInsight.self)
         let descriptor = FetchDescriptor<PersistedHomeInsight>(
             predicate: #Predicate {
                 $0.statusRaw == statusActive && $0.categoryRaw == environmentCategory
@@ -783,7 +784,7 @@ final class AmbientalAIService {
         )
         let records = ((try? context.fetch(descriptor)) ?? [])
             .filter {
-                $0.sourceRecordType == legacySourceType &&
+                ($0.sourceRecordType == ambientalSourceType || $0.sourceRecordType == legacySourceType) &&
                 $0.createdAt.addingTimeInterval(2 * 3600) > now
             }
         insights = records.compactMap { record -> AmbientalAIInsight? in
@@ -1140,7 +1141,7 @@ final class AmbientalAIService {
             category: .environment,
             severity: homeInsightSeverity(from: insight.severity),
             status: insight.isDismissed ? .dismissed : .active,
-            title: insight.patternKey ?? insight.roomName,
+            title: displayTitle(for: insight),
             message: insight.message,
             whyExplanation: insight.whyExplanation,
             sourceEntityID: insight.sourceAccessoryID,
@@ -1157,6 +1158,41 @@ final class AmbientalAIService {
             sourceRecordID: insight.id.uuidString,
             syncPolicy: .syncFull
         )
+    }
+
+    private func displayTitle(for insight: AmbientalAIInsight) -> String {
+        let isItalian = Locale.current.language.languageCode?.identifier == "it"
+        let roomName = insight.roomName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let room = roomName.isEmpty ? (isItalian ? "Casa" : "Home") : roomName
+        let key = (insight.patternKey ?? "")
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+        let message = insight.message
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+        let text = "\(key) \(message)"
+
+        if text.contains("co2") || text.contains("co₂") || text.contains("anidride carbonica") || text.contains("carbon dioxide") {
+            return isItalian ? "CO2 elevata in \(room)" : "Elevated CO2 in \(room)"
+        }
+
+        if text.contains("airquality") || text.contains("air quality") || text.contains("qualita aria") || text.contains("qualità aria") {
+            return isItalian ? "Qualità aria da controllare in \(room)" : "Air quality to check in \(room)"
+        }
+
+        if text.contains("solar") || text.contains("heat") || text.contains("caldo") || text.contains("temperatura") || text.contains("temperature") {
+            return isItalian ? "Temperatura da monitorare in \(room)" : "Temperature to monitor in \(room)"
+        }
+
+        guard let patternKey = insight.patternKey, !patternKey.isEmpty else {
+            return isItalian ? "Insight ambiente in \(room)" : "Environment insight in \(room)"
+        }
+
+        return patternKey
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 
     private func encodeNextActions(_ actions: [AINextAction]) -> String {

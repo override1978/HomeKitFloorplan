@@ -205,20 +205,62 @@ enum HomeInsightAnomalyPipeline {
     ) -> [HomeStateInterval] {
         guard let homeKitService else { return intervals }
 
-        let liveActiveByAccessoryID = Dictionary(
+        let liveStateByAccessoryID = Dictionary(
             uniqueKeysWithValues: homeKitService.allAccessories.map { accessory in
                 let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService)
-                return (accessory.uniqueIdentifier.uuidString, adapter.isOn)
+                return (accessory.uniqueIdentifier.uuidString, liveIntervalState(for: adapter))
             }
         )
 
         return intervals.filter { interval in
             guard interval.isActive,
                   let entityID = interval.entityID,
-                  let isLiveActive = liveActiveByAccessoryID[entityID] else {
+                  let liveState = liveStateByAccessoryID[entityID] else {
                 return true
             }
-            return isLiveActive
+            return liveState.matches(interval)
+        }
+    }
+
+    private static func liveIntervalState(for adapter: any AccessoryAdapter) -> LiveIntervalState {
+        if let thermostat = adapter as? ThermostatAdapter {
+            return .climate(
+                isOn: thermostat.isOn,
+                currentMode: thermostat.currentMode,
+                currentOperation: thermostat.heaterCoolerState
+            )
+        }
+
+        if let thermostat = adapter as? LegacyThermostatAdapter {
+            return .climate(
+                isOn: thermostat.isOn,
+                currentMode: thermostat.currentMode,
+                currentOperation: thermostat.heaterCoolerState
+            )
+        }
+
+        return .generic(isOn: adapter.isOn)
+    }
+
+    private enum LiveIntervalState {
+        case generic(isOn: Bool)
+        case climate(isOn: Bool, currentMode: HeaterCoolerMode, currentOperation: Int)
+
+        func matches(_ interval: HomeStateInterval) -> Bool {
+            switch self {
+            case .generic(let isOn):
+                return isOn
+            case .climate(let isOn, let currentMode, let currentOperation):
+                guard isOn else { return false }
+                guard interval.stateRaw == "heating" else { return true }
+                if currentOperation == 3 || currentMode == .cool {
+                    return false
+                }
+                if currentOperation == 2 || currentMode == .heat {
+                    return true
+                }
+                return false
+            }
         }
     }
 }
