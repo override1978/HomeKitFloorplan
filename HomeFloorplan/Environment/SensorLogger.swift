@@ -1,7 +1,6 @@
 import Foundation
 import HomeKit
 import SwiftData
-import UserNotifications
 
 // MARK: - SensorLogger
 
@@ -32,7 +31,7 @@ final class SensorLogger {
     // MARK: - Campionamento principale
 
     /// Campiona tutti i sensori ambientali della casa e salva le letture.
-    /// Dopo il salvataggio controlla le soglie e invia notifiche se necessario.
+    /// La generazione degli alert passa dal motore unificato di Home Intelligence.
     func sampleAllSensors(home: HMHome, modelContainer: ModelContainer) async {
         let accessories = home.accessories
         var readings: [(accessoryUUID: String, serviceType: SensorServiceType, roomName: String, value: Double)] = []
@@ -53,10 +52,6 @@ final class SensorLogger {
         // Salva in background context per non bloccare la UI
         let backgroundContext = ModelContext(modelContainer)
 
-        // Carica i threshold attivi per il controllo soglie
-        let thresholds = (try? backgroundContext.fetch(FetchDescriptor<SensorAlertThreshold>())) ?? []
-        var alertCandidates: [EnvironmentalAlertCandidate] = []
-
         for reading in readings {
             let entity = SensorReading(
                 accessoryUUID: reading.accessoryUUID,
@@ -65,18 +60,7 @@ final class SensorLogger {
                 value: reading.value
             )
             backgroundContext.insert(entity)
-
-            if let candidate = thresholdAlert(
-                serviceType: reading.serviceType,
-                roomName: reading.roomName,
-                value: reading.value,
-                thresholds: thresholds
-            ) {
-                alertCandidates.append(candidate)
-            }
         }
-
-        AlertNotificationService.shared.sendGroupedAlerts(alertCandidates)
 
         do {
             try backgroundContext.save()
@@ -218,41 +202,4 @@ final class SensorLogger {
         return nil
     }
 
-    // MARK: - Controllo soglie
-
-    private func thresholdAlert(
-        serviceType: SensorServiceType,
-        roomName: String,
-        value: Double,
-        thresholds: [SensorAlertThreshold]
-    ) -> EnvironmentalAlertCandidate? {
-        // Rispetta il toggle globale delle notifiche ambientali
-        guard UserDefaults.standard.bool(forKey: "alertNotificationsEnabled") else { return nil }
-
-        // Prima cerca soglia specifica per stanza, poi globale
-        let threshold = thresholds.first(where: {
-            $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == roomName
-        }) ?? thresholds.first(where: {
-            $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == nil
-        })
-
-        guard let threshold, threshold.isEnabled else { return nil }
-
-        if value >= threshold.dangerValue {
-            return EnvironmentalAlertCandidate(
-                sensorType: serviceType,
-                roomName: roomName,
-                value: value,
-                level: .danger
-            )
-        } else if value >= threshold.warningValue {
-            return EnvironmentalAlertCandidate(
-                sensorType: serviceType,
-                roomName: roomName,
-                value: value,
-                level: .warning
-            )
-        }
-        return nil
-    }
 }

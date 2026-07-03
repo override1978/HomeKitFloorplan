@@ -3,24 +3,25 @@ import HomeKit
 
 // MARK: - SensorEventRouter
 
-/// Routes real-time HMAccessoryDelegate value-change callbacks to AlertNotificationService.
+/// Routes real-time HMAccessoryDelegate value-change callbacks to immediate AI analysis.
 /// Plugged into HomeKitService via the injectable `sensorEventRouter` property.
 ///
 /// Priority tiers (Sprint 23.A):
 /// - High (immediate): smoke detected, carbonMonoxide ≥ warning, carbonDioxide ≥ danger, temperature > 38 °C
 /// - Medium (debounce 2 min): temperature/humidity at warning, airQuality ≥ fair (≥ 3), vocDensity ≥ warning
 ///
-/// The `ambientalAI` weak ref is wired up in HomeFloorplanApp.init so high-priority events
-/// also bypass the normal 15-min analysis gate for the affected room.
+/// The `ambientalAI` weak ref is wired up in HomeFloorplanApp.init so priority events
+/// bypass the normal 15-min analysis gate for the affected room. Notification delivery
+/// is handled later by the unified PersistedHomeInsight pipeline.
 final class SensorEventRouter {
 
     static let shared = SensorEventRouter()
 
-    /// Minimum interval between medium-priority alerts for the same sensor+room key.
+    /// Minimum interval between medium-priority analysis requests for the same sensor+room key.
     private let mediumDebounceInterval: TimeInterval = 2 * 60
 
-    /// Last medium-priority send timestamps, keyed by "sensorType-roomName".
-    private var lastMediumAlert: [String: Date] = [:]
+    /// Last medium-priority analysis timestamps, keyed by "sensorType-roomName".
+    private var lastMediumAnalysisRequest: [String: Date] = [:]
 
     /// Weak reference to AmbientalAIService; assigned from HomeFloorplanApp after both objects exist.
     weak var ambientalAI: AmbientalAIService?
@@ -37,27 +38,24 @@ final class SensorEventRouter {
 
         let roomName = accessory.room?.name ?? ""
         guard let numericValue = numericDouble(from: value, sensorType: sensorType) else { return }
-        guard let (priority, level) = classify(sensorType: sensorType, value: numericValue) else { return }
+        guard let priority = classify(sensorType: sensorType, value: numericValue) else { return }
 
         let key = "\(sensorType.rawValue)-\(roomName)"
 
         switch priority {
         case .high:
-            AlertNotificationService.shared.sendAlert(
-                sensorType: sensorType, roomName: roomName, value: numericValue, level: level
-            )
             if let ai = ambientalAI {
                 Task { @MainActor in ai.requestImmediateAnalysis(for: roomName) }
             }
 
         case .medium:
             let now = Date()
-            if let last = lastMediumAlert[key],
+            if let last = lastMediumAnalysisRequest[key],
                now.timeIntervalSince(last) < mediumDebounceInterval { return }
-            lastMediumAlert[key] = now
-            AlertNotificationService.shared.sendAlert(
-                sensorType: sensorType, roomName: roomName, value: numericValue, level: level
-            )
+            lastMediumAnalysisRequest[key] = now
+            if let ai = ambientalAI {
+                Task { @MainActor in ai.requestImmediateAnalysis(for: roomName) }
+            }
         }
     }
 
@@ -68,48 +66,48 @@ final class SensorEventRouter {
     private func classify(
         sensorType: SensorServiceType,
         value: Double
-    ) -> (priority: Priority, level: AlertLevel)? {
+    ) -> Priority? {
         switch sensorType {
         case .smoke:
             guard value >= sensorType.defaultWarning else { return nil }
-            return (.high, .danger)
+            return .high
 
         case .carbonMonoxide:
             guard value >= sensorType.defaultWarning else { return nil }
-            return (.high, value >= sensorType.defaultDanger ? .danger : .warning)
+            return .high
 
         case .carbonDioxide:
-            if value >= sensorType.defaultDanger  { return (.high, .danger) }
-            if value >= sensorType.defaultWarning { return (.medium, .warning) }
+            if value >= sensorType.defaultDanger  { return .high }
+            if value >= sensorType.defaultWarning { return .medium }
             return nil
 
         case .temperature:
-            if value > 38.0 || value >= sensorType.defaultDanger { return (.high, .danger) }
-            if value >= sensorType.defaultWarning { return (.medium, .warning) }
-            if let ld = sensorType.defaultLowDanger,  value < ld { return (.medium, .danger) }
-            if let lw = sensorType.defaultLowWarning, value < lw { return (.medium, .warning) }
+            if value > 38.0 || value >= sensorType.defaultDanger { return .high }
+            if value >= sensorType.defaultWarning { return .medium }
+            if let ld = sensorType.defaultLowDanger,  value < ld { return .medium }
+            if let lw = sensorType.defaultLowWarning, value < lw { return .medium }
             return nil
 
         case .humidity:
-            if value >= sensorType.defaultDanger  { return (.medium, .danger) }
-            if value >= sensorType.defaultWarning { return (.medium, .warning) }
-            if let ld = sensorType.defaultLowDanger,  value < ld { return (.medium, .danger) }
-            if let lw = sensorType.defaultLowWarning, value < lw { return (.medium, .warning) }
+            if value >= sensorType.defaultDanger  { return .medium }
+            if value >= sensorType.defaultWarning { return .medium }
+            if let ld = sensorType.defaultLowDanger,  value < ld { return .medium }
+            if let lw = sensorType.defaultLowWarning, value < lw { return .medium }
             return nil
 
         case .airQuality:
-            if value >= sensorType.defaultDanger  { return (.medium, .danger) }
-            if value >= sensorType.defaultWarning { return (.medium, .warning) }
+            if value >= sensorType.defaultDanger  { return .medium }
+            if value >= sensorType.defaultWarning { return .medium }
             return nil
 
         case .vocDensity, .pm25, .pm10:
-            if value >= sensorType.defaultDanger  { return (.medium, .danger) }
-            if value >= sensorType.defaultWarning { return (.medium, .warning) }
+            if value >= sensorType.defaultDanger  { return .medium }
+            if value >= sensorType.defaultWarning { return .medium }
             return nil
 
         case .lightSensor:
-            if value >= sensorType.defaultDanger  { return (.medium, .danger) }
-            if value >= sensorType.defaultWarning { return (.medium, .warning) }
+            if value >= sensorType.defaultDanger  { return .medium }
+            if value >= sensorType.defaultWarning { return .medium }
             return nil
 
         case .outdoorTemperature, .outdoorHumidity:

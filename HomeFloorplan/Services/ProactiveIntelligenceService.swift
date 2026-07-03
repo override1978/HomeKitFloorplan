@@ -262,190 +262,7 @@ final class ProactiveIntelligenceService {
         loadNotifications()
     }
 
-    // MARK: - Signal Processors
-
-    private func processDeviation(_ signal: DeviationSignal, context: ContextSnapshot) async {
-        let key  = "behavioral|\(signal.pattern.accessoryName)|\(signal.pattern.action.rawValue)"
-        let score = BehavioralDeviationDetector.score(for: signal)
-        guard score.composite >= deliveryThreshold else { return }
-
-        // Priority escalates after consecutive misses
-        let priority: NotificationPriority = signal.consecutiveMisses >= 3 ? .medium : .low
-
-        if let existing = findLive(semanticKey: key) {
-            existing.body           = BehavioralDeviationDetector.body(for: signal)
-            existing.whyExplanation = BehavioralDeviationDetector.whyExplanation(for: signal)
-            existing.status         = .updated
-            existing.lastUpdatedAt  = Date()
-            existing.scoreData      = try? JSONEncoder().encode(score)
-        } else {
-            let notif = ProactiveNotification(
-                category:       .behavioralAI,
-                priority:       priority,
-                semanticKey:    key,
-                headline:       BehavioralDeviationDetector.headline(for: signal),
-                body:           BehavioralDeviationDetector.body(for: signal),
-                sourceID:       signal.pattern.id.uuidString,
-                whyExplanation: BehavioralDeviationDetector.whyExplanation(for: signal),
-                score:          score
-            )
-            notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-            modelContainer.mainContext.insert(notif)
-            if checkRateLimit(priority: priority, category: .behavioralAI) {
-                await NotificationDeliveryOrchestrator.deliver(notif, context: context)
-            }
-        }
-        BehavioralDeviationDetector.recordMiss(for: signal.pattern.id)
-    }
-
-    private func processOpportunity(_ opp: AutomationOpportunity, context: ContextSnapshot) async {
-        let key   = "automationOpportunity|\(opp.patternID.uuidString)"
-        let score = IntelligenceScore(
-            relevance:     min(1.0, opp.confidence * 1.1),
-            confidence:    opp.confidence,
-            urgency:       0.30,
-            actionability: 1.00,
-            novelty:       opportunityNovelty(opp)
-        )
-        guard score.composite >= deliveryThreshold else { return }
-
-        if let existing = findLive(semanticKey: key) {
-            existing.body           = opportunityBody(opp)
-            existing.whyExplanation = opportunityWhy(opp)
-            existing.status         = .updated
-            existing.lastUpdatedAt  = Date()
-            existing.scoreData      = try? JSONEncoder().encode(score)
-        } else {
-            let notif = ProactiveNotification(
-                category:    .automationOpportunity,
-                priority:    opp.confidence >= 0.90 ? .medium : .low,
-                semanticKey: key,
-                headline:    opportunityHeadline(opp),
-                body:        opportunityBody(opp),
-                sourceID:    opp.id.uuidString,
-                whyExplanation: opportunityWhy(opp),
-                score:       score
-            )
-            notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-            modelContainer.mainContext.insert(notif)
-            if opp.confidence >= 0.90 {
-                await NotificationDeliveryOrchestrator.deliver(notif, context: context)
-            }
-        }
-    }
-
-    private func processEnvironmental(_ sig: EnvironmentalSignal, context: ContextSnapshot) async {
-        let key = sig.semanticKey
-
-        if let existing = findLive(semanticKey: key) {
-            // Update without re-sending system notification (unless priority escalated)
-            let oldPriority = existing.priority
-            existing.currentValue   = EnvironmentalAlertBuilder.formattedCurrentValue(for: sig)
-            existing.peakValue      = EnvironmentalAlertBuilder.formattedPeakValue(for: sig)
-            existing.trendRaw       = sig.trend.rawValue
-            existing.body           = EnvironmentalAlertBuilder.body(for: sig)
-            existing.priorityRaw    = sig.priority.rawValue
-            existing.recommendation = EnvironmentalAlertBuilder.recommendation(for: sig)
-            existing.whyExplanation = EnvironmentalAlertBuilder.whyExplanation(for: sig)
-            existing.status         = .updated
-            existing.lastUpdatedAt  = Date()
-            existing.scoreData      = try? JSONEncoder().encode(sig.score)
-            // Re-deliver only on priority escalation
-            if sig.priority > oldPriority && sig.priority.sendsSystemNotification {
-                await NotificationDeliveryOrchestrator.deliver(existing, context: context)
-            }
-        } else {
-            let notif = ProactiveNotification(
-                category:       .environment,
-                priority:       sig.priority,
-                semanticKey:    key,
-                headline:       EnvironmentalAlertBuilder.headline(for: sig),
-                body:           EnvironmentalAlertBuilder.body(for: sig),
-                contextNote:    sig.contextNote,
-                currentValue:   EnvironmentalAlertBuilder.formattedCurrentValue(for: sig),
-                peakValue:      EnvironmentalAlertBuilder.formattedPeakValue(for: sig),
-                trend:          sig.trend,
-                recommendation: EnvironmentalAlertBuilder.recommendation(for: sig),
-                whyExplanation: EnvironmentalAlertBuilder.whyExplanation(for: sig),
-                score:          sig.score
-            )
-            notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-            modelContainer.mainContext.insert(notif)
-            if checkRateLimit(priority: sig.priority, category: .environment) {
-                await NotificationDeliveryOrchestrator.deliver(notif, context: context)
-            }
-        }
-    }
-
-    private func processPredictiveAlert(_ signal: PredictiveSignal, context: ContextSnapshot) async {
-        let key = signal.semanticKey
-        if let existing = findLive(semanticKey: key) {
-            existing.recommendation = String(localized: "notif.predictive.rec",
-                defaultValue: "Open windows or activate ventilation in advance.")
-            existing.whyExplanation = String(format:
-                String(localized: "notif.predictive.why",
-                       defaultValue: "Detected in %1$.0f%% of the %2$d similar days observed."),
-                signal.pattern.exceedanceRate * 100, signal.pattern.sampleCount)
-            return
-        }
-
-        let typeName = signal.pattern.sensorType?.displayName ?? signal.pattern.sensorTypeRaw
-        let notif = ProactiveNotification(
-            category:    .aiDiscovery,
-            priority:    .low,
-            semanticKey: key,
-            headline:    String(format:
-                String(localized: "notif.predictive.headline",
-                       defaultValue: "Expected %@ peak in %@"),
-                typeName, signal.pattern.roomName),
-            body:        String(format:
-                String(localized: "notif.predictive.body",
-                       defaultValue: "Tends to exceed threshold in ~%d min. Ventilate now to prevent it."),
-                signal.expectedInMinutes),
-            recommendation: String(localized: "notif.predictive.rec",
-                defaultValue: "Open windows or activate ventilation in advance."),
-            whyExplanation: String(format:
-                String(localized: "notif.predictive.why",
-                       defaultValue: "Detected in %.0f%% of %d similar days observed."),
-                signal.pattern.exceedanceRate * 100, signal.pattern.sampleCount),
-            score: signal.score
-        )
-        notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-        modelContainer.mainContext.insert(notif)
-        if signal.score.urgency >= 0.70, checkRateLimit(priority: .low, category: .aiDiscovery) {
-            await NotificationDeliveryOrchestrator.deliver(notif, context: context)
-        }
-    }
-
-    private func processAnomaly(_ signal: AnomalySignal, context: ContextSnapshot) async {
-        let key = signal.semanticKey
-        let detailStr = String(format: "%g", signal.numericDetail)
-        if let existing = findLive(semanticKey: key) {
-            existing.body         = signal.description
-            existing.currentValue = detailStr
-            return
-        }
-
-        let notif = ProactiveNotification(
-            category:     .deviceHealth,
-            priority:     .medium,
-            semanticKey:  key,
-            headline:     String(format:
-                String(localized: "notif.anomaly.headline",
-                       defaultValue: "Anomalous %@ in %@"),
-                signal.sensorType.displayName, signal.roomName),
-            body:         signal.description,
-            currentValue: detailStr,
-            recommendation: String(localized: "notif.anomaly.rec",
-                defaultValue: "Check the sensor and verify it is correctly positioned."),
-            score: signal.score
-        )
-        notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-        modelContainer.mainContext.insert(notif)
-        if checkRateLimit(priority: .medium, category: .deviceHealth) {
-            await NotificationDeliveryOrchestrator.deliver(notif, context: context)
-        }
-    }
+    // MARK: - Unified Home Insight Delivery
 
     private func processHomeInsightAnomaly(_ insight: HomeInsight, context: ContextSnapshot) async {
         let key = "homeInsight|\(insight.dedupeKey)"
@@ -453,7 +270,6 @@ final class ProactiveIntelligenceService {
         let category = notificationCategory(for: insight)
         let score = intelligenceScore(for: insight)
 
-        guard priority >= .medium else { return }
         guard score.composite >= deliveryThreshold else { return }
 
         if let existing = findLive(semanticKey: key) {
@@ -468,7 +284,9 @@ final class ProactiveIntelligenceService {
             existing.status = .updated
             existing.lastUpdatedAt = Date()
             existing.scoreData = try? JSONEncoder().encode(score)
-            if priority > oldPriority && checkRateLimit(priority: priority, category: category) {
+            if priority > oldPriority,
+               shouldDeliverSystemNotification(for: insight, priority: priority),
+               checkRateLimit(priority: priority, category: category) {
                 await NotificationDeliveryOrchestrator.deliver(existing, context: context)
             }
             return
@@ -490,7 +308,8 @@ final class ProactiveIntelligenceService {
         )
         notif.statusRaw = ProactiveNotificationStatus.live.rawValue
         modelContainer.mainContext.insert(notif)
-        if checkRateLimit(priority: priority, category: category) {
+        if shouldDeliverSystemNotification(for: insight, priority: priority),
+           checkRateLimit(priority: priority, category: category) {
             await NotificationDeliveryOrchestrator.deliver(notif, context: context)
         }
     }
@@ -513,33 +332,17 @@ final class ProactiveIntelligenceService {
         return nil
     }
 
-    private func processMaintenance(_ signal: MaintenanceSignal, context: ContextSnapshot) async {
-        let key = signal.semanticKey
-        if let existing = findLive(semanticKey: key) {
-            existing.recommendation = String(localized: "notif.maintenance.rec",
-                defaultValue: "Verify that the device is working correctly.")
-            existing.whyExplanation = String(localized: "notif.maintenance.why",
-                defaultValue: "Anomaly detected by comparing usage history.")
-            return
+    private func shouldDeliverSystemNotification(for insight: HomeInsight, priority: NotificationPriority) -> Bool {
+        guard priority.sendsSystemNotification else { return false }
+
+        if insight.sourceRecordType == String(describing: HomeSignalEvent.self) {
+            let why = insight.whyExplanation ?? ""
+            return why.localizedCaseInsensitiveContains("danger threshold")
+                || why.localizedCaseInsensitiveContains("critical threshold")
+                || why.localizedCaseInsensitiveContains("soglia critica")
         }
 
-        let notif = ProactiveNotification(
-            category:    .deviceHealth,
-            priority:    .low,
-            semanticKey: key,
-            headline:    String(format:
-                String(localized: "notif.maintenance.headline",
-                       defaultValue: "Check %@"), signal.accessoryName),
-            body:        signal.detail,
-            recommendation: String(localized: "notif.maintenance.rec",
-                defaultValue: "Verify that the device is working correctly."),
-            whyExplanation: String(localized: "notif.maintenance.why",
-                defaultValue: "Anomaly detected by comparing usage history."),
-            score: signal.score
-        )
-        notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-        modelContainer.mainContext.insert(notif)
-        // Maintenance alerts are low-priority — no system notification needed
+        return true
     }
 
     // MARK: - Sprint 31: Weather Prediction
@@ -560,9 +363,6 @@ final class ProactiveIntelligenceService {
 
         let signals = weatherPredictionSignals(for: forecast, forecastDateKey: tomorrowDate)
         upsertHomeInsights(signals.map(HomeInsightMapper.map))
-        for signal in signals where signal.score.composite >= deliveryThreshold {
-            processWeatherPrediction(signal)
-        }
         autoResolveWeatherInsights(currentSignals: signals)
     }
 
@@ -637,30 +437,6 @@ final class ProactiveIntelligenceService {
         return []
     }
 
-    private func processWeatherPrediction(_ signal: WeatherPredictionSignal) {
-        guard findLive(semanticKey: signal.semanticKey) == nil else { return }
-
-        let notif = ProactiveNotification(
-            category:    .weather,
-            priority:    .low,
-            semanticKey: signal.semanticKey,
-            headline:    signal.headline,
-            body:        signal.body,
-            recommendation: signal.recommendation,
-            whyExplanation: signal.whyExplanation,
-            score: signal.score
-        )
-        notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-        modelContainer.mainContext.insert(notif)
-    }
-
-    /// Returns the localized weekday name for a Calendar weekday integer (1 = Sunday … 7 = Saturday).
-    private func localizedWeekdayName(_ weekday: Int) -> String {
-        let symbols = Calendar.current.weekdaySymbols
-        let idx     = max(0, min(weekday - 1, symbols.count - 1))
-        return symbols[idx]
-    }
-
     private func processLearningMilestones(behavioralService: BehavioralAnalysisService) async {
         var notifiedIDs = notifiedPatternIDsSet()
 
@@ -672,7 +448,6 @@ final class ProactiveIntelligenceService {
 
         for pattern in newlyStable.prefix(2) {
             let key = "learning|\(pattern.id.uuidString)"
-            guard findLive(semanticKey: key) == nil else { continue }
 
             let score = IntelligenceScore(
                 relevance: 0.70, confidence: pattern.confidence,
@@ -680,22 +455,6 @@ final class ProactiveIntelligenceService {
             )
             let milestone = LearningMilestoneSignal(pattern: pattern, semanticKey: key, score: score)
             upsertHomeInsights([HomeInsightMapper.map(milestone)])
-            let notif = ProactiveNotification(
-                category:    .learning,
-                priority:    .info,
-                semanticKey: key,
-                headline:    String(localized: "notif.learning.headline",
-                                   defaultValue: "New Behavior Learned"),
-                body:        pattern.naturalLanguageDescription,
-                sourceID:    pattern.id.uuidString,
-                whyExplanation: String(format:
-                    String(localized: "notif.learning.why",
-                           defaultValue: "Detected in %d sessions with %@ confidence."),
-                    pattern.observations, pattern.confidenceLabel),
-                score:    score
-            )
-            notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-            modelContainer.mainContext.insert(notif)
             notifiedIDs.insert(pattern.id)
         }
 
@@ -1050,6 +809,8 @@ final class ProactiveIntelligenceService {
             || notification.semanticKey.hasPrefix("maintenance|")
             || notification.semanticKey.hasPrefix("automation|")
             || notification.semanticKey.hasPrefix("opportunity|")
+            || notification.semanticKey.hasPrefix("weather|")
+            || notification.semanticKey.hasPrefix("learning|")
     }
 
     private func updatePersistedHomeInsightStatus(
@@ -1136,7 +897,8 @@ final class ProactiveIntelligenceService {
     private func notificationCategory(for insight: HomeInsight) -> NotificationCategory {
         switch insight.category {
         case .environment:
-            return insight.title.localizedCaseInsensitiveContains("heating") ? .hvac : .environment
+            let climateText = "\(insight.title) \(insight.message)"
+            return containsClimateSignal(climateText) ? .hvac : .environment
         case .security:
             return .security
         case .lighting:
@@ -1156,6 +918,17 @@ final class ProactiveIntelligenceService {
         case .system:
             return .aiDiscovery
         }
+    }
+
+    private func containsClimateSignal(_ value: String) -> Bool {
+        value.localizedCaseInsensitiveContains("heating")
+            || value.localizedCaseInsensitiveContains("heat mode")
+            || value.localizedCaseInsensitiveContains("requesting heat")
+            || value.localizedCaseInsensitiveContains("thermostat")
+            || value.localizedCaseInsensitiveContains("thermostatic valve")
+            || value.localizedCaseInsensitiveContains("climate")
+            || value.localizedCaseInsensitiveContains("clima")
+            || value.localizedCaseInsensitiveContains("valvola")
     }
 
     private func notificationPriority(for severity: HomeInsightSeverity) -> NotificationPriority {
@@ -1202,36 +975,4 @@ final class ProactiveIntelligenceService {
         )
     }
 
-    // MARK: - Opportunity helpers
-
-    private func opportunityHeadline(_ opp: AutomationOpportunity) -> String {
-        String(localized: "notif.opportunity.headline", defaultValue: "Suggested Automation")
-    }
-
-    private func opportunityBody(_ opp: AutomationOpportunity) -> String {
-        String(format:
-            String(localized: "notif.opportunity.body",
-                   defaultValue: "%@ · %d observations · %@"),
-            opp.naturalLanguage,
-            opp.observations,
-            opp.confidenceLabel
-        )
-    }
-
-    private func opportunityWhy(_ opp: AutomationOpportunity) -> String {
-        String(format:
-            String(localized: "notif.opportunity.why",
-                   defaultValue: "You have repeated this action %d times with %@ confidence."),
-            opp.observations,
-            opp.confidenceLabel
-        )
-    }
-
-    private func opportunityNovelty(_ opp: AutomationOpportunity) -> Double {
-        // Lower novelty for opportunities already in the feed
-        let key = "proactive.oppSeen.\(opp.id.uuidString)"
-        let seen = UserDefaults.standard.bool(forKey: key)
-        if !seen { UserDefaults.standard.set(true, forKey: key) }
-        return seen ? 0.20 : 0.90
-    }
 }

@@ -108,7 +108,7 @@ final class HomeKitService: NSObject {
     /// Store eventi accessori per lo storico AI. Iniettato dall'app dopo l'init.
     var accessoryEventStore: AccessoryEventStore?
 
-    /// Routes sensor value changes to AlertNotificationService. Iniettato dall'app dopo l'init.
+    /// Routes sensor value changes to the unified analysis pipeline. Iniettato dall'app dopo l'init.
     var sensorEventRouter: SensorEventRouter?
 
     /// Smart Lighting engine. Iniettato dall'app per sospendere temporaneamente
@@ -673,7 +673,7 @@ extension HomeKitService: HMAccessoryDelegate {
                 store.saveEvent(dto)
             }
 
-            // Instrada letture sensore verso AlertNotificationService (Sprint 23.A)
+            // Instrada letture sensore verso la pipeline unificata di analisi.
             sensorEventRouter?.route(characteristic: characteristic, value: value, accessory: accessory)
         }
     }

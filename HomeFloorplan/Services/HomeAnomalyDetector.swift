@@ -220,9 +220,20 @@ enum HomeAnomalyDetector {
         let expected = baseline?.mean.map { format($0, for: signal.signalType) }
             ?? thresholdBreach.map { format($0.limit, for: signal.signalType) }
             ?? "baseline"
-        let expectedSource = baseline?.mean == nil && thresholdBreach != nil ? "threshold" : "baseline"
-        let title = "Anomalous \(signal.signalType.rawValue)"
-        let message = "\(entityName) reports \(measured), \(direction) its expected \(expected) \(expectedSource)."
+        let title = anomalyTitle(
+            for: signal,
+            severity: severity,
+            thresholdBreach: thresholdBreach,
+            direction: direction
+        )
+        let message = anomalyMessage(
+            for: signal,
+            entityName: entityName,
+            measured: measured,
+            expected: expected,
+            thresholdBreach: thresholdBreach,
+            direction: direction
+        )
         let why = explanation(
             value: value,
             baseline: baseline,
@@ -382,10 +393,28 @@ enum HomeAnomalyDetector {
         if let contextKey = baseline?.contextKey {
             parts.append(contextKey)
         }
-        return parts.isEmpty ? "The latest value does not fit the selected baseline." : parts.joined(separator: " · ")
+        if parts.isEmpty {
+            return isItalian ? "Il valore più recente non rientra nella baseline selezionata." : "The latest value does not fit the selected baseline."
+        }
+        return parts.joined(separator: " · ")
     }
 
     private static func recommendation(for signal: HomeSignalEvent, direction: String) -> String {
+        if isItalian {
+            switch signal.signalType {
+            case .temperature:
+                return direction == "above" ? "Controlla raffrescamento, ventilazione o esposizione al sole." : "Controlla riscaldamento o finestre aperte."
+            case .humidity:
+                return direction == "above" ? "Controlla ventilazione o deumidificazione." : "Verifica se la stanza è troppo secca."
+            case .carbonDioxide, .vocDensity, .pm25, .pm10, .airQuality:
+                return "Controlla ventilazione e dispositivi per la qualità dell'aria."
+            case .lightLevel:
+                return "Controlla illuminazione o luce naturale nella stanza."
+            default:
+                return "Verifica il dispositivo sorgente e il contesto recente della stanza."
+            }
+        }
+
         switch signal.signalType {
         case .temperature:
             return direction == "above" ? "Check cooling, ventilation or sun exposure." : "Check heating or open windows."
@@ -398,6 +427,143 @@ enum HomeAnomalyDetector {
         default:
             return "Review the source device and recent room context."
         }
+    }
+
+    private static func anomalyTitle(
+        for signal: HomeSignalEvent,
+        severity: HomeInsightSeverity,
+        thresholdBreach: ThresholdBreach?,
+        direction: String
+    ) -> String {
+        let prefix: String
+        if isItalian {
+            prefix = severity >= .high ? "ALLARME: " : "Attenzione: "
+        } else {
+            prefix = severity >= .high ? "ALERT: " : "Warning: "
+        }
+
+        if thresholdBreach != nil {
+            return prefix + thresholdTitle(for: signal.signalType, direction: direction)
+        }
+
+        let room = signal.roomName ?? signal.entityName
+        if isItalian {
+            return "\(signalLabel(for: signal.signalType, lowercase: false)) fuori norma in \(room)"
+        }
+        return "Unusual \(signalLabel(for: signal.signalType, lowercase: true)) in \(room)"
+    }
+
+    private static func anomalyMessage(
+        for signal: HomeSignalEvent,
+        entityName: String,
+        measured: String,
+        expected: String,
+        thresholdBreach: ThresholdBreach?,
+        direction: String
+    ) -> String {
+        let location = signal.roomName ?? signal.entityName
+        let signalName = signalLabel(for: signal.signalType, lowercase: true)
+
+        if let thresholdBreach {
+            let level = thresholdBreach.level == .danger
+                ? (isItalian ? "critico" : "critical")
+                : (isItalian ? "attenzione" : "warning")
+            if isItalian {
+                return "In \(location) \(signalName) ha raggiunto \(measured) (livello \(level))."
+            }
+            return "In \(location), \(signalName) reached \(measured) (\(level) level)."
+        }
+
+        if isItalian {
+            let relation = direction == "above" ? "sopra" : "sotto"
+            return "\(entityName): valore attuale \(measured), \(relation) il valore atteso \(expected)."
+        }
+
+        return "\(entityName) reports \(measured), \(direction) its expected \(expected) baseline."
+    }
+
+    private static func thresholdTitle(for signalType: HomeSignalType, direction: String) -> String {
+        if isItalian {
+            switch signalType {
+            case .temperature:
+                return direction == "above" ? "Temperatura alta" : "Temperatura bassa"
+            case .humidity:
+                return direction == "above" ? "Umidità alta" : "Umidità bassa"
+            case .airQuality:
+                return "Qualità aria bassa"
+            case .carbonDioxide:
+                return "CO2 alta"
+            case .carbonMonoxide:
+                return "Monossido di carbonio rilevato"
+            case .smoke:
+                return "Fumo rilevato"
+            case .vocDensity:
+                return "VOC elevati"
+            case .pm25:
+                return "PM2.5 elevato"
+            case .pm10:
+                return "PM10 elevato"
+            default:
+                return "\(signalLabel(for: signalType, lowercase: false)) anomalo"
+            }
+        }
+
+        switch signalType {
+        case .temperature:
+            return direction == "above" ? "High temperature" : "Low temperature"
+        case .humidity:
+            return direction == "above" ? "High humidity" : "Low humidity"
+        case .airQuality:
+            return "Low air quality"
+        case .carbonDioxide:
+            return "High CO2"
+        case .carbonMonoxide:
+            return "Carbon monoxide detected"
+        case .smoke:
+            return "Smoke detected"
+        case .vocDensity:
+            return "Elevated VOC"
+        case .pm25:
+            return "Elevated PM2.5"
+        case .pm10:
+            return "Elevated PM10"
+        default:
+            return "Anomalous \(signalLabel(for: signalType, lowercase: true))"
+        }
+    }
+
+    private static func signalLabel(for signalType: HomeSignalType, lowercase: Bool) -> String {
+        let label: String
+        if isItalian {
+            switch signalType {
+            case .temperature: label = "Temperatura"
+            case .humidity: label = "Umidità"
+            case .airQuality: label = "Qualità aria"
+            case .carbonMonoxide: label = "Monossido di carbonio"
+            case .carbonDioxide: label = "CO2"
+            case .smoke: label = "Fumo"
+            case .vocDensity: label = "VOC"
+            case .pm25: label = "PM2.5"
+            case .pm10: label = "PM10"
+            case .lightLevel: label = "Luce"
+            default: label = "Valore"
+            }
+        } else {
+            switch signalType {
+            case .temperature: label = "Temperature"
+            case .humidity: label = "Humidity"
+            case .airQuality: label = "Air quality"
+            case .carbonMonoxide: label = "Carbon monoxide"
+            case .carbonDioxide: label = "CO2"
+            case .smoke: label = "Smoke"
+            case .vocDensity: label = "VOC"
+            case .pm25: label = "PM2.5"
+            case .pm10: label = "PM10"
+            case .lightLevel: label = "Light"
+            default: label = "Value"
+            }
+        }
+        return lowercase ? label.lowercased() : label
     }
 
     private static func confidence(
@@ -454,7 +620,24 @@ enum HomeAnomalyDetector {
         if signalType == .airQuality {
             return airQualityLabel(for: value)
         }
-        return format(value)
+        return String(format: "%.1f%@", value, unit(for: signalType))
+    }
+
+    private static func unit(for signalType: HomeSignalType) -> String {
+        switch signalType {
+        case .temperature:
+            return "°C"
+        case .humidity:
+            return "%"
+        case .carbonMonoxide, .carbonDioxide:
+            return "ppm"
+        case .vocDensity, .pm25, .pm10:
+            return "µg/m³"
+        case .lightLevel:
+            return "lux"
+        default:
+            return ""
+        }
     }
 
     private static func airQualityLabel(for value: Double) -> String {
@@ -516,14 +699,19 @@ enum HomeAnomalyDetector {
 
         let entityName = displayEntityName(for: interval)
         let durationText = durationDescription(duration)
+        let stateDescription = rule.stateDescription ?? interval.stateRaw
         let message: String
         let why: String
         if interval.isActive {
-            message = "\(entityName) is currently \(interval.stateRaw)."
-            why = "The current \(interval.stateRaw) state exceeds the \(durationDescription(rule.minimumDuration)) \(rule.basis). Exact duration is not shown because the open interval depends on event history."
+            message = isItalian ? "\(entityName) è attualmente \(stateDescription)." : "\(entityName) is currently \(stateDescription)."
+            why = isItalian
+                ? "Lo stato \(stateDescription) supera la policy \(rule.basis) di \(durationDescription(rule.minimumDuration)). La durata esatta non viene mostrata perché l'intervallo aperto dipende dallo storico eventi."
+                : "The current \(stateDescription) state exceeds the \(durationDescription(rule.minimumDuration)) \(rule.basis). Exact duration is not shown because the open interval depends on event history."
         } else {
-            message = "\(entityName) has been \(interval.stateRaw) for \(durationText)."
-            why = "\(interval.stateRaw) duration \(durationText) exceeds \(durationDescription(rule.minimumDuration)) \(rule.basis)."
+            message = isItalian ? "\(entityName) è rimasto \(stateDescription) per \(durationText)." : "\(entityName) has been \(stateDescription) for \(durationText)."
+            why = isItalian
+                ? "La durata \(durationText) supera la policy \(rule.basis) di \(durationDescription(rule.minimumDuration))."
+                : "\(stateDescription) duration \(durationText) exceeds \(durationDescription(rule.minimumDuration)) \(rule.basis)."
         }
 
         return HomeInsight(
@@ -580,14 +768,16 @@ enum HomeAnomalyDetector {
             )
         case .active where interval.stateRaw == "heating":
             let isSummer = Calendar.current.component(.month, from: Date()).isSummerMonth
+            let role = climateRole(for: interval)
             return IntervalRule(
                 minimumDuration: isSummer ? configuration.minimumSummerHeatingDuration : configuration.minimumHeatingDuration,
-                title: "Unexpected heating",
+                title: heatingTitle(for: role),
                 category: .environment,
                 severity: isSummer ? .high : .medium,
-                recommendation: "Check thermostat schedule and valve demand.",
+                recommendation: heatingRecommendation(for: role),
                 confidence: isSummer ? 0.85 : 0.65,
-                basis: isSummer ? "summer heating policy" : "heating policy"
+                basis: heatingBasis(for: role, isSummer: isSummer),
+                stateDescription: heatingStateDescription(for: role)
             )
         case .power:
             let baselineDuration = durationBaseline.flatMap { $0.p95 ?? $0.mean }
@@ -617,6 +807,114 @@ enum HomeAnomalyDetector {
             return "\(roomName) \(interval.entityName)"
         }
         return interval.entityName
+    }
+
+    private static func climateRole(for interval: HomeStateInterval) -> ClimateRole {
+        let name = "\(interval.entityName) \(interval.roomName ?? "")"
+        if containsAny(
+            name,
+            tokens: ["valvola", "valve", "trv", "termostatica", "thermostatic valve"]
+        ) {
+            return .thermostaticValve
+        }
+
+        if containsAny(
+            name,
+            tokens: ["clima", "condizionatore", "climatizzatore", "air conditioner", "heat pump", "pompa di calore", "split"]
+        ) {
+            return .airConditioner
+        }
+
+        return .thermostat
+    }
+
+    private static func heatingTitle(for role: ClimateRole) -> String {
+        if isItalian {
+            switch role {
+            case .thermostaticValve:
+                return "Valvola termostatica in richiesta calore"
+            case .airConditioner:
+                return "Clima in modalità caldo"
+            case .thermostat:
+                return "Riscaldamento inatteso"
+            }
+        }
+
+        switch role {
+        case .thermostaticValve:
+            return "Thermostatic valve requesting heat"
+        case .airConditioner:
+            return "Unexpected heat mode"
+        case .thermostat:
+            return "Unexpected thermostat heating"
+        }
+    }
+
+    private static func heatingRecommendation(for role: ClimateRole) -> String {
+        if isItalian {
+            switch role {
+            case .thermostaticValve:
+                return "Controlla richiesta della valvola, setpoint stanza e programma riscaldamento."
+            case .airConditioner:
+                return "Controlla modalità del clima, programma e richiesta della pompa di calore."
+            case .thermostat:
+                return "Controlla programma, setpoint e richiesta di riscaldamento."
+            }
+        }
+
+        switch role {
+        case .thermostaticValve:
+            return "Check valve demand, room setpoint, and heating schedule."
+        case .airConditioner:
+            return "Check climate mode, schedule, and heat-pump demand."
+        case .thermostat:
+            return "Check thermostat schedule, setpoint, and heating demand."
+        }
+    }
+
+    private static func heatingBasis(for role: ClimateRole, isSummer: Bool) -> String {
+        let prefix = isSummer ? (isItalian ? "estiva " : "summer ") : ""
+        if isItalian {
+            switch role {
+            case .thermostaticValve:
+                return "\(prefix)riscaldamento valvola termostatica"
+            case .airConditioner:
+                return "\(prefix)modalità caldo clima"
+            case .thermostat:
+                return "\(prefix)riscaldamento termostato"
+            }
+        }
+
+        switch role {
+        case .thermostaticValve:
+            return "\(prefix)thermostatic valve heating policy"
+        case .airConditioner:
+            return "\(prefix)climate heat-mode policy"
+        case .thermostat:
+            return "\(prefix)thermostat heating policy"
+        }
+    }
+
+    private static func heatingStateDescription(for role: ClimateRole) -> String {
+        if isItalian {
+            switch role {
+            case .thermostaticValve:
+                return "in richiesta calore"
+            case .airConditioner:
+                return "in modalità caldo"
+            case .thermostat:
+                return "in riscaldamento"
+            }
+        }
+
+        switch role {
+        case .thermostaticValve:
+            return "requesting heat"
+        case .airConditioner:
+            return "in heat mode"
+        case .thermostat:
+            return "heating"
+        }
     }
 
     private static func durationDescription(_ duration: TimeInterval) -> String {
@@ -703,6 +1001,17 @@ enum HomeAnomalyDetector {
         var recommendation: String
         var confidence: Double
         var basis: String
+        var stateDescription: String? = nil
+    }
+
+    private enum ClimateRole {
+        case thermostat
+        case thermostaticValve
+        case airConditioner
+    }
+
+    private static var isItalian: Bool {
+        Locale.current.identifier.lowercased().hasPrefix("it")
     }
 
     private enum ThresholdLevel: String {
