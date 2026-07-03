@@ -3,9 +3,7 @@ import SwiftUI
 
 @MainActor
 struct HomeIntelligenceDebugView: View {
-    @Query(sort: \PersistedInsight.generatedAt, order: .reverse) private var persistedInsights: [PersistedInsight]
-    @Query(sort: \AutomationOpportunity.lastUpdatedAt, order: .reverse) private var automationOpportunities: [AutomationOpportunity]
-    @Query(sort: \ProactiveNotification.lastUpdatedAt, order: .reverse) private var proactiveNotifications: [ProactiveNotification]
+    @Query(sort: \PersistedHomeInsight.updatedAt, order: .reverse) private var persistedHomeInsights: [PersistedHomeInsight]
     @Query(sort: \AccessoryEvent.timestamp, order: .reverse) private var accessoryEvents: [AccessoryEvent]
     @Query(sort: \SensorReading.timestamp, order: .reverse) private var sensorReadings: [SensorReading]
     @Query(sort: \DailySensorSummary.date, order: .reverse) private var dailySensorSummaries: [DailySensorSummary]
@@ -26,10 +24,9 @@ struct HomeIntelligenceDebugView: View {
     }
 
     private var insights: [HomeInsight] {
-        let mapped = persistedInsights.map(HomeInsightMapper.map)
-            + automationOpportunities.map(HomeInsightMapper.map)
-            + proactiveNotifications.map(HomeInsightMapper.map)
-        return mapped.sorted { $0.updatedAt > $1.updatedAt }
+        persistedHomeInsights
+            .map { $0.toHomeInsight() }
+            .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     private var signalSamples: [HomeSignalEvent] {
