@@ -120,6 +120,8 @@ final class ProactiveIntelligenceService {
 
         // 3. Environmental alerts
         let envSignals = await EnvironmentalAlertBuilder.build(modelContainer: modelContainer)
+        let environmentalInsights = envSignals.map(HomeInsightMapper.map)
+        upsertHomeInsights(environmentalInsights)
         for sig in envSignals where sig.score.composite >= deliveryThreshold {
             await processEnvironmental(sig, context: context)
         }
@@ -640,6 +642,18 @@ final class ProactiveIntelligenceService {
             notif.status     = .resolved
             notif.resolvedAt = Date()
             notif.lastUpdatedAt = Date()
+        }
+
+        let persistedDescriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.statusRaw == "active"
+            }
+        )
+        let persisted = (try? ctx.fetch(persistedDescriptor)) ?? []
+        for insight in persisted
+        where insight.sourceRecordType == String(describing: EnvironmentalSignal.self) &&
+            !activeKeys.contains(insight.dedupeKey) {
+            insight.markResolved()
         }
     }
 
