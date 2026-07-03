@@ -435,6 +435,33 @@ enum HomeInsightMapper {
         )
     }
 
+    static func map(_ signal: MaintenanceSignal) -> HomeInsight {
+        HomeInsight(
+            kind: .maintenance,
+            category: .deviceHealth,
+            severity: signal.score.urgency >= 0.60 ? .medium : .low,
+            status: .active,
+            title: String(format:
+                String(localized: "notif.maintenance.headline",
+                       defaultValue: "Check %@"),
+                signal.accessoryName),
+            message: signal.detail,
+            whyExplanation: String(localized: "notif.maintenance.why",
+                defaultValue: "Anomaly detected by comparing usage history."),
+            recommendation: String(localized: "notif.maintenance.rec",
+                defaultValue: "Verify that the device is working correctly."),
+            sourceEntityID: signal.accessoryID.uuidString,
+            sourceEntityName: signal.accessoryName,
+            roomName: signal.roomName,
+            confidence: signal.score.confidence,
+            score: HomeInsightScore(signal.score),
+            dedupeKey: signal.semanticKey,
+            sourceRecordType: String(describing: MaintenanceSignal.self),
+            sourceRecordID: signal.accessoryID.uuidString,
+            syncPolicy: .localOnly
+        )
+    }
+
     static func map(_ signal: DeviationSignal) -> HomeInsight {
         HomeInsight(
             kind: .anomaly,
@@ -452,7 +479,7 @@ enum HomeInsightMapper {
             startedAt: signal.expectedAt,
             confidence: signal.pattern.confidence,
             score: HomeInsightScore(BehavioralDeviationDetector.score(for: signal)),
-            dedupeKey: "deviation|\(signal.pattern.id.uuidString)",
+            dedupeKey: "behavioral|\(signal.pattern.accessoryName)|\(signal.pattern.action.rawValue)",
             sourceRecordType: String(describing: DeviationSignal.self),
             sourceRecordID: signal.pattern.id.uuidString,
             syncPolicy: .localOnly

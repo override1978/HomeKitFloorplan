@@ -108,9 +108,12 @@ final class ProactiveIntelligenceService {
                 recentEventSignatures: sigs,
                 context:               context
             )
+            let deviationInsights = devs.map(HomeInsightMapper.map)
+            upsertHomeInsights(deviationInsights)
             for dev in devs {
                 await processDeviation(dev, context: context)
             }
+            autoResolveDeviationInsights(currentSignals: devs)
         }
 
         // 2. Automation opportunities
@@ -166,9 +169,13 @@ final class ProactiveIntelligenceService {
 
         // 9. Maintenance prediction (usage pattern anomalies)
         if let maint = maintenanceService {
-            for sig in maint.signals where sig.score.composite >= deliveryThreshold {
+            let maintenanceSignals = maint.signals
+            let maintenanceInsights = maintenanceSignals.map(HomeInsightMapper.map)
+            upsertHomeInsights(maintenanceInsights)
+            for sig in maintenanceSignals where sig.score.composite >= deliveryThreshold {
                 await processMaintenance(sig, context: context)
             }
+            autoResolveMaintenanceInsights(currentSignals: maintenanceSignals)
         }
 
         // 10. Weather prediction (Sprint 31) — morning-only, next-day extremes
@@ -701,6 +708,38 @@ final class ProactiveIntelligenceService {
         let persisted = (try? ctx.fetch(descriptor)) ?? []
         for insight in persisted
         where insight.sourceRecordType == String(describing: AnomalySignal.self)
+            && !activeKeys.contains(insight.dedupeKey) {
+            insight.markResolved()
+        }
+    }
+
+    private func autoResolveDeviationInsights(currentSignals: [DeviationSignal]) {
+        let activeKeys = Set(currentSignals.map { HomeInsightMapper.map($0).dedupeKey })
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.statusRaw == "active"
+            }
+        )
+        let persisted = (try? ctx.fetch(descriptor)) ?? []
+        for insight in persisted
+        where insight.sourceRecordType == String(describing: DeviationSignal.self)
+            && !activeKeys.contains(insight.dedupeKey) {
+            insight.markResolved()
+        }
+    }
+
+    private func autoResolveMaintenanceInsights(currentSignals: [MaintenanceSignal]) {
+        let activeKeys = Set(currentSignals.map(\.semanticKey))
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.statusRaw == "active"
+            }
+        )
+        let persisted = (try? ctx.fetch(descriptor)) ?? []
+        for insight in persisted
+        where insight.sourceRecordType == String(describing: MaintenanceSignal.self)
             && !activeKeys.contains(insight.dedupeKey) {
             insight.markResolved()
         }
