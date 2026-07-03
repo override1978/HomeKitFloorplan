@@ -825,6 +825,7 @@ final class AmbientalAIService {
         if let data = try? JSONEncoder().encode(freshActions),
            let json = String(data: data, encoding: .utf8) {
             record.nextActionsJSON = json
+            upsertPersistedHomeInsight(from: record)
             try? context.save()
         }
         dprint("🔁 [Restore] \(insight.roomName): upgraded tip-only → \(freshActions.count) action(s)")
@@ -882,6 +883,7 @@ final class AmbientalAIService {
                    let data = try? JSONEncoder().encode(freshActions),
                    let json = String(data: data, encoding: .utf8) {
                     record.nextActionsJSON = json
+                    upsertPersistedHomeInsight(from: record)
                     try? context.save()
                 }
                 dprint("🔁 [ReResolve] \(insight.roomName): stale insight upgraded to \(freshActions.count) action(s)")
@@ -978,11 +980,30 @@ final class AmbientalAIService {
             predicate: #Predicate { $0.roomName == roomName && $0.statusRaw == statusActive }
         )
         if let records = try? context.fetch(existing) {
-            records.forEach { $0.statusRaw = InsightPersistedStatus.expired.rawValue }
+            records.forEach {
+                $0.statusRaw = InsightPersistedStatus.expired.rawValue
+                upsertPersistedHomeInsight(from: $0)
+            }
         }
         let record = PersistedInsight.from(insight)
         context.insert(record)
+        upsertPersistedHomeInsight(from: record)
         try? context.save()
+    }
+
+    /// Mirrors legacy environmental AI insight records into the unified home insight store.
+    private func upsertPersistedHomeInsight(from record: PersistedInsight) {
+        let insight = HomeInsightMapper.map(record)
+        let dedupeKey = insight.dedupeKey
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate { $0.dedupeKey == dedupeKey }
+        )
+
+        if let existing = (try? context.fetch(descriptor))?.first {
+            existing.update(from: insight)
+        } else {
+            context.insert(PersistedHomeInsight(insight: insight))
+        }
     }
 
     /// Updates the persisted status of a single insight record.
@@ -992,6 +1013,7 @@ final class AmbientalAIService {
         )
         guard let record = (try? context.fetch(descriptor))?.first else { return }
         record.statusRaw = status.rawValue
+        upsertPersistedHomeInsight(from: record)
         try? context.save()
     }
 
@@ -1001,6 +1023,7 @@ final class AmbientalAIService {
         )
         guard let record = (try? context.fetch(descriptor))?.first else { return }
         record.severityRaw = severity.rawValue
+        upsertPersistedHomeInsight(from: record)
         try? context.save()
     }
 
