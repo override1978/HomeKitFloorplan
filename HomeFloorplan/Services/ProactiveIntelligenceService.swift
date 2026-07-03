@@ -2,6 +2,31 @@ import Foundation
 import SwiftData
 import Observation
 
+// MARK: - Proactive Signal Types
+
+struct WeatherPredictionSignal {
+    enum Kind {
+        case hot
+        case cold
+    }
+
+    let kind: Kind
+    let semanticKey: String
+    let headline: String
+    let body: String
+    let recommendation: String
+    let whyExplanation: String
+    let temperatureCelsius: Double
+    let forecastDateKey: String
+    let score: IntelligenceScore
+}
+
+struct LearningMilestoneSignal {
+    let pattern: BehavioralPattern
+    let semanticKey: String
+    let score: IntelligenceScore
+}
+
 // MARK: - ProactiveIntelligenceService
 
 /// Main orchestrator for Sprint 15 Proactive Intelligence Engine.
@@ -521,10 +546,20 @@ final class ProactiveIntelligenceService {
         fmt.dateFormat = "yyyy-MM-dd"
         let tomorrowDate = fmt.string(from: Date().addingTimeInterval(24 * 3600))
 
-        if forecast.maxTemperature >= 30 {
-            let key = "weather|hot|\(tomorrowDate)"
-            guard findLive(semanticKey: key) == nil else { return }
+        let signals = weatherPredictionSignals(for: forecast, forecastDateKey: tomorrowDate)
+        upsertHomeInsights(signals.map(HomeInsightMapper.map))
+        for signal in signals where signal.score.composite >= deliveryThreshold {
+            processWeatherPrediction(signal)
+        }
+        autoResolveWeatherInsights(currentSignals: signals)
+    }
 
+    private func weatherPredictionSignals(
+        for forecast: TomorrowForecast,
+        forecastDateKey: String
+    ) -> [WeatherPredictionSignal] {
+        if forecast.maxTemperature >= 30 {
+            let key = "weather|hot|\(forecastDateKey)"
             let score = IntelligenceScore(
                 relevance:     0.85,
                 confidence:    0.80,
@@ -532,34 +567,31 @@ final class ProactiveIntelligenceService {
                 actionability: 0.75,
                 novelty:       0.90
             )
-            guard score.composite >= deliveryThreshold else { return }
-
             let tempStr = String(format: "%.0f", forecast.maxTemperature)
-            let notif = ProactiveNotification(
-                category:    .weather,
-                priority:    .low,
-                semanticKey: key,
-                headline:    String(localized: "notif.weather.hot.headline",
-                                   defaultValue: "Hot Day Ahead"),
-                body:        String(format:
-                    String(localized: "notif.weather.hot.body",
-                           defaultValue: "Tomorrow's forecast is %1$@°C. Consider pre-cooling main rooms in the morning, before temperatures peak."),
-                    tempStr),
-                recommendation: String(localized: "notif.weather.hot.rec",
-                    defaultValue: "Turn on the AC now to cool your home before temperatures peak."),
-                whyExplanation: String(format:
-                    String(localized: "notif.weather.hot.why",
-                           defaultValue: "Forecast of %1$@°C tomorrow. Pre-cooling in the morning is more efficient."),
-                    tempStr),
-                score: score
-            )
-            notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-            modelContainer.mainContext.insert(notif)
+            return [
+                WeatherPredictionSignal(
+                    kind: .hot,
+                    semanticKey: key,
+                    headline: String(localized: "notif.weather.hot.headline",
+                                     defaultValue: "Hot Day Ahead"),
+                    body: String(format:
+                        String(localized: "notif.weather.hot.body",
+                               defaultValue: "Tomorrow's forecast is %1$@°C. Consider pre-cooling main rooms in the morning, before temperatures peak."),
+                        tempStr),
+                    recommendation: String(localized: "notif.weather.hot.rec",
+                        defaultValue: "Turn on the AC now to cool your home before temperatures peak."),
+                    whyExplanation: String(format:
+                        String(localized: "notif.weather.hot.why",
+                               defaultValue: "Forecast of %1$@°C tomorrow. Pre-cooling in the morning is more efficient."),
+                        tempStr),
+                    temperatureCelsius: forecast.maxTemperature,
+                    forecastDateKey: forecastDateKey,
+                    score: score
+                )
+            ]
 
         } else if forecast.minTemperature <= 2 {
-            let key = "weather|cold|\(tomorrowDate)"
-            guard findLive(semanticKey: key) == nil else { return }
-
+            let key = "weather|cold|\(forecastDateKey)"
             let score = IntelligenceScore(
                 relevance:     0.85,
                 confidence:    0.80,
@@ -567,30 +599,47 @@ final class ProactiveIntelligenceService {
                 actionability: 0.75,
                 novelty:       0.90
             )
-            guard score.composite >= deliveryThreshold else { return }
-
             let tempStr = String(format: "%.0f", forecast.minTemperature)
-            let notif = ProactiveNotification(
-                category:    .weather,
-                priority:    .low,
-                semanticKey: key,
-                headline:    String(localized: "notif.weather.cold.headline",
-                                   defaultValue: "Cold Night Ahead"),
-                body:        String(format:
-                    String(localized: "notif.weather.cold.body",
-                           defaultValue: "Tomorrow night temperatures will drop to %1$@°C. Consider pre-heating your home this evening."),
-                    tempStr),
-                recommendation: String(localized: "notif.weather.cold.rec",
-                    defaultValue: "Turn on heating tonight to wake up to a warm home."),
-                whyExplanation: String(format:
-                    String(localized: "notif.weather.cold.why",
-                           defaultValue: "Tomorrow's low is %1$@°C. Pre-heating in the evening is more efficient."),
-                    tempStr),
-                score: score
-            )
-            notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-            modelContainer.mainContext.insert(notif)
+            return [
+                WeatherPredictionSignal(
+                    kind: .cold,
+                    semanticKey: key,
+                    headline: String(localized: "notif.weather.cold.headline",
+                                     defaultValue: "Cold Night Ahead"),
+                    body: String(format:
+                        String(localized: "notif.weather.cold.body",
+                               defaultValue: "Tomorrow night temperatures will drop to %1$@°C. Consider pre-heating your home this evening."),
+                        tempStr),
+                    recommendation: String(localized: "notif.weather.cold.rec",
+                        defaultValue: "Turn on heating tonight to wake up to a warm home."),
+                    whyExplanation: String(format:
+                        String(localized: "notif.weather.cold.why",
+                               defaultValue: "Tomorrow's low is %1$@°C. Pre-heating in the evening is more efficient."),
+                        tempStr),
+                    temperatureCelsius: forecast.minTemperature,
+                    forecastDateKey: forecastDateKey,
+                    score: score
+                )
+            ]
         }
+        return []
+    }
+
+    private func processWeatherPrediction(_ signal: WeatherPredictionSignal) {
+        guard findLive(semanticKey: signal.semanticKey) == nil else { return }
+
+        let notif = ProactiveNotification(
+            category:    .weather,
+            priority:    .low,
+            semanticKey: signal.semanticKey,
+            headline:    signal.headline,
+            body:        signal.body,
+            recommendation: signal.recommendation,
+            whyExplanation: signal.whyExplanation,
+            score: signal.score
+        )
+        notif.statusRaw = ProactiveNotificationStatus.live.rawValue
+        modelContainer.mainContext.insert(notif)
     }
 
     /// Returns the localized weekday name for a Calendar weekday integer (1 = Sunday … 7 = Saturday).
@@ -617,6 +666,8 @@ final class ProactiveIntelligenceService {
                 relevance: 0.70, confidence: pattern.confidence,
                 urgency: 0.10, actionability: 0.60, novelty: 0.90
             )
+            let milestone = LearningMilestoneSignal(pattern: pattern, semanticKey: key, score: score)
+            upsertHomeInsights([HomeInsightMapper.map(milestone)])
             let notif = ProactiveNotification(
                 category:    .learning,
                 priority:    .info,
@@ -651,7 +702,9 @@ final class ProactiveIntelligenceService {
             }
         )
         let live = (try? ctx.fetch(descriptor)) ?? []
-        for notif in live where !activeKeys.contains(notif.semanticKey) {
+        for notif in live
+        where !notif.semanticKey.hasPrefix("homeInsight|")
+            && !activeKeys.contains(notif.semanticKey) {
             notif.status     = .resolved
             notif.resolvedAt = Date()
             notif.lastUpdatedAt = Date()
@@ -740,6 +793,22 @@ final class ProactiveIntelligenceService {
         let persisted = (try? ctx.fetch(descriptor)) ?? []
         for insight in persisted
         where insight.sourceRecordType == String(describing: MaintenanceSignal.self)
+            && !activeKeys.contains(insight.dedupeKey) {
+            insight.markResolved()
+        }
+    }
+
+    private func autoResolveWeatherInsights(currentSignals: [WeatherPredictionSignal]) {
+        let activeKeys = Set(currentSignals.map(\.semanticKey))
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.statusRaw == "active"
+            }
+        )
+        let persisted = (try? ctx.fetch(descriptor)) ?? []
+        for insight in persisted
+        where insight.sourceRecordType == String(describing: WeatherPredictionSignal.self)
             && !activeKeys.contains(insight.dedupeKey) {
             insight.markResolved()
         }

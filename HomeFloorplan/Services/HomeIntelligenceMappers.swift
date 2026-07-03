@@ -375,6 +375,56 @@ enum HomeInsightMapper {
         )
     }
 
+    static func map(_ signal: WeatherPredictionSignal) -> HomeInsight {
+        HomeInsight(
+            kind: .prediction,
+            category: .weather,
+            severity: signal.score.urgency >= 0.70 ? .medium : .low,
+            status: .active,
+            title: signal.headline,
+            message: signal.body,
+            whyExplanation: signal.whyExplanation,
+            recommendation: signal.recommendation,
+            sourceEntityName: String(localized: "weather.source.name", defaultValue: "Weather"),
+            confidence: signal.score.confidence,
+            score: HomeInsightScore(signal.score),
+            dedupeKey: signal.semanticKey,
+            sourceRecordType: String(describing: WeatherPredictionSignal.self),
+            sourceRecordID: signal.forecastDateKey,
+            syncPolicy: .localOnly
+        )
+    }
+
+    static func map(_ signal: LearningMilestoneSignal) -> HomeInsight {
+        let pattern = signal.pattern
+        return HomeInsight(
+            id: pattern.id,
+            kind: .habit,
+            category: .habits,
+            severity: .info,
+            status: .active,
+            title: String(localized: "notif.learning.headline",
+                          defaultValue: "New Behavior Learned"),
+            message: pattern.naturalLanguageDescription,
+            whyExplanation: String(format:
+                String(localized: "notif.learning.why",
+                       defaultValue: "Detected in %d sessions with %@ confidence."),
+                pattern.observations, pattern.confidenceLabel),
+            sourceEntityID: pattern.accessoryID?.uuidString,
+            sourceEntityName: pattern.accessoryName,
+            roomName: pattern.roomName,
+            createdAt: pattern.detectedAt,
+            updatedAt: Date(),
+            startedAt: pattern.firstObservedAt,
+            confidence: signal.score.confidence,
+            score: HomeInsightScore(signal.score),
+            dedupeKey: signal.semanticKey,
+            sourceRecordType: String(describing: LearningMilestoneSignal.self),
+            sourceRecordID: pattern.id.uuidString,
+            syncPolicy: .localOnly
+        )
+    }
+
     static func map(_ signal: EnvironmentalSignal) -> HomeInsight {
         HomeInsight(
             kind: .environment,
