@@ -169,8 +169,12 @@ final class ProactiveIntelligenceService {
             modelContainer: modelContainer,
             homeKitService: homeKitService
         )
-        upsertHomeInsights(homeInsightAnomalies)
-        autoResolveHomeInsightAnomalies(currentInsights: homeInsightAnomalies)
+        let homeIncoherences = HomeIncoherenceDetector.detect(
+            modelContainer: modelContainer,
+            homeKitService: homeKitService
+        )
+        upsertHomeInsights(homeInsightAnomalies + homeIncoherences)
+        autoResolveHomeInsightAnomalies(currentInsights: homeInsightAnomalies + homeIncoherences)
         resolveLegacyEnvironmentalInsights()
 
         // 7. Maintenance prediction (usage pattern anomalies)
@@ -880,12 +884,17 @@ final class ProactiveIntelligenceService {
     }
 
     private func isRuntimeAnomalyInsight(_ insight: PersistedHomeInsight) -> Bool {
-        insight.kindRaw == HomeInsightKind.anomaly.rawValue
-            && (
-                insight.sourceRecordType == String(describing: HomeSignalEvent.self)
-                    || insight.sourceRecordType == String(describing: HomeStateInterval.self)
-                    || insight.sourceRecordType == String(describing: AnomalySignal.self)
-            )
+        if insight.kindRaw == HomeInsightKind.incoherence.rawValue &&
+            insight.sourceRecordType == String(describing: HomeIncoherenceDetector.self) {
+            return true
+        }
+
+        return insight.kindRaw == HomeInsightKind.anomaly.rawValue
+        && (
+            insight.sourceRecordType == String(describing: HomeSignalEvent.self)
+            || insight.sourceRecordType == String(describing: HomeStateInterval.self)
+            || insight.sourceRecordType == String(describing: AnomalySignal.self)
+        )
     }
 
     // MARK: - Rate Limiting

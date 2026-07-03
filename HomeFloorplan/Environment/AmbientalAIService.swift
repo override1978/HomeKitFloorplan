@@ -867,7 +867,7 @@ final class AmbientalAIService {
             return .observation
         case .anomaly:
             return .pattern
-        case .security, .habit, .maintenance, .deviceHealth, nil:
+        case .incoherence, .security, .habit, .maintenance, .deviceHealth, nil:
             return .observation
         }
     }

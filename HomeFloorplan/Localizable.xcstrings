@@ -23815,6 +23815,201 @@
         }
       }
     },
+    "homeInsight.incoherence.co2NoVentilation.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: CO2 is %2$lld ppm, up %3$lld ppm recently."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: CO2 a %2$lld ppm, +%3$lld ppm nel periodo recente."
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.co2NoVentilation.recommendation" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start air exchange or open a window."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avvia un ricambio aria o apri una finestra."
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.co2NoVentilation.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CO2 rising without ventilation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CO2 in salita senza ricambio"
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.co2NoVentilation.why" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CO2 is rising and no open window, fan, or purifier is active in the room."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La CO2 sta aumentando e non risultano finestra aperta, ventola o purificatore attivi nella stanza."
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.coolingTempRising.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ is cooling but temperature rose by %3$.1f°C."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ raffresca ma la temperatura è salita di %3$.1f°C."
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.coolingTempRising.recommendation" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check windows, sun exposure, and climate settings."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controlla finestre, esposizione solare e impostazioni del clima."
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.coolingTempRising.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ineffective cooling"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raffrescamento inefficace"
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.coolingTempRising.why" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Climate is set to cool but the room temperature trend is rising."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il clima è in freddo ma il trend temperatura della stanza è in aumento."
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.hvacWindowOpen.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ is active while %3$@ is open."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ è attivo mentre %3$@ risulta aperta."
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.hvacWindowOpen.recommendation" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn off climate or close the window."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spegni il clima o chiudi la finestra."
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.hvacWindowOpen.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Climate on with window open"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clima acceso con finestra aperta"
+          }
+        }
+      }
+    },
+    "homeInsight.incoherence.hvacWindowOpen.why" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Climate and an open contact are active in the same room."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clima e contatto aperto sono attivi nella stessa stanza."
+          }
+        }
+      }
+    },
     "HomeKit" : {
       "extractionState" : "stale",
       "localizations" : {

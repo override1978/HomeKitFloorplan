@@ -254,6 +254,10 @@ struct HomeInsight: Identifiable, Codable, Hashable {
     var recommendation: String?
     var sourceEntityID: String?
     var sourceEntityName: String?
+    var relatedEntityID: String?
+    var relatedEntityName: String?
+    var relatedRecordType: String?
+    var relatedRecordID: String?
     var roomName: String?
     var createdAt: Date
     var updatedAt: Date
@@ -279,6 +283,10 @@ struct HomeInsight: Identifiable, Codable, Hashable {
         recommendation: String? = nil,
         sourceEntityID: String? = nil,
         sourceEntityName: String? = nil,
+        relatedEntityID: String? = nil,
+        relatedEntityName: String? = nil,
+        relatedRecordType: String? = nil,
+        relatedRecordID: String? = nil,
         roomName: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
@@ -303,6 +311,10 @@ struct HomeInsight: Identifiable, Codable, Hashable {
         self.recommendation = recommendation
         self.sourceEntityID = sourceEntityID
         self.sourceEntityName = sourceEntityName
+        self.relatedEntityID = relatedEntityID
+        self.relatedEntityName = relatedEntityName
+        self.relatedRecordType = relatedRecordType
+        self.relatedRecordID = relatedRecordID
         self.roomName = roomName
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -320,6 +332,7 @@ struct HomeInsight: Identifiable, Codable, Hashable {
 
 enum HomeInsightKind: String, Codable, Hashable, CaseIterable {
     case anomaly
+    case incoherence
     case environment
     case security
     case habit
@@ -423,6 +436,10 @@ final class PersistedHomeInsight {
     var recommendation: String?
     var sourceEntityID: String?
     var sourceEntityName: String?
+    var relatedEntityID: String?
+    var relatedEntityName: String?
+    var relatedRecordType: String?
+    var relatedRecordID: String?
     var roomName: String?
     var createdAt: Date
     var updatedAt: Date
@@ -452,6 +469,10 @@ final class PersistedHomeInsight {
         self.recommendation = insight.recommendation
         self.sourceEntityID = insight.sourceEntityID
         self.sourceEntityName = insight.sourceEntityName
+        self.relatedEntityID = insight.relatedEntityID
+        self.relatedEntityName = insight.relatedEntityName
+        self.relatedRecordType = insight.relatedRecordType
+        self.relatedRecordID = insight.relatedRecordID
         self.roomName = insight.roomName
         self.createdAt = insight.createdAt
         self.updatedAt = insight.updatedAt
@@ -483,6 +504,10 @@ final class PersistedHomeInsight {
         recommendation = insight.recommendation
         sourceEntityID = insight.sourceEntityID
         sourceEntityName = insight.sourceEntityName
+        relatedEntityID = insight.relatedEntityID
+        relatedEntityName = insight.relatedEntityName
+        relatedRecordType = insight.relatedRecordType
+        relatedRecordID = insight.relatedRecordID
         roomName = insight.roomName
         updatedAt = insight.updatedAt
         startedAt = insight.startedAt
@@ -543,6 +568,10 @@ final class PersistedHomeInsight {
             recommendation: recommendation,
             sourceEntityID: sourceEntityID,
             sourceEntityName: sourceEntityName,
+            relatedEntityID: relatedEntityID,
+            relatedEntityName: relatedEntityName,
+            relatedRecordType: relatedRecordType,
+            relatedRecordID: relatedRecordID,
             roomName: roomName,
             createdAt: createdAt,
             updatedAt: updatedAt,
