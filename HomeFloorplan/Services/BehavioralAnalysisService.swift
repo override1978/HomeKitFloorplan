@@ -308,9 +308,12 @@ final class BehavioralAnalysisService {
 
     /// User dismisses an opportunity permanently.
     func dismiss(_ opportunity: AutomationOpportunity) {
+        var changedOpportunity: AutomationOpportunity?
         if let idx = opportunities.firstIndex(where: { $0.id == opportunity.id }) {
             opportunities[idx].status      = .dismissed
             opportunities[idx].dismissedAt = Date()
+            opportunities[idx].modifiedAt  = Date()
+            changedOpportunity = opportunities[idx]
         }
         // Also mark the source pattern as dismissed
         if let pIdx = patterns.firstIndex(where: { $0.id == opportunity.patternID }) {
@@ -323,6 +326,9 @@ final class BehavioralAnalysisService {
             }
         }
         persist()
+        if let changedOpportunity {
+            upsertHomeInsight(for: changedOpportunity)
+        }
     }
 
     /// Dismisses a pattern directly (without an existing opportunity).
@@ -341,18 +347,27 @@ final class BehavioralAnalysisService {
 
     /// User asks to be reminded about this opportunity later.
     func snooze(_ opportunity: AutomationOpportunity, days: Int = 7) {
+        var changedOpportunity: AutomationOpportunity?
         if let idx = opportunities.firstIndex(where: { $0.id == opportunity.id }) {
             opportunities[idx].status      = .snoozed
             opportunities[idx].snoozedUntil = Date().addingTimeInterval(Double(days) * 24 * 3600)
+            opportunities[idx].modifiedAt  = Date()
+            changedOpportunity = opportunities[idx]
         }
         persist()
+        if let changedOpportunity {
+            upsertHomeInsight(for: changedOpportunity)
+        }
     }
 
     /// Marks an opportunity as approved after it has been converted through the unified automation builder.
     func markApproved(_ opportunity: AutomationOpportunity) {
+        var changedOpportunity: AutomationOpportunity?
         if let idx = opportunities.firstIndex(where: { $0.id == opportunity.id }) {
             opportunities[idx].status     = .approved
             opportunities[idx].approvedAt = Date()
+            opportunities[idx].modifiedAt = Date()
+            changedOpportunity = opportunities[idx]
         }
         if let pIdx = patterns.firstIndex(where: { $0.id == opportunity.patternID }) {
             patterns[pIdx].status     = .approved
@@ -364,6 +379,9 @@ final class BehavioralAnalysisService {
             }
         }
         persist()
+        if let changedOpportunity {
+            upsertHomeInsight(for: changedOpportunity)
+        }
     }
 
     /// Removes stale dismissed patterns and expired opportunities.
@@ -526,6 +544,36 @@ final class BehavioralAnalysisService {
         opportunityContext.insert(opp)
         opportunities.append(opp)
         try? opportunityContext.save()
+        upsertHomeInsight(for: opp)
+    }
+
+    private func upsertHomeInsight(for opportunity: AutomationOpportunity) {
+        let insight = HomeInsightMapper.map(opportunity)
+        let context = modelContainer.mainContext
+        let sourceType = String(describing: AutomationOpportunity.self)
+        let sourceID = opportunity.id.uuidString
+
+        let sourceDescriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.sourceRecordType == sourceType && $0.sourceRecordID == sourceID
+            }
+        )
+        if let existing = (try? context.fetch(sourceDescriptor))?.first {
+            existing.update(from: insight)
+            try? context.save()
+            return
+        }
+
+        let dedupeKey = insight.dedupeKey
+        let dedupeDescriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate { $0.dedupeKey == dedupeKey }
+        )
+        if let existing = (try? context.fetch(dedupeDescriptor))?.first {
+            existing.update(from: insight)
+        } else {
+            context.insert(PersistedHomeInsight(insight: insight))
+        }
+        try? context.save()
     }
 
     // MARK: - Diagnostics
