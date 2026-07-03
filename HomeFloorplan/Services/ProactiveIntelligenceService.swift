@@ -114,7 +114,10 @@ final class ProactiveIntelligenceService {
         }
 
         // 2. Automation opportunities
-        for opp in behavioralService.pendingOpportunities.prefix(3) {
+        let automationOpportunities = Array(behavioralService.pendingOpportunities.prefix(3))
+        let automationInsights = automationOpportunities.map(HomeInsightMapper.map)
+        upsertHomeInsights(automationInsights)
+        for opp in automationOpportunities {
             await processOpportunity(opp, context: context)
         }
 
@@ -136,9 +139,12 @@ final class ProactiveIntelligenceService {
         if !context.suppressNonCritical {
             let recurrence = EnvironmentalPatternAnalyzer.loadPatterns()
             let predictive = PredictiveAlertBuilder.build(patterns: recurrence)
+            let predictiveInsights = predictive.map(HomeInsightMapper.map)
+            upsertHomeInsights(predictiveInsights)
             for sig in predictive where sig.score.composite >= deliveryThreshold {
                 await processPredictiveAlert(sig, context: context)
             }
+            autoResolvePredictiveInsights(currentSignals: predictive)
         }
 
         // 8. Sensor anomaly detection (device health)
@@ -695,6 +701,22 @@ final class ProactiveIntelligenceService {
         let persisted = (try? ctx.fetch(descriptor)) ?? []
         for insight in persisted
         where insight.sourceRecordType == String(describing: AnomalySignal.self)
+            && !activeKeys.contains(insight.dedupeKey) {
+            insight.markResolved()
+        }
+    }
+
+    private func autoResolvePredictiveInsights(currentSignals: [PredictiveSignal]) {
+        let activeKeys = Set(currentSignals.map(\.semanticKey))
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.statusRaw == "active"
+            }
+        )
+        let persisted = (try? ctx.fetch(descriptor)) ?? []
+        for insight in persisted
+        where insight.sourceRecordType == String(describing: PredictiveSignal.self)
             && !activeKeys.contains(insight.dedupeKey) {
             insight.markResolved()
         }

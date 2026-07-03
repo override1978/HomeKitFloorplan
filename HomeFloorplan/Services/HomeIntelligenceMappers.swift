@@ -310,7 +310,7 @@ enum HomeInsightMapper {
             startedAt: opportunity.firstObservedAt,
             resolvedAt: opportunity.approvedAt ?? opportunity.dismissedAt,
             confidence: opportunity.confidence,
-            dedupeKey: "opportunity|\(opportunity.patternID.uuidString)",
+            dedupeKey: "automationOpportunity|\(opportunity.patternID.uuidString)",
             suggestedActionJSON: encodeOpportunityAction(opportunity),
             sourceRecordType: String(describing: AutomationOpportunity.self),
             sourceRecordID: opportunity.id.uuidString,
@@ -359,6 +359,40 @@ enum HomeInsightMapper {
             dedupeKey: "predictiveEnvironment|\(alert.roomName)|\(alert.sensorTypeRaw)|\(alert.weekday)|\(alert.hourOfDay)",
             sourceRecordType: String(describing: PredictiveEnvironmentAlert.self),
             sourceRecordID: alert.id.uuidString,
+            syncPolicy: .localOnly
+        )
+    }
+
+    static func map(_ signal: PredictiveSignal) -> HomeInsight {
+        let typeName = signal.pattern.sensorType?.displayName ?? signal.pattern.sensorTypeRaw
+        return HomeInsight(
+            id: signal.pattern.id,
+            kind: .prediction,
+            category: .environment,
+            severity: signal.score.urgency >= 0.70 ? .medium : .low,
+            status: .active,
+            title: String(format:
+                String(localized: "notif.predictive.headline",
+                       defaultValue: "Expected %@ peak in %@"),
+                typeName, signal.pattern.roomName),
+            message: String(format:
+                String(localized: "notif.predictive.body",
+                       defaultValue: "Tends to exceed threshold in ~%d min. Ventilate now to prevent it."),
+                signal.expectedInMinutes),
+            whyExplanation: String(format:
+                String(localized: "notif.predictive.why",
+                       defaultValue: "Detected in %.0f%% of %d similar days observed."),
+                signal.pattern.exceedanceRate * 100, signal.pattern.sampleCount),
+            recommendation: String(localized: "notif.predictive.rec",
+                defaultValue: "Open windows or activate ventilation in advance."),
+            sourceEntityName: typeName,
+            roomName: signal.pattern.roomName,
+            updatedAt: signal.pattern.lastUpdatedAt,
+            confidence: signal.score.confidence,
+            score: HomeInsightScore(signal.score),
+            dedupeKey: signal.semanticKey,
+            sourceRecordType: String(describing: PredictiveSignal.self),
+            sourceRecordID: signal.pattern.id.uuidString,
             syncPolicy: .localOnly
         )
     }
