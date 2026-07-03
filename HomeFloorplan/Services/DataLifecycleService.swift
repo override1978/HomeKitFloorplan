@@ -81,6 +81,11 @@ final class DataLifecycleService {
         let container = modelContainer
         let start = Date()
 
+        // One-way, idempotent migration from legacy environmental insight records
+        // to the unified home insight store. Runs outside pruning because it never deletes.
+        Self.backfillPersistedHomeInsights(context: modelContainer.mainContext)
+        try? modelContainer.mainContext.save()
+
         await Task.detached(priority: .background) {
             let ctx = ModelContext(container)
 
@@ -314,6 +319,108 @@ final class DataLifecycleService {
         #if DEBUG
         if inserted > 0 { print("🗂  → \(inserted) EffectivenessSummary created") }
         #endif
+    }
+
+    // MARK: - Phase 1d: Backfill PersistedHomeInsight
+
+    private static func backfillPersistedHomeInsights(context: ModelContext) {
+        let legacyInsights = (try? context.fetch(FetchDescriptor<PersistedInsight>())) ?? []
+        guard !legacyInsights.isEmpty else { return }
+
+        let existingHomeInsights = (try? context.fetch(FetchDescriptor<PersistedHomeInsight>())) ?? []
+        var existingByDedupeKey = Dictionary(uniqueKeysWithValues: existingHomeInsights.map { ($0.dedupeKey, $0) })
+
+        var inserted = 0
+        var updated = 0
+        var skipped = 0
+        let legacySourceType = String(describing: PersistedInsight.self)
+        for legacyInsight in legacyInsights {
+            let homeInsight = mapLegacyInsightToHomeInsight(legacyInsight)
+            if let existing = existingByDedupeKey[homeInsight.dedupeKey] {
+                if existing.sourceRecordType == legacySourceType ||
+                    existing.sourceRecordID == legacyInsight.id.uuidString {
+                    existing.update(from: homeInsight)
+                    updated += 1
+                } else {
+                    skipped += 1
+                }
+            } else {
+                let record = PersistedHomeInsight(insight: homeInsight)
+                context.insert(record)
+                existingByDedupeKey[homeInsight.dedupeKey] = record
+                inserted += 1
+            }
+        }
+
+        #if DEBUG
+        if inserted > 0 || updated > 0 || skipped > 0 {
+            print("🗂  → PersistedHomeInsight backfilled (\(inserted) inserted, \(updated) updated, \(skipped) skipped)")
+        }
+        #endif
+    }
+
+    private static func mapLegacyInsightToHomeInsight(_ insight: PersistedInsight) -> HomeInsight {
+        HomeInsight(
+            id: insight.id,
+            kind: homeInsightKind(intelligenceLevelRaw: insight.intelligenceLevelRaw, severityRaw: insight.severityRaw),
+            category: .environment,
+            severity: homeInsightSeverity(insight.severityRaw),
+            status: homeInsightStatus(insight.statusRaw),
+            title: insight.patternKey ?? insight.roomName,
+            message: insight.message,
+            whyExplanation: insight.whyExplanation,
+            sourceEntityID: insight.sourceAccessoryID,
+            sourceEntityName: insight.sourceAccessoryName,
+            roomName: insight.roomName,
+            createdAt: insight.generatedAt,
+            updatedAt: insight.generatedAt,
+            startedAt: insight.generatedAt,
+            resolvedAt: nil,
+            confidence: insight.confidenceScore ?? 0.7,
+            dedupeKey: insight.patternKey ?? "persistedInsight|\(insight.roomName)|\(insight.id.uuidString)",
+            suggestedActionJSON: insight.nextActionsJSON,
+            sourceRecordType: String(describing: PersistedInsight.self),
+            sourceRecordID: insight.id.uuidString,
+            syncPolicy: .syncFull
+        )
+    }
+
+    private static func homeInsightKind(intelligenceLevelRaw: String?, severityRaw: String) -> HomeInsightKind {
+        if severityRaw == InsightSeverity.anomaly.rawValue { return .anomaly }
+        switch intelligenceLevelRaw.flatMap(IntelligenceLevel.init(rawValue:)) {
+        case .prediction:
+            return .prediction
+        case .recommendation:
+            return .recommendation
+        case .pattern:
+            return .environment
+        case .observation, nil:
+            return .environment
+        }
+    }
+
+    private static func homeInsightSeverity(_ rawValue: String) -> HomeInsightSeverity {
+        switch InsightSeverity(rawValue: rawValue) {
+        case .anomaly:
+            return .high
+        case .warning:
+            return .medium
+        case .info, nil:
+            return .info
+        }
+    }
+
+    private static func homeInsightStatus(_ rawValue: String) -> HomeInsightStatus {
+        switch InsightPersistedStatus(rawValue: rawValue) {
+        case .dismissed:
+            return .dismissed
+        case .expired:
+            return .expired
+        case .executed:
+            return .executed
+        case .active, nil:
+            return .active
+        }
     }
 
     // MARK: - Phase 2a: Prune PersistedInsight
