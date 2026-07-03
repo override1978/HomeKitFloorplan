@@ -23,7 +23,7 @@ private enum DLCRetention {
 ///   1. Aggregate raw sensor readings   → DailySensorSummary   (permanent)
 ///   2. Aggregate raw accessory events  → AccessoryUsageSummary (permanent)
 ///   3. Aggregate effectiveness events  → EffectivenessSummary  (permanent)
-///   4. Prune expired PersistedInsight records (>30 days)
+///   4. Prune expired insight records (>30 days)
 ///   5. Prune resolved/stale SensorAlertEvents
 ///   6. Prune raw ActionEffectivenessEvents (>90 days, after aggregation)
 ///
@@ -94,6 +94,7 @@ final class DataLifecycleService {
             // the device, but local SwiftData records must not be removed silently.
             if !LocalDataProtection.shouldPreserveSwiftData {
                 Self.prunePersistedInsights(context: ctx)
+                Self.prunePersistedHomeInsights(context: ctx)
                 Self.pruneSensorAlertEvents(context: ctx)
                 Self.pruneActionEffectivenessEvents(context: ctx)
                 Self.pruneRoomAnalysisStates(context: ctx)
@@ -342,6 +343,40 @@ final class DataLifecycleService {
         }
         #if DEBUG
         if expiredCount > 0 { print("🗂  → \(expiredCount) PersistedInsight(s) expired (stale prompt version)") }
+        #endif
+    }
+
+    // MARK: - Phase 2a.1: Prune PersistedHomeInsight
+
+    private nonisolated static func prunePersistedHomeInsights(context: ModelContext) {
+        let cutoff = Date().addingTimeInterval(-Double(DLCRetention.insight) * 86400)
+        let deleted = (try? context.delete(
+            model: PersistedHomeInsight.self,
+            where: #Predicate<PersistedHomeInsight> { $0.createdAt < cutoff }
+        )) != nil
+        #if DEBUG
+        if deleted { print("🗂  → PersistedHomeInsight pruned (cutoff: \(DLCRetention.insight)d)") }
+        #endif
+
+        // Ambient AI bridge records inherit the old 2-hour visibility window.
+        let activeRaw = HomeInsightStatus.active.rawValue
+        let expiredRaw = HomeInsightStatus.expired.rawValue
+        let environmentRaw = HomeInsightCategory.environment.rawValue
+        let legacySourceType = String(describing: PersistedInsight.self)
+        let expiryCutoff = Date().addingTimeInterval(-2 * 3600)
+        let all = (try? context.fetch(FetchDescriptor<PersistedHomeInsight>())) ?? []
+        var expiredCount = 0
+        for record in all where
+            record.statusRaw == activeRaw &&
+            record.categoryRaw == environmentRaw &&
+            record.sourceRecordType == legacySourceType &&
+            record.createdAt < expiryCutoff {
+            record.statusRaw = expiredRaw
+            record.updatedAt = Date()
+            expiredCount += 1
+        }
+        #if DEBUG
+        if expiredCount > 0 { print("🗂  → \(expiredCount) PersistedHomeInsight(s) expired (ambient bridge)") }
         #endif
     }
 
