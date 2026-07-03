@@ -64,9 +64,6 @@ final class HomeKnowledgeService {
     /// Deterministic natural-language summary of what the system has learned (Sprint 25.B).
     var learningNarrative: String = ""
 
-    /// Active predictive environmental alerts from PredictiveAlertEngine (Sprint 25.C).
-    var predictiveAlerts: [PredictiveEnvironmentAlert] = []
-
     /// Count of HabitPatterns with confidence ≥ 0.80 and status != dismissed.
     var stableHabitsCount: Int = 0
 
@@ -280,9 +277,6 @@ final class HomeKnowledgeService {
             totalHelpful:            totalHelpful,
             daysSinceLearningStarted: daysSinceLearningStarted
         )
-
-        // Sprint 25.C — predictive environmental alerts
-        predictiveAlerts = PredictiveAlertEngine.generateAlerts()
     }
 
     // MARK: - Domain Building

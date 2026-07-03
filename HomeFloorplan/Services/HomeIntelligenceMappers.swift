@@ -341,28 +341,6 @@ enum HomeInsightMapper {
         )
     }
 
-    static func map(_ alert: PredictiveEnvironmentAlert) -> HomeInsight {
-        HomeInsight(
-            id: alert.id,
-            kind: .prediction,
-            category: .environment,
-            severity: alert.confidence >= 0.80 ? .medium : .low,
-            status: .active,
-            title: alert.roomName,
-            message: alert.message,
-            sourceEntityName: alert.sensorTypeRaw,
-            roomName: alert.roomName,
-            createdAt: alert.generatedAt,
-            updatedAt: alert.generatedAt,
-            startedAt: alert.generatedAt,
-            confidence: alert.confidence,
-            dedupeKey: "predictiveEnvironment|\(alert.roomName)|\(alert.sensorTypeRaw)|\(alert.weekday)|\(alert.hourOfDay)",
-            sourceRecordType: String(describing: PredictiveEnvironmentAlert.self),
-            sourceRecordID: alert.id.uuidString,
-            syncPolicy: .localOnly
-        )
-    }
-
     static func map(_ signal: PredictiveSignal) -> HomeInsight {
         let typeName = signal.pattern.sensorType?.displayName ?? signal.pattern.sensorTypeRaw
         return HomeInsight(

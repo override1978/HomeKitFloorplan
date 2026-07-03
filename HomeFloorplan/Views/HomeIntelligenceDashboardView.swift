@@ -41,6 +41,15 @@ struct HomeIntelligenceDashboardView: View {
     @Environment(FamilyPresenceService.self)         private var familyPresenceService
     @Environment(\.modelContext)                     private var modelContext
 
+    @Query(
+        filter: #Predicate<PersistedHomeInsight> {
+            $0.statusRaw == "active" && $0.kindRaw == "prediction"
+        },
+        sort: \PersistedHomeInsight.updatedAt,
+        order: .reverse
+    )
+    private var activePredictionInsights: [PersistedHomeInsight]
+
     @State private var service: HomeKnowledgeService?
     @State private var isRefreshing: Bool = false
     @State private var reviewingProposal: AutomationProposal?
@@ -52,6 +61,12 @@ struct HomeIntelligenceDashboardView: View {
     private static let feedTimeFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
     }()
+
+    private var predictiveInsights: [PersistedHomeInsight] {
+        activePredictionInsights.filter {
+            $0.sourceRecordType == String(describing: PredictiveSignal.self)
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -210,7 +225,7 @@ struct HomeIntelligenceDashboardView: View {
             )
             color = BrandColor.primary
             icon = "sparkles"
-        } else if activeInsightCount > 0 || !svc.predictiveAlerts.isEmpty {
+        } else if activeInsightCount > 0 || !predictiveInsights.isEmpty {
             title = String(localized: "intelligence.assistant.watch.title", defaultValue: "The home needs attention")
             message = String(localized: "intelligence.assistant.watch.message",
                              defaultValue: "I found some environmental or predictive signals to review.")
@@ -265,11 +280,11 @@ struct HomeIntelligenceDashboardView: View {
             ))
         }
 
-        if let alert = svc.predictiveAlerts.first {
+        if let insight = predictiveInsights.first {
             items.append(IntelligenceAssistantPriority(
                 icon: "clock.arrow.2.circlepath",
                 title: String(localized: "intelligence.assistant.priority.prediction", defaultValue: "Previsto a breve"),
-                detail: alert.message,
+                detail: insight.message,
                 color: .blue
             ))
         }
@@ -392,11 +407,11 @@ struct HomeIntelligenceDashboardView: View {
             ))
         }
 
-        for alert in svc.predictiveAlerts.prefix(max(0, 3 - items.count)) {
+        for insight in predictiveInsights.prefix(max(0, 3 - items.count)) {
             items.append(DashboardAttentionItem(
                 icon: "clock.arrow.2.circlepath",
                 title: String(localized: "intelligence.attention.predictive", defaultValue: "Predicted soon"),
-                detail: alert.message,
+                detail: insight.message,
                 color: .blue
             ))
         }
@@ -751,11 +766,11 @@ struct HomeIntelligenceDashboardView: View {
         }
     }
 
-    // MARK: - Section: Predictive Alerts (Sprint 25.C)
+    // MARK: - Section: Predictive Insights
 
     @ViewBuilder
-    private func predictiveAlertsSection(svc: HomeKnowledgeService) -> some View {
-        if !svc.predictiveAlerts.isEmpty {
+    private func predictiveInsightsSection() -> some View {
+        if !predictiveInsights.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeader(
                     icon: "clock.arrow.2.circlepath",
@@ -763,9 +778,9 @@ struct HomeIntelligenceDashboardView: View {
                                   defaultValue: "What will likely happen")
                 )
                 VStack(spacing: 0) {
-                    ForEach(Array(svc.predictiveAlerts.enumerated()), id: \.element.id) { idx, alert in
-                        PredictiveAlertRow(alert: alert)
-                        if idx < svc.predictiveAlerts.count - 1 {
+                    ForEach(Array(predictiveInsights.enumerated()), id: \.element.id) { idx, insight in
+                        PredictiveAlertRow(insight: insight)
+                        if idx < predictiveInsights.count - 1 {
                             Divider().padding(.leading, 62)
                         }
                     }
@@ -2210,25 +2225,35 @@ private struct IntelligenceSectionGroup: View {
 
 private struct PredictiveAlertRow: View {
 
-    let alert: PredictiveEnvironmentAlert
+    let insight: PersistedHomeInsight
 
     private var sensorColor: Color {
-        switch alert.sensorTypeRaw {
-        case "temperature":   return .red
-        case "humidity":      return .blue
-        case "carbonDioxide": return .orange
-        case "airQuality":    return .purple
-        default:              return BrandColor.primary
+        let name = (insight.sourceEntityName ?? "").localizedLowercase
+        if name.contains("temp") {
+            return .red
+        } else if name.contains("humid") {
+            return .blue
+        } else if name.contains("co") || name.contains("carbon") {
+            return .orange
+        } else if name.contains("air") {
+            return .purple
+        } else {
+            return BrandColor.primary
         }
     }
 
     private var sensorIcon: String {
-        switch alert.sensorTypeRaw {
-        case "temperature":   return "thermometer.medium"
-        case "humidity":      return "humidity.fill"
-        case "carbonDioxide": return "aqi.medium"
-        case "airQuality":    return "aqi.low"
-        default:              return "waveform.path.ecg"
+        let name = (insight.sourceEntityName ?? "").localizedLowercase
+        if name.contains("temp") {
+            return "thermometer.medium"
+        } else if name.contains("humid") {
+            return "humidity.fill"
+        } else if name.contains("co") || name.contains("carbon") {
+            return "aqi.medium"
+        } else if name.contains("air") {
+            return "aqi.low"
+        } else {
+            return "waveform.path.ecg"
         }
     }
 
@@ -2243,12 +2268,13 @@ private struct PredictiveAlertRow: View {
                     .foregroundStyle(sensorColor)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(alert.message)
+                Text(insight.message)
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 4) {
-                    Text(alert.roomName)
+                    Text(insight.roomName ?? String(localized: "intelligence.attention.environment",
+                                                    defaultValue: "Environment signal"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("·")
@@ -2258,7 +2284,7 @@ private struct PredictiveAlertRow: View {
                         String(
                             format: String(localized: "predictive.confidence.label",
                                            defaultValue: "%lld%% confidence"),
-                            Int64(alert.confidence * 100)
+                            Int64(insight.confidence * 100)
                         )
                     )
                     .font(.caption)
