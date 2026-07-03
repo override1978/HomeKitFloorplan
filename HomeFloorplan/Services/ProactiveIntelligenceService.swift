@@ -83,7 +83,8 @@ final class ProactiveIntelligenceService {
         occupancyService:   OccupancyPredictionService?   = nil,
         maintenanceService: MaintenancePredictionService? = nil,
         presenceOverride:   PresenceState?                = nil,
-        weatherService:     WeatherKitService?            = nil
+        weatherService:     WeatherKitService?            = nil,
+        homeKitService:     HomeKitService?               = nil
     ) async {
         if let last = lastCycleAt,
            Date().timeIntervalSince(last) < minCycleInterval { return }
@@ -93,7 +94,8 @@ final class ProactiveIntelligenceService {
             occupancyService:   occupancyService,
             maintenanceService: maintenanceService,
             presenceOverride:   presenceOverride,
-            weatherService:     weatherService
+            weatherService:     weatherService,
+            homeKitService:     homeKitService
         )
     }
 
@@ -103,7 +105,8 @@ final class ProactiveIntelligenceService {
         occupancyService:   OccupancyPredictionService?   = nil,
         maintenanceService: MaintenancePredictionService? = nil,
         presenceOverride:   PresenceState?                = nil,
-        weatherService:     WeatherKitService?            = nil
+        weatherService:     WeatherKitService?            = nil,
+        homeKitService:     HomeKitService?               = nil
     ) async {
         guard !isRunning else { return }
         isRunning = true
@@ -135,9 +138,6 @@ final class ProactiveIntelligenceService {
             )
             let deviationInsights = devs.map(HomeInsightMapper.map)
             upsertHomeInsights(deviationInsights)
-            for dev in devs {
-                await processDeviation(dev, context: context)
-            }
             autoResolveDeviationInsights(currentSignals: devs)
         }
 
@@ -145,17 +145,14 @@ final class ProactiveIntelligenceService {
         let automationOpportunities = Array(behavioralService.pendingOpportunities.prefix(3))
         let automationInsights = automationOpportunities.map(HomeInsightMapper.map)
         upsertHomeInsights(automationInsights)
-        for opp in automationOpportunities {
-            await processOpportunity(opp, context: context)
-        }
 
         // 3. Environmental alerts
-        let envSignals = await EnvironmentalAlertBuilder.build(modelContainer: modelContainer)
+        let envSignals = await EnvironmentalAlertBuilder.build(
+            modelContainer: modelContainer,
+            homeKitService: homeKitService
+        )
         let environmentalInsights = envSignals.map(HomeInsightMapper.map)
         upsertHomeInsights(environmentalInsights)
-        for sig in envSignals where sig.score.composite >= deliveryThreshold {
-            await processEnvironmental(sig, context: context)
-        }
 
         // 4. Auto-resolve environmental alerts whose condition cleared
         autoResolveEnvironmental(currentSignals: envSignals)
@@ -169,9 +166,6 @@ final class ProactiveIntelligenceService {
             let predictive = PredictiveAlertBuilder.build(patterns: recurrence)
             let predictiveInsights = predictive.map(HomeInsightMapper.map)
             upsertHomeInsights(predictiveInsights)
-            for sig in predictive where sig.score.composite >= deliveryThreshold {
-                await processPredictiveAlert(sig, context: context)
-            }
             autoResolvePredictiveInsights(currentSignals: predictive)
         }
 
@@ -179,17 +173,14 @@ final class ProactiveIntelligenceService {
         let anomalies = await SensorAnomalyDetector.detect(modelContainer: modelContainer)
         let anomalyInsights = anomalies.map(HomeInsightMapper.map)
         upsertHomeInsights(anomalyInsights)
-        for anom in anomalies where anom.score.composite >= deliveryThreshold {
-            await processAnomaly(anom, context: context)
-        }
         autoResolveSensorAnomalyInsights(currentSignals: anomalies)
 
         // 8.5. Home intelligence anomalies (central baseline domain)
-        let homeInsightAnomalies = HomeInsightAnomalyPipeline.detect(modelContainer: modelContainer)
+        let homeInsightAnomalies = HomeInsightAnomalyPipeline.detect(
+            modelContainer: modelContainer,
+            homeKitService: homeKitService
+        )
         upsertHomeInsights(homeInsightAnomalies)
-        for insight in homeInsightAnomalies where !context.suppressNonCritical || insight.severity >= .high {
-            await processHomeInsightAnomaly(insight, context: context)
-        }
         autoResolveHomeInsightAnomalies(currentInsights: homeInsightAnomalies)
 
         // 9. Maintenance prediction (usage pattern anomalies)
@@ -197,9 +188,6 @@ final class ProactiveIntelligenceService {
             let maintenanceSignals = maint.signals
             let maintenanceInsights = maintenanceSignals.map(HomeInsightMapper.map)
             upsertHomeInsights(maintenanceInsights)
-            for sig in maintenanceSignals where sig.score.composite >= deliveryThreshold {
-                await processMaintenance(sig, context: context)
-            }
             autoResolveMaintenanceInsights(currentSignals: maintenanceSignals)
         }
 
@@ -207,6 +195,10 @@ final class ProactiveIntelligenceService {
         if !context.suppressNonCritical, let weather = weatherService {
             await processWeatherPrediction(weatherService: weather, context: context)
         }
+
+        // 11. Notification delivery is sourced from the unified home insight store.
+        await processActiveHomeInsightNotifications(context: context)
+        resolveLegacySignalNotifications()
 
         // 12. Auto-expire old notifications
         autoExpire()
@@ -468,6 +460,7 @@ final class ProactiveIntelligenceService {
             let oldPriority = existing.priority
             existing.headline = insight.title
             existing.body = insight.message
+            existing.currentValue = currentValueText(for: insight)
             existing.priorityRaw = priority.rawValue
             existing.recommendation = insight.recommendation
             existing.whyExplanation = insight.whyExplanation
@@ -489,6 +482,7 @@ final class ProactiveIntelligenceService {
             semanticKey: key,
             headline: insight.title,
             body: insight.message,
+            currentValue: currentValueText(for: insight),
             recommendation: insight.recommendation,
             sourceID: insight.sourceRecordID ?? insight.sourceEntityID,
             whyExplanation: insight.whyExplanation,
@@ -499,6 +493,24 @@ final class ProactiveIntelligenceService {
         if checkRateLimit(priority: priority, category: category) {
             await NotificationDeliveryOrchestrator.deliver(notif, context: context)
         }
+    }
+
+    private func currentValueText(for insight: HomeInsight) -> String? {
+        let message = insight.message.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let reportsRange = message.range(of: " reports ") {
+            let valueStart = reportsRange.upperBound
+            let valueEnd = message[valueStart...].firstIndex(of: ",") ?? message.endIndex
+            let value = message[valueStart..<valueEnd].trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+
+        if let forRange = message.range(of: " for ") {
+            let value = message[..<forRange.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+
+        return nil
     }
 
     private func processMaintenance(_ signal: MaintenanceSignal, context: ContextSnapshot) async {
@@ -698,7 +710,7 @@ final class ProactiveIntelligenceService {
         let descriptor = FetchDescriptor<ProactiveNotification>(
             predicate: #Predicate {
                 $0.categoryRaw == "environment" &&
-                ($0.statusRaw == "live" || $0.statusRaw == "updated")
+                ($0.statusRaw == "live" || $0.statusRaw == "updated" || $0.statusRaw == "acknowledged")
             }
         )
         let live = (try? ctx.fetch(descriptor)) ?? []
@@ -729,7 +741,7 @@ final class ProactiveIntelligenceService {
         let ctx = modelContainer.mainContext
         let descriptor = FetchDescriptor<ProactiveNotification>(
             predicate: #Predicate {
-                $0.statusRaw == "live" || $0.statusRaw == "updated"
+                $0.statusRaw == "live" || $0.statusRaw == "updated" || $0.statusRaw == "acknowledged"
             }
         )
         let live = (try? ctx.fetch(descriptor)) ?? []
@@ -953,6 +965,91 @@ final class ProactiveIntelligenceService {
                 ctx.insert(PersistedHomeInsight(insight: insight))
             }
         }
+    }
+
+    private func processActiveHomeInsightNotifications(context: ContextSnapshot) async {
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.statusRaw == "active"
+            },
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        let activeInsights = (try? ctx.fetch(descriptor)) ?? []
+        for insight in notificationInsights(from: activeInsights.map { $0.toHomeInsight() }) {
+            guard !context.suppressNonCritical || insight.severity >= .high else { continue }
+            await processHomeInsightAnomaly(insight, context: context)
+        }
+    }
+
+    private func notificationInsights(from insights: [HomeInsight]) -> [HomeInsight] {
+        let environmentalKeys = Set(
+            insights
+                .filter { $0.sourceRecordType == String(describing: EnvironmentalSignal.self) }
+                .compactMap(notificationGroupingKey)
+        )
+
+        return insights.filter { insight in
+            guard insight.kind == .anomaly,
+                  insight.category == .environment,
+                  let key = notificationGroupingKey(for: insight) else {
+                return true
+            }
+            return !environmentalKeys.contains(key)
+        }
+    }
+
+    private func notificationGroupingKey(for insight: HomeInsight) -> String? {
+        let room = (insight.roomName ?? "home").lowercased()
+        let entity = (insight.sourceEntityName ?? inferredSignalName(from: insight))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !entity.isEmpty else { return nil }
+        return "\(room)|\(entity)"
+    }
+
+    private func inferredSignalName(from insight: HomeInsight) -> String {
+        let raw = "\(insight.title) \(insight.message)".lowercased()
+        if raw.contains("airquality") || raw.contains("air quality") || raw.contains("qualità aria") {
+            return SensorServiceType.airQuality.displayName
+        }
+        if raw.contains("temperature") || raw.contains("temperatura") {
+            return SensorServiceType.temperature.displayName
+        }
+        if raw.contains("humidity") || raw.contains("umid") {
+            return SensorServiceType.humidity.displayName
+        }
+        if raw.contains("co₂") || raw.contains("co2") || raw.contains("carbon dioxide") {
+            return SensorServiceType.carbonDioxide.displayName
+        }
+        return insight.sourceEntityName ?? ""
+    }
+
+    private func resolveLegacySignalNotifications() {
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<ProactiveNotification>(
+            predicate: #Predicate {
+                $0.statusRaw == "live" || $0.statusRaw == "updated" || $0.statusRaw == "acknowledged"
+            }
+        )
+        let live = (try? ctx.fetch(descriptor)) ?? []
+        let now = Date()
+        for notification in live where isLegacySignalNotification(notification) {
+            notification.status = .resolved
+            notification.resolvedAt = now
+            notification.lastUpdatedAt = now
+        }
+    }
+
+    private func isLegacySignalNotification(_ notification: ProactiveNotification) -> Bool {
+        guard !notification.semanticKey.hasPrefix("homeInsight|") else { return false }
+        return notification.semanticKey.hasPrefix("environment|")
+            || notification.semanticKey.hasPrefix("anomaly|")
+            || notification.semanticKey.hasPrefix("predictive|")
+            || notification.semanticKey.hasPrefix("deviation|")
+            || notification.semanticKey.hasPrefix("maintenance|")
+            || notification.semanticKey.hasPrefix("automation|")
+            || notification.semanticKey.hasPrefix("opportunity|")
     }
 
     private func updatePersistedHomeInsightStatus(

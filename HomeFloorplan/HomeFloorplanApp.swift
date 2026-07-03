@@ -596,7 +596,8 @@ struct HomeFloorplanApp: App {
                 occupancyService:   occupancy,
                 maintenanceService: maintenance,
                 presenceOverride:   location.presenceState,
-                weatherService:     weather
+                weatherService:     weather,
+                homeKitService:     homeKitSvc
             )
             task.setTaskCompleted(success: true)
         }

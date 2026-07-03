@@ -348,6 +348,17 @@ private struct TimelineEventRow: View {
                         .lineLimit(isExpanded ? nil : 2)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    if let value = notification.currentValue {
+                        HStack(spacing: 5) {
+                            Text(String(localized: "feed.row.current", defaultValue: "Current"))
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text(value)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.primary)
+                        }
+                    }
+
                     // Meta
                     metaRow
 

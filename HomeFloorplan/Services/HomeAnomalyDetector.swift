@@ -135,7 +135,8 @@ enum HomeAnomalyDetector {
         let thresholdBreach = thresholdBreach(value: value, threshold: threshold)
         let deviation = baseline.flatMap { standardDeviationDeviation(value: value, baseline: $0) }
         let absoluteDelta = baseline?.mean.map { abs(value - $0) } ?? thresholdBreach.map { abs(value - $0.limit) } ?? 0
-        let passesMinimumDelta = thresholdBreach != nil || absoluteDelta >= policy.minimumAbsoluteDelta
+        let passesMinimumDelta = (thresholdBreach != nil && policy.thresholdBypassesMinimumDelta)
+            || absoluteDelta >= policy.minimumAbsoluteDelta
         let relativeBaselineEnabled = thresholdBreach != nil || policy.allowsRelativeBaseline
         let p95Exceeded = relativeBaselineEnabled
             && passesMinimumDelta
@@ -215,8 +216,10 @@ enum HomeAnomalyDetector {
         )
         let direction = anomalyDirection(value: value, baseline: baseline)
         let entityName = displayEntityName(for: signal)
-        let measured = format(value)
-        let expected = baseline?.mean.map(format) ?? thresholdBreach.map { format($0.limit) } ?? "baseline"
+        let measured = format(value, for: signal.signalType)
+        let expected = baseline?.mean.map { format($0, for: signal.signalType) }
+            ?? thresholdBreach.map { format($0.limit, for: signal.signalType) }
+            ?? "baseline"
         let expectedSource = baseline?.mean == nil && thresholdBreach != nil ? "threshold" : "baseline"
         let title = "Anomalous \(signal.signalType.rawValue)"
         let message = "\(entityName) reports \(measured), \(direction) its expected \(expected) \(expectedSource)."
@@ -447,6 +450,30 @@ enum HomeAnomalyDetector {
         String(format: "%.2f", value)
     }
 
+    private static func format(_ value: Double, for signalType: HomeSignalType) -> String {
+        if signalType == .airQuality {
+            return airQualityLabel(for: value)
+        }
+        return format(value)
+    }
+
+    private static func airQualityLabel(for value: Double) -> String {
+        switch Int(value.rounded()) {
+        case 1:
+            return String(localized: "sensor.airQuality.excellent", defaultValue: "Excellent")
+        case 2:
+            return String(localized: "sensor.airQuality.good", defaultValue: "Good")
+        case 3:
+            return String(localized: "sensor.airQuality.fair", defaultValue: "Fair")
+        case 4:
+            return String(localized: "sensor.airQuality.inferior", defaultValue: "Inferior")
+        case 5:
+            return String(localized: "sensor.airQuality.poor", defaultValue: "Poor")
+        default:
+            return String(format: "%.0f", value)
+        }
+    }
+
     private static func policy(for signal: HomeSignalEvent) -> DetectionPolicy {
         switch signal.signalType {
         case .humidity:
@@ -455,7 +482,10 @@ enum HomeAnomalyDetector {
                 allowsRelativeBaseline: signal.sourceKind != .weather
             )
         case .temperature:
-            return DetectionPolicy(minimumAbsoluteDelta: signal.sourceKind == .weather ? 4 : 2)
+            return DetectionPolicy(
+                minimumAbsoluteDelta: signal.sourceKind == .weather ? 4 : 2,
+                thresholdBypassesMinimumDelta: false
+            )
         case .carbonDioxide:
             return DetectionPolicy(minimumAbsoluteDelta: 150)
         case .vocDensity:
@@ -486,8 +516,15 @@ enum HomeAnomalyDetector {
 
         let entityName = displayEntityName(for: interval)
         let durationText = durationDescription(duration)
-        let message = "\(entityName) has been \(interval.stateRaw) for \(durationText)."
-        let why = "\(interval.stateRaw) duration \(durationText) exceeds \(durationDescription(rule.minimumDuration)) \(rule.basis)."
+        let message: String
+        let why: String
+        if interval.isActive {
+            message = "\(entityName) is currently \(interval.stateRaw)."
+            why = "The current \(interval.stateRaw) state exceeds the \(durationDescription(rule.minimumDuration)) \(rule.basis). Exact duration is not shown because the open interval depends on event history."
+        } else {
+            message = "\(entityName) has been \(interval.stateRaw) for \(durationText)."
+            why = "\(interval.stateRaw) duration \(durationText) exceeds \(durationDescription(rule.minimumDuration)) \(rule.basis)."
+        }
 
         return HomeInsight(
             id: UUID(),
@@ -655,6 +692,7 @@ enum HomeAnomalyDetector {
     private struct DetectionPolicy {
         var minimumAbsoluteDelta: Double
         var allowsRelativeBaseline: Bool = true
+        var thresholdBypassesMinimumDelta: Bool = true
     }
 
     private struct IntervalRule {

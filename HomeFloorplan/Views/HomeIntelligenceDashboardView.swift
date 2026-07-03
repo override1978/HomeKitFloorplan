@@ -1171,7 +1171,8 @@ struct HomeIntelligenceDashboardView: View {
             habitService:       habitService,
             occupancyService:   occupancyService,
             maintenanceService: maintenanceService,
-            presenceOverride:   locationService.presenceState
+            presenceOverride:   locationService.presenceState,
+            homeKitService:     homeKit
         )
     }
 

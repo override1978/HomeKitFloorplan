@@ -1,4 +1,5 @@
 import Foundation
+import HomeKit
 import SwiftData
 
 // MARK: - EnvironmentalSignal
@@ -30,7 +31,10 @@ enum EnvironmentalAlertBuilder {
 
     // MARK: - Build
 
-    static func build(modelContainer: ModelContainer) async -> [EnvironmentalSignal] {
+    static func build(
+        modelContainer: ModelContainer,
+        homeKitService: HomeKitService? = nil
+    ) async -> [EnvironmentalSignal] {
         let context = ModelContext(modelContainer)
         let cutoff  = Date().addingTimeInterval(-lookbackSeconds)
 
@@ -38,7 +42,7 @@ enum EnvironmentalAlertBuilder {
             predicate: #Predicate { $0.timestamp >= cutoff },
             sortBy:    [SortDescriptor(\.timestamp)]
         )
-        let readings = (try? context.fetch(descriptor)) ?? []
+        let readings = ((try? context.fetch(descriptor)) ?? []) + liveSensorReadings(from: homeKitService)
         guard !readings.isEmpty else { return [] }
 
         // Group by room + sensorType
@@ -54,6 +58,86 @@ enum EnvironmentalAlertBuilder {
             signals.append(sig)
         }
         return signals
+    }
+
+    private static func liveSensorReadings(from homeKitService: HomeKitService?) -> [SensorReading] {
+        guard let homeKitService else { return [] }
+
+        return homeKitService.allAccessories.flatMap { accessory -> [SensorReading] in
+            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService)
+            guard let readable = adapter as? any EnvironmentReadable else { return [] }
+
+            let roomName = accessory.room?.name ?? "Home"
+            let now = Date()
+            return [
+                liveReading(
+                    type: .temperature,
+                    value: readable.environmentTemperature,
+                    accessory: accessory,
+                    roomName: roomName,
+                    timestamp: now
+                ),
+                liveReading(
+                    type: .humidity,
+                    value: readable.environmentHumidity,
+                    accessory: accessory,
+                    roomName: roomName,
+                    timestamp: now
+                ),
+                liveReading(
+                    type: .carbonDioxide,
+                    value: readable.environmentCO2,
+                    accessory: accessory,
+                    roomName: roomName,
+                    timestamp: now
+                ),
+                liveReading(
+                    type: .pm25,
+                    value: readable.environmentPM25,
+                    accessory: accessory,
+                    roomName: roomName,
+                    timestamp: now
+                ),
+                liveReading(
+                    type: .pm10,
+                    value: readable.environmentPM10,
+                    accessory: accessory,
+                    roomName: roomName,
+                    timestamp: now
+                ),
+                liveReading(
+                    type: .vocDensity,
+                    value: readable.environmentVOC,
+                    accessory: accessory,
+                    roomName: roomName,
+                    timestamp: now
+                ),
+                liveReading(
+                    type: .lightSensor,
+                    value: readable.environmentLightLevel.map(Double.init),
+                    accessory: accessory,
+                    roomName: roomName,
+                    timestamp: now
+                )
+            ].compactMap { $0 }
+        }
+    }
+
+    private static func liveReading(
+        type: SensorServiceType,
+        value: Double?,
+        accessory: HMAccessory,
+        roomName: String,
+        timestamp: Date
+    ) -> SensorReading? {
+        guard let value else { return nil }
+        return SensorReading(
+            accessoryUUID: accessory.uniqueIdentifier.uuidString,
+            serviceType: type,
+            roomName: roomName,
+            value: value,
+            timestamp: timestamp
+        )
     }
 
     private static func buildSignal(from group: [SensorReading]) -> EnvironmentalSignal? {
@@ -154,7 +238,7 @@ enum EnvironmentalAlertBuilder {
     }
 
     static func body(for signal: EnvironmentalSignal) -> String {
-        let valueStr   = String(format: "%.1f%@", signal.currentValue, signal.sensorType.unit)
+        let valueStr   = formattedValue(signal.currentValue, for: signal.sensorType)
         let trendLabel = signal.trend.localizedLabel
         return String(format:
             String(localized: "notif.env.body", defaultValue: "%1$@ for %2$d min · %3$@"),
@@ -217,13 +301,37 @@ enum EnvironmentalAlertBuilder {
     }
 
     static func formattedCurrentValue(for signal: EnvironmentalSignal) -> String {
-        String(format: "%.1f%@", signal.currentValue, signal.sensorType.unit)
+        formattedValue(signal.currentValue, for: signal.sensorType)
     }
 
     static func formattedPeakValue(for signal: EnvironmentalSignal) -> String {
-        let value = String(format: "%.1f%@", signal.peakValue, signal.sensorType.unit)
+        let value = formattedValue(signal.peakValue, for: signal.sensorType)
         let peakLabel = String(localized: "sensor.peak.label", defaultValue: "peak")
         return "\(value) (\(peakLabel))"
+    }
+
+    private static func formattedValue(_ value: Double, for type: SensorServiceType) -> String {
+        if type == .airQuality {
+            return airQualityLabel(for: value)
+        }
+        return String(format: "%.1f%@", value, type.unit)
+    }
+
+    private static func airQualityLabel(for value: Double) -> String {
+        switch Int(value.rounded()) {
+        case 1:
+            return String(localized: "sensor.airQuality.excellent", defaultValue: "Excellent")
+        case 2:
+            return String(localized: "sensor.airQuality.good", defaultValue: "Good")
+        case 3:
+            return String(localized: "sensor.airQuality.fair", defaultValue: "Fair")
+        case 4:
+            return String(localized: "sensor.airQuality.inferior", defaultValue: "Inferior")
+        case 5:
+            return String(localized: "sensor.airQuality.poor", defaultValue: "Poor")
+        default:
+            return String(format: "%.0f", value)
+        }
     }
 
     // MARK: - SensorServiceType-only overloads (used by NotificationDisplayResolver)
