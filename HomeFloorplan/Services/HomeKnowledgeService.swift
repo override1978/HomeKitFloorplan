@@ -49,8 +49,8 @@ final class HomeKnowledgeService {
     /// Top room per sensor type based on 7-day averages.
     var environmentalTrends: [RoomTrend] = []
 
-    /// Recent AI insights from PersistedInsight (last 7 days), most recent first.
-    var recentInsights: [PersistedInsightSummary] = []
+    /// Recent environmental AI insights from the unified home insight store (last 7 days), most recent first.
+    var recentInsights: [HomeInsightSummary] = []
 
     /// Current learning phase derived from houseKnowledgeScore.
     var learningPhase: LearningPhase = .observing
@@ -100,7 +100,7 @@ final class HomeKnowledgeService {
         let events14: [AccessoryEventLite]
         let sceneCount14: Int
         let sensorReadings7: [SensorReadingLite]
-        let recentInsights: [PersistedInsightSummary]
+        let recentInsights: [HomeInsightSummary]
     }
 
     // MARK: - Init
@@ -185,16 +185,21 @@ final class HomeKnowledgeService {
                 SensorReadingLite(serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, value: $0.value)
             }
 
-            // Recent AI insights (already Sendable DTO)
-            let insightDesc = FetchDescriptor<PersistedInsight>(
-                predicate: #Predicate { $0.generatedAt >= cutoff7 },
-                sortBy: [SortDescriptor(\.generatedAt, order: .reverse)]
+            // Recent environmental AI insights from the unified home insight store.
+            let environmentCategory = HomeInsightCategory.environment.rawValue
+            let insightDesc = FetchDescriptor<PersistedHomeInsight>(
+                predicate: #Predicate { $0.createdAt >= cutoff7 && $0.categoryRaw == environmentCategory },
+                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
             )
             let rawInsights   = (try? ctx.fetch(insightDesc)) ?? []
             let recentInsights = rawInsights.map { r in
-                PersistedInsightSummary(
-                    id: r.id, roomName: r.roomName, message: r.message,
-                    severityRaw: r.severityRaw, generatedAt: r.generatedAt, statusRaw: r.statusRaw
+                HomeInsightSummary(
+                    id: r.id,
+                    roomName: r.roomName ?? "",
+                    message: r.message,
+                    severityRaw: r.severityRaw,
+                    generatedAt: r.createdAt,
+                    statusRaw: r.statusRaw
                 )
             }
 
@@ -578,10 +583,10 @@ enum LearningPhase {
     }
 }
 
-// MARK: - PersistedInsightSummary
+// MARK: - HomeInsightSummary
 
-/// Lightweight Sendable DTO for displaying PersistedInsight records in the Intelligence Dashboard.
-struct PersistedInsightSummary: Identifiable, Sendable {
+/// Lightweight Sendable DTO for displaying unified home insight records in the Intelligence Dashboard.
+struct HomeInsightSummary: Identifiable, Sendable {
     let id:          UUID
     let roomName:    String
     let message:     String
@@ -589,5 +594,14 @@ struct PersistedInsightSummary: Identifiable, Sendable {
     let generatedAt: Date
     let statusRaw:   String
 
-    var severity: InsightSeverity { InsightSeverity(rawValue: severityRaw) ?? .info }
+    var severity: InsightSeverity {
+        switch HomeInsightSeverity(rawValue: severityRaw) {
+        case .critical, .high:
+            return .anomaly
+        case .medium:
+            return .warning
+        case .low, .info, nil:
+            return .info
+        }
+    }
 }

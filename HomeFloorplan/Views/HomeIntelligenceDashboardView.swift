@@ -209,7 +209,7 @@ struct HomeIntelligenceDashboardView: View {
     private func assistantSummaryCard(svc: HomeKnowledgeService) -> some View {
         let priorities = assistantPriorities(svc: svc)
         let pendingCount = habitService.pendingPatterns.count + behavioralService.pendingOpportunities.count
-        let activeInsightCount = svc.recentInsights.filter { $0.statusRaw == InsightPersistedStatus.active.rawValue }.count
+        let activeInsightCount = svc.recentInsights.filter { $0.statusRaw == HomeInsightStatus.active.rawValue }.count
 
         let title: String
         let message: String
@@ -269,14 +269,14 @@ struct HomeIntelligenceDashboardView: View {
             ))
         }
 
-        if let insight = svc.recentInsights.first(where: { $0.statusRaw == InsightPersistedStatus.active.rawValue }) {
+        if let insight = svc.recentInsights.first(where: { $0.statusRaw == HomeInsightStatus.active.rawValue }) {
             items.append(IntelligenceAssistantPriority(
-                icon: insight.severityRaw == "anomaly" ? "exclamationmark.octagon.fill" : "waveform.path.ecg",
+                icon: insight.severity == .anomaly ? "exclamationmark.octagon.fill" : "waveform.path.ecg",
                 title: insight.roomName.isEmpty
                     ? String(localized: "intelligence.assistant.priority.environment", defaultValue: "Ambiente")
                     : insight.roomName,
                 detail: insight.message,
-                color: insight.severityRaw == "anomaly" ? .red : .orange
+                color: insight.severity == .anomaly ? .red : .orange
             ))
         }
 
@@ -394,7 +394,7 @@ struct HomeIntelligenceDashboardView: View {
         var items: [DashboardAttentionItem] = []
 
         for insight in svc.recentInsights
-            .filter({ $0.statusRaw == InsightPersistedStatus.active.rawValue })
+            .filter({ $0.statusRaw == HomeInsightStatus.active.rawValue })
             .prefix(2) {
             let color: Color = insight.severity == .anomaly ? .red : .orange
             items.append(DashboardAttentionItem(
@@ -891,7 +891,7 @@ struct HomeIntelligenceDashboardView: View {
     @ViewBuilder
     private func aiInsightsSection(svc: HomeKnowledgeService) -> some View {
         let active = svc.recentInsights.filter {
-            $0.statusRaw == InsightPersistedStatus.active.rawValue
+            $0.statusRaw == HomeInsightStatus.active.rawValue
         }
         if !active.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
@@ -1916,7 +1916,7 @@ private struct BehavioralOpportunityCard: View {
 
 private struct AIInsightTimelineRow: View {
 
-    let insight: PersistedInsightSummary
+    let insight: HomeInsightSummary
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
