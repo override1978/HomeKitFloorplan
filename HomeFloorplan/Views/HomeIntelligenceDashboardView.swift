@@ -50,11 +50,27 @@ struct HomeIntelligenceDashboardView: View {
     )
     private var activePredictionInsights: [PersistedHomeInsight]
 
+    @Query(
+        filter: #Predicate<PersistedHomeInsight> {
+            $0.statusRaw == "active"
+        },
+        sort: \PersistedHomeInsight.updatedAt,
+        order: .reverse
+    )
+    private var activeHomeInsights: [PersistedHomeInsight]
+
+    @Query(
+        sort: \PersistedHomeInsight.updatedAt,
+        order: .reverse
+    )
+    private var recentHomeInsights: [PersistedHomeInsight]
+
     @State private var service: HomeKnowledgeService?
     @State private var isRefreshing: Bool = false
     @State private var reviewingProposal: AutomationProposal?
     @State private var reviewingOpportunity: AutomationOpportunity?
     @State private var reviewingHabitPattern: HabitPattern?
+    @State private var isDiaryExpanded: Bool = false
     @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
 
     // Static formatters — created once, reused on every render.
@@ -152,56 +168,375 @@ struct HomeIntelligenceDashboardView: View {
 
     @ViewBuilder
     private func scrollContent(svc: HomeKnowledgeService) -> some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                profileRow
-                homeBriefingCard(svc: svc)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    profileRow
+                    intelligenceStatusHero {
+                        withAnimation(.snappy) {
+                            isDiaryExpanded = true
+                            proxy.scrollTo("intelligenceDiarySection", anchor: .top)
+                        }
+                    }
+                    domainAnomalyGrid
+                    incoherenceSection
+                    evidenceSection
+                    trendOverviewSection
+                    diaryDisclosureSection
+                        .id("intelligenceDiarySection")
 
-                IntelligenceSectionGroup(
-                    title: String(localized: "intelligence.section.attention",
-                                  defaultValue: "Needs Attention"),
-                    icon: "exclamationmark.triangle.fill"
+                    if !svc.hasAnyData && recentHomeInsights.isEmpty {
+                        if svc.isLoading { loadingCard } else { emptyStateCard }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 40)
+            }
+            .refreshable { await performRefresh() }
+        }
+    }
+
+    // MARK: - Redesigned Intelligence Dashboard
+
+    private var activeInsights: [HomeInsight] {
+        activeHomeInsights.map { $0.toHomeInsight() }
+    }
+
+    private var actionRequiredInsights: [HomeInsight] {
+        activeInsights
+            .filter { insight in
+                insight.kind == .incoherence ||
+                (insight.kind == .anomaly && insight.severity >= .medium)
+            }
+            .sorted(by: insightSort)
+    }
+
+    private var activeIncoherences: [HomeInsight] {
+        activeInsights
+            .filter { $0.kind == .incoherence }
+            .sorted(by: insightSort)
+    }
+
+    private var activeAnomalyEvidences: [HomeInsight] {
+        activeInsights
+            .filter { $0.kind == .anomaly && $0.severity >= .medium }
+            .sorted(by: insightSort)
+    }
+
+    private func intelligenceStatusHero(onOpenDiary: @escaping () -> Void) -> some View {
+        let count = actionRequiredInsights.count
+        let primary = actionRequiredInsights.first
+        let color = globalStatusColor(for: actionRequiredInsights)
+        let title = heroTitle(actionCount: count)
+        let message = heroMessage(primary: primary, count: count)
+
+        return IntelligenceStatusHeroCard(
+            color: color,
+            title: title,
+            message: message,
+            actionCount: count,
+            trendLabel: globalTrendLabel(),
+            ctaTitle: primary.map { heroActionTitle(for: $0) }
+        ) { onOpenDiary() }
+    }
+
+    @ViewBuilder
+    private var incoherenceSection: some View {
+        let incoherences = Array(activeIncoherences.prefix(3))
+        if !incoherences.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionHeader(
+                    icon: "arrow.triangle.2.circlepath",
+                    title: String(
+                        format: String(localized: "intelligence.incoherence.section",
+                                       defaultValue: "Incoherences · %d active"),
+                        activeIncoherences.count
+                    )
                 )
-                needsAttentionSection(svc: svc)
-
-                IntelligenceSectionGroup(
-                    title: String(localized: "intelligence.feed.header",
-                                  defaultValue: "Home Diary"),
-                    icon: "clock.badge"
-                )
-                feedSection()
-
-                IntelligenceSectionGroup(
-                    title: String(localized: "intelligence.section.opportunities",
-                                  defaultValue: "Ready to Automate"),
-                    icon: "wand.and.stars"
-                )
-                opportunitiesSection()
-
-                IntelligenceSectionGroup(
-                    title: String(localized: "intelligence.section.learningSummary",
-                                  defaultValue: "Learning Summary"),
-                    icon: "brain.fill"
-                )
-                learningSummarySection(svc: svc)
-                relevantTrendsSection(svc: svc)
-
-                IntelligenceSectionGroup(
-                    title: String(localized: "intelligence.section.trust",
-                                  defaultValue: "Trust & Feedback"),
-                    icon: "chart.line.uptrend.xyaxis"
-                )
-                effectivenessSection(svc: svc)
-
-                if !svc.hasAnyData {
-                    if svc.isLoading { loadingCard } else { emptyStateCard }
+                VStack(spacing: 10) {
+                    ForEach(incoherences, id: \.id) { insight in
+                        IncoherenceConflictCard(insight: insight)
+                    }
+                    if activeIncoherences.count > incoherences.count {
+                        Text(
+                            String(
+                                format: String(localized: "intelligence.incoherence.more",
+                                               defaultValue: "%d more incoherences in the diary"),
+                                activeIncoherences.count - incoherences.count
+                            )
+                        )
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                    }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
         }
-        .refreshable { await performRefresh() }
+    }
+
+    @ViewBuilder
+    private var evidenceSection: some View {
+        let evidences = Array(activeAnomalyEvidences.prefix(3))
+        if !evidences.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionHeader(
+                    icon: "waveform.path.ecg",
+                    title: String(
+                        format: String(localized: "intelligence.evidence.section",
+                                       defaultValue: "Today's anomalies · %d active"),
+                        activeAnomalyEvidences.count
+                    )
+                )
+                VStack(spacing: 10) {
+                    ForEach(evidences, id: \.id) { insight in
+                        IntelligenceEvidenceCard(
+                            insight: insight,
+                            domain: visualDomain(for: insight)
+                        )
+                    }
+                    if activeAnomalyEvidences.count > evidences.count {
+                        Text(
+                            String(
+                                format: String(localized: "intelligence.evidence.more",
+                                               defaultValue: "%d more evidence items in the diary"),
+                                activeAnomalyEvidences.count - evidences.count
+                            )
+                        )
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                    }
+                }
+            }
+        }
+    }
+
+    private var domainAnomalyGrid: some View {
+        let summaries = intelligenceDomainSummaries()
+        return VStack(alignment: .leading, spacing: 10) {
+            sectionHeader(
+                icon: "square.grid.2x2.fill",
+                title: String(localized: "intelligence.domains.section", defaultValue: "Anomalies by domain")
+            )
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 112), spacing: 10)],
+                spacing: 10
+            ) {
+                ForEach(summaries) { summary in
+                    IntelligenceDomainTile(summary: summary)
+                }
+            }
+        }
+    }
+
+    private var trendOverviewSection: some View {
+        let trends = intelligenceTrendRows()
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                sectionHeader(
+                    icon: "chart.line.uptrend.xyaxis",
+                    title: String(localized: "intelligence.trend.section", defaultValue: "Andamento")
+                )
+                Spacer()
+                Text(String(localized: "intelligence.trend.window.7d", defaultValue: "7g"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Color.secondary.opacity(0.10), in: Capsule())
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(trends.enumerated()), id: \.element.id) { index, row in
+                    IntelligenceTrendRow(row: row)
+                    if index < trends.count - 1 {
+                        Divider().padding(.leading, 72)
+                    }
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+            )
+        }
+    }
+
+    private var diaryDisclosureSection: some View {
+        let eventCount = recentHomeInsights.filter {
+            $0.updatedAt >= Date().addingTimeInterval(-7 * 24 * 3600)
+        }.count
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.snappy) { isDiaryExpanded.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "clock.badge")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text(
+                        String(
+                            format: String(localized: "intelligence.diary.collapsed",
+                                           defaultValue: "Diary · last 7 days · %d events"),
+                            eventCount
+                        )
+                    )
+                    .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .rotationEffect(.degrees(isDiaryExpanded ? 180 : 0))
+                }
+                .foregroundStyle(.primary)
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+                )
+            }
+            .buttonStyle(.plain)
+
+            if isDiaryExpanded {
+                feedSection()
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private func globalStatusColor(for insights: [HomeInsight]) -> Color {
+        guard !insights.contains(where: { $0.severity >= .high }) else { return .red }
+        guard !insights.isEmpty else { return .green }
+        return .orange
+    }
+
+    private func heroTitle(actionCount: Int) -> String {
+        if actionCount == 0 {
+            return String(localized: "intelligence.hero.ok.title", defaultValue: "Tutto sotto controllo")
+        }
+        return String(
+            format: String(localized: "intelligence.hero.attention.title",
+                           defaultValue: "Attention — %d situations need action"),
+            actionCount
+        )
+    }
+
+    private func heroMessage(primary: HomeInsight?, count: Int) -> String {
+        guard let primary else {
+            return String(localized: "intelligence.hero.ok.message",
+                          defaultValue: "No significant active incoherence or anomaly.")
+        }
+
+        let domain = visualDomain(for: primary).localizedTitle
+        if count == 1 {
+            return "\(domain): \(primary.title)."
+        }
+        return "\(domain): \(primary.title). \(count - 1) altre evidenze da verificare."
+    }
+
+    private func heroActionTitle(for insight: HomeInsight) -> String {
+        if insight.kind == .incoherence {
+            return String(localized: "intelligence.hero.cta.resolve", defaultValue: "View incoherence")
+        }
+        return String(localized: "intelligence.hero.cta.openDiary", defaultValue: "Open diary")
+    }
+
+    private func globalTrendLabel() -> String {
+        let today = countInsights(daysAgo: 0)
+        let yesterday = countInsights(daysAgo: 1)
+        if today > yesterday {
+            return String(localized: "intelligence.trend.worsening", defaultValue: "worsening")
+        }
+        if today < yesterday {
+            return String(localized: "intelligence.trend.improving", defaultValue: "improving")
+        }
+        return String(localized: "intelligence.trend.stable", defaultValue: "stable")
+    }
+
+    private func intelligenceDomainSummaries() -> [IntelligenceDomainSummary] {
+        IntelligenceVisualDomain.allCases.map { domain in
+            let matching = activeInsights.filter { visualDomain(for: $0) == domain }
+            let worst = matching.map(\.severity).max()
+            return IntelligenceDomainSummary(
+                domain: domain,
+                count: matching.count,
+                severity: worst ?? .info
+            )
+        }
+    }
+
+    private func intelligenceTrendRows() -> [IntelligenceTrendData] {
+        let candidateDomains: [IntelligenceVisualDomain] = [.air, .climate, .routine]
+        return candidateDomains.map { domain in
+            let points = (0..<7).reversed().map { dayOffset in
+                Double(countInsights(domain: domain, daysAgo: dayOffset))
+            }
+            let trend = trendDirection(points: points)
+            return IntelligenceTrendData(domain: domain, points: points, direction: trend)
+        }
+    }
+
+    private func trendDirection(points: [Double]) -> IntelligenceTrendDirection {
+        guard let first = points.first, let last = points.last else { return .stable }
+        if last > first { return .worsening }
+        if last < first { return .improving }
+        return .stable
+    }
+
+    private func countInsights(domain: IntelligenceVisualDomain? = nil, daysAgo: Int) -> Int {
+        let calendar = Calendar.current
+        let target = calendar.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        return recentHomeInsights.filter { record in
+            calendar.isDate(record.updatedAt, inSameDayAs: target) &&
+            record.statusRaw != HomeInsightStatus.expired.rawValue &&
+            record.statusRaw != HomeInsightStatus.resolved.rawValue &&
+            (domain == nil || visualDomain(for: record.toHomeInsight()) == domain)
+        }.count
+    }
+
+    private func visualDomain(for insight: HomeInsight) -> IntelligenceVisualDomain {
+        if insight.kind == .habit || insight.kind == .prediction || insight.category == .habits {
+            return .routine
+        }
+        if insight.category == .security || insight.category == .presence {
+            return .security
+        }
+        if insight.category == .lighting {
+            return .lights
+        }
+        if insight.category == .deviceHealth || insight.category == .maintenance {
+            return .loads
+        }
+
+        let text = [
+            insight.title,
+            insight.message,
+            insight.sourceEntityName ?? "",
+            insight.relatedEntityName ?? "",
+            insight.dedupeKey
+        ].joined(separator: " ")
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+
+        if text.contains("co2") || text.contains("co₂") || text.contains("aria") || text.contains("air") || text.contains("pm") || text.contains("voc") {
+            return .air
+        }
+        if text.contains("clima") || text.contains("climate") || text.contains("cool") || text.contains("heat") || text.contains("raffresc") || text.contains("temperatura") {
+            return .climate
+        }
+        if text.contains("luce") || text.contains("light") {
+            return .lights
+        }
+        if text.contains("presa") || text.contains("power") || text.contains("load") || text.contains("carico") {
+            return .loads
+        }
+        return .routine
+    }
+
+    private func insightSort(_ lhs: HomeInsight, _ rhs: HomeInsight) -> Bool {
+        if lhs.severity != rhs.severity { return lhs.severity > rhs.severity }
+        let lhsScore = lhs.score?.composite ?? lhs.confidence
+        let rhsScore = rhs.score?.composite ?? rhs.confidence
+        if lhsScore != rhsScore { return lhsScore > rhsScore }
+        return lhs.updatedAt > rhs.updatedAt
     }
 
     // MARK: - Section: Assistant Summary
@@ -1322,6 +1657,379 @@ private struct DashboardAttentionRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
+    }
+}
+
+private enum IntelligenceVisualDomain: String, CaseIterable, Identifiable {
+    case air
+    case climate
+    case lights
+    case loads
+    case security
+    case routine
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .air: return String(localized: "intelligence.domain.air", defaultValue: "Air")
+        case .climate: return String(localized: "intelligence.domain.climate", defaultValue: "Climate")
+        case .lights: return String(localized: "intelligence.domain.lights", defaultValue: "Lights")
+        case .loads: return String(localized: "intelligence.domain.loads", defaultValue: "Loads")
+        case .security: return String(localized: "intelligence.domain.security", defaultValue: "Security")
+        case .routine: return String(localized: "intelligence.domain.routine", defaultValue: "Routine")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .air: return "wind"
+        case .climate: return "air.conditioner.horizontal.fill"
+        case .lights: return "lightbulb.fill"
+        case .loads: return "bolt.fill"
+        case .security: return "shield.fill"
+        case .routine: return "arrow.triangle.2.circlepath"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .air: return .teal
+        case .climate: return .orange
+        case .lights: return .yellow
+        case .loads: return .purple
+        case .security: return .red
+        case .routine: return BrandColor.primary
+        }
+    }
+}
+
+private struct IntelligenceDomainSummary: Identifiable {
+    let domain: IntelligenceVisualDomain
+    let count: Int
+    let severity: HomeInsightSeverity
+
+    var id: String { domain.id }
+
+    var severityColor: Color {
+        switch severity {
+        case .critical, .high: return .red
+        case .medium: return .orange
+        case .low, .info: return count == 0 ? .green : .secondary
+        }
+    }
+}
+
+private enum IntelligenceTrendDirection {
+    case improving
+    case stable
+    case worsening
+
+    var localizedTitle: String {
+        switch self {
+        case .improving: return String(localized: "intelligence.trend.improves", defaultValue: "improves")
+        case .stable: return String(localized: "intelligence.trend.isStable", defaultValue: "stable")
+        case .worsening: return String(localized: "intelligence.trend.worsens", defaultValue: "worsens")
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .improving: return .green
+        case .stable: return .secondary
+        case .worsening: return .red
+        }
+    }
+}
+
+private struct IntelligenceTrendData: Identifiable {
+    let domain: IntelligenceVisualDomain
+    let points: [Double]
+    let direction: IntelligenceTrendDirection
+
+    var id: String { domain.id }
+}
+
+private struct IntelligenceStatusHeroCard: View {
+    let color: Color
+    let title: String
+    let message: String
+    let actionCount: Int
+    let trendLabel: String
+    let ctaTitle: String?
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            Circle()
+                .fill(color)
+                .frame(width: 14, height: 14)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(message)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 10)
+
+            VStack(alignment: .trailing, spacing: 0) {
+                Text("\(actionCount)")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                Text(trendLabel)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+            .frame(minWidth: 58, alignment: .trailing)
+
+            if let ctaTitle {
+                Button(action: action) {
+                    HStack(spacing: 6) {
+                        Text(ctaTitle)
+                        Image(systemName: "arrow.up.right")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(.secondary.opacity(0.28), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(color.opacity(0.28), lineWidth: 1)
+                )
+        )
+    }
+}
+
+private struct IncoherenceConflictCard: View {
+    let insight: HomeInsight
+
+    private var color: Color {
+        switch insight.severity {
+        case .critical, .high: return .red
+        case .medium: return .orange
+        case .low, .info: return .secondary
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Rectangle()
+                .fill(color)
+                .frame(width: 4)
+                .clipShape(Capsule())
+
+            HStack(spacing: 8) {
+                Image(systemName: "air.conditioner.horizontal.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(color)
+                    .frame(width: 24)
+                Image(systemName: "arrow.left.and.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(color)
+                    .frame(width: 24)
+            }
+            .frame(width: 82)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(insight.title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(insight.message)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                if let recommendation = insight.recommendation {
+                    Text(recommendation)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(color)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 8)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+        )
+    }
+}
+
+private struct IntelligenceEvidenceCard: View {
+    let insight: HomeInsight
+    let domain: IntelligenceVisualDomain
+
+    private var severityColor: Color {
+        switch insight.severity {
+        case .critical, .high: return .red
+        case .medium: return .orange
+        case .low, .info: return .secondary
+        }
+    }
+
+    private var roomLabel: String {
+        insight.roomName ?? insight.sourceEntityName ?? domain.localizedTitle
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(domain.color.opacity(0.14))
+                    .frame(width: 42, height: 42)
+                Image(systemName: domain.symbol)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(domain.color)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(domain.localizedTitle)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(domain.color)
+                    Circle()
+                        .fill(severityColor)
+                        .frame(width: 6, height: 6)
+                    Text(roomLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Text(insight.title)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(insight.message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            if let score = insight.score {
+                Text("\(Int(score.composite * 100))")
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+        )
+    }
+}
+
+private struct IntelligenceDomainTile: View {
+    let summary: IntelligenceDomainSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: summary.domain.symbol)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(summary.count == 0 ? .secondary : summary.domain.color)
+                Spacer()
+                Circle()
+                    .fill(summary.severityColor)
+                    .frame(width: 8, height: 8)
+            }
+
+            Text("\(summary.count)")
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+                .monospacedDigit()
+            Text(summary.domain.localizedTitle)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(14)
+        .frame(minHeight: 124, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.regularMaterial.opacity(summary.count == 0 ? 0.62 : 1.0))
+        )
+    }
+}
+
+private struct IntelligenceTrendRow: View {
+    let row: IntelligenceTrendData
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text(row.domain.localizedTitle)
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 68, alignment: .leading)
+
+            IntelligenceSparkline(points: row.points)
+                .stroke(.secondary, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .frame(height: 34)
+
+            Text(row.direction.localizedTitle)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(row.direction.color)
+                .frame(width: 82, alignment: .trailing)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+}
+
+private struct IntelligenceSparkline: Shape {
+    let points: [Double]
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard points.count > 1 else { return path }
+
+        let maxValue = max(points.max() ?? 0, 1)
+        let minValue = points.min() ?? 0
+        let range = max(maxValue - minValue, 1)
+        let step = rect.width / CGFloat(points.count - 1)
+
+        for index in points.indices {
+            let x = CGFloat(index) * step
+            let normalized = (points[index] - minValue) / range
+            let y = rect.maxY - CGFloat(normalized) * rect.height
+            let point = CGPoint(x: x, y: y)
+            if index == points.startIndex {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+        return path
     }
 }
 
