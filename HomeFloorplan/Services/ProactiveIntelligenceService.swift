@@ -141,9 +141,12 @@ final class ProactiveIntelligenceService {
 
         // 8. Sensor anomaly detection (device health)
         let anomalies = await SensorAnomalyDetector.detect(modelContainer: modelContainer)
+        let anomalyInsights = anomalies.map(HomeInsightMapper.map)
+        upsertHomeInsights(anomalyInsights)
         for anom in anomalies where anom.score.composite >= deliveryThreshold {
             await processAnomaly(anom, context: context)
         }
+        autoResolveSensorAnomalyInsights(currentSignals: anomalies)
 
         // 8.5. Home intelligence anomalies (central baseline domain)
         let homeInsightAnomalies = HomeInsightAnomalyPipeline.detect(modelContainer: modelContainer)
@@ -667,6 +670,22 @@ final class ProactiveIntelligenceService {
         }
     }
 
+    private func autoResolveSensorAnomalyInsights(currentSignals: [AnomalySignal]) {
+        let activeKeys = Set(currentSignals.map(\.semanticKey))
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.statusRaw == "active"
+            }
+        )
+        let persisted = (try? ctx.fetch(descriptor)) ?? []
+        for insight in persisted
+        where insight.sourceRecordType == String(describing: AnomalySignal.self)
+            && !activeKeys.contains(insight.dedupeKey) {
+            insight.markResolved()
+        }
+    }
+
     private func autoExpire() {
         let ctx = modelContainer.mainContext
         let cutoff = Date().addingTimeInterval(-7 * 24 * 3600) // 7 day default TTL for low/info
@@ -797,7 +816,7 @@ final class ProactiveIntelligenceService {
         status: HomeInsightStatus,
         resolvedAt: Date? = nil
     ) {
-        guard let dedupeKey = homeInsightDedupeKey(from: notification.semanticKey) else { return }
+        let dedupeKey = homeInsightDedupeKey(from: notification.semanticKey) ?? notification.semanticKey
         let ctx = modelContainer.mainContext
         let descriptor = FetchDescriptor<PersistedHomeInsight>(
             predicate: #Predicate { $0.dedupeKey == dedupeKey }
@@ -819,6 +838,7 @@ final class ProactiveIntelligenceService {
             && (
                 insight.sourceRecordType == String(describing: HomeSignalEvent.self)
                     || insight.sourceRecordType == String(describing: HomeStateInterval.self)
+                    || insight.sourceRecordType == String(describing: AnomalySignal.self)
             )
     }
 
