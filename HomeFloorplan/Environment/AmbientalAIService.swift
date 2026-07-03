@@ -773,13 +773,21 @@ final class AmbientalAIService {
         isRestored = true
         pruneOldInsights()
         let now = Date()
-        let statusActive = InsightPersistedStatus.active.rawValue
-        let descriptor = FetchDescriptor<PersistedInsight>(
-            predicate: #Predicate { $0.statusRaw == statusActive && $0.expiresAt > now }
+        let statusActive = HomeInsightStatus.active.rawValue
+        let environmentCategory = HomeInsightCategory.environment.rawValue
+        let legacySourceType = String(describing: PersistedInsight.self)
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.statusRaw == statusActive && $0.categoryRaw == environmentCategory
+            }
         )
-        let records = (try? context.fetch(descriptor)) ?? []
+        let records = ((try? context.fetch(descriptor)) ?? [])
+            .filter {
+                $0.sourceRecordType == legacySourceType &&
+                $0.createdAt.addingTimeInterval(2 * 3600) > now
+            }
         insights = records.compactMap { record -> AmbientalAIInsight? in
-            guard let insight = record.toAmbientalAIInsight() else { return nil }
+            guard let insight = ambientInsight(from: record) else { return nil }
             // Fast path: re-resolve in-memory (works when HomeKit is already loaded)
             let updated = reResolveIfAllTips(insight, record: record)
             // Slow path fallback: if HomeKit wasn't loaded yet, bust the fingerprint so the
@@ -788,12 +796,122 @@ final class AmbientalAIService {
             if stillOnlyTips { invalidateFingerprint(for: insight.roomName) }
             return updated
         }
-        dprint("🔄 [Persistence] Restored \(insights.count) active insight(s) from storage")
+        if insights.isEmpty {
+            restoreLegacyInsightsFromStorage(now: now)
+            return
+        }
+        dprint("🔄 [Persistence] Restored \(insights.count) active insight(s) from unified storage")
+    }
+
+    private func restoreLegacyInsightsFromStorage(now: Date) {
+        let statusActive = InsightPersistedStatus.active.rawValue
+        let descriptor = FetchDescriptor<PersistedInsight>(
+            predicate: #Predicate { $0.statusRaw == statusActive && $0.expiresAt > now }
+        )
+        let records = (try? context.fetch(descriptor)) ?? []
+        insights = records.compactMap { record -> AmbientalAIInsight? in
+            guard let insight = record.toAmbientalAIInsight() else { return nil }
+            let updated = reResolveIfAllTips(insight, record: record)
+            let stillOnlyTips = !updated.nextActions.isEmpty && updated.nextActions.allSatisfy { $0.isTip }
+            if stillOnlyTips { invalidateFingerprint(for: insight.roomName) }
+            return updated
+        }
+        dprint("🔄 [Persistence] Restored \(insights.count) active legacy insight(s) from storage")
+    }
+
+    private func ambientInsight(from record: PersistedHomeInsight) -> AmbientalAIInsight? {
+        guard let roomName = record.roomName else { return nil }
+        let actions = record.suggestedActionJSON?
+            .data(using: .utf8)
+            .flatMap { try? JSONDecoder().decode([AINextAction].self, from: $0) } ?? []
+
+        return AmbientalAIInsight(
+            id: record.id,
+            roomName: roomName,
+            message: record.message,
+            severity: ambientSeverity(from: record.severityRaw),
+            intelligenceLevel: ambientIntelligenceLevel(from: record.kindRaw),
+            patternKey: record.dedupeKey,
+            whyExplanation: record.whyExplanation,
+            confidence: record.confidence,
+            generatedAt: record.createdAt,
+            isDismissed: record.statusRaw == HomeInsightStatus.dismissed.rawValue,
+            nextActions: actions,
+            resolvedIntents: [],
+            sourceAccessoryID: record.sourceEntityID,
+            sourceAccessoryName: record.sourceEntityName,
+            sourceServiceType: nil,
+            promptVersion: AIPromptVersion.currentEnvironmental
+        )
+    }
+
+    private func ambientSeverity(from rawValue: String) -> InsightSeverity {
+        switch HomeInsightSeverity(rawValue: rawValue) {
+        case .critical, .high:
+            return .anomaly
+        case .medium:
+            return .warning
+        case .low, .info, nil:
+            return .info
+        }
+    }
+
+    private func ambientIntelligenceLevel(from rawValue: String) -> IntelligenceLevel {
+        switch HomeInsightKind(rawValue: rawValue) {
+        case .prediction:
+            return .prediction
+        case .recommendation, .opportunity:
+            return .recommendation
+        case .environment:
+            return .observation
+        case .anomaly:
+            return .pattern
+        case .security, .habit, .maintenance, .deviceHealth, nil:
+            return .observation
+        }
     }
 
     /// Re-runs the resolver for an insight whose every action is a tip.
     /// Uses ActionIntentInferrer as fallback when resolvedIntents is empty (old records).
     /// Returns the original insight unchanged when no real accessory is found.
+    private func reResolveIfAllTips(_ insight: AmbientalAIInsight, record: PersistedHomeInsight) -> AmbientalAIInsight {
+        guard !insight.nextActions.isEmpty, insight.nextActions.allSatisfy({ $0.isTip }) else { return insight }
+
+        var intents = insight.resolvedIntents.compactMap { ActionIntent(rawValue: $0) }
+        if intents.isEmpty { intents = ActionIntentInferrer.infer(from: insight) }
+        guard !intents.isEmpty else { return insight }
+
+        let roomType = RoomClassifier.classify(roomName: insight.roomName, outdoorRoomName: outdoorRoomName)
+        let freshActions = resolver.resolve(intents: intents, roomName: insight.roomName, roomType: roomType)
+        guard freshActions.contains(where: { !$0.isTip }) else { return insight }
+
+        let updated = AmbientalAIInsight(
+            id: insight.id,
+            roomName: insight.roomName,
+            message: insight.message,
+            severity: insight.severity,
+            intelligenceLevel: insight.intelligenceLevel,
+            patternKey: insight.patternKey,
+            whyExplanation: insight.whyExplanation,
+            confidence: insight.confidence,
+            generatedAt: insight.generatedAt,
+            isDismissed: insight.isDismissed,
+            nextActions: freshActions,
+            resolvedIntents: insight.resolvedIntents,
+            sourceAccessoryID: insight.sourceAccessoryID,
+            sourceAccessoryName: insight.sourceAccessoryName,
+            sourceServiceType: insight.sourceServiceType
+        )
+        if let data = try? JSONEncoder().encode(freshActions),
+           let json = String(data: data, encoding: .utf8) {
+            record.suggestedActionJSON = json
+            record.updatedAt = Date()
+            try? context.save()
+        }
+        dprint("🔁 [Restore] \(insight.roomName): upgraded unified tip-only → \(freshActions.count) action(s)")
+        return updated
+    }
+
     private func reResolveIfAllTips(_ insight: AmbientalAIInsight, record: PersistedInsight) -> AmbientalAIInsight {
         guard !insight.nextActions.isEmpty, insight.nextActions.allSatisfy({ $0.isTip }) else { return insight }
 
