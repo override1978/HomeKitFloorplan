@@ -27,6 +27,7 @@ struct StorageHealthMonitor {
         let activityEventCount:          Int
         let actionEffectivenessCount:    Int
         let persistedInsightCount:       Int
+        let persistedHomeInsightCount:   Int
         let sensorAlertEventCount:       Int
 
         // MARK: Aggregated knowledge counts (permanent)
@@ -50,7 +51,7 @@ struct StorageHealthMonitor {
         /// Total raw telemetry rows (time-bounded data that will eventually be pruned).
         var totalRawRows: Int {
             sensorReadingCount + accessoryEventCount + activityEventCount +
-            actionEffectivenessCount + persistedInsightCount + sensorAlertEventCount
+            actionEffectivenessCount + persistedHomeInsightCount + persistedInsightCount + sensorAlertEventCount
         }
 
         /// Total aggregated knowledge rows (permanent).
@@ -115,7 +116,8 @@ struct StorageHealthMonitor {
             │    AccessoryEvent:          \(accessoryEventCount)
             │    ActivityEvent:           \(activityEventCount)
             │    ActionEffectiveness:     \(actionEffectivenessCount)
-            │    PersistedInsight:        \(persistedInsightCount)
+            │    PersistedHomeInsight:    \(persistedHomeInsightCount)
+            │    PersistedInsight legacy: \(persistedInsightCount)
             │    SensorAlertEvent:        \(sensorAlertEventCount)
             │    ─────────────────────── \(totalRawRows) total raw rows
             │
@@ -164,6 +166,7 @@ struct StorageHealthMonitor {
             activityEventCount:         count(ActivityEvent.self),
             actionEffectivenessCount:   count(ActionEffectivenessEvent.self),
             persistedInsightCount:      count(PersistedInsight.self),
+            persistedHomeInsightCount:  count(PersistedHomeInsight.self),
             sensorAlertEventCount:      count(SensorAlertEvent.self),
             dailySensorSummaryCount:    count(DailySensorSummary.self),
             accessoryUsageSummaryCount: count(AccessoryUsageSummary.self),

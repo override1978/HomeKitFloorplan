@@ -22,12 +22,12 @@ import SwiftData
 //   7.  AccessoryEvent
 //   8.  Rule
 //   9.  ActionEffectivenessEvent
-//   10. PersistedInsight
+//   10. PersistedInsight (legacy environmental insight bridge)
 //   11. RoomAnalysisState
 //   12. DailySensorSummary
 //   13. AccessoryUsageSummary
 //   14. EffectivenessSummary
-//   15. PersistedHomeInsight
+//   15. PersistedHomeInsight (primary unified insight store)
 //   16. ProactiveNotification
 //   17. AutomationOpportunity
 //   18. PersistedBehavioralPattern

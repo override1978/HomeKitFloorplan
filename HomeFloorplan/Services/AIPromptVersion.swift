@@ -6,7 +6,9 @@ import Foundation
 ///
 /// Bump the relevant constant whenever the system prompt changes in a way that
 /// invalidates previously cached insights (different output schema, new fields, etc.).
-/// DataLifecycleService expires PersistedInsights whose promptVersion != currentEnvironmental.
+/// DataLifecycleService expires legacy environmental PersistedInsight records whose
+/// promptVersion != currentEnvironmental; unified PersistedHomeInsight records are
+/// backfilled from those legacy records and lifecycle-managed independently.
 enum AIPromptVersion {
     /// Current version of the environmental analysis system prompt.
     static let currentEnvironmental = "env_v3"

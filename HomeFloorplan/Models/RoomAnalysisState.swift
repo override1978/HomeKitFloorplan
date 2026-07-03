@@ -23,7 +23,8 @@ final class RoomAnalysisState {
     var lastIntentSet: [String]
     /// InsightSeverity.rawValue of the last generated insight. "none" if no insight was produced.
     var lastSeverityRaw: String
-    /// ID of the PersistedInsight produced by the last analysis. Nil if no insight was generated.
+    /// ID of the last generated environmental insight. Nil if no insight was generated.
+    /// Historical records may point to PersistedInsight; current flows mirror into PersistedHomeInsight.
     var lastInsightID: UUID?
 
     init(
