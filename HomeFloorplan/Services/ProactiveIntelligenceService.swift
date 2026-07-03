@@ -147,6 +147,7 @@ final class ProactiveIntelligenceService {
 
         // 8.5. Home intelligence anomalies (central baseline domain)
         let homeInsightAnomalies = HomeInsightAnomalyPipeline.detect(modelContainer: modelContainer)
+        upsertHomeInsights(homeInsightAnomalies)
         for insight in homeInsightAnomalies where !context.suppressNonCritical || insight.severity >= .high {
             await processHomeInsightAnomaly(insight, context: context)
         }
@@ -186,6 +187,7 @@ final class ProactiveIntelligenceService {
         notification.status      = .dismissed
         notification.dismissCount += 1
         notification.lastUpdatedAt = Date()
+        updatePersistedHomeInsightStatus(for: notification, status: .dismissed)
         // Record miss for behavioral patterns to track repeated dismissals
         if let sourceID = notification.sourceID, let patternID = UUID(uuidString: sourceID),
            notification.category == .behavioralAI {
@@ -199,6 +201,7 @@ final class ProactiveIntelligenceService {
         notification.status       = .snoozed
         notification.snoozedUntil = Date().addingTimeInterval(Double(days) * 24 * 3600)
         notification.lastUpdatedAt = Date()
+        updatePersistedHomeInsightStatus(for: notification, status: .snoozed)
         save()
         loadNotifications()
     }
@@ -206,6 +209,7 @@ final class ProactiveIntelligenceService {
     func markActedOn(_ notification: ProactiveNotification) {
         notification.status       = .actedOn
         notification.lastUpdatedAt = Date()
+        updatePersistedHomeInsightStatus(for: notification, status: .executed)
         if let sourceID = notification.sourceID, let patternID = UUID(uuidString: sourceID),
            notification.category == .behavioralAI {
             BehavioralDeviationDetector.resetMisses(for: patternID)
@@ -218,6 +222,7 @@ final class ProactiveIntelligenceService {
         notification.status      = .resolved
         notification.resolvedAt  = Date()
         notification.lastUpdatedAt = Date()
+        updatePersistedHomeInsightStatus(for: notification, status: .resolved, resolvedAt: notification.resolvedAt)
         save()
         loadNotifications()
     }
@@ -637,6 +642,7 @@ final class ProactiveIntelligenceService {
 
     private func autoResolveHomeInsightAnomalies(currentInsights: [HomeInsight]) {
         let activeKeys = Set(currentInsights.map { "homeInsight|\($0.dedupeKey)" })
+        let activeDedupeKeys = Set(currentInsights.map(\.dedupeKey))
         let ctx = modelContainer.mainContext
         let descriptor = FetchDescriptor<ProactiveNotification>(
             predicate: #Predicate {
@@ -648,6 +654,16 @@ final class ProactiveIntelligenceService {
             notif.status = .resolved
             notif.resolvedAt = Date()
             notif.lastUpdatedAt = Date()
+        }
+
+        let persistedDescriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.statusRaw == "active"
+            }
+        )
+        let persisted = (try? ctx.fetch(persistedDescriptor)) ?? []
+        for insight in persisted where isRuntimeAnomalyInsight(insight) && !activeDedupeKeys.contains(insight.dedupeKey) {
+            insight.markResolved()
         }
     }
 
@@ -759,6 +775,51 @@ final class ProactiveIntelligenceService {
 
     private func save() {
         try? modelContainer.mainContext.save()
+    }
+
+    private func upsertHomeInsights(_ insights: [HomeInsight]) {
+        let ctx = modelContainer.mainContext
+        for insight in insights {
+            let dedupeKey = insight.dedupeKey
+            let descriptor = FetchDescriptor<PersistedHomeInsight>(
+                predicate: #Predicate { $0.dedupeKey == dedupeKey }
+            )
+            if let existing = (try? ctx.fetch(descriptor))?.first {
+                existing.update(from: insight)
+            } else {
+                ctx.insert(PersistedHomeInsight(insight: insight))
+            }
+        }
+    }
+
+    private func updatePersistedHomeInsightStatus(
+        for notification: ProactiveNotification,
+        status: HomeInsightStatus,
+        resolvedAt: Date? = nil
+    ) {
+        guard let dedupeKey = homeInsightDedupeKey(from: notification.semanticKey) else { return }
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate { $0.dedupeKey == dedupeKey }
+        )
+        guard let insight = (try? ctx.fetch(descriptor))?.first else { return }
+        insight.statusRaw = status.rawValue
+        insight.resolvedAt = resolvedAt
+        insight.updatedAt = Date()
+    }
+
+    private func homeInsightDedupeKey(from semanticKey: String) -> String? {
+        let prefix = "homeInsight|"
+        guard semanticKey.hasPrefix(prefix) else { return nil }
+        return String(semanticKey.dropFirst(prefix.count))
+    }
+
+    private func isRuntimeAnomalyInsight(_ insight: PersistedHomeInsight) -> Bool {
+        insight.kindRaw == HomeInsightKind.anomaly.rawValue
+            && (
+                insight.sourceRecordType == String(describing: HomeSignalEvent.self)
+                    || insight.sourceRecordType == String(describing: HomeStateInterval.self)
+            )
     }
 
     // MARK: - Rate Limiting

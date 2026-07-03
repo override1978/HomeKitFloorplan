@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 // MARK: - HomeSignalEvent
 
@@ -403,4 +404,157 @@ struct HomeInsightScore: Codable, Hashable {
         actionability: 0,
         novelty: 0
     )
+}
+
+// MARK: - PersistedHomeInsight
+
+@Model
+final class PersistedHomeInsight {
+    #Index<PersistedHomeInsight>([\.dedupeKey], [\.updatedAt], [\.statusRaw])
+
+    var id: UUID
+    var kindRaw: String
+    var categoryRaw: String
+    var severityRaw: String
+    var statusRaw: String
+    var title: String
+    var message: String
+    var whyExplanation: String?
+    var recommendation: String?
+    var sourceEntityID: String?
+    var sourceEntityName: String?
+    var roomName: String?
+    var createdAt: Date
+    var updatedAt: Date
+    var startedAt: Date?
+    var resolvedAt: Date?
+    var confidence: Double
+    var scoreRelevance: Double?
+    var scoreConfidence: Double?
+    var scoreUrgency: Double?
+    var scoreActionability: Double?
+    var scoreNovelty: Double?
+    var dedupeKey: String
+    var suggestedActionJSON: String?
+    var sourceRecordType: String?
+    var sourceRecordID: String?
+    var syncPolicyRaw: String
+
+    init(insight: HomeInsight) {
+        self.id = insight.id
+        self.kindRaw = insight.kind.rawValue
+        self.categoryRaw = insight.category.rawValue
+        self.severityRaw = insight.severity.rawValue
+        self.statusRaw = insight.status.rawValue
+        self.title = insight.title
+        self.message = insight.message
+        self.whyExplanation = insight.whyExplanation
+        self.recommendation = insight.recommendation
+        self.sourceEntityID = insight.sourceEntityID
+        self.sourceEntityName = insight.sourceEntityName
+        self.roomName = insight.roomName
+        self.createdAt = insight.createdAt
+        self.updatedAt = insight.updatedAt
+        self.startedAt = insight.startedAt
+        self.resolvedAt = insight.resolvedAt
+        self.confidence = insight.confidence
+        if let score = insight.score {
+            self.scoreRelevance = score.relevance
+            self.scoreConfidence = score.confidence
+            self.scoreUrgency = score.urgency
+            self.scoreActionability = score.actionability
+            self.scoreNovelty = score.novelty
+        }
+        self.dedupeKey = insight.dedupeKey
+        self.suggestedActionJSON = insight.suggestedActionJSON
+        self.sourceRecordType = insight.sourceRecordType
+        self.sourceRecordID = insight.sourceRecordID
+        self.syncPolicyRaw = insight.syncPolicy.rawValue
+    }
+
+    func update(from insight: HomeInsight) {
+        kindRaw = insight.kind.rawValue
+        categoryRaw = insight.category.rawValue
+        severityRaw = insight.severity.rawValue
+        statusRaw = insight.status.rawValue
+        title = insight.title
+        message = insight.message
+        whyExplanation = insight.whyExplanation
+        recommendation = insight.recommendation
+        sourceEntityID = insight.sourceEntityID
+        sourceEntityName = insight.sourceEntityName
+        roomName = insight.roomName
+        updatedAt = insight.updatedAt
+        startedAt = insight.startedAt
+        resolvedAt = insight.resolvedAt
+        confidence = insight.confidence
+        if let score = insight.score {
+            scoreRelevance = score.relevance
+            scoreConfidence = score.confidence
+            scoreUrgency = score.urgency
+            scoreActionability = score.actionability
+            scoreNovelty = score.novelty
+        } else {
+            scoreRelevance = nil
+            scoreConfidence = nil
+            scoreUrgency = nil
+            scoreActionability = nil
+            scoreNovelty = nil
+        }
+        suggestedActionJSON = insight.suggestedActionJSON
+        sourceRecordType = insight.sourceRecordType
+        sourceRecordID = insight.sourceRecordID
+        syncPolicyRaw = insight.syncPolicy.rawValue
+    }
+
+    func markResolved(at date: Date = Date()) {
+        statusRaw = HomeInsightStatus.resolved.rawValue
+        resolvedAt = date
+        updatedAt = date
+    }
+
+    func toHomeInsight() -> HomeInsight {
+        let restoredScore: HomeInsightScore?
+        if let relevance = scoreRelevance,
+           let confidence = scoreConfidence,
+           let urgency = scoreUrgency,
+           let actionability = scoreActionability,
+           let novelty = scoreNovelty {
+            restoredScore = HomeInsightScore(
+                relevance: relevance,
+                confidence: confidence,
+                urgency: urgency,
+                actionability: actionability,
+                novelty: novelty
+            )
+        } else {
+            restoredScore = nil
+        }
+
+        return HomeInsight(
+            id: id,
+            kind: HomeInsightKind(rawValue: kindRaw) ?? .anomaly,
+            category: HomeInsightCategory(rawValue: categoryRaw) ?? .system,
+            severity: HomeInsightSeverity(rawValue: severityRaw) ?? .info,
+            status: HomeInsightStatus(rawValue: statusRaw) ?? .active,
+            title: title,
+            message: message,
+            whyExplanation: whyExplanation,
+            recommendation: recommendation,
+            sourceEntityID: sourceEntityID,
+            sourceEntityName: sourceEntityName,
+            roomName: roomName,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            startedAt: startedAt,
+            resolvedAt: resolvedAt,
+            confidence: confidence,
+            score: restoredScore,
+            dedupeKey: dedupeKey,
+            suggestedActionJSON: suggestedActionJSON,
+            sourceRecordType: sourceRecordType,
+            sourceRecordID: sourceRecordID,
+            syncPolicy: HomeInsightSyncPolicy(rawValue: syncPolicyRaw) ?? .localOnly
+        )
+    }
 }
