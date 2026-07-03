@@ -425,26 +425,6 @@ enum HomeInsightMapper {
         )
     }
 
-    static func map(_ signal: EnvironmentalSignal) -> HomeInsight {
-        HomeInsight(
-            kind: .environment,
-            category: .environment,
-            severity: HomeInsightSeverity(notificationPriority: signal.priority),
-            status: .active,
-            title: EnvironmentalAlertBuilder.headline(for: signal),
-            message: EnvironmentalAlertBuilder.body(for: signal),
-            whyExplanation: EnvironmentalAlertBuilder.whyExplanation(for: signal),
-            recommendation: EnvironmentalAlertBuilder.recommendation(for: signal),
-            sourceEntityName: signal.sensorType.displayName,
-            roomName: signal.roomName,
-            confidence: signal.score.confidence,
-            score: HomeInsightScore(signal.score),
-            dedupeKey: signal.semanticKey,
-            sourceRecordType: String(describing: EnvironmentalSignal.self),
-            syncPolicy: .localOnly
-        )
-    }
-
     static func map(_ signal: AnomalySignal) -> HomeInsight {
         HomeInsight(
             kind: .anomaly,

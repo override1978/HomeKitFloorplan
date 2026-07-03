@@ -243,26 +243,22 @@ final class ProactiveNotification {
         return try? JSONDecoder().decode(IntelligenceScore.self, from: d)
     }
 
-    // MARK: Display (locale-safe, resolved at render time)
+    // MARK: Display
 
-    /// Headline resolved at render time from semanticKey; falls back to stored value.
     var displayHeadline: String {
-        NotificationDisplayResolver.headline(for: self) ?? headline
+        headline
     }
 
-    /// Body resolved at render time from semanticKey (anomaly only); falls back to stored value.
     var displayBody: String {
-        NotificationDisplayResolver.body(for: self) ?? body
+        body
     }
 
-    /// Recommendation resolved at render time from semanticKey; falls back to stored value.
     var displayRecommendation: String? {
-        NotificationDisplayResolver.recommendation(for: self) ?? recommendation
+        recommendation
     }
 
-    /// Why-explanation resolved at render time from semanticKey; falls back to stored value.
     var displayWhyExplanation: String? {
-        NotificationDisplayResolver.whyExplanation(for: self) ?? whyExplanation
+        whyExplanation
     }
 
     // MARK: Init

@@ -1093,25 +1093,34 @@ final class AmbientalAIService {
     /// Writes a new insight to SwiftData, invalidating any previous active record for the same room.
     private func persistInsight(_ insight: AmbientalAIInsight) {
         let roomName = insight.roomName
-        let statusActive = InsightPersistedStatus.active.rawValue
-        let existing = FetchDescriptor<PersistedInsight>(
-            predicate: #Predicate { $0.roomName == roomName && $0.statusRaw == statusActive }
+        let statusActive = HomeInsightStatus.active.rawValue
+        let environmentCategory = HomeInsightCategory.environment.rawValue
+        let existing = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.roomName == roomName &&
+                $0.statusRaw == statusActive &&
+                $0.categoryRaw == environmentCategory
+            }
         )
         if let records = try? context.fetch(existing) {
-            records.forEach {
-                $0.statusRaw = InsightPersistedStatus.expired.rawValue
-                upsertPersistedHomeInsight(from: $0)
-            }
+            records.forEach { $0.markResolved() }
         }
-        let record = PersistedInsight.from(insight)
-        context.insert(record)
-        upsertPersistedHomeInsight(from: record)
+        upsertPersistedHomeInsight(from: insight)
         try? context.save()
     }
 
     /// Mirrors legacy environmental AI insight records into the unified home insight store.
     private func upsertPersistedHomeInsight(from record: PersistedInsight) {
         let insight = HomeInsightMapper.map(record)
+        upsertPersistedHomeInsight(insight)
+    }
+
+    /// Writes current environmental AI insights directly into the unified home insight store.
+    private func upsertPersistedHomeInsight(from insight: AmbientalAIInsight) {
+        upsertPersistedHomeInsight(homeInsight(from: insight))
+    }
+
+    private func upsertPersistedHomeInsight(_ insight: HomeInsight) {
         let dedupeKey = insight.dedupeKey
         let descriptor = FetchDescriptor<PersistedHomeInsight>(
             predicate: #Predicate { $0.dedupeKey == dedupeKey }
@@ -1124,25 +1133,99 @@ final class AmbientalAIService {
         }
     }
 
+    private func homeInsight(from insight: AmbientalAIInsight) -> HomeInsight {
+        HomeInsight(
+            id: insight.id,
+            kind: homeInsightKind(from: insight.intelligenceLevel, severity: insight.severity),
+            category: .environment,
+            severity: homeInsightSeverity(from: insight.severity),
+            status: insight.isDismissed ? .dismissed : .active,
+            title: insight.patternKey ?? insight.roomName,
+            message: insight.message,
+            whyExplanation: insight.whyExplanation,
+            sourceEntityID: insight.sourceAccessoryID,
+            sourceEntityName: insight.sourceAccessoryName,
+            roomName: insight.roomName,
+            createdAt: insight.generatedAt,
+            updatedAt: Date(),
+            startedAt: insight.generatedAt,
+            resolvedAt: insight.isDismissed ? Date() : nil,
+            confidence: insight.confidence,
+            dedupeKey: insight.patternKey ?? "ambientalAI|\(insight.roomName)|\(insight.id.uuidString)",
+            suggestedActionJSON: encodeNextActions(insight.nextActions),
+            sourceRecordType: String(describing: AmbientalAIInsight.self),
+            sourceRecordID: insight.id.uuidString,
+            syncPolicy: .syncFull
+        )
+    }
+
+    private func encodeNextActions(_ actions: [AINextAction]) -> String {
+        guard let data = try? JSONEncoder().encode(actions),
+              let string = String(data: data, encoding: .utf8) else {
+            return "[]"
+        }
+        return string
+    }
+
+    private func homeInsightKind(from level: IntelligenceLevel, severity: InsightSeverity) -> HomeInsightKind {
+        switch level {
+        case .prediction:
+            return .prediction
+        case .recommendation:
+            return .recommendation
+        case .pattern:
+            return .environment
+        case .observation:
+            return severity == .anomaly ? .anomaly : .environment
+        }
+    }
+
+    private func homeInsightSeverity(from severity: InsightSeverity) -> HomeInsightSeverity {
+        switch severity {
+        case .anomaly:
+            return .high
+        case .warning:
+            return .medium
+        case .info:
+            return .info
+        }
+    }
+
     /// Updates the persisted status of a single insight record.
     private func updatePersistedStatus(for id: UUID, to status: InsightPersistedStatus) {
-        let descriptor = FetchDescriptor<PersistedInsight>(
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
             predicate: #Predicate { $0.id == id }
         )
         guard let record = (try? context.fetch(descriptor))?.first else { return }
-        record.statusRaw = status.rawValue
-        upsertPersistedHomeInsight(from: record)
+        record.statusRaw = homeInsightStatus(from: status).rawValue
+        if status != .active {
+            record.resolvedAt = Date()
+        }
+        record.updatedAt = Date()
         try? context.save()
     }
 
     private func updatePersistedSeverity(for id: UUID, to severity: InsightSeverity) {
-        let descriptor = FetchDescriptor<PersistedInsight>(
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
             predicate: #Predicate { $0.id == id }
         )
         guard let record = (try? context.fetch(descriptor))?.first else { return }
-        record.severityRaw = severity.rawValue
-        upsertPersistedHomeInsight(from: record)
+        record.severityRaw = homeInsightSeverity(from: severity).rawValue
+        record.updatedAt = Date()
         try? context.save()
+    }
+
+    private func homeInsightStatus(from status: InsightPersistedStatus) -> HomeInsightStatus {
+        switch status {
+        case .active:
+            return .active
+        case .dismissed:
+            return .dismissed
+        case .expired:
+            return .expired
+        case .executed:
+            return .executed
+        }
     }
 
     // MARK: - Semantic Fingerprint

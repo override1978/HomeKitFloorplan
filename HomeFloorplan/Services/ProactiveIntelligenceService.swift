@@ -146,21 +146,10 @@ final class ProactiveIntelligenceService {
         let automationInsights = automationOpportunities.map(HomeInsightMapper.map)
         upsertHomeInsights(automationInsights)
 
-        // 3. Environmental alerts
-        let envSignals = await EnvironmentalAlertBuilder.build(
-            modelContainer: modelContainer,
-            homeKitService: homeKitService
-        )
-        let environmentalInsights = envSignals.map(HomeInsightMapper.map)
-        upsertHomeInsights(environmentalInsights)
-
-        // 4. Auto-resolve environmental alerts whose condition cleared
-        autoResolveEnvironmental(currentSignals: envSignals)
-
-        // 5. Learning milestones
+        // 3. Learning milestones
         await processLearningMilestones(behavioralService: behavioralService)
 
-        // 6. Predictive environmental alerts (pattern-based, before-the-fact)
+        // 4. Predictive environmental alerts (pattern-based, before-the-fact)
         if !context.suppressNonCritical {
             let recurrence = EnvironmentalPatternAnalyzer.loadPatterns()
             let predictive = PredictiveAlertBuilder.build(patterns: recurrence)
@@ -169,21 +158,22 @@ final class ProactiveIntelligenceService {
             autoResolvePredictiveInsights(currentSignals: predictive)
         }
 
-        // 8. Sensor anomaly detection (device health)
+        // 5. Sensor anomaly detection (device health)
         let anomalies = await SensorAnomalyDetector.detect(modelContainer: modelContainer)
         let anomalyInsights = anomalies.map(HomeInsightMapper.map)
         upsertHomeInsights(anomalyInsights)
         autoResolveSensorAnomalyInsights(currentSignals: anomalies)
 
-        // 8.5. Home intelligence anomalies (central baseline domain)
+        // 6. Home intelligence anomalies (central baseline domain)
         let homeInsightAnomalies = HomeInsightAnomalyPipeline.detect(
             modelContainer: modelContainer,
             homeKitService: homeKitService
         )
         upsertHomeInsights(homeInsightAnomalies)
         autoResolveHomeInsightAnomalies(currentInsights: homeInsightAnomalies)
+        resolveLegacyEnvironmentalInsights()
 
-        // 9. Maintenance prediction (usage pattern anomalies)
+        // 7. Maintenance prediction (usage pattern anomalies)
         if let maint = maintenanceService {
             let maintenanceSignals = maint.signals
             let maintenanceInsights = maintenanceSignals.map(HomeInsightMapper.map)
@@ -191,16 +181,16 @@ final class ProactiveIntelligenceService {
             autoResolveMaintenanceInsights(currentSignals: maintenanceSignals)
         }
 
-        // 10. Weather prediction (Sprint 31) — morning-only, next-day extremes
+        // 8. Weather prediction (Sprint 31) — morning-only, next-day extremes
         if !context.suppressNonCritical, let weather = weatherService {
             await processWeatherPrediction(weatherService: weather, context: context)
         }
 
-        // 11. Notification delivery is sourced from the unified home insight store.
+        // 9. Notification delivery is sourced from the unified home insight store.
         await processActiveHomeInsightNotifications(context: context)
         resolveLegacySignalNotifications()
 
-        // 12. Auto-expire old notifications
+        // 10. Auto-expire old notifications
         autoExpire()
 
         // Save any pending changes
@@ -463,8 +453,7 @@ final class ProactiveIntelligenceService {
 
     // MARK: - Auto-resolve / Auto-expire
 
-    private func autoResolveEnvironmental(currentSignals: [EnvironmentalSignal]) {
-        let activeKeys = Set(currentSignals.map(\.semanticKey))
+    private func resolveLegacyEnvironmentalInsights() {
         let ctx = modelContainer.mainContext
         let descriptor = FetchDescriptor<ProactiveNotification>(
             predicate: #Predicate {
@@ -474,8 +463,7 @@ final class ProactiveIntelligenceService {
         )
         let live = (try? ctx.fetch(descriptor)) ?? []
         for notif in live
-        where !notif.semanticKey.hasPrefix("homeInsight|")
-            && !activeKeys.contains(notif.semanticKey) {
+        where !notif.semanticKey.hasPrefix("homeInsight|") {
             notif.status     = .resolved
             notif.resolvedAt = Date()
             notif.lastUpdatedAt = Date()
@@ -488,8 +476,7 @@ final class ProactiveIntelligenceService {
         )
         let persisted = (try? ctx.fetch(persistedDescriptor)) ?? []
         for insight in persisted
-        where insight.sourceRecordType == String(describing: EnvironmentalSignal.self) &&
-            !activeKeys.contains(insight.dedupeKey) {
+        where insight.sourceRecordType == "EnvironmentalSignal" {
             insight.markResolved()
         }
     }
@@ -742,46 +729,7 @@ final class ProactiveIntelligenceService {
     }
 
     private func notificationInsights(from insights: [HomeInsight]) -> [HomeInsight] {
-        let environmentalKeys = Set(
-            insights
-                .filter { $0.sourceRecordType == String(describing: EnvironmentalSignal.self) }
-                .compactMap(notificationGroupingKey)
-        )
-
-        return insights.filter { insight in
-            guard insight.kind == .anomaly,
-                  insight.category == .environment,
-                  let key = notificationGroupingKey(for: insight) else {
-                return true
-            }
-            return !environmentalKeys.contains(key)
-        }
-    }
-
-    private func notificationGroupingKey(for insight: HomeInsight) -> String? {
-        let room = (insight.roomName ?? "home").lowercased()
-        let entity = (insight.sourceEntityName ?? inferredSignalName(from: insight))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        guard !entity.isEmpty else { return nil }
-        return "\(room)|\(entity)"
-    }
-
-    private func inferredSignalName(from insight: HomeInsight) -> String {
-        let raw = "\(insight.title) \(insight.message)".lowercased()
-        if raw.contains("airquality") || raw.contains("air quality") || raw.contains("qualità aria") {
-            return SensorServiceType.airQuality.displayName
-        }
-        if raw.contains("temperature") || raw.contains("temperatura") {
-            return SensorServiceType.temperature.displayName
-        }
-        if raw.contains("humidity") || raw.contains("umid") {
-            return SensorServiceType.humidity.displayName
-        }
-        if raw.contains("co₂") || raw.contains("co2") || raw.contains("carbon dioxide") {
-            return SensorServiceType.carbonDioxide.displayName
-        }
-        return insight.sourceEntityName ?? ""
+        insights
     }
 
     private func resolveLegacySignalNotifications() {
