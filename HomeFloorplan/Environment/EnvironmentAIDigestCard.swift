@@ -436,7 +436,6 @@ private extension InsightSeverity {
 // MARK: - Preview
 
 #Preview("AI Digest Card") {
-    let now = Date()
     let insights = [
         AmbientalAIInsight(
             roomName: "Cucina",

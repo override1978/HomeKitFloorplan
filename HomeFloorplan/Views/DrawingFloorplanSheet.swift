@@ -135,6 +135,7 @@ struct DrawingFloorplanSheet: View {
     @State private var isExporting = false
     @State private var showHelpSheet = false
     @State private var showNoLinkedRoomsConfirm = false
+    @State private var exportViewportSize = CGSize(width: 390, height: 844)
 
     private var visualExportStyle: DrawingVisualExportStyle {
         get { DrawingVisualExportStyle(rawValue: visualExportStyleRaw) ?? .standard }
@@ -434,12 +435,21 @@ struct DrawingFloorplanSheet: View {
                 .presentationDragIndicator(.visible)
         }
         .onAppear {
+            updateExportViewportSize(geo.size)
             guard !ProcessInfo.processInfo.isiOSAppOnMac, !hasSeenDrawingHelp else { return }
             hasSeenDrawingHelp = true
             showHelpSheet = true
         }
+        .onChange(of: geo.size) { _, newSize in
+            updateExportViewportSize(newSize)
+        }
         .suppressesIdleScreensaver(.drawingEditor)
         } // GeometryReader
+    }
+
+    private func updateExportViewportSize(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        exportViewportSize = size
     }
 
     // MARK: - Opening placement (called from canvas tap in placeOpening mode)
@@ -829,10 +839,10 @@ struct DrawingFloorplanSheet: View {
             allPoints.append(CGPoint(x: item.rect.maxX, y: item.rect.maxY))
         }
 
-        // Output size = screen dimensions so the exported image matches the device display
-        let screenBounds = UIScreen.main.bounds
-        let outputW: CGFloat    = screenBounds.width
-        let outputH: CGFloat    = screenBounds.height
+        // Output size = current editor viewport dimensions so the exported image
+        // matches the visible drawing surface.
+        let outputW: CGFloat    = exportViewportSize.width
+        let outputH: CGFloat    = exportViewportSize.height
         let scale: CGFloat      = 2.0   // @2x physical pixels
         let marginFraction: CGFloat = 0.08  // 8% padding around the drawing
 

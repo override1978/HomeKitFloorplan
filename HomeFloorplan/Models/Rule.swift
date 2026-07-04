@@ -5,8 +5,7 @@ import SwiftData
 
 /// Regola di automazione generata dall'AI o dall'utente.
 /// Può essere delegata a HomeKit (HMEventTrigger) o eseguita in-app.
-/// Legacy: prefer `AutomationProposal` + `AutomationWizardSheet` for new automation flows.
-@available(*, deprecated, message: "Use AutomationProposal and AutomationWizardSheet for new automation flows.")
+/// Legacy schema model retained only so existing local stores remain readable.
 @Model
 final class Rule {
     @Attribute(.unique) var id: UUID

@@ -10,7 +10,6 @@ struct SettingsView: View {
     @Environment(WeatherKitService.self)    private var weatherKit
     @Environment(SmartLightingEngine.self)  private var smartLightingEngine
     @Environment(AISettings.self)           private var aiSettings
-    @Environment(RuleEngineService.self)    private var ruleEngine
     @Environment(CloudKitSyncService.self)  private var cloudKitSync
 
     @Query(sort: \SyncableSettings.modifiedAt) var settingsArray: [SyncableSettings]
@@ -331,15 +330,6 @@ struct SettingsView: View {
                     HabitsDiagnosticsView()
                 } label: {
                     Label("Habits Diagnostics", systemImage: "brain.head.profile.fill")
-                }
-                NavigationLink {
-                    LegacyAutomationCleanupView()
-                } label: {
-                    settingsLinkRow(
-                        icon: "trash.circle",
-                        title: "Legacy Rule Cleanup",
-                        subtitle: "\(ruleEngine.rules.count) local legacy rules"
-                    )
                 }
             } header: {
                 Text(String(localized: "settings.developer.header", defaultValue: "Developer"))
@@ -699,133 +689,6 @@ struct SettingsView: View {
     }
 }
 
-#if DEBUG
-private struct LegacyAutomationCleanupView: View {
-    @Environment(RuleEngineService.self) private var ruleEngine
-    @Environment(HomeKitService.self) private var homeKit
-
-    @State private var showDeleteAllConfirmation = false
-    @State private var isDeleting = false
-
-    var body: some View {
-        List {
-            Section {
-                HStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(String(localized: "settings.legacyCleanup.summary.title", defaultValue: "Legacy local rules"))
-                            .font(.headline)
-                        Text(String(localized: "settings.legacyCleanup.summary.description", defaultValue: "These records belong to the old Rule system. Deleting them does not remove habits, events, insights, proposals, or HomeKit automations created with the new builder."))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-
-            Section {
-                if ruleEngine.rules.isEmpty {
-                    ContentUnavailableView(
-                        String(localized: "settings.legacyCleanup.empty.title", defaultValue: "No legacy rules"),
-                        systemImage: "checkmark.circle",
-                        description: Text(String(localized: "settings.legacyCleanup.empty.description", defaultValue: "The local legacy Rule store is already clean."))
-                    )
-                } else {
-                    ForEach(ruleEngine.rules) { rule in
-                        LegacyRuleCleanupRow(rule: rule)
-                    }
-                    .onDelete { offsets in
-                        deleteRules(at: offsets)
-                    }
-                }
-            } header: {
-                Text(String(localized: "settings.legacyCleanup.storedRules", defaultValue: "Stored Rules"))
-            }
-
-            if !ruleEngine.rules.isEmpty {
-                Section {
-                    Button(role: .destructive) {
-                        showDeleteAllConfirmation = true
-                    } label: {
-                        if isDeleting {
-                            ProgressView()
-                        } else {
-                            Label(String(localized: "settings.legacyCleanup.deleteAll", defaultValue: "Delete all legacy rules"), systemImage: "trash")
-                        }
-                    }
-                    .disabled(isDeleting)
-                } footer: {
-                    Text(String(localized: "settings.legacyCleanup.footer", defaultValue: "Only SwiftData Rule records are deleted. If a legacy rule has a linked HomeKit trigger ID, the cleanup also asks HomeKit to remove that old trigger."))
-                }
-            }
-        }
-        .navigationTitle(String(localized: "settings.legacyCleanup.title", defaultValue: "Legacy Cleanup"))
-        .alert(String(localized: "settings.legacyCleanup.confirm.title", defaultValue: "Delete all legacy rules?"), isPresented: $showDeleteAllConfirmation) {
-            Button(String(localized: "button.delete", defaultValue: "Delete"), role: .destructive) {
-                deleteAllRules()
-            }
-            Button(String(localized: "button.cancel", defaultValue: "Cancel"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "settings.legacyCleanup.confirm.message", defaultValue: "This removes only old local Rule records and their linked legacy HomeKit triggers when available."))
-        }
-    }
-
-    private func deleteRules(at offsets: IndexSet) {
-        let rules = offsets.map { ruleEngine.rules[$0] }
-        delete(rules)
-    }
-
-    private func deleteAllRules() {
-        delete(ruleEngine.rules)
-    }
-
-    private func delete(_ rules: [Rule]) {
-        guard !rules.isEmpty else { return }
-        isDeleting = true
-        Task {
-            for rule in rules {
-                try? await ruleEngine.deleteRule(rule, home: homeKit.currentHome)
-            }
-            isDeleting = false
-        }
-    }
-}
-
-private struct LegacyRuleCleanupRow: View {
-    let rule: Rule
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(rule.name)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Spacer()
-                Text(rule.isEnabled ? "Enabled" : "Paused")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(rule.isEnabled ? .green : .secondary)
-            }
-
-            Text(rule.ruleDescription)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-
-            HStack(spacing: 8) {
-                Label(rule.triggerType, systemImage: "bolt.horizontal")
-                Label(rule.actionType, systemImage: "slider.horizontal.3")
-                if rule.homeKitTriggerID != nil {
-                    Label("HomeKit", systemImage: "house.fill")
-                }
-            }
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-        }
-        .padding(.vertical, 4)
-    }
-}
-#endif
 
 private extension Bundle {
     var appVersion: String {

@@ -11,10 +11,10 @@ import Foundation
 /// backfilled from those legacy records and lifecycle-managed independently.
 enum AIPromptVersion {
     /// Current version of the environmental analysis system prompt.
-    static let currentEnvironmental = "env_v3"
+    nonisolated static let currentEnvironmental = "env_v3"
     /// Current version of the habit-analysis prompt (future use).
-    static let currentHabit = "habit_v1"
+    nonisolated static let currentHabit = "habit_v1"
     /// Current version of the agent loop system prompt.
     /// v8: controlAccessory(room,type) used directly for explicit commands; listAccessories only for state queries/UUID needs.
-    static let currentAgentLoop = "agent_v8"
+    nonisolated static let currentAgentLoop = "agent_v8"
 }

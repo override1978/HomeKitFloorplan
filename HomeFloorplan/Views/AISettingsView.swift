@@ -259,14 +259,6 @@ struct AISettingsView: View {
             }
             .disabled(!settings.isOperational)
 
-            Toggle(isOn: binding(\.ruleEngineEnabled)) {
-                Label(
-                    String(localized: "ai.settings.ruleEngine", defaultValue: "Predictive Rules"),
-                    systemImage: "gearshape.2"
-                )
-            }
-            .disabled(!settings.isOperational)
-
         } header: {
             Text(String(localized: "ai.settings.features.header", defaultValue: "AI Features"))
         } footer: {

@@ -12,7 +12,8 @@ import SwiftData
 //   • If a migration is non-lightweight (e.g. custom mapping), create a
 //     VersionedSchema + SchemaMigrationPlan before shipping.
 //
-// Current schema — v20 (20 @Model types):
+// Current schema — v21 (20 @Model types):
+//   v21: PersistedHomeInsight += signalTypeRaw: String? (lightweight migration)
 //   1.  Floorplan
 //   2.  PlacedAccessory
 //   3.  ActivityEvent
@@ -46,7 +47,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 20
+    static let currentVersion: Int = 21
 
     // MARK: - Persistence
 

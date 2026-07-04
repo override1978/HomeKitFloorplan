@@ -169,7 +169,7 @@ enum NotificationTrend: String, Codable {
 // MARK: - IntelligenceScore
 
 /// 5-axis AI quality score. Every notification exposes this for explainability.
-struct IntelligenceScore: Codable {
+struct IntelligenceScore: nonisolated Codable {
     var relevance:     Double   // 0–1: relevant to current context?
     var confidence:    Double   // 0–1: how certain is the AI?
     var urgency:       Double   // 0–1: how time-sensitive?

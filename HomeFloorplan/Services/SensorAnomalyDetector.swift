@@ -55,7 +55,7 @@ enum SensorAnomalyDetector {
         )
 
         var signals: [AnomalySignal] = []
-        for (keyStr, group) in groups {
+        for (_, group) in groups {
             guard group.count >= 4 else { continue }
             guard let first = group.first,
                   let sensorType = SensorServiceType(rawValue: first.serviceTypeRaw)

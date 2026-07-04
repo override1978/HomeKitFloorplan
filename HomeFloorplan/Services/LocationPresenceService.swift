@@ -32,7 +32,7 @@ final class LocationPresenceService: NSObject {
     static let homeLonKey    = "location.home.lon"
     static let homeRadiusKey = "location.home.radius"
 
-    private static let regionID = "com.homefloorplan.homeRegion"
+    nonisolated private static let regionID = "com.homefloorplan.homeRegion"
 
     // MARK: - Private
 

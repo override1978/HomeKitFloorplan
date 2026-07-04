@@ -11,6 +11,9 @@ enum HomeInsightAnomalyPipeline {
         var accessorySummaryLimit: Int = 80
         var minimumSeverity: HomeInsightSeverity = .medium
         var minimumConfidence: Double = 0.65
+        /// Gate ridotto per gli insight operativi (luci/prese/contatti da HomeStateInterval):
+        /// il detector assegna loro 0.55–0.75, quindi il gate standard 0.65 li eliminerebbe quasi tutti.
+        var operationalMinimumConfidence: Double = 0.5
     }
 
     static func detect(
@@ -29,8 +32,8 @@ enum HomeInsightAnomalyPipeline {
 
         let signals = sensorReadings.map(HomeSignalEventMapper.map) + liveSensorSignals(from: homeKitService)
         let intervals = operationalPolicy.isEnabled
-            ? filterIntervalsAgainstLiveState(
-                HomeStateIntervalBuilder.build(from: accessoryEvents),
+            ? operationalIntervals(
+                from: accessoryEvents,
                 homeKitService: homeKitService,
                 policy: operationalPolicy
             )
@@ -50,12 +53,18 @@ enum HomeInsightAnomalyPipeline {
             configuration: HomeAnomalyDetector.Configuration(
                 minimumOpenContactDuration: operationalPolicy.minimumContactDuration,
                 elevatedOpenContactDuration: operationalPolicy.elevatedContactDuration,
+                escalatesOpenContactsAtNight: operationalPolicy.escalatesAtNight,
+                nightStartHour: operationalPolicy.nightStartHour,
+                nightEndHour: operationalPolicy.nightEndHour,
                 minimumLongRunningPowerDuration: operationalPolicy.minimumPowerDuration
             )
         )
         .filter { insight in
-            insight.kind == .anomaly
-                && (insight.severity >= configuration.minimumSeverity || isOperationalIntervalInsight(insight))
+            guard insight.kind == .anomaly else { return false }
+            if isOperationalIntervalInsight(insight) {
+                return insight.confidence >= configuration.operationalMinimumConfidence
+            }
+            return insight.severity >= configuration.minimumSeverity
                 && insight.confidence >= configuration.minimumConfidence
         }
     }
@@ -213,7 +222,12 @@ enum HomeInsightAnomalyPipeline {
         homeKitService: HomeKitService?,
         policy: OperationalIntelligencePolicy
     ) -> [HomeStateInterval] {
-        guard let homeKitService else { return intervals }
+        guard let homeKitService else {
+            // Senza live state la modalità climatica reale non è verificabile: gli eventi
+            // termostato sono etichettati "heating" a prescindere dal mode (anche in cooling),
+            // quindi gli intervalli "heating" attivi vanno scartati per evitare falsi allarmi estivi.
+            return intervals.filter { !($0.isActive && $0.stateRaw == "heating") }
+        }
 
         let liveStateByAccessoryID = Dictionary(
             uniqueKeysWithValues: homeKitService.allAccessories.map { accessory in
@@ -236,9 +250,178 @@ enum HomeInsightAnomalyPipeline {
         }
     }
 
+    private static func operationalIntervals(
+        from accessoryEvents: [AccessoryEvent],
+        homeKitService: HomeKitService?,
+        policy: OperationalIntelligencePolicy
+    ) -> [HomeStateInterval] {
+        let eventIntervals = HomeStateIntervalBuilder.build(from: accessoryEvents)
+        let liveIntervals = liveOperationalIntervals(
+            from: homeKitService,
+            existingIntervals: eventIntervals,
+            recentEvents: accessoryEvents,
+            policy: policy
+        )
+
+        return filterIntervalsAgainstLiveState(
+            eventIntervals + liveIntervals,
+            homeKitService: homeKitService,
+            policy: policy
+        )
+    }
+
+    private static func liveOperationalIntervals(
+        from homeKitService: HomeKitService?,
+        existingIntervals: [HomeStateInterval],
+        recentEvents: [AccessoryEvent],
+        policy: OperationalIntelligencePolicy
+    ) -> [HomeStateInterval] {
+        guard let homeKitService else { return [] }
+
+        let existingActiveKeys = Set(existingIntervals.filter(\.isActive).compactMap(intervalIdentity))
+        let now = Date()
+        var observedStateKeys = existingActiveKeys
+
+        let liveIntervals = homeKitService.allAccessories.compactMap { accessory -> HomeStateInterval? in
+            let entityID = accessory.uniqueIdentifier.uuidString
+            guard !policy.ignoredAccessoryIDs.contains(entityID) else { return nil }
+
+            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService)
+            guard adapter.isReachable else { return nil }
+
+            let liveState = liveIntervalState(for: adapter)
+            guard let draft = liveIntervalDraft(
+                accessory: accessory,
+                liveState: liveState,
+                policy: policy
+            ) else { return nil }
+
+            let key = intervalIdentity(entityID: entityID, signalType: draft.signalType, stateRaw: draft.stateRaw)
+            observedStateKeys.insert(key)
+            guard !existingActiveKeys.contains(key) else { return nil }
+
+            return HomeStateInterval(
+                entityID: entityID,
+                entityName: accessory.name,
+                roomID: accessory.room?.uniqueIdentifier.uuidString,
+                roomName: accessory.room?.name,
+                signalType: draft.signalType,
+                stateRaw: draft.stateRaw,
+                startedAt: inferredLiveStartDate(
+                    accessoryID: accessory.uniqueIdentifier,
+                    signalType: draft.signalType,
+                    stateRaw: draft.stateRaw,
+                    recentEvents: recentEvents,
+                    now: now
+                ),
+                endedAt: nil,
+                confidence: 0.65
+            )
+        }
+
+        // Gli stati non più osservati escono dallo store: il timer riparte alla prossima attivazione.
+        LiveStateFirstSeenStore.prune(activeKeys: observedStateKeys)
+        return liveIntervals
+    }
+
+    private struct LiveIntervalDraft {
+        let signalType: HomeSignalType
+        let stateRaw: String
+    }
+
+    private static func liveIntervalDraft(
+        accessory: HMAccessory,
+        liveState: LiveIntervalState,
+        policy: OperationalIntelligencePolicy
+    ) -> LiveIntervalDraft? {
+        switch liveState {
+        case .contact(let isOpen):
+            guard isOpen else { return nil }
+            return LiveIntervalDraft(
+                signalType: .contact,
+                stateRaw: "open"
+            )
+        case .generic(let isOn):
+            guard isOn, isOperationalPowerAccessory(accessory) else { return nil }
+            return LiveIntervalDraft(
+                signalType: .power,
+                stateRaw: "on"
+            )
+        case .climate, .unknown:
+            return nil
+        }
+    }
+
+    private static func isOperationalPowerAccessory(_ accessory: HMAccessory) -> Bool {
+        switch AccessoryCategorizer.categorize(accessory) {
+        case "colorLight", "dimmableLight", "outlet", "switch", "onOff":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func inferredLiveStartDate(
+        accessoryID: UUID,
+        signalType: HomeSignalType,
+        stateRaw: String,
+        recentEvents: [AccessoryEvent],
+        now: Date
+    ) -> Date {
+        if let latestMatchingEvent = recentEvents
+            .filter({
+                $0.accessoryID == accessoryID &&
+                signalTypeForEvent($0) == signalType &&
+                eventStartsState($0, signalType: signalType, stateRaw: stateRaw)
+            })
+            .max(by: { $0.timestamp < $1.timestamp }) {
+            return latestMatchingEvent.timestamp
+        }
+
+        // Nessun evento di start registrato: ancora la durata alla prima osservazione live persistita,
+        // così l'anomalia scatta solo dopo che la durata minima è trascorsa davvero
+        // (il vecchio fallback now-minimumDuration la faceva scattare per costruzione al primo ciclo).
+        let key = intervalIdentity(entityID: accessoryID.uuidString, signalType: signalType, stateRaw: stateRaw)
+        return LiveStateFirstSeenStore.firstSeen(for: key, now: now)
+    }
+
+    private static func signalTypeForEvent(_ event: AccessoryEvent) -> HomeSignalType {
+        HomeSignalEventMapper.map(event).signalType
+    }
+
+    private static func eventStartsState(
+        _ event: AccessoryEvent,
+        signalType: HomeSignalType,
+        stateRaw: String
+    ) -> Bool {
+        switch signalType {
+        case .contact:
+            return stateRaw == "open" && !event.state
+        case .power, .active:
+            return (stateRaw == "on" || stateRaw == "active") && event.state
+        default:
+            return false
+        }
+    }
+
+    private static func intervalIdentity(_ interval: HomeStateInterval) -> String? {
+        guard let entityID = interval.entityID else { return nil }
+        return intervalIdentity(entityID: entityID, signalType: interval.signalType, stateRaw: interval.stateRaw)
+    }
+
+    private static func intervalIdentity(
+        entityID: String,
+        signalType: HomeSignalType,
+        stateRaw: String
+    ) -> String {
+        "\(entityID)|\(signalType.rawValue)|\(stateRaw)"
+    }
+
     private static func liveIntervalState(for adapter: any AccessoryAdapter) -> LiveIntervalState {
-        if let sensor = adapter as? SensorAdapter,
-           let contactDetected = sensor.contactDetected {
+        if let sensor = adapter as? SensorAdapter {
+            // contactDetected nil = valore non ancora letto (cache HomeKit fredda: avvio/BGTask).
+            // "Sconosciuto" NON è "chiuso": non deve invalidare gli intervalli ricostruiti dagli eventi.
+            guard let contactDetected = sensor.contactDetected else { return .unknown }
             return .contact(isOpen: contactDetected)
         }
 
@@ -278,15 +461,23 @@ enum HomeInsightAnomalyPipeline {
         case generic(isOn: Bool)
         case contact(isOpen: Bool)
         case climate(isOn: Bool, currentMode: HeaterCoolerMode, currentOperation: Int)
+        /// Lo stato live non è determinabile (valore non in cache): non contraddice lo storico eventi.
+        case unknown
 
         func matches(_ interval: HomeStateInterval) -> Bool {
             switch self {
+            case .unknown:
+                return true
             case .generic(let isOn):
                 switch interval.signalType {
                 case .power, .active, .motion:
+                    // "heating" richiede conferma positiva dallo stato climatico live:
+                    // un adapter generico non può darla (il dispositivo potrebbe essere in cooling).
+                    if interval.stateRaw == "heating" { return false }
                     return isOn
                 case .contact:
-                    return false
+                    // L'adapter non espone lo stato contatto: impossibile contraddire l'evento storico.
+                    return true
                 default:
                     return true
                 }
@@ -305,5 +496,45 @@ enum HomeInsightAnomalyPipeline {
                 return false
             }
         }
+    }
+}
+
+// MARK: - LiveStateFirstSeenStore
+
+/// Persiste la prima osservazione live di uno stato operativo (luce accesa, contatto aperto)
+/// per gli accessori senza evento di start nello storico. Serve come ancora temporale:
+/// senza, gli intervalli inferiti supererebbero la durata minima per costruzione al primo ciclo.
+@MainActor
+private enum LiveStateFirstSeenStore {
+    private static let storageKey = "homeInsightPipeline.liveStateFirstSeen.v1"
+
+    static func firstSeen(for key: String, now: Date) -> Date {
+        var map = load()
+        if let existing = map[key] { return existing }
+        map[key] = now
+        save(map)
+        return now
+    }
+
+    /// Rimuove le chiavi non più attive: quando lo stato termina, il timer riparte da zero
+    /// alla successiva attivazione (comportamento conservativo anche su flapping di reachability).
+    static func prune(activeKeys: Set<String>) {
+        let map = load()
+        let pruned = map.filter { activeKeys.contains($0.key) }
+        guard pruned.count != map.count else { return }
+        save(pruned)
+    }
+
+    private static func load() -> [String: Date] {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let map = try? JSONDecoder().decode([String: Date].self, from: data) else {
+            return [:]
+        }
+        return map
+    }
+
+    private static func save(_ map: [String: Date]) {
+        guard let data = try? JSONEncoder().encode(map) else { return }
+        UserDefaults.standard.set(data, forKey: storageKey)
     }
 }

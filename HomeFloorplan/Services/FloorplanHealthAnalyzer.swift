@@ -79,7 +79,7 @@ enum FloorplanHealthAnalyzer {
         let missingMarkers = floorplan.accessories.filter {
             homeKit.accessory(for: $0.homeKitAccessoryUUID) == nil
         }
-        for marker in missingMarkers {
+        for _ in missingMarkers {
             issues.append(FloorplanHealthIssue(
                 severity: .critical,
                 title: String(localized: "floorplan.health.missingAccessory.title", defaultValue: "Accessory not found"),

@@ -106,7 +106,7 @@ final class ActionExecutionService {
         return success
     }
 
-    /// Esegue un'azione raw (senza insight AI associato) — usata dal RuleEditorView.
+    /// Esegue un'azione raw (senza insight AI associato).
     /// Non registra nel tracker perché non proviene da un insight ambientale.
     @discardableResult
     func executeRaw(_ action: AINextAction, in home: HMHome) async -> Bool {

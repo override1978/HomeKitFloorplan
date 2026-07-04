@@ -246,6 +246,10 @@ struct HomeInsight: Identifiable, Codable, Hashable {
     var id: UUID
     var kind: HomeInsightKind
     var category: HomeInsightCategory
+    /// Tipo di segnale strutturato all'origine dell'insight (nil per sorgenti narrative/AI).
+    /// Usato dal resolver per classificare dominio e issue in modo deterministico,
+    /// senza dipendere dal matching testuale di titolo/messaggio (fragile e locale-dipendente).
+    var signalType: HomeSignalType?
     var severity: HomeInsightSeverity
     var status: HomeInsightStatus
     var title: String
@@ -275,6 +279,7 @@ struct HomeInsight: Identifiable, Codable, Hashable {
         id: UUID = UUID(),
         kind: HomeInsightKind,
         category: HomeInsightCategory,
+        signalType: HomeSignalType? = nil,
         severity: HomeInsightSeverity,
         status: HomeInsightStatus = .active,
         title: String,
@@ -303,6 +308,7 @@ struct HomeInsight: Identifiable, Codable, Hashable {
         self.id = id
         self.kind = kind
         self.category = category
+        self.signalType = signalType
         self.severity = severity
         self.status = status
         self.title = title
@@ -428,6 +434,8 @@ final class PersistedHomeInsight {
     var id: UUID
     var kindRaw: String
     var categoryRaw: String
+    /// Raw di HomeSignalType (nil per insight senza segnale strutturato o record pre-v21).
+    var signalTypeRaw: String?
     var severityRaw: String
     var statusRaw: String
     var title: String
@@ -461,6 +469,7 @@ final class PersistedHomeInsight {
         self.id = insight.id
         self.kindRaw = insight.kind.rawValue
         self.categoryRaw = insight.category.rawValue
+        self.signalTypeRaw = insight.signalType?.rawValue
         self.severityRaw = insight.severity.rawValue
         self.statusRaw = insight.status.rawValue
         self.title = insight.title
@@ -496,6 +505,7 @@ final class PersistedHomeInsight {
     func update(from insight: HomeInsight) {
         kindRaw = insight.kind.rawValue
         categoryRaw = insight.category.rawValue
+        signalTypeRaw = insight.signalType?.rawValue
         severityRaw = insight.severity.rawValue
         statusRaw = insight.status.rawValue
         title = insight.title
@@ -560,6 +570,7 @@ final class PersistedHomeInsight {
             id: id,
             kind: HomeInsightKind(rawValue: kindRaw) ?? .anomaly,
             category: HomeInsightCategory(rawValue: categoryRaw) ?? .system,
+            signalType: signalTypeRaw.flatMap(HomeSignalType.init(rawValue:)),
             severity: HomeInsightSeverity(rawValue: severityRaw) ?? .info,
             status: HomeInsightStatus(rawValue: statusRaw) ?? .active,
             title: title,

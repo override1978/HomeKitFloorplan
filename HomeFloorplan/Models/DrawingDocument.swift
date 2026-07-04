@@ -585,7 +585,7 @@ enum DimensionUnit: String, CaseIterable {
 
 // MARK: - DrawingDocument
 
-struct DrawingDocument: Equatable, Codable {
+struct DrawingDocument: Equatable, nonisolated Codable {
     var walls: [WallSegment]          = []
     var openings: [PlacedOpening]     = []
     var roomLabels: [RoomLabel]       = []

@@ -71,7 +71,7 @@ enum BehavioralDeviationDetector {
 
     // MARK: - Miss tracking (UserDefaults — single dict, keyed by pattern UUID string)
 
-    private static let missesKey = "deviation.missesDict"
+    nonisolated private static let missesKey = "deviation.missesDict"
 
     static func recordMiss(for patternID: UUID) {
         var dict = UserDefaults.standard.dictionary(forKey: missesKey) as? [String: Int] ?? [:]
@@ -87,7 +87,7 @@ enum BehavioralDeviationDetector {
 
     /// Removes miss counters for patterns that no longer exist.
     /// Called by DataLifecycleService to prevent unbounded UserDefaults growth.
-    static func cleanup(keepPatternIDs: Set<UUID>) {
+    nonisolated static func cleanup(keepPatternIDs: Set<UUID>) {
         var dict = UserDefaults.standard.dictionary(forKey: missesKey) as? [String: Int] ?? [:]
         let keepStrings = Set(keepPatternIDs.map(\.uuidString))
         dict = dict.filter { keepStrings.contains($0.key) }

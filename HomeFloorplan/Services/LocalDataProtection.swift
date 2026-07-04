@@ -3,7 +3,7 @@ import Foundation
 // MARK: - LocalDataProtection
 
 enum LocalDataProtection {
-    static let preserveSwiftDataKey = "localData.preserveSwiftData"
+    nonisolated static let preserveSwiftDataKey = "localData.preserveSwiftData"
 
     /// Defaults to true: local SwiftData records must not be removed automatically.
     nonisolated static var shouldPreserveSwiftData: Bool {

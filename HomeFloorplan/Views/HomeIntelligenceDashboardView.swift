@@ -72,6 +72,7 @@ struct HomeIntelligenceDashboardView: View {
     @State private var reviewingHabitPattern: HabitPattern?
     @State private var isDiaryExpanded: Bool = false
     @State private var selectedDomain: IntelligenceVisualDomain?
+    @State private var isShowingOperationalPolicy: Bool = false
     @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
 
     // Static formatters — created once, reused on every render.
@@ -121,6 +122,20 @@ struct HomeIntelligenceDashboardView: View {
                     domain: domain,
                     groups: insightGroups(for: domain)
                 )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $isShowingOperationalPolicy) {
+                NavigationStack {
+                    OperationalIntelligencePolicySettingsView()
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button(String(localized: "common.done", defaultValue: "Done")) {
+                                    isShowingOperationalPolicy = false
+                                }
+                            }
+                        }
+                }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
@@ -216,13 +231,14 @@ struct HomeIntelligenceDashboardView: View {
         activeInsights
             .filter { insight in
                 insight.kind == .incoherence ||
-                (insight.kind == .anomaly && insight.severity >= .medium)
+                (insight.kind == .anomaly && insight.severity >= .medium) ||
+                (insight.kind == .security && insight.severity >= .high)
             }
             .sorted(by: HomeSituationResolver.insightSort)
     }
 
     private var actionRequiredGroups: [HomeSituation] {
-        HomeSituationResolver.resolve(actionRequiredInsights)
+        HomeSituationResolver.resolve(actionRequiredInsights, granularity: .device)
     }
 
     private var activeIncoherences: [HomeInsight] {
@@ -241,11 +257,11 @@ struct HomeIntelligenceDashboardView: View {
     }
 
     private var activeIncoherenceGroups: [HomeSituation] {
-        HomeSituationResolver.resolve(activeIncoherences)
+        HomeSituationResolver.resolve(activeIncoherences, granularity: .device)
     }
 
     private var activeAnomalyEvidenceGroups: [HomeSituation] {
-        HomeSituationResolver.resolve(activeAnomalyEvidences)
+        HomeSituationResolver.resolve(activeAnomalyEvidences, granularity: .device)
     }
 
     private func intelligenceStatusHero(onOpenDiary: @escaping () -> Void) -> some View {
@@ -492,7 +508,7 @@ struct HomeIntelligenceDashboardView: View {
     }
 
     private func insightGroups(for domain: IntelligenceVisualDomain) -> [HomeSituation] {
-        HomeSituationResolver.resolve(activeInsights)
+        HomeSituationResolver.resolve(activeInsights, granularity: .device)
             .filter { IntelligenceVisualDomain($0.domain) == domain }
     }
 
@@ -535,7 +551,7 @@ struct HomeIntelligenceDashboardView: View {
             record.statusRaw != HomeInsightStatus.resolved.rawValue
         }
         .map { $0.toHomeInsight() }
-        return HomeSituationResolver.resolve(matching)
+        return HomeSituationResolver.resolve(matching, granularity: .device)
             .filter { domain == nil || IntelligenceVisualDomain($0.domain) == domain }
             .count
     }
@@ -1405,6 +1421,18 @@ struct HomeIntelligenceDashboardView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             Button {
+                isShowingOperationalPolicy = true
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+            }
+            .accessibilityLabel(
+                String(localized: "intelligence.operationalPolicy.open",
+                       defaultValue: "Operational Intelligence settings")
+            )
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
                 Task { await performRefresh() }
             } label: {
                 if isRefreshing {
@@ -1502,12 +1530,11 @@ struct HomeIntelligenceDashboardView: View {
         }
         await service?.refresh(
             habitPatterns: habitService.patterns,
-            rules: [],
             tracker: executionService.tracker,
             aiIsOperational: AISettings().isOperational
         )
         await behavioralService.analyzeIfNeeded()
-        await proactiveService.runCycleIfNeeded(
+        await proactiveService.runCycle(
             behavioralService:  behavioralService,
             habitService:       habitService,
             occupancyService:   occupancyService,

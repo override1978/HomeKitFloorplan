@@ -5,12 +5,12 @@ import Observation
 // MARK: - Retention constants
 // Stored in a caseless enum so they are never inferred as @MainActor-isolated.
 private enum DLCRetention {
-    nonisolated(unsafe) static let sensorRaw        = 30
-    nonisolated(unsafe) static let accessoryRaw     = 30
-    nonisolated(unsafe) static let effectivenessRaw = 90
-    nonisolated(unsafe) static let alertResolved    = 30
-    nonisolated(unsafe) static let alertOrphan      = 90
-    nonisolated(unsafe) static let insight          = 30
+    nonisolated static let sensorRaw        = 30
+    nonisolated static let accessoryRaw     = 30
+    nonisolated static let effectivenessRaw = 90
+    nonisolated static let alertResolved    = 30
+    nonisolated static let alertOrphan      = 90
+    nonisolated static let insight          = 30
 }
 
 // MARK: - DataLifecycleService

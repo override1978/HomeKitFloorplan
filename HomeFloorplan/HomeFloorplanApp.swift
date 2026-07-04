@@ -18,7 +18,6 @@ struct HomeFloorplanApp: App {
     @State private var securityNotifier: SecurityNotificationService
     @State private var accessoryEventStore: AccessoryEventStore
     @State private var habitAnalysisService: HabitAnalysisService
-    @State private var ruleEngineService: RuleEngineService
     @State private var actionExecutionService: ActionExecutionService
     @State private var ambientalAIService: AmbientalAIService
     @State private var dataLifecycleService: DataLifecycleService
@@ -51,7 +50,7 @@ struct HomeFloorplanApp: App {
 
     /// Identifier del task di campionamento sensori in background.
     private static let sensorSampleTaskID = "com.homefloorplan.sensorSample"
-    /// Identifier del task di valutazione regole in-app in background.
+    /// Identifier del task di valutazione intelligence in background.
     private static let ruleEvaluationTaskID = "com.homefloorplan.ruleEvaluation"
     /// Identifier del task di lifecycle dati (aggregazione + pruning), giornaliero.
     private static let lifecycleTaskID = "com.homefloorplan.dataLifecycle"
@@ -232,7 +231,6 @@ struct HomeFloorplanApp: App {
         self._cloudKitSync = State(initialValue: cloudSync)
         let habitSvc = HabitAnalysisService(aiSettings: aiSettings, modelContainer: container)
         self._habitAnalysisService = State(initialValue: habitSvc)
-        self._ruleEngineService = State(initialValue: RuleEngineService(modelContainer: container))
         // Tracker condiviso tra AmbientalAIService (per dismiss/expiration) e ActionExecutionService
         // (per trackExecution). Una sola istanza garantisce coerenza del dataset di efficacia.
         let sharedTracker = ActionEffectivenessTracker(modelContainer: container)
@@ -287,7 +285,6 @@ struct HomeFloorplanApp: App {
                 .environment(activityLogger)
                 .environment(automationsService)
                 .environment(habitAnalysisService)
-                .environment(ruleEngineService)
                 .environment(actionExecutionService)
                 .environment(ambientalAIService)
                 .environment(behavioralAnalysisService)
@@ -485,7 +482,7 @@ struct HomeFloorplanApp: App {
 
     // MARK: - Background Tasks
 
-    /// Registra i BGTask: campionamento sensori, valutazione regole e lifecycle dati.
+    /// Registra i BGTask: campionamento sensori, intelligence e lifecycle dati.
     private func registerBackgroundTasks() {
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.sensorSampleTaskID,
@@ -547,24 +544,23 @@ struct HomeFloorplanApp: App {
         }
     }
 
-    /// Pianifica la prossima valutazione regole tra 15 minuti.
+    /// Pianifica la prossima valutazione intelligence tra 15 minuti.
     private func scheduleNextRuleEvaluation() {
         let request = BGProcessingTaskRequest(identifier: Self.ruleEvaluationTaskID)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         request.requiresNetworkConnectivity = false
         do {
             try BGTaskScheduler.shared.submit(request)
-            dprint("⏰ Prossima valutazione regole pianificata tra ~15 min")
+            dprint("⏰ Prossima valutazione intelligence pianificata tra ~15 min")
         } catch {
             dprint("❌ BGTask ruleEvaluation schedule error: \(error)")
         }
     }
 
-    /// Valuta le regole in-app nel background task.
+    /// Valuta i cicli intelligence nel background task.
     private func handleRuleEvaluationTask(_ task: BGProcessingTask) {
         scheduleNextRuleEvaluation()
 
-        let engine      = ruleEngineService
         let homeKitSvc  = homeKit
         let proactive   = proactiveIntelligenceService
         let behavioral  = behavioralAnalysisService
@@ -581,9 +577,6 @@ struct HomeFloorplanApp: App {
         }
 
         Task { @MainActor in
-            if let home = homeKitSvc.currentHome {
-                await engine.evaluateInAppRules(home: home)
-            }
             guard cloudSync.isMaster else {
                 task.setTaskCompleted(success: true)
                 return

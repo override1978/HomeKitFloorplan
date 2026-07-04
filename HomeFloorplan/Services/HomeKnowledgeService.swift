@@ -8,8 +8,8 @@ import Observation
 /// user-friendly snapshot for the Home Intelligence Dashboard.
 ///
 /// This is a read-only presentation layer — it never writes to any store.
-/// All business logic remains in HabitAnalysisService, ActionEffectivenessTracker,
-/// and RuleEngineService. This service only reads and aggregates.
+/// All business logic remains in HabitAnalysisService and ActionEffectivenessTracker.
+/// This service only reads and aggregates.
 @Observable
 @MainActor
 final class HomeKnowledgeService {
@@ -116,7 +116,6 @@ final class HomeKnowledgeService {
     /// All SwiftData fetches run on a background thread to keep the main actor free.
     func refresh(
         habitPatterns: [HabitPattern],
-        rules: [Rule],
         tracker: ActionEffectivenessTracker,
         aiIsOperational: Bool
     ) async {
@@ -127,10 +126,9 @@ final class HomeKnowledgeService {
         let summaryStats = tracker.summaryStats(days: 30)
         let outcomeStats = tracker.outcomeStats(days: 30)
 
-        // Pre-extract HabitPattern / Rule values before background work
+        // Pre-extract HabitPattern values before background work
         // (SwiftData @Model instances must not escape the main actor).
         let patternCount  = habitPatterns.filter { $0.status != .dismissed }.count
-        let rulesCount    = rules.count
         let stableCount   = habitPatterns.filter { $0.status != .dismissed && $0.confidence >= 0.80 }.count
         let acceptedCount = habitPatterns.filter { $0.status == .approved }.count
         let pendingDescs  = habitPatterns.filter { $0.status == .pending }.prefix(4).map(\.patternDescription)
@@ -232,12 +230,11 @@ final class HomeKnowledgeService {
 
         let daysFactor:     Double = min(1.0, Double(daysWithEvents) / 14.0)
         let patternsFactor: Double = min(1.0, Double(patternCount)   / 5.0)
-        let rulesFactor:    Double = min(1.0, Double(rulesCount)     / 3.0)
 
         // Base score from observable behavior only. Capped at 1.0 regardless of AI key,
         // so users without an API key are never penalised — AI is a product choice, not
         // a quality prerequisite (Sprint 25.B).
-        let baseScore = daysFactor * 0.40 + patternsFactor * 0.30 + rulesFactor * 0.20
+        let baseScore = daysFactor * 0.40 + patternsFactor * 0.30
         learningProgress = min(1.0, baseScore / 0.90)
 
         houseKnowledgeScore      = Int(learningProgress * 100)

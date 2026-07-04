@@ -16,7 +16,6 @@ final class ToolDispatcher {
     private let homeKit:              HomeKitService
     private let weatherKit:           WeatherKitService
     private let behavioralService:    BehavioralAnalysisService
-    private let ruleEngine:           RuleEngineService
     private let modelContainer:       ModelContainer
     private let smartLightingEngine:  SmartLightingEngine
     private let scenesService:        HomeKitScenesService
@@ -38,7 +37,6 @@ final class ToolDispatcher {
         homeKit:             HomeKitService,
         weatherKit:          WeatherKitService,
         behavioralService:   BehavioralAnalysisService,
-        ruleEngine:          RuleEngineService,
         modelContainer:      ModelContainer,
         smartLightingEngine: SmartLightingEngine,
         scenesService:       HomeKitScenesService
@@ -48,7 +46,6 @@ final class ToolDispatcher {
         self.homeKit             = homeKit
         self.weatherKit          = weatherKit
         self.behavioralService   = behavioralService
-        self.ruleEngine          = ruleEngine
         self.modelContainer      = modelContainer
         self.smartLightingEngine = smartLightingEngine
         self.scenesService       = scenesService
@@ -1114,132 +1111,64 @@ final class ToolDispatcher {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
 
-        let rules = ruleEngine.rules.filter { rule in
+        let actionSets = (homeKit.currentHome?.actionSets ?? []).filter { actionSet in
             guard let query, !query.isEmpty else { return true }
-            let haystack = [
-                rule.name,
-                rule.ruleDescription,
-                rule.actionSceneName ?? "",
-                rule.actionType,
-                rule.triggerType
-            ].joined(separator: " ").lowercased()
-            return haystack.contains(query)
+            return actionSet.name.lowercased().contains(query)
         }
+        let triggers = (homeKit.currentHome?.triggers ?? []).filter { trigger in
+            guard let query, !query.isEmpty else { return true }
+            return trigger.name.lowercased().contains(query)
+        }
+        let count = actionSets.count + triggers.count
 
-        guard !rules.isEmpty else {
+        guard count > 0 else {
             lastActionPayload = .automationDiagnostics(
                 title: String(localized: "chat.diagnostics.title", defaultValue: "Automazioni"),
                 items: []
             )
             return query == nil
-                ? "Nessuna automazione attiva nell'app."
+                ? "Nessuna automazione HomeKit trovata."
                 : "Nessuna automazione corrisponde al filtro '\(query ?? "")'."
         }
 
-        let homeTriggers = Set(homeKit.currentHome?.triggers.map { $0.uniqueIdentifier.uuidString } ?? [])
-        let sceneNames = Set(homeKit.currentHome?.actionSets.map { $0.name.lowercased() } ?? [])
-        let accessoryIDs = Set(homeKit.allAccessories.map { $0.uniqueIdentifier.uuidString })
-
-        var lines: [String] = ["Automazioni nell'app (\(rules.count)):"]
+        var lines: [String] = ["Automazioni HomeKit (\(count)):"]
         var diagnosticItems: [AutomationDiagnosticItem] = []
-        for rule in rules.prefix(12) {
-            var issues: [String] = []
-            if !rule.isEnabled {
-                issues.append("disabilitata")
-            }
-            if rule.executionMode == "homeKit" {
-                if let triggerID = rule.homeKitTriggerID {
-                    if !homeTriggers.contains(triggerID) {
-                        issues.append("trigger HomeKit non trovato")
-                    }
-                } else {
-                    issues.append("trigger HomeKit assente")
-                }
-            }
-            if let sceneName = rule.actionSceneName {
-                if !sceneNames.contains(sceneName.lowercased()) {
-                    issues.append("scena non trovata")
-                }
-            } else if !rule.actionAccessoryID.isEmpty,
-                      !accessoryIDs.contains(rule.actionAccessoryID) {
-                issues.append("accessorio non trovato")
-            }
-            if rule.triggerType == "calendar", rule.triggerTime == nil {
-                issues.append("orario mancante")
-            }
-            if rule.triggerType == "characteristic",
-               (rule.triggerCharacteristicID == nil || rule.triggerThreshold == nil) {
-                issues.append("soglia sensore incompleta")
-            }
 
-            let status = issues.isEmpty ? "ok" : issues.joined(separator: ", ")
-            let sceneOrAction = rule.actionSceneName.map { "scena '\($0)'" } ?? automationActionSummary(rule)
+        for trigger in triggers.prefix(12) {
+            let status = trigger.isEnabled ? "ok" : "disabilitata"
             diagnosticItems.append(AutomationDiagnosticItem(
-                title: rule.name,
-                trigger: automationTriggerSummary(rule),
-                action: sceneOrAction,
-                mode: rule.executionModeLabel,
-                isEnabled: rule.isEnabled,
+                title: trigger.name,
+                trigger: "HomeKit",
+                action: "\(trigger.actionSets.count) scene",
+                mode: "HomeKit",
+                isEnabled: trigger.isEnabled,
                 status: status
             ))
-            lines.append("- \(rule.name): \(rule.isEnabled ? "attiva" : "spenta"), \(rule.executionModeLabel), trigger \(automationTriggerSummary(rule)), azione \(sceneOrAction), stato: \(status)")
+            lines.append("- \(trigger.name): \(trigger.isEnabled ? "attiva" : "spenta"), HomeKit, \(trigger.actionSets.count) scene, stato: \(status)")
         }
-        if rules.count > 12 {
-            lines.append("(+ altre \(rules.count - 12) automazioni)")
+
+        let remainingSlots = max(0, 12 - diagnosticItems.count)
+        for actionSet in actionSets.prefix(remainingSlots) {
+            diagnosticItems.append(AutomationDiagnosticItem(
+                title: actionSet.name,
+                trigger: "Scena",
+                action: "\(actionSet.actions.count) azioni",
+                mode: "HomeKit",
+                isEnabled: true,
+                status: "ok"
+            ))
+            lines.append("- \(actionSet.name): scena HomeKit, \(actionSet.actions.count) azioni")
+        }
+        if count > 12 {
+            lines.append("(+ altre \(count - 12) automazioni)")
         }
 
         lastActionPayload = .automationDiagnostics(
-            title: "Automazioni nell'app",
+            title: "Automazioni HomeKit",
             items: diagnosticItems
         )
 
         return lines.joined(separator: "\n")
-    }
-
-    private func automationTriggerSummary(_ rule: Rule) -> String {
-        switch rule.triggerType {
-        case "calendar":
-            let time = rule.triggerTime ?? "--:--"
-            let weekdays = rule.weekdaysArray
-            guard !weekdays.isEmpty else { return "ogni giorno alle \(time)" }
-            let symbols = Calendar.current.shortWeekdaySymbols
-            let days = weekdays.sorted().compactMap { day -> String? in
-                guard day >= 1, day <= symbols.count else { return nil }
-                return symbols[day - 1]
-            }.joined(separator: ", ")
-            return "\(days) alle \(time)"
-        case "characteristic":
-            guard let condition = rule.triggerCharacteristicID,
-                  let threshold = rule.triggerThreshold else {
-                return "soglia sensore"
-            }
-            let parts = condition.split(separator: "|").map(String.init)
-            let sensorRaw = parts.first ?? ""
-            let sensorName = SensorServiceType(rawValue: sensorRaw)?.displayName ?? sensorRaw
-            let room = parts.count > 1 ? " (\(parts[1]))" : ""
-            let direction = parts.count > 2 ? parts[2] : "below"
-            let symbol = direction == "above" ? ">" : "<"
-            return "\(sensorName)\(room) \(symbol) \(String(format: "%.1f", threshold))"
-        default:
-            return "manuale/in-app"
-        }
-    }
-
-    private func automationActionSummary(_ rule: Rule) -> String {
-        switch rule.actionType {
-        case "on": return "accendi"
-        case "off": return "spegni"
-        case "dim":
-            return "luminosità \(Int((rule.actionValue ?? 0.3) * 100))%"
-        case "setSpeed":
-            return "velocità \(Int((rule.actionValue ?? 0.5) * 100))%"
-        case "setTemp":
-            return "temperatura \(Int(rule.actionValue ?? 22.0))°C"
-        case "setMode": return "modalità"
-        case "open": return "apri"
-        case "close": return "chiudi"
-        default: return rule.actionType
-        }
     }
 
     // MARK: - controlAccessory (Phase 2 — write, reversible only)

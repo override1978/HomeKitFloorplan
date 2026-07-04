@@ -11,6 +11,9 @@ enum HomeAnomalyDetector {
         var outputLimit: Int = 40
         var minimumOpenContactDuration: TimeInterval = 15 * 60
         var elevatedOpenContactDuration: TimeInterval = 45 * 60
+        var escalatesOpenContactsAtNight: Bool = true
+        var nightStartHour: Int = 22
+        var nightEndHour: Int = 7
         var minimumHeatingDuration: TimeInterval = 90 * 60
         var minimumSummerHeatingDuration: TimeInterval = 10 * 60
         var minimumLongRunningPowerDuration: TimeInterval = 6 * 60 * 60
@@ -248,6 +251,7 @@ enum HomeAnomalyDetector {
             id: UUID(),
             kind: .anomaly,
             category: .environment,
+            signalType: signal.signalType,
             severity: severity,
             status: .active,
             title: title,
@@ -718,6 +722,7 @@ enum HomeAnomalyDetector {
             id: UUID(),
             kind: .anomaly,
             category: rule.category,
+            signalType: interval.signalType,
             severity: rule.severity,
             status: .active,
             title: rule.title,
@@ -753,6 +758,7 @@ enum HomeAnomalyDetector {
         switch interval.signalType {
         case .contact:
             let isElevated = interval.durationSeconds >= configuration.elevatedOpenContactDuration
+                || (configuration.escalatesOpenContactsAtNight && intervalTouchesNight(interval, configuration: configuration))
             let isWindowLike = containsAny(
                 interval.entityName + " " + (interval.roomName ?? ""),
                 tokens: ["window", "finestra", "porta finestra", "balcone"]
@@ -804,6 +810,45 @@ enum HomeAnomalyDetector {
         default:
             return nil
         }
+    }
+
+    /// True se il periodo di apertura ha toccato la fascia notturna in un punto qualsiasi,
+    /// non solo nell'istante di valutazione. Rende l'escalation "sticky": un contatto aperto
+    /// durante la notte resta elevato anche quando il ciclo gira dopo le 7:00 (niente flapping
+    /// di severity al confine giorno/notte) e viene colto anche se aperto di notte e valutato al mattino.
+    private static func intervalTouchesNight(_ interval: HomeStateInterval, configuration: Configuration) -> Bool {
+        let start = interval.startedAt
+        let end = interval.endedAt ?? Date()
+        guard end > start else {
+            return isNight(start, configuration: configuration)
+        }
+        if isNight(start, configuration: configuration) || isNight(end, configuration: configuration) {
+            return true
+        }
+        // Nessuno dei due estremi cade di notte: il periodo la tocca solo se contiene
+        // l'inizio della fascia notturna.
+        guard let nextNightStart = Calendar.current.nextDate(
+            after: start,
+            matching: DateComponents(hour: clampedHour(configuration.nightStartHour)),
+            matchingPolicy: .nextTime
+        ) else { return false }
+        return nextNightStart <= end
+    }
+
+    private static func isNight(_ date: Date, configuration: Configuration) -> Bool {
+        let hour = Calendar.current.component(.hour, from: date)
+        let startHour = clampedHour(configuration.nightStartHour)
+        let endHour = clampedHour(configuration.nightEndHour)
+
+        if startHour == endHour { return true }
+        if startHour < endHour {
+            return hour >= startHour && hour < endHour
+        }
+        return hour >= startHour || hour < endHour
+    }
+
+    private static func clampedHour(_ hour: Int) -> Int {
+        min(max(hour, 0), 23)
     }
 
     private static func displayEntityName(for interval: HomeStateInterval) -> String {

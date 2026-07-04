@@ -1,4 +1,5 @@
 import Foundation
+import HomeKit
 import SwiftData
 import Observation
 
@@ -163,6 +164,16 @@ final class ProactiveIntelligenceService {
         let anomalyInsights = anomalies.map(HomeInsightMapper.map)
         upsertHomeInsights(anomalyInsights)
         autoResolveSensorAnomalyInsights(currentSignals: anomalies)
+
+        // 5.5 Security safety events → store unificato (fumo, CO, perdite, serrature,
+        //     garage, allarme, telecamere offline). Contatti aperti, movimento e presenza
+        //     sono esclusi di proposito: già coperti dalle anomalie operative con policy
+        //     di durata — includerli qui creerebbe doppioni su dashboard e notifiche.
+        if let homeKit = homeKitService {
+            let securityInsights = securityHomeInsights(homeKitService: homeKit, context: context)
+            upsertHomeInsights(securityInsights)
+            autoResolveSecurityInsights(currentInsights: securityInsights)
+        }
 
         // 6. Home intelligence anomalies (central baseline domain)
         let homeInsightAnomalies = HomeInsightAnomalyPipeline.detect(
@@ -465,6 +476,79 @@ final class ProactiveIntelligenceService {
         }
     }
 
+    // MARK: - Security safety events
+
+    /// Simboli degli insight di sicurezza che hanno già una contropartita canonica
+    /// (contatti aperti, movimento, presenza): vanno esclusi dallo store unificato.
+    private static let canonicalOverlapSymbols: Set<String> = [
+        "door.left.hand.open",
+        "figure.walk.motion",
+        "person.fill"
+    ]
+
+    /// Eventi di sicurezza live (SecurityScoreService) destinati allo store unificato.
+    /// Rispetta la selezione utente dei sensori monitorati — stessa chiave AppStorage
+    /// della vista Sicurezza ("securityMonitoredUUIDs") — così i sensori esclusi
+    /// dall'utente non generano mai segnalazioni.
+    private func securityHomeInsights(
+        homeKitService: HomeKitService,
+        context: ContextSnapshot
+    ) -> [HomeInsight] {
+        let monitoredRaw = UserDefaults.standard.string(forKey: "securityMonitoredUUIDs") ?? ""
+        let monitoredUUIDs = Set(monitoredRaw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+
+        var sensors: [(accessory: HMAccessory, adapter: any AccessoryAdapter)] = []
+        var system: (accessory: HMAccessory, adapter: SecuritySystemAdapter)?
+
+        for accessory in homeKitService.allAccessories {
+            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService)
+            if let securitySystem = adapter as? SecuritySystemAdapter {
+                if system == nil { system = (accessory, securitySystem) }
+                continue
+            }
+            guard monitoredUUIDs.contains(accessory.uniqueIdentifier.uuidString),
+                  isUnifiedSecurityRelevant(adapter) else { continue }
+            sensors.append((accessory, adapter))
+        }
+
+        guard system != nil || !sensors.isEmpty else { return [] }
+
+        return SecurityScoreService.buildInsights(sensors: sensors, system: system, context: context)
+            .filter { !Self.canonicalOverlapSymbols.contains($0.sfSymbol) }
+            .map(HomeInsightMapper.map)
+    }
+
+    /// Adapter che producono eventi safety SENZA contropartita nel motore anomalie:
+    /// fumo/CO/perdite (SensorAdapter), serrature, garage, telecamere.
+    /// I sensori solo-contatto/movimento/presenza restano fuori: le loro segnalazioni
+    /// arrivano dalle anomalie operative (HomeStateInterval) con policy di durata.
+    private func isUnifiedSecurityRelevant(_ adapter: any AccessoryAdapter) -> Bool {
+        if let sensor = adapter as? SensorAdapter {
+            return sensor.smokeDetected != nil
+                || sensor.carbonMonoxideDetected != nil
+                || sensor.leakDetected != nil
+        }
+        return adapter is DoorLockAdapter
+            || adapter is GarageDoorAdapter
+            || adapter is CameraAdapter
+    }
+
+    private func autoResolveSecurityInsights(currentInsights: [HomeInsight]) {
+        let activeKeys = Set(currentInsights.map(\.dedupeKey))
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate {
+                $0.statusRaw == "active"
+            }
+        )
+        let persisted = (try? ctx.fetch(descriptor)) ?? []
+        for insight in persisted
+        where insight.sourceRecordType == String(describing: SecurityInsight.self)
+            && !activeKeys.contains(insight.dedupeKey) {
+            insight.markResolved()
+        }
+    }
+
     private func autoResolveSensorAnomalyInsights(currentSignals: [AnomalySignal]) {
         let activeKeys = Set(currentSignals.map(\.semanticKey))
         let ctx = modelContainer.mainContext
@@ -663,11 +747,33 @@ final class ProactiveIntelligenceService {
                 predicate: #Predicate { $0.dedupeKey == dedupeKey }
             )
             if let existing = (try? ctx.fetch(descriptor))?.first {
+                // update(from:) sovrascrive statusRaw con .active: preserva le scelte utente
+                // (dismissed/snoozed) entro la loro finestra, speculare a findRecentlyDismissed(12h).
+                let silencedStatus = userSilencedStatus(for: existing)
                 existing.update(from: insight)
+                if let silencedStatus {
+                    existing.statusRaw = silencedStatus
+                }
             } else {
                 ctx.insert(PersistedHomeInsight(insight: insight))
             }
         }
+    }
+
+    /// Ritorna lo status da preservare se l'utente ha silenziato l'insight di recente
+    /// (dismiss: 12h, snooze: 24h — allineato a snooze(days: 1)). Nil = può riattivarsi.
+    private func userSilencedStatus(for existing: PersistedHomeInsight) -> String? {
+        let window: TimeInterval
+        switch existing.statusRaw {
+        case HomeInsightStatus.dismissed.rawValue:
+            window = 12 * 3600
+        case HomeInsightStatus.snoozed.rawValue:
+            window = 24 * 3600
+        default:
+            return nil
+        }
+        guard Date().timeIntervalSince(existing.updatedAt) < window else { return nil }
+        return existing.statusRaw
     }
 
     private func processActiveHomeInsightNotifications(context: ContextSnapshot) async {
@@ -683,21 +789,88 @@ final class ProactiveIntelligenceService {
         let situations = HomeSituationResolver.resolve(insights)
         resolveSuppressedHomeSituationNotifications(allowedSituations: situations)
 
+        // Le consegne di sistema vengono raccolte e spedite in coda al ciclo:
+        // una sola push aggregata quando scattano più segnalazioni insieme.
+        var pendingDeliveries: [PendingSystemDelivery] = []
         for situation in situations {
             let insight = situation.primary
             guard !context.suppressNonCritical || insight.severity >= .high else { continue }
-            await processHomeSituation(situation, context: context)
+            if let pending = processHomeSituation(situation, context: context) {
+                pendingDeliveries.append(pending)
+            }
         }
+        await deliverSystemNotifications(pendingDeliveries, context: context)
     }
 
-    private func processHomeSituation(_ situation: HomeSituation, context: ContextSnapshot) async {
+    private struct PendingSystemDelivery {
+        let notification: ProactiveNotification
+        let insight: HomeInsight
+        let priority: NotificationPriority
+        let category: NotificationCategory
+    }
+
+    /// Consegna le push di sistema del ciclo: 1 pendente → push normale;
+    /// 2+ pendenti → un'unica push digest (in-app resta tutto granulare, il feed
+    /// contiene comunque le singole ProactiveNotification).
+    private func deliverSystemNotifications(
+        _ pending: [PendingSystemDelivery],
+        context: ContextSnapshot
+    ) async {
+        guard !pending.isEmpty else { return }
+
+        if pending.count == 1, let single = pending.first {
+            guard checkRateLimit(priority: single.priority, category: single.category) else { return }
+            await NotificationDeliveryOrchestrator.deliver(single.notification, context: context)
+            return
+        }
+
+        let ranked = pending.sorted { $0.priority > $1.priority }
+        guard let top = ranked.first else { return }
+        guard checkRateLimit(priority: top.priority, category: top.category) else { return }
+
+        let headlines = ranked.map(\.notification.headline)
+        var body = headlines.prefix(2).joined(separator: " · ")
+        if headlines.count > 2 {
+            body += " · " + String(
+                format: String(localized: "notif.digest.more", defaultValue: "+%lld more"),
+                headlines.count - 2
+            )
+        }
+
+        // Notifica transiente (non inserita nel context): esiste solo come push di sistema.
+        let digest = ProactiveNotification(
+            category: top.category,
+            priority: top.priority,
+            semanticKey: "homeSituationDigest|\(Int(Date().timeIntervalSince1970))",
+            headline: String(
+                format: String(localized: "notif.digest.title", defaultValue: "%lld home alerts"),
+                pending.count
+            ),
+            body: body,
+            currentValue: nil,
+            recommendation: nil,
+            sourceID: nil,
+            whyExplanation: nil,
+            score: intelligenceScore(for: top.insight)
+        )
+        digest.statusRaw = ProactiveNotificationStatus.live.rawValue
+        await NotificationDeliveryOrchestrator.deliver(digest, context: context)
+    }
+
+    /// Aggiorna/crea la ProactiveNotification della situation e ritorna la consegna
+    /// di sistema pendente (se dovuta). La consegna effettiva è centralizzata in
+    /// deliverSystemNotifications, che aggrega più push dello stesso ciclo in un digest.
+    private func processHomeSituation(
+        _ situation: HomeSituation,
+        context: ContextSnapshot
+    ) -> PendingSystemDelivery? {
         let insight = situation.primary
         let key = "homeSituation|\(situation.key)"
         let priority = notificationPriority(for: insight.severity)
         let category = notificationCategory(for: insight)
         let score = intelligenceScore(for: insight)
 
-        guard score.composite >= deliveryThreshold else { return }
+        guard score.composite >= deliveryThreshold else { return nil }
 
         if let existing = findLive(semanticKey: key) {
             let oldPriority = existing.priority
@@ -712,14 +885,18 @@ final class ProactiveIntelligenceService {
             existing.lastUpdatedAt = Date()
             existing.scoreData = try? JSONEncoder().encode(score)
             if priority > oldPriority,
-               shouldDeliverSystemNotification(for: insight, priority: priority),
-               checkRateLimit(priority: priority, category: category) {
-                await NotificationDeliveryOrchestrator.deliver(existing, context: context)
+               shouldDeliverSystemNotification(for: insight, priority: priority) {
+                return PendingSystemDelivery(
+                    notification: existing,
+                    insight: insight,
+                    priority: priority,
+                    category: category
+                )
             }
-            return
+            return nil
         }
 
-        guard !findRecentlyDismissed(semanticKey: key, withinHours: 12) else { return }
+        guard !findRecentlyDismissed(semanticKey: key, withinHours: 12) else { return nil }
 
         let notif = ProactiveNotification(
             category: category,
@@ -735,10 +912,15 @@ final class ProactiveIntelligenceService {
         )
         notif.statusRaw = ProactiveNotificationStatus.live.rawValue
         modelContainer.mainContext.insert(notif)
-        if shouldDeliverSystemNotification(for: insight, priority: priority),
-           checkRateLimit(priority: priority, category: category) {
-            await NotificationDeliveryOrchestrator.deliver(notif, context: context)
+        if shouldDeliverSystemNotification(for: insight, priority: priority) {
+            return PendingSystemDelivery(
+                notification: notif,
+                insight: insight,
+                priority: priority,
+                category: category
+            )
         }
+        return nil
     }
 
     private func notificationInsights(from insights: [HomeInsight]) -> [HomeInsight] {
@@ -926,11 +1108,14 @@ final class ProactiveIntelligenceService {
             return true
         }
 
+        // NOTA: AnomalySignal è escluso di proposito — ha il proprio auto-resolve dedicato
+        // (autoResolveSensorAnomalyInsights, step 5). Includerlo qui lo risolverebbe
+        // immediatamente ad ogni ciclo, perché le sue dedupeKey non sono mai
+        // tra quelle prodotte dalla pipeline anomalie (step 6).
         return insight.kindRaw == HomeInsightKind.anomaly.rawValue
         && (
             insight.sourceRecordType == String(describing: HomeSignalEvent.self)
             || insight.sourceRecordType == String(describing: HomeStateInterval.self)
-            || insight.sourceRecordType == String(describing: AnomalySignal.self)
         )
     }
 

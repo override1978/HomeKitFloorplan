@@ -23,8 +23,13 @@ enum HomeIncoherenceDetector {
         let context = modelContainer.mainContext
         let readings = fetchSensorReadings(context: context, limit: configuration.sensorReadingLimit)
         let accessories = homeKitService.allAccessories
+        let eventOpenContactIDs = activeOpenContactIDs(context: context)
         let liveStates = accessories.map { accessory in
-            LiveAccessoryState(accessory: accessory, adapter: AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService))
+            LiveAccessoryState(
+                accessory: accessory,
+                adapter: AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService),
+                eventSaysOpenContact: eventOpenContactIDs.contains(accessory.uniqueIdentifier.uuidString)
+            )
         }
 
         return hvacWindowOpen(states: liveStates)
@@ -40,49 +45,127 @@ enum HomeIncoherenceDetector {
         return (try? context.fetch(descriptor)) ?? []
     }
 
+    /// Contatti attualmente aperti secondo lo storico eventi. Integra la lettura live:
+    /// con cache HomeKit fredda (avvio/BGTask) `contactDetected` è nil e da solo
+    /// farebbe risultare tutto chiuso.
+    private static func activeOpenContactIDs(context: ModelContext) -> Set<String> {
+        var descriptor = FetchDescriptor<AccessoryEvent>(
+            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+        )
+        descriptor.fetchLimit = 300
+        let events = (try? context.fetch(descriptor)) ?? []
+        return Set(
+            HomeStateIntervalBuilder.build(from: events)
+                .filter { $0.isActive && $0.signalType == .contact && $0.stateRaw == "open" }
+                .compactMap(\.entityID)
+        )
+    }
+
     private static func hvacWindowOpen(states: [LiveAccessoryState]) -> [HomeInsight] {
+        let openContacts = states.filter(\.isOpenContact)
         let openContactsByRoom = Dictionary(
-            grouping: states.filter { $0.isOpenContact && $0.roomKey != nil },
+            grouping: openContacts.filter { $0.roomKey != nil },
             by: { $0.roomKey ?? "home" }
         )
         let activeClimate = states.filter(\.isClimateActive)
 
         return activeClimate.compactMap { climate -> HomeInsight? in
-            guard let roomKey = climate.roomKey,
-                  let contact = openContactsByRoom[roomKey]?.first else {
-                return nil
+            // 1) Match nella stessa stanza: massima confidenza, qualsiasi contatto.
+            if let roomKey = climate.roomKey,
+               let contact = openContactsByRoom[roomKey]?.first {
+                return hvacWindowOpenInsight(climate: climate, contact: contact, sameRoomKey: roomKey)
             }
 
-            let roomName = climate.roomName ?? contact.roomName
-            return HomeInsight(
-                kind: .incoherence,
-                category: .environment,
-                severity: .high,
-                title: String(localized: "homeInsight.incoherence.hvacWindowOpen.title", defaultValue: "Climate on with window open"),
-                message: localizedFormat(
-                    key: "homeInsight.incoherence.hvacWindowOpen.message",
-                    defaultValue: "%@: %@ is active while %@ is open.",
-                    roomName ?? "Home",
-                    climate.name,
-                    contact.name
-                ),
-                whyExplanation: String(localized: "homeInsight.incoherence.hvacWindowOpen.why", defaultValue: "Climate and an open contact are active in the same room."),
-                recommendation: String(localized: "homeInsight.incoherence.hvacWindowOpen.recommendation", defaultValue: "Turn off climate or close the window."),
-                sourceEntityID: climate.id,
-                sourceEntityName: climate.name,
-                relatedEntityID: contact.id,
-                relatedEntityName: contact.name,
-                relatedRecordType: String(describing: HMAccessory.self),
-                relatedRecordID: contact.id,
-                roomName: roomName,
-                confidence: 0.9,
-                score: HomeInsightScore(relevance: 0.9, confidence: 0.9, urgency: 0.85, actionability: 0.85, novelty: 0.6),
-                dedupeKey: "incoherence|hvacWindowOpen|\(roomKey)",
-                sourceRecordType: String(describing: HomeIncoherenceDetector.self),
-                sourceRecordID: climate.id,
-                syncPolicy: .localOnly
-            )
+            // 2) Fallback a livello casa: clima attivo + porta/finestra aperta altrove.
+            //    Copre il caso comune del termostato centrale (stanza diversa o nessuna stanza):
+            //    riscaldare o raffrescare con un infisso aperto disperde comunque, l'aria è condivisa.
+            //    Limitato ai contatti "window-like" per non scattare su ante/cassetti sensorizzati.
+            if let contact = openContacts.first(where: { $0.isWindowLikeContact && $0.roomKey != climate.roomKey }) {
+                return hvacWindowOpenInsight(climate: climate, contact: contact, sameRoomKey: nil)
+            }
+
+            return nil
         }
+    }
+
+    private static func hvacWindowOpenInsight(
+        climate: LiveAccessoryState,
+        contact: LiveAccessoryState,
+        sameRoomKey: String?
+    ) -> HomeInsight {
+        // Titolo specifico per modalità: "termostato su caldo" e "su freddo" sono
+        // incoerenze diverse agli occhi dell'utente.
+        let title: String
+        if climate.isHeating {
+            title = String(localized: "homeInsight.incoherence.heatingWindowOpen.title", defaultValue: "Heating on with window open")
+        } else if climate.isCooling {
+            title = String(localized: "homeInsight.incoherence.coolingWindowOpen.title", defaultValue: "Cooling on with window open")
+        } else {
+            title = String(localized: "homeInsight.incoherence.hvacWindowOpen.title", defaultValue: "Climate on with window open")
+        }
+
+        let roomName = climate.roomName ?? contact.roomName
+        let message: String
+        let why: String
+        let severity: HomeInsightSeverity
+        let confidence: Double
+        let dedupeKey: String
+
+        if let sameRoomKey {
+            message = localizedFormat(
+                key: "homeInsight.incoherence.hvacWindowOpen.message",
+                defaultValue: "%@: %@ is active while %@ is open.",
+                roomName ?? "Home",
+                climate.name,
+                contact.name
+            )
+            why = String(localized: "homeInsight.incoherence.hvacWindowOpen.why", defaultValue: "Climate and an open contact are active in the same room.")
+            severity = .high
+            confidence = 0.9
+            dedupeKey = "incoherence|hvacWindowOpen|\(sameRoomKey)"
+        } else {
+            message = localizedFormat(
+                key: "homeInsight.incoherence.hvacWindowOpenHome.message",
+                defaultValue: "%@ is active while %@ (%@) is open.",
+                climate.name,
+                contact.name,
+                contact.roomName ?? String(localized: "homeInsight.incoherence.hvacWindowOpenHome.unknownRoom", defaultValue: "another room")
+            )
+            why = String(localized: "homeInsight.incoherence.hvacWindowOpenHome.why", defaultValue: "Climate is running while a door or window is open elsewhere in the home.")
+            severity = .medium
+            confidence = 0.75
+            dedupeKey = "incoherence|hvacWindowOpenHome|\(climate.id)"
+        }
+
+        return HomeInsight(
+            kind: .incoherence,
+            category: .environment,
+            signalType: .active,
+            severity: severity,
+            title: title,
+            message: message,
+            whyExplanation: why,
+            recommendation: String(localized: "homeInsight.incoherence.hvacWindowOpen.recommendation", defaultValue: "Turn off climate or close the window."),
+            sourceEntityID: climate.id,
+            sourceEntityName: climate.name,
+            relatedEntityID: contact.id,
+            relatedEntityName: contact.name,
+            relatedRecordType: String(describing: HMAccessory.self),
+            relatedRecordID: contact.id,
+            roomName: roomName,
+            confidence: confidence,
+            score: HomeInsightScore(
+                relevance: sameRoomKey != nil ? 0.9 : 0.8,
+                confidence: confidence,
+                urgency: sameRoomKey != nil ? 0.85 : 0.7,
+                actionability: 0.85,
+                novelty: 0.6
+            ),
+            dedupeKey: dedupeKey,
+            sourceRecordType: String(describing: HomeIncoherenceDetector.self),
+            sourceRecordID: climate.id,
+            syncPolicy: .localOnly
+        )
     }
 
     private static func co2RisingWithoutVentilation(
@@ -106,6 +189,7 @@ enum HomeIncoherenceDetector {
             return HomeInsight(
                 kind: .incoherence,
                 category: .environment,
+                signalType: .carbonDioxide,
                 severity: trend.latest >= 1200 ? .high : .medium,
                 title: String(localized: "homeInsight.incoherence.co2NoVentilation.title", defaultValue: "CO2 rising without ventilation"),
                 message: localizedFormat(
@@ -149,6 +233,7 @@ enum HomeIncoherenceDetector {
             return HomeInsight(
                 kind: .incoherence,
                 category: .environment,
+                signalType: .temperature,
                 severity: .medium,
                 title: String(localized: "homeInsight.incoherence.coolingTempRising.title", defaultValue: "Ineffective cooling"),
                 message: localizedFormat(
@@ -199,11 +284,13 @@ private struct LiveAccessoryState {
     let roomKey: String?
     let isClimateActive: Bool
     let isCooling: Bool
+    let isHeating: Bool
     let isOpenContact: Bool
+    let isWindowLikeContact: Bool
     let isVentilationActive: Bool
 
     @MainActor
-    init(accessory: HMAccessory, adapter: any AccessoryAdapter) {
+    init(accessory: HMAccessory, adapter: any AccessoryAdapter, eventSaysOpenContact: Bool) {
         id = accessory.uniqueIdentifier.uuidString
         name = accessory.name
         let accessoryRoomName = accessory.room?.name
@@ -213,19 +300,29 @@ private struct LiveAccessoryState {
         if let thermostat = adapter as? ThermostatAdapter {
             isClimateActive = thermostat.isOn
             isCooling = thermostat.isOn && (thermostat.currentMode == .cool || thermostat.heaterCoolerState == 3)
+            isHeating = thermostat.isOn && (thermostat.currentMode == .heat || thermostat.heaterCoolerState == 2)
         } else if let thermostat = adapter as? LegacyThermostatAdapter {
             isClimateActive = thermostat.isOn
             isCooling = thermostat.isOn && (thermostat.currentMode == .cool || thermostat.heaterCoolerState == 3)
+            isHeating = thermostat.isOn && (thermostat.currentMode == .heat || thermostat.heaterCoolerState == 2)
         } else {
             isClimateActive = false
             isCooling = false
+            isHeating = false
         }
 
         if let sensor = adapter as? SensorAdapter {
-            isOpenContact = sensor.contactDetected == true
+            // Live vince quando disponibile; nil = valore non in cache → usa lo storico eventi.
+            isOpenContact = sensor.contactDetected ?? eventSaysOpenContact
         } else {
-            isOpenContact = false
+            isOpenContact = eventSaysOpenContact
         }
+
+        let normalizedName = "\(accessory.name) \(accessoryRoomName ?? "")"
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+        isWindowLikeContact = ["finestra", "window", "porta", "door", "balcone", "ingresso", "entrance"]
+            .contains { normalizedName.contains($0) }
 
         isVentilationActive = (adapter is FanAdapter || adapter is AirPurifierAdapter) && adapter.isOn
     }
