@@ -71,6 +71,7 @@ struct HomeIntelligenceDashboardView: View {
     @State private var reviewingOpportunity: AutomationOpportunity?
     @State private var reviewingHabitPattern: HabitPattern?
     @State private var isDiaryExpanded: Bool = false
+    @State private var selectedDomain: IntelligenceVisualDomain?
     @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
 
     // Static formatters — created once, reused on every render.
@@ -113,6 +114,14 @@ struct HomeIntelligenceDashboardView: View {
                     automationsService.refresh()
                 }
                 .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+            .sheet(item: $selectedDomain) { domain in
+                IntelligenceDomainDetailSheet(
+                    domain: domain,
+                    groups: insightGroups(for: domain)
+                )
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
         }
@@ -209,25 +218,41 @@ struct HomeIntelligenceDashboardView: View {
                 insight.kind == .incoherence ||
                 (insight.kind == .anomaly && insight.severity >= .medium)
             }
-            .sorted(by: insightSort)
+            .sorted(by: HomeSituationResolver.insightSort)
+    }
+
+    private var actionRequiredGroups: [HomeSituation] {
+        HomeSituationResolver.resolve(actionRequiredInsights)
     }
 
     private var activeIncoherences: [HomeInsight] {
         activeInsights
             .filter { $0.kind == .incoherence }
-            .sorted(by: insightSort)
+            .sorted(by: HomeSituationResolver.insightSort)
     }
 
     private var activeAnomalyEvidences: [HomeInsight] {
         activeInsights
-            .filter { $0.kind == .anomaly && $0.severity >= .medium }
-            .sorted(by: insightSort)
+            .filter { insight in
+                insight.kind == .anomaly &&
+                (insight.severity >= .medium || isOperationalEvidence(insight))
+            }
+            .sorted(by: HomeSituationResolver.insightSort)
+    }
+
+    private var activeIncoherenceGroups: [HomeSituation] {
+        HomeSituationResolver.resolve(activeIncoherences)
+    }
+
+    private var activeAnomalyEvidenceGroups: [HomeSituation] {
+        HomeSituationResolver.resolve(activeAnomalyEvidences)
     }
 
     private func intelligenceStatusHero(onOpenDiary: @escaping () -> Void) -> some View {
-        let count = actionRequiredInsights.count
-        let primary = actionRequiredInsights.first
-        let color = globalStatusColor(for: actionRequiredInsights)
+        let groups = actionRequiredGroups
+        let count = groups.count
+        let primary = groups.first?.primary
+        let color = globalStatusColor(for: groups.map(\.primary))
         let title = heroTitle(actionCount: count)
         let message = heroMessage(primary: primary, count: count)
 
@@ -243,7 +268,7 @@ struct HomeIntelligenceDashboardView: View {
 
     @ViewBuilder
     private var incoherenceSection: some View {
-        let incoherences = Array(activeIncoherences.prefix(3))
+        let incoherences = Array(activeIncoherenceGroups.prefix(3))
         if !incoherences.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 sectionHeader(
@@ -251,19 +276,19 @@ struct HomeIntelligenceDashboardView: View {
                     title: String(
                         format: String(localized: "intelligence.incoherence.section",
                                        defaultValue: "Incoherences · %d active"),
-                        activeIncoherences.count
+                        activeIncoherenceGroups.count
                     )
                 )
                 VStack(spacing: 10) {
-                    ForEach(incoherences, id: \.id) { insight in
-                        IncoherenceConflictCard(insight: insight)
+                    ForEach(incoherences) { group in
+                        IncoherenceConflictCard(insight: group.primary, sourceCount: group.sourceCount)
                     }
-                    if activeIncoherences.count > incoherences.count {
+                    if activeIncoherenceGroups.count > incoherences.count {
                         Text(
                             String(
                                 format: String(localized: "intelligence.incoherence.more",
                                                defaultValue: "%d more incoherences in the diary"),
-                                activeIncoherences.count - incoherences.count
+                                activeIncoherenceGroups.count - incoherences.count
                             )
                         )
                         .font(.caption.weight(.semibold))
@@ -278,7 +303,7 @@ struct HomeIntelligenceDashboardView: View {
 
     @ViewBuilder
     private var evidenceSection: some View {
-        let evidences = Array(activeAnomalyEvidences.prefix(3))
+        let evidences = Array(activeAnomalyEvidenceGroups.prefix(3))
         if !evidences.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 sectionHeader(
@@ -286,22 +311,23 @@ struct HomeIntelligenceDashboardView: View {
                     title: String(
                         format: String(localized: "intelligence.evidence.section",
                                        defaultValue: "Today's anomalies · %d active"),
-                        activeAnomalyEvidences.count
+                        activeAnomalyEvidenceGroups.count
                     )
                 )
                 VStack(spacing: 10) {
-                    ForEach(evidences, id: \.id) { insight in
+                    ForEach(evidences) { group in
                         IntelligenceEvidenceCard(
-                            insight: insight,
-                            domain: visualDomain(for: insight)
+                            insight: group.primary,
+                            domain: IntelligenceVisualDomain(group.domain),
+                            sourceCount: group.sourceCount
                         )
                     }
-                    if activeAnomalyEvidences.count > evidences.count {
+                    if activeAnomalyEvidenceGroups.count > evidences.count {
                         Text(
                             String(
                                 format: String(localized: "intelligence.evidence.more",
                                                defaultValue: "%d more evidence items in the diary"),
-                                activeAnomalyEvidences.count - evidences.count
+                                activeAnomalyEvidenceGroups.count - evidences.count
                             )
                         )
                         .font(.caption.weight(.semibold))
@@ -326,7 +352,12 @@ struct HomeIntelligenceDashboardView: View {
                 spacing: 10
             ) {
                 ForEach(summaries) { summary in
-                    IntelligenceDomainTile(summary: summary)
+                    Button {
+                        selectedDomain = summary.domain
+                    } label: {
+                        IntelligenceDomainTile(summary: summary)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -451,10 +482,24 @@ struct HomeIntelligenceDashboardView: View {
         return String(localized: "intelligence.trend.stable", defaultValue: "stable")
     }
 
+    private func isOperationalEvidence(_ insight: HomeInsight) -> Bool {
+        switch visualDomain(for: insight) {
+        case .lights, .loads, .security:
+            return true
+        case .air, .climate, .routine:
+            return false
+        }
+    }
+
+    private func insightGroups(for domain: IntelligenceVisualDomain) -> [HomeSituation] {
+        HomeSituationResolver.resolve(activeInsights)
+            .filter { IntelligenceVisualDomain($0.domain) == domain }
+    }
+
     private func intelligenceDomainSummaries() -> [IntelligenceDomainSummary] {
         IntelligenceVisualDomain.allCases.map { domain in
-            let matching = activeInsights.filter { visualDomain(for: $0) == domain }
-            let worst = matching.map(\.severity).max()
+            let matching = insightGroups(for: domain)
+            let worst = matching.map(\.primary.severity).max()
             return IntelligenceDomainSummary(
                 domain: domain,
                 count: matching.count,
@@ -484,60 +529,21 @@ struct HomeIntelligenceDashboardView: View {
     private func countInsights(domain: IntelligenceVisualDomain? = nil, daysAgo: Int) -> Int {
         let calendar = Calendar.current
         let target = calendar.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
-        return recentHomeInsights.filter { record in
+        let matching = recentHomeInsights.filter { record in
             calendar.isDate(record.updatedAt, inSameDayAs: target) &&
             record.statusRaw != HomeInsightStatus.expired.rawValue &&
-            record.statusRaw != HomeInsightStatus.resolved.rawValue &&
-            (domain == nil || visualDomain(for: record.toHomeInsight()) == domain)
-        }.count
+            record.statusRaw != HomeInsightStatus.resolved.rawValue
+        }
+        .map { $0.toHomeInsight() }
+        return HomeSituationResolver.resolve(matching)
+            .filter { domain == nil || IntelligenceVisualDomain($0.domain) == domain }
+            .count
     }
 
     private func visualDomain(for insight: HomeInsight) -> IntelligenceVisualDomain {
-        if insight.kind == .habit || insight.kind == .prediction || insight.category == .habits {
-            return .routine
-        }
-        if insight.category == .security || insight.category == .presence {
-            return .security
-        }
-        if insight.category == .lighting {
-            return .lights
-        }
-        if insight.category == .deviceHealth || insight.category == .maintenance {
-            return .loads
-        }
-
-        let text = [
-            insight.title,
-            insight.message,
-            insight.sourceEntityName ?? "",
-            insight.relatedEntityName ?? "",
-            insight.dedupeKey
-        ].joined(separator: " ")
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .lowercased()
-
-        if text.contains("co2") || text.contains("co₂") || text.contains("aria") || text.contains("air") || text.contains("pm") || text.contains("voc") {
-            return .air
-        }
-        if text.contains("clima") || text.contains("climate") || text.contains("cool") || text.contains("heat") || text.contains("raffresc") || text.contains("temperatura") {
-            return .climate
-        }
-        if text.contains("luce") || text.contains("light") {
-            return .lights
-        }
-        if text.contains("presa") || text.contains("power") || text.contains("load") || text.contains("carico") {
-            return .loads
-        }
-        return .routine
+        IntelligenceVisualDomain(HomeSituationResolver.domain(for: insight))
     }
 
-    private func insightSort(_ lhs: HomeInsight, _ rhs: HomeInsight) -> Bool {
-        if lhs.severity != rhs.severity { return lhs.severity > rhs.severity }
-        let lhsScore = lhs.score?.composite ?? lhs.confidence
-        let rhsScore = rhs.score?.composite ?? rhs.confidence
-        if lhsScore != rhsScore { return lhsScore > rhsScore }
-        return lhs.updatedAt > rhs.updatedAt
-    }
 
     // MARK: - Section: Assistant Summary
 
@@ -1670,6 +1676,17 @@ private enum IntelligenceVisualDomain: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    init(_ domain: HomeSituationDomain) {
+        switch domain {
+        case .air: self = .air
+        case .climate: self = .climate
+        case .lights: self = .lights
+        case .loads: self = .loads
+        case .security: self = .security
+        case .routine: self = .routine
+        }
+    }
+
     var localizedTitle: String {
         switch self {
         case .air: return String(localized: "intelligence.domain.air", defaultValue: "Air")
@@ -1822,6 +1839,7 @@ private struct IntelligenceStatusHeroCard: View {
 
 private struct IncoherenceConflictCard: View {
     let insight: HomeInsight
+    var sourceCount: Int = 1
 
     private var color: Color {
         switch insight.severity {
@@ -1871,6 +1889,10 @@ private struct IncoherenceConflictCard: View {
             }
 
             Spacer(minLength: 8)
+
+            if sourceCount > 1 {
+                SourceCountBadge(count: sourceCount)
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1883,6 +1905,7 @@ private struct IncoherenceConflictCard: View {
 private struct IntelligenceEvidenceCard: View {
     let insight: HomeInsight
     let domain: IntelligenceVisualDomain
+    var sourceCount: Int = 1
 
     private var severityColor: Color {
         switch insight.severity {
@@ -1934,7 +1957,9 @@ private struct IntelligenceEvidenceCard: View {
 
             Spacer(minLength: 0)
 
-            if let score = insight.score {
+            if sourceCount > 1 {
+                SourceCountBadge(count: sourceCount)
+            } else if let score = insight.score {
                 Text("\(Int(score.composite * 100))")
                     .font(.caption.weight(.bold).monospacedDigit())
                     .foregroundStyle(.secondary)
@@ -1946,6 +1971,24 @@ private struct IntelligenceEvidenceCard: View {
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
         )
+    }
+}
+
+private struct SourceCountBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text(
+            String(
+                format: String(localized: "intelligence.sources.count", defaultValue: "%d fonti"),
+                count
+            )
+        )
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color.secondary.opacity(0.12), in: Capsule())
     }
 }
 
@@ -1980,6 +2023,62 @@ private struct IntelligenceDomainTile: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.regularMaterial.opacity(summary.count == 0 ? 0.62 : 1.0))
         )
+    }
+}
+
+private struct IntelligenceDomainDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let domain: IntelligenceVisualDomain
+    let groups: [HomeSituation]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    if groups.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 28, weight: .semibold))
+                                .foregroundStyle(.green)
+                            Text(String(localized: "intelligence.domain.detail.empty.title", defaultValue: "No active anomalies"))
+                                .font(.headline.weight(.semibold))
+                            Text(String(localized: "intelligence.domain.detail.empty.message", defaultValue: "There are no active evidence items for this domain."))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(18)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
+                        )
+                    } else {
+                        ForEach(groups) { group in
+                            if group.primary.kind == .incoherence {
+                                IncoherenceConflictCard(insight: group.primary, sourceCount: group.sourceCount)
+                            } else {
+                                IntelligenceEvidenceCard(
+                                    insight: group.primary,
+                                    domain: domain,
+                                    sourceCount: group.sourceCount
+                                )
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .navigationTitle(domain.localizedTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(String(localized: "common.close", defaultValue: "Close")) {
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 

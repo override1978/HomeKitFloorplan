@@ -25,12 +25,16 @@ enum HomeInsightAnomalyPipeline {
         let dailySummaries = fetchDailySensorSummaries(context: context, limit: configuration.dailySummaryLimit)
         let accessorySummaries = fetchAccessoryUsageSummaries(context: context, limit: configuration.accessorySummaryLimit)
         let thresholds = fetchSensorAlertThresholds(context: context)
+        let operationalPolicy = OperationalIntelligencePolicy.load()
 
         let signals = sensorReadings.map(HomeSignalEventMapper.map) + liveSensorSignals(from: homeKitService)
-        let intervals = filterIntervalsAgainstLiveState(
-            HomeStateIntervalBuilder.build(from: accessoryEvents),
-            homeKitService: homeKitService
-        )
+        let intervals = operationalPolicy.isEnabled
+            ? filterIntervalsAgainstLiveState(
+                HomeStateIntervalBuilder.build(from: accessoryEvents),
+                homeKitService: homeKitService,
+                policy: operationalPolicy
+            )
+            : []
         let baselines = HomeBaselineEngine.buildMergedBaselines(
             dailySensorSummaries: dailySummaries,
             accessoryUsageSummaries: accessorySummaries,
@@ -42,11 +46,16 @@ enum HomeInsightAnomalyPipeline {
             signals: signals,
             baselines: baselines,
             thresholds: thresholds,
-            stateIntervals: intervals
+            stateIntervals: intervals,
+            configuration: HomeAnomalyDetector.Configuration(
+                minimumOpenContactDuration: operationalPolicy.minimumContactDuration,
+                elevatedOpenContactDuration: operationalPolicy.elevatedContactDuration,
+                minimumLongRunningPowerDuration: operationalPolicy.minimumPowerDuration
+            )
         )
         .filter { insight in
             insight.kind == .anomaly
-                && insight.severity >= configuration.minimumSeverity
+                && (insight.severity >= configuration.minimumSeverity || isOperationalIntervalInsight(insight))
                 && insight.confidence >= configuration.minimumConfidence
         }
     }
@@ -201,7 +210,8 @@ enum HomeInsightAnomalyPipeline {
 
     private static func filterIntervalsAgainstLiveState(
         _ intervals: [HomeStateInterval],
-        homeKitService: HomeKitService?
+        homeKitService: HomeKitService?,
+        policy: OperationalIntelligencePolicy
     ) -> [HomeStateInterval] {
         guard let homeKitService else { return intervals }
 
@@ -213,6 +223,10 @@ enum HomeInsightAnomalyPipeline {
         )
 
         return intervals.filter { interval in
+            if let entityID = interval.entityID,
+               policy.ignoredAccessoryIDs.contains(entityID) {
+                return false
+            }
             guard interval.isActive,
                   let entityID = interval.entityID,
                   let liveState = liveStateByAccessoryID[entityID] else {
@@ -223,6 +237,11 @@ enum HomeInsightAnomalyPipeline {
     }
 
     private static func liveIntervalState(for adapter: any AccessoryAdapter) -> LiveIntervalState {
+        if let sensor = adapter as? SensorAdapter,
+           let contactDetected = sensor.contactDetected {
+            return .contact(isOpen: contactDetected)
+        }
+
         if let thermostat = adapter as? ThermostatAdapter {
             return .climate(
                 isOn: thermostat.isOn,
@@ -242,14 +261,38 @@ enum HomeInsightAnomalyPipeline {
         return .generic(isOn: adapter.isOn)
     }
 
+    private static func isOperationalIntervalInsight(_ insight: HomeInsight) -> Bool {
+        guard insight.sourceRecordType == String(describing: HomeStateInterval.self) else {
+            return false
+        }
+
+        switch insight.category {
+        case .lighting, .deviceHealth, .maintenance, .security, .presence:
+            return true
+        case .environment, .weather, .habits, .automation, .system:
+            return false
+        }
+    }
+
     private enum LiveIntervalState {
         case generic(isOn: Bool)
+        case contact(isOpen: Bool)
         case climate(isOn: Bool, currentMode: HeaterCoolerMode, currentOperation: Int)
 
         func matches(_ interval: HomeStateInterval) -> Bool {
             switch self {
             case .generic(let isOn):
-                return isOn
+                switch interval.signalType {
+                case .power, .active, .motion:
+                    return isOn
+                case .contact:
+                    return false
+                default:
+                    return true
+                }
+            case .contact(let isOpen):
+                guard interval.signalType == .contact else { return true }
+                return interval.stateRaw == "open" && isOpen
             case .climate(let isOn, let currentMode, let currentOperation):
                 guard isOn else { return false }
                 guard interval.stateRaw == "heating" else { return true }

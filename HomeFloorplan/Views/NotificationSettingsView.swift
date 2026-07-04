@@ -82,6 +82,18 @@ struct NotificationSettingsView: View {
                         .padding(.vertical, 3)
                         .background(BrandColor.primary.opacity(0.12), in: Capsule())
                 }
+
+                NavigationLink {
+                    OperationalIntelligencePolicySettingsView()
+                } label: {
+                    notificationLinkRow(
+                        icon: "slider.horizontal.3",
+                        title: String(localized: "settings.notifications.operationalPolicy.link", defaultValue: "Operational Intelligence"),
+                        subtitle: String(localized: "settings.notifications.operationalPolicy.subtitle", defaultValue: "Rules for lights, plugs, doors, windows, and security evidence."),
+                        status: String(localized: "settings.status.configurable", defaultValue: "Configurable"),
+                        statusColor: BrandColor.primary
+                    )
+                }
             } header: {
                 Text(String(localized: "settings.notifications.intelligence.header", defaultValue: "Home Intelligence"))
             } footer: {

@@ -759,12 +759,13 @@ enum HomeAnomalyDetector {
             )
             return IntervalRule(
                 minimumDuration: configuration.minimumOpenContactDuration,
-                title: "Contact left open",
+                title: contactOpenTitle(isWindowLike: isWindowLike),
                 category: isWindowLike ? .security : .presence,
                 severity: isElevated ? .medium : .low,
-                recommendation: isWindowLike ? "Check the window or exterior door state." : "Monitor whether this contact remains open.",
+                recommendation: contactOpenRecommendation(isWindowLike: isWindowLike),
                 confidence: isElevated ? 0.75 : 0.55,
-                basis: "contact policy"
+                basis: contactOpenBasis(isWindowLike: isWindowLike),
+                stateDescription: contactOpenStateDescription(isWindowLike: isWindowLike)
             )
         case .active where interval.stateRaw == "heating":
             let isSummer = Calendar.current.component(.month, from: Date()).isSummerMonth
@@ -788,14 +789,17 @@ enum HomeAnomalyDetector {
                 )
             } ?? configuration.minimumLongRunningPowerDuration
             let usesBaseline = baselineDuration != nil
+            let role = powerRole(for: interval)
+            let isElevated = interval.durationSeconds >= minimumDuration * 2
             return IntervalRule(
                 minimumDuration: minimumDuration,
-                title: "Long running power state",
-                category: .lighting,
-                severity: .low,
-                recommendation: "Review whether this device should still be on.",
+                title: powerTitle(for: role),
+                category: powerCategory(for: role),
+                severity: isElevated ? .medium : .low,
+                recommendation: powerRecommendation(for: role),
                 confidence: usesBaseline ? min(0.8, max(0.55, durationBaseline?.confidence ?? 0.55)) : 0.55,
-                basis: usesBaseline ? "duration baseline" : "fallback policy"
+                basis: usesBaseline ? powerBaselineBasis(for: role) : powerFallbackBasis(for: role),
+                stateDescription: powerStateDescription(for: role)
             )
         default:
             return nil
@@ -917,6 +921,170 @@ enum HomeAnomalyDetector {
         }
     }
 
+    private static func contactOpenTitle(isWindowLike: Bool) -> String {
+        if isItalian {
+            return isWindowLike ? "Finestra o porta aperta" : "Contatto aperto da verificare"
+        }
+        return isWindowLike ? "Window or door left open" : "Contact left open"
+    }
+
+    private static func contactOpenRecommendation(isWindowLike: Bool) -> String {
+        if isItalian {
+            return isWindowLike ? "Controlla se va chiusa o se deve restare aperta." : "Verifica se il contatto aperto è previsto."
+        }
+        return isWindowLike ? "Check whether it should be closed or intentionally open." : "Check whether this open contact is expected."
+    }
+
+    private static func contactOpenBasis(isWindowLike: Bool) -> String {
+        if isItalian {
+            return isWindowLike ? "contatto esterno aperto" : "contatto aperto"
+        }
+        return isWindowLike ? "open exterior contact policy" : "open contact policy"
+    }
+
+    private static func contactOpenStateDescription(isWindowLike: Bool) -> String {
+        if isItalian {
+            return isWindowLike ? "aperta" : "aperto"
+        }
+        return "open"
+    }
+
+    private static func powerTitle(for role: PowerRole) -> String {
+        if isItalian {
+            switch role {
+            case .light:
+                return "Luce accesa da molto"
+            case .outlet:
+                return "Presa attiva da molto"
+            case .generic:
+                return "Dispositivo acceso da molto"
+            }
+        }
+
+        switch role {
+        case .light:
+            return "Light on for a long time"
+        case .outlet:
+            return "Outlet active for a long time"
+        case .generic:
+            return "Device on for a long time"
+        }
+    }
+
+    private static func powerRecommendation(for role: PowerRole) -> String {
+        if isItalian {
+            switch role {
+            case .light:
+                return "Controlla se la luce deve restare accesa."
+            case .outlet:
+                return "Controlla il carico collegato e spegnilo se non serve."
+            case .generic:
+                return "Controlla se il dispositivo deve restare acceso."
+            }
+        }
+
+        switch role {
+        case .light:
+            return "Check whether the light should still be on."
+        case .outlet:
+            return "Check the connected load and turn it off if not needed."
+        case .generic:
+            return "Check whether the device should still be on."
+        }
+    }
+
+    private static func powerBaselineBasis(for role: PowerRole) -> String {
+        if isItalian {
+            switch role {
+            case .light:
+                return "durata abituale della luce"
+            case .outlet:
+                return "durata abituale della presa"
+            case .generic:
+                return "durata abituale del dispositivo"
+            }
+        }
+
+        switch role {
+        case .light:
+            return "usual light duration"
+        case .outlet:
+            return "usual outlet duration"
+        case .generic:
+            return "usual device duration"
+        }
+    }
+
+    private static func powerFallbackBasis(for role: PowerRole) -> String {
+        if isItalian {
+            switch role {
+            case .light:
+                return "policy luce accesa"
+            case .outlet:
+                return "policy presa attiva"
+            case .generic:
+                return "policy dispositivo acceso"
+            }
+        }
+
+        switch role {
+        case .light:
+            return "light-on policy"
+        case .outlet:
+            return "outlet-active policy"
+        case .generic:
+            return "device-on policy"
+        }
+    }
+
+    private static func powerStateDescription(for role: PowerRole) -> String {
+        if isItalian {
+            switch role {
+            case .light:
+                return "accesa"
+            case .outlet:
+                return "attiva"
+            case .generic:
+                return "acceso"
+            }
+        }
+
+        switch role {
+        case .light:
+            return "on"
+        case .outlet:
+            return "active"
+        case .generic:
+            return "on"
+        }
+    }
+
+    private static func powerCategory(for role: PowerRole) -> HomeInsightCategory {
+        switch role {
+        case .light:
+            return .lighting
+        case .outlet, .generic:
+            return .deviceHealth
+        }
+    }
+
+    private static func powerRole(for interval: HomeStateInterval) -> PowerRole {
+        let name = "\(interval.entityName) \(interval.roomName ?? "")"
+        if containsAny(
+            name,
+            tokens: ["luce", "lamp", "light", "bulb", "lampada", "faretti", "strip"]
+        ) {
+            return .light
+        }
+        if containsAny(
+            name,
+            tokens: ["presa", "plug", "outlet", "socket", "carico", "load", "power"]
+        ) {
+            return .outlet
+        }
+        return .generic
+    }
+
     private static func durationDescription(_ duration: TimeInterval) -> String {
         let minutes = max(1, Int(duration.rounded()) / 60)
         let hours = minutes / 60
@@ -1008,6 +1176,12 @@ enum HomeAnomalyDetector {
         case thermostat
         case thermostaticValve
         case airConditioner
+    }
+
+    private enum PowerRole {
+        case light
+        case outlet
+        case generic
     }
 
     private static var isItalian: Bool {
