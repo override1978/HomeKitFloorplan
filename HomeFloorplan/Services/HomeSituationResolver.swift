@@ -8,7 +8,7 @@ enum HomeSituationDomain: String, Codable, Hashable, CaseIterable, Identifiable 
     case security
     case routine
 
-    var id: String { rawValue }
+    nonisolated var id: String { rawValue }
 }
 
 struct HomeSituation: Identifiable, Hashable {
@@ -16,14 +16,13 @@ struct HomeSituation: Identifiable, Hashable {
     let domain: HomeSituationDomain
     let insights: [HomeInsight]
 
-    var id: String { key }
-    var primary: HomeInsight { insights[0] }
-    var sourceCount: Int { insights.count }
+    nonisolated var id: String { key }
+    nonisolated var primary: HomeInsight { insights[0] }
+    nonisolated var sourceCount: Int { insights.count }
 }
 
-@MainActor
 enum HomeSituationResolver {
-    static func resolve(_ insights: [HomeInsight]) -> [HomeSituation] {
+    nonisolated static func resolve(_ insights: [HomeInsight]) -> [HomeSituation] {
         let sorted = insights.sorted(by: insightSort)
         let grouped = Dictionary(grouping: sorted, by: aggregateKey(for:))
 
@@ -40,7 +39,7 @@ enum HomeSituationResolver {
         }
     }
 
-    static func domain(for insight: HomeInsight) -> HomeSituationDomain {
+    nonisolated static func domain(for insight: HomeInsight) -> HomeSituationDomain {
         let text = normalized([
             insight.title,
             insight.message,
@@ -76,15 +75,37 @@ enum HomeSituationResolver {
         return .routine
     }
 
-    static func insightSort(_ lhs: HomeInsight, _ rhs: HomeInsight) -> Bool {
-        if lhs.severity != rhs.severity { return lhs.severity > rhs.severity }
-        let lhsScore = lhs.score?.composite ?? lhs.confidence
-        let rhsScore = rhs.score?.composite ?? rhs.confidence
+    nonisolated static func insightSort(_ lhs: HomeInsight, _ rhs: HomeInsight) -> Bool {
+        let lhsSeverity = severityRank(lhs.severity)
+        let rhsSeverity = severityRank(rhs.severity)
+        if lhsSeverity != rhsSeverity { return lhsSeverity > rhsSeverity }
+        let lhsScore = compositeScore(lhs.score) ?? lhs.confidence
+        let rhsScore = compositeScore(rhs.score) ?? rhs.confidence
         if lhsScore != rhsScore { return lhsScore > rhsScore }
         return lhs.updatedAt > rhs.updatedAt
     }
 
-    private static func aggregateKey(for insight: HomeInsight) -> String {
+    nonisolated private static func severityRank(_ severity: HomeInsightSeverity) -> Int {
+        switch severity {
+        case .info: return 0
+        case .low: return 1
+        case .medium: return 2
+        case .high: return 3
+        case .critical: return 4
+        }
+    }
+
+    nonisolated private static func compositeScore(_ score: HomeInsightScore?) -> Double? {
+        guard let score else { return nil }
+        return min(1.0,
+                   0.25 * score.relevance +
+                   0.25 * score.confidence +
+                   0.20 * score.urgency +
+                   0.20 * score.actionability +
+                   0.10 * score.novelty)
+    }
+
+    nonisolated private static func aggregateKey(for insight: HomeInsight) -> String {
         let domain = domain(for: insight)
         let room = normalized(insight.roomName ?? insight.sourceEntityName ?? "")
         let text = normalized([
@@ -97,7 +118,7 @@ enum HomeSituationResolver {
         return "\(domain.rawValue)|\(room)|\(issue)"
     }
 
-    private static func aggregateIssueToken(for text: String, domain: HomeSituationDomain) -> String {
+    nonisolated private static func aggregateIssueToken(for text: String, domain: HomeSituationDomain) -> String {
         if text.contains("co2") || text.contains("co₂") || text.contains("qualita-aria") || text.contains("air-quality") {
             return "air-quality"
         }
@@ -116,7 +137,7 @@ enum HomeSituationResolver {
         return "\(domain.rawValue)-\(text.prefix(28))"
     }
 
-    private static func normalized(_ value: String) -> String {
+    nonisolated private static func normalized(_ value: String) -> String {
         value
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
             .lowercased()

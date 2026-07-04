@@ -258,56 +258,6 @@ final class ProactiveIntelligenceService {
 
     // MARK: - Unified Home Insight Delivery
 
-    private func processHomeInsightAnomaly(_ insight: HomeInsight, context: ContextSnapshot) async {
-        let key = "homeInsight|\(insight.dedupeKey)"
-        let priority = notificationPriority(for: insight.severity)
-        let category = notificationCategory(for: insight)
-        let score = intelligenceScore(for: insight)
-
-        guard score.composite >= deliveryThreshold else { return }
-
-        if let existing = findLive(semanticKey: key) {
-            let oldPriority = existing.priority
-            existing.headline = insight.title
-            existing.body = insight.message
-            existing.currentValue = currentValueText(for: insight)
-            existing.priorityRaw = priority.rawValue
-            existing.recommendation = insight.recommendation
-            existing.whyExplanation = insight.whyExplanation
-            existing.sourceID = insight.sourceRecordID ?? insight.sourceEntityID
-            existing.status = .updated
-            existing.lastUpdatedAt = Date()
-            existing.scoreData = try? JSONEncoder().encode(score)
-            if priority > oldPriority,
-               shouldDeliverSystemNotification(for: insight, priority: priority),
-               checkRateLimit(priority: priority, category: category) {
-                await NotificationDeliveryOrchestrator.deliver(existing, context: context)
-            }
-            return
-        }
-
-        guard !findRecentlyDismissed(semanticKey: key, withinHours: 12) else { return }
-
-        let notif = ProactiveNotification(
-            category: category,
-            priority: priority,
-            semanticKey: key,
-            headline: insight.title,
-            body: insight.message,
-            currentValue: currentValueText(for: insight),
-            recommendation: insight.recommendation,
-            sourceID: insight.sourceRecordID ?? insight.sourceEntityID,
-            whyExplanation: insight.whyExplanation,
-            score: score
-        )
-        notif.statusRaw = ProactiveNotificationStatus.live.rawValue
-        modelContainer.mainContext.insert(notif)
-        if shouldDeliverSystemNotification(for: insight, priority: priority),
-           checkRateLimit(priority: priority, category: category) {
-            await NotificationDeliveryOrchestrator.deliver(notif, context: context)
-        }
-    }
-
     private func currentValueText(for insight: HomeInsight) -> String? {
         let message = insight.message.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -486,7 +436,8 @@ final class ProactiveIntelligenceService {
     }
 
     private func autoResolveHomeInsightAnomalies(currentInsights: [HomeInsight]) {
-        let activeKeys = Set(currentInsights.map { "homeInsight|\($0.dedupeKey)" })
+        let activeSituations = HomeSituationResolver.resolve(currentInsights)
+        let activeKeys = Set(activeSituations.map { "homeSituation|\($0.key)" })
         let activeDedupeKeys = Set(currentInsights.map(\.dedupeKey))
         let ctx = modelContainer.mainContext
         let descriptor = FetchDescriptor<ProactiveNotification>(
@@ -495,7 +446,9 @@ final class ProactiveIntelligenceService {
             }
         )
         let live = (try? ctx.fetch(descriptor)) ?? []
-        for notif in live where notif.semanticKey.hasPrefix("homeInsight|") && !activeKeys.contains(notif.semanticKey) {
+        for notif in live
+        where (notif.semanticKey.hasPrefix("homeInsight|") || notif.semanticKey.hasPrefix("homeSituation|"))
+            && !activeKeys.contains(notif.semanticKey) {
             notif.status = .resolved
             notif.resolvedAt = Date()
             notif.lastUpdatedAt = Date()
@@ -727,11 +680,64 @@ final class ProactiveIntelligenceService {
         )
         let activeInsights = (try? ctx.fetch(descriptor)) ?? []
         let insights = notificationInsights(from: activeInsights.map { $0.toHomeInsight() })
-        resolveSuppressedHomeInsightNotifications(allowedInsights: insights)
+        let situations = HomeSituationResolver.resolve(insights)
+        resolveSuppressedHomeSituationNotifications(allowedSituations: situations)
 
-        for insight in insights {
+        for situation in situations {
+            let insight = situation.primary
             guard !context.suppressNonCritical || insight.severity >= .high else { continue }
-            await processHomeInsightAnomaly(insight, context: context)
+            await processHomeSituation(situation, context: context)
+        }
+    }
+
+    private func processHomeSituation(_ situation: HomeSituation, context: ContextSnapshot) async {
+        let insight = situation.primary
+        let key = "homeSituation|\(situation.key)"
+        let priority = notificationPriority(for: insight.severity)
+        let category = notificationCategory(for: insight)
+        let score = intelligenceScore(for: insight)
+
+        guard score.composite >= deliveryThreshold else { return }
+
+        if let existing = findLive(semanticKey: key) {
+            let oldPriority = existing.priority
+            existing.headline = insight.title
+            existing.body = insight.message
+            existing.currentValue = currentValueText(for: insight)
+            existing.priorityRaw = priority.rawValue
+            existing.recommendation = insight.recommendation
+            existing.whyExplanation = insight.whyExplanation
+            existing.sourceID = insight.sourceRecordID ?? insight.sourceEntityID
+            existing.status = .updated
+            existing.lastUpdatedAt = Date()
+            existing.scoreData = try? JSONEncoder().encode(score)
+            if priority > oldPriority,
+               shouldDeliverSystemNotification(for: insight, priority: priority),
+               checkRateLimit(priority: priority, category: category) {
+                await NotificationDeliveryOrchestrator.deliver(existing, context: context)
+            }
+            return
+        }
+
+        guard !findRecentlyDismissed(semanticKey: key, withinHours: 12) else { return }
+
+        let notif = ProactiveNotification(
+            category: category,
+            priority: priority,
+            semanticKey: key,
+            headline: insight.title,
+            body: insight.message,
+            currentValue: currentValueText(for: insight),
+            recommendation: insight.recommendation,
+            sourceID: insight.sourceRecordID ?? insight.sourceEntityID,
+            whyExplanation: insight.whyExplanation,
+            score: score
+        )
+        notif.statusRaw = ProactiveNotificationStatus.live.rawValue
+        modelContainer.mainContext.insert(notif)
+        if shouldDeliverSystemNotification(for: insight, priority: priority),
+           checkRateLimit(priority: priority, category: category) {
+            await NotificationDeliveryOrchestrator.deliver(notif, context: context)
         }
     }
 
@@ -753,8 +759,8 @@ final class ProactiveIntelligenceService {
         }
     }
 
-    private func resolveSuppressedHomeInsightNotifications(allowedInsights: [HomeInsight]) {
-        let allowedKeys = Set(allowedInsights.map { "homeInsight|\($0.dedupeKey)" })
+    private func resolveSuppressedHomeSituationNotifications(allowedSituations: [HomeSituation]) {
+        let allowedKeys = Set(allowedSituations.map { "homeSituation|\($0.key)" })
         let ctx = modelContainer.mainContext
         let descriptor = FetchDescriptor<ProactiveNotification>(
             predicate: #Predicate {
@@ -765,10 +771,8 @@ final class ProactiveIntelligenceService {
         let now = Date()
 
         for notification in live
-        where notification.semanticKey.hasPrefix("homeInsight|")
-            && !allowedKeys.contains(notification.semanticKey)
-            && (notification.categoryRaw == NotificationCategory.environment.rawValue
-                || notification.categoryRaw == NotificationCategory.hvac.rawValue) {
+        where (notification.semanticKey.hasPrefix("homeInsight|") || notification.semanticKey.hasPrefix("homeSituation|"))
+            && !allowedKeys.contains(notification.semanticKey) {
             notification.status = .resolved
             notification.resolvedAt = now
             notification.lastUpdatedAt = now
@@ -866,6 +870,11 @@ final class ProactiveIntelligenceService {
         status: HomeInsightStatus,
         resolvedAt: Date? = nil
     ) {
+        if let situationKey = homeSituationKey(from: notification.semanticKey) {
+            updatePersistedHomeSituationStatus(situationKey: situationKey, status: status, resolvedAt: resolvedAt)
+            return
+        }
+
         let dedupeKey = homeInsightDedupeKey(from: notification.semanticKey) ?? notification.semanticKey
         let ctx = modelContainer.mainContext
         let descriptor = FetchDescriptor<PersistedHomeInsight>(
@@ -875,6 +884,34 @@ final class ProactiveIntelligenceService {
         insight.statusRaw = status.rawValue
         insight.resolvedAt = resolvedAt
         insight.updatedAt = Date()
+    }
+
+    private func updatePersistedHomeSituationStatus(
+        situationKey: String,
+        status: HomeInsightStatus,
+        resolvedAt: Date?
+    ) {
+        let ctx = modelContainer.mainContext
+        let descriptor = FetchDescriptor<PersistedHomeInsight>(
+            predicate: #Predicate { $0.statusRaw == "active" }
+        )
+        let records = (try? ctx.fetch(descriptor)) ?? []
+        let situations = HomeSituationResolver.resolve(records.map { $0.toHomeInsight() })
+        guard let situation = situations.first(where: { $0.key == situationKey }) else { return }
+
+        let dedupeKeys = Set(situation.insights.map(\.dedupeKey))
+        let now = Date()
+        for record in records where dedupeKeys.contains(record.dedupeKey) {
+            record.statusRaw = status.rawValue
+            record.resolvedAt = resolvedAt
+            record.updatedAt = now
+        }
+    }
+
+    private func homeSituationKey(from semanticKey: String) -> String? {
+        let prefix = "homeSituation|"
+        guard semanticKey.hasPrefix(prefix) else { return nil }
+        return String(semanticKey.dropFirst(prefix.count))
     }
 
     private func homeInsightDedupeKey(from semanticKey: String) -> String? {

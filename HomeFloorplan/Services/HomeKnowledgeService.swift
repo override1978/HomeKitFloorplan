@@ -185,21 +185,22 @@ final class HomeKnowledgeService {
                 SensorReadingLite(serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, value: $0.value)
             }
 
-            // Recent environmental AI insights from the unified home insight store.
+            // Recent environmental situations from the unified home insight store.
             let environmentCategory = HomeInsightCategory.environment.rawValue
             let insightDesc = FetchDescriptor<PersistedHomeInsight>(
                 predicate: #Predicate { $0.createdAt >= cutoff7 && $0.categoryRaw == environmentCategory },
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
             )
             let rawInsights   = (try? ctx.fetch(insightDesc)) ?? []
-            let recentInsights = rawInsights.map { r in
-                HomeInsightSummary(
-                    id: r.id,
-                    roomName: r.roomName ?? "",
-                    message: r.message,
-                    severityRaw: r.severityRaw,
-                    generatedAt: r.createdAt,
-                    statusRaw: r.statusRaw
+            let recentInsights = HomeSituationResolver.resolve(rawInsights.map { $0.toHomeInsight() }).map { situation in
+                let insight = situation.primary
+                return HomeInsightSummary(
+                    id: insight.id,
+                    roomName: insight.roomName ?? "",
+                    message: insight.message,
+                    severityRaw: insight.severity.rawValue,
+                    generatedAt: insight.createdAt,
+                    statusRaw: insight.status.rawValue
                 )
             }
 
