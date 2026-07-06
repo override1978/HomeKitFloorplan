@@ -9,6 +9,13 @@ import UIKit
 @MainActor
 final class NextActionExecutor {
 
+    /// Le scritture dirette via `characteristic.writeValue` bypassano HomeKitService.write
+    /// (aggiornamento cache characteristicValues + registrazione AccessoryEvent + activity log):
+    /// il risultato era che dopo una CTA "Spegni" l'anomalia restava attiva fino alla notifica
+    /// esterna di HomeKit. Iniettato una volta da HomeFloorplanApp; quando presente,
+    /// tutte le scritture passano dal servizio.
+    static weak var homeKit: HomeKitService?
+
     // HAP UUID costanti (allineate con AccessoryEventStore)
     private static let onUUID                  = "00000025-0000-1000-8000-0026bb765291"
     private static let activeUUID              = "000000b0-0000-1000-8000-0026bb765291"
@@ -26,6 +33,14 @@ final class NextActionExecutor {
     private static let garageDoorTargetUUID    = "00000032-0000-1000-8000-0026bb765291"
     private static let securitySystemServiceType = "0000007E-0000-1000-8000-0026BB765291"
     private static let valveServiceType = ValveAdapter.serviceType.lowercased()
+
+    private static func write(_ value: Any, to characteristic: HMCharacteristic) async throws {
+        if let homeKit {
+            try await homeKit.write(value, to: characteristic)
+        } else {
+            try await characteristic.writeValue(value)
+        }
+    }
 
     // MARK: - Execute
 
@@ -50,7 +65,7 @@ final class NextActionExecutor {
         let value = targetValue(for: actionType, accessoryValue: action.accessoryValue, accessory: accessory)
 
         do {
-            try await characteristic.writeValue(value)
+            try await Self.write(value, to: characteristic)
 
             // Se setMode ha una temperatura secondaria, scrivila subito dopo
             if actionType == "setMode", let temp = action.accessoryValue2 {
@@ -58,7 +73,7 @@ final class NextActionExecutor {
                 for char in allChars {
                     let t = char.characteristicType.lowercased()
                     if t == Self.heatingThresholdUUID || t == Self.coolingThresholdUUID {
-                        try? await char.writeValue(temp)
+                        try? await Self.write(temp, to: char)
                     }
                 }
             }

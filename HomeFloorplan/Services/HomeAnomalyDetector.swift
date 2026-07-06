@@ -610,7 +610,8 @@ enum HomeAnomalyDetector {
     }
 
     private static func displayEntityName(for signal: HomeSignalEvent) -> String {
-        if let roomName = signal.roomName, !roomName.isEmpty {
+        if let roomName = signal.roomName, !roomName.isEmpty,
+           !signal.entityName.localizedCaseInsensitiveContains(roomName) {
             return "\(roomName) \(signal.entityName)"
         }
         return signal.entityName
@@ -707,10 +708,14 @@ enum HomeAnomalyDetector {
         let message: String
         let why: String
         if interval.isActive {
-            message = isItalian ? "\(entityName) è attualmente \(stateDescription)." : "\(entityName) is currently \(stateDescription)."
+            // Lo start viene dagli eventi o dal first-seen live: la durata è una stima
+            // per difetto, quindi "da almeno".
+            message = isItalian
+                ? "\(entityName) è \(stateDescription) da almeno \(durationText)."
+                : "\(entityName) has been \(stateDescription) for at least \(durationText)."
             why = isItalian
-                ? "Lo stato \(stateDescription) supera la policy \(rule.basis) di \(durationDescription(rule.minimumDuration)). La durata esatta non viene mostrata perché l'intervallo aperto dipende dallo storico eventi."
-                : "The current \(stateDescription) state exceeds the \(durationDescription(rule.minimumDuration)) \(rule.basis). Exact duration is not shown because the open interval depends on event history."
+                ? "Lo stato \(stateDescription) dura da almeno \(durationText) e supera la policy \(rule.basis) di \(durationDescription(rule.minimumDuration))."
+                : "The \(stateDescription) state has lasted at least \(durationText), exceeding the \(durationDescription(rule.minimumDuration)) \(rule.basis)."
         } else {
             message = isItalian ? "\(entityName) è rimasto \(stateDescription) per \(durationText)." : "\(entityName) has been \(stateDescription) for \(durationText)."
             why = isItalian
@@ -744,6 +749,14 @@ enum HomeAnomalyDetector {
                 novelty: 0.7
             ),
             dedupeKey: "intervalAnomaly|\(interval.entityID ?? interval.entityName)|\(interval.stateRaw)",
+            suggestedActionJSON: rule.turnOffLabel.flatMap { label in
+                guard let entityID = interval.entityID else { return nil }
+                return InsightCorrectiveAction.turnOffJSON(
+                    accessoryID: entityID,
+                    accessoryName: interval.entityName,
+                    label: label
+                )
+            },
             sourceRecordType: String(describing: HomeStateInterval.self),
             sourceRecordID: interval.id.uuidString,
             syncPolicy: .localOnly
@@ -784,7 +797,8 @@ enum HomeAnomalyDetector {
                 recommendation: heatingRecommendation(for: role),
                 confidence: isSummer ? 0.85 : 0.65,
                 basis: heatingBasis(for: role, isSummer: isSummer),
-                stateDescription: heatingStateDescription(for: role)
+                stateDescription: heatingStateDescription(for: role),
+                turnOffLabel: heatingTurnOffLabel(for: role)
             )
         case .power:
             let baselineDuration = durationBaseline.flatMap { $0.p95 ?? $0.mean }
@@ -805,7 +819,8 @@ enum HomeAnomalyDetector {
                 recommendation: powerRecommendation(for: role),
                 confidence: usesBaseline ? min(0.8, max(0.55, durationBaseline?.confidence ?? 0.55)) : 0.55,
                 basis: usesBaseline ? powerBaselineBasis(for: role) : powerFallbackBasis(for: role),
-                stateDescription: powerStateDescription(for: role)
+                stateDescription: powerStateDescription(for: role),
+                turnOffLabel: powerTurnOffLabel(for: role)
             )
         default:
             return nil
@@ -852,7 +867,9 @@ enum HomeAnomalyDetector {
     }
 
     private static func displayEntityName(for interval: HomeStateInterval) -> String {
-        if let roomName = interval.roomName, !roomName.isEmpty {
+        // Evita "Studio Studio Cubo": non anteporre la stanza se il nome la contiene già.
+        if let roomName = interval.roomName, !roomName.isEmpty,
+           !interval.entityName.localizedCaseInsensitiveContains(roomName) {
             return "\(roomName) \(interval.entityName)"
         }
         return interval.entityName
@@ -995,24 +1012,23 @@ enum HomeAnomalyDetector {
     }
 
     private static func powerTitle(for role: PowerRole) -> String {
+        // Un solo titolo per il dominio Carichi: "presa" vs "dispositivo" è un dettaglio
+        // interno (ruolo) — nella lista utente la stessa anomalia deve avere la stessa voce.
+        // La specificità la dà il nome del dispositivo nel messaggio.
         if isItalian {
             switch role {
             case .light:
-                return "Luce accesa da molto"
-            case .outlet:
-                return "Presa attiva da molto"
-            case .generic:
-                return "Dispositivo acceso da molto"
+                return "Luce accesa da molto tempo"
+            case .outlet, .generic:
+                return "Dispositivo attivo da molto tempo"
             }
         }
 
         switch role {
         case .light:
             return "Light on for a long time"
-        case .outlet:
-            return "Outlet active for a long time"
-        case .generic:
-            return "Device on for a long time"
+        case .outlet, .generic:
+            return "Device active for a long time"
         }
     }
 
@@ -1021,20 +1037,16 @@ enum HomeAnomalyDetector {
             switch role {
             case .light:
                 return "Controlla se la luce deve restare accesa."
-            case .outlet:
-                return "Controlla il carico collegato e spegnilo se non serve."
-            case .generic:
-                return "Controlla se il dispositivo deve restare acceso."
+            case .outlet, .generic:
+                return "Controlla se deve restare attivo e spegnilo se non serve."
             }
         }
 
         switch role {
         case .light:
             return "Check whether the light should still be on."
-        case .outlet:
-            return "Check the connected load and turn it off if not needed."
-        case .generic:
-            return "Check whether the device should still be on."
+        case .outlet, .generic:
+            return "Check whether it should stay on and turn it off if not needed."
         }
     }
 
@@ -1043,9 +1055,7 @@ enum HomeAnomalyDetector {
             switch role {
             case .light:
                 return "durata abituale della luce"
-            case .outlet:
-                return "durata abituale della presa"
-            case .generic:
+            case .outlet, .generic:
                 return "durata abituale del dispositivo"
             }
         }
@@ -1053,9 +1063,7 @@ enum HomeAnomalyDetector {
         switch role {
         case .light:
             return "usual light duration"
-        case .outlet:
-            return "usual outlet duration"
-        case .generic:
+        case .outlet, .generic:
             return "usual device duration"
         }
     }
@@ -1065,24 +1073,22 @@ enum HomeAnomalyDetector {
             switch role {
             case .light:
                 return "policy luce accesa"
-            case .outlet:
-                return "policy presa attiva"
-            case .generic:
-                return "policy dispositivo acceso"
+            case .outlet, .generic:
+                return "policy dispositivo attivo"
             }
         }
 
         switch role {
         case .light:
             return "light-on policy"
-        case .outlet:
-            return "outlet-active policy"
-        case .generic:
-            return "device-on policy"
+        case .outlet, .generic:
+            return "device-active policy"
         }
     }
 
     private static func powerStateDescription(for role: PowerRole) -> String {
+        // Verbo uniforme "attivo/attiva": cambia solo il genere grammaticale
+        // (Presa … è attiva / Frigorifero … è attivo).
         if isItalian {
             switch role {
             case .light:
@@ -1090,17 +1096,59 @@ enum HomeAnomalyDetector {
             case .outlet:
                 return "attiva"
             case .generic:
-                return "acceso"
+                return "attivo"
             }
         }
 
         switch role {
         case .light:
             return "on"
-        case .outlet:
+        case .outlet, .generic:
             return "active"
+        }
+    }
+
+    private static func powerTurnOffLabel(for role: PowerRole) -> String {
+        if isItalian {
+            switch role {
+            case .light:
+                return "Spegni la luce"
+            case .outlet:
+                return "Spegni la presa"
+            case .generic:
+                return "Spegni il dispositivo"
+            }
+        }
+
+        switch role {
+        case .light:
+            return "Turn off the light"
+        case .outlet:
+            return "Turn off the outlet"
         case .generic:
-            return "on"
+            return "Turn off the device"
+        }
+    }
+
+    private static func heatingTurnOffLabel(for role: ClimateRole) -> String {
+        if isItalian {
+            switch role {
+            case .thermostaticValve:
+                return "Spegni la valvola"
+            case .airConditioner:
+                return "Spegni il clima"
+            case .thermostat:
+                return "Spegni il termostato"
+            }
+        }
+
+        switch role {
+        case .thermostaticValve:
+            return "Turn off the valve"
+        case .airConditioner:
+            return "Turn off climate"
+        case .thermostat:
+            return "Turn off the thermostat"
         }
     }
 
@@ -1114,6 +1162,17 @@ enum HomeAnomalyDetector {
     }
 
     private static func powerRole(for interval: HomeStateInterval) -> PowerRole {
+        // Ruolo strutturale (eventType/categorizer) quando disponibile: i token del nome
+        // non riconoscono luci come "Studio Cubo" e le fanno finire tra i carichi.
+        switch interval.deviceRoleRaw {
+        case "light":
+            return .light
+        case "outlet":
+            return .outlet
+        default:
+            break
+        }
+
         let name = "\(interval.entityName) \(interval.roomName ?? "")"
         if containsAny(
             name,
@@ -1215,6 +1274,9 @@ enum HomeAnomalyDetector {
         var confidence: Double
         var basis: String
         var stateDescription: String? = nil
+        /// Etichetta della CTA "spegni" quando l'anomalia è correggibile via HomeKit.
+        /// Nil = nessuna azione possibile (es. contatti: una finestra non si chiude via software).
+        var turnOffLabel: String? = nil
     }
 
     private enum ClimateRole {

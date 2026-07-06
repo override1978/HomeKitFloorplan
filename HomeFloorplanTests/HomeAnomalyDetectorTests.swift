@@ -114,6 +114,49 @@ struct HomeAnomalyDetectorTests {
         #expect(HomeAnomalyDetector.detect(intervals: [interval]).isEmpty)
     }
 
+    @Test("deviceRoleRaw 'light' vince sui token del nome: 'Studio Cubo' è una luce")
+    func structuralDeviceRoleBeatsNameTokens() {
+        let interval = makeInterval(
+            entityName: "Studio Cubo", // nessun token luce/presa nel nome
+            roomName: "Studio",
+            signalType: .power,
+            stateRaw: "on",
+            deviceRoleRaw: "light",
+            startedAt: Date().addingTimeInterval(-7 * 3600)
+        )
+
+        let insight = HomeAnomalyDetector.detect(intervals: [interval]).first
+        #expect(insight?.category == .lighting)
+    }
+
+    @Test("Nome che contiene già la stanza: niente 'Studio Studio Cubo' nel messaggio")
+    func entityNameNotDuplicatedWithRoom() {
+        let interval = makeInterval(
+            entityName: "Studio Cubo",
+            roomName: "Studio",
+            signalType: .power,
+            stateRaw: "on",
+            deviceRoleRaw: "light",
+            startedAt: Date().addingTimeInterval(-7 * 3600)
+        )
+
+        let insight = HomeAnomalyDetector.detect(intervals: [interval]).first
+        #expect(insight?.message.contains("Studio Studio") == false)
+    }
+
+    @Test("Intervallo attivo: il messaggio riporta la durata stimata")
+    func activeIntervalMessageIncludesDuration() {
+        let interval = makeInterval(
+            entityName: "Presa Lavatrice",
+            signalType: .power,
+            stateRaw: "on",
+            startedAt: Date().addingTimeInterval(-7 * 3600)
+        )
+
+        let insight = HomeAnomalyDetector.detect(intervals: [interval]).first
+        #expect(insight?.message.contains("7h") == true)
+    }
+
     @Test("Power con baseline durata: soglia = p95 × 1.5, confidence dalla baseline")
     func powerWithDurationBaseline() {
         let accessoryID = UUID().uuidString
@@ -143,6 +186,39 @@ struct HomeAnomalyDetectorTests {
         #expect(insight != nil)
         #expect(insight?.confidence == 0.7)
         #expect(insight?.category == .lighting) // "luce" → light role
+    }
+
+    @Test("Anomalia power: trasporta l'azione correttiva 'spegni'")
+    func powerAnomalyCarriesTurnOffAction() throws {
+        let interval = makeInterval(
+            entityName: "Presa Lavatrice",
+            signalType: .power,
+            stateRaw: "on",
+            deviceRoleRaw: "outlet",
+            startedAt: Date().addingTimeInterval(-7 * 3600)
+        )
+
+        let insight = HomeAnomalyDetector.detect(intervals: [interval]).first
+        let json = try #require(insight?.suggestedActionJSON)
+        let action = try JSONDecoder().decode(AINextAction.self, from: #require(json.data(using: .utf8)))
+        #expect(action.accessoryActionType == "off")
+        #expect(action.accessoryID == interval.entityID)
+    }
+
+    @Test("Anomalia contatto: nessuna azione (una finestra non si chiude via software)")
+    func contactAnomalyHasNoAction() {
+        var config = HomeAnomalyDetector.Configuration()
+        config.escalatesOpenContactsAtNight = false
+
+        let interval = makeInterval(
+            entityName: "Finestra Cucina",
+            signalType: .contact,
+            stateRaw: "open",
+            startedAt: Date().addingTimeInterval(-20 * 60)
+        )
+
+        let insight = HomeAnomalyDetector.detect(intervals: [interval], configuration: config).first
+        #expect(insight?.suggestedActionJSON == nil)
     }
 
     // MARK: - Segnali (baseline z-score)
@@ -199,6 +275,7 @@ struct HomeAnomalyDetectorTests {
         roomName: String? = "Stanza",
         signalType: HomeSignalType,
         stateRaw: String,
+        deviceRoleRaw: String? = nil,
         startedAt: Date,
         endedAt: Date? = nil
     ) -> HomeStateInterval {
@@ -208,6 +285,7 @@ struct HomeAnomalyDetectorTests {
             roomName: roomName,
             signalType: signalType,
             stateRaw: stateRaw,
+            deviceRoleRaw: deviceRoleRaw,
             startedAt: startedAt,
             endedAt: endedAt
         )

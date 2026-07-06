@@ -1164,7 +1164,11 @@ final class AmbientalAIService {
         let isItalian = Locale.current.language.languageCode?.identifier == "it"
         let roomName = insight.roomName.trimmingCharacters(in: .whitespacesAndNewlines)
         let room = roomName.isEmpty ? (isItalian ? "Casa" : "Home") : roomName
+        // Gli underscore del patternKey AI ("kitchen_morning_air_quality_degradation")
+        // impedivano il match dei token ("air_quality" ≠ "air quality") e il titolo
+        // cadeva sul fallback inglese capitalizzato.
         let key = (insight.patternKey ?? "")
+            .replacingOccurrences(of: "_", with: " ")
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
             .lowercased()
         let message = insight.message
@@ -1184,15 +1188,18 @@ final class AmbientalAIService {
             return isItalian ? "Temperatura da monitorare in \(room)" : "Temperature to monitor in \(room)"
         }
 
-        guard let patternKey = insight.patternKey, !patternKey.isEmpty else {
-            return isItalian ? "Insight ambiente in \(room)" : "Environment insight in \(room)"
+        if text.contains("humid") || text.contains("umidit") || text.contains("umido") || text.contains("secco") || text.contains("dry") || text.contains("moist") {
+            return isItalian ? "Umidità da controllare in \(room)" : "Humidity to check in \(room)"
         }
 
-        return patternKey
-            .replacingOccurrences(of: "_", with: " ")
-            .split(separator: " ")
-            .map { $0.capitalized }
-            .joined(separator: " ")
+        if text.contains("lux") || text.contains("luminosit") || text.contains("brightness") || text.contains("light level") || text.contains("buio") || text.contains("dark") {
+            return isItalian ? "Luminosità da controllare in \(room)" : "Light level to check in \(room)"
+        }
+
+        // Nessun token riconosciuto: fallback SEMPRE localizzato. Il patternKey AI è
+        // in inglese per costruzione — capitalizzarlo produceva titoli non localizzati
+        // ("Studio Afternoon Low Humidity") con il messaggio in italiano sotto.
+        return isItalian ? "Insight ambiente in \(room)" : "Environment insight in \(room)"
     }
 
     private func encodeNextActions(_ actions: [AINextAction]) -> String {

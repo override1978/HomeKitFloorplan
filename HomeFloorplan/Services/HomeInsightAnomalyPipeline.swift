@@ -19,8 +19,12 @@ enum HomeInsightAnomalyPipeline {
     static func detect(
         modelContainer: ModelContainer,
         homeKitService: HomeKitService? = nil,
+        adapters: [UUID: any AccessoryAdapter]? = nil,
         configuration: Configuration? = nil
     ) -> [HomeInsight] {
+        // Mappa adapter condivisa: passata da runCycle (costruita una volta per ciclo)
+        // o ricostruita qui per i chiamanti standalone (debug view, test).
+        let adapters = adapters ?? homeKitService.map(AccessoryAdapterFactory.adapterMap) ?? [:]
         let configuration = configuration ?? Configuration()
         let context = modelContainer.mainContext
         let sensorReadings = fetchSensorReadings(context: context, limit: configuration.sensorReadingLimit)
@@ -30,11 +34,13 @@ enum HomeInsightAnomalyPipeline {
         let thresholds = fetchSensorAlertThresholds(context: context)
         let operationalPolicy = OperationalIntelligencePolicy.load()
 
-        let signals = sensorReadings.map(HomeSignalEventMapper.map) + liveSensorSignals(from: homeKitService)
+        let signals = (sensorReadings.map(HomeSignalEventMapper.map) + liveSensorSignals(from: homeKitService, adapters: adapters))
+            .filter { !operationalPolicy.isRoomIgnored($0.roomName) }
         let intervals = operationalPolicy.isEnabled
             ? operationalIntervals(
                 from: accessoryEvents,
                 homeKitService: homeKitService,
+                adapters: adapters,
                 policy: operationalPolicy
             )
             : []
@@ -67,6 +73,14 @@ enum HomeInsightAnomalyPipeline {
             return insight.severity >= configuration.minimumSeverity
                 && insight.confidence >= configuration.minimumConfidence
         }
+    }
+
+    private static func adapter(
+        for accessory: HMAccessory,
+        in adapters: [UUID: any AccessoryAdapter],
+        homeKit: HomeKitService
+    ) -> any AccessoryAdapter {
+        adapters[accessory.uniqueIdentifier] ?? AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
     }
 
     private static func fetchSensorReadings(context: ModelContext, limit: Int) -> [SensorReading] {
@@ -106,11 +120,14 @@ enum HomeInsightAnomalyPipeline {
         return (try? context.fetch(descriptor)) ?? []
     }
 
-    private static func liveSensorSignals(from homeKitService: HomeKitService?) -> [HomeSignalEvent] {
+    private static func liveSensorSignals(
+        from homeKitService: HomeKitService?,
+        adapters: [UUID: any AccessoryAdapter]
+    ) -> [HomeSignalEvent] {
         guard let homeKitService else { return [] }
 
         return homeKitService.allAccessories.flatMap { accessory -> [HomeSignalEvent] in
-            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService)
+            let adapter = adapter(for: accessory, in: adapters, homeKit: homeKitService)
             guard let readable = adapter as? any EnvironmentReadable else { return [] }
 
             let roomName = accessory.room?.name
@@ -220,25 +237,37 @@ enum HomeInsightAnomalyPipeline {
     private static func filterIntervalsAgainstLiveState(
         _ intervals: [HomeStateInterval],
         homeKitService: HomeKitService?,
+        adapters: [UUID: any AccessoryAdapter],
         policy: OperationalIntelligencePolicy
     ) -> [HomeStateInterval] {
         guard let homeKitService else {
             // Senza live state la modalità climatica reale non è verificabile: gli eventi
             // termostato sono etichettati "heating" a prescindere dal mode (anche in cooling),
             // quindi gli intervalli "heating" attivi vanno scartati per evitare falsi allarmi estivi.
-            return intervals.filter { !($0.isActive && $0.stateRaw == "heating") }
+            return intervals.filter {
+                !($0.isActive && $0.stateRaw == "heating") && !policy.isRoomIgnored($0.roomName)
+            }
         }
 
         let liveStateByAccessoryID = Dictionary(
-            uniqueKeysWithValues: homeKitService.allAccessories.map { accessory in
-                let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService)
-                return (accessory.uniqueIdentifier.uuidString, liveIntervalState(for: adapter))
+            uniqueKeysWithValues: homeKitService.allAccessories.map { accessory -> (String, LiveIntervalState) in
+                let adapter = adapter(for: accessory, in: adapters, homeKit: homeKitService)
+                // Accessorio non raggiungibile: la cache HomeKit può dire ancora "acceso"
+                // per un dispositivo spento da ore. Lo stato va marcato come non confermabile,
+                // non letto dalla cache stantia.
+                let state: LiveIntervalState = adapter.isReachable
+                    ? liveIntervalState(for: adapter)
+                    : .unreachable
+                return (accessory.uniqueIdentifier.uuidString, state)
             }
         )
 
         return intervals.filter { interval in
             if let entityID = interval.entityID,
                policy.ignoredAccessoryIDs.contains(entityID) {
+                return false
+            }
+            if policy.isRoomIgnored(interval.roomName) {
                 return false
             }
             guard interval.isActive,
@@ -253,11 +282,13 @@ enum HomeInsightAnomalyPipeline {
     private static func operationalIntervals(
         from accessoryEvents: [AccessoryEvent],
         homeKitService: HomeKitService?,
+        adapters: [UUID: any AccessoryAdapter],
         policy: OperationalIntelligencePolicy
     ) -> [HomeStateInterval] {
         let eventIntervals = HomeStateIntervalBuilder.build(from: accessoryEvents)
         let liveIntervals = liveOperationalIntervals(
             from: homeKitService,
+            adapters: adapters,
             existingIntervals: eventIntervals,
             recentEvents: accessoryEvents,
             policy: policy
@@ -266,12 +297,14 @@ enum HomeInsightAnomalyPipeline {
         return filterIntervalsAgainstLiveState(
             eventIntervals + liveIntervals,
             homeKitService: homeKitService,
+            adapters: adapters,
             policy: policy
         )
     }
 
     private static func liveOperationalIntervals(
         from homeKitService: HomeKitService?,
+        adapters: [UUID: any AccessoryAdapter],
         existingIntervals: [HomeStateInterval],
         recentEvents: [AccessoryEvent],
         policy: OperationalIntelligencePolicy
@@ -284,9 +317,10 @@ enum HomeInsightAnomalyPipeline {
 
         let liveIntervals = homeKitService.allAccessories.compactMap { accessory -> HomeStateInterval? in
             let entityID = accessory.uniqueIdentifier.uuidString
-            guard !policy.ignoredAccessoryIDs.contains(entityID) else { return nil }
+            guard !policy.ignoredAccessoryIDs.contains(entityID),
+                  !policy.isRoomIgnored(accessory.room?.name) else { return nil }
 
-            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService)
+            let adapter = adapter(for: accessory, in: adapters, homeKit: homeKitService)
             guard adapter.isReachable else { return nil }
 
             let liveState = liveIntervalState(for: adapter)
@@ -307,6 +341,7 @@ enum HomeInsightAnomalyPipeline {
                 roomName: accessory.room?.name,
                 signalType: draft.signalType,
                 stateRaw: draft.stateRaw,
+                deviceRoleRaw: draft.deviceRoleRaw,
                 startedAt: inferredLiveStartDate(
                     accessoryID: accessory.uniqueIdentifier,
                     signalType: draft.signalType,
@@ -327,6 +362,7 @@ enum HomeInsightAnomalyPipeline {
     private struct LiveIntervalDraft {
         let signalType: HomeSignalType
         let stateRaw: String
+        var deviceRoleRaw: String? = nil
     }
 
     private static func liveIntervalDraft(
@@ -342,22 +378,52 @@ enum HomeInsightAnomalyPipeline {
                 stateRaw: "open"
             )
         case .generic(let isOn):
-            guard isOn, isOperationalPowerAccessory(accessory) else { return nil }
+            guard isOn, let role = operationalPowerRole(for: accessory) else { return nil }
             return LiveIntervalDraft(
                 signalType: .power,
-                stateRaw: "on"
+                stateRaw: "on",
+                deviceRoleRaw: role.rawRole
             )
-        case .climate, .unknown:
+        case .climate, .unknown, .unreachable:
             return nil
         }
     }
 
-    private static func isOperationalPowerAccessory(_ accessory: HMAccessory) -> Bool {
+    private enum OperationalPowerRole {
+        case light
+        case outlet
+        case generic
+
+        var rawRole: String? {
+            switch self {
+            case .light: return "light"
+            case .outlet: return "outlet"
+            case .generic: return nil
+            }
+        }
+    }
+
+    /// Ruolo operativo structure-first: il nome accessorio resta solo come
+    /// fallback nel detector.
+    private static func operationalPowerRole(for accessory: HMAccessory) -> OperationalPowerRole? {
+        // Servizio Lightbulb = luce sempre, anche on/off senza dimmer
+        // (il categorizer richiede Brightness e le classificherebbe switch).
+        if accessory.services.contains(where: { $0.serviceType == HMServiceTypeLightbulb }) {
+            return .light
+        }
+        if accessory.category.categoryType == HMAccessoryCategoryTypeOutlet {
+            return .outlet
+        }
+
         switch AccessoryCategorizer.categorize(accessory) {
-        case "colorLight", "dimmableLight", "outlet", "switch", "onOff":
-            return true
+        case "colorLight", "dimmableLight":
+            return .light
+        case "outlet":
+            return .outlet
+        case "switch", "onOff":
+            return .generic
         default:
-            return false
+            return nil
         }
     }
 
@@ -463,11 +529,23 @@ enum HomeInsightAnomalyPipeline {
         case climate(isOn: Bool, currentMode: HeaterCoolerMode, currentOperation: Int)
         /// Lo stato live non è determinabile (valore non in cache): non contraddice lo storico eventi.
         case unknown
+        /// Accessorio non raggiungibile: uno stato "acceso" non è confermabile.
+        case unreachable
 
         func matches(_ interval: HomeStateInterval) -> Bool {
             switch self {
             case .unknown:
                 return true
+            case .unreachable:
+                // Meglio nessuna anomalia che una falsa "presa/valvola accesa" basata
+                // su cache stantia. I contatti a batteria dormono tra gli eventi:
+                // per loro lo storico resta la fonte di verità.
+                switch interval.signalType {
+                case .power, .active, .motion:
+                    return false
+                default:
+                    return true
+                }
             case .generic(let isOn):
                 switch interval.signalType {
                 case .power, .active, .motion:

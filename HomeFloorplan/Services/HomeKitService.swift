@@ -167,6 +167,23 @@ final class HomeKitService: NSObject {
     func accessory(for uuid: UUID) -> HMAccessory? {
         allAccessories.first { $0.uniqueIdentifier == uuid }
     }
+
+    /// Returns the HomeKit zone that contains the given room, if the user configured one.
+    func zone(for room: HMRoom) -> HMZone? {
+        currentHome?.zones.first { zone in
+            zone.rooms.contains { $0.uniqueIdentifier == room.uniqueIdentifier }
+        }
+    }
+
+    /// Returns the HomeKit zone that contains the accessory room, if available.
+    func zone(for accessory: HMAccessory) -> HMZone? {
+        guard let room = accessory.room else { return nil }
+        return zone(for: room)
+    }
+
+    func zoneName(for accessory: HMAccessory) -> String? {
+        zone(for: accessory)?.name
+    }
     
     /// Restituisce il valore corrente di una caratteristica (se osservata).
     func value(for characteristic: HMCharacteristic) -> Any? {

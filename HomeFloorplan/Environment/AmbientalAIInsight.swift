@@ -291,6 +291,20 @@ struct AmbientalAIInsight: Identifiable {
     var isDismissed: Bool
     /// Azioni suggerite dall'AI (max 3). Possono essere vuote.
     let nextActions: [AINextAction]
+
+    /// Azioni senza doppioni visivi: l'AI (o il merge post-unificazione) può produrre
+    /// più azioni con la stessa etichetta ("Raffredda" ×3) — all'utente ne serve una.
+    /// Dedup per etichetta normalizzata + tipo azione, preservando l'ordine.
+    var dedupedNextActions: [AINextAction] {
+        var seen = Set<String>()
+        return nextActions.filter { action in
+            let key = action.label
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+                + "|" + action.actionType
+            return seen.insert(key).inserted
+        }
+    }
     /// Intent semantici risolti dal LLM per questo insight (es. ["coolRoom", "reduceHumidity"]).
     /// Usati da ActionEffectivenessTracker per registrare dismissal ed expiration.
     let resolvedIntents: [String]

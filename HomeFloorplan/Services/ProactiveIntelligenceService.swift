@@ -2,6 +2,14 @@ import Foundation
 import HomeKit
 import SwiftData
 import Observation
+import os
+
+/// Durata di un singolo step di runCycle (diagnosi M6).
+struct CycleStepTiming: Identifiable {
+    let label: String
+    let milliseconds: Double
+    var id: String { label }
+}
 
 // MARK: - Proactive Signal Types
 
@@ -55,6 +63,9 @@ final class ProactiveIntelligenceService {
     var isRunning:          Bool = false
     /// Date of last completed cycle.
     var lastCycleAt:        Date?
+    /// Timing per step dell'ultimo ciclo completato (diagnosi M6, mostrato nella Debug View).
+    private(set) var lastCycleTimings: [CycleStepTiming] = []
+    private(set) var lastCycleTotalMilliseconds: Double = 0
 
     var unreadCount: Int {
         liveNotifications.filter { $0.status == .live || $0.status == .updated }.count
@@ -117,6 +128,19 @@ final class ProactiveIntelligenceService {
             loadNotifications()
         }
 
+        // Diagnosi M6: cronometro per step. I risultati finiscono in lastCycleTimings
+        // (Debug View), su os.Logger (visibile in Console anche in Release/TestFlight)
+        // e su dprint per le build di sviluppo.
+        let clock = ContinuousClock()
+        let cycleStart = clock.now
+        var stepStart = cycleStart
+        var timings: [CycleStepTiming] = []
+        func mark(_ label: String) {
+            let now = clock.now
+            timings.append(CycleStepTiming(label: label, milliseconds: Self.milliseconds(now - stepStart)))
+            stepStart = now
+        }
+
         let context = ContextResolver.resolve(
             presenceOverride: presenceOverride,
             occupancyIsAway:  occupancyService?.isLikelyAway ?? false
@@ -128,6 +152,7 @@ final class ProactiveIntelligenceService {
         //    analyzeHabits() is throttled internally (max once/hour).
         let visiblePatterns = behavioralService.patterns.filter { $0.tier.isVisible }
         await habitService.analyzeHabits(knownPatterns: visiblePatterns)
+        mark("habitAI")
 
         // 1. Behavioral deviations
         if !context.suppressNonCritical {
@@ -141,6 +166,7 @@ final class ProactiveIntelligenceService {
             upsertHomeInsights(deviationInsights)
             autoResolveDeviationInsights(currentSignals: devs)
         }
+        mark("behavioral")
 
         // 2. Automation opportunities
         let automationOpportunities = Array(behavioralService.pendingOpportunities.prefix(3))
@@ -158,35 +184,53 @@ final class ProactiveIntelligenceService {
             upsertHomeInsights(predictiveInsights)
             autoResolvePredictiveInsights(currentSignals: predictive)
         }
+        mark("opportunities+predictive")
 
         // 5. Sensor anomaly detection (device health)
         let anomalies = await SensorAnomalyDetector.detect(modelContainer: modelContainer)
         let anomalyInsights = anomalies.map(HomeInsightMapper.map)
         upsertHomeInsights(anomalyInsights)
         autoResolveSensorAnomalyInsights(currentSignals: anomalies)
+        mark("sensorAnomalies")
+
+        // Mappa adapter condivisa: costruita UNA volta per ciclo e passata a
+        // security, pipeline e incoerenze — prima ognuno ricostruiva gli stessi
+        // adapter per ogni accessorio (4-5 scansioni servizi/caratteristiche a ciclo).
+        let adapterMap = homeKitService.map(AccessoryAdapterFactory.adapterMap) ?? [:]
+        mark("adapterMap")
 
         // 5.5 Security safety events → store unificato (fumo, CO, perdite, serrature,
         //     garage, allarme, telecamere offline). Contatti aperti, movimento e presenza
         //     sono esclusi di proposito: già coperti dalle anomalie operative con policy
         //     di durata — includerli qui creerebbe doppioni su dashboard e notifiche.
         if let homeKit = homeKitService {
-            let securityInsights = securityHomeInsights(homeKitService: homeKit, context: context)
+            let securityInsights = securityHomeInsights(
+                homeKitService: homeKit,
+                adapters: adapterMap,
+                context: context
+            )
             upsertHomeInsights(securityInsights)
             autoResolveSecurityInsights(currentInsights: securityInsights)
         }
+        mark("security")
 
         // 6. Home intelligence anomalies (central baseline domain)
         let homeInsightAnomalies = HomeInsightAnomalyPipeline.detect(
             modelContainer: modelContainer,
-            homeKitService: homeKitService
+            homeKitService: homeKitService,
+            adapters: adapterMap
         )
+        mark("anomalyPipeline")
         let homeIncoherences = HomeIncoherenceDetector.detect(
             modelContainer: modelContainer,
-            homeKitService: homeKitService
+            homeKitService: homeKitService,
+            adapters: adapterMap
         )
+        mark("incoherences")
         upsertHomeInsights(homeInsightAnomalies + homeIncoherences)
         autoResolveHomeInsightAnomalies(currentInsights: homeInsightAnomalies + homeIncoherences)
         resolveLegacyEnvironmentalInsights()
+        mark("upsertResolve")
 
         // 7. Maintenance prediction (usage pattern anomalies)
         if let maint = maintenanceService {
@@ -200,16 +244,23 @@ final class ProactiveIntelligenceService {
         if !context.suppressNonCritical, let weather = weatherService {
             await processWeatherPrediction(weatherService: weather, context: context)
         }
+        mark("maintenance+weather")
 
         // 9. Notification delivery is sourced from the unified home insight store.
         await processActiveHomeInsightNotifications(context: context)
         resolveLegacySignalNotifications()
+        mark("notifications")
 
         // 10. Auto-expire old notifications
         autoExpire()
 
         // Save any pending changes
         try? modelContainer.mainContext.save()
+        mark("expire+save")
+
+        lastCycleTimings = timings
+        lastCycleTotalMilliseconds = Self.milliseconds(clock.now - cycleStart)
+        logCycleTimings()
     }
 
     // MARK: - User Actions
@@ -492,6 +543,7 @@ final class ProactiveIntelligenceService {
     /// dall'utente non generano mai segnalazioni.
     private func securityHomeInsights(
         homeKitService: HomeKitService,
+        adapters: [UUID: any AccessoryAdapter],
         context: ContextSnapshot
     ) -> [HomeInsight] {
         let monitoredRaw = UserDefaults.standard.string(forKey: "securityMonitoredUUIDs") ?? ""
@@ -501,7 +553,8 @@ final class ProactiveIntelligenceService {
         var system: (accessory: HMAccessory, adapter: SecuritySystemAdapter)?
 
         for accessory in homeKitService.allAccessories {
-            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService)
+            let adapter = adapters[accessory.uniqueIdentifier]
+                ?? AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService)
             if let securitySystem = adapter as? SecuritySystemAdapter {
                 if system == nil { system = (accessory, securitySystem) }
                 continue
@@ -737,6 +790,31 @@ final class ProactiveIntelligenceService {
 
     private func save() {
         try? modelContainer.mainContext.save()
+    }
+
+    // MARK: - Cycle timing (diagnosi M6)
+
+    private static let cycleLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "HomeFloorplan",
+        category: "ProactiveCycle"
+    )
+
+    private static func milliseconds(_ duration: Duration) -> Double {
+        Double(duration.components.seconds) * 1_000
+            + Double(duration.components.attoseconds) / 1e15
+    }
+
+    /// Riepilogo timing su os.Logger (livello notice: catturato anche in Release,
+    /// leggibile in Console.app filtrando category "ProactiveCycle") e su dprint.
+    private func logCycleTimings() {
+        let breakdown = lastCycleTimings
+            .filter { $0.milliseconds >= 1 }
+            .sorted { $0.milliseconds > $1.milliseconds }
+            .map { "\($0.label) \(Int($0.milliseconds.rounded()))ms" }
+            .joined(separator: " · ")
+        let total = Int(lastCycleTotalMilliseconds.rounded())
+        Self.cycleLogger.notice("⏱ runCycle \(total, privacy: .public)ms — \(breakdown, privacy: .public)")
+        dprint("⏱ [ProactiveCycle] \(total)ms — \(breakdown)")
     }
 
     private func upsertHomeInsights(_ insights: [HomeInsight]) {

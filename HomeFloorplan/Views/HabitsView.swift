@@ -94,7 +94,8 @@ struct HabitsView: View {
         return AutomationProposalMapper.proposal(
             from: opportunity,
             capabilities: capabilities,
-            scenes: scenesService.scenes
+            scenes: scenesService.scenes,
+            sourcePattern: behavioralService.patterns.first { $0.id == opportunity.patternID }
         )
     }
 

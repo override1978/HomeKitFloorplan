@@ -137,6 +137,9 @@ struct HomeStateInterval: Identifiable, Codable, Hashable {
     var roomName: String?
     var signalType: HomeSignalType
     var stateRaw: String
+    /// Ruolo del dispositivo ("light" | "outlet") noto strutturalmente
+    /// dall'eventType o dall'AccessoryCategorizer. Nil = ricadi sui token del nome.
+    var deviceRoleRaw: String?
     var startedAt: Date
     var endedAt: Date?
     var sourceEventIDs: [UUID]
@@ -156,6 +159,7 @@ struct HomeStateInterval: Identifiable, Codable, Hashable {
         roomName: String? = nil,
         signalType: HomeSignalType,
         stateRaw: String,
+        deviceRoleRaw: String? = nil,
         startedAt: Date,
         endedAt: Date? = nil,
         sourceEventIDs: [UUID] = [],
@@ -168,6 +172,7 @@ struct HomeStateInterval: Identifiable, Codable, Hashable {
         self.roomName = roomName
         self.signalType = signalType
         self.stateRaw = stateRaw
+        self.deviceRoleRaw = deviceRoleRaw
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.sourceEventIDs = sourceEventIDs

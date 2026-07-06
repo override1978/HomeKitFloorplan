@@ -124,6 +124,10 @@ final class AutomationOpportunity {
         case "characteristic":
             return triggerSensorType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
 
+        case "accessoryState":
+            // Validità piena verificata dal mapper (risoluzione causa dal pattern sorgente).
+            return true
+
         case "presence", "people":
             return true
 
@@ -283,14 +287,33 @@ extension AutomationOpportunity {
         let triggerType: String
         let triggerTime: String?
         let triggerWeekdaysRaw: String?
+        var triggerSensorType: String?
+        var triggerThreshold: Double?
+        var triggerDirection: String?
 
         switch pattern.patternType {
         case .temporal, .scene, .lighting:
             triggerType        = "calendar"
             triggerTime        = pattern.avgTimeString
             triggerWeekdaysRaw = weekdayStr
-        case .sequential, .contextual:
-            triggerType        = "inApp"
+        case .sequential:
+            // P1: sequenze A→B diventano automazioni HomeKit con event-trigger.
+            // I dettagli della causa (accessorio + azione) vivono nel BehavioralPattern
+            // sorgente e vengono risolti dal mapper al momento della proposta.
+            triggerType        = "accessoryState"
+            triggerTime        = nil
+            triggerWeekdaysRaw = weekdayStr
+        case .contextual:
+            // P2: condizione ambientale codificata nella causeSignature → trigger
+            // a soglia sensore, già supportato end-to-end dal mapper ("characteristic").
+            if let condition = pattern.causeSignature.flatMap(ContextualCondition.parse(fromSignature:)) {
+                triggerType       = "characteristic"
+                triggerSensorType = condition.sensorTypeRaw
+                triggerThreshold  = condition.threshold
+                triggerDirection  = condition.direction
+            } else {
+                triggerType = "inApp"
+            }
             triggerTime        = nil
             triggerWeekdaysRaw = weekdayStr
         }
@@ -317,9 +340,9 @@ extension AutomationOpportunity {
             triggerType:          triggerType,
             triggerTime:          triggerTime,
             triggerWeekdaysRaw:   triggerWeekdaysRaw,
-            triggerSensorType:    nil,
-            triggerThreshold:     nil,
-            triggerDirection:     nil,
+            triggerSensorType:    triggerSensorType,
+            triggerThreshold:     triggerThreshold,
+            triggerDirection:     triggerDirection,
             effectAccessoryIDString: matchedSceneName == nil ? pattern.accessoryID?.uuidString : nil,
             effectActionRaw:      pattern.action.rawValue,
             effectValue:          pattern.numericValue,

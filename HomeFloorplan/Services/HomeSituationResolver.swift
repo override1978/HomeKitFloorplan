@@ -71,8 +71,12 @@ enum HomeSituationResolver {
             insight.relatedEntityName ?? "",
             insight.dedupeKey
         ].joined(separator: " "))
+        // I token corti e ambigui ("aria", "air", "pm", "voc") vanno confrontati come
+        // parole intere: text.contains("aria") matchava "avaria" e classificava in Aria
+        // i guasti sensore; contains("pm") matchava qualunque "rpm"/"lampada" simile.
+        let words = Set(text.components(separatedBy: "-"))
 
-        if text.contains("co2") || text.contains("co₂") || text.contains("aria") || text.contains("air") || text.contains("qualita-aria") || text.contains("air-quality") || text.contains("pm") || text.contains("voc") {
+        if words.contains("co2") || words.contains("aria") || words.contains("air") || text.contains("qualita-aria") || text.contains("air-quality") || words.contains("pm") || words.contains("pm2") || words.contains("pm25") || words.contains("pm10") || words.contains("voc") {
             return .air
         }
         if text.contains("clima") || text.contains("climate") || text.contains("cool") || text.contains("heat") || text.contains("raffresc") || text.contains("temperatura") || text.contains("temperature") {

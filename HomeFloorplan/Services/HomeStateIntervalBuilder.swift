@@ -90,11 +90,25 @@ enum HomeStateIntervalBuilder {
             roomName: start.roomName,
             signalType: signal.signalType,
             stateRaw: stateRaw(for: signal.signalType, eventType: start.eventType),
+            deviceRoleRaw: deviceRole(forEventType: start.eventType),
             startedAt: start.timestamp,
             endedAt: end?.timestamp,
             sourceEventIDs: sourceEventIDs,
             confidence: end == nil ? 0.85 : 1.0
         )
+    }
+
+    /// Ruolo dispositivo noto dall'eventType registrato: evita l'euristica sui nomi
+    /// (una luce "Studio Cubo" non contiene token riconoscibili).
+    private static func deviceRole(forEventType eventType: String) -> String? {
+        switch eventType {
+        case AccessoryEventType.light.rawValue:
+            return "light"
+        case AccessoryEventType.outlet.rawValue:
+            return "outlet"
+        default:
+            return nil
+        }
     }
 
     private static func stateRaw(for signalType: HomeSignalType, eventType: String) -> String {

@@ -31,6 +31,24 @@ enum SensorAnomalyDetector {
     private static let oscillationRelStddev: Double = 0.15
     /// Minimum absolute range to avoid flagging stable, low-range sensors as oscillating.
     private static let oscillationMinRange:  Double = 2.0
+
+    /// Deviazione standard minima ASSOLUTA per tipo sensore, sotto la quale
+    /// l'oscillazione è fisiologica e non va segnalata. Senza questi minimi il
+    /// check relativo produceva rumore continuo (±3% umidità, ±114ppm CO2,
+    /// ±1µg/m³ PM: tutte variazioni normalissime in 2h).
+    private static func minimumOscillationStddev(for type: SensorServiceType) -> Double {
+        switch type {
+        case .temperature, .outdoorTemperature: return 1.5    // °C
+        case .humidity, .outdoorHumidity:       return 6.0    // %
+        case .carbonDioxide:                    return 250.0  // ppm
+        case .carbonMonoxide:                   return 5.0    // ppm
+        case .vocDensity:                       return 150.0  // µg/m³
+        case .pm25, .pm10:                      return 12.0   // µg/m³
+        case .airQuality:                       return 1.5    // indice 1-5
+        case .smoke:                            return .infinity // boolean-alert (escluso a monte)
+        case .lightSensor:                      return .infinity // mai (escluso a monte)
+        }
+    }
     /// Duration above which a completely stuck value is considered anomalous.
     private static let stuckDuration: TimeInterval = 30 * 60   // 30 min
     /// Lookback window for readings.
@@ -48,6 +66,8 @@ enum SensorAnomalyDetector {
         let readings = (try? context.fetch(descriptor)) ?? []
         guard !readings.isEmpty else { return [] }
 
+        let policy = OperationalIntelligencePolicy.load()
+
         // Group by (roomName, serviceTypeRaw)
         let groups = Dictionary(
             grouping: readings,
@@ -62,8 +82,13 @@ enum SensorAnomalyDetector {
             else { continue }
             // Boolean-alert sensors are not evaluated for statistical anomalies
             guard !sensorType.isBooleanAlert else { continue }
+            // Il sensore di luminosità varia per natura (nuvole, tende, giorno/notte):
+            // oscillazione e stallo non indicano un guasto. Escluso dai check statistici.
+            guard sensorType != .lightSensor else { continue }
 
             let roomName = first.roomName
+            // Stanze tecniche escluse dai calcoli (switch virtuali, dispositivi di servizio).
+            guard !policy.isRoomIgnored(roomName) else { continue }
             let sorted   = group.sorted { $0.timestamp < $1.timestamp }
             let values   = sorted.map(\.value)
             let valMin   = values.min() ?? 0
@@ -76,7 +101,9 @@ enum SensorAnomalyDetector {
 
             // — Oscillation check —
             let relStddev = valRange > 0 ? stddev / valRange : 0
-            if relStddev > oscillationRelStddev && valRange > oscillationMinRange {
+            if relStddev > oscillationRelStddev,
+               valRange > oscillationMinRange,
+               stddev >= minimumOscillationStddev(for: sensorType) {
                 let score = IntelligenceScore(
                     relevance:     0.75,
                     confidence:    min(1.0, Double(group.count) / 6.0),

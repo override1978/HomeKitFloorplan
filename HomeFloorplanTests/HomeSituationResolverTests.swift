@@ -62,6 +62,18 @@ struct HomeSituationResolverTests {
         #expect(HomeSituationResolver.domain(for: insight) == .climate)
     }
 
+    @Test("'in avaria' non deve finire nel dominio Aria (bug substring 'aria')")
+    func faultySensorNotClassifiedAsAir() {
+        let insight = makeInsight(
+            kind: .anomaly,
+            signalType: nil,
+            category: .deviceHealth,
+            title: "Letture Umidità instabili",
+            message: "Letture instabili ±2.0% nelle ultime 2h. Il sensore potrebbe essere in avaria."
+        )
+        #expect(HomeSituationResolver.domain(for: insight) == .loads)
+    }
+
     @Test("Fallback su categoria: security senza token testuali → security")
     func textFallbackSecurityCategory() {
         let insight = makeInsight(

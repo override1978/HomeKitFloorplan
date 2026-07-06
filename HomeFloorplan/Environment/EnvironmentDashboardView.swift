@@ -72,7 +72,7 @@ struct EnvironmentDashboardView: View {
                 confidence: insight.confidence,
                 generatedAt: insight.generatedAt,
                 isDismissed: insight.isDismissed,
-                nextActions: insight.nextActions,
+                nextActions: insight.dedupedNextActions,
                 resolvedIntents: insight.resolvedIntents,
                 sourceAccessoryID: insight.sourceAccessoryID,
                 sourceAccessoryName: insight.sourceAccessoryName,

@@ -482,7 +482,7 @@ private struct AIInsightRow: View {
             if !insight.nextActions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(insight.nextActions) { action in
+                        ForEach(insight.dedupedNextActions) { action in
                             NextActionButtonView(
                                 action: action,
                                 insight: insight,

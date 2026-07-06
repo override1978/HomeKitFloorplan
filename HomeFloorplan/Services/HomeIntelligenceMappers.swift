@@ -428,7 +428,9 @@ enum HomeInsightMapper {
     static func map(_ signal: AnomalySignal) -> HomeInsight {
         HomeInsight(
             kind: .anomaly,
-            category: .environment,
+            // Un sensore che oscilla/si blocca è un problema del DISPOSITIVO, non
+            // dell'ambiente: con .environment il resolver lo classificava in Aria.
+            category: .deviceHealth,
             severity: .medium,
             status: .active,
             title: anomalyTitle(for: signal),
@@ -530,11 +532,20 @@ enum HomeInsightMapper {
     private static func anomalyTitle(for signal: AnomalySignal) -> String {
         switch signal.kind {
         case .oscillating:
-            return String(format: "Unstable %@ readings", signal.sensorType.displayName)
+            return String(
+                format: String(localized: "anomaly.oscillating.title", defaultValue: "Unstable %@ readings"),
+                signal.sensorType.displayName
+            )
         case .stuck:
-            return String(format: "%@ sensor may be stuck", signal.sensorType.displayName)
+            return String(
+                format: String(localized: "anomaly.stuck.title", defaultValue: "%@ sensor may be stuck"),
+                signal.sensorType.displayName
+            )
         case .outOfRange:
-            return String(format: "Impossible %@ value", signal.sensorType.displayName)
+            return String(
+                format: String(localized: "anomaly.outofrange.title", defaultValue: "Impossible %@ value"),
+                signal.sensorType.displayName
+            )
         }
     }
 

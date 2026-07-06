@@ -25,6 +25,10 @@ enum AutomationProposalMapper {
         var scheduleOffsetMinutes: Int
         var presenceKind: String?
         var presenceUserScope: String?
+        /// Trigger "accessoryState" (sequenze A→B): nome dell'accessorio causa
+        /// e stato che innesca (true = si accende/attiva).
+        var triggerAccessoryName: String? = nil
+        var triggerAccessoryActive: Bool? = nil
     }
 
     static func chatbotProposal(
@@ -114,9 +118,10 @@ enum AutomationProposalMapper {
     static func proposal(
         from opportunity: AutomationOpportunity,
         capabilities: [AutomationCharacteristicCapability],
-        scenes: [SceneItem]
+        scenes: [SceneItem],
+        sourcePattern: BehavioralPattern? = nil
     ) -> AutomationProposal {
-        let draft = Draft(
+        var draft = Draft(
             source: source(from: opportunity.origin),
             title: opportunity.title,
             explanation: opportunity.naturalLanguage,
@@ -140,7 +145,29 @@ enum AutomationProposalMapper {
             presenceUserScope: nil
         )
 
+        // Sequenze A→B: la causa vive nel pattern sorgente (nome + azione dalla signature).
+        if opportunity.triggerType == "accessoryState", let pattern = sourcePattern {
+            draft.triggerAccessoryName = pattern.causeName
+            draft.triggerAccessoryActive = pattern.causeSignature.flatMap(causeTriggerState(fromSignature:))
+        }
+
         return proposal(from: draft, capabilities: capabilities, scenes: scenes)
+    }
+
+    /// Stato che innesca la sequenza, estratto dalla causeSignature
+    /// ("eventType:accessoryName:action"): true = attivazione, false = spegnimento.
+    /// Nil per azioni non riconducibili a uno stato on/off (trigger non costruibile).
+    static func causeTriggerState(fromSignature signature: String) -> Bool? {
+        let parts = signature.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count >= 3, let action = parts.last else { return nil }
+        switch action {
+        case "on", "activate", "dim", "open", "unlock":
+            return true
+        case "off", "close", "lock":
+            return false
+        default:
+            return nil
+        }
     }
 
     static func proposal(
@@ -260,10 +287,54 @@ enum AutomationProposalMapper {
         case "presence", "people":
             return .presence(presenceTrigger(from: draft))
 
+        case "accessoryState":
+            guard let selection = accessoryStateSelection(from: draft, capabilities: capabilities, limitations: &limitations) else {
+                return nil
+            }
+            return .accessory(selection)
+
         default:
             limitations.append(String(localized: "automation.proposal.limit.inAppTrigger", defaultValue: "In-app triggers need to be reviewed before they can become HomeKit automations."))
             return nil
         }
+    }
+
+    /// Selezione trigger per le sequenze A→B: la capability boolean (power/active)
+    /// dell'accessorio causa, risolta per nome (match esatto, poi contains).
+    private static func accessoryStateSelection(
+        from draft: Draft,
+        capabilities: [AutomationCharacteristicCapability],
+        limitations: inout [String]
+    ) -> AutomationProposalCapabilitySelection? {
+        guard let causeName = draft.triggerAccessoryName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !causeName.isEmpty,
+              let triggersOnActive = draft.triggerAccessoryActive else {
+            limitations.append(String(localized: "automation.proposal.limit.missingCauseAccessory", defaultValue: "The triggering accessory of this sequence could not be resolved."))
+            return nil
+        }
+
+        let candidates = capabilities.filter { capability in
+            guard capability.supportedRoles.contains(.trigger) else { return false }
+            if case .boolean = capability.valueKind { return true }
+            return false
+        }
+
+        let normalizedCause = causeName.lowercased()
+        let capability = candidates.first { $0.accessoryName.lowercased() == normalizedCause }
+            ?? candidates.first { $0.accessoryName.lowercased().contains(normalizedCause) || normalizedCause.contains($0.accessoryName.lowercased()) }
+
+        guard let capability else {
+            limitations.append(String(localized: "automation.proposal.limit.missingCauseAccessory", defaultValue: "The triggering accessory of this sequence could not be resolved."))
+            return nil
+        }
+
+        return AutomationProposalCapabilitySelection(
+            capabilityID: capability.id,
+            accessoryID: capability.accessoryID,
+            characteristicID: capability.characteristic.uniqueIdentifier,
+            comparisonOperator: triggersOnActive ? .becomesActive : .becomesInactive,
+            targetValue: .bool(triggersOnActive)
+        )
     }
 
     private static func presenceTrigger(from draft: Draft) -> AutomationProposalPresenceTrigger {

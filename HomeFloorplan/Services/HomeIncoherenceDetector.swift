@@ -6,35 +6,211 @@ import SwiftData
 enum HomeIncoherenceDetector {
     struct Configuration {
         var sensorReadingLimit: Int = 120
+        /// Salita minima (trend a 90 min) perché la CO2 sia "in salita". I LIVELLI
+        /// assoluti non stanno qui: derivano dalla soglia warning Ambiente dell'utente
+        /// (per stanza se configurata) via `co2Bounds(forWarning:)`.
         var co2RisePPM: Double = 180
-        var co2MinimumPPM: Double = 900
         var temperatureRiseCelsius: Double = 0.5
         var trendWindow: TimeInterval = 90 * 60
+        /// Lux oltre i quali la luce artificiale è considerata superflua.
+        /// Alto di proposito: le sole luci artificiali raramente superano i 500 lux,
+        /// così il sensore che misura anche il loro contributo non auto-innesca l'incoerenza.
+        var daylightLuxThreshold: Double = 500
+        /// Fascia diurna in cui valutare l'incoerenza luci+luminosità: fuori da
+        /// questa finestra i lux misurati sono prodotti dalle luci stesse.
+        var daylightStartHour: Int = 8
+        var daylightEndHour: Int = 18
+        /// Età massima della lettura lux considerata rappresentativa.
+        var luxReadingMaxAge: TimeInterval = 30 * 60
     }
 
     static func detect(
         modelContainer: ModelContainer,
         homeKitService: HomeKitService?,
+        adapters: [UUID: any AccessoryAdapter]? = nil,
         configuration: Configuration? = nil
     ) -> [HomeInsight] {
         guard let homeKitService else { return [] }
 
-        let configuration = configuration ?? Configuration()
+        // Mappa adapter condivisa da runCycle, o ricostruita per i chiamanti standalone.
+        let adapters = adapters ?? AccessoryAdapterFactory.adapterMap(homeKit: homeKitService)
+
+        let policy = OperationalIntelligencePolicy.load()
+        var effectiveConfiguration = configuration ?? Configuration()
+        if configuration == nil {
+            // Soglie regolabili dall'utente (Impostazioni → Intelligence operativa).
+            effectiveConfiguration.daylightLuxThreshold = policy.daylightLuxThreshold
+            effectiveConfiguration.daylightStartHour = policy.daylightStartHour
+            effectiveConfiguration.daylightEndHour = policy.daylightEndHour
+            effectiveConfiguration.temperatureRiseCelsius = policy.coolingIneffectiveDeltaCelsius
+            effectiveConfiguration.co2RisePPM = policy.co2RiseThresholdPPM
+        }
+        let configuration = effectiveConfiguration
         let context = modelContainer.mainContext
         let readings = fetchSensorReadings(context: context, limit: configuration.sensorReadingLimit)
+            .filter { !policy.isRoomIgnored($0.roomName) }
+        // Stanze tecniche escluse da tutti i check di incoerenza.
         let accessories = homeKitService.allAccessories
+            .filter { !policy.isRoomIgnored($0.room?.name) }
         let eventOpenContactIDs = activeOpenContactIDs(context: context)
         let liveStates = accessories.map { accessory in
             LiveAccessoryState(
                 accessory: accessory,
-                adapter: AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService),
+                adapter: adapters[accessory.uniqueIdentifier]
+                    ?? AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKitService),
+                zoneName: homeKitService.zoneName(for: accessory),
                 eventSaysOpenContact: eventOpenContactIDs.contains(accessory.uniqueIdentifier.uuidString)
             )
         }
 
-        return hvacWindowOpen(states: liveStates)
-            + co2RisingWithoutVentilation(states: liveStates, readings: readings, configuration: configuration)
+        let daylightIncoherences = policy.daylightWasteEnabled
+            ? lightsOnWithDaylight(states: liveStates, readings: readings, configuration: configuration)
+            : []
+
+        return hvacWindowOpen(states: liveStates, zonesByRoomUUID: floorplanZones(context: context))
+            + co2RisingWithoutVentilation(
+                states: liveStates,
+                readings: readings,
+                co2Thresholds: fetchCO2Thresholds(context: context),
+                configuration: configuration
+            )
             + coolingWhileTemperatureRises(states: liveStates, readings: readings, configuration: configuration)
+            + daylightIncoherences
+    }
+
+    private static func fetchCO2Thresholds(context: ModelContext) -> [SensorAlertThreshold] {
+        let co2Raw = SensorServiceType.carbonDioxide.rawValue
+        let descriptor = FetchDescriptor<SensorAlertThreshold>(
+            predicate: #Predicate { $0.serviceTypeRaw == co2Raw && $0.isEnabled }
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// Livelli assoluti CO2 derivati dalla soglia warning Ambiente: UNA manopola
+    /// (quella che l'utente già conosce) guida allarmi E incoerenze in modo coerente.
+    /// Con la warning default (1000 ppm) riproduce esattamente i vecchi valori
+    /// hardcoded: minimo 900, escalation high 1200.
+    static func co2Bounds(forWarning warning: Double) -> (minimum: Double, high: Double) {
+        (minimum: warning * 0.9, high: warning * 1.2)
+    }
+
+    /// Soglia warning CO2 per la stanza: preferenza per-stanza → globale → default di tipo.
+    private static func co2Warning(
+        forRoomKey roomKey: String,
+        thresholds: [SensorAlertThreshold]
+    ) -> Double {
+        if let roomSpecific = thresholds.first(where: {
+            $0.roomName.map(normalizedHomeIncoherenceRoomKey) == roomKey
+        }) {
+            return roomSpecific.warningValue
+        }
+        if let global = thresholds.first(where: { $0.roomName == nil }) {
+            return global.warningValue
+        }
+        return SensorServiceType.carbonDioxide.defaultWarning
+    }
+
+    // MARK: - Luci accese con luce naturale sufficiente
+
+    private static func lightsOnWithDaylight(
+        states: [LiveAccessoryState],
+        readings: [SensorReading],
+        configuration: Configuration
+    ) -> [HomeInsight] {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let luxByRoom = roomLux(states: states, readings: readings, configuration: configuration)
+        let lightsOnByRoom = Dictionary(
+            grouping: states.filter { $0.isLightOn && $0.roomKey != nil },
+            by: { $0.roomKey ?? "home" }
+        )
+
+        return lightsOnByRoom.compactMap { roomKey, lights -> HomeInsight? in
+            guard let lux = luxByRoom[roomKey],
+                  isDaylightWasteCandidate(lux: lux, hour: hour, configuration: configuration),
+                  let light = lights.first else {
+                return nil
+            }
+
+            let roomName = light.roomName ?? roomKey
+            return HomeInsight(
+                kind: .incoherence,
+                category: .lighting,
+                signalType: .power,
+                severity: .low,
+                title: String(localized: "homeInsight.incoherence.lightsDaylight.title", defaultValue: "Lights on in a bright room"),
+                message: localizedFormat(
+                    key: "homeInsight.incoherence.lightsDaylight.message",
+                    defaultValue: "%@: %@ is on while the room already measures %lld lux.",
+                    roomName,
+                    light.name,
+                    Int(lux)
+                ),
+                whyExplanation: String(localized: "homeInsight.incoherence.lightsDaylight.why", defaultValue: "Measured brightness exceeds the daylight threshold during daytime hours — artificial light is likely unnecessary."),
+                recommendation: String(localized: "homeInsight.incoherence.lightsDaylight.recommendation", defaultValue: "Turn off or dim the lights."),
+                sourceEntityID: light.id,
+                sourceEntityName: light.name,
+                roomName: light.roomName,
+                confidence: 0.7,
+                score: HomeInsightScore(relevance: 0.7, confidence: 0.7, urgency: 0.35, actionability: 0.9, novelty: 0.55),
+                dedupeKey: "incoherence|lightsOnDaylight|\(roomKey)",
+                suggestedActionJSON: encodedTurnOffAction(
+                    accessoryID: light.id,
+                    accessoryName: light.name,
+                    label: String(localized: "homeInsight.incoherence.action.turnOffLight", defaultValue: "Turn off the light")
+                ),
+                sourceRecordType: String(describing: HomeIncoherenceDetector.self),
+                sourceRecordID: light.id,
+                syncPolicy: .localOnly
+            )
+        }
+    }
+
+    /// Vero se la coppia (lux, ora) giustifica l'incoerenza "luce artificiale superflua".
+    /// Estratta pura per i test: la finestra oraria evita l'auto-innesco serale,
+    /// quando i lux misurati provengono dalle luci stesse.
+    static func isDaylightWasteCandidate(lux: Double, hour: Int, configuration: Configuration = Configuration()) -> Bool {
+        guard hour >= configuration.daylightStartHour && hour < configuration.daylightEndHour else { return false }
+        return lux >= configuration.daylightLuxThreshold
+    }
+
+    /// Lux per stanza: preferisce il valore live del sensore, con fallback
+    /// sulla lettura persistita più recente entro `luxReadingMaxAge`.
+    private static func roomLux(
+        states: [LiveAccessoryState],
+        readings: [SensorReading],
+        configuration: Configuration
+    ) -> [String: Double] {
+        var luxByRoom: [String: Double] = [:]
+
+        let cutoff = Date().addingTimeInterval(-configuration.luxReadingMaxAge)
+        let recentLux = readings
+            .filter { $0.serviceTypeRaw == SensorServiceType.lightSensor.rawValue && $0.timestamp >= cutoff }
+            .sorted { $0.timestamp > $1.timestamp }
+        for reading in recentLux {
+            let key = normalizedRoomKey(reading.roomName)
+            if luxByRoom[key] == nil { luxByRoom[key] = reading.value }
+        }
+
+        for state in states {
+            guard let roomKey = state.roomKey, let lux = state.lightLevelLux else { continue }
+            luxByRoom[roomKey] = lux
+        }
+
+        return luxByRoom
+    }
+
+    /// Mappa stanza → planimetrie che la contengono (via Floorplan.linkedRooms).
+    /// È la nozione di "zona" usata per limitare le incoerenze cross-stanza:
+    /// un clima al piano terra non deve accoppiarsi con una finestra in mansarda.
+    private static func floorplanZones(context: ModelContext) -> [UUID: Set<UUID>] {
+        let floorplans = (try? context.fetch(FetchDescriptor<Floorplan>())) ?? []
+        var zones: [UUID: Set<UUID>] = [:]
+        for floorplan in floorplans {
+            for room in floorplan.linkedRooms {
+                zones[room.hmRoomUUID, default: []].insert(floorplan.id)
+            }
+        }
+        return zones
     }
 
     private static func fetchSensorReadings(context: ModelContext, limit: Int) -> [SensorReading] {
@@ -61,7 +237,10 @@ enum HomeIncoherenceDetector {
         )
     }
 
-    private static func hvacWindowOpen(states: [LiveAccessoryState]) -> [HomeInsight] {
+    private static func hvacWindowOpen(
+        states: [LiveAccessoryState],
+        zonesByRoomUUID: [UUID: Set<UUID>]
+    ) -> [HomeInsight] {
         let openContacts = states.filter(\.isOpenContact)
         let openContactsByRoom = Dictionary(
             grouping: openContacts.filter { $0.roomKey != nil },
@@ -76,16 +255,47 @@ enum HomeIncoherenceDetector {
                 return hvacWindowOpenInsight(climate: climate, contact: contact, sameRoomKey: roomKey)
             }
 
-            // 2) Fallback a livello casa: clima attivo + porta/finestra aperta altrove.
-            //    Copre il caso comune del termostato centrale (stanza diversa o nessuna stanza):
-            //    riscaldare o raffrescare con un infisso aperto disperde comunque, l'aria è condivisa.
-            //    Limitato ai contatti "window-like" per non scattare su ante/cassetti sensorizzati.
-            if let contact = openContacts.first(where: { $0.isWindowLikeContact && $0.roomKey != climate.roomKey }) {
+            // 2) Fallback fuori stanza: mai attraverso piani/zone diverse.
+            //    La zona viene dalle HMZone se configurate, altrimenti dalle planimetrie
+            //    (stanze linkate allo stesso Floorplan = stessa zona).
+            if let contact = openContacts.first(where: {
+                $0.isWindowLikeContact &&
+                $0.roomKey != climate.roomKey &&
+                isCrossRoomClimateContactCandidate(
+                    climate: climate,
+                    contact: $0,
+                    zonesByRoomUUID: zonesByRoomUUID
+                )
+            }) {
                 return hvacWindowOpenInsight(climate: climate, contact: contact, sameRoomKey: nil)
             }
 
             return nil
         }
+    }
+
+    private static func isCrossRoomClimateContactCandidate(
+        climate: LiveAccessoryState,
+        contact: LiveAccessoryState,
+        zonesByRoomUUID: [UUID: Set<UUID>]
+    ) -> Bool {
+        // 1) Zone HomeKit esplicite: vincolano quando entrambe note.
+        if let climateZone = climate.zoneKey, let contactZone = contact.zoneKey {
+            return climateZone == contactZone
+        }
+
+        // 2) Zone da planimetria: le due stanze devono condividere almeno un Floorplan.
+        if let climateRoom = climate.roomUUID,
+           let contactRoom = contact.roomUUID,
+           let climateZones = zonesByRoomUUID[climateRoom],
+           let contactZones = zonesByRoomUUID[contactRoom] {
+            return !climateZones.isDisjoint(with: contactZones)
+        }
+
+        // 3) Nessuna informazione di zona per la coppia: solo un clima senza stanza
+        //    (impianto centrale) giustifica ancora il fallback a livello casa.
+        //    Con stanze note ma zone ignote meglio tacere che accoppiare piani diversi.
+        return climate.roomKey == nil && climate.zoneKey == nil
     }
 
     private static func hvacWindowOpenInsight(
@@ -162,15 +372,37 @@ enum HomeIncoherenceDetector {
                 novelty: 0.6
             ),
             dedupeKey: dedupeKey,
+            suggestedActionJSON: encodedTurnOffAction(
+                accessoryID: climate.id,
+                accessoryName: climate.name,
+                label: climate.isHeatOnlyClimate
+                    ? String(localized: "homeInsight.incoherence.action.turnOffValve", defaultValue: "Turn off the valve")
+                    : String(localized: "homeInsight.incoherence.action.turnOffClimate", defaultValue: "Turn off climate")
+            ),
             sourceRecordType: String(describing: HomeIncoherenceDetector.self),
             sourceRecordID: climate.id,
             syncPolicy: .localOnly
         )
     }
 
+    /// Azione correttiva one-tap serializzata in `HomeInsight.suggestedActionJSON`
+    /// (delega all'encoder condiviso con HomeAnomalyDetector).
+    private static func encodedTurnOffAction(
+        accessoryID: String,
+        accessoryName: String,
+        label: String
+    ) -> String? {
+        InsightCorrectiveAction.turnOffJSON(
+            accessoryID: accessoryID,
+            accessoryName: accessoryName,
+            label: label
+        )
+    }
+
     private static func co2RisingWithoutVentilation(
         states: [LiveAccessoryState],
         readings: [SensorReading],
+        co2Thresholds: [SensorAlertThreshold],
         configuration: Configuration
     ) -> [HomeInsight] {
         let grouped = Dictionary(grouping: readings.filter { $0.serviceTypeRaw == SensorServiceType.carbonDioxide.rawValue }) {
@@ -178,8 +410,9 @@ enum HomeIncoherenceDetector {
         }
 
         return grouped.compactMap { roomKey, values -> HomeInsight? in
+            let bounds = co2Bounds(forWarning: co2Warning(forRoomKey: roomKey, thresholds: co2Thresholds))
             guard let trend = trend(values: values, window: configuration.trendWindow),
-                  trend.latest >= configuration.co2MinimumPPM,
+                  trend.latest >= bounds.minimum,
                   trend.delta >= configuration.co2RisePPM,
                   !hasVentilationEvidence(roomKey: roomKey, states: states) else {
                 return nil
@@ -190,7 +423,7 @@ enum HomeIncoherenceDetector {
                 kind: .incoherence,
                 category: .environment,
                 signalType: .carbonDioxide,
-                severity: trend.latest >= 1200 ? .high : .medium,
+                severity: trend.latest >= bounds.high ? .high : .medium,
                 title: String(localized: "homeInsight.incoherence.co2NoVentilation.title", defaultValue: "CO2 rising without ventilation"),
                 message: localizedFormat(
                     key: "homeInsight.incoherence.co2NoVentilation.message",
@@ -280,31 +513,53 @@ enum HomeIncoherenceDetector {
 private struct LiveAccessoryState {
     let id: String
     let name: String
+    let roomUUID: UUID?
     let roomName: String?
     let roomKey: String?
+    let zoneName: String?
+    let zoneKey: String?
     let isClimateActive: Bool
     let isCooling: Bool
     let isHeating: Bool
+    /// Valvola termostatica o simile: può solo scaldare o stare spenta.
+    /// Attiva = richiesta calore, mai raffrescamento (a differenza di un clima).
+    let isHeatOnlyClimate: Bool
     let isOpenContact: Bool
     let isWindowLikeContact: Bool
     let isVentilationActive: Bool
+    let isLightOn: Bool
+    let lightLevelLux: Double?
 
     @MainActor
-    init(accessory: HMAccessory, adapter: any AccessoryAdapter, eventSaysOpenContact: Bool) {
+    init(accessory: HMAccessory, adapter: any AccessoryAdapter, zoneName: String?, eventSaysOpenContact: Bool) {
         id = accessory.uniqueIdentifier.uuidString
         name = accessory.name
+        roomUUID = accessory.room?.uniqueIdentifier
         let accessoryRoomName = accessory.room?.name
         roomName = accessoryRoomName
         roomKey = accessoryRoomName.map(normalizedHomeIncoherenceRoomKey)
+        self.zoneName = zoneName
+        zoneKey = zoneName.map(normalizedHomeIncoherenceRoomKey)
+
+        // Le valvole termostatiche (TRV) possono solo scaldare o stare spente:
+        // alcuni firmware riportano mode/state incoerenti, quindi il ruolo va
+        // dedotto dal nome (stessi token del climateRole nel detector anomalie).
+        let heatOnly = ["valvola", "valve", "trv", "termostatica", "thermostatic"].contains {
+            "\(accessory.name) \(accessoryRoomName ?? "")"
+                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                .lowercased()
+                .contains($0)
+        }
+        isHeatOnlyClimate = heatOnly
 
         if let thermostat = adapter as? ThermostatAdapter {
             isClimateActive = thermostat.isOn
-            isCooling = thermostat.isOn && (thermostat.currentMode == .cool || thermostat.heaterCoolerState == 3)
-            isHeating = thermostat.isOn && (thermostat.currentMode == .heat || thermostat.heaterCoolerState == 2)
+            isCooling = !heatOnly && thermostat.isOn && (thermostat.currentMode == .cool || thermostat.heaterCoolerState == 3)
+            isHeating = thermostat.isOn && (heatOnly || thermostat.currentMode == .heat || thermostat.heaterCoolerState == 2)
         } else if let thermostat = adapter as? LegacyThermostatAdapter {
             isClimateActive = thermostat.isOn
-            isCooling = thermostat.isOn && (thermostat.currentMode == .cool || thermostat.heaterCoolerState == 3)
-            isHeating = thermostat.isOn && (thermostat.currentMode == .heat || thermostat.heaterCoolerState == 2)
+            isCooling = !heatOnly && thermostat.isOn && (thermostat.currentMode == .cool || thermostat.heaterCoolerState == 3)
+            isHeating = thermostat.isOn && (heatOnly || thermostat.currentMode == .heat || thermostat.heaterCoolerState == 2)
         } else {
             isClimateActive = false
             isCooling = false
@@ -325,6 +580,16 @@ private struct LiveAccessoryState {
             .contains { normalizedName.contains($0) }
 
         isVentilationActive = (adapter is FanAdapter || adapter is AirPurifierAdapter) && adapter.isOn
+
+        // Ruolo luce dal categorizer (structure-first, come per gli intervalli operativi).
+        switch AccessoryCategorizer.categorize(accessory) {
+        case "colorLight", "dimmableLight":
+            isLightOn = adapter.isOn
+        default:
+            isLightOn = false
+        }
+
+        lightLevelLux = (adapter as? any EnvironmentReadable)?.environmentLightLevel.map(Double.init)
     }
 }
 

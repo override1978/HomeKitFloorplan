@@ -27,7 +27,7 @@ struct SidebarView: View {
     @AppStorage("sidebar.section.analysis.expanded")   private var analysisExpanded:   Bool = true
     @AppStorage("sidebar.section.scenes.expanded")     private var scenesExpanded:     Bool = true
     @AppStorage("sidebar.section.settings.expanded")   private var settingsExpanded:   Bool = true
-    @AppStorage("ai.isEnabled")                        private var isAIEnabled:        Bool = false
+    @AppStorage("ai.isEnabled")                        private var areHabitsEnabled:  Bool = false
 
     @State private var showingNewFloorplan = false
     @State private var pendingDeleteFloorplan: Floorplan?
@@ -120,7 +120,7 @@ struct SidebarView: View {
                 }
             }
 
-            // MARK: Analisi — Ambiente, Sicurezza, Abitudini, Intelligenza
+            // MARK: Analisi — Ambiente, Sicurezza, Intelligenza, Abitudini
             Section {
                 DisclosureGroup(isExpanded: $analysisExpanded) {
                     NavigationLink(value: SidebarSelection.environment) {
@@ -129,12 +129,12 @@ struct SidebarView: View {
                     NavigationLink(value: SidebarSelection.security) {
                         Label(String(localized: "sidebar.security", defaultValue: "Security"), systemImage: "shield.lefthalf.filled")
                     }
-                    if isAIEnabled {
+                    NavigationLink(value: SidebarSelection.homeIntelligence) {
+                        Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligence"), systemImage: "sparkles.rectangle.stack")
+                    }
+                    if areHabitsEnabled {
                         NavigationLink(value: SidebarSelection.habits) {
                             Label(String(localized: "sidebar.habits", defaultValue: "Habits"), systemImage: "brain.head.profile")
-                        }
-                        NavigationLink(value: SidebarSelection.homeIntelligence) {
-                            Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligence"), systemImage: "sparkles.rectangle.stack")
                         }
                     }
                 } label: {

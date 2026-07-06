@@ -144,17 +144,24 @@ final class AccessoryEventStore {
 
         switch type {
         case onUUID:
-            // Luce o switch generico: distingui per categoria servizio
+            // Luce, presa o switch generico: distingui per tipo di servizio/categoria
             guard let raw = intVal(value) else { return nil }
             let state = raw != 0
             // Recupera brightness se presente nello stesso servizio
             let brightness: Double? = characteristic.service?.characteristics
                 .first(where: { $0.characteristicType.lowercased() == brightnessUUID })
                 .flatMap { doubleVal($0.value).map { $0 / 100.0 } }
-            // Tipo: se il servizio ha una brightness, è una luce; altrimenti switch
-            let hasColor = characteristic.service?.characteristics
-                .contains(where: { $0.characteristicType.lowercased() == brightnessUUID }) ?? false
-            let eventType = hasColor ? AccessoryEventType.light.rawValue : AccessoryEventType.switch.rawValue
+            // Servizio Lightbulb = luce SEMPRE (anche on/off senza dimmer: prima
+            // venivano registrate come "switch" e sparivano dal dominio Luci).
+            // Categoria Outlet = presa. Solo il resto è switch generico.
+            let eventType: String
+            if characteristic.service?.serviceType == HMServiceTypeLightbulb {
+                eventType = AccessoryEventType.light.rawValue
+            } else if accessory.category.categoryType == HMAccessoryCategoryTypeOutlet {
+                eventType = AccessoryEventType.outlet.rawValue
+            } else {
+                eventType = AccessoryEventType.switch.rawValue
+            }
 
             return AccessoryEventDTO(
                 accessoryID: accessory.uniqueIdentifier,

@@ -107,6 +107,9 @@ struct HomeFloorplanApp: App {
 
         let kit = HomeKitService()
         self._homeKit = State(initialValue: kit)
+        // Le azioni AI/CTA scrivono via HomeKitService (cache + eventi + log),
+        // non direttamente sulla caratteristica: vedi NextActionExecutor.write.
+        NextActionExecutor.homeKit = kit
         let iconStore = IconOverrideStore()
         self._iconOverrides = State(initialValue: iconStore)
         let scenes = HomeKitScenesService(homeKit: kit)
@@ -247,6 +250,11 @@ struct HomeFloorplanApp: App {
         self._ambientalAIService = State(initialValue: ambientalSvc)
         self._dataLifecycleService = State(initialValue: DataLifecycleService(modelContainer: container))
         let behavioralSvc = BehavioralAnalysisService(modelContainer: container)
+        // Anti-duplicazione abitudini: il motore confronta le opportunità con le
+        // automazioni HomeKit esistenti prima di proporle (fotografie fresche a ogni analisi).
+        behavioralSvc.existingAutomationsProvider = { [weak kit] in
+            ExistingAutomationSnapshot.snapshots(from: kit?.currentHome)
+        }
         behavioralSvc.habitNamingService = habitSvc
         self._behavioralAnalysisService = State(initialValue: behavioralSvc)
         self._proactiveIntelligenceService = State(initialValue: ProactiveIntelligenceService(modelContainer: container))
@@ -346,6 +354,9 @@ struct HomeFloorplanApp: App {
                     var lastLightSampleAt: Date?
                     var lastSmartLightingEvaluationAt: Date?
                     var nextFullSensorSampleAt = Date().addingTimeInterval(45)
+                    // Primo ciclo proattivo dopo il primo campionamento completo (stagger 90s):
+                    // evita di competere col primo frame e analizza dati già freschi.
+                    var nextProactiveCycleAllowedAt = Date().addingTimeInterval(90)
                     while !Task.isCancelled {
                         let now = Date()
                         if let home = homeKit.currentHome {
@@ -370,6 +381,25 @@ struct HomeFloorplanApp: App {
                             now.timeIntervalSince(lastSmartLightingEvaluationAt ?? .distantPast) >= 5 * 60 {
                             await smartLightingEngine.evaluate()
                             lastSmartLightingEvaluationAt = Date()
+                        }
+
+                        // Ciclo proattivo anche in foreground: con l'app sempre aperta sulla
+                        // planimetria i BGTask non partono mai, e senza questo giro anomalie,
+                        // incoerenze e notifiche si aggiornerebbero solo aprendo la vista
+                        // Intelligenza. Il throttle interno (5 min) regola la cadenza e
+                        // deduplica con i cicli innescati dal dashboard. Gira su qualsiasi
+                        // dispositivo, come il dashboard: gli insight sono local-only.
+                        if now >= nextProactiveCycleAllowedAt {
+                            await proactiveIntelligenceService.runCycleIfNeeded(
+                                behavioralService:  behavioralAnalysisService,
+                                habitService:       habitAnalysisService,
+                                occupancyService:   occupancyPredictionService,
+                                maintenanceService: maintenancePredictionService,
+                                presenceOverride:   locationPresenceService.presenceState,
+                                weatherService:     weatherKitService,
+                                homeKitService:     homeKit
+                            )
+                            nextProactiveCycleAllowedAt = .distantPast
                         }
 
                         do {

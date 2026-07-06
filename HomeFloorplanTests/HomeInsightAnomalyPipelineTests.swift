@@ -59,6 +59,28 @@ struct HomeInsightAnomalyPipelineTests {
         #expect(contact?.confidence == 0.55)
     }
 
+    @Test("Stanza ignorata: nessun insight dalla stanza 'Impostazioni'")
+    func ignoredRoomProducesNoInsights() throws {
+        let container = try makeContainer()
+        var policy = OperationalIntelligencePolicy.default
+        policy.ignoredRoomNames = ["Impostazioni"]
+        policy.save()
+
+        let event = AccessoryEvent(
+            accessoryID: UUID(),
+            accessoryName: "Presenza",
+            roomName: "Impostazioni",
+            state: true,
+            timestamp: Date().addingTimeInterval(-8 * 3600),
+            eventType: AccessoryEventType.switch.rawValue
+        )
+        container.mainContext.insert(event)
+        try container.mainContext.save()
+
+        let insights = HomeInsightAnomalyPipeline.detect(modelContainer: container, homeKitService: nil)
+        #expect(insights.allSatisfy { $0.roomName != "Impostazioni" })
+    }
+
     @Test("Policy disabilitata: nessun insight operativo")
     func disabledPolicyProducesNoOperationalInsights() throws {
         let container = try makeContainer()
@@ -111,7 +133,15 @@ struct HomeInsightAnomalyPipelineTests {
             AccessoryUsageSummary.self,
             SensorAlertThreshold.self
         ])
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        // Nel test host (app con entitlement CloudKit/App Group) la configurazione
+        // default prova cloudKitDatabase/groupContainer .automatic e il container
+        // fallisce con loadIssueModelContainer: qui serve tutto esplicitamente off.
+        let configuration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: true,
+            groupContainer: .none,
+            cloudKitDatabase: .none
+        )
         return try ModelContainer(for: schema, configurations: [configuration])
     }
 }

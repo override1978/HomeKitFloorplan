@@ -10,6 +10,8 @@ struct HomeIntelligenceDebugView: View {
     @Query(sort: \AccessoryUsageSummary.weekStartDate, order: .reverse) private var accessoryUsageSummaries: [AccessoryUsageSummary]
     @Query private var sensorAlertThresholds: [SensorAlertThreshold]
 
+    @Environment(ProactiveIntelligenceService.self) private var proactiveService
+
     @State private var selectedTab: DebugTab = .insights
 
     private enum DebugTab: String, CaseIterable, Identifiable {
@@ -86,11 +88,42 @@ struct HomeIntelligenceDebugView: View {
         insights.filter { $0.syncPolicy != .localOnly }.count
     }
 
+    /// Timing dell'ultimo runCycle (diagnosi M6): step ordinati per costo.
+    @ViewBuilder
+    private var cycleTimingsCard: some View {
+        if !proactiveService.lastCycleTimings.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("Ultimo runCycle", systemImage: "stopwatch")
+                        .font(.subheadline.weight(.bold))
+                    Spacer()
+                    Text("\(Int(proactiveService.lastCycleTotalMilliseconds.rounded())) ms")
+                        .font(.subheadline.weight(.bold).monospacedDigit())
+                        .foregroundStyle(proactiveService.lastCycleTotalMilliseconds > 250 ? .red : .primary)
+                }
+                ForEach(proactiveService.lastCycleTimings.sorted { $0.milliseconds > $1.milliseconds }) { step in
+                    HStack {
+                        Text(step.label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(Int(step.milliseconds.rounded())) ms")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(step.milliseconds > 100 ? .orange : .secondary)
+                    }
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.regularMaterial))
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 summaryGrid
+                cycleTimingsCard
                 Picker("Debug section", selection: $selectedTab) {
                     ForEach(DebugTab.allCases) { tab in
                         Text(tab.rawValue).tag(tab)

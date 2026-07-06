@@ -120,7 +120,11 @@ struct HomeIntelligenceDashboardView: View {
             .sheet(item: $selectedDomain) { domain in
                 IntelligenceDomainDetailSheet(
                     domain: domain,
-                    groups: insightGroups(for: domain)
+                    groups: insightGroups(for: domain),
+                    onAction: { action in await executeCorrectiveAction(action) },
+                    onSnooze: { situation in snoozeSituation(situation) },
+                    onIgnore: { situation in ignoreAccessories(in: situation) },
+                    onIgnoreRoom: { roomName in ignoreRoom(named: roomName) }
                 )
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -171,7 +175,8 @@ struct HomeIntelligenceDashboardView: View {
         return AutomationProposalMapper.proposal(
             from: opportunity,
             capabilities: capabilities,
-            scenes: scenesService.scenes
+            scenes: scenesService.scenes,
+            sourcePattern: behavioralService.patterns.first { $0.id == opportunity.patternID }
         )
     }
 
@@ -297,7 +302,12 @@ struct HomeIntelligenceDashboardView: View {
                 )
                 VStack(spacing: 10) {
                     ForEach(incoherences) { group in
-                        IncoherenceConflictCard(insight: group.primary, sourceCount: group.sourceCount)
+                        IncoherenceConflictCard(
+                            insight: group.primary,
+                            sourceCount: group.sourceCount,
+                            onAction: { action in await executeCorrectiveAction(action) }
+                        )
+                        .contextMenu { situationContextMenu(for: group) }
                     }
                     if activeIncoherenceGroups.count > incoherences.count {
                         Text(
@@ -335,8 +345,10 @@ struct HomeIntelligenceDashboardView: View {
                         IntelligenceEvidenceCard(
                             insight: group.primary,
                             domain: IntelligenceVisualDomain(group.domain),
-                            sourceCount: group.sourceCount
+                            sourceCount: group.sourceCount,
+                            onAction: { action in await executeCorrectiveAction(action) }
                         )
+                        .contextMenu { situationContextMenu(for: group) }
                     }
                     if activeAnomalyEvidenceGroups.count > evidences.count {
                         Text(
@@ -504,6 +516,135 @@ struct HomeIntelligenceDashboardView: View {
             return true
         case .air, .climate, .routine:
             return false
+        }
+    }
+
+    // MARK: - Azioni sulle segnalazioni
+
+    /// Esegue l'azione correttiva di un'incoerenza (es. "Spegni il clima") e
+    /// rilancia il ciclo: a comando riuscito l'incoerenza si auto-risolve subito.
+    private func executeCorrectiveAction(_ action: AINextAction) async -> Bool {
+        guard let home = homeKit.currentHome else { return false }
+        let success = await executionService.executeRaw(action, in: home)
+        if success {
+            // Resolve ottimistico: l'utente ha appena sistemato il dispositivo — le sue
+            // card spariscono subito. Se il comando non avesse avuto effetto reale,
+            // il ciclo successivo le ri-solleva.
+            resolveActiveInsights(forAccessoryID: action.accessoryID)
+            Task {
+                // Respiro perché la conferma HomeKit rientri nella cache prima della verifica.
+                try? await Task.sleep(for: .seconds(2))
+                await performRefresh()
+            }
+        }
+        return success
+    }
+
+    /// Risolve immediatamente gli insight attivi legati a un accessorio appena azionato via CTA.
+    private func resolveActiveInsights(forAccessoryID accessoryID: String?) {
+        guard let accessoryID, !accessoryID.isEmpty else { return }
+        let now = Date()
+        for record in activeHomeInsights where record.sourceEntityID == accessoryID {
+            record.statusRaw = HomeInsightStatus.resolved.rawValue
+            record.resolvedAt = now
+            record.updatedAt = now
+        }
+        try? modelContext.save()
+    }
+
+    /// Silenzia per 24h tutti gli insight della situation (status snoozed:
+    /// l'upsert del ciclo lo preserva per la finestra di snooze).
+    private func snoozeSituation(_ situation: HomeSituation) {
+        let keys = Set(situation.insights.map(\.dedupeKey))
+        let now = Date()
+        for record in activeHomeInsights where keys.contains(record.dedupeKey) {
+            record.statusRaw = HomeInsightStatus.snoozed.rawValue
+            record.updatedAt = now
+        }
+        try? modelContext.save()
+    }
+
+    /// Aggiunge gli accessori della situation alla lista ignorati della policy
+    /// operativa (per i sempre-accesi tipo frigorifero) e risolve subito i loro insight.
+    private func ignoreAccessories(in situation: HomeSituation) {
+        let entityIDs = Set(situation.insights.compactMap(\.sourceEntityID))
+        guard !entityIDs.isEmpty else { return }
+
+        var policy = OperationalIntelligencePolicy.load()
+        var changed = false
+        for id in entityIDs where !policy.ignoredAccessoryIDs.contains(id) {
+            policy.ignoredAccessoryIDs.append(id)
+            changed = true
+        }
+        if changed { policy.save() }
+
+        let now = Date()
+        for record in activeHomeInsights where entityIDs.contains(record.sourceEntityID ?? "") {
+            record.statusRaw = HomeInsightStatus.resolved.rawValue
+            record.resolvedAt = now
+            record.updatedAt = now
+        }
+        try? modelContext.save()
+    }
+
+    /// True se la situation nasce da anomalie operative su un accessorio specifico
+    /// (solo per quelle ha senso "Ignora accessorio").
+    private func canIgnoreAccessory(in situation: HomeSituation) -> Bool {
+        situation.insights.contains {
+            $0.sourceRecordType == String(describing: HomeStateInterval.self) && $0.sourceEntityID != nil
+        }
+    }
+
+    /// Esclude l'intera stanza da tutti i calcoli intelligence (per stanze tecniche
+    /// con switch virtuali, es. "Impostazioni") e risolve subito i suoi insight attivi.
+    private func ignoreRoom(named roomName: String) {
+        var policy = OperationalIntelligencePolicy.load()
+        guard !policy.isRoomIgnored(roomName) else { return }
+        policy.ignoredRoomNames.append(roomName)
+        policy.save()
+
+        let now = Date()
+        for record in activeHomeInsights
+        where record.roomName?.localizedCaseInsensitiveCompare(roomName) == .orderedSame {
+            record.statusRaw = HomeInsightStatus.resolved.rawValue
+            record.resolvedAt = now
+            record.updatedAt = now
+        }
+        try? modelContext.save()
+    }
+
+    @ViewBuilder
+    private func situationContextMenu(for situation: HomeSituation) -> some View {
+        Button {
+            snoozeSituation(situation)
+        } label: {
+            Label(
+                String(localized: "intelligence.menu.snooze", defaultValue: "Snooze 24h"),
+                systemImage: "moon.zzz.fill"
+            )
+        }
+        if canIgnoreAccessory(in: situation) {
+            Button(role: .destructive) {
+                ignoreAccessories(in: situation)
+            } label: {
+                Label(
+                    String(localized: "intelligence.menu.ignoreAccessory", defaultValue: "Ignore this accessory"),
+                    systemImage: "eye.slash.fill"
+                )
+            }
+        }
+        if let roomName = situation.primary.roomName, !roomName.isEmpty {
+            Button(role: .destructive) {
+                ignoreRoom(named: roomName)
+            } label: {
+                Label(
+                    String(
+                        format: String(localized: "intelligence.menu.ignoreRoom", defaultValue: "Ignore room \"%@\""),
+                        roomName
+                    ),
+                    systemImage: "square.slash"
+                )
+            }
         }
     }
 
@@ -1864,9 +2005,26 @@ private struct IntelligenceStatusHeroCard: View {
     }
 }
 
+/// "verificata 2 min fa" — ultima ri-conferma dal ciclo di intelligence (updatedAt).
+/// Distingue a colpo d'occhio un'evidenza appena rilevata da una in attesa di verifica.
+private func lastVerifiedLabel(for insight: HomeInsight) -> String {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    let relative = formatter.localizedString(for: insight.updatedAt, relativeTo: Date())
+    return String(
+        format: String(localized: "intelligence.verified.relative", defaultValue: "checked %@"),
+        relative
+    )
+}
+
 private struct IncoherenceConflictCard: View {
     let insight: HomeInsight
     var sourceCount: Int = 1
+    /// Esegue l'azione correttiva decodificata da suggestedActionJSON. Nil = nessuna CTA.
+    var onAction: ((AINextAction) async -> Bool)? = nil
+
+    @State private var isExecutingAction = false
+    @State private var actionCompleted = false
 
     private var color: Color {
         switch insight.severity {
@@ -1874,6 +2032,12 @@ private struct IncoherenceConflictCard: View {
         case .medium: return .orange
         case .low, .info: return .secondary
         }
+    }
+
+    private var correctiveAction: AINextAction? {
+        insight.suggestedActionJSON
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode(AINextAction.self, from: $0) }
     }
 
     var body: some View {
@@ -1913,6 +2077,37 @@ private struct IncoherenceConflictCard: View {
                         .foregroundStyle(color)
                         .lineLimit(1)
                 }
+                if let action = correctiveAction, let onAction {
+                    Button {
+                        guard !isExecutingAction, !actionCompleted else { return }
+                        Task {
+                            isExecutingAction = true
+                            actionCompleted = await onAction(action)
+                            isExecutingAction = false
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isExecutingAction {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            } else {
+                                Image(systemName: actionCompleted ? "checkmark.circle.fill" : "power")
+                            }
+                            Text(actionCompleted
+                                ? String(localized: "intelligence.action.done", defaultValue: "Done")
+                                : action.label)
+                        }
+                        .font(.caption.weight(.bold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(actionCompleted ? .green : color)
+                    .controlSize(.small)
+                    .disabled(isExecutingAction || actionCompleted)
+                    .padding(.top, 2)
+                }
+                Text(lastVerifiedLabel(for: insight))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
 
             Spacer(minLength: 8)
@@ -1933,6 +2128,17 @@ private struct IntelligenceEvidenceCard: View {
     let insight: HomeInsight
     let domain: IntelligenceVisualDomain
     var sourceCount: Int = 1
+    /// Esegue l'azione correttiva decodificata da suggestedActionJSON. Nil = nessuna CTA.
+    var onAction: ((AINextAction) async -> Bool)? = nil
+
+    @State private var isExecutingAction = false
+    @State private var actionCompleted = false
+
+    private var correctiveAction: AINextAction? {
+        insight.suggestedActionJSON
+            .flatMap { $0.data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode(AINextAction.self, from: $0) }
+    }
 
     private var severityColor: Color {
         switch insight.severity {
@@ -1980,6 +2186,37 @@ private struct IntelligenceEvidenceCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                if let action = correctiveAction, let onAction {
+                    Button {
+                        guard !isExecutingAction, !actionCompleted else { return }
+                        Task {
+                            isExecutingAction = true
+                            actionCompleted = await onAction(action)
+                            isExecutingAction = false
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isExecutingAction {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            } else {
+                                Image(systemName: actionCompleted ? "checkmark.circle.fill" : "power")
+                            }
+                            Text(actionCompleted
+                                ? String(localized: "intelligence.action.done", defaultValue: "Done")
+                                : action.label)
+                        }
+                        .font(.caption.weight(.bold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(actionCompleted ? .green : domain.color)
+                    .controlSize(.small)
+                    .disabled(isExecutingAction || actionCompleted)
+                    .padding(.top, 2)
+                }
+                Text(lastVerifiedLabel(for: insight))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
 
             Spacer(minLength: 0)
@@ -2058,6 +2295,53 @@ private struct IntelligenceDomainDetailSheet: View {
 
     let domain: IntelligenceVisualDomain
     let groups: [HomeSituation]
+    var onAction: ((AINextAction) async -> Bool)? = nil
+    var onSnooze: ((HomeSituation) -> Void)? = nil
+    var onIgnore: ((HomeSituation) -> Void)? = nil
+    var onIgnoreRoom: ((String) -> Void)? = nil
+
+    private func canIgnoreAccessory(in situation: HomeSituation) -> Bool {
+        situation.insights.contains {
+            $0.sourceRecordType == String(describing: HomeStateInterval.self) && $0.sourceEntityID != nil
+        }
+    }
+
+    @ViewBuilder
+    private func rowContextMenu(for situation: HomeSituation) -> some View {
+        if let onSnooze {
+            Button {
+                onSnooze(situation)
+            } label: {
+                Label(
+                    String(localized: "intelligence.menu.snooze", defaultValue: "Snooze 24h"),
+                    systemImage: "moon.zzz.fill"
+                )
+            }
+        }
+        if let onIgnore, canIgnoreAccessory(in: situation) {
+            Button(role: .destructive) {
+                onIgnore(situation)
+            } label: {
+                Label(
+                    String(localized: "intelligence.menu.ignoreAccessory", defaultValue: "Ignore this accessory"),
+                    systemImage: "eye.slash.fill"
+                )
+            }
+        }
+        if let onIgnoreRoom, let roomName = situation.primary.roomName, !roomName.isEmpty {
+            Button(role: .destructive) {
+                onIgnoreRoom(roomName)
+            } label: {
+                Label(
+                    String(
+                        format: String(localized: "intelligence.menu.ignoreRoom", defaultValue: "Ignore room \"%@\""),
+                        roomName
+                    ),
+                    systemImage: "square.slash"
+                )
+            }
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -2082,13 +2366,20 @@ private struct IntelligenceDomainDetailSheet: View {
                     } else {
                         ForEach(groups) { group in
                             if group.primary.kind == .incoherence {
-                                IncoherenceConflictCard(insight: group.primary, sourceCount: group.sourceCount)
+                                IncoherenceConflictCard(
+                                    insight: group.primary,
+                                    sourceCount: group.sourceCount,
+                                    onAction: onAction
+                                )
+                                .contextMenu { rowContextMenu(for: group) }
                             } else {
                                 IntelligenceEvidenceCard(
                                     insight: group.primary,
                                     domain: domain,
-                                    sourceCount: group.sourceCount
+                                    sourceCount: group.sourceCount,
+                                    onAction: onAction
                                 )
+                                .contextMenu { rowContextMenu(for: group) }
                             }
                         }
                     }

@@ -7,7 +7,24 @@ import HomeKit
 /// guardiamo le caratteristiche effettive per decidere.
 @MainActor
 enum AccessoryAdapterFactory {
-    
+
+    /// Mappa accessorio → adapter costruita in un'unica passata.
+    ///
+    /// La classificazione characteristic-first è deterministica dentro un singolo
+    /// ciclo di analisi: costruire la mappa una volta e passarla ai detector
+    /// (pipeline, incoerenze, security) evita di ripetere la stessa scansione
+    /// servizi/caratteristiche 4-5 volte per accessorio a ogni runCycle.
+    /// La mappa NON va cachata tra un ciclo e l'altro: si ricostruisce fresca
+    /// così accessori aggiunti/rimossi/riclassificati vengono sempre visti.
+    static func adapterMap(homeKit: HomeKitService) -> [UUID: any AccessoryAdapter] {
+        Dictionary(
+            homeKit.allAccessories.map { accessory in
+                (accessory.uniqueIdentifier, adapter(for: accessory, homeKit: homeKit))
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
     static func adapter(for accessory: HMAccessory,
                         homeKit: HomeKitService) -> any AccessoryAdapter {
         

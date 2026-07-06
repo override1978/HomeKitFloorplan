@@ -16,6 +16,15 @@ struct LightingInsight: Identifiable {
     let suggestedIntent: ActionIntent
 }
 
+// MARK: - SuppressedOpportunity
+
+/// Opportunità non proposta perché già coperta da un'automazione HomeKit esistente.
+struct SuppressedOpportunity: Identifiable {
+    let id = UUID()
+    let patternName: String
+    let coveredByAutomation: String
+}
+
 // MARK: - BehavioralAnalysisService
 
 /// Main orchestrator for the Sprint 13 Behavioral AI Engine.
@@ -63,6 +72,21 @@ final class BehavioralAnalysisService {
     /// Wired up from HomeFloorplanApp after both services are created.
     /// Called at the end of analyze() to trigger cluster naming without tying to view lifecycle.
     weak var habitNamingService: HabitAnalysisService?
+
+    /// Fotografie delle automazioni HomeKit esistenti, iniettate da HomeFloorplanApp
+    /// e rivalutate a ogni analisi: le opportunità già coperte vengono soppresse.
+    var existingAutomationsProvider: (@MainActor () -> [ExistingAutomationSnapshot])?
+
+    /// Opportunità soppresse nell'ultima analisi perché già coperte da automazioni
+    /// HomeKit esistenti (diagnostica: dimostra che il motore le ha viste).
+    private(set) var lastSuppressedDuplicates: [SuppressedOpportunity] = []
+
+    /// Eventi esclusi dall'ultima analisi perché adiacenti a esecuzioni scena
+    /// (effetti di scene/SmartLighting, non abitudini umane).
+    private(set) var lastSceneDrivenExcludedCount: Int = 0
+
+    /// Esiti della correlazione contestuale dell'ultima analisi (P2, diagnostica).
+    private(set) var lastContextualOutcomes: [ContextualCorrelationEngine.CorrelationOutcome] = []
 
     // MARK: - Computed
 
@@ -216,8 +240,17 @@ final class BehavioralAnalysisService {
 
         guard !rawAccessory.isEmpty || !rawActivity.isEmpty else { return }
 
+        // Anti-rumore: gli eventi a ridosso di un'esecuzione scena sono effetti della
+        // scena (o dello SmartLightingEngine, che agisce via scene), non abitudini umane.
+        // Senza questo filtro il motore impara dalle proprie automazioni.
+        let humanAccessory = HabitNoiseFilter.excludingSceneDrivenEvents(
+            rawAccessory,
+            sceneExecutionTimestamps: rawActivity.map(\.timestamp)
+        )
+        lastSceneDrivenExcludedCount = rawAccessory.count - humanAccessory.count
+
         // Normalize to BehavioralEvent
-        let accessoryEvents = rawAccessory.map { BehavioralEventPreprocessor.convert($0) }
+        let accessoryEvents = humanAccessory.map { BehavioralEventPreprocessor.convert($0) }
         let sceneEvents     = rawActivity.map  { BehavioralEventPreprocessor.convert($0) }
 
         // Track stats for diagnostics (same eligibility filter as the engine)
@@ -265,6 +298,43 @@ final class BehavioralAnalysisService {
         lastBurstReport        = PatternDetectionEngine.lastBurstReport
         lastAbsorbedEventCount = PatternDetectionEngine.lastAbsorbedEventCount
         lastCoupledPairs       = PatternDetectionEngine.lastCoupledPairs
+
+        // P2 — Contextual Phase: correla i candidati respinti dal gate orario con le
+        // condizioni ambientali. I pattern .contextual sono ri-derivati freschi a ogni
+        // run (come i burst-cluster); le decisioni utente sopravvivono per chiave stabile.
+        var contextualDecisions: [String: BehavioralPatternStatus] = [:]
+        for p in patterns where p.patternType == .contextual && (p.status == .approved || p.status == .dismissed) {
+            contextualDecisions[Self.contextualDecisionKey(for: p)] = p.status
+        }
+        patterns.removeAll { $0.patternType == .contextual }
+
+        let readingsDescriptor: FetchDescriptor<SensorReading> = {
+            var d = FetchDescriptor<SensorReading>(
+                predicate: #Predicate { $0.timestamp >= cutoff },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+            d.fetchLimit = 6000
+            return d
+        }()
+        let sensorReadings = (try? context.fetch(readingsDescriptor)) ?? []
+
+        var contextualPatterns = ContextualCorrelationEngine.detect(
+            candidates: PatternDetectionEngine.lastContextualCandidates,
+            accessoryEvents: accessoryEvents,
+            readings: sensorReadings
+        )
+        for i in contextualPatterns.indices {
+            if let decision = contextualDecisions[Self.contextualDecisionKey(for: contextualPatterns[i])] {
+                contextualPatterns[i].status = decision
+                if decision == .approved  { contextualPatterns[i].approvedAt  = Date() }
+                if decision == .dismissed { contextualPatterns[i].dismissedAt = Date() }
+            }
+        }
+        patterns += contextualPatterns
+        lastContextualOutcomes = ContextualCorrelationEngine.lastOutcomes
+        if !contextualPatterns.isEmpty {
+            dprint("🧠 BehavioralAnalysis: \(contextualPatterns.count) pattern contestuali derivati (P2)")
+        }
 
         // Remove sequential artefacts: active/decaying patterns not re-detected in this run
         // that were recently observed — these are burst fragments from prior analyses.
@@ -430,9 +500,31 @@ final class BehavioralAnalysisService {
             $0.origin != .detected
         }
         let preservedPatternIDs = Set(preserved.map(\.patternID))
-        let activePatternIDs    = Set(qualifying.map(\.id))
 
-        for pattern in qualifying where !preservedPatternIDs.contains(pattern.id) {
+        // Anti-duplicazione: pattern già coperti da automazioni HomeKit esistenti
+        // non generano opportunità (e quelle pendenti vengono fatte scadere).
+        let automationSnapshots = existingAutomationsProvider?() ?? []
+        var suppressed: [SuppressedOpportunity] = []
+        var suppressedPatternIDs: Set<UUID> = []
+        if !automationSnapshots.isEmpty {
+            for pattern in qualifying {
+                if let coveredBy = existingAutomationName(covering: pattern, snapshots: automationSnapshots) {
+                    suppressedPatternIDs.insert(pattern.id)
+                    suppressed.append(SuppressedOpportunity(
+                        patternName: pattern.accessoryName,
+                        coveredByAutomation: coveredBy
+                    ))
+                }
+            }
+        }
+        lastSuppressedDuplicates = suppressed
+        if !suppressed.isEmpty {
+            dprint("🧠 BehavioralAnalysis: \(suppressed.count) opportunità soppresse (già coperte da automazioni HomeKit)")
+        }
+
+        let activePatternIDs = Set(qualifying.map(\.id)).subtracting(suppressedPatternIDs)
+
+        for pattern in qualifying where !preservedPatternIDs.contains(pattern.id) && !suppressedPatternIDs.contains(pattern.id) {
             if let existing = opportunities.first(where: { $0.patternID == pattern.id && $0.status == .pending }) {
                 // Direct mutation — reference semantics on @Model
                 existing.confidence    = pattern.confidence
@@ -458,6 +550,50 @@ final class BehavioralAnalysisService {
         opportunities = opportunities.filter { $0.status != .expired }
     }
 
+    /// Chiave stabile per preservare le decisioni utente sui pattern contestuali
+    /// tra le ri-derivazioni (senza soglia: la decisione sopravvive alla sua deriva).
+    private static func contextualDecisionKey(for pattern: BehavioralPattern) -> String {
+        let sensorType = pattern.causeSignature
+            .flatMap(ContextualCondition.parse(fromSignature:))?.sensorTypeRaw ?? "?"
+        return "ctx:\(pattern.accessoryName)|\(pattern.action.rawValue)|\(pattern.roomName)|\(sensorType)"
+    }
+
+    /// Nome dell'automazione HomeKit esistente che copre già il pattern, nil se nessuna.
+    private func existingAutomationName(
+        covering pattern: BehavioralPattern,
+        snapshots: [ExistingAutomationSnapshot]
+    ) -> String? {
+        switch pattern.patternType {
+        case .temporal, .lighting:
+            guard let accessoryID = pattern.accessoryID else { return nil }
+            return AutomationDuplicateChecker.automationCovering(
+                accessoryID: accessoryID,
+                avgMinuteOfDay: pattern.avgMinuteOfDay,
+                in: snapshots
+            )
+        case .scene:
+            guard let sceneName = pattern.causeName else { return nil }
+            return AutomationDuplicateChecker.automationTriggering(sceneName: sceneName, in: snapshots)
+        case .sequential:
+            // L'effetto è già coperto da un'automazione esistente (event-trigger o timer
+            // vicino) → la sequenza osservata è probabilmente l'eco di quell'automazione.
+            guard let accessoryID = pattern.accessoryID else { return nil }
+            return AutomationDuplicateChecker.automationCovering(
+                accessoryID: accessoryID,
+                avgMinuteOfDay: pattern.avgMinuteOfDay,
+                in: snapshots
+            )
+
+        case .contextual:
+            guard let accessoryID = pattern.accessoryID else { return nil }
+            return AutomationDuplicateChecker.automationCovering(
+                accessoryID: accessoryID,
+                avgMinuteOfDay: pattern.avgMinuteOfDay,
+                in: snapshots
+            )
+        }
+    }
+
     private func isAutomationConvertible(_ pattern: BehavioralPattern) -> Bool {
         switch pattern.patternType {
         case .temporal, .lighting:
@@ -467,8 +603,29 @@ final class BehavioralAnalysisService {
             let sceneName = pattern.causeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return !sceneName.isEmpty
 
-        case .sequential, .contextual:
-            return false
+        case .sequential:
+            // P1: convertibile se effetto azionabile e causa risolvibile
+            // (un singolo accessorio con azione on/off/dim — i cluster burst no).
+            guard pattern.accessoryID != nil,
+                  isSupportedAutomationAction(pattern.action),
+                  let causeName = pattern.causeName,
+                  !causeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let signature = pattern.causeSignature,
+                  !signature.hasPrefix("burst_cluster:"),
+                  AutomationProposalMapper.causeTriggerState(fromSignature: signature) != nil else {
+                return false
+            }
+            return true
+
+        case .contextual:
+            // P2: convertibile se la condizione è parsabile e l'effetto azionabile.
+            guard pattern.accessoryID != nil,
+                  isSupportedAutomationAction(pattern.action),
+                  let signature = pattern.causeSignature,
+                  ContextualCondition.parse(fromSignature: signature) != nil else {
+                return false
+            }
+            return true
         }
     }
 

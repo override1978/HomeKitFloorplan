@@ -68,6 +68,78 @@ struct OperationalIntelligencePolicySettingsView: View {
                 Text(String(localized: "operationalPolicy.contacts.footer", defaultValue: "Nella finestra notturna configurata, un contatto aperto supera subito la priorità base dopo la prima soglia."))
             }
 
+            Section {
+                Toggle(String(localized: "operationalPolicy.daylight.enabled", defaultValue: "Report lights on in bright rooms"), isOn: $policy.daylightWasteEnabled)
+                    .onChange(of: policy.daylightWasteEnabled) { _, _ in save() }
+                if policy.daylightWasteEnabled {
+                    luxStepper(
+                        title: String(localized: "operationalPolicy.daylight.threshold", defaultValue: "Brightness threshold"),
+                        systemImage: "sun.max.fill",
+                        value: $policy.daylightLuxThreshold,
+                        range: 200...1500,
+                        step: 50
+                    )
+                    hourStepper(
+                        title: String(localized: "operationalPolicy.daylight.dayStart", defaultValue: "Daytime from"),
+                        systemImage: "sunrise.fill",
+                        value: $policy.daylightStartHour
+                    )
+                    hourStepper(
+                        title: String(localized: "operationalPolicy.daylight.dayEnd", defaultValue: "Daytime until"),
+                        systemImage: "sunset.fill",
+                        value: $policy.daylightEndHour
+                    )
+                }
+            } header: {
+                Text(String(localized: "operationalPolicy.daylight.header", defaultValue: "Lights and Daylight"))
+            } footer: {
+                Text(String(localized: "operationalPolicy.daylight.footer", defaultValue: "Within this window, rooms brighter than the threshold with lights on are reported as an incoherence. Requires a light sensor in the room. The window keeps evening artificial light from triggering itself."))
+            }
+
+            Section {
+                degreesStepper(
+                    title: String(localized: "operationalPolicy.climate.coolingDelta", defaultValue: "Ineffective cooling threshold"),
+                    systemImage: "thermometer.medium",
+                    value: $policy.coolingIneffectiveDeltaCelsius,
+                    range: 0.3...3.0,
+                    step: 0.1
+                )
+                ppmStepper(
+                    title: String(localized: "operationalPolicy.climate.co2Rise", defaultValue: "CO2 rise threshold"),
+                    systemImage: "carbon.dioxide.cloud.fill",
+                    value: $policy.co2RiseThresholdPPM,
+                    range: 60...500,
+                    step: 20
+                )
+            } header: {
+                Text(String(localized: "operationalPolicy.climate.header", defaultValue: "Climate and Air"))
+            } footer: {
+                Text(String(localized: "operationalPolicy.climate.footer", defaultValue: "These are TREND thresholds: how fast a value changes over the last 90 minutes. Absolute levels (how much is \"too much\") come from your sensor thresholds in the Environment tab — incoherences activate at 90% of your CO2 warning level and escalate at 120%."))
+            }
+
+            if !policy.ignoredRoomNames.isEmpty {
+                Section {
+                    ForEach(policy.ignoredRoomNames, id: \.self) { room in
+                        HStack {
+                            Label(room, systemImage: "square.slash")
+                            Spacer()
+                            Button(role: .destructive) {
+                                policy.ignoredRoomNames.removeAll { $0 == room }
+                                save()
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                } header: {
+                    Text(String(localized: "operationalPolicy.ignoredRooms.header", defaultValue: "Ignored Rooms"))
+                } footer: {
+                    Text(String(localized: "operationalPolicy.ignoredRooms.footer", defaultValue: "These rooms are excluded from all intelligence checks (anomalies, sensor faults, incoherences). Useful for technical rooms hosting virtual switches."))
+                }
+            }
+
             if !policy.ignoredAccessoryIDs.isEmpty {
                 Section {
                     Button(role: .destructive) {
@@ -131,6 +203,152 @@ struct OperationalIntelligencePolicySettingsView: View {
             }
             .background(.quaternary, in: Capsule())
         }
+    }
+
+    private func luxStepper(
+        title: String,
+        systemImage: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double
+    ) -> some View {
+        HStack(spacing: 12) {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            HStack(spacing: 0) {
+                Button {
+                    decrement(value, step: step, in: range)
+                } label: {
+                    Image(systemName: "minus")
+                        .frame(width: 44, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(value.wrappedValue <= range.lowerBound)
+
+                Divider()
+                    .frame(height: 22)
+
+                Text(luxText(value.wrappedValue))
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .frame(minWidth: 72)
+
+                Divider()
+                    .frame(height: 22)
+
+                Button {
+                    increment(value, step: step, in: range)
+                } label: {
+                    Image(systemName: "plus")
+                        .frame(width: 44, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(value.wrappedValue >= range.upperBound)
+            }
+            .background(.quaternary, in: Capsule())
+        }
+    }
+
+    private func degreesStepper(
+        title: String,
+        systemImage: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double
+    ) -> some View {
+        HStack(spacing: 12) {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            HStack(spacing: 0) {
+                Button {
+                    decrement(value, step: step, in: range)
+                } label: {
+                    Image(systemName: "minus")
+                        .frame(width: 44, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(value.wrappedValue <= range.lowerBound)
+
+                Divider()
+                    .frame(height: 22)
+
+                Text(degreesText(value.wrappedValue))
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .frame(minWidth: 72)
+
+                Divider()
+                    .frame(height: 22)
+
+                Button {
+                    increment(value, step: step, in: range)
+                } label: {
+                    Image(systemName: "plus")
+                        .frame(width: 44, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(value.wrappedValue >= range.upperBound)
+            }
+            .background(.quaternary, in: Capsule())
+        }
+    }
+
+    private func ppmStepper(
+        title: String,
+        systemImage: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double
+    ) -> some View {
+        HStack(spacing: 12) {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            HStack(spacing: 0) {
+                Button {
+                    decrement(value, step: step, in: range)
+                } label: {
+                    Image(systemName: "minus")
+                        .frame(width: 44, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(value.wrappedValue <= range.lowerBound)
+
+                Divider()
+                    .frame(height: 22)
+
+                Text(String(format: "%d ppm", Int(value.wrappedValue)))
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .frame(minWidth: 72)
+
+                Divider()
+                    .frame(height: 22)
+
+                Button {
+                    increment(value, step: step, in: range)
+                } label: {
+                    Image(systemName: "plus")
+                        .frame(width: 44, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(value.wrappedValue >= range.upperBound)
+            }
+            .background(.quaternary, in: Capsule())
+        }
+    }
+
+    private func degreesText(_ value: Double) -> String {
+        String(format: "%.1f °C", value)
+    }
+
+    private func luxText(_ value: Double) -> String {
+        String(format: String(localized: "operationalPolicy.daylight.luxValue", defaultValue: "%d lux"), Int(value))
     }
 
     private func hourStepper(
