@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// Pannello laterale destro per le scene, mostrato inline sul floorplan editor.
 /// Si apre/chiude con animazione slide-from-right senza coprire interamente la planimetria.
@@ -7,12 +8,14 @@ struct ScenesSidePanel: View {
 
     @Environment(HomeKitScenesService.self) private var scenesService
     @Environment(IconOverrideStore.self) private var iconOverrides
+    @Environment(\.modelContext) private var modelContext
 
     @State private var searchText: String = ""
     @State private var selectedRoomID: UUID?
     @State private var sceneDetailTarget: SceneItem?
     @State private var executingSceneID: UUID?
     @State private var recentlySucceededID: UUID?
+    @State private var usageStore: SceneUsageStore?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,6 +35,10 @@ struct ScenesSidePanel: View {
         .padding(.trailing, 12)
         .task {
             scenesService.refresh()
+            if usageStore == nil {
+                usageStore = SceneUsageStore(modelContainer: modelContext.container)
+            }
+            usageStore?.loadUsageData()
         }
         .sheet(item: $sceneDetailTarget) { scene in
             SceneDetailSheet(scene: scene)
@@ -239,7 +246,35 @@ struct ScenesSidePanel: View {
         if let selectedRoomID {
             result = result.filter { $0.affiliatedRoomIDs.contains(selectedRoomID) }
         }
-        return result
+        return sortedByUsage(result)
+    }
+
+    private func sortedByUsage(_ scenes: [SceneItem]) -> [SceneItem] {
+        guard let usageStore else {
+            return scenes.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        }
+
+        return scenes.sorted { lhs, rhs in
+            let leftUsage = usageStore.summary(for: lhs.name)
+            let rightUsage = usageStore.summary(for: rhs.name)
+            let leftCount = leftUsage?.totalExecutions ?? 0
+            let rightCount = rightUsage?.totalExecutions ?? 0
+
+            if leftCount != rightCount {
+                return leftCount > rightCount
+            }
+
+            switch (leftUsage?.lastExecutedAt, rightUsage?.lastExecutedAt) {
+            case let (leftDate?, rightDate?) where leftDate != rightDate:
+                return leftDate > rightDate
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+        }
     }
 
     // MARK: - Run scene
@@ -262,6 +297,7 @@ struct ScenesSidePanel: View {
                 await MainActor.run {
                     executingSceneID = nil
                     recentlySucceededID = scene.id
+                    usageStore?.loadUsageData()
                 }
 
                 try? await Task.sleep(nanoseconds: 1_500_000_000)

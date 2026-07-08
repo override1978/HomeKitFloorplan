@@ -2,8 +2,7 @@ import SwiftUI
 
 // MARK: - FloorplanContextPanel
 
-/// Floating cards panel — no opaque background.
-/// The cards rendered by `content` float directly over the floorplan.
+/// Floating cards panel for floorplan overlays.
 /// A small dismiss button (GlassCircle) anchors to the top-right edge.
 struct FloorplanContextPanel<Content: View>: View {
 
@@ -53,7 +52,6 @@ struct FloorplanContextPanel<Content: View>: View {
             .buttonStyle(.plain)
             .padding(.bottom, 16)
         }
-        // No background — cards float directly over the floorplan
     }
 }
 
@@ -103,5 +101,6 @@ struct FloorplanContextPanelContainer<Content: View>: View {
             .animation(.spring(response: 0.38, dampingFraction: 0.88), value: overlayVM.isPanelVisible)
         }
         .ignoresSafeArea(edges: .vertical)
+        .zIndex(100)
     }
 }

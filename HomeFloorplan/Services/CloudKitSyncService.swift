@@ -106,6 +106,9 @@ final class CloudKitSyncService {
     /// Resolves a synced marker UUID/name/room into this device's local HMAccessory UUID.
     var accessoryUUIDResolver: ((UUID, String?, String?) -> UUID?)?
 
+    /// Resolves a synced room UUID/name into this device's local HMRoom UUID.
+    var roomUUIDResolver: ((UUID, String) -> UUID?)?
+
     /// Applies remotely received settings into runtime services backed by UserDefaults.
     /// SwiftData stores the sync source of truth; this callback keeps observable app state in step.
     var remoteSettingsApplyCallback: ((SyncableSettings) -> Void)?
@@ -524,6 +527,40 @@ final class CloudKitSyncService {
         guard didChange else { return }
         try? context.save()
         dprint("[CloudKitSync] Remapped floorplan markers to local HomeKit accessory IDs")
+    }
+
+    /// Re-resolves synced floorplan linked-room UUIDs against this device's HomeKit rooms.
+    /// CloudKit shares the drawn floorplan, but HMRoom.uniqueIdentifier can differ per HomeKit graph.
+    func remapLinkedRoomsToLocalHomeKitIDs() {
+        guard let roomUUIDResolver else { return }
+
+        let context = ModelContext(modelContainer)
+        let floorplans = (try? context.fetch(FetchDescriptor<Floorplan>())) ?? []
+        var didChange = false
+
+        for floorplan in floorplans {
+            let roomIDMap = remapLinkedRooms(on: floorplan)
+            guard !roomIDMap.isEmpty else { continue }
+            didChange = true
+
+            for marker in floorplan.accessories {
+                if let linkedRoomUUID = marker.linkedRoomUUID,
+                   let localRoomUUID = roomIDMap[linkedRoomUUID] {
+                    marker.linkedRoomUUID = localRoomUUID
+                    didChange = true
+                } else if let localRoomUUID = FloorplanRoomMatcher.linkedRoomID(
+                    containing: marker.position,
+                    in: floorplan.linkedRooms
+                ), marker.linkedRoomUUID != localRoomUUID {
+                    marker.linkedRoomUUID = localRoomUUID
+                    didChange = true
+                }
+            }
+        }
+
+        guard didChange else { return }
+        try? context.save()
+        dprint("[CloudKitSync] Remapped floorplan linked rooms to local HomeKit room IDs")
     }
 
     /// Must be called before or right after the SwiftData delete — once the record is gone
@@ -1349,6 +1386,7 @@ private extension CloudKitSyncService {
         fp.drawingExportRotationRaw    = record["drawingExportRotationRaw"] as? String ?? fp.drawingExportRotationRaw
         fp.homeUUID                    = (record["homeUUID"] as? String).flatMap(UUID.init)
         fp.linkedRoomsJSON             = record["linkedRoomsJSON"] as? Data
+        let roomIDMap                  = remapLinkedRooms(on: fp)
 
         if let asset = record["imageData"] as? CKAsset,
            let url   = asset.fileURL,
@@ -1370,13 +1408,14 @@ private extension CloudKitSyncService {
            let snapshots = try? JSONDecoder().decode([PlacedAccessorySnapshot].self, from: data) {
             dprint("[CloudKitSync] Applying \(snapshots.count) marker snapshot(s) to floorplan \(fp.name)")
             appliedFloorplanMarkerSnapshots[fp.id] = snapshots
-            applyAccessorySnapshots(snapshots, to: fp, context: context)
+            applyAccessorySnapshots(snapshots, to: fp, roomIDMap: roomIDMap, context: context)
         }
     }
 
     private func applyAccessorySnapshots(
         _ snapshots: [PlacedAccessorySnapshot],
         to fp: Floorplan,
+        roomIDMap: [UUID: UUID],
         context: ModelContext
     ) {
         let existingByID = Dictionary(uniqueKeysWithValues: fp.accessories.map { ($0.id, $0) })
@@ -1403,6 +1442,11 @@ private extension CloudKitSyncService {
                 snap.accessoryName,
                 snap.roomName
             ) ?? snap.homeKitAccessoryUUID
+            let localLinkedRoomUUID = localLinkedRoomUUID(
+                from: snap,
+                roomIDMap: roomIDMap,
+                floorplan: fp
+            )
             markerIconOverrideApplyCallback?(localAccessoryUUID, snap.iconOverride)
 
             if let existing = existingByID[snap.id] {
@@ -1414,7 +1458,7 @@ private extension CloudKitSyncService {
                 existing.homeKitAccessoryUUID = localAccessoryUUID
                 existing.positionX      = snap.positionX
                 existing.positionY      = snap.positionY
-                existing.linkedRoomUUID = snap.linkedRoomUUID
+                existing.linkedRoomUUID = localLinkedRoomUUID
                 existing.customLabel    = snap.customLabel
             } else {
                 SyncDiagnosticsLogger.log(
@@ -1424,7 +1468,7 @@ private extension CloudKitSyncService {
                     homeKitAccessoryUUID: localAccessoryUUID,
                     position: NormalizedPoint(x: snap.positionX, y: snap.positionY),
                     customLabel:   snap.customLabel,
-                    linkedRoomUUID: snap.linkedRoomUUID
+                    linkedRoomUUID: localLinkedRoomUUID
                 )
                 placed.id       = snap.id
                 placed.floorplan = fp
@@ -1433,6 +1477,64 @@ private extension CloudKitSyncService {
             }
         }
         cachedMarkerIdentities = identityCache
+    }
+
+    private func remapLinkedRooms(on floorplan: Floorplan) -> [UUID: UUID] {
+        guard let roomUUIDResolver else { return [:] }
+
+        let currentRooms = floorplan.linkedRooms
+        var roomIDMap: [UUID: UUID] = [:]
+        var remappedRooms: [LinkedRoom] = []
+        var didChange = false
+
+        for room in currentRooms {
+            let localRoomUUID = roomUUIDResolver(room.hmRoomUUID, room.name) ?? room.hmRoomUUID
+            if localRoomUUID != room.hmRoomUUID {
+                roomIDMap[room.hmRoomUUID] = localRoomUUID
+                didChange = true
+            }
+
+            remappedRooms.append(
+                LinkedRoom(
+                    hmRoomUUID: localRoomUUID,
+                    name: room.name,
+                    normalizedRect: room.normalizedRect,
+                    normalizedPoints: room.normalizedPoints
+                )
+            )
+        }
+
+        if didChange {
+            floorplan.linkedRooms = remappedRooms
+        }
+
+        return roomIDMap
+    }
+
+    private func localLinkedRoomUUID(
+        from snapshot: PlacedAccessorySnapshot,
+        roomIDMap: [UUID: UUID],
+        floorplan: Floorplan
+    ) -> UUID? {
+        if let linkedRoomUUID = snapshot.linkedRoomUUID,
+           let localRoomUUID = roomIDMap[linkedRoomUUID] {
+            return localRoomUUID
+        }
+
+        if let linkedRoomUUID = snapshot.linkedRoomUUID,
+           floorplan.linkedRooms.contains(where: { $0.hmRoomUUID == linkedRoomUUID }) {
+            return linkedRoomUUID
+        }
+
+        if let roomName = snapshot.roomName,
+           let matchedRoom = floorplan.linkedRooms.first(where: {
+               FloorplanRoomMatcher.matches(roomName: roomName, linkedRoom: $0)
+           }) {
+            return matchedRoom.hmRoomUUID
+        }
+
+        let markerPosition = NormalizedPoint(x: snapshot.positionX, y: snapshot.positionY)
+        return FloorplanRoomMatcher.linkedRoomID(containing: markerPosition, in: floorplan.linkedRooms)
     }
 
     func applySettingsRecord(_ record: CKRecord, context: ModelContext) {
@@ -1546,6 +1648,7 @@ private extension CloudKitSyncService {
                 triggerSensorType: record["triggerSensorType"] as? String,
                 triggerThreshold: record["triggerThreshold"] as? Double,
                 triggerDirection: record["triggerDirection"] as? String,
+                triggerConditionsRaw: record["triggerConditionsRaw"] as? String,
                 effectAccessoryIDString: record["effectAccessoryIDString"] as? String,
                 effectActionRaw: record["effectActionRaw"] as? String ?? "",
                 effectValue: record["effectValue"] as? Double,
@@ -1575,6 +1678,7 @@ private extension CloudKitSyncService {
         opp.triggerWeekdaysRaw      = record["triggerWeekdaysRaw"] as? String ?? opp.triggerWeekdaysRaw
         opp.triggerThreshold        = record["triggerThreshold"] as? Double ?? opp.triggerThreshold
         opp.triggerDirection        = record["triggerDirection"] as? String ?? opp.triggerDirection
+        opp.triggerConditionsRaw    = record["triggerConditionsRaw"] as? String ?? opp.triggerConditionsRaw
         opp.effectAccessoryIDString = record["effectAccessoryIDString"] as? String ?? opp.effectAccessoryIDString
         opp.effectActionRaw         = record["effectActionRaw"] as? String ?? opp.effectActionRaw
         opp.effectValue             = record["effectValue"] as? Double ?? opp.effectValue

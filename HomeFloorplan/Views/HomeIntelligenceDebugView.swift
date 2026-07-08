@@ -11,8 +11,11 @@ struct HomeIntelligenceDebugView: View {
     @Query private var sensorAlertThresholds: [SensorAlertThreshold]
 
     @Environment(ProactiveIntelligenceService.self) private var proactiveService
+    @Environment(CloudKitSyncService.self) private var cloudKitSync
+    @Environment(\.modelContext) private var modelContext
 
     @State private var selectedTab: DebugTab = .insights
+    @State private var schemaSeedResult: String?
 
     private enum DebugTab: String, CaseIterable, Identifiable {
         case insights = "Insights"
@@ -118,12 +121,107 @@ struct HomeIntelligenceDebugView: View {
         }
     }
 
+    /// Seed per la creazione dello schema CloudKit in Development: la just-in-time
+    /// schema registra SOLO i campi non-nil al primo save, e production non fa
+    /// just-in-time — un record type nato monco e deployato farebbe fallire i save
+    /// futuri (es. il primo snoozedUntil reale). Il seed valorizza tutti i campi.
+    private var cloudKitSchemaSeedCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Schema CloudKit — seed opportunità", systemImage: "icloud.and.arrow.up")
+                .font(.subheadline.weight(.bold))
+            Text("Crea un'AutomationOpportunity di prova con TUTTI i campi valorizzati (inclusa la coppia di condizioni P2 v2). Verifica in Console (Development) che il record type abbia tutti i campi di toCKRecord, deploya in Production, poi elimina il seed.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Button("Crea seed") { seedCloudKitSchemaOpportunity() }
+                    .buttonStyle(.borderedProminent)
+                Button("Elimina seed", role: .destructive) { deleteSchemaSeeds() }
+                    .buttonStyle(.bordered)
+            }
+            if let schemaSeedResult {
+                Text(schemaSeedResult)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.regularMaterial))
+    }
+
+    private static let schemaSeedTitle = "CloudKit schema seed"
+
+    private func seedCloudKitSchemaOpportunity() {
+        let conditions = [
+            ContextualCondition(sensorTypeRaw: "temperature", direction: "above", threshold: 27.5),
+            ContextualCondition(sensorTypeRaw: "lightSensor", direction: "below", threshold: 100, roomName: "Balcone")
+        ]
+        let seed = AutomationOpportunity(
+            profileID: UUID(),
+            createdAt: .now,
+            lastUpdatedAt: .now,
+            title: Self.schemaSeedTitle,
+            naturalLanguage: "Record di prova per la creazione dello schema — eliminami dalla Console",
+            roomName: "Studio",
+            patternID: UUID(),
+            confidence: 0.5,
+            observations: 1,
+            firstObservedAt: .now,
+            lastObservedAt: .now,
+            avgTimeString: "21:30",
+            timeDeviationMinutes: 0,
+            dayTypeLabel: "test",
+            patternTypeRaw: BehavioralPatternType.contextual.rawValue,
+            triggerType: "characteristic",
+            triggerTime: "21:30",
+            triggerWeekdaysRaw: "1,2,3,4,5,6,7",
+            triggerSensorType: "temperature",
+            triggerThreshold: 27.5,
+            triggerDirection: "above",
+            triggerConditionsRaw: ContextualCondition.signature(for: conditions),
+            effectAccessoryIDString: UUID().uuidString,
+            effectActionRaw: "on",
+            effectValue: 50,
+            effectValue2: 20,
+            effectSceneName: "Scena Test",
+            statusRaw: OpportunityStatus.dismissed.rawValue,  // mai visibile come card
+            snoozedUntil: .now.addingTimeInterval(3600),
+            dismissedAt: .now,
+            approvedAt: .now,
+            originRaw: OpportunityOrigin.conversational.rawValue
+        )
+        modelContext.insert(seed)
+        do {
+            try modelContext.save()
+            cloudKitSync.syncAfterSave()
+            schemaSeedResult = "In coda per il sync: opportunity:\(seed.id.uuidString)"
+        } catch {
+            schemaSeedResult = "Errore save: \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteSchemaSeeds() {
+        let title = Self.schemaSeedTitle
+        let seeds = (try? modelContext.fetch(FetchDescriptor<AutomationOpportunity>(
+            predicate: #Predicate { $0.title == title }
+        ))) ?? []
+        for seed in seeds {
+            cloudKitSync.markOpportunityDeleted(seed.id)
+            modelContext.delete(seed)
+        }
+        try? modelContext.save()
+        schemaSeedResult = seeds.isEmpty
+            ? "Nessun seed da eliminare"
+            : "Eliminati \(seeds.count) seed (anche dal record CloudKit)"
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 summaryGrid
                 cycleTimingsCard
+                cloudKitSchemaSeedCard
                 Picker("Debug section", selection: $selectedTab) {
                     ForEach(DebugTab.allCases) { tab in
                         Text(tab.rawValue).tag(tab)

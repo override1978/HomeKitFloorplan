@@ -29,6 +29,10 @@ enum AutomationProposalMapper {
         /// e stato che innesca (true = si accende/attiva).
         var triggerAccessoryName: String? = nil
         var triggerAccessoryActive: Bool? = nil
+        /// P2 v2 — condizioni contestuali oltre la primaria (che vive nei campi
+        /// sensorType/Threshold/Direction). Risolte per (tipo, stanza): late binding,
+        /// nessun ID HomeKit.
+        var secondaryConditions: [ContextualCondition] = []
     }
 
     static func chatbotProposal(
@@ -46,6 +50,7 @@ enum AutomationProposalMapper {
         triggerSensorAccessoryName: String? = nil,
         triggerThreshold: Double?,
         triggerDirection: String?,
+        triggerConditionsRaw: String? = nil,
         sceneName: String?,
         triggerScheduleKind: String? = nil,
         triggerOffsetMinutes: Int = 0,
@@ -55,7 +60,7 @@ enum AutomationProposalMapper {
         capabilities: [AutomationCharacteristicCapability],
         scenes: [SceneItem]
     ) -> AutomationProposal {
-        let draft = Draft(
+        var draft = Draft(
             source: .chatbot,
             title: label,
             explanation: naturalLanguage,
@@ -78,6 +83,16 @@ enum AutomationProposalMapper {
             presenceKind: triggerPresenceKind,
             presenceUserScope: triggerPresenceUserScope
         )
+
+        if triggerType == "characteristic",
+           let raw = triggerConditionsRaw,
+           let parsed = ContextualCondition.parseConditions(fromSignature: raw),
+           let primary = parsed.first {
+            if !primary.roomName.isEmpty {
+                draft.sensorRoom = primary.roomName
+            }
+            draft.secondaryConditions = Array(parsed.dropFirst())
+        }
 
         return proposal(from: draft, capabilities: capabilities, scenes: scenes)
     }
@@ -149,6 +164,19 @@ enum AutomationProposalMapper {
         if opportunity.triggerType == "accessoryState", let pattern = sourcePattern {
             draft.triggerAccessoryName = pattern.causeName
             draft.triggerAccessoryActive = pattern.causeSignature.flatMap(causeTriggerState(fromSignature:))
+        }
+
+        // P2 v2 — condizioni multiple: vivono nell'opportunità stessa (autosufficiente),
+        // NON nel pattern sorgente, che per i contestuali è effimero (UUID nuovo a ogni
+        // run → patternID dangling su opportunità snoozed o sincronizzate).
+        if opportunity.triggerType == "characteristic",
+           let raw = opportunity.triggerConditionsRaw,
+           let conditions = ContextualCondition.parseConditions(fromSignature: raw),
+           let primary = conditions.first {
+            if !primary.roomName.isEmpty {
+                draft.sensorRoom = primary.roomName
+            }
+            draft.secondaryConditions = Array(conditions.dropFirst())
         }
 
         return proposal(from: draft, capabilities: capabilities, scenes: scenes)
@@ -225,6 +253,73 @@ enum AutomationProposalMapper {
         if draft.triggerType != "presence",
            draft.presenceKind?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             conditions.append(.presence(presenceCondition(from: draft)))
+        }
+
+        // P2 v2 — coppia contestuale: OR degli attraversamenti (start events multipli,
+        // copre entrambi gli ordini di arrivo) + AND delle condizioni (predicato
+        // composto, conditionJoinMode .all). Una secondaria non risolvibile produce
+        // una limitation esplicita nel wizard, MAI un drop silenzioso: l'utente non
+        // deve approvare un'automazione diversa da quella descritta sulla card.
+        if draft.triggerType == "characteristic", !draft.secondaryConditions.isEmpty, !startEvents.isEmpty {
+            var probe: [String] = []  // esiti dei tentativi opzionali: non sono limiti della proposta
+            let primaryAsCondition = sensorSelection(
+                sensorType: draft.sensorType,
+                roomName: draft.sensorRoom,
+                accessoryName: draft.sensorAccessoryName,
+                threshold: draft.sensorThreshold,
+                direction: draft.sensorDirection,
+                requiredRole: .condition,
+                capabilities: capabilities,
+                limitations: &probe
+            )
+
+            var addedSecondary = false
+            for secondary in draft.secondaryConditions {
+                let room = secondary.roomName.isEmpty ? draft.sensorRoom : secondary.roomName
+                var attempt: [String] = []
+                guard let conditionSelection = sensorSelection(
+                    sensorType: secondary.sensorTypeRaw,
+                    roomName: room,
+                    accessoryName: nil,
+                    threshold: secondary.threshold,
+                    direction: secondary.direction,
+                    requiredRole: .condition,
+                    capabilities: capabilities,
+                    limitations: &attempt
+                ) else {
+                    let typeName = SensorServiceType(rawValue: secondary.sensorTypeRaw)?.displayName ?? secondary.sensorTypeRaw
+                    let label = "\(typeName) (\(room)) \(secondary.direction == "above" ? ">" : "<") \(secondary.threshold)"
+                    limitations.append(String(
+                        format: String(localized: "automation.proposal.limit.secondaryCondition",
+                                       defaultValue: "The additional condition (%@) could not be resolved in HomeKit — the automation will be created without it."),
+                        label
+                    ))
+                    continue
+                }
+                conditions.append(.accessory(conditionSelection))
+                addedSecondary = true
+
+                // Attraversamento della secondaria come start event SOLO se la primaria
+                // è disponibile come condizione: altrimenti l'automazione scatterebbe
+                // sulla secondaria senza verificare la primaria.
+                if primaryAsCondition != nil,
+                   let triggerSelection = sensorSelection(
+                       sensorType: secondary.sensorTypeRaw,
+                       roomName: room,
+                       accessoryName: nil,
+                       threshold: secondary.threshold,
+                       direction: secondary.direction,
+                       requiredRole: .trigger,
+                       capabilities: capabilities,
+                       limitations: &probe
+                   ) {
+                    startEvents.append(.accessory(triggerSelection))
+                }
+            }
+
+            if addedSecondary, let primaryAsCondition {
+                conditions.append(.accessory(primaryAsCondition))
+            }
         }
 
         if let action = action(from: draft, capabilities: capabilities, scenes: scenes, limitations: &limitations) {
@@ -412,15 +507,37 @@ enum AutomationProposalMapper {
         capabilities: [AutomationCharacteristicCapability],
         limitations: inout [String]
     ) -> AutomationProposalCapabilitySelection? {
-        guard let sensorType = draft.sensorType else {
+        sensorSelection(
+            sensorType: draft.sensorType,
+            roomName: draft.sensorRoom,
+            accessoryName: draft.sensorAccessoryName,
+            threshold: draft.sensorThreshold,
+            direction: draft.sensorDirection,
+            requiredRole: requiredRole,
+            capabilities: capabilities,
+            limitations: &limitations
+        )
+    }
+
+    private static func sensorSelection(
+        sensorType: String?,
+        roomName: String,
+        accessoryName: String?,
+        threshold: Double?,
+        direction: String?,
+        requiredRole: AutomationCapabilityRole,
+        capabilities: [AutomationCharacteristicCapability],
+        limitations: inout [String]
+    ) -> AutomationProposalCapabilitySelection? {
+        guard let sensorType else {
             limitations.append(String(localized: "automation.proposal.limit.missingSensor", defaultValue: "The opportunity does not include a complete sensor condition."))
             return nil
         }
 
         guard let capability = capability(
             forSensorType: sensorType,
-            roomName: draft.sensorRoom,
-            accessoryName: draft.sensorAccessoryName,
+            roomName: roomName,
+            accessoryName: accessoryName,
             requiredRole: requiredRole,
             capabilities: capabilities
         ) else {
@@ -430,7 +547,7 @@ enum AutomationProposalMapper {
 
         let comparisonOperator: AutomationProposalOperator
         let target: AutomationProposalTargetValue
-        let normalizedDirection = draft.sensorDirection?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let normalizedDirection = direction?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         switch capability.valueKind {
         case .boolean:
             let inactiveDirections = ["below", "inactive", "closed", "clear", "off", "false"]
@@ -438,7 +555,7 @@ enum AutomationProposalMapper {
             comparisonOperator = isInactiveTarget ? .becomesInactive : .becomesActive
             target = .bool(!isInactiveTarget)
         case .numeric, .state:
-            guard let threshold = draft.sensorThreshold else {
+            guard let threshold else {
                 limitations.append(String(localized: "automation.proposal.limit.missingSensor", defaultValue: "The opportunity does not include a complete sensor condition."))
                 return nil
             }

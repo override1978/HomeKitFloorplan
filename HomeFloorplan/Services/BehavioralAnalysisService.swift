@@ -321,7 +321,8 @@ final class BehavioralAnalysisService {
         var contextualPatterns = ContextualCorrelationEngine.detect(
             candidates: PatternDetectionEngine.lastContextualCandidates,
             accessoryEvents: accessoryEvents,
-            readings: sensorReadings
+            readings: sensorReadings,
+            outdoorRoomName: UserDefaults.standard.string(forKey: "outdoorRoomName") ?? ""
         )
         for i in contextualPatterns.indices {
             if let decision = contextualDecisions[Self.contextualDecisionKey(for: contextualPatterns[i])] {
@@ -618,11 +619,15 @@ final class BehavioralAnalysisService {
             return true
 
         case .contextual:
-            // P2: convertibile se la condizione è parsabile e l'effetto azionabile.
+            // P2: convertibile se OGNI condizione è parsabile, HomeKit-backed
+            // (i tipi WeatherKit non hanno characteristic → niente CTA su un wizard
+            // che fallirebbe sempre) e l'effetto azionabile.
             guard pattern.accessoryID != nil,
                   isSupportedAutomationAction(pattern.action),
                   let signature = pattern.causeSignature,
-                  ContextualCondition.parse(fromSignature: signature) != nil else {
+                  let conditions = ContextualCondition.parseConditions(fromSignature: signature),
+                  !conditions.isEmpty,
+                  conditions.allSatisfy(\.isHomeKitBacked) else {
                 return false
             }
             return true

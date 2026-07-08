@@ -13,6 +13,10 @@ struct AccessoryPickerSheet: View {
     /// Optional: UUIDs of HMRooms drawn on this floorplan — shown first under a dedicated header.
     var preferredRoomUUIDs: Set<UUID> = []
 
+    /// Optional fallback names for linked rooms. HomeKit room identifiers can change across imports/syncs,
+    /// while the drawn floorplan still stores the original room name.
+    var preferredRoomNames: Set<String> = []
+
     /// Optional contextual title, used when the picker is opened from a specific room.
     var title: String = String(localized: "floorplan.accessoryPicker.title", defaultValue: "Add accessories")
 
@@ -147,14 +151,33 @@ struct AccessoryPickerSheet: View {
 
     /// Rooms whose UUID is in `preferredRoomUUIDs` (floorplan areas).
     private var preferredRooms: [(HMRoom, [HMAccessory])] {
-        guard !preferredRoomUUIDs.isEmpty else { return [] }
-        return allRoomsWithAccessories.filter { preferredRoomUUIDs.contains($0.0.uniqueIdentifier) }
+        guard hasPreferredRooms else { return [] }
+        return allRoomsWithAccessories.filter { isPreferredRoom($0.0) }
     }
 
     /// Rooms not in `preferredRoomUUIDs`.
     private var otherRooms: [(HMRoom, [HMAccessory])] {
-        if preferredRoomUUIDs.isEmpty { return allRoomsWithAccessories }
-        return allRoomsWithAccessories.filter { !preferredRoomUUIDs.contains($0.0.uniqueIdentifier) }
+        if !hasPreferredRooms { return allRoomsWithAccessories }
+        return allRoomsWithAccessories.filter { !isPreferredRoom($0.0) }
+    }
+
+    private var hasPreferredRooms: Bool {
+        !preferredRoomUUIDs.isEmpty || !preferredRoomNames.isEmpty
+    }
+
+    private func isPreferredRoom(_ room: HMRoom) -> Bool {
+        if preferredRoomUUIDs.contains(room.uniqueIdentifier) {
+            return true
+        }
+
+        let normalizedRoomName = normalizedRoomName(room.name)
+        return preferredRoomNames.contains(normalizedRoomName)
+    }
+
+    private func normalizedRoomName(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Rimuove il nome della stanza dal nome dell'accessorio (suffisso o prefisso con trattino).

@@ -209,6 +209,19 @@ struct HomeFloorplanApp: App {
                 Self.normalizedHomeKitToken($0.name) == normalizedName
             }?.uniqueIdentifier
         }
+        cloudSync.roomUUIDResolver = { remoteUUID, roomName in
+            guard let home = kit.currentHome else { return nil }
+            if home.rooms.contains(where: { $0.uniqueIdentifier == remoteUUID }) {
+                return remoteUUID
+            }
+
+            let normalizedRoomName = Self.normalizedHomeKitToken(roomName)
+            guard let normalizedRoomName else { return nil }
+
+            return home.rooms.first {
+                Self.normalizedHomeKitToken($0.name) == normalizedRoomName
+            }?.uniqueIdentifier
+        }
         cloudSync.remoteSettingsApplyCallback = { settings in
             if let provider = AIProvider(rawValue: settings.aiProviderRaw),
                provider.isPubliclyAvailable {
@@ -458,6 +471,7 @@ struct HomeFloorplanApp: App {
                 }
                 .onChange(of: homeKit.isReady, initial: true) { _, isReady in
                     guard isReady else { return }
+                    cloudKitSync.remapLinkedRoomsToLocalHomeKitIDs()
                     cloudKitSync.remapPlacedAccessoriesToLocalHomeKitIDs()
                 }
                 .onChange(of: locationPresenceService.presenceState) { _, newState in

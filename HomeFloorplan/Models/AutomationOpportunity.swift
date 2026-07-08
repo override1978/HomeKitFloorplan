@@ -58,6 +58,13 @@ final class AutomationOpportunity {
     var triggerSensorType: String?
     var triggerThreshold: Double?
     var triggerDirection: String?
+    /// P2 v2 — lista completa delle condizioni contestuali nel formato signature
+    /// ("context:<tipo>[@<stanza>]:<dir>:<soglia>[+...]"). Valorizzato SOLO quando
+    /// c'è più di una condizione o una stanza non-default; nil = mono-condizione
+    /// descritta dai tre campi scalari sopra (che restano sempre la primaria).
+    /// Rende l'opportunità autosufficiente: il mapper non dipende dal pattern
+    /// sorgente, che per i contestuali è effimero (UUID nuovo a ogni run).
+    var triggerConditionsRaw: String?
 
     // — Effect (for proposal generation) —
     var effectAccessoryIDString: String?
@@ -122,7 +129,24 @@ final class AutomationOpportunity {
             return (0...23).contains(hour) && (0...59).contains(minute)
 
         case "characteristic":
-            return triggerSensorType?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            // P2 v2: se c'è la lista completa, OGNI condizione deve essere risolvibile
+            // in una characteristic HomeKit. Chiude anche il wart outdoor-WeatherKit:
+            // i tipi meteo (hmCharacteristicType vuoto) non hanno nulla da scrivere nel
+            // predicato — la CTA portava a un wizard che falliva sempre.
+            if let raw = triggerConditionsRaw {
+                guard let conditions = ContextualCondition.parseConditions(fromSignature: raw),
+                      !conditions.isEmpty else { return false }
+                return conditions.allSatisfy(\.isHomeKitBacked)
+            }
+            guard let sensorType = triggerSensorType?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !sensorType.isEmpty else { return false }
+            // Tipi noti non HomeKit-backed (WeatherKit) → non convertibile.
+            // Tipi sconosciuti (es. dal chatbot: "motion") restano permissivi come oggi:
+            // li risolve il mapper con i suoi fallback.
+            if let known = SensorServiceType(rawValue: sensorType) {
+                return !known.hmCharacteristicType.isEmpty
+            }
+            return true
 
         case "accessoryState":
             // Validità piena verificata dal mapper (risoluzione causa dal pattern sorgente).
@@ -180,6 +204,20 @@ final class AutomationOpportunity {
             }.joined(separator: ", ")
             return "\(dayNames) · \(time)"
         case "characteristic":
+            // P2 v2: con la lista completa, riepilogo di TUTTE le condizioni —
+            // la card non deve mentire per omissione sulla secondaria.
+            if let raw = triggerConditionsRaw,
+               let conditions = ContextualCondition.parseConditions(fromSignature: raw),
+               !conditions.isEmpty {
+                return conditions.map { condition in
+                    let name = SensorServiceType(rawValue: condition.sensorTypeRaw)?.displayName ?? condition.sensorTypeRaw
+                    let room = condition.roomName.isEmpty
+                        ? (roomName.isEmpty ? "" : " (\(roomName))")
+                        : " (\(condition.roomName))"
+                    let dir = condition.direction == "above" ? ">" : "<"
+                    return "\(name)\(room) \(dir) \(String(format: "%.1f", condition.threshold))"
+                }.joined(separator: " + ")
+            }
             guard let sensor = triggerSensorType else { return nil }
             let sensorName = SensorServiceType(rawValue: sensor)?.displayName ?? sensor
             let sensorRoom = roomName.isEmpty ? "" : " (\(roomName))"
@@ -218,6 +256,7 @@ final class AutomationOpportunity {
         triggerSensorType: String?,
         triggerThreshold: Double?,
         triggerDirection: String?,
+        triggerConditionsRaw: String? = nil,
         effectAccessoryIDString: String?,
         effectActionRaw: String,
         effectValue: Double?,
@@ -252,6 +291,7 @@ final class AutomationOpportunity {
         self.triggerSensorType       = triggerSensorType
         self.triggerThreshold        = triggerThreshold
         self.triggerDirection        = triggerDirection
+        self.triggerConditionsRaw    = triggerConditionsRaw
         self.effectAccessoryIDString = effectAccessoryIDString
         self.effectActionRaw         = effectActionRaw
         self.effectValue             = effectValue
@@ -290,6 +330,7 @@ extension AutomationOpportunity {
         var triggerSensorType: String?
         var triggerThreshold: Double?
         var triggerDirection: String?
+        var triggerConditionsRaw: String?
 
         switch pattern.patternType {
         case .temporal, .scene, .lighting:
@@ -304,13 +345,19 @@ extension AutomationOpportunity {
             triggerTime        = nil
             triggerWeekdaysRaw = weekdayStr
         case .contextual:
-            // P2: condizione ambientale codificata nella causeSignature → trigger
-            // a soglia sensore, già supportato end-to-end dal mapper ("characteristic").
-            if let condition = pattern.causeSignature.flatMap(ContextualCondition.parse(fromSignature:)) {
+            // P2: condizioni ambientali codificate nella causeSignature → trigger a
+            // soglia sensore. La primaria vive nei campi scalari (retro-compat con i
+            // client vecchi, che vedono un'opportunità mono-condizione valida); la
+            // lista completa in triggerConditionsRaw solo quando serve (P2 v2).
+            if let conditions = pattern.causeSignature.flatMap(ContextualCondition.parseConditions(fromSignature:)),
+               let primary = conditions.first {
                 triggerType       = "characteristic"
-                triggerSensorType = condition.sensorTypeRaw
-                triggerThreshold  = condition.threshold
-                triggerDirection  = condition.direction
+                triggerSensorType = primary.sensorTypeRaw
+                triggerThreshold  = primary.threshold
+                triggerDirection  = primary.direction
+                if conditions.count > 1 || !primary.roomName.isEmpty {
+                    triggerConditionsRaw = ContextualCondition.signature(for: conditions)
+                }
             } else {
                 triggerType = "inApp"
             }
@@ -343,6 +390,7 @@ extension AutomationOpportunity {
             triggerSensorType:    triggerSensorType,
             triggerThreshold:     triggerThreshold,
             triggerDirection:     triggerDirection,
+            triggerConditionsRaw: triggerConditionsRaw,
             effectAccessoryIDString: matchedSceneName == nil ? pattern.accessoryID?.uuidString : nil,
             effectActionRaw:      pattern.action.rawValue,
             effectValue:          pattern.numericValue,
@@ -434,6 +482,7 @@ extension AutomationOpportunity {
         triggerSensorRoom:  String? = nil,
         triggerThreshold:   Double? = nil,
         triggerDirection:   String? = nil,
+        triggerConditionsRaw: String? = nil,
         sceneName:          String? = nil,
         semanticKey:        String,
         profileID:          UUID?   = nil
@@ -464,6 +513,7 @@ extension AutomationOpportunity {
             triggerSensorType:    triggerSensorType,
             triggerThreshold:     triggerThreshold,
             triggerDirection:     triggerDirection,
+            triggerConditionsRaw: triggerConditionsRaw,
             effectAccessoryIDString: accessoryID,
             effectActionRaw:      action,
             effectValue:          value,

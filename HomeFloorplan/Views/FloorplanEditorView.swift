@@ -280,12 +280,23 @@ struct FloorplanEditorView: View {
             pendingMarkerPosition = nil
             editHighlightedRoomID = nil
         }) {
+            let preferredRoomUUIDs = pickerRoomFilter != nil
+                ? Set([pickerRoomFilter!])
+                : Set(floorplan.linkedRooms.map(\.hmRoomUUID))
+            let preferredRoomNames = Set(
+                floorplan.linkedRooms
+                    .filter { room in
+                        pickerRoomFilter == nil || room.hmRoomUUID == pickerRoomFilter
+                    }
+                    .map { normalizedRoomName($0.name) }
+            )
+            let alreadyPlaced = Set(floorplan.accessories.map(\.homeKitAccessoryUUID))
+            let title = accessoryPickerTitle
             AccessoryPickerSheet(
-                alreadyPlaced: Set(floorplan.accessories.map(\.homeKitAccessoryUUID)),
-                preferredRoomUUIDs: pickerRoomFilter != nil
-                    ? Set([pickerRoomFilter!])
-                    : Set(floorplan.linkedRooms.map(\.hmRoomUUID)),
-                title: accessoryPickerTitle,
+                alreadyPlaced: alreadyPlaced,
+                preferredRoomUUIDs: preferredRoomUUIDs,
+                preferredRoomNames: preferredRoomNames,
+                title: title,
                 onPick: { accessories in
                     for accessory in accessories {
                         addAccessory(accessory, at: pendingMarkerPosition)
@@ -520,9 +531,10 @@ struct FloorplanEditorView: View {
 
             if !isEditing,
                overlayVM?.activeMode == .controls,
+               cloudKitSync.isMaster,
                let status = smartLightingEngine.floorplanStatus {
                 smartLightingFloorplanStatus(status)
-                    .padding(.top, 6)
+                    .padding(.top, 10)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
 
@@ -650,7 +662,11 @@ struct FloorplanEditorView: View {
             }
         }
         .background(.regularMaterial, in: Capsule())
-        .shadow(color: .black.opacity(0.10), radius: 10, x: 0, y: 3)
+        .overlay(
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
     }
 
     private func smartLightingStatusTitle(_ status: SmartLightingFloorplanStatus) -> String {
@@ -1723,6 +1739,12 @@ struct FloorplanEditorView: View {
 
     private func formatCoordinate(_ value: Double) -> String {
         String(format: "%.4f", value)
+    }
+
+    private func normalizedRoomName(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     @ViewBuilder

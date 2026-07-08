@@ -117,6 +117,7 @@ extension AutomationOpportunity {
         record["triggerSensorType"]       = triggerSensorType
         record["triggerThreshold"]        = triggerThreshold
         record["triggerDirection"]        = triggerDirection
+        record["triggerConditionsRaw"]    = triggerConditionsRaw
         record["effectAccessoryIDString"] = effectAccessoryIDString
         record["effectActionRaw"]         = effectActionRaw
         record["effectValue"]             = effectValue

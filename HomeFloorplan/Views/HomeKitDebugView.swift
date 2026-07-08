@@ -5,23 +5,72 @@ import UIKit
 struct HomeKitDebugView: View {
     @Environment(HomeKitService.self) private var homeKit
     @State private var searchText: String = ""
+    @State private var isRunningMatterEnergyProbe: Bool = false
+    @State private var matterEnergyProbeReport: String?
     
     var body: some View {
-        List(filteredAccessories, id: \.uniqueIdentifier) { accessory in
-            NavigationLink {
-                HomeKitDebugAccessoryDetail(accessory: accessory)
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(accessory.name).font(.body)
-                    Text(accessory.category.localizedDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        List {
+            matterEnergyProbeSection
+
+            ForEach(filteredAccessories, id: \.uniqueIdentifier) { accessory in
+                NavigationLink {
+                    HomeKitDebugAccessoryDetail(accessory: accessory)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(accessory.name).font(.body)
+                        Text(accessory.category.localizedDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
         .searchable(text: $searchText, prompt: Text("homekit.debug.search.prompt"))
         .navigationTitle(Text("homekit.debug.title"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private var matterEnergyProbeSection: some View {
+        Section("Sonda Matter Energia") {
+            Button {
+                runMatterEnergyProbe()
+            } label: {
+                if isRunningMatterEnergyProbe {
+                    ProgressView()
+                } else {
+                    Label("Sonda Matter Energia", systemImage: "bolt.circle")
+                }
+            }
+            .disabled(isRunningMatterEnergyProbe || homeKit.currentHome == nil)
+
+            if let matterEnergyProbeReport {
+                Text(matterEnergyProbeReport)
+                    .font(.caption2.monospaced())
+                    .textSelection(.enabled)
+            } else {
+                Text("Read-only: mostra solo nodi Matter con capability utili e fa una sola read energia dove disponibile.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func runMatterEnergyProbe() {
+        guard let home = homeKit.currentHome else {
+            matterEnergyProbeReport = "HomeKit home non disponibile."
+            return
+        }
+        isRunningMatterEnergyProbe = true
+        matterEnergyProbeReport = "Sonda in corso..."
+
+        Task {
+            let report = await MatterEnergyProbe().run(home: home)
+            await MainActor.run {
+                matterEnergyProbeReport = report.text
+                isRunningMatterEnergyProbe = false
+            }
+        }
     }
     
     private var filteredAccessories: [HMAccessory] {

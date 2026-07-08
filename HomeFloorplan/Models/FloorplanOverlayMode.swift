@@ -21,7 +21,7 @@ enum FloorplanOverlayMode: String, CaseIterable, Identifiable {
         case .controls:     return true
         case .environment:  return context.hasEnvironmentData
         case .security:     return context.hasSecurityDevices
-        case .intelligence: return context.hasIntelligenceSuggestions
+        case .intelligence: return true
         }
     }
 }
