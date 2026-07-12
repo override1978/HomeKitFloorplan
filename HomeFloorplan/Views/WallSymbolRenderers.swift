@@ -428,13 +428,71 @@ private func shadowDeviceOffset(_ context: CGContext, _ canvasOffset: CGSize) ->
                   height: canvasOffset.width * t.b + canvasOffset.height * t.d)
 }
 
+/// Approximate silhouette of the furniture's dominant drawn shape, used as the
+/// shadow caster: shadows must follow what is visibly drawn, not the bounding
+/// rect (a chair casting a rectangle reads as a stain on patterned floors).
+/// Subpaths must not overlap — the even-odd clip in the shadow pass would
+/// otherwise paint the source through the overlap region.
+private func furnitureShadowPath(_ item: FurnitureItem) -> UIBezierPath {
+    let rect = item.rect
+    func rounded(_ r: CGRect, _ radius: CGFloat) -> UIBezierPath {
+        UIBezierPath(roundedRect: r, cornerRadius: min(radius, min(r.width, r.height) / 2))
+    }
+    let path: UIBezierPath
+    switch item.kind {
+    case .sofa:
+        path = rounded(rect.insetBy(dx: rect.width * 0.07, dy: rect.height * 0.10), 10)
+    case .armchair:
+        path = rounded(rect.insetBy(dx: rect.width * 0.11, dy: rect.height * 0.10), 10)
+    case .diningTable:
+        path = UIBezierPath(ovalIn: rect.insetBy(dx: rect.width * 0.12, dy: rect.height * 0.14))
+    case .chair:
+        let seat = CGRect(x: rect.minX + rect.width * 0.23, y: rect.minY + rect.height * 0.34,
+                          width: rect.width * 0.54, height: rect.height * 0.42)
+        let back = CGRect(x: seat.minX - rect.width * 0.03, y: rect.minY + rect.height * 0.15,
+                          width: seat.width + rect.width * 0.06, height: rect.height * 0.16)
+        path = rounded(seat, 4)
+        path.append(rounded(back, 3))
+    case .bed:
+        path = rounded(rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.06), 7)
+    case .wardrobe:
+        path = rounded(rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.10), 4)
+    case .toilet:
+        let tank = CGRect(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.12,
+                          width: rect.width * 0.56, height: rect.height * 0.22)
+        let bowl = CGRect(x: rect.minX + rect.width * 0.18, y: rect.minY + rect.height * 0.34,
+                          width: rect.width * 0.64, height: rect.height * 0.46)
+        path = rounded(tank, 3)
+        path.append(UIBezierPath(ovalIn: bowl))
+    case .sink:
+        path = UIBezierPath(ovalIn: rect.insetBy(dx: rect.width * 0.16, dy: rect.height * 0.18))
+    case .inductionCooktop:
+        path = rounded(rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.10), 5)
+    case .washingMachine:
+        path = rounded(rect.insetBy(dx: rect.width * 0.10, dy: rect.height * 0.08), 6)
+    case .bathtub:
+        let tub = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.18)
+        path = rounded(tub, tub.height / 2)
+    case .shower:
+        path = rounded(rect.insetBy(dx: rect.width * 0.12, dy: rect.height * 0.12), 4)
+    case .generic:
+        path = rounded(rect, 4)
+    }
+    let rotation = CGAffineTransform(translationX: rect.midX, y: rect.midY)
+        .rotated(by: CGFloat(item.rotationDegrees * .pi / 180))
+        .translatedBy(x: -rect.midX, y: -rect.midY)
+    path.apply(rotation)
+    return path
+}
+
 private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGContext) {
     for item in doc.furnitureItems {
-        let path = UIBezierPath(roundedRect: item.rect, cornerRadius: 3)
-        let rotation = CGAffineTransform(translationX: item.rect.midX, y: item.rect.midY)
-            .rotated(by: CGFloat(item.rotationDegrees * .pi / 180))
-            .translatedBy(x: -item.rect.midX, y: -item.rect.midY)
-        path.apply(rotation)
+        let path = furnitureShadowPath(item)
+        // Shadow reach scales with the object footprint: a chair must not cast
+        // the same shadow as a sofa.
+        let ref = min(item.rect.width, item.rect.height)
+        let offset = CGSize(width: min(5, ref * 0.07), height: min(8, ref * 0.11))
+        let blur = min(12, max(4, ref * 0.14))
 
         context.saveGState()
         // Shadow strength is multiplied by the source alpha, so the silhouette must
@@ -442,9 +500,9 @@ private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGConte
         context.addRect(CGRect(x: -1e5, y: -1e5, width: 2e5, height: 2e5))
         context.addPath(path.cgPath)
         context.clip(using: .evenOdd)
-        context.setShadow(offset: shadowDeviceOffset(context, CGSize(width: 5, height: 8)),
-                          blur: 12 * shadowDeviceScale(context),
-                          color: UIColor.black.withAlphaComponent(0.45).cgColor)
+        context.setShadow(offset: shadowDeviceOffset(context, offset),
+                          blur: blur * shadowDeviceScale(context),
+                          color: UIColor.black.withAlphaComponent(0.40).cgColor)
         context.setFillColor(UIColor.black.cgColor)
         context.addPath(path.cgPath)
         context.fillPath()
@@ -710,38 +768,46 @@ private func drawFloorPatternCG(_ kind: FloorKind,
 
     switch kind {
     case .legno:
-        UIColor(red: dark ? 0.55 : 0.85,
-                green: dark ? 0.40 : 0.72,
-                blue:  dark ? 0.22 : 0.52,
-                alpha: dark ? 0.45 : 0.28).setFill()
-        path.fill()
-        UIColor(red: 0.58, green: 0.40, blue: 0.22,
-                alpha: dark ? 0.30 : 0.22).setStroke()
-        var y = (bounds.minY / 12).rounded(.down) * 12
-        while y <= bounds.maxY {
-            let line = UIBezierPath()
-            line.move(to: CGPoint(x: bounds.minX, y: y))
-            line.addLine(to: CGPoint(x: bounds.maxX, y: y))
-            line.lineWidth = 0.8
-            line.stroke()
-            y += 12
+        if dark {
+            drawDarkWoodPlanksCG(bounds: bounds)
+        } else {
+            UIColor(red: 0.85, green: 0.72, blue: 0.52, alpha: 0.28).setFill()
+            path.fill()
+            UIColor(red: 0.58, green: 0.40, blue: 0.22, alpha: 0.22).setStroke()
+            var y = (bounds.minY / 12).rounded(.down) * 12
+            while y <= bounds.maxY {
+                let line = UIBezierPath()
+                line.move(to: CGPoint(x: bounds.minX, y: y))
+                line.addLine(to: CGPoint(x: bounds.maxX, y: y))
+                line.lineWidth = 0.8
+                line.stroke()
+                y += 12
+            }
         }
 
     case .piastrelle:
-        UIColor(red: 0.93, green: 0.91, blue: 0.87,
-                alpha: dark ? 0.30 : 0.40).setFill()
-        path.fill()
-        drawFloorGridCG(bounds: bounds, spacing: 30,
-                        color: dark ? UIColor.white.withAlphaComponent(0.18)
-                                    : UIColor.gray.withAlphaComponent(0.28))
+        if dark {
+            drawDarkTileFloorCG(bounds: bounds, spacing: 30,
+                                base: (red: 0.60, green: 0.62, blue: 0.65),
+                                alpha: 0.32)
+        } else {
+            UIColor(red: 0.93, green: 0.91, blue: 0.87, alpha: 0.40).setFill()
+            path.fill()
+            drawFloorGridCG(bounds: bounds, spacing: 30,
+                            color: UIColor.gray.withAlphaComponent(0.28))
+        }
 
     case .gres:
-        UIColor(red: 0.87, green: 0.85, blue: 0.80,
-                alpha: dark ? 0.28 : 0.38).setFill()
-        path.fill()
-        drawFloorGridCG(bounds: bounds, spacing: 60,
-                        color: dark ? UIColor.white.withAlphaComponent(0.20)
-                                    : UIColor.gray.withAlphaComponent(0.32))
+        if dark {
+            drawDarkTileFloorCG(bounds: bounds, spacing: 60,
+                                base: (red: 0.58, green: 0.57, blue: 0.54),
+                                alpha: 0.30)
+        } else {
+            UIColor(red: 0.87, green: 0.85, blue: 0.80, alpha: 0.38).setFill()
+            path.fill()
+            drawFloorGridCG(bounds: bounds, spacing: 60,
+                            color: UIColor.gray.withAlphaComponent(0.32))
+        }
 
     case .marmo:
         UIColor(red: 0.96, green: 0.95, blue: 0.92,
@@ -788,6 +854,84 @@ private func drawFloorGridCG(bounds: CGRect, spacing: CGFloat, color: UIColor) {
         line.lineWidth = 0.8
         line.stroke()
         y += spacing
+    }
+}
+
+/// Deterministic per-cell hash in [0, 1) so pattern variation is stable across
+/// exports (same document → same PNG). Never use randomness here.
+private func floorPatternHash(_ x: Int, _ y: Int) -> CGFloat {
+    var h: UInt64 = 0x9E3779B97F4A7C15
+    h ^= UInt64(bitPattern: Int64(x)) &* 0xBF58476D1CE4E5B9
+    h = (h ^ (h >> 27)) &* 0x94D049BB133111EB
+    h ^= UInt64(bitPattern: Int64(y)) &* 0xD6E8FEB86659FD93
+    h ^= h >> 31
+    return CGFloat(h % 4096) / 4096
+}
+
+/// Staggered wood planks with per-plank tone variation (dark export style).
+/// Geometry is anchored to absolute canvas coordinates so the pattern does not
+/// shift when a room is moved or resized, and adjacent wood rooms stay aligned.
+private func drawDarkWoodPlanksCG(bounds: CGRect) {
+    let plankH: CGFloat = 12    // 12 cm at 100 pt/m
+    let plankW: CGFloat = 84
+    let joint: CGFloat = 0.7
+
+    // Joint/base layer, visible only in the gaps between planks
+    UIColor(red: 0.14, green: 0.11, blue: 0.08, alpha: 0.60).setFill()
+    UIBezierPath(rect: bounds).fill()
+
+    let tones: [(red: CGFloat, green: CGFloat, blue: CGFloat)] = [
+        (0.40, 0.31, 0.22),
+        (0.35, 0.27, 0.19),
+        (0.44, 0.34, 0.24),
+        (0.31, 0.24, 0.17)
+    ]
+
+    var row = Int((bounds.minY / plankH).rounded(.down))
+    while CGFloat(row) * plankH <= bounds.maxY {
+        let y = CGFloat(row) * plankH
+        let rowOffset = floorPatternHash(row, 7391) * plankW
+        var col = Int(((bounds.minX - rowOffset) / plankW).rounded(.down))
+        while CGFloat(col) * plankW + rowOffset <= bounds.maxX {
+            let x = CGFloat(col) * plankW + rowOffset
+            let tone = tones[Int(floorPatternHash(col, row) * CGFloat(tones.count)) % tones.count]
+            UIColor(red: tone.red, green: tone.green, blue: tone.blue, alpha: 0.55).setFill()
+            UIBezierPath(rect: CGRect(x: x + joint, y: y + joint,
+                                      width: plankW - joint * 2,
+                                      height: plankH - joint * 2)).fill()
+            col += 1
+        }
+        row += 1
+    }
+}
+
+/// Tile floor with dark grout lines and subtle per-tile luminance variation
+/// (dark export style). Anchored to absolute canvas coordinates like the planks.
+private func drawDarkTileFloorCG(bounds: CGRect, spacing: CGFloat,
+                                 base: (red: CGFloat, green: CGFloat, blue: CGFloat),
+                                 alpha: CGFloat) {
+    let grout: CGFloat = 0.6
+
+    // Grout layer, visible only in the gaps between tiles
+    UIColor(red: 0.04, green: 0.05, blue: 0.07, alpha: 0.50).setFill()
+    UIBezierPath(rect: bounds).fill()
+
+    var row = Int((bounds.minY / spacing).rounded(.down))
+    while CGFloat(row) * spacing <= bounds.maxY {
+        var col = Int((bounds.minX / spacing).rounded(.down))
+        while CGFloat(col) * spacing <= bounds.maxX {
+            let delta = (floorPatternHash(col, row) - 0.5) * 0.10
+            UIColor(red: base.red + delta,
+                    green: base.green + delta,
+                    blue: base.blue + delta,
+                    alpha: alpha).setFill()
+            UIBezierPath(rect: CGRect(x: CGFloat(col) * spacing + grout,
+                                      y: CGFloat(row) * spacing + grout,
+                                      width: spacing - grout * 2,
+                                      height: spacing - grout * 2)).fill()
+            col += 1
+        }
+        row += 1
     }
 }
 
