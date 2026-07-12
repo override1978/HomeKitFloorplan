@@ -135,9 +135,16 @@ struct DrawingCanvasContent: View {
                     at: labelPt, anchor: .center
                 )
             }
-            // Also label the preview wall (if exterior) during draw
+            // Also label the preview wall (if exterior) during draw.
+            // Non-orthogonal walls get the inclination appended (e.g. "10.0 m · 15°").
             if let pw = previewWall, pw.kind == .exterior, pw.length >= 60 {
-                let label = dimensionUnit.format(pt: pw.length)
+                var label = dimensionUnit.format(pt: pw.length)
+                let rawDeg = atan2(pw.end.y - pw.start.y, pw.end.x - pw.start.x) * 180 / .pi
+                var inclination = rawDeg < 0 ? rawDeg + 180 : rawDeg
+                if inclination > 90 { inclination = 180 - inclination }
+                if inclination > 0.5, abs(inclination - 90) > 0.5 {
+                    label += " · \(Int(inclination.rounded()))°"
+                }
                 let mid = CGPoint(x: (pw.start.x + pw.end.x) / 2,
                                   y: (pw.start.y + pw.end.y) / 2)
                 let isHoriz = abs(pw.end.x - pw.start.x) >= abs(pw.end.y - pw.start.y)

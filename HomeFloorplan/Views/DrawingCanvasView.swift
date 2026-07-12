@@ -236,29 +236,54 @@ struct DrawingCanvasView: UIViewRepresentable {
             }
         }
 
+        /// Signed angular distance in degrees, wrap-aware (result in [-180, 180]).
+        private func angularDistance(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+            var d = (a - b).truncatingRemainder(dividingBy: 360)
+            if d > 180 { d -= 360 }
+            if d < -180 { d += 360 }
+            return d
+        }
+
+        /// Magnetic angle snap for wall drawing and endpoint drags.
+        /// Strong magnet (±7°) on the 45° family with the legacy grid-friendly
+        /// endpoint math; weak magnet (±4°) on the 15° family preserving the
+        /// dragged length (rounded to 5 pt = 5 cm); free angle everywhere else,
+        /// so arbitrary inclinations like 15° or 20° are drawable.
         private func angleSnappedEnd(from start: CGPoint, to end: CGPoint, snapResult: SnapResult) -> CGPoint {
             guard !snapResult.isVertex else { return end }
 
             let dx = end.x - start.x
             let dy = end.y - start.y
-            guard hypot(dx, dy) >= DrawingDocument.gridSpacing else { return end }
+            let length = hypot(dx, dy)
+            guard length >= DrawingDocument.gridSpacing else { return end }
 
-            let angle = atan2(dy, dx)
-            let octant = CGFloat(Int(round(angle / (.pi / 4))))
-            let snappedAngle = octant * (.pi / 4)
-            let directionX = cos(snappedAngle)
-            let directionY = sin(snappedAngle)
+            let deg = atan2(dy, dx) * 180 / .pi
 
-            if abs(directionY) < 0.001 {
-                return CGPoint(x: end.x, y: start.y)
+            let octantDeg = (deg / 45).rounded() * 45
+            if abs(angularDistance(deg, octantDeg)) <= 7 {
+                let snappedAngle = octantDeg * .pi / 180
+                let directionX = cos(snappedAngle)
+                let directionY = sin(snappedAngle)
+                if abs(directionY) < 0.001 {
+                    return CGPoint(x: end.x, y: start.y)
+                }
+                if abs(directionX) < 0.001 {
+                    return CGPoint(x: start.x, y: end.y)
+                }
+                let diagonalLength = max(abs(dx), abs(dy))
+                return CGPoint(x: start.x + (directionX > 0 ? diagonalLength : -diagonalLength),
+                               y: start.y + (directionY > 0 ? diagonalLength : -diagonalLength))
             }
-            if abs(directionX) < 0.001 {
-                return CGPoint(x: start.x, y: end.y)
+
+            let stepDeg = (deg / 15).rounded() * 15
+            if abs(angularDistance(deg, stepDeg)) <= 4 {
+                let snappedAngle = stepDeg * .pi / 180
+                let roundedLength = (length / 5).rounded() * 5
+                return CGPoint(x: start.x + cos(snappedAngle) * roundedLength,
+                               y: start.y + sin(snappedAngle) * roundedLength)
             }
 
-            let diagonalLength = max(abs(dx), abs(dy))
-            return CGPoint(x: start.x + (directionX > 0 ? diagonalLength : -diagonalLength),
-                           y: start.y + (directionY > 0 ? diagonalLength : -diagonalLength))
+            return end
         }
 
         func makeHostingController() -> UIHostingController<DrawingContentWrapper> {
