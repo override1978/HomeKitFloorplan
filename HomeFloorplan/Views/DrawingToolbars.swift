@@ -963,6 +963,14 @@ struct RoomAreaInspectorPanel: View {
                 }
             }
 
+            Label(
+                String(localized: "drawing.area.reshapeHint",
+                       defaultValue: "Drag an edge to reshape — it snaps to walls. Double-tap a point to remove it."),
+                systemImage: "hand.draw"
+            )
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
             // Floor picker row
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {

@@ -449,7 +449,19 @@ struct DrawingCanvasView: UIViewRepresentable {
                         parent.onBeginResizeRoomArea(id)
                         return
                     }
-                    // Not near a vertex — check if inside the area for move
+                    // Grab an edge to pinch the shape: insert a vertex at the grab
+                    // point and keep dragging it within the same gesture.
+                    // (onInsertRoomAreaVertex pushes undo, so the whole insert+drag
+                    // is one undo step — do not also call onBeginResizeRoomArea.)
+                    if let edge = area.nearestEdge(to: rawPoint, threshold: canvasThreshold()) {
+                        let snapped = wallAwareSnap(edge.point)
+                        parent.onInsertRoomAreaVertex?(id, edge.edgeIndex, snapped)
+                        resizingRoomAreaID  = id
+                        resizingCornerIndex = edge.edgeIndex + 1
+                        resizeOriginalRect  = area.rect
+                        return
+                    }
+                    // Not near a vertex or edge — check if inside the area for move
                     if area.contains(rawPoint) {
                         draggingRoomAreaID = id
                         dragAreaTouchStart = rawPoint
@@ -547,7 +559,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 // Resize / reshape room area vertex
                 if let id = resizingRoomAreaID,
                    let cornerIdx = resizingCornerIndex {
-                    let snapped = DrawingDocument.fineSnap(rawPoint)
+                    let snapped = wallAwareSnap(rawPoint)
                     // Always delegate to handleMoveRoomAreaVertex which auto-promotes
                     // legacy rect areas to polygon on the first vertex drag.
                     parent.onMoveRoomAreaVertex?(id, cornerIdx, snapped)
@@ -625,6 +637,19 @@ struct DrawingCanvasView: UIViewRepresentable {
         /// A 24pt finger target on screen becomes 24/zoomScale canvas units.
         private func canvasThreshold(_ screenPts: CGFloat = 24) -> CGFloat {
             screenPts / currentZoomScale
+        }
+
+        /// Snap used while dragging a room-area vertex: wall endpoints first, then
+        /// wall bodies, then the fine grid — so the area outline clicks onto the
+        /// walls that describe the real room.
+        private func wallAwareSnap(_ point: CGPoint) -> CGPoint {
+            let doc = parent.document
+            if let ep = doc.nearestEndpoint(to: point, maxDistance: 24) { return ep }
+            if let hit = doc.nearestWall(to: point, maxDistance: 16),
+               let wall = doc.wall(for: hit.wallID) {
+                return wall.project(point).closest
+            }
+            return DrawingDocument.fineSnap(point)
         }
 
         /// Returns the vertex index if `point` is within `threshold` of any effective
