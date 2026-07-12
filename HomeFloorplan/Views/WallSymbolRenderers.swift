@@ -475,6 +475,19 @@ private func furnitureShadowPath(_ item: FurnitureItem) -> UIBezierPath {
         path = rounded(tub, tub.height / 2)
     case .shower:
         path = rounded(rect.insetBy(dx: rect.width * 0.12, dy: rect.height * 0.12), 4)
+    case .kitchenCounter:
+        path = rounded(rect.insetBy(dx: rect.width * 0.03, dy: rect.height * 0.08), 4)
+    case .tvUnit:
+        path = rounded(rect.insetBy(dx: rect.width * 0.05, dy: rect.height * 0.18), 4)
+    case .plant:
+        let side = min(rect.width, rect.height)
+        let r = side * 0.52
+        path = UIBezierPath(ovalIn: CGRect(x: rect.midX - r, y: rect.midY - r,
+                                           width: r * 2, height: r * 2))
+    case .rug:
+        // Flat on the floor: the path exists for completeness but rug is skipped
+        // by the shadow and sheen passes.
+        path = rounded(rect, 8)
     case .generic:
         path = rounded(rect, 4)
     }
@@ -489,6 +502,7 @@ private func furnitureShadowPath(_ item: FurnitureItem) -> UIBezierPath {
 /// on the lit side and a dark rim on the shaded side, matching the wall bevels'
 /// global light vector so furniture reads as raised, not cut out.
 private func drawDarkFurnitureSheenCG(_ item: FurnitureItem, context: CGContext) {
+    guard item.kind != .rug else { return }
     let path = furnitureShadowPath(item)
     let litShift = CGSize(width: 1.9, height: 2.2)   // toward light direction opposite
 
@@ -515,7 +529,7 @@ private func drawDarkFurnitureSheenCG(_ item: FurnitureItem, context: CGContext)
 }
 
 private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGContext) {
-    for item in doc.furnitureItems {
+    for item in doc.furnitureItems where item.kind != .rug {
         let path = furnitureShadowPath(item)
         // Shadow reach scales with the object footprint: a chair must not cast
         // the same shadow as a sofa.
@@ -1261,6 +1275,58 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         line(CGPoint(x: base.maxX, y: base.minY), CGPoint(x: base.minX, y: base.maxY))
         detailColor.setFill()
         UIBezierPath(ovalIn: CGRect(x: base.midX - 4, y: base.midY - 4, width: 8, height: 8)).fill()
+
+    case .kitchenCounter:
+        let body = rect.insetBy(dx: rect.width * 0.03, dy: rect.height * 0.08)
+        fillStroke(rounded(body, radius: 4))
+        detailColor.setStroke()
+        let inner = rounded(body.insetBy(dx: min(6, body.width * 0.06), dy: min(6, body.height * 0.14)), radius: 3)
+        inner.lineWidth = lineWidth
+        inner.stroke()
+
+    case .tvUnit:
+        let cabinet = rect.insetBy(dx: rect.width * 0.05, dy: rect.height * 0.18)
+        fillStroke(rounded(cabinet, radius: 4))
+        let tv = CGRect(x: rect.midX - rect.width * 0.35,
+                        y: cabinet.minY + cabinet.height * 0.18,
+                        width: rect.width * 0.70,
+                        height: max(3, cabinet.height * 0.20))
+        strokeColor.withAlphaComponent(0.65).setFill()
+        rounded(tv, radius: 2).fill()
+
+    case .plant:
+        let side = min(rect.width, rect.height)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let leafW = side * 0.42, leafH = side * 0.22
+        UIColor(red: 0.45, green: 0.62, blue: 0.45, alpha: 0.35).setFill()
+        UIColor(red: 0.38, green: 0.55, blue: 0.40, alpha: 0.70).setStroke()
+        for i in 0 ..< 6 {
+            let angle = CGFloat(Double(i) * 60.0 * .pi / 180)
+            context.saveGState()
+            context.translateBy(x: center.x, y: center.y)
+            context.rotate(by: angle)
+            let leaf = UIBezierPath(ovalIn: CGRect(x: side * 0.10, y: -leafH / 2, width: leafW, height: leafH))
+            leaf.lineWidth = lineWidth
+            leaf.fill()
+            leaf.stroke()
+            context.restoreGState()
+        }
+        let potR = side * 0.16
+        fillStroke(UIBezierPath(ovalIn: CGRect(x: center.x - potR, y: center.y - potR,
+                                               width: potR * 2, height: potR * 2)))
+
+    case .rug:
+        fillColor.withAlphaComponent(fillColor.cgColor.alpha * 0.40).setFill()
+        rounded(rect, radius: 8).fill()
+        strokeColor.withAlphaComponent(0.80).setStroke()
+        let outer = rounded(rect, radius: 8)
+        outer.lineWidth = lineWidth
+        outer.stroke()
+        detailColor.setStroke()
+        let innerRug = rounded(rect.insetBy(dx: min(9, rect.width * 0.08), dy: min(9, rect.height * 0.08)), radius: 5)
+        innerRug.lineWidth = lineWidth
+        innerRug.setLineDash([5, 4], count: 2, phase: 0)
+        innerRug.stroke()
 
     case .generic:
         fillStroke(rounded(rect, radius: 4))

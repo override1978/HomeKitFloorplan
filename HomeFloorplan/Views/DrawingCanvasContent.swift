@@ -661,6 +661,47 @@ private func drawFurnitureShape(_ item: FurnitureItem, context: inout GraphicsCo
         strokeLine(CGPoint(x: base.maxX, y: base.minY), CGPoint(x: base.minX, y: base.maxY), color: detail)
         context.fill(Path(ellipseIn: CGRect(x: base.midX - 4, y: base.midY - 4, width: 8, height: 8)), with: .color(detail))
 
+    case .kitchenCounter:
+        let body = rect.insetBy(dx: rect.width * 0.03, dy: rect.height * 0.08)
+        context.fill(rounded(body, radius: 4), with: .color(fill))
+        context.stroke(rounded(body, radius: 4), with: .color(stroke), style: style)
+        let inner = body.insetBy(dx: min(6, body.width * 0.06), dy: min(6, body.height * 0.14))
+        context.stroke(rounded(inner, radius: 3), with: .color(detail), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+
+    case .tvUnit:
+        let cabinet = rect.insetBy(dx: rect.width * 0.05, dy: rect.height * 0.18)
+        context.fill(rounded(cabinet, radius: 4), with: .color(fill))
+        context.stroke(rounded(cabinet, radius: 4), with: .color(stroke), style: style)
+        let tv = CGRect(x: rect.midX - rect.width * 0.35,
+                        y: cabinet.minY + cabinet.height * 0.18,
+                        width: rect.width * 0.70,
+                        height: max(3, cabinet.height * 0.20))
+        context.fill(rounded(tv, radius: 2), with: .color(stroke.opacity(0.65)))
+
+    case .plant:
+        let side = min(rect.width, rect.height)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let leafW = side * 0.42, leafH = side * 0.22
+        for i in 0 ..< 6 {
+            let angle = Double(i) * 60.0
+            var leafCtx = context
+            leafCtx.translateBy(x: center.x, y: center.y)
+            leafCtx.rotate(by: .degrees(angle))
+            let leafRect = CGRect(x: side * 0.10, y: -leafH / 2, width: leafW, height: leafH)
+            leafCtx.fill(Path(ellipseIn: leafRect), with: .color(Color(red: 0.45, green: 0.62, blue: 0.45).opacity(0.35)))
+            leafCtx.stroke(Path(ellipseIn: leafRect), with: .color(Color(red: 0.38, green: 0.55, blue: 0.40).opacity(0.7)), style: StrokeStyle(lineWidth: 1))
+        }
+        let potR = side * 0.16
+        let pot = CGRect(x: center.x - potR, y: center.y - potR, width: potR * 2, height: potR * 2)
+        context.fill(Path(ellipseIn: pot), with: .color(fill))
+        context.stroke(Path(ellipseIn: pot), with: .color(stroke), style: style)
+
+    case .rug:
+        context.fill(rounded(rect, radius: 8), with: .color(fill.opacity(0.35)))
+        context.stroke(rounded(rect, radius: 8), with: .color(stroke.opacity(0.8)), style: StrokeStyle(lineWidth: 1.2))
+        let inner = rect.insetBy(dx: min(9, rect.width * 0.08), dy: min(9, rect.height * 0.08))
+        context.stroke(rounded(inner, radius: 5), with: .color(detail), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+
     case .generic:
         context.fill(rounded(rect, radius: 4), with: .color(fill))
         context.stroke(rounded(rect, radius: 4), with: .color(stroke), style: style)

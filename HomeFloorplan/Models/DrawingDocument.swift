@@ -345,6 +345,10 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     case washingMachine
     case bathtub
     case shower
+    case kitchenCounter
+    case tvUnit
+    case plant
+    case rug
 
     var id: String { rawValue }
 
@@ -376,6 +380,14 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
             return String(localized: "drawing.furniture.bathtub", defaultValue: "Bathtub")
         case .shower:
             return String(localized: "drawing.furniture.shower", defaultValue: "Shower")
+        case .kitchenCounter:
+            return String(localized: "drawing.furniture.kitchenCounter", defaultValue: "Kitchen counter")
+        case .tvUnit:
+            return String(localized: "drawing.furniture.tvUnit", defaultValue: "TV unit")
+        case .plant:
+            return String(localized: "drawing.furniture.plant", defaultValue: "Plant")
+        case .rug:
+            return String(localized: "drawing.furniture.rug", defaultValue: "Rug")
         }
     }
 
@@ -394,6 +406,10 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         case .washingMachine: return "washer.fill"
         case .bathtub: return "bathtub.fill"
         case .shower: return "shower.fill"
+        case .kitchenCounter: return "rectangle.split.3x1.fill"
+        case .tvUnit: return "tv.fill"
+        case .plant: return "leaf.fill"
+        case .rug: return "rectangle.inset.filled"
         }
     }
 
@@ -412,6 +428,10 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         case .washingMachine: return CGSize(width: 75, height: 75)
         case .bathtub: return CGSize(width: 150, height: 75)
         case .shower: return CGSize(width: 80, height: 80)
+        case .kitchenCounter: return CGSize(width: 180, height: 60)
+        case .tvUnit: return CGSize(width: 140, height: 40)
+        case .plant: return CGSize(width: 45, height: 45)
+        case .rug: return CGSize(width: 160, height: 110)
         }
     }
 }
