@@ -349,6 +349,8 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     case tvUnit
     case plant
     case rug
+    case stairs
+    case spiralStairs
 
     var id: String { rawValue }
 
@@ -388,6 +390,10 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
             return String(localized: "drawing.furniture.plant", defaultValue: "Plant")
         case .rug:
             return String(localized: "drawing.furniture.rug", defaultValue: "Rug")
+        case .stairs:
+            return String(localized: "drawing.furniture.stairs", defaultValue: "Stairs")
+        case .spiralStairs:
+            return String(localized: "drawing.furniture.spiralStairs", defaultValue: "Spiral staircase")
         }
     }
 
@@ -410,6 +416,8 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         case .tvUnit: return "tv.fill"
         case .plant: return "leaf.fill"
         case .rug: return "rectangle.inset.filled"
+        case .stairs: return "stairs"
+        case .spiralStairs: return "hurricane"
         }
     }
 
@@ -432,6 +440,8 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         case .tvUnit: return CGSize(width: 140, height: 40)
         case .plant: return CGSize(width: 45, height: 45)
         case .rug: return CGSize(width: 160, height: 110)
+        case .stairs: return CGSize(width: 80, height: 180)
+        case .spiralStairs: return CGSize(width: 110, height: 110)
         }
     }
 }

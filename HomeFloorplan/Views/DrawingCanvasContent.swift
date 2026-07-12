@@ -702,6 +702,45 @@ private func drawFurnitureShape(_ item: FurnitureItem, context: inout GraphicsCo
         let inner = rect.insetBy(dx: min(9, rect.width * 0.08), dy: min(9, rect.height * 0.08))
         context.stroke(rounded(inner, radius: 5), with: .color(detail), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
 
+    case .stairs:
+        let body = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.04)
+        context.fill(rounded(body, radius: 3), with: .color(fill))
+        context.stroke(rounded(body, radius: 3), with: .color(stroke), style: style)
+        // Treads: ~26 pt each (≈26 cm at 100 pt/m)
+        let count = max(3, Int(body.height / 26))
+        let step = body.height / CGFloat(count)
+        for i in 1 ..< count {
+            let y = body.minY + CGFloat(i) * step
+            strokeLine(CGPoint(x: body.minX, y: y), CGPoint(x: body.maxX, y: y))
+        }
+        // Walkline: circle at the base, arrow pointing up (climb direction)
+        let cx = body.midX
+        let tipY = body.minY + step * 0.6
+        strokeLine(CGPoint(x: cx, y: body.maxY - step * 0.5), CGPoint(x: cx, y: tipY), color: stroke)
+        let ah = min(8, body.width * 0.14)
+        strokeLine(CGPoint(x: cx - ah, y: tipY + ah), CGPoint(x: cx, y: tipY), color: stroke)
+        strokeLine(CGPoint(x: cx + ah, y: tipY + ah), CGPoint(x: cx, y: tipY), color: stroke)
+        context.fill(Path(ellipseIn: CGRect(x: cx - 3, y: body.maxY - step * 0.5 - 3, width: 6, height: 6)),
+                     with: .color(stroke))
+
+    case .spiralStairs:
+        let side = min(rect.width, rect.height)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let outerR = side * 0.48
+        let outer = CGRect(x: center.x - outerR, y: center.y - outerR,
+                           width: outerR * 2, height: outerR * 2)
+        context.fill(Path(ellipseIn: outer), with: .color(fill))
+        context.stroke(Path(ellipseIn: outer), with: .color(stroke), style: style)
+        let poleR = side * 0.07
+        for i in 0 ..< 10 {
+            let a = CGFloat(i) * (.pi * 2 / 10)
+            strokeLine(CGPoint(x: center.x + cos(a) * poleR, y: center.y + sin(a) * poleR),
+                       CGPoint(x: center.x + cos(a) * outerR, y: center.y + sin(a) * outerR))
+        }
+        context.fill(Path(ellipseIn: CGRect(x: center.x - poleR, y: center.y - poleR,
+                                            width: poleR * 2, height: poleR * 2)),
+                     with: .color(stroke.opacity(0.7)))
+
     case .generic:
         context.fill(rounded(rect, radius: 4), with: .color(fill))
         context.stroke(rounded(rect, radius: 4), with: .color(stroke), style: style)

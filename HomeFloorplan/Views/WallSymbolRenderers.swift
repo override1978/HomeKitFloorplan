@@ -488,6 +488,13 @@ private func furnitureShadowPath(_ item: FurnitureItem) -> UIBezierPath {
         // Flat on the floor: the path exists for completeness but rug is skipped
         // by the shadow and sheen passes.
         path = rounded(rect, 8)
+    case .stairs:
+        path = rounded(rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.04), 3)
+    case .spiralStairs:
+        let side = min(rect.width, rect.height)
+        let r = side * 0.48
+        path = UIBezierPath(ovalIn: CGRect(x: rect.midX - r, y: rect.midY - r,
+                                           width: r * 2, height: r * 2))
     case .generic:
         path = rounded(rect, 4)
     }
@@ -1327,6 +1334,42 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         innerRug.lineWidth = lineWidth
         innerRug.setLineDash([5, 4], count: 2, phase: 0)
         innerRug.stroke()
+
+    case .stairs:
+        let body = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.04)
+        fillStroke(rounded(body, radius: 3))
+        // Treads: ~26 pt each (≈26 cm at 100 pt/m)
+        let count = max(3, Int(body.height / 26))
+        let step = body.height / CGFloat(count)
+        for i in 1 ..< count {
+            let y = body.minY + CGFloat(i) * step
+            line(CGPoint(x: body.minX, y: y), CGPoint(x: body.maxX, y: y))
+        }
+        // Walkline: circle at the base, arrow pointing up (climb direction)
+        let cx = body.midX
+        let tipY = body.minY + step * 0.6
+        line(CGPoint(x: cx, y: body.maxY - step * 0.5), CGPoint(x: cx, y: tipY), color: strokeColor)
+        let ah = min(8, body.width * 0.14)
+        line(CGPoint(x: cx - ah, y: tipY + ah), CGPoint(x: cx, y: tipY), color: strokeColor)
+        line(CGPoint(x: cx + ah, y: tipY + ah), CGPoint(x: cx, y: tipY), color: strokeColor)
+        strokeColor.setFill()
+        UIBezierPath(ovalIn: CGRect(x: cx - 3, y: body.maxY - step * 0.5 - 3, width: 6, height: 6)).fill()
+
+    case .spiralStairs:
+        let side = min(rect.width, rect.height)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let outerR = side * 0.48
+        fillStroke(UIBezierPath(ovalIn: CGRect(x: center.x - outerR, y: center.y - outerR,
+                                               width: outerR * 2, height: outerR * 2)))
+        let poleR = side * 0.07
+        for i in 0 ..< 10 {
+            let a = CGFloat(i) * (.pi * 2 / 10)
+            line(CGPoint(x: center.x + cos(a) * poleR, y: center.y + sin(a) * poleR),
+                 CGPoint(x: center.x + cos(a) * outerR, y: center.y + sin(a) * outerR))
+        }
+        strokeColor.withAlphaComponent(0.70).setFill()
+        UIBezierPath(ovalIn: CGRect(x: center.x - poleR, y: center.y - poleR,
+                                    width: poleR * 2, height: poleR * 2)).fill()
 
     case .generic:
         fillStroke(rounded(rect, radius: 4))
