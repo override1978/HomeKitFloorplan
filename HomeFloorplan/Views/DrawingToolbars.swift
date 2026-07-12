@@ -1087,10 +1087,12 @@ struct FurnitureInspectorPanel: View {
     var onRotate: (Double) -> Void
     var onDuplicate: () -> Void
     var onToggleName: () -> Void
+    var onTintChange: (Int?) -> Void
 
     @State private var editingName: String = ""
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
         HStack(spacing: 12) {
             Image(systemName: item.kind.systemImage)
                 .font(.system(size: 18, weight: .medium))
@@ -1109,9 +1111,46 @@ struct FurnitureInspectorPanel: View {
                     if !trimmed.isEmpty { onNameChange(trimmed) }
                 }
                 let w = Int(item.rect.width), h = Int(item.rect.height)
-                Text("\(w) × \(h) pt · \(Int(normalizedRotation(item.rotationDegrees)))°")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text("\(w) × \(h) pt")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Menu {
+                        ForEach([15.0, 30.0, 45.0], id: \.self) { step in
+                            Button {
+                                onRotate(step)
+                            } label: {
+                                Label("+\(Int(step))°", systemImage: "rotate.right")
+                            }
+                            Button {
+                                onRotate(-step)
+                            } label: {
+                                Label("−\(Int(step))°", systemImage: "rotate.left")
+                            }
+                        }
+                        Divider()
+                        Button {
+                            onRotate(-item.rotationDegrees)
+                        } label: {
+                            Label(String(localized: "drawing.inspector.furniture.resetRotation",
+                                         defaultValue: "Reset to 0°"),
+                                  systemImage: "arrow.uturn.backward")
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text("\(Int(normalizedRotation(item.rotationDegrees)))°")
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 7, weight: .bold))
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandColor.primary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(BrandColor.primary.opacity(0.12), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             Spacer()
@@ -1165,6 +1204,11 @@ struct FurnitureInspectorPanel: View {
                 .buttonStyle(.plain)
             }
         }
+
+        if item.kind.supportsTint {
+            tintRow
+        }
+        }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(.regularMaterial,
@@ -1176,6 +1220,52 @@ struct FurnitureInspectorPanel: View {
         .onChange(of: editingName) { _, newValue in
             let trimmed = newValue.trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty { onNameChange(trimmed) }
+        }
+    }
+
+    /// Swatch row for the furniture tint: a neutral option plus the curated palette.
+    private var tintRow: some View {
+        HStack(spacing: 8) {
+            Button {
+                onTintChange(nil)
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.primary.opacity(0.07))
+                        .frame(width: 24, height: 24)
+                    Image(systemName: "slash.circle")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .overlay(
+                    Circle().strokeBorder(item.tintIndex == nil ? BrandColor.primary : .clear,
+                                          lineWidth: 2)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "drawing.tint.none", defaultValue: "No tint"))
+
+            ForEach(FurnitureTint.allCases) { tint in
+                let isSelected = item.tintIndex == tint.rawValue
+                Button {
+                    onTintChange(tint.rawValue)
+                } label: {
+                    Circle()
+                        .fill(Color(UIColor { t in
+                            UIColor(cgColor: t.userInterfaceStyle == .dark
+                                    ? tint.darkCGColor : tint.lightCGColor)
+                        }))
+                        .frame(width: 24, height: 24)
+                        .overlay(
+                            Circle().strokeBorder(isSelected ? BrandColor.primary : Color.primary.opacity(0.12),
+                                                  lineWidth: isSelected ? 2 : 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tint.localizedName)
+            }
+
+            Spacer()
         }
     }
 

@@ -421,6 +421,19 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// True for kinds whose soft parts can take a `FurnitureTint`.
+    /// Fixtures, appliances, stairs and plants stay neutral by design.
+    var supportsTint: Bool {
+        switch self {
+        case .generic, .sofa, .armchair, .diningTable, .chair, .bed,
+             .wardrobe, .kitchenCounter, .tvUnit, .rug:
+            return true
+        case .toilet, .sink, .inductionCooktop, .washingMachine,
+             .bathtub, .shower, .plant, .stairs, .spiralStairs:
+            return false
+        }
+    }
+
     var defaultSize: CGSize {
         switch self {
         case .generic: return CGSize(width: 80, height: 60)
@@ -446,6 +459,61 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - FurnitureTint
+
+/// Curated, muted tints for furniture soft parts. Each tint has a light-canvas
+/// and a dark-architectural variant; dark variants keep their luminance above
+/// the dark floor tones so tinted furniture still reads as a raised object.
+enum FurnitureTint: Int, CaseIterable, Identifiable {
+    case tortora = 0
+    case salvia
+    case terracotta
+    case bluPolvere
+    case ocra
+    case oliva
+    case rosaAntico
+
+    var id: Int { rawValue }
+
+    var localizedName: String {
+        switch self {
+        case .tortora:    return String(localized: "drawing.tint.tortora",    defaultValue: "Taupe")
+        case .salvia:     return String(localized: "drawing.tint.salvia",     defaultValue: "Sage")
+        case .terracotta: return String(localized: "drawing.tint.terracotta", defaultValue: "Terracotta")
+        case .bluPolvere: return String(localized: "drawing.tint.bluPolvere", defaultValue: "Dusty Blue")
+        case .ocra:       return String(localized: "drawing.tint.ocra",       defaultValue: "Ochre")
+        case .oliva:      return String(localized: "drawing.tint.oliva",      defaultValue: "Olive")
+        case .rosaAntico: return String(localized: "drawing.tint.rosaAntico", defaultValue: "Dusty Rose")
+        }
+    }
+
+    /// Variant for white-canvas rendering (editor light mode, standard/architectural export).
+    var lightCGColor: CGColor {
+        switch self {
+        case .tortora:    return CGColor(red: 0.78, green: 0.72, blue: 0.66, alpha: 1)
+        case .salvia:     return CGColor(red: 0.70, green: 0.78, blue: 0.68, alpha: 1)
+        case .terracotta: return CGColor(red: 0.85, green: 0.64, blue: 0.54, alpha: 1)
+        case .bluPolvere: return CGColor(red: 0.66, green: 0.74, blue: 0.82, alpha: 1)
+        case .ocra:       return CGColor(red: 0.86, green: 0.76, blue: 0.54, alpha: 1)
+        case .oliva:      return CGColor(red: 0.72, green: 0.73, blue: 0.58, alpha: 1)
+        case .rosaAntico: return CGColor(red: 0.85, green: 0.71, blue: 0.70, alpha: 1)
+        }
+    }
+
+    /// Variant for the dark architectural style and editor dark mode.
+    var darkCGColor: CGColor {
+        switch self {
+        case .tortora:    return CGColor(red: 0.46, green: 0.42, blue: 0.38, alpha: 1)
+        case .salvia:     return CGColor(red: 0.40, green: 0.49, blue: 0.40, alpha: 1)
+        case .terracotta: return CGColor(red: 0.55, green: 0.40, blue: 0.33, alpha: 1)
+        case .bluPolvere: return CGColor(red: 0.38, green: 0.46, blue: 0.55, alpha: 1)
+        case .ocra:       return CGColor(red: 0.55, green: 0.47, blue: 0.30, alpha: 1)
+        case .oliva:      return CGColor(red: 0.44, green: 0.46, blue: 0.33, alpha: 1)
+        case .rosaAntico: return CGColor(red: 0.53, green: 0.41, blue: 0.41, alpha: 1)
+        }
+    }
+}
+
 /// A named, resizable rectangular furniture element on the canvas.
 /// Purely decorative — no HomeKit room linking.
 struct FurnitureItem: Identifiable, Equatable, Codable {
@@ -460,14 +528,21 @@ struct FurnitureItem: Identifiable, Equatable, Codable {
     var rotationDegrees: Double
     /// Controls whether the furniture name is rendered on the canvas/export.
     var showsName: Bool
+    /// Optional index into `FurnitureTint` for the soft parts. `nil` = neutral palette.
+    var tintIndex: Int?
 
-    init(id: UUID = UUID(), name: String? = nil, rect: CGRect, kind: FurnitureKind = .generic, rotationDegrees: Double = 0, showsName: Bool = true) {
+    init(id: UUID = UUID(), name: String? = nil, rect: CGRect, kind: FurnitureKind = .generic, rotationDegrees: Double = 0, showsName: Bool = true, tintIndex: Int? = nil) {
         self.id = id
         self.name = name ?? kind.localizedName
         self.rect = rect
         self.kindRaw = kind.rawValue
         self.rotationDegrees = rotationDegrees
         self.showsName = showsName
+        self.tintIndex = tintIndex
+    }
+
+    var tint: FurnitureTint? {
+        tintIndex.flatMap(FurnitureTint.init(rawValue:))
     }
 
     var kind: FurnitureKind {
@@ -479,7 +554,7 @@ struct FurnitureItem: Identifiable, Equatable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, rect, kindRaw, rotationDegrees, showsName
+        case id, name, rect, kindRaw, rotationDegrees, showsName, tintIndex
     }
 
     init(from decoder: Decoder) throws {
@@ -490,6 +565,7 @@ struct FurnitureItem: Identifiable, Equatable, Codable {
         kindRaw = try c.decodeIfPresent(String.self, forKey: .kindRaw) ?? FurnitureKind.generic.rawValue
         rotationDegrees = try c.decodeIfPresent(Double.self, forKey: .rotationDegrees) ?? 0
         showsName = try c.decodeIfPresent(Bool.self, forKey: .showsName) ?? true
+        tintIndex = try c.decodeIfPresent(Int.self, forKey: .tintIndex)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -500,6 +576,7 @@ struct FurnitureItem: Identifiable, Equatable, Codable {
         try c.encode(kindRaw, forKey: .kindRaw)
         try c.encode(rotationDegrees, forKey: .rotationDegrees)
         try c.encode(showsName, forKey: .showsName)
+        try c.encodeIfPresent(tintIndex, forKey: .tintIndex)
     }
 
     var visualCorners: [CGPoint] {

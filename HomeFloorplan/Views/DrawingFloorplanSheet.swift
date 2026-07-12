@@ -246,6 +246,8 @@ struct DrawingFloorplanSheet: View {
                         duplicateFurniture(id: id)
                     } onToggleName: {
                         toggleFurnitureName(id: id)
+                    } onTintChange: { tintIndex in
+                        setFurnitureTint(id: id, tintIndex: tintIndex)
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -667,7 +669,8 @@ struct DrawingFloorplanSheet: View {
             rect: CGRect(origin: shiftedOrigin, size: source.rect.size),
             kind: source.kind,
             rotationDegrees: source.rotationDegrees,
-            showsName: source.showsName
+            showsName: source.showsName,
+            tintIndex: source.tintIndex
         )
 
         document.furnitureItems.append(duplicate)
@@ -679,6 +682,13 @@ struct DrawingFloorplanSheet: View {
         guard let idx = document.furnitureItems.firstIndex(where: { $0.id == id }) else { return }
         pushUndo()
         document.furnitureItems[idx].showsName.toggle()
+        selection = .furniture(id)
+    }
+
+    private func setFurnitureTint(id: UUID, tintIndex: Int?) {
+        guard let idx = document.furnitureItems.firstIndex(where: { $0.id == id }) else { return }
+        pushUndo()
+        document.furnitureItems[idx].tintIndex = tintIndex
         selection = .furniture(id)
     }
 

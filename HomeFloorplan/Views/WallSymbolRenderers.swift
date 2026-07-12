@@ -561,11 +561,17 @@ private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGConte
 }
 
 private func drawDarkFurnitureItemCG(_ item: FurnitureItem, context: CGContext, drawText: Bool = true) {
+    let fill: UIColor = {
+        if let tint = item.tint, item.kind.supportsTint {
+            return UIColor(cgColor: tint.darkCGColor).withAlphaComponent(0.90)
+        }
+        return DarkArchitecturalPalette.furnitureFill
+    }()
     UIGraphicsPushContext(context)
     drawFurnitureBlueprintCG(
         item,
         context: context,
-        fillColor: DarkArchitecturalPalette.furnitureFill,
+        fillColor: fill,
         strokeColor: DarkArchitecturalPalette.furnitureStroke,
         detailColor: DarkArchitecturalPalette.text.withAlphaComponent(0.50),
         lineWidth: 1.4
@@ -1017,11 +1023,17 @@ private func drawRoomAreaCG(_ area: RoomArea, context: CGContext, drawText: Bool
 }
 
 private func drawFurnitureItemCG(_ item: FurnitureItem, context: CGContext, drawText: Bool = true) {
+    let fill: UIColor = {
+        if let tint = item.tint, item.kind.supportsTint {
+            return UIColor(cgColor: tint.lightCGColor)
+        }
+        return UIColor(white: 0.92, alpha: 1)
+    }()
     UIGraphicsPushContext(context)
     drawFurnitureBlueprintCG(
         item,
         context: context,
-        fillColor: UIColor(white: 0.92, alpha: 1),
+        fillColor: fill,
         strokeColor: UIColor(white: 0.55, alpha: 1),
         detailColor: UIColor(white: 0.35, alpha: 0.46)
     )

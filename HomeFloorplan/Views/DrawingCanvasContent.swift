@@ -467,7 +467,14 @@ private func furnitureSelectionPath(_ item: FurnitureItem) -> Path {
 
 private func drawFurnitureShape(_ item: FurnitureItem, context: inout GraphicsContext) {
     let rect = item.rect
-    let fill = DrawingStyle.furnitureFill
+    let fill: Color
+    if let tint = item.tint, item.kind.supportsTint {
+        fill = Color(UIColor { t in
+            UIColor(cgColor: t.userInterfaceStyle == .dark ? tint.darkCGColor : tint.lightCGColor)
+        }).opacity(0.85)
+    } else {
+        fill = DrawingStyle.furnitureFill
+    }
     let stroke = DrawingStyle.furnitureBorder
     let detail = DrawingStyle.furnitureText.opacity(0.55)
     let style = StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round)
