@@ -1640,7 +1640,9 @@ private func drawExteriorFillCG(_ doc: DrawingDocument, context: CGContext, canv
 }
 
 /// Builds a `UIBezierPath` from all room areas in the document.
-/// Falls back to the wall bounding box when no room areas exist.
+/// For walls-only documents the closed exterior wall chains describe the real
+/// outline (correct for slanted perimeters); the wall bounding box remains the
+/// last-resort fallback when the perimeter is not closed.
 /// `effectivePoints` handles both rect-only and polygon rooms.
 private func buildFootprintPath(for doc: DrawingDocument) -> UIBezierPath {
     let path = UIBezierPath()
@@ -1654,16 +1656,26 @@ private func buildFootprintPath(for doc: DrawingDocument) -> UIBezierPath {
             path.close()
         }
     } else {
-        // Fallback: bounding box of all wall endpoints
-        let allPts = doc.walls.flatMap { [$0.start, $0.end] }
-        guard !allPts.isEmpty else { return path }
-        let minX = allPts.map(\.x).min()!
-        let maxX = allPts.map(\.x).max()!
-        let minY = allPts.map(\.y).min()!
-        let maxY = allPts.map(\.y).max()!
-        path.append(UIBezierPath(rect: CGRect(x: minX, y: minY,
-                                              width: maxX - minX,
-                                              height: maxY - minY)))
+        let closedChains = doc.wallChains(for: .exterior)
+            .filter { $0.isClosed && $0.points.count >= 3 }
+        if !closedChains.isEmpty {
+            for chain in closedChains {
+                path.move(to: chain.points[0])
+                for pt in chain.points.dropFirst() { path.addLine(to: pt) }
+                path.close()
+            }
+        } else {
+            // Fallback: bounding box of all wall endpoints
+            let allPts = doc.walls.flatMap { [$0.start, $0.end] }
+            guard !allPts.isEmpty else { return path }
+            let minX = allPts.map(\.x).min()!
+            let maxX = allPts.map(\.x).max()!
+            let minY = allPts.map(\.y).min()!
+            let maxY = allPts.map(\.y).max()!
+            path.append(UIBezierPath(rect: CGRect(x: minX, y: minY,
+                                                  width: maxX - minX,
+                                                  height: maxY - minY)))
+        }
     }
 
     // Non-zero winding: adjacent rooms merge into a single solid shape.
@@ -1701,16 +1713,22 @@ private func drawWallDepthShadowCG(_ doc: DrawingDocument,
     context.addPath(footprint.cgPath)
     context.clip()
 
-    // Shadow source: big rect with a single rectangular hole (the footprint bbox).
-    // Using the bbox instead of individual room subpaths avoids spurious shadow at
-    // internal room boundaries where rooms touch or overlap.
-    // The clip above already constrains the shadow to the real building shape.
+    // Shadow source: big rect with the footprint as an even-odd hole.
+    // With room areas the hole stays the footprint bbox: individual room subpaths
+    // would cast spurious shadow at internal boundaries where rooms touch or
+    // overlap, and the clip above already constrains to the real building shape.
+    // For walls-only documents the footprint polygons are disjoint closed chains,
+    // so the actual outline is used and the gradient follows slanted perimeters.
     let expand: CGFloat = 2000
     let bigRect = UIBezierPath(rect: CGRect(
         x: bounds.minX - expand, y: bounds.minY - expand,
         width: bounds.width + expand * 2, height: bounds.height + expand * 2
     ))
-    bigRect.append(UIBezierPath(rect: bounds))   // single clean rectangular hole
+    if doc.roomAreas.isEmpty {
+        bigRect.append(footprint)
+    } else {
+        bigRect.append(UIBezierPath(rect: bounds))   // single clean rectangular hole
+    }
     bigRect.usesEvenOddFillRule = true
 
     UIGraphicsPushContext(context)
