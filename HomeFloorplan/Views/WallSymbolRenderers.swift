@@ -330,8 +330,8 @@ private enum DarkArchitecturalPalette {
     static let wallInterior = UIColor(red: 0.62, green: 0.68, blue: 0.74, alpha: 1)
     static let wallBalcony = UIColor(red: 0.55, green: 0.61, blue: 0.68, alpha: 0.85)
     static let openingLine = UIColor(red: 0.72, green: 0.78, blue: 0.84, alpha: 0.62)
-    static let furnitureStroke = UIColor(red: 0.62, green: 0.69, blue: 0.76, alpha: 0.52)
-    static let furnitureFill = UIColor(red: 0.10, green: 0.125, blue: 0.155, alpha: 0.62)
+    static let furnitureStroke = UIColor(red: 0.74, green: 0.79, blue: 0.84, alpha: 0.60)
+    static let furnitureFill = UIColor(red: 0.30, green: 0.33, blue: 0.37, alpha: 0.90)
     static let text = UIColor(red: 0.78, green: 0.82, blue: 0.86, alpha: 0.72)
 }
 
@@ -485,6 +485,35 @@ private func furnitureShadowPath(_ item: FurnitureItem) -> UIBezierPath {
     return path
 }
 
+/// Directional sheen on the furniture silhouette (dark style only): a light rim
+/// on the lit side and a dark rim on the shaded side, matching the wall bevels'
+/// global light vector so furniture reads as raised, not cut out.
+private func drawDarkFurnitureSheenCG(_ item: FurnitureItem, context: CGContext) {
+    let path = furnitureShadowPath(item)
+    let litShift = CGSize(width: 1.9, height: 2.2)   // toward light direction opposite
+
+    context.saveGState()
+    context.addPath(path.cgPath)
+    context.clip()
+
+    var toward = CGAffineTransform(translationX: litShift.width, y: litShift.height)
+    if let shifted = path.cgPath.copy(using: &toward) {
+        context.addPath(shifted)
+        context.setStrokeColor(UIColor.white.withAlphaComponent(0.18).cgColor)
+        context.setLineWidth(3.6)
+        context.strokePath()
+    }
+
+    var away = CGAffineTransform(translationX: -litShift.width, y: -litShift.height)
+    if let shifted = path.cgPath.copy(using: &away) {
+        context.addPath(shifted)
+        context.setStrokeColor(UIColor.black.withAlphaComponent(0.22).cgColor)
+        context.setLineWidth(3.6)
+        context.strokePath()
+    }
+    context.restoreGState()
+}
+
 private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGContext) {
     for item in doc.furnitureItems {
         let path = furnitureShadowPath(item)
@@ -517,8 +546,10 @@ private func drawDarkFurnitureItemCG(_ item: FurnitureItem, context: CGContext, 
         context: context,
         fillColor: DarkArchitecturalPalette.furnitureFill,
         strokeColor: DarkArchitecturalPalette.furnitureStroke,
-        detailColor: DarkArchitecturalPalette.text.withAlphaComponent(0.44)
+        detailColor: DarkArchitecturalPalette.text.withAlphaComponent(0.50),
+        lineWidth: 1.4
     )
+    drawDarkFurnitureSheenCG(item, context: context)
 
     if drawText, item.showsName {
         let attributes: [NSAttributedString.Key: Any] = [
@@ -996,7 +1027,8 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
                                       context: CGContext,
                                       fillColor: UIColor,
                                       strokeColor: UIColor,
-                                      detailColor: UIColor) {
+                                      detailColor: UIColor,
+                                      lineWidth: CGFloat = 1) {
     let rect = item.rect
     context.saveGState()
     context.translateBy(x: rect.midX, y: rect.midY)
@@ -1012,7 +1044,7 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         fillColor.setFill()
         path.fill()
         strokeColor.setStroke()
-        path.lineWidth = 1
+        path.lineWidth = lineWidth
         path.stroke()
     }
 
@@ -1021,7 +1053,7 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         let path = UIBezierPath()
         path.move(to: a)
         path.addLine(to: b)
-        path.lineWidth = 1
+        path.lineWidth = lineWidth
         path.lineCapStyle = .round
         path.stroke()
     }
@@ -1043,7 +1075,7 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
             fill.setFill()
             path.fill()
             stroke.setStroke()
-            path.lineWidth = 1
+            path.lineWidth = lineWidth
             path.stroke()
         }
 
@@ -1068,7 +1100,7 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         line(CGPoint(x: innerX + pillowW, y: pillowY), CGPoint(x: innerX + pillowW, y: frame.maxY))
         strokeColor.withAlphaComponent(0.42).setStroke()
         let framePath = rounded(frame, radius: 10)
-        framePath.lineWidth = 1
+        framePath.lineWidth = lineWidth
         framePath.stroke()
 
     case .armchair:
@@ -1087,7 +1119,7 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
             fill.setFill()
             path.fill()
             stroke.setStroke()
-            path.lineWidth = 1
+            path.lineWidth = lineWidth
             path.stroke()
         }
 
@@ -1105,7 +1137,7 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         line(CGPoint(x: innerX, y: seatY), CGPoint(x: innerX + innerW, y: seatY))
         strokeColor.withAlphaComponent(0.42).setStroke()
         let framePath = rounded(frame, radius: 10)
-        framePath.lineWidth = 1
+        framePath.lineWidth = lineWidth
         framePath.stroke()
 
     case .diningTable:
@@ -1122,7 +1154,7 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         rounded(back, radius: 3).fill()
         strokeColor.setStroke()
         let backPath = rounded(back, radius: 3)
-        backPath.lineWidth = 1
+        backPath.lineWidth = lineWidth
         backPath.stroke()
         line(CGPoint(x: back.minX + back.width * 0.14, y: back.maxY), CGPoint(x: seat.minX + seat.width * 0.18, y: seat.minY))
         line(CGPoint(x: back.maxX - back.width * 0.14, y: back.maxY), CGPoint(x: seat.maxX - seat.width * 0.18, y: seat.minY))
@@ -1150,13 +1182,17 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         fillStroke(rounded(tank, radius: 3))
         fillStroke(UIBezierPath(ovalIn: bowl))
         detailColor.setStroke()
-        UIBezierPath(ovalIn: bowl.insetBy(dx: bowl.width * 0.23, dy: bowl.height * 0.22)).stroke()
+        let bowlDetail = UIBezierPath(ovalIn: bowl.insetBy(dx: bowl.width * 0.23, dy: bowl.height * 0.22))
+        bowlDetail.lineWidth = lineWidth
+        bowlDetail.stroke()
 
     case .sink:
         let basin = rect.insetBy(dx: rect.width * 0.16, dy: rect.height * 0.18)
         fillStroke(UIBezierPath(ovalIn: basin))
         detailColor.setStroke()
-        UIBezierPath(ovalIn: basin.insetBy(dx: basin.width * 0.22, dy: basin.height * 0.22)).stroke()
+        let basinDetail = UIBezierPath(ovalIn: basin.insetBy(dx: basin.width * 0.22, dy: basin.height * 0.22))
+        basinDetail.lineWidth = lineWidth
+        basinDetail.stroke()
         line(CGPoint(x: rect.midX, y: basin.minY), CGPoint(x: rect.midX, y: basin.minY - rect.height * 0.12), color: strokeColor)
 
     case .inductionCooktop:
@@ -1174,10 +1210,10 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         for center in zoneCenters {
             let zone = CGRect(x: center.x - zoneRadius, y: center.y - zoneRadius, width: zoneRadius * 2, height: zoneRadius * 2)
             let zonePath = UIBezierPath(ovalIn: zone)
-            zonePath.lineWidth = 1
+            zonePath.lineWidth = lineWidth
             zonePath.stroke()
             let innerPath = UIBezierPath(ovalIn: zone.insetBy(dx: zoneRadius * 0.38, dy: zoneRadius * 0.38))
-            innerPath.lineWidth = 1
+            innerPath.lineWidth = lineWidth
             innerPath.stroke()
         }
         line(
@@ -1195,15 +1231,15 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         fillStroke(rounded(body, radius: 6))
         detailColor.setStroke()
         let panelPath = rounded(panel, radius: 3)
-        panelPath.lineWidth = 1
+        panelPath.lineWidth = lineWidth
         panelPath.stroke()
         strokeColor.setStroke()
         let doorPath = UIBezierPath(ovalIn: door)
-        doorPath.lineWidth = 1
+        doorPath.lineWidth = lineWidth
         doorPath.stroke()
         detailColor.setStroke()
         let innerDoor = UIBezierPath(ovalIn: door.insetBy(dx: doorRadius * 0.28, dy: doorRadius * 0.28))
-        innerDoor.lineWidth = 1
+        innerDoor.lineWidth = lineWidth
         innerDoor.stroke()
         detailColor.setFill()
         UIBezierPath(ovalIn: CGRect(x: panel.maxX - panel.width * 0.20, y: panel.midY - 3, width: 6, height: 6)).fill()
@@ -1213,7 +1249,9 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         let tub = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.18)
         fillStroke(rounded(tub, radius: tub.height / 2))
         detailColor.setStroke()
-        rounded(tub.insetBy(dx: tub.width * 0.10, dy: tub.height * 0.20), radius: tub.height / 3).stroke()
+        let tubDetail = rounded(tub.insetBy(dx: tub.width * 0.10, dy: tub.height * 0.20), radius: tub.height / 3)
+        tubDetail.lineWidth = lineWidth
+        tubDetail.stroke()
         line(CGPoint(x: tub.minX + tub.width * 0.12, y: tub.minY), CGPoint(x: tub.minX + tub.width * 0.12, y: tub.minY - rect.height * 0.10), color: strokeColor)
 
     case .shower:
