@@ -719,6 +719,78 @@ struct DrawingDocument: Equatable, nonisolated Codable {
     func roomArea(for id: UUID) -> RoomArea?          { roomAreas.first     { $0.id == id } }
     func furnitureItem(for id: UUID) -> FurnitureItem? { furnitureItems.first { $0.id == id } }
 
+    // MARK: Wall chains (for mitered joint rendering)
+
+    /// A polyline of wall vertices sharing endpoints, used to stroke walls with
+    /// mitered joins instead of per-segment square caps (clean corners at any angle).
+    struct WallChain {
+        var points: [CGPoint]
+        var isClosed: Bool
+    }
+
+    /// Groups the walls of `kind` into chains of segments connected end-to-end.
+    /// Chains break at junction nodes (3+ walls meeting), where a miter would be
+    /// ambiguous; closed loops (e.g. the perimeter) are returned with `isClosed`.
+    func wallChains(for kind: WallKind) -> [WallChain] {
+        struct NodeKey: Hashable { let x: Int; let y: Int }
+        func key(_ p: CGPoint) -> NodeKey {
+            NodeKey(x: Int((p.x * 10).rounded()), y: Int((p.y * 10).rounded()))
+        }
+
+        let edges = walls.filter { $0.kind == kind && $0.length > 0.001 }
+        guard !edges.isEmpty else { return [] }
+
+        var adjacency: [NodeKey: [Int]] = [:]
+        var nodePoint: [NodeKey: CGPoint] = [:]
+        for (i, e) in edges.enumerated() {
+            for p in [e.start, e.end] {
+                let k = key(p)
+                adjacency[k, default: []].append(i)
+                if nodePoint[k] == nil { nodePoint[k] = p }
+            }
+        }
+
+        var visited = Set<Int>()
+        var chains: [WallChain] = []
+
+        func nextUnvisited(at node: NodeKey) -> Int? {
+            adjacency[node]?.first { !visited.contains($0) }
+        }
+
+        func walk(from startNode: NodeKey, edge firstEdge: Int) -> [CGPoint] {
+            var points: [CGPoint] = [nodePoint[startNode]!]
+            var node = startNode
+            var edgeIdx: Int? = firstEdge
+            while let ei = edgeIdx, !visited.contains(ei) {
+                visited.insert(ei)
+                let e = edges[ei]
+                let nextNode = key(e.start) == node ? key(e.end) : key(e.start)
+                points.append(nodePoint[nextNode]!)
+                node = nextNode
+                edgeIdx = (adjacency[node]?.count == 2) ? nextUnvisited(at: node) : nil
+            }
+            return points
+        }
+
+        // Pass 1: open chains, starting from chain ends and junction nodes
+        for (node, edgeIndices) in adjacency where edgeIndices.count != 2 {
+            while let e = nextUnvisited(at: node) {
+                let pts = walk(from: node, edge: e)
+                if pts.count >= 2 { chains.append(WallChain(points: pts, isClosed: false)) }
+            }
+        }
+
+        // Pass 2: what remains are pure cycles (every node has degree 2)
+        for (i, e) in edges.enumerated() where !visited.contains(i) {
+            var pts = walk(from: key(e.start), edge: i)
+            let closed = pts.count > 2 && key(pts.first!) == key(pts.last!)
+            if closed { pts.removeLast() }
+            if pts.count >= 2 { chains.append(WallChain(points: pts, isClosed: closed)) }
+        }
+
+        return chains
+    }
+
     // MARK: Grid snapping
 
     static func snap(_ point: CGPoint) -> CGPoint {

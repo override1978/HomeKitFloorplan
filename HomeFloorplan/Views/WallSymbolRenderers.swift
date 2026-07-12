@@ -79,44 +79,46 @@ enum ExteriorFillPalette: Int, CaseIterable {
 
 // MARK: - SwiftUI GraphicsContext renderers
 
-/// Draws a single wall segment on a SwiftUI `GraphicsContext`.
-func drawWall(_ wall: WallSegment,
-              context: inout GraphicsContext,
-              selected: Bool = false) {
+/// Draws the selection halo under a wall segment on a SwiftUI `GraphicsContext`.
+func drawWallSelectionHalo(_ wall: WallSegment, context: inout GraphicsContext) {
     let w = DrawingDocument.wallWidth(for: wall.kind)
-
     var path = Path()
     path.move(to: wall.start)
     path.addLine(to: wall.end)
+    context.stroke(path,
+                   with: .color(DrawingStyle.selectionColor),
+                   style: StrokeStyle(lineWidth: w + DrawingStyle.selectionWidth * 2,
+                                      lineCap: .square))
+}
 
-    if wall.kind == .balcony {
-        // Balcony: double-line effect — dark outer stroke + white inner stroke
-        // No selection halo needed (selection ring comes from drawSelectionHandles)
-        if selected {
-            context.stroke(path,
-                           with: .color(DrawingStyle.selectionColor),
-                           style: StrokeStyle(lineWidth: w + DrawingStyle.selectionWidth * 2,
-                                              lineCap: .square))
-        }
-        // Outer dark line (same width as exterior wall)
-        context.stroke(path,
-                       with: .color(DrawingStyle.wallColor),
-                       style: StrokeStyle(lineWidth: w, lineCap: .square))
+private func wallChainsPath(_ chains: [DrawingDocument.WallChain]) -> Path {
+    var path = Path()
+    for chain in chains where chain.points.count >= 2 {
+        path.move(to: chain.points[0])
+        for pt in chain.points.dropFirst() { path.addLine(to: pt) }
+        if chain.isClosed { path.closeSubpath() }
+    }
+    return path
+}
+
+/// Draws all walls of `kind` as connected polylines with mitered joins, so
+/// corners stay clean at any angle (per-segment square caps only meet cleanly
+/// at 90°).
+func drawWallChains(_ doc: DrawingDocument,
+                    kind: WallKind,
+                    context: inout GraphicsContext) {
+    let chains = doc.wallChains(for: kind)
+    guard !chains.isEmpty else { return }
+    let path = wallChainsPath(chains)
+    let w = DrawingDocument.wallWidth(for: kind)
+    let style = StrokeStyle(lineWidth: w, lineCap: .square, lineJoin: .miter)
+
+    context.stroke(path, with: .color(DrawingStyle.wallColor), style: style)
+    if kind == .balcony {
         // Inner line (background color) — creates the hollow / double-line look
-        let innerW = w * 0.45
         context.stroke(path,
                        with: .color(Color(.systemBackground)),
-                       style: StrokeStyle(lineWidth: innerW, lineCap: .square))
-    } else {
-        if selected {
-            context.stroke(path,
-                           with: .color(DrawingStyle.selectionColor),
-                           style: StrokeStyle(lineWidth: w + DrawingStyle.selectionWidth * 2,
-                                              lineCap: .square))
-        }
-        context.stroke(path,
-                       with: .color(DrawingStyle.wallColor),
-                       style: StrokeStyle(lineWidth: w, lineCap: .square))
+                       style: StrokeStyle(lineWidth: w * 0.45, lineCap: .square, lineJoin: .miter))
     }
 }
 
@@ -296,9 +298,7 @@ func renderDocument(_ doc: DrawingDocument,
     // Exterior walls paint over any overlapping balcony/interior segments.
     let wallDrawOrder: [WallKind] = [.balcony, .interior, .exterior]
     for kind in wallDrawOrder {
-        for wall in doc.walls where wall.kind == kind {
-            drawWallCG(wall, context: cgContext)
-        }
+        drawWallChainsCG(doc, kind: kind, context: cgContext)
     }
     if visualStyle == .architectural {
         drawWallBevelsCG(doc, context: cgContext)
@@ -357,9 +357,10 @@ private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
 
     let wallDrawOrder: [WallKind] = [.balcony, .interior, .exterior]
     for kind in wallDrawOrder {
-        for wall in doc.walls where wall.kind == kind {
-            drawDarkWallCG(wall, context: context)
-        }
+        drawDarkWallChainsCG(doc, kind: kind, context: context)
+    }
+    for wall in doc.walls where wall.kind != .balcony {
+        drawDarkWallHighlightCG(wall, context: context)
     }
 
     for opening in doc.openings {
@@ -595,11 +596,14 @@ private func drawDarkFurnitureItemCG(_ item: FurnitureItem, context: CGContext, 
 private func drawDarkWallShadowsCG(_ doc: DrawingDocument, context: CGContext) {
     context.saveGState()
     context.setLineCap(.square)
+    context.setLineJoin(.miter)
     context.setLineDash(phase: 0, lengths: [])
 
-    for wall in doc.walls where wall.kind != .balcony {
-        let width = DrawingDocument.wallWidth(for: wall.kind)
-        let isExterior = wall.kind == .exterior
+    for kind in [WallKind.interior, .exterior] {
+        let chains = doc.wallChains(for: kind)
+        guard !chains.isEmpty else { continue }
+        let width = DrawingDocument.wallWidth(for: kind)
+        let isExterior = kind == .exterior
         context.saveGState()
         context.setShadow(offset: shadowDeviceOffset(context, CGSize(width: width * 0.45, height: width * 0.55)),
                           blur: width * 2.2 * shadowDeviceScale(context),
@@ -608,8 +612,7 @@ private func drawDarkWallShadowsCG(_ doc: DrawingDocument, context: CGContext) {
         // stroke itself is fully covered when the walls are painted afterwards.
         context.setStrokeColor(UIColor.black.cgColor)
         context.setLineWidth(width)
-        context.move(to: wall.start)
-        context.addLine(to: wall.end)
+        addWallChainsPath(chains, to: context)
         context.strokePath()
         context.restoreGState()
     }
@@ -617,35 +620,33 @@ private func drawDarkWallShadowsCG(_ doc: DrawingDocument, context: CGContext) {
     context.restoreGState()
 }
 
-private func drawDarkWallCG(_ wall: WallSegment, context: CGContext) {
-    let width = DrawingDocument.wallWidth(for: wall.kind)
+private func drawDarkWallChainsCG(_ doc: DrawingDocument, kind: WallKind, context: CGContext) {
+    let chains = doc.wallChains(for: kind)
+    guard !chains.isEmpty else { return }
+    let width = DrawingDocument.wallWidth(for: kind)
     context.setLineDash(phase: 0, lengths: [])
     context.setLineCap(.square)
+    context.setLineJoin(.miter)
 
-    if wall.kind == .balcony {
+    if kind == .balcony {
         context.setStrokeColor(DarkArchitecturalPalette.wallBalcony.cgColor)
         context.setLineWidth(width)
-        context.move(to: wall.start)
-        context.addLine(to: wall.end)
+        addWallChainsPath(chains, to: context)
         context.strokePath()
 
         context.setStrokeColor(DarkArchitecturalPalette.background.withAlphaComponent(0.88).cgColor)
         context.setLineWidth(width * 0.48)
-        context.move(to: wall.start)
-        context.addLine(to: wall.end)
+        addWallChainsPath(chains, to: context)
         context.strokePath()
         return
     }
 
-    context.setStrokeColor((wall.kind == .exterior
+    context.setStrokeColor((kind == .exterior
                             ? DarkArchitecturalPalette.wallExterior
                             : DarkArchitecturalPalette.wallInterior).cgColor)
     context.setLineWidth(width)
-    context.move(to: wall.start)
-    context.addLine(to: wall.end)
+    addWallChainsPath(chains, to: context)
     context.strokePath()
-
-    drawDarkWallHighlightCG(wall, context: context)
 }
 
 private func drawDarkWallHighlightCG(_ wall: WallSegment, context: CGContext) {
@@ -1413,29 +1414,32 @@ private func drawGridCG(in rect: CGRect, spacing: CGFloat, context: CGContext) {
     }
 }
 
-private func drawWallCG(_ wall: WallSegment, context: CGContext) {
-    let w = DrawingDocument.wallWidth(for: wall.kind)
+private func addWallChainsPath(_ chains: [DrawingDocument.WallChain], to context: CGContext) {
+    for chain in chains where chain.points.count >= 2 {
+        context.move(to: chain.points[0])
+        for pt in chain.points.dropFirst() { context.addLine(to: pt) }
+        if chain.isClosed { context.closePath() }
+    }
+}
+
+private func drawWallChainsCG(_ doc: DrawingDocument, kind: WallKind, context: CGContext) {
+    let chains = doc.wallChains(for: kind)
+    guard !chains.isEmpty else { return }
+    let w = DrawingDocument.wallWidth(for: kind)
     context.setLineDash(phase: 0, lengths: [])
     context.setLineCap(.square)
+    context.setLineJoin(.miter)
 
-    if wall.kind == .balcony {
-        // Outer dark stroke (same width as exterior walls)
-        context.setStrokeColor(DrawingStyle.wallCGColor)
-        context.setLineWidth(w)
-        context.move(to: wall.start)
-        context.addLine(to: wall.end)
-        context.strokePath()
+    context.setStrokeColor(DrawingStyle.wallCGColor)
+    context.setLineWidth(w)
+    addWallChainsPath(chains, to: context)
+    context.strokePath()
+
+    if kind == .balcony {
         // Inner white stroke — creates the hollow / double-line look
         context.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         context.setLineWidth(w * 0.45)
-        context.move(to: wall.start)
-        context.addLine(to: wall.end)
-        context.strokePath()
-    } else {
-        context.setStrokeColor(DrawingStyle.wallCGColor)
-        context.setLineWidth(w)
-        context.move(to: wall.start)
-        context.addLine(to: wall.end)
+        addWallChainsPath(chains, to: context)
         context.strokePath()
     }
 }
@@ -1443,23 +1447,23 @@ private func drawWallCG(_ wall: WallSegment, context: CGContext) {
 private func drawWallCastShadowsCG(_ doc: DrawingDocument, context: CGContext) {
     context.saveGState()
     context.setLineCap(.square)
-    context.setLineJoin(.bevel)
+    context.setLineJoin(.miter)
     context.setLineDash(phase: 0, lengths: [])
 
-    for wall in doc.walls where wall.kind != .balcony {
-        let width = DrawingDocument.wallWidth(for: wall.kind)
-        let alpha: CGFloat = wall.kind == .exterior ? 0.16 : 0.10
-        let blur: CGFloat = wall.kind == .exterior ? 5.5 : 3.5
+    for kind in [WallKind.interior, .exterior] {
+        let chains = doc.wallChains(for: kind)
+        guard !chains.isEmpty else { continue }
+        let width = DrawingDocument.wallWidth(for: kind)
+        let isExterior = kind == .exterior
         let offset = CGSize(width: width * 0.16, height: width * 0.20)
 
         context.saveGState()
         context.setShadow(offset: offset,
-                          blur: blur,
-                          color: UIColor.black.withAlphaComponent(alpha).cgColor)
+                          blur: isExterior ? 5.5 : 3.5,
+                          color: UIColor.black.withAlphaComponent(isExterior ? 0.16 : 0.10).cgColor)
         context.setStrokeColor(UIColor.black.withAlphaComponent(0.03).cgColor)
         context.setLineWidth(width)
-        context.move(to: wall.start)
-        context.addLine(to: wall.end)
+        addWallChainsPath(chains, to: context)
         context.strokePath()
         context.restoreGState()
     }

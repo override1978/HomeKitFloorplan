@@ -69,13 +69,14 @@ struct DrawingCanvasContent: View {
                      context: &ctx)
 
             // 2. Committed walls — draw order: balcony first, interior, exterior last.
+            // Walls of a kind are stroked as connected chains (mitered joins).
             let wallDrawOrder: [WallKind] = [.balcony, .interior, .exterior]
             for kind in wallDrawOrder {
-                for wall in document.walls where wall.kind == kind {
-                    let isSelected: Bool
-                    if case .wall(let id) = selection { isSelected = wall.id == id } else { isSelected = false }
-                    drawWall(wall, context: &ctx, selected: isSelected)
+                if case .wall(let id) = selection,
+                   let selectedWall = document.wall(for: id), selectedWall.kind == kind {
+                    drawWallSelectionHalo(selectedWall, context: &ctx)
                 }
+                drawWallChains(document, kind: kind, context: &ctx)
             }
 
             // 3. Preview wall (in-progress draw stroke)
@@ -831,9 +832,7 @@ struct ScaledDrawingView: View {
             }
             drawGrid(in: canvasRect, spacing: DrawingDocument.gridSpacing, context: &ctx)
             for kind in [WallKind.balcony, .interior, .exterior] {
-                for wall in document.walls where wall.kind == kind {
-                    drawWall(wall, context: &ctx, selected: false)
-                }
+                drawWallChains(document, kind: kind, context: &ctx)
             }
             for opening in document.openings {
                 guard let wall = document.wall(for: opening.wallID) else { continue }
