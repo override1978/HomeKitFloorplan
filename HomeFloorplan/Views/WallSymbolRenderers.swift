@@ -323,12 +323,12 @@ func renderDocument(_ doc: DrawingDocument,
 
 private enum DarkArchitecturalPalette {
     static let background = UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
-    static let roomFill = UIColor(red: 0.115, green: 0.145, blue: 0.180, alpha: 0.92)
-    static let roomAlternateFill = UIColor(red: 0.095, green: 0.125, blue: 0.160, alpha: 0.92)
+    static let roomFill = UIColor(red: 0.140, green: 0.170, blue: 0.205, alpha: 0.94)
+    static let roomAlternateFill = UIColor(red: 0.120, green: 0.150, blue: 0.185, alpha: 0.94)
     static let roomStroke = UIColor(red: 0.42, green: 0.50, blue: 0.58, alpha: 0.22)
-    static let wallExterior = UIColor(red: 0.45, green: 0.53, blue: 0.62, alpha: 1)
-    static let wallInterior = UIColor(red: 0.36, green: 0.43, blue: 0.51, alpha: 1)
-    static let wallBalcony = UIColor(red: 0.35, green: 0.43, blue: 0.51, alpha: 0.82)
+    static let wallExterior = UIColor(red: 0.84, green: 0.87, blue: 0.90, alpha: 1)
+    static let wallInterior = UIColor(red: 0.62, green: 0.68, blue: 0.74, alpha: 1)
+    static let wallBalcony = UIColor(red: 0.55, green: 0.61, blue: 0.68, alpha: 0.85)
     static let openingLine = UIColor(red: 0.72, green: 0.78, blue: 0.84, alpha: 0.62)
     static let furnitureStroke = UIColor(red: 0.62, green: 0.69, blue: 0.76, alpha: 0.52)
     static let furnitureFill = UIColor(red: 0.10, green: 0.125, blue: 0.155, alpha: 0.62)
@@ -352,6 +352,7 @@ private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
         drawDarkFurnitureItemCG(item, context: context, drawText: drawText)
     }
 
+    drawWallDepthShadowCG(doc, context: context, tightAlpha: 0.55, ambientAlpha: 0.35)
     drawDarkWallShadowsCG(doc, context: context)
 
     let wallDrawOrder: [WallKind] = [.balcony, .interior, .exterior]
@@ -412,18 +413,43 @@ private func drawDarkRoomAreaCG(_ area: RoomArea, index: Int, context: CGContext
     UIGraphicsPopContext()
 }
 
+// CGContext shadows are specified in base (device) space and ignore the CTM,
+// so canvas-unit blur/offset values must be converted or shadows shrink
+// relative to walls as the export scale factor decreases.
+private func shadowDeviceScale(_ context: CGContext) -> CGFloat {
+    let t = context.userSpaceToDeviceSpaceTransform
+    let s = hypot(t.a, t.b)
+    return s.isFinite && s > 0 ? s : 1
+}
+
+private func shadowDeviceOffset(_ context: CGContext, _ canvasOffset: CGSize) -> CGSize {
+    let t = context.userSpaceToDeviceSpaceTransform
+    return CGSize(width: canvasOffset.width * t.a + canvasOffset.height * t.c,
+                  height: canvasOffset.width * t.b + canvasOffset.height * t.d)
+}
+
 private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGContext) {
-    context.saveGState()
-    context.setShadow(offset: CGSize(width: 4, height: 7),
-                      blur: 9,
-                      color: UIColor.black.withAlphaComponent(0.34).cgColor)
-    context.setFillColor(UIColor.black.withAlphaComponent(0.12).cgColor)
     for item in doc.furnitureItems {
         let path = UIBezierPath(roundedRect: item.rect, cornerRadius: 3)
+        let rotation = CGAffineTransform(translationX: item.rect.midX, y: item.rect.midY)
+            .rotated(by: CGFloat(item.rotationDegrees * .pi / 180))
+            .translatedBy(x: -item.rect.midX, y: -item.rect.midY)
+        path.apply(rotation)
+
+        context.saveGState()
+        // Shadow strength is multiplied by the source alpha, so the silhouette must
+        // be painted opaque; clipping it out keeps only the outer shadow visible.
+        context.addRect(CGRect(x: -1e5, y: -1e5, width: 2e5, height: 2e5))
+        context.addPath(path.cgPath)
+        context.clip(using: .evenOdd)
+        context.setShadow(offset: shadowDeviceOffset(context, CGSize(width: 5, height: 8)),
+                          blur: 12 * shadowDeviceScale(context),
+                          color: UIColor.black.withAlphaComponent(0.45).cgColor)
+        context.setFillColor(UIColor.black.cgColor)
         context.addPath(path.cgPath)
         context.fillPath()
+        context.restoreGState()
     }
-    context.restoreGState()
 }
 
 private func drawDarkFurnitureItemCG(_ item: FurnitureItem, context: CGContext, drawText: Bool = true) {
@@ -457,11 +483,14 @@ private func drawDarkWallShadowsCG(_ doc: DrawingDocument, context: CGContext) {
 
     for wall in doc.walls where wall.kind != .balcony {
         let width = DrawingDocument.wallWidth(for: wall.kind)
+        let isExterior = wall.kind == .exterior
         context.saveGState()
-        context.setShadow(offset: CGSize(width: width * 0.26, height: width * 0.30),
-                          blur: wall.kind == .exterior ? 10 : 6,
-                          color: UIColor.black.withAlphaComponent(wall.kind == .exterior ? 0.52 : 0.34).cgColor)
-        context.setStrokeColor(UIColor.black.withAlphaComponent(0.10).cgColor)
+        context.setShadow(offset: shadowDeviceOffset(context, CGSize(width: width * 0.45, height: width * 0.55)),
+                          blur: width * 2.2 * shadowDeviceScale(context),
+                          color: UIColor.black.withAlphaComponent(isExterior ? 0.55 : 0.38).cgColor)
+        // Opaque source: shadow strength is multiplied by the source alpha, and the
+        // stroke itself is fully covered when the walls are painted afterwards.
+        context.setStrokeColor(UIColor.black.cgColor)
         context.setLineWidth(width)
         context.move(to: wall.start)
         context.addLine(to: wall.end)
@@ -517,18 +546,27 @@ private func drawDarkWallHighlightCG(_ wall: WallSegment, context: CGContext) {
     let litNormal = normal.x * lightVector.x + normal.y * lightVector.y >= 0
         ? normal
         : CGPoint(x: -normal.x, y: -normal.y)
-    let edgeOffset = width * 0.34
+    let shadedNormal = CGPoint(x: -litNormal.x, y: -litNormal.y)
+    let edgeOffset = width * 0.36
     let inset = width * 0.16
     let start = CGPoint(x: wall.start.x + unitX * inset, y: wall.start.y + unitY * inset)
     let end = CGPoint(x: wall.end.x - unitX * inset, y: wall.end.y - unitY * inset)
 
     context.setLineCap(.butt)
-    context.setLineWidth(max(1, width * 0.08))
-    context.setStrokeColor(UIColor.white.withAlphaComponent(wall.kind == .exterior ? 0.24 : 0.16).cgColor)
+    context.setLineWidth(max(1.5, width * 0.14))
+
+    context.setStrokeColor(UIColor.white.withAlphaComponent(wall.kind == .exterior ? 0.55 : 0.38).cgColor)
     context.move(to: CGPoint(x: start.x + litNormal.x * edgeOffset,
                              y: start.y + litNormal.y * edgeOffset))
     context.addLine(to: CGPoint(x: end.x + litNormal.x * edgeOffset,
                                 y: end.y + litNormal.y * edgeOffset))
+    context.strokePath()
+
+    context.setStrokeColor(UIColor.black.withAlphaComponent(wall.kind == .exterior ? 0.38 : 0.28).cgColor)
+    context.move(to: CGPoint(x: start.x + shadedNormal.x * edgeOffset,
+                             y: start.y + shadedNormal.y * edgeOffset))
+    context.addLine(to: CGPoint(x: end.x + shadedNormal.x * edgeOffset,
+                                y: end.y + shadedNormal.y * edgeOffset))
     context.strokePath()
 }
 
@@ -1337,7 +1375,10 @@ private func buildFootprintPath(for doc: DrawingDocument) -> UIBezierPath {
 ///
 /// Zero offset → shadow spreads uniformly inward (no directional bias).
 /// Parameters scale with the footprint so depth is proportional to building size.
-private func drawWallDepthShadowCG(_ doc: DrawingDocument, context: CGContext) {
+private func drawWallDepthShadowCG(_ doc: DrawingDocument,
+                                   context: CGContext,
+                                   tightAlpha: CGFloat = 0.88,
+                                   ambientAlpha: CGFloat = 0.55) {
     let footprint = buildFootprintPath(for: doc)
     let bounds = footprint.bounds
     guard bounds.width > 0, bounds.height > 0 else { return }
@@ -1370,7 +1411,7 @@ private func drawWallDepthShadowCG(_ doc: DrawingDocument, context: CGContext) {
     // Pass 1 — sharp layer: strong, tight shadow right at the wall edge
     context.saveGState()
     context.setShadow(offset: .zero, blur: blurTight,
-                      color: UIColor.black.withAlphaComponent(0.88).cgColor)
+                      color: UIColor.black.withAlphaComponent(tightAlpha).cgColor)
     UIColor.black.setFill()
     bigRect.fill()
     context.restoreGState()
@@ -1378,7 +1419,7 @@ private func drawWallDepthShadowCG(_ doc: DrawingDocument, context: CGContext) {
     // Pass 2 — ambient layer: softer, wider depth gradient
     context.saveGState()
     context.setShadow(offset: .zero, blur: blurAmbient,
-                      color: UIColor.black.withAlphaComponent(0.55).cgColor)
+                      color: UIColor.black.withAlphaComponent(ambientAlpha).cgColor)
     UIColor.black.setFill()
     bigRect.fill()
     context.restoreGState()
