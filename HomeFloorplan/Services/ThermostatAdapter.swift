@@ -57,6 +57,7 @@ final class ThermostatAdapter: AccessoryAdapter {
     private let currentStateCharacteristic: HMCharacteristic?
     private let lowBatteryCharacteristic: HMCharacteristic?
     private let rotationSpeedCharacteristic: HMCharacteristic?
+    private let swingModeCharacteristic: HMCharacteristic?
     private let humidityCharacteristic: HMCharacteristic?
     
     
@@ -74,6 +75,7 @@ final class ThermostatAdapter: AccessoryAdapter {
         let currentStateUUID = "000000B1-0000-1000-8000-0026BB765291"
         let lowBatteryUUID = "00000079-0000-1000-8000-0026BB765291"
         let rotationSpeedUUID = "00000029-0000-1000-8000-0026BB765291"
+        let swingModeUUID = "000000B6-0000-1000-8000-0026BB765291"
         let humidityUUID = "00000010-0000-1000-8000-0026BB765291"
         
         guard let active = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: activeUUID),
@@ -95,6 +97,7 @@ final class ThermostatAdapter: AccessoryAdapter {
         self.currentStateCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: currentStateUUID)
         self.lowBatteryCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: lowBatteryUUID)
         self.rotationSpeedCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: rotationSpeedUUID)
+        self.swingModeCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: swingModeUUID)
         self.humidityCharacteristic = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: humidityUUID)
     }
     
@@ -353,6 +356,22 @@ final class ThermostatAdapter: AccessoryAdapter {
         let range = rotationSpeedRange
         let clamped = Swift.min(Swift.max(value, range.lowerBound), range.upperBound)
         try await homeKit.write(clamped, to: c)
+    }
+
+    // MARK: - Swing mode (oscillazione aria)
+
+    var hasSwingMode: Bool {
+        swingModeCharacteristic != nil
+    }
+
+    var isSwingEnabled: Bool {
+        guard let c = swingModeCharacteristic else { return false }
+        return intValue(homeKit.value(for: c) ?? c.value) == 1
+    }
+
+    func setSwingEnabled(_ enabled: Bool) async throws {
+        guard let c = swingModeCharacteristic else { return }
+        try await homeKit.write(enabled ? 1 : 0, to: c)
     }
     
     // MARK: - Writes

@@ -1,11 +1,11 @@
-#if DEBUG
 import SwiftUI
 import SwiftData
 
 // MARK: - HabitsDiagnosticsView
 
-/// Debug-only view exposing the full internal state of the Habits pipeline.
-/// Accessible from Settings → Developer section (DEBUG builds only).
+/// Diagnostics view exposing the full internal state of the Habits pipeline,
+/// including the demo-data seed/wipe used to verify the pipeline on test
+/// devices. Accessible from Settings → Diagnostics (all builds).
 ///
 /// Five sections:
 ///   1. Engine On-Device  — BehavioralAnalysisService patterns + opportunities
@@ -17,6 +17,7 @@ struct HabitsDiagnosticsView: View {
 
     @Environment(BehavioralAnalysisService.self) private var behavioralService
     @Environment(HabitAnalysisService.self)      private var habitService
+    @Environment(CloudKitSyncService.self)       private var cloudKitSync
     @Environment(\.modelContext) private var modelContext
 
     @State private var rawEventCount: Int?
@@ -30,6 +31,7 @@ struct HabitsDiagnosticsView: View {
     @State private var showsCoupledPairs         = false
     @State private var showsContextualCandidates = false
     @State private var isRunning = false
+    @State private var demoStatus: String?
 
     var body: some View {
         List {
@@ -37,11 +39,13 @@ struct HabitsDiagnosticsView: View {
             engineAISection
             gateRejectionsSection
             contextualCandidatesSection
+            correlationOutcomesSection
             burstSection
             coupledPairsSection
             persistenceSection
             rawEventsSection
             topPatternsSection
+            demoDataSection
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Habits Diagnostics")
@@ -82,6 +86,81 @@ struct HabitsDiagnosticsView: View {
             lastEventDate      = behavioralService.lastEventDate()
             daysWithEvents     = behavioralService.daysWithEvents(days: 30)
             await loadSensorReadingCounts()
+        }
+    }
+
+    // MARK: - Demo data
+
+    private var demoDataSection: some View {
+        Section {
+            // L'analisi programmata gira SOLO sul master (HomeFloorplanApp):
+            // su uno slave i risultati locali vengono sovrascritti dalla sync
+            // e le opportunity mostrate arrivano dal master. Il demo va provato
+            // sul device master.
+            HStack {
+                Text("Questo device è il master")
+                Spacer()
+                if cloudKitSync.isMaster {
+                    Text("Sì").foregroundStyle(.green)
+                } else {
+                    Text("NO — il demo va eseguito sul master")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                }
+            }
+
+            Button {
+                Task {
+                    isRunning = true
+                    do {
+                        try HabitScenarioFactory.seedDemoHistory(into: modelContext)
+                        // I pattern in-memory di seed precedenti sopravvivrebbero al
+                        // merge dell'analisi (con statistiche congelate): via prima.
+                        behavioralService.patterns.removeAll { pattern in
+                            pattern.accessoryID.map(HabitScenarioFactory.DemoID.allAccessoryIDs.contains) == true
+                        }
+                        await behavioralService.analyze()
+                        let contextual = behavioralService.patterns.filter { $0.patternType == .contextual }.count
+                        demoStatus = "Seed ok · \(behavioralService.lastAnalyzedEventCount) eventi analizzati · \(behavioralService.patterns.count) pattern (\(contextual) contestuali) · \(behavioralService.pendingOpportunities.count) suggerimenti pendenti"
+                    } catch {
+                        demoStatus = "Seed FALLITO: \(error.localizedDescription)"
+                    }
+                    isRunning = false
+                }
+            } label: {
+                Label("Inietta scenari demo (15 gg di storia)", systemImage: "wand.and.stars")
+            }
+            .disabled(isRunning)
+
+            Button(role: .destructive) {
+                Task {
+                    isRunning = true
+                    do {
+                        try HabitScenarioFactory.wipeDemoData(from: modelContext)
+                        behavioralService.patterns.removeAll { pattern in
+                            pattern.accessoryID.map(HabitScenarioFactory.DemoID.allAccessoryIDs.contains) == true
+                        }
+                        await behavioralService.analyze()
+                        demoStatus = "Wipe ok · restano \(behavioralService.patterns.count) pattern · \(behavioralService.pendingOpportunities.count) suggerimenti"
+                    } catch {
+                        demoStatus = "Wipe FALLITO: \(error.localizedDescription)"
+                    }
+                    isRunning = false
+                }
+            } label: {
+                Label("Rimuovi dati demo e derivati", systemImage: "trash")
+            }
+            .disabled(isRunning)
+
+            if let demoStatus {
+                Text(demoStatus)
+                    .font(.caption)
+                    .foregroundStyle(demoStatus.contains("FALLITO") ? .red : .secondary)
+            }
+        } header: {
+            Text("Demo Data")
+        } footer: {
+            Text("Storia sintetica (clima col caldo, riscaldamento col freddo, luci con poca luce, correlazione spuria umidità→luci, coppia P2v2, routine mattutina) per verificare la pipeline abitudini → automazioni in minuti invece che in settimane. Il wipe rimuove anche pattern e opportunity derivati, che sincronizzano via CloudKit.")
         }
     }
 
@@ -261,6 +340,46 @@ struct HabitsDiagnosticsView: View {
         } footer: {
             if !candidates.isEmpty {
                 Text("Groups with time spread > 60 min — candidates for environmental correlation (temp, lux, humidity). Sorted by occurrences desc, top 20.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Section 3b-bis: Correlation Outcomes
+
+    @ViewBuilder
+    private var correlationOutcomesSection: some View {
+        let outcomes = behavioralService.lastContextualOutcomes
+        Section {
+            if outcomes.isEmpty {
+                Text("No data — tap \"Run Analysis\" to populate")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
+            } else {
+                ForEach(outcomes.sorted(by: { $0.score > $1.score })) { o in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text("\(o.candidateLabel) × \(o.sensorTypeRaw)")
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1)
+                            Spacer()
+                            Text(o.accepted ? "✓" : "✗")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(o.accepted ? .green : .secondary)
+                        }
+                        Text("hit=\(String(format: "%.2f", o.hitRate)) · base=\(String(format: "%.2f", o.baseRate)) · score=\(String(format: "%.2f", o.score))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        } header: {
+            Text("Correlation Outcomes")
+        } footer: {
+            if !outcomes.isEmpty {
+                Text("Why each candidate×sensor pair passed or failed the correlation gates (hitRate ≥ 0.70, baseRate ≤ 0.50, score ≥ 0.40). The verdict on whether contextual habits can emerge from this home's data lives here.")
                     .foregroundStyle(.secondary)
             }
         }
@@ -717,6 +836,18 @@ struct HabitsDiagnosticsView: View {
             }
         }
 
+        lines += ["", "=== Correlation Outcomes (last run) ==="]
+        let outcomes = behavioralService.lastContextualOutcomes
+        if outcomes.isEmpty {
+            lines.append("No candidate×sensor pairs evaluated — run analysis first.")
+        } else {
+            lines.append("Every candidate×sensor pair the correlation engine evaluated (gates: hitRate ≥ 0.70, baseRate ≤ 0.50, score ≥ 0.40):")
+            for o in outcomes.sorted(by: { $0.score > $1.score }) {
+                let verdict = o.accepted ? "✓ ACCEPTED" : "✗ rejected"
+                lines.append("  \(verdict)  \(o.candidateLabel) × \(o.sensorTypeRaw)  hit=\(String(format: "%.2f", o.hitRate))  base=\(String(format: "%.2f", o.baseRate))  score=\(String(format: "%.2f", o.score))")
+            }
+        }
+
         lines += ["", "=== Burst Clusters (last run) ==="]
         let bursts = behavioralService.lastBurstReport
         if bursts.isEmpty {
@@ -823,4 +954,3 @@ struct HabitsDiagnosticsView: View {
         return lines.joined(separator: "\n")
     }
 }
-#endif

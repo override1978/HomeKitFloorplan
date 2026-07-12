@@ -308,21 +308,47 @@ final class BehavioralAnalysisService {
         }
         patterns.removeAll { $0.patternType == .contextual }
 
-        let readingsDescriptor: FetchDescriptor<SensorReading> = {
-            var d = FetchDescriptor<SensorReading>(
-                predicate: #Predicate { $0.timestamp >= cutoff },
-                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-            )
-            d.fetchLimit = 6000
-            return d
-        }()
-        let sensorReadings = (try? context.fetch(readingsDescriptor)) ?? []
+        // Letture sensore per la correlazione: SOLO le stanze dei candidati
+        // contestuali (+ la stanza outdoor, correlabile con qualsiasi stanza).
+        // Il vecchio limite globale di 6000 letture più recenti, su una casa
+        // che campiona ogni 15', copriva ~2 giorni: la baseline moriva di fame
+        // e la correlazione non trovava mai nulla sui device con molti sensori.
+        // Filtrando per stanza il backstop resta una protezione, non il percorso.
+        let contextualCandidates = PatternDetectionEngine.lastContextualCandidates
+        let outdoorRoomName = UserDefaults.standard.string(forKey: "outdoorRoomName") ?? ""
+        let sensorReadings: [SensorReading]
+        if contextualCandidates.isEmpty {
+            sensorReadings = []
+        } else {
+            var relevantRooms = Set(contextualCandidates.compactMap(\.roomName))
+            if !outdoorRoomName.isEmpty { relevantRooms.insert(outdoorRoomName) }
+            let hasRoomlessCandidate = contextualCandidates.contains { $0.roomName == nil }
+
+            let readingsDescriptor: FetchDescriptor<SensorReading> = {
+                var d: FetchDescriptor<SensorReading>
+                if hasRoomlessCandidate || relevantRooms.isEmpty {
+                    d = FetchDescriptor<SensorReading>(
+                        predicate: #Predicate { $0.timestamp >= cutoff },
+                        sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+                    )
+                } else {
+                    let rooms = Array(relevantRooms)
+                    d = FetchDescriptor<SensorReading>(
+                        predicate: #Predicate { $0.timestamp >= cutoff && rooms.contains($0.roomName) },
+                        sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+                    )
+                }
+                d.fetchLimit = 24_000
+                return d
+            }()
+            sensorReadings = (try? context.fetch(readingsDescriptor)) ?? []
+        }
 
         var contextualPatterns = ContextualCorrelationEngine.detect(
-            candidates: PatternDetectionEngine.lastContextualCandidates,
+            candidates: contextualCandidates,
             accessoryEvents: accessoryEvents,
             readings: sensorReadings,
-            outdoorRoomName: UserDefaults.standard.string(forKey: "outdoorRoomName") ?? ""
+            outdoorRoomName: outdoorRoomName
         )
         for i in contextualPatterns.indices {
             if let decision = contextualDecisions[Self.contextualDecisionKey(for: contextualPatterns[i])] {
@@ -490,7 +516,8 @@ final class BehavioralAnalysisService {
             $0.status == .active &&
             $0.confidence >= 0.60 &&
             $0.observations >= 3 &&
-            isAutomationConvertible($0)
+            isAutomationConvertible($0) &&
+            AutomationSemanticPolicy.allowsPromotion($0)
         }
 
         // Preserve user decisions (dismissed / approved / snoozed) AND all conversational

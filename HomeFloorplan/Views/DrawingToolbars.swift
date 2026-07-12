@@ -969,7 +969,7 @@ struct RoomAreaInspectorPanel: View {
                     // "Nessuno" tile — resets to colour fill
                     floorTile(
                         icon: "slash.circle",
-                        label: String(localized: "drawing.floor.none", defaultValue: "Nessuno"),
+                        label: String(localized: "drawing.floor.none", defaultValue: "None"),
                         swatch: Color.secondary.opacity(0.18),
                         isActive: area.floorKind == nil
                     ) { onFloorKindChange(nil) }

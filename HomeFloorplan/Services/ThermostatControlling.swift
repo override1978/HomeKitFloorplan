@@ -37,8 +37,19 @@ protocol ThermostatControlling: AnyObject {
     var rotationSpeedRange: ClosedRange<Int> { get }
     var rotationSpeedStep: Int { get }
     func setRotationSpeed(_ value: Int) async throws
+
+    // Oscillazione aria (opzionale)
+    var hasSwingMode: Bool { get }
+    var isSwingEnabled: Bool { get }
+    func setSwingEnabled(_ enabled: Bool) async throws
     
     // Writes
     func setMode(_ mode: HeaterCoolerMode) async throws
     func setTargetTemperature(_ value: Double) async throws
+}
+
+extension ThermostatControlling {
+    var hasSwingMode: Bool { false }
+    var isSwingEnabled: Bool { false }
+    func setSwingEnabled(_ enabled: Bool) async throws {}
 }

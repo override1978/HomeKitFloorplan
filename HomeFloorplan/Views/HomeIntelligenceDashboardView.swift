@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import SwiftData
 
@@ -12,6 +13,103 @@ private extension LearningPhase {
         case .understanding:  return BrandColor.primary
         case .mature:         return .green
         }
+    }
+}
+
+// MARK: - Localized Insight Copy
+
+private enum LocalizedInsightCopy {
+    static func title(for insight: HomeInsight) -> String {
+        localizedAnomalyCopy(for: insight)?.title ?? insight.title
+    }
+
+    static func message(for insight: HomeInsight) -> String {
+        localizedAnomalyCopy(for: insight)?.message ?? insight.message
+    }
+
+    private static func localizedAnomalyCopy(for insight: HomeInsight) -> (title: String, message: String)? {
+        let parts = insight.dedupeKey.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 4,
+              parts[0] == "anomaly",
+              let sensorType = SensorServiceType(rawValue: parts[2]) else {
+            return nil
+        }
+
+        let title: String
+        let message: String
+        switch parts[3] {
+        case "oscillating":
+            title = String(
+                format: String(localized: "anomaly.oscillating.title", defaultValue: "Unstable %@ readings"),
+                sensorType.displayName
+            )
+            if let value = firstNumber(in: insight.message) {
+                message = String(
+                    format: String(localized: "anomaly.oscillating.detail",
+                                   defaultValue: "Unstable readings ±%1$.1f%2$@ in the last 2h. The sensor may be malfunctioning."),
+                    value,
+                    sensorType.unit
+                )
+            } else {
+                message = String(
+                    format: String(localized: "anomaly.oscillating.generic",
+                                   defaultValue: "Unstable %@ readings detected in the last 2h."),
+                    sensorType.displayName
+                )
+            }
+        case "stuck":
+            title = String(
+                format: String(localized: "anomaly.stuck.title", defaultValue: "%@ sensor may be stuck"),
+                sensorType.displayName
+            )
+            if let value = firstNumber(in: insight.message) {
+                message = String(
+                    format: String(localized: "anomaly.stuck.detail",
+                                   defaultValue: "Value unchanged (%1$.1f%2$@) for over 30 minutes. The sensor may be stuck."),
+                    value,
+                    sensorType.unit
+                )
+            } else {
+                message = String(
+                    format: String(localized: "anomaly.stuck.generic",
+                                   defaultValue: "%@ value has not changed for over 30 minutes."),
+                    sensorType.displayName
+                )
+            }
+        case "outofrange":
+            title = String(
+                format: String(localized: "anomaly.outofrange.title", defaultValue: "Impossible %@ value"),
+                sensorType.displayName
+            )
+            if let value = firstNumber(in: insight.message) {
+                message = String(
+                    format: String(localized: "anomaly.outofrange.detail",
+                                   defaultValue: "Anomalous value detected (%1$.1f%2$@) — impossible under normal conditions."),
+                    value,
+                    sensorType.unit
+                )
+            } else {
+                message = String(
+                    format: String(localized: "anomaly.outofrange.generic",
+                                   defaultValue: "An anomalous %@ value was detected."),
+                    sensorType.displayName
+                )
+            }
+        default:
+            return nil
+        }
+
+        return (title, message)
+    }
+
+    private static func firstNumber(in text: String) -> Double? {
+        let pattern = #"[-+]?[0-9]+(?:[\.,][0-9]+)?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range, in: text) else {
+            return nil
+        }
+        return Double(text[range].replacingOccurrences(of: ",", with: "."))
     }
 }
 
@@ -155,21 +253,25 @@ struct HomeIntelligenceDashboardView: View {
     }
 
     private func reviewOpportunity(_ opportunity: AutomationOpportunity) {
+        let proposal = proposal(from: opportunity)
+        guard proposal.isReadyForBuilder else { return }
         reviewingHabitPattern = nil
         reviewingOpportunity = opportunity
-        reviewingProposal = proposal(from: opportunity)
+        reviewingProposal = proposal
     }
 
     private func reviewHabitPattern(_ pattern: HabitPattern) {
+        let proposal = proposal(from: pattern)
+        guard proposal.isReadyForBuilder else { return }
         reviewingOpportunity = nil
         reviewingHabitPattern = pattern
-        reviewingProposal = proposal(from: pattern)
+        reviewingProposal = proposal
     }
 
     private func proposal(from opportunity: AutomationOpportunity) -> AutomationProposal {
         scenesService.refresh()
         let capabilities = homeKit.currentHome.map {
-            AutomationCapabilityCatalog.capabilities(in: $0)
+            AutomationCapabilityCatalog.descriptors(in: $0)
         } ?? []
 
         return AutomationProposalMapper.proposal(
@@ -183,7 +285,7 @@ struct HomeIntelligenceDashboardView: View {
     private func proposal(from pattern: HabitPattern) -> AutomationProposal {
         scenesService.refresh()
         let capabilities = homeKit.currentHome.map {
-            AutomationCapabilityCatalog.capabilities(in: $0)
+            AutomationCapabilityCatalog.descriptors(in: $0)
         } ?? []
 
         return AutomationProposalMapper.proposal(
@@ -2063,11 +2165,11 @@ private struct IncoherenceConflictCard: View {
             .frame(width: 82)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(insight.title)
+                Text(LocalizedInsightCopy.title(for: insight))
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text(insight.message)
+                Text(LocalizedInsightCopy.message(for: insight))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -2177,11 +2279,11 @@ private struct IntelligenceEvidenceCard: View {
                         .lineLimit(1)
                 }
 
-                Text(insight.title)
+                Text(LocalizedInsightCopy.title(for: insight))
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text(insight.message)
+                Text(LocalizedInsightCopy.message(for: insight))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

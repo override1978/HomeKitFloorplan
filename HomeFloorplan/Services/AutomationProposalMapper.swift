@@ -33,6 +33,11 @@ enum AutomationProposalMapper {
         /// sensorType/Threshold/Direction). Risolte per (tipo, stanza): late binding,
         /// nessun ID HomeKit.
         var secondaryConditions: [ContextualCondition] = []
+        /// Nome dell'accessorio effetto: fallback di risoluzione quando l'UUID non
+        /// corrisponde a nessun accessorio locale (gli identifier HomeKit sono
+        /// per-device: le opportunity sincronizzate da un altro device arrivano
+        /// con UUID estranei).
+        var effectAccessoryName: String? = nil
     }
 
     static func chatbotProposal(
@@ -57,7 +62,7 @@ enum AutomationProposalMapper {
         triggerPresenceKind: String? = nil,
         triggerPresenceUserScope: String? = nil,
         semanticKey: String,
-        capabilities: [AutomationCharacteristicCapability],
+        capabilities: [AutomationCapabilityDescriptor],
         scenes: [SceneItem]
     ) -> AutomationProposal {
         var draft = Draft(
@@ -132,7 +137,7 @@ enum AutomationProposalMapper {
 
     static func proposal(
         from opportunity: AutomationOpportunity,
-        capabilities: [AutomationCharacteristicCapability],
+        capabilities: [AutomationCapabilityDescriptor],
         scenes: [SceneItem],
         sourcePattern: BehavioralPattern? = nil
     ) -> AutomationProposal {
@@ -165,6 +170,8 @@ enum AutomationProposalMapper {
             draft.triggerAccessoryName = pattern.causeName
             draft.triggerAccessoryActive = pattern.causeSignature.flatMap(causeTriggerState(fromSignature:))
         }
+
+        draft.effectAccessoryName = sourcePattern?.accessoryName
 
         // P2 v2 — condizioni multiple: vivono nell'opportunità stessa (autosufficiente),
         // NON nel pattern sorgente, che per i contestuali è effimero (UUID nuovo a ogni
@@ -200,7 +207,7 @@ enum AutomationProposalMapper {
 
     static func proposal(
         from pattern: HabitPattern,
-        capabilities: [AutomationCharacteristicCapability],
+        capabilities: [AutomationCapabilityDescriptor],
         scenes: [SceneItem]
     ) -> AutomationProposal {
         let legacy = legacyHabitDraft(from: pattern)
@@ -231,9 +238,50 @@ enum AutomationProposalMapper {
         return proposal(from: draft, capabilities: capabilities, scenes: scenes)
     }
 
+    static func proposal(
+        from pattern: BehavioralPattern,
+        capabilities: [AutomationCapabilityDescriptor],
+        scenes: [SceneItem]
+    ) -> AutomationProposal {
+        var draft = Draft(
+            source: .opportunity,
+            title: pattern.localizedTitle,
+            explanation: pattern.naturalLanguageDescription,
+            confidence: pattern.confidence,
+            triggerType: triggerType(for: pattern),
+            triggerTime: pattern.avgTimeString,
+            triggerWeekdays: pattern.weekdays,
+            sensorType: nil,
+            sensorRoom: pattern.roomName,
+            sensorAccessoryName: nil,
+            sensorThreshold: nil,
+            sensorDirection: nil,
+            accessoryIDString: pattern.patternType == .scene ? nil : pattern.accessoryID?.uuidString,
+            actionRaw: pattern.action.rawValue,
+            actionValue: actionValue(for: pattern),
+            actionValue2: nil,
+            sceneName: sceneName(for: pattern),
+            scheduleKind: nil,
+            scheduleOffsetMinutes: 0,
+            presenceKind: nil,
+            presenceUserScope: nil
+        )
+
+        if pattern.patternType == .sequential {
+            draft.triggerAccessoryName = pattern.causeName
+            draft.triggerAccessoryActive = pattern.causeSignature.flatMap(causeTriggerState(fromSignature:))
+        }
+
+        if pattern.patternType != .scene {
+            draft.effectAccessoryName = pattern.accessoryName
+        }
+
+        return proposal(from: draft, capabilities: capabilities, scenes: scenes)
+    }
+
     private static func proposal(
         from draft: Draft,
-        capabilities: [AutomationCharacteristicCapability],
+        capabilities: [AutomationCapabilityDescriptor],
         scenes: [SceneItem]
     ) -> AutomationProposal {
         var limitations: [String] = []
@@ -245,9 +293,18 @@ enum AutomationProposalMapper {
             startEvents.append(startEvent)
         }
 
-        if draft.triggerType == "calendar",
-           let sensorCondition = sensorSelection(from: draft, requiredRole: .condition, capabilities: capabilities, limitations: &limitations) {
-            conditions.append(.accessory(sensorCondition))
+        // Condizione sensore sulle proposte calendar: è un ARRICCHIMENTO OPZIONALE
+        // (le condizioni non sono obbligatorie). Il tentativo non deve sporcare le
+        // limitations — "does not include a complete sensor condition" compariva
+        // su OGNI abitudine temporale. Diventa un limite reale solo se il draft
+        // aveva davvero un sensore e questo non si risolve più in HomeKit.
+        if draft.triggerType == "calendar" {
+            var attempt: [String] = []
+            if let sensorCondition = sensorSelection(from: draft, requiredRole: .condition, capabilities: capabilities, limitations: &attempt) {
+                conditions.append(.accessory(sensorCondition))
+            } else if draft.sensorType != nil {
+                limitations.append(contentsOf: attempt)
+            }
         }
 
         if draft.triggerType != "presence",
@@ -360,9 +417,36 @@ enum AutomationProposalMapper {
         }
     }
 
+    private static func triggerType(for pattern: BehavioralPattern) -> String {
+        switch pattern.patternType {
+        case .sequential:
+            return "accessoryState"
+        case .contextual:
+            return "characteristic"
+        case .temporal, .lighting, .scene:
+            return "calendar"
+        }
+    }
+
+    private static func actionValue(for pattern: BehavioralPattern) -> Double? {
+        switch pattern.action {
+        case .dim:
+            return pattern.numericValue
+        default:
+            return nil
+        }
+    }
+
+    private static func sceneName(for pattern: BehavioralPattern) -> String? {
+        guard pattern.patternType == .scene else { return nil }
+        return pattern.causeName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? pattern.causeName
+            : pattern.accessoryName
+    }
+
     private static func startEvent(
         from draft: Draft,
-        capabilities: [AutomationCharacteristicCapability],
+        capabilities: [AutomationCapabilityDescriptor],
         limitations: inout [String]
     ) -> AutomationProposalStartEvent? {
         switch draft.triggerType {
@@ -398,7 +482,7 @@ enum AutomationProposalMapper {
     /// dell'accessorio causa, risolta per nome (match esatto, poi contains).
     private static func accessoryStateSelection(
         from draft: Draft,
-        capabilities: [AutomationCharacteristicCapability],
+        capabilities: [AutomationCapabilityDescriptor],
         limitations: inout [String]
     ) -> AutomationProposalCapabilitySelection? {
         guard let causeName = draft.triggerAccessoryName?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -426,7 +510,7 @@ enum AutomationProposalMapper {
         return AutomationProposalCapabilitySelection(
             capabilityID: capability.id,
             accessoryID: capability.accessoryID,
-            characteristicID: capability.characteristic.uniqueIdentifier,
+            characteristicID: capability.characteristicID,
             comparisonOperator: triggersOnActive ? .becomesActive : .becomesInactive,
             targetValue: .bool(triggersOnActive)
         )
@@ -504,7 +588,7 @@ enum AutomationProposalMapper {
     private static func sensorSelection(
         from draft: Draft,
         requiredRole: AutomationCapabilityRole,
-        capabilities: [AutomationCharacteristicCapability],
+        capabilities: [AutomationCapabilityDescriptor],
         limitations: inout [String]
     ) -> AutomationProposalCapabilitySelection? {
         sensorSelection(
@@ -526,7 +610,7 @@ enum AutomationProposalMapper {
         threshold: Double?,
         direction: String?,
         requiredRole: AutomationCapabilityRole,
-        capabilities: [AutomationCharacteristicCapability],
+        capabilities: [AutomationCapabilityDescriptor],
         limitations: inout [String]
     ) -> AutomationProposalCapabilitySelection? {
         guard let sensorType else {
@@ -568,7 +652,7 @@ enum AutomationProposalMapper {
         return AutomationProposalCapabilitySelection(
             capabilityID: capability.id,
             accessoryID: capability.accessoryID,
-            characteristicID: capability.characteristic.uniqueIdentifier,
+            characteristicID: capability.characteristicID,
             comparisonOperator: comparisonOperator,
             targetValue: target
         )
@@ -579,8 +663,8 @@ enum AutomationProposalMapper {
         roomName: String,
         accessoryName: String?,
         requiredRole: AutomationCapabilityRole,
-        capabilities: [AutomationCharacteristicCapability]
-    ) -> AutomationCharacteristicCapability? {
+        capabilities: [AutomationCapabilityDescriptor]
+    ) -> AutomationCapabilityDescriptor? {
         let hmType = SensorServiceType(rawValue: sensorType)?.hmCharacteristicType
             ?? sensorKindCharacteristicType(from: sensorType)
         let normalizedRoom = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -593,7 +677,7 @@ enum AutomationProposalMapper {
 
             let matchesType: Bool
             if let hmType, !hmType.isEmpty {
-                matchesType = capability.characteristic.characteristicType.caseInsensitiveCompare(hmType) == .orderedSame
+                matchesType = capability.characteristicType.caseInsensitiveCompare(hmType) == .orderedSame
             } else {
                 matchesType = capability.title.localizedCaseInsensitiveContains(sensorType)
             }
@@ -645,7 +729,7 @@ enum AutomationProposalMapper {
 
     private static func targetValue(
         _ raw: Double,
-        for capability: AutomationCharacteristicCapability
+        for capability: AutomationCapabilityDescriptor
     ) -> AutomationProposalTargetValue {
         switch capability.valueKind {
         case .boolean:
@@ -659,7 +743,7 @@ enum AutomationProposalMapper {
 
     private static func action(
         from draft: Draft,
-        capabilities: [AutomationCharacteristicCapability],
+        capabilities: [AutomationCapabilityDescriptor],
         scenes: [SceneItem],
         limitations: inout [String]
     ) -> AutomationProposalAction? {
@@ -669,8 +753,23 @@ enum AutomationProposalMapper {
             return .scene(AutomationProposalSceneReference(sceneID: scene?.id, name: sceneName))
         }
 
-        guard let rawAccessoryID = draft.accessoryIDString,
-              let accessoryID = UUID(uuidString: rawAccessoryID) else {
+        let parsedID = draft.accessoryIDString.flatMap(UUID.init(uuidString:))
+
+        // Con un catalogo capability disponibile, un UUID che non corrisponde a
+        // nessun accessorio locale è tipico delle opportunity sincronizzate da un
+        // altro device (gli identifier HomeKit sono per-device): si riabbina per
+        // nome+stanza invece di produrre una proposta senza azioni.
+        let accessoryID: UUID
+        if let parsedID,
+           capabilities.isEmpty || capabilities.contains(where: { $0.accessoryID == parsedID }) {
+            accessoryID = parsedID
+        } else if let fallbackID = effectAccessoryID(
+            named: draft.effectAccessoryName,
+            roomName: draft.sensorRoom,
+            capabilities: capabilities
+        ) {
+            accessoryID = fallbackID
+        } else {
             limitations.append(String(localized: "automation.proposal.limit.missingActionTarget", defaultValue: "The opportunity does not include a valid action target."))
             return nil
         }
@@ -717,6 +816,36 @@ enum AutomationProposalMapper {
             limitations.append(String(localized: "automation.proposal.limit.unsupportedAction", defaultValue: "This action needs the advanced accessory editor and is not converted automatically yet."))
             return nil
         }
+    }
+
+    /// Risoluzione dell'accessorio effetto per nome (match esatto, poi contains),
+    /// preferendo la stessa stanza del trigger quando più accessori condividono il nome.
+    private static func effectAccessoryID(
+        named accessoryName: String?,
+        roomName: String,
+        capabilities: [AutomationCapabilityDescriptor]
+    ) -> UUID? {
+        guard let accessoryName = accessoryName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !accessoryName.isEmpty else {
+            return nil
+        }
+
+        let normalizedName = accessoryName.lowercased()
+        let normalizedRoom = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let exact = capabilities.filter { $0.accessoryName.lowercased() == normalizedName }
+        let candidates = exact.isEmpty
+            ? capabilities.filter {
+                $0.accessoryName.lowercased().contains(normalizedName) ||
+                normalizedName.contains($0.accessoryName.lowercased())
+            }
+            : exact
+
+        let sameRoom = candidates.first {
+            !normalizedRoom.isEmpty &&
+            $0.roomName.localizedCaseInsensitiveCompare(normalizedRoom) == .orderedSame
+        }
+        return (sameRoom ?? candidates.first)?.accessoryID
     }
 
     private static func accessoryAction(

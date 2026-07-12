@@ -17,6 +17,14 @@ struct AutomationProposal: Identifiable, Codable, Hashable {
     var unsupportedReason: String?
     var shouldEnableAutomation: Bool
 
+    var hasResolvedContent: Bool {
+        !startEvents.isEmpty || !conditions.isEmpty || !actions.isEmpty
+    }
+
+    var isReadyForBuilder: Bool {
+        hasResolvedContent
+    }
+
     init(
         id: UUID = UUID(),
         source: AutomationProposalSource,

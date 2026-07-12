@@ -126,11 +126,11 @@ enum FloorKind: String, Codable, CaseIterable, Identifiable {
 
     var localizedName: String {
         switch self {
-        case .legno:      return String(localized: "drawing.floor.legno",      defaultValue: "Legno")
-        case .piastrelle: return String(localized: "drawing.floor.piastrelle", defaultValue: "Piastrelle")
-        case .gres:       return String(localized: "drawing.floor.gres",       defaultValue: "Gres")
-        case .marmo:      return String(localized: "drawing.floor.marmo",      defaultValue: "Marmo")
-        case .cemento:    return String(localized: "drawing.floor.cemento",    defaultValue: "Cemento")
+        case .legno:      return String(localized: "drawing.floor.legno",      defaultValue: "Wood")
+        case .piastrelle: return String(localized: "drawing.floor.piastrelle", defaultValue: "Tiles")
+        case .gres:       return String(localized: "drawing.floor.gres",       defaultValue: "Stoneware")
+        case .marmo:      return String(localized: "drawing.floor.marmo",      defaultValue: "Marble")
+        case .cemento:    return String(localized: "drawing.floor.cemento",    defaultValue: "Concrete")
         }
     }
 

@@ -169,12 +169,14 @@ struct SidebarView: View {
                     NavigationLink(value: SidebarSelection.settings) {
                         Label(String(localized: "sidebar.settings", defaultValue: "Settings"), systemImage: "gearshape")
                     }
+#if DEBUG
                     NavigationLink(value: SidebarSelection.debugHomeKit) {
                         Label(String(localized: "sidebar.debugHomeKit", defaultValue: "HomeKit Debug"), systemImage: "stethoscope")
                     }
                     NavigationLink(value: SidebarSelection.homeIntelligenceDebug) {
                         Label("Intelligence Debug", systemImage: "point.3.connected.trianglepath.dotted")
                     }
+#endif
                 } label: {
                     Text(String(localized: "sidebar.section.settings", defaultValue: "Settings"))
                         .font(.subheadline.weight(.semibold))

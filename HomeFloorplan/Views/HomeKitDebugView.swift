@@ -4,13 +4,16 @@ import UIKit
 
 struct HomeKitDebugView: View {
     @Environment(HomeKitService.self) private var homeKit
+    @Environment(MatterEnergyLiveStore.self) private var matterEnergy
     @State private var searchText: String = ""
-    @State private var isRunningMatterEnergyProbe: Bool = false
-    @State private var matterEnergyProbeReport: String?
+    @State private var isRunningVacuumProbe: Bool = false
+    @State private var vacuumProbeReport: String?
+    @State private var vacuumProbeCopied: Bool = false
     
     var body: some View {
         List {
-            matterEnergyProbeSection
+            matterEnergySection
+            matterVacuumProbeSection
 
             ForEach(filteredAccessories, id: \.uniqueIdentifier) { accessory in
                 NavigationLink {
@@ -28,49 +31,165 @@ struct HomeKitDebugView: View {
         .searchable(text: $searchText, prompt: Text("homekit.debug.search.prompt"))
         .navigationTitle(Text("homekit.debug.title"))
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Report Vacuum copiato", isPresented: $vacuumProbeCopied) {
+            Button("OK", role: .cancel) {}
+        }
     }
 
     @ViewBuilder
-    private var matterEnergyProbeSection: some View {
-        Section("Sonda Matter Energia") {
+    private var matterEnergySection: some View {
+        Section("Energia Matter Live") {
             Button {
-                runMatterEnergyProbe()
+                refreshMatterEnergy()
             } label: {
-                if isRunningMatterEnergyProbe {
+                if matterEnergy.isRefreshing {
                     ProgressView()
                 } else {
-                    Label("Sonda Matter Energia", systemImage: "bolt.circle")
+                    Label("Aggiorna energia Matter", systemImage: "bolt.circle")
                 }
             }
-            .disabled(isRunningMatterEnergyProbe || homeKit.currentHome == nil)
+            .disabled(matterEnergy.isRefreshing || homeKit.currentHome == nil)
 
-            if let matterEnergyProbeReport {
-                Text(matterEnergyProbeReport)
+            if matterEnergy.snapshots.isEmpty {
+                Text("Nessuna lettura in memoria. Usa refresh per leggere solo i device con cluster energia Matter.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(matterEnergy.snapshots) { snapshot in
+                    matterEnergySnapshotRow(snapshot)
+                }
+            }
+
+            if !matterEnergy.diagnostics.isEmpty {
+                DisclosureGroup("Diagnostica (\(matterEnergy.diagnostics.count))") {
+                    ForEach(matterEnergy.diagnostics, id: \.self) { diagnostic in
+                        Text(diagnostic)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func matterEnergySnapshotRow(_ snapshot: MatterEnergyDeviceSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(snapshot.accessoryName)
+                        .font(.body.weight(.semibold))
+                    Text("\(snapshot.manufacturer) · \(snapshot.source.rawValue) · \(snapshot.nodeIDText)")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                Spacer()
+                Text(snapshot.measuredAt, style: .time)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                matterMetric("Potenza", formattedWatts(snapshot.activePowerWatts), snapshot.powerStatus, snapshot.powerLatencyMilliseconds)
+                Spacer(minLength: 16)
+                matterMetric("Energia", formattedKilowattHours(snapshot.cumulativeEnergyKilowattHours), snapshot.energyStatus, snapshot.energyLatencyMilliseconds)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func matterMetric(_ title: String, _ value: String, _ status: String, _ latency: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.monospacedDigit().weight(.medium))
+            Text("\(status)\(latency.map { " · \($0) ms" } ?? "")")
+                .font(.caption2)
+                .foregroundStyle(status == "ok" ? Color.secondary : Color.red)
+                .lineLimit(2)
+        }
+    }
+
+    private func refreshMatterEnergy() {
+        guard let home = homeKit.currentHome else {
+            return
+        }
+
+        Task {
+            await matterEnergy.refresh(home: home)
+        }
+    }
+
+    @ViewBuilder
+    private var matterVacuumProbeSection: some View {
+        Section("Vacuum Matter Probe") {
+            Button {
+                runMatterVacuumProbe()
+            } label: {
+                if isRunningVacuumProbe {
+                    ProgressView()
+                } else {
+                    Label("Esegui sonda Vacuum Matter", systemImage: "magnifyingglass")
+                }
+            }
+            .disabled(isRunningVacuumProbe || homeKit.currentHome == nil)
+
+            if let vacuumProbeReport {
+                Button {
+                    UIPasteboard.general.string = vacuumProbeReport
+                    vacuumProbeCopied = true
+                } label: {
+                    Label("Copia report Vacuum", systemImage: "doc.on.doc")
+                }
+
+                Text(vacuumProbeReport)
                     .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             } else {
-                Text("Read-only: mostra solo nodi Matter con capability utili e fa una sola read energia dove disponibile.")
+                Text("Sonda read-only sui cluster Matter RVC: RVCRunMode, RVCCleanMode, RVCOperationalState e ServiceArea.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
     }
 
-    private func runMatterEnergyProbe() {
+    private func runMatterVacuumProbe() {
         guard let home = homeKit.currentHome else {
-            matterEnergyProbeReport = "HomeKit home non disponibile."
             return
         }
-        isRunningMatterEnergyProbe = true
-        matterEnergyProbeReport = "Sonda in corso..."
 
+        isRunningVacuumProbe = true
         Task {
-            let report = await MatterEnergyProbe().run(home: home)
+            let report = await MatterVacuumProbe().run(home: home)
             await MainActor.run {
-                matterEnergyProbeReport = report.text
-                isRunningMatterEnergyProbe = false
+                vacuumProbeReport = report.text
+                isRunningVacuumProbe = false
             }
         }
+    }
+
+    private func formattedWatts(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return "\(decimal(value, maximumFractionDigits: 1)) W"
+    }
+
+    private func formattedKilowattHours(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return "\(decimal(value, maximumFractionDigits: 3)) kWh"
+    }
+
+    private func decimal(_ value: Double, maximumFractionDigits: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale.current
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = maximumFractionDigits
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
     
     private var filteredAccessories: [HMAccessory] {

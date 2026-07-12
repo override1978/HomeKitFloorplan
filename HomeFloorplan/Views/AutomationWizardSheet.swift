@@ -222,6 +222,24 @@ struct AutomationWizardSheet: View {
                              : String(localized: "automation.wizard.editTitle", defaultValue: "Edit Automation"))
             .navigationBarTitleDisplayMode(.inline)
             .task {
+                // Il load della proposta è one-shot: caricarla mentre HomeKit non ha
+                // ancora consegnato casa/accessori (apertura del builder subito dopo
+                // il lancio) risolveva tutto come "no longer available" e il builder
+                // restava vuoto PER SEMPRE. Attesa bounded della disponibilità prima
+                // del primo load: ~5s per la casa, ~3s per gli accessori.
+                var attempts = 0
+                while homeKit.currentHome == nil, attempts < 20 {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    attempts += 1
+                }
+                if let home = homeKit.currentHome {
+                    attempts = 0
+                    while home.accessories.isEmpty, attempts < 12 {
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        attempts += 1
+                    }
+                }
+
                 scenesService.refresh()
                 if inlineActionBundle.lightDrafts.isEmpty,
                    inlineActionBundle.outletDrafts.isEmpty,
@@ -3608,6 +3626,7 @@ struct AutomationWizardSheet: View {
         inlinePowerActions = []
         clearInlineActionBundleSelection()
 
+        var appliedAnyAction = false
         for action in proposal.actions {
             switch action {
             case .scene(let reference):
@@ -3618,6 +3637,7 @@ struct AutomationWizardSheet: View {
                 selectedSceneID = scene.id
                 inlinePowerActions = []
                 clearInlineActionBundleSelection()
+                appliedAnyAction = true
             case .accessoryPower(let powerAction):
                 guard selectedSceneID == nil,
                       let action = resolvePowerAction(powerAction, capabilities: capabilities)
@@ -3626,6 +3646,7 @@ struct AutomationWizardSheet: View {
                     continue
                 }
                 inlinePowerActions.append(action)
+                appliedAnyAction = true
             case .accessory(let accessoryAction):
                 guard selectedSceneID == nil,
                       applyProposalAccessoryAction(accessoryAction)
@@ -3634,7 +3655,18 @@ struct AutomationWizardSheet: View {
                     continue
                 }
                 inlinePowerActions = []
+                appliedAnyAction = true
             }
+        }
+
+        // Una proposta CON azioni che arriva al builder senza NESSUNA azione
+        // applicata è il sintomo storico del "builder vuoto": va detto chiaro,
+        // non lasciato dedurre da una riga generica tra i dettagli.
+        if !proposal.actions.isEmpty, !appliedAnyAction {
+            unresolved.append(String(
+                localized: "automation.proposal.unresolved.allActions",
+                defaultValue: "None of the proposed actions could be applied to this home — add the action manually before saving."
+            ))
         }
 
         if !proposal.limitations.isEmpty || !unresolved.isEmpty {

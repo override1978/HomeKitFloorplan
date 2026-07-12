@@ -290,13 +290,27 @@ struct ContentView: View {
         case .homeIntelligence:
             HomeIntelligenceDashboardView()
         case .debugHomeKit:
+#if DEBUG
             NavigationStack {
                 HomeKitDebugView()
             }
+#else
+            emptyState(
+                title: String(localized: "content.debug.unavailable.title", defaultValue: "Debug unavailable"),
+                message: String(localized: "content.debug.unavailable.message", defaultValue: "Debug views are only available in debug builds.")
+            )
+#endif
         case .homeIntelligenceDebug:
+#if DEBUG
             NavigationStack {
                 HomeIntelligenceDebugView()
             }
+#else
+            emptyState(
+                title: String(localized: "content.debug.unavailable.title", defaultValue: "Debug unavailable"),
+                message: String(localized: "content.debug.unavailable.message", defaultValue: "Debug views are only available in debug builds.")
+            )
+#endif
         case .settings:
             NavigationStack {
                 SettingsView()

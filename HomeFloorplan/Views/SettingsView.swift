@@ -80,14 +80,6 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
 
-                Picker(selection: $dimensionUnitRaw) {
-                    Text(String(localized: "settings.drawing.dimensionUnit.metric",   defaultValue: "m – Metric")).tag(DimensionUnit.metric.rawValue)
-                    Text(String(localized: "settings.drawing.dimensionUnit.imperial", defaultValue: "ft – Imperial")).tag(DimensionUnit.imperial.rawValue)
-                } label: {
-                    Label(String(localized: "settings.drawing.dimensionUnit", defaultValue: "Measurements"), systemImage: "ruler")
-                }
-                .pickerStyle(.menu)
-
 #if DEBUG
                 NavigationLink {
                     HomeKitDebugView()
@@ -107,6 +99,67 @@ struct SettingsView: View {
                 } else {
                     Text(String(localized: "settings.homekit.footer.single", defaultValue: "The active home determines which accessories and floorplans are visible."))
                 }
+            }
+
+            // MARK: - App
+
+            Section {
+                Picker(selection: $appLanguageRaw) {
+                    ForEach(AppLanguage.selectableLanguages) { language in
+                        Text(language.displayName).tag(language.rawValue)
+                    }
+                } label: {
+                    Label(String(localized: "settings.language.picker", defaultValue: "App Language"), systemImage: "globe")
+                }
+                .pickerStyle(.menu)
+
+                Picker(selection: $dimensionUnitRaw) {
+                    Text(String(localized: "settings.drawing.dimensionUnit.metric",   defaultValue: "m – Metric")).tag(DimensionUnit.metric.rawValue)
+                    Text(String(localized: "settings.drawing.dimensionUnit.imperial", defaultValue: "ft – Imperial")).tag(DimensionUnit.imperial.rawValue)
+                } label: {
+                    Label(String(localized: "settings.drawing.dimensionUnit", defaultValue: "Measurements"), systemImage: "ruler")
+                }
+                .pickerStyle(.menu)
+
+                Picker(String(localized: "settings.screensaver.picker", defaultValue: "Activate after"), selection: $idleTimeoutSeconds) {
+                    Text(String(localized: "settings.screensaver.30s",    defaultValue: "30 seconds")).tag(30.0)
+                    Text(String(localized: "settings.screensaver.1m",     defaultValue: "1 minute")).tag(60.0)
+                    Text(String(localized: "settings.screensaver.1m30s",  defaultValue: "1 min 30 sec")).tag(90.0)
+                    Text(String(localized: "settings.screensaver.2m",     defaultValue: "2 minutes")).tag(120.0)
+                    Text(String(localized: "settings.screensaver.5m",     defaultValue: "5 minutes")).tag(300.0)
+                    Text(String(localized: "settings.screensaver.10m",    defaultValue: "10 minutes")).tag(600.0)
+                    Text(String(localized: "settings.screensaver.never",  defaultValue: "Never")).tag(0.0)
+                }
+                .pickerStyle(.menu)
+
+                HStack {
+                    Text(String(localized: "settings.info.version", defaultValue: "Version"))
+                    Spacer()
+                    Text(Bundle.main.appVersion)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(String(localized: "settings.section.app", defaultValue: "App"))
+            } footer: {
+                Text(String(localized: "settings.language.restartHint", defaultValue: "Language changes are applied after closing and reopening the app on iPad."))
+            }
+            .onChange(of: idleTimeoutSeconds) { _, newValue in
+                if newValue == 0 {
+                    IdleTimerService.shared.timeout = .infinity
+                } else {
+                    IdleTimerService.shared.timeout = newValue
+                }
+                IdleTimerService.shared.resetTimer()
+            }
+            .onChange(of: appLanguageRaw) { _, newValue in
+                AppLanguage.apply(rawValue: newValue)
+                showLanguageRestartAlert = true
+            }
+            .alert(String(localized: "settings.language.restartAlert.title", defaultValue: "Restart required"),
+                   isPresented: $showLanguageRestartAlert) {
+                Button(String(localized: "button.ok", defaultValue: "OK")) {}
+            } message: {
+                Text(String(localized: "settings.language.restartAlert.message", defaultValue: "Close and reopen Home Floorplan on this iPad to apply the selected language everywhere."))
             }
 
             // MARK: - Notifications
@@ -201,30 +254,6 @@ struct SettingsView: View {
             // MARK: - iCloud
 
             Section {
-                iCloudSyncRow
-                ShareLink(item: SyncDiagnosticsLogger.fileURL) {
-                    Label(
-                        String(localized: "settings.icloud.diagnostics.export", defaultValue: "Export Sync Diagnostics"),
-                        systemImage: "square.and.arrow.up"
-                    )
-                }
-                Button(role: .destructive) {
-                    SyncDiagnosticsLogger.clear()
-                } label: {
-                    Label(
-                        String(localized: "settings.icloud.diagnostics.clear", defaultValue: "Clear Sync Diagnostics"),
-                        systemImage: "trash"
-                    )
-                }
-            } header: {
-                Text(String(localized: "settings.icloud.header", defaultValue: "iCloud"))
-            } footer: {
-                Text(String(localized: "settings.icloud.footer", defaultValue: "Floorplans, settings, and automation opportunities sync automatically via iCloud."))
-            }
-
-            // MARK: - Device Role
-
-            Section {
                 HStack {
                     Label(String(localized: "settings.device.role.label", defaultValue: "Device Role"), systemImage: isMasterDevice ? "iphone.badge.play" : "iphone")
                     Spacer()
@@ -239,67 +268,49 @@ struct SettingsView: View {
                             .foregroundStyle(.tint)
                     }
                 }
+
+                iCloudSyncRow
+                ShareLink(item: SyncDiagnosticsLogger.fileURL) {
+                    Label(
+                        String(localized: "settings.icloud.diagnostics.export", defaultValue: "Export Sync Diagnostics"),
+                        systemImage: "square.and.arrow.up"
+                    )
+                }
+#if DEBUG
+                Button(role: .destructive) {
+                    SyncDiagnosticsLogger.clear()
+                } label: {
+                    Label(
+                        String(localized: "settings.icloud.diagnostics.clear", defaultValue: "Clear Sync Diagnostics"),
+                        systemImage: "trash"
+                    )
+                }
+#endif
             } header: {
-                Text(String(localized: "settings.device.header", defaultValue: "This Device"))
+                Text(String(localized: "settings.icloud.header", defaultValue: "iCloud"))
             } footer: {
                 if isMasterDevice {
-                    Text(String(localized: "settings.device.master.footer", defaultValue: "This device runs behavioral analysis and generates automation suggestions."))
+                    Text(String(localized: "settings.icloud.master.footer", defaultValue: "Floorplans, settings, and automation opportunities sync automatically via iCloud. This device runs behavioral analysis and generates automation suggestions."))
                 } else {
-                    Text(String(localized: "settings.device.slave.footer", defaultValue: "This device receives data from iCloud. Tap \"Become Primary\" to run analysis here instead."))
+                    Text(String(localized: "settings.icloud.slave.footer", defaultValue: "Floorplans, settings, and automation opportunities sync automatically via iCloud. This device receives data from iCloud; tap \"Become Primary\" to run analysis here instead."))
                 }
             }
 
-            // MARK: - App
+            // MARK: - Diagnostics (visibile in tutte le build, sezione demo inclusa:
+            // serve a verificare la pipeline abitudini sui device di test)
 
             Section {
-                Picker(selection: $appLanguageRaw) {
-                    ForEach(AppLanguage.selectableLanguages) { language in
-                        Text(language.displayName).tag(language.rawValue)
-                    }
+                NavigationLink {
+                    HabitsDiagnosticsView()
                 } label: {
-                    Label(String(localized: "settings.language.picker", defaultValue: "App Language"), systemImage: "globe")
-                }
-                .pickerStyle(.menu)
-
-                Picker(String(localized: "settings.screensaver.picker", defaultValue: "Activate after"), selection: $idleTimeoutSeconds) {
-                    Text(String(localized: "settings.screensaver.30s",    defaultValue: "30 seconds")).tag(30.0)
-                    Text(String(localized: "settings.screensaver.1m",     defaultValue: "1 minute")).tag(60.0)
-                    Text(String(localized: "settings.screensaver.1m30s",  defaultValue: "1 min 30 sec")).tag(90.0)
-                    Text(String(localized: "settings.screensaver.2m",     defaultValue: "2 minutes")).tag(120.0)
-                    Text(String(localized: "settings.screensaver.5m",     defaultValue: "5 minutes")).tag(300.0)
-                    Text(String(localized: "settings.screensaver.10m",    defaultValue: "10 minutes")).tag(600.0)
-                    Text(String(localized: "settings.screensaver.never",  defaultValue: "Never")).tag(0.0)
-                }
-                .pickerStyle(.menu)
-
-                HStack {
-                    Text(String(localized: "settings.info.version", defaultValue: "Version"))
-                    Spacer()
-                    Text(Bundle.main.appVersion)
-                        .foregroundStyle(.secondary)
+                    settingsLinkRow(
+                        icon: "brain.head.profile.fill",
+                        title: String(localized: "settings.diagnostics.habits", defaultValue: "Habits Diagnostics"),
+                        subtitle: String(localized: "settings.diagnostics.habits.subtitle", defaultValue: "Inspect the habits engine: events, gates, patterns and opportunities.")
+                    )
                 }
             } header: {
-                Text(String(localized: "settings.section.app", defaultValue: "App"))
-            } footer: {
-                Text(String(localized: "settings.language.restartHint", defaultValue: "Language changes are applied after closing and reopening the app on iPad."))
-            }
-            .onChange(of: idleTimeoutSeconds) { _, newValue in
-                if newValue == 0 {
-                    IdleTimerService.shared.timeout = .infinity
-                } else {
-                    IdleTimerService.shared.timeout = newValue
-                }
-                IdleTimerService.shared.resetTimer()
-            }
-            .onChange(of: appLanguageRaw) { _, newValue in
-                AppLanguage.apply(rawValue: newValue)
-                showLanguageRestartAlert = true
-            }
-            .alert(String(localized: "settings.language.restartAlert.title", defaultValue: "Restart required"),
-                   isPresented: $showLanguageRestartAlert) {
-                Button(String(localized: "button.ok", defaultValue: "OK")) {}
-            } message: {
-                Text(String(localized: "settings.language.restartAlert.message", defaultValue: "Close and reopen Home Floorplan on this iPad to apply the selected language everywhere."))
+                Text(String(localized: "settings.diagnostics.header", defaultValue: "Diagnostics"))
             }
 
 #if DEBUG
@@ -325,11 +336,6 @@ struct SettingsView: View {
                     AITraceView()
                 } label: {
                     Label("AI Pipeline Trace", systemImage: "waveform.and.magnifyingglass")
-                }
-                NavigationLink {
-                    HabitsDiagnosticsView()
-                } label: {
-                    Label("Habits Diagnostics", systemImage: "brain.head.profile.fill")
                 }
             } header: {
                 Text(String(localized: "settings.developer.header", defaultValue: "Developer"))

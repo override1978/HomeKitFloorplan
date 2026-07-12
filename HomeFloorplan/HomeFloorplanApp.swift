@@ -31,6 +31,7 @@ struct HomeFloorplanApp: App {
     @State private var smartLightingEngine: SmartLightingEngine
     @State private var aiSettings: AISettings
     @State private var cloudKitSync: CloudKitSyncService
+    @State private var matterEnergyLiveStore = MatterEnergyLiveStore()
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -55,43 +56,28 @@ struct HomeFloorplanApp: App {
     /// Identifier del task di lifecycle dati (aggregazione + pruning), giornaliero.
     private static let lifecycleTaskID = "com.homefloorplan.dataLifecycle"
 
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Floorplan.self,
-            PlacedAccessory.self,
-            ActivityEvent.self,
-            SensorReading.self,
-            SensorAlertEvent.self,
-            SensorAlertThreshold.self,
-            AccessoryEvent.self,
-            Rule.self,
-            ActionEffectivenessEvent.self,
-            PersistedInsight.self,
-            RoomAnalysisState.self,
-            DailySensorSummary.self,
-            AccessoryUsageSummary.self,
-            EffectivenessSummary.self,
-            PersistedHomeInsight.self,
-            ProactiveNotification.self,
-            AutomationOpportunity.self,
-            PersistedBehavioralPattern.self,
-            HabitPattern.self,
-            SyncableSettings.self,
-        ])
+    let sharedModelContainer: ModelContainer
+
+    private static func makeModelContainer() -> ModelContainer {
+        let schema = AppSchema.schema
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
             cloudKitDatabase: .none  // CloudKit managed manually via CKSyncEngine
         )
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            guard SchemaVersionValidator.probeContainerIntegrity(container: container) else {
+                fatalError("SwiftData integrity probe failed. Local store was preserved.")
+            }
+            return container
         } catch {
             guard HomeFloorplanApp.isStoreCorruptionOrMigrationError(error) else {
                 fatalError("Could not create ModelContainer (non-corruption error): \(error)")
             }
             fatalError("Could not create ModelContainer due to migration/corruption error. Local store was preserved: \(error)")
         }
-    }()
+    }
 
     init() {
         // Consent safety guard: if AI was enabled before 26.B (upgrade edge case),
@@ -104,6 +90,8 @@ struct HomeFloorplanApp: App {
         // Schema version check: logs version changes so crash reports can correlate
         // store wipes with model changes. Always runs before the container is created.
         SchemaVersionValidator.validateAndRecord()
+        let container = Self.makeModelContainer()
+        self.sharedModelContainer = container
 
         let kit = HomeKitService()
         self._homeKit = State(initialValue: kit)
@@ -120,44 +108,9 @@ struct HomeFloorplanApp: App {
         kit.smartLightingEngine = lightingEngine
         self._smartLightingEngine = State(initialValue: lightingEngine)
 
-        // Costruisce il container prima di creare i servizi che ne hanno bisogno
-        let schema = Schema([
-            Floorplan.self,
-            PlacedAccessory.self,
-            ActivityEvent.self,
-            SensorReading.self,
-            SensorAlertEvent.self,
-            SensorAlertThreshold.self,
-            AccessoryEvent.self,
-            Rule.self,
-            ActionEffectivenessEvent.self,
-            PersistedInsight.self,
-            RoomAnalysisState.self,
-            DailySensorSummary.self,
-            AccessoryUsageSummary.self,
-            EffectivenessSummary.self,
-            PersistedHomeInsight.self,
-            ProactiveNotification.self,
-            AutomationOpportunity.self,
-            PersistedBehavioralPattern.self,
-            HabitPattern.self,
-            SyncableSettings.self,
-        ])
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none)
-        var container: ModelContainer?
-        do {
-            container = try ModelContainer(for: schema, configurations: [config])
-        } catch {
-            if HomeFloorplanApp.isStoreCorruptionOrMigrationError(error) {
-                fatalError("Could not create ModelContainer due to migration/corruption error. Local store was preserved: \(error)")
-            }
-            // Non-corruption errors (e.g. CloudKit config): do not wipe, let guard below handle it
-        }
-        // Integrity probe: catches stores that open without throwing but are corrupt.
-        if let c = container, !SchemaVersionValidator.probeContainerIntegrity(container: c) {
-            fatalError("SwiftData integrity probe failed. Local store was preserved.")
-        }
-        guard let container else { fatalError("Could not create ModelContainer") }
+        #if DEBUG
+        DebugSupport.modelContainer = container
+        #endif
         lightingEngine.modelContainer = container
         let logger = ActivityLoggerService(modelContainer: container)
         kit.activityLogger = logger
@@ -318,6 +271,7 @@ struct HomeFloorplanApp: App {
                 .environment(smartLightingEngine)
                 .environment(aiSettings)
                 .environment(cloudKitSync)
+                .environment(matterEnergyLiveStore)
                 .environment(\.locale, AppLanguage.resolved(from: appLanguageRaw).locale)
                 .task {
                     await ImageMigrationService.runIfNeeded(context: sharedModelContainer.mainContext)
@@ -365,6 +319,7 @@ struct HomeFloorplanApp: App {
                     guard scenePhase == .active else { return }
                     let container = sharedModelContainer
                     var lastLightSampleAt: Date?
+                    var lastMatterEnergyRefreshAt: Date?
                     var lastSmartLightingEvaluationAt: Date?
                     var nextFullSensorSampleAt = Date().addingTimeInterval(45)
                     // Primo ciclo proattivo dopo il primo campionamento completo (stagger 90s):
@@ -377,6 +332,12 @@ struct HomeFloorplanApp: App {
                                 now.timeIntervalSince(lastLightSampleAt ?? .distantPast) >= 5 * 60 {
                                 await SensorLogger.shared.sampleLightSensors(home: home, modelContainer: container)
                                 lastLightSampleAt = Date()
+                            }
+
+                            if lastMatterEnergyRefreshAt == nil ||
+                                now.timeIntervalSince(lastMatterEnergyRefreshAt ?? .distantPast) >= 5 * 60 {
+                                await matterEnergyLiveStore.refreshIfNeeded(home: home, minimumInterval: 5 * 60)
+                                lastMatterEnergyRefreshAt = Date()
                             }
 
                             if now >= nextFullSensorSampleAt {
@@ -468,6 +429,9 @@ struct HomeFloorplanApp: App {
                     let profileID = familyPresenceService.activeProfileID
                     behavioralAnalysisService.switchProfile(to: profileID)
                     occupancyPredictionService.switchProfile(to: profileID)
+                    Task {
+                        await matterEnergyLiveStore.refreshIfNeeded(home: home)
+                    }
                 }
                 .onChange(of: homeKit.isReady, initial: true) { _, isReady in
                     guard isReady else { return }
@@ -490,6 +454,11 @@ struct HomeFloorplanApp: App {
                     guard newPhase == .active else { return }
                     Task {
                         await cloudKitSync.fetchRemoteChangesIfNeeded(reason: "foreground")
+                    }
+                    if let home = homeKit.currentHome {
+                        Task {
+                            await matterEnergyLiveStore.refreshIfNeeded(home: home)
+                        }
                     }
                     // Only the master device runs behavioral analysis.
                     // Slave devices receive opportunities via CloudKit sync.

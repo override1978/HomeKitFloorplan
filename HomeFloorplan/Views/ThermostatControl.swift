@@ -17,6 +17,7 @@ struct ThermostatControl: View {
     /// Target ottimistico durante l'interazione (per UI reattiva), in Celsius (come l'adapter).
     @State private var optimisticTarget: Double?
     @State private var optimisticFan: Int?
+    @State private var optimisticSwing: Bool?
     @State private var writeError = false
 
     /// Target in unità di display (°C o °F).
@@ -34,8 +35,11 @@ struct ThermostatControl: View {
             stepperRow
             modePillsRow
             if adapter.hasRotationSpeed {
-                        fanSliderRow
-                    }
+                fanSliderRow
+            }
+            if adapter.hasSwingMode {
+                swingModeRow
+            }
             statusLine
             
             EnvironmentInfoSection(
@@ -53,10 +57,15 @@ struct ThermostatControl: View {
             }
         }
         .onChange(of: adapter.rotationSpeed) { _, newValue in
-                if let optimistic = optimisticFan, newValue == optimistic {
-                    optimisticFan = nil
-                }
+            if let optimistic = optimisticFan, newValue == optimistic {
+                optimisticFan = nil
             }
+        }
+        .onChange(of: adapter.isSwingEnabled) { _, newValue in
+            if let optimistic = optimisticSwing, newValue == optimistic {
+                optimisticSwing = nil
+            }
+        }
     }
     
     // MARK: - Target grande
@@ -154,6 +163,45 @@ struct ThermostatControl: View {
         isReachable && mode != .off
     }
 
+    private var displayedSwingEnabled: Bool {
+        optimisticSwing ?? adapter.isSwingEnabled
+    }
+
+    private var swingModeRow: some View {
+        Button {
+            toggleSwing()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.left.and.right")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(displayedSwingEnabled ? Color.accentColor : Color.secondary)
+
+                Text(String(localized: "thermostat.swing", defaultValue: "Oscillazione"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Text(displayedSwingEnabled
+                     ? String(localized: "common.on", defaultValue: "On")
+                     : String(localized: "common.off", defaultValue: "Off"))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(displayedSwingEnabled ? Color.accentColor : Color.secondary)
+                    .contentTransition(.numericText())
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!canControlSwing)
+        .opacity(canControlSwing ? 1.0 : 0.4)
+    }
+
+    private var canControlSwing: Bool {
+        isReachable && mode != .off
+    }
+
     private var fanTicks: some View {
         let range = adapter.rotationSpeedRange
         let stepValue = adapter.rotationSpeedStep
@@ -219,6 +267,21 @@ struct ThermostatControl: View {
                 try await adapter.setRotationSpeed(level)
             } catch {
                 optimisticFan = nil
+                triggerWriteError()
+            }
+        }
+    }
+
+    private func toggleSwing() {
+        let nextValue = !displayedSwingEnabled
+        optimisticSwing = nextValue
+        let haptic = UIImpactFeedbackGenerator(style: .light)
+        haptic.impactOccurred()
+        Task {
+            do {
+                try await adapter.setSwingEnabled(nextValue)
+            } catch {
+                optimisticSwing = nil
                 triggerWriteError()
             }
         }

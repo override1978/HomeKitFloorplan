@@ -88,7 +88,7 @@ struct HabitsView: View {
     private func proposal(from opportunity: AutomationOpportunity) -> AutomationProposal {
         scenesService.refresh()
         let capabilities = homeKit.currentHome.map {
-            AutomationCapabilityCatalog.capabilities(in: $0)
+            AutomationCapabilityCatalog.descriptors(in: $0)
         } ?? []
 
         return AutomationProposalMapper.proposal(
@@ -637,8 +637,10 @@ struct HabitsView: View {
             }
             HStack(spacing: 12) {
                 Button {
+                    let proposal = proposal(from: opp)
+                    guard proposal.isReadyForBuilder else { return }
                     reviewingOpportunity = opp
-                    reviewingProposal = proposal(from: opp)
+                    reviewingProposal = proposal
                 } label: {
                     Text(String(localized: "behavioral.opportunity.approve",
                                 defaultValue: "Review automation"))
@@ -798,24 +800,34 @@ struct HabitsView: View {
             .frame(height: 4)
 
             if !isPatternConvertibleToAutomation(pattern), pattern.confidence >= 0.45 {
-                Button {
-                    showManualAutomationWizard = true
-                } label: {
-                    Label(String(localized: "habits.learning.createManual",
-                                 defaultValue: "Create manually"),
-                          systemImage: "plus.circle")
-                        .font(.caption.weight(.semibold))
+                // Il percorso manuale deve rispettare la stessa policy semantica
+                // della promozione automatica: un pattern osservato ma incoerente
+                // (es. umidità→luci) resta un'osservazione, non un'automazione.
+                if let blockReason = AutomationSemanticPolicy.reasonBlockingPromotion(pattern) {
+                    Label(blockReason, systemImage: "eye")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        createManualAutomation(from: pattern)
+                    } label: {
+                        Label(String(localized: "habits.learning.createManual",
+                                     defaultValue: "Create manually"),
+                              systemImage: "plus.circle")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(BrandColor.primary)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(BrandColor.primary)
             }
         }
         .padding(.vertical, 6)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            if !isPatternConvertibleToAutomation(pattern), pattern.confidence >= 0.45 {
+            if !isPatternConvertibleToAutomation(pattern), pattern.confidence >= 0.45,
+               AutomationSemanticPolicy.allowsPromotion(pattern) {
                 Button {
-                    showManualAutomationWizard = true
+                    createManualAutomation(from: pattern)
                 } label: {
                     Label(String(localized: "habits.learning.createManual",
                                  defaultValue: "Create manually"),
@@ -932,7 +944,7 @@ struct HabitsView: View {
     private func reviewHabitPattern(_ pattern: HabitPattern) {
         scenesService.refresh()
         let capabilities = homeKit.currentHome.map {
-            AutomationCapabilityCatalog.capabilities(in: $0)
+            AutomationCapabilityCatalog.descriptors(in: $0)
         } ?? []
         reviewingOpportunity = nil
         reviewingHabitPattern = pattern
@@ -941,5 +953,26 @@ struct HabitsView: View {
             capabilities: capabilities,
             scenes: scenesService.scenes
         )
+    }
+
+    private func createManualAutomation(from pattern: BehavioralPattern) {
+        // Difesa in profondità: qualunque percorso UI arrivi qui, la policy
+        // semantica vale quanto sul percorso automatico delle opportunity.
+        guard AutomationSemanticPolicy.allowsPromotion(pattern) else { return }
+        scenesService.refresh()
+        let capabilities = homeKit.currentHome.map {
+            AutomationCapabilityCatalog.descriptors(in: $0)
+        } ?? []
+        let proposal = AutomationProposalMapper.proposal(
+            from: pattern,
+            capabilities: capabilities,
+            scenes: scenesService.scenes
+        )
+
+        guard proposal.isReadyForBuilder else { return }
+
+        reviewingOpportunity = nil
+        reviewingHabitPattern = nil
+        reviewingProposal = proposal
     }
 }

@@ -488,6 +488,11 @@ enum ContextualCorrelationEngine {
         let first = timestamps.min() ?? Date()
         let last = timestamps.max() ?? Date()
         let spanDays = max(1, Calendar.current.dateComponents([.day], from: first, to: last).day ?? 1)
+        // Giorni distinti dagli eventi realmente correlati, NON da candidate.distinctDays:
+        // il candidato nasce dal raggruppamento per dayType del gate orario, quindi
+        // conta solo i giorni di una classe (feriale O weekend) e sottostima
+        // l'evidenza che la correlazione ha effettivamente usato.
+        let evidenceDays = Set(timestamps.map { Calendar.current.startOfDay(for: $0) }).count
         let avgMinute = events.map(\.minuteOfDay).reduce(0, +) / max(1, events.count)
         let action = events.first?.action ?? .on
 
@@ -513,7 +518,7 @@ enum ContextualCorrelationEngine {
             firstObservedAt: first,
             lastObservedAt: last,
             stabilityDays: spanDays,
-            distinctActiveDays: candidate.distinctDays,
+            distinctActiveDays: evidenceDays,
             status: .active,
             dismissedAt: nil,
             approvedAt: nil,

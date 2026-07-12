@@ -116,8 +116,21 @@ struct BehavioralPattern: Identifiable, Codable {
         // regularity: actual active days vs expected days in the span
         // For legacy patterns without distinctActiveDays, use observations as lower-bound proxy
         let activeDays = distinctActiveDays ?? min(observations, max(1, Int(dataSpanDays)))
-        let expected   = expectedActiveDays
-        let regularity = Double(activeDays) / Double(max(1, expected))
+
+        // I pattern contestuali NON sono abitudini giornaliere: scattano quando la
+        // condizione ambientale si verifica, quindi "giorni attivi / giorni attesi"
+        // li punisce per la loro stessa natura (un clima acceso solo nei giorni caldi
+        // resterebbe per sempre sotto il gate 0.60 delle opportunity, anche con
+        // hitRate 1.0). La qualità statistica è già garantita a monte dai gate del
+        // ContextualCorrelationEngine (hitRate ≥ 0.70, baseRate ≤ 0.50, score ≥ 0.40,
+        // ≥ 4 giorni distinti): qui la regolarità misura solo il VOLUME di evidenza,
+        // saturando a 10 giorni distinti di conferma.
+        let regularity: Double
+        if patternType == .contextual {
+            regularity = min(1.0, Double(activeDays) / 10.0)
+        } else {
+            regularity = Double(activeDays) / Double(max(1, expectedActiveDays))
+        }
 
         return min(0.97, regularity * stabilityFactor * recencyFactor)
     }

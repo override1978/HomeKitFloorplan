@@ -1757,7 +1757,7 @@ final class ToolDispatcher {
         proposedSemanticKeys.insert(semanticKey)
         scenesService.refresh()
         let capabilities = homeKit.currentHome.map {
-            AutomationCapabilityCatalog.capabilities(in: $0)
+            AutomationCapabilityCatalog.descriptors(in: $0)
         } ?? []
 
         let primaryAccessoryID = hasNativeActions ? (parsedActions.first?.accessoryID ?? accessoryIDStr) : accessoryIDStr

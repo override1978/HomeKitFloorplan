@@ -44,6 +44,7 @@ struct AccessoryMarkerView: View {
 
     @Environment(IconOverrideStore.self) private var iconOverrides
     @Environment(HomeKitService.self) private var homeKit
+    @Environment(MatterEnergyLiveStore.self) private var matterEnergy
 
     /// Angolo corrente del wiggle (cambia con animazione repeatForever).
     @State private var wiggleAngle: Double = 0
@@ -101,6 +102,11 @@ struct AccessoryMarkerView: View {
 
     private var batteryInfo: BatteryInfo? {
         adapter?.batteryInfo
+    }
+
+    private var energySnapshot: MatterEnergyDeviceSnapshot? {
+        guard let adapter else { return nil }
+        return matterEnergy.snapshot(for: adapter.accessory.uniqueIdentifier)
     }
 
     private var runtimeState: MarkerRuntimeState? {
@@ -335,7 +341,6 @@ struct AccessoryMarkerView: View {
     @ViewBuilder
     private var markerBadges: some View {
         let topTrailing = badgeTopTrailingOffset
-        let bottomTrailing = badgeBottomTrailingOffset
 
         if adapter == nil {
             statusBadge(systemImage: "exclamationmark", color: .red)
@@ -351,15 +356,26 @@ struct AccessoryMarkerView: View {
                 .offset(topTrailing)
         }
 
+        if !hasPriorityBadge,
+           let energySnapshot,
+           let activePowerWatts = energySnapshot.activePowerWatts {
+            energyBadge(formattedMarkerWatts(activePowerWatts))
+                .offset(energyBadgeTopTrailingOffset)
+        }
+
         if let batteryInfo, batteryInfo.isLow {
             statusBadge(systemImage: batteryInfo.symbolName, color: batteryInfo.tintColor)
-                .offset(bottomTrailing)
+                .offset(badgeBottomTrailingOffset)
         }
 
         if isEditing, let editIssue {
             statusBadge(systemImage: editIssue.systemImage, color: editIssue.color)
                 .offset(badgeTopLeadingOffset)
         }
+    }
+
+    private var hasPriorityBadge: Bool {
+        adapter == nil || isLikelyOffline || runtimeState != nil
     }
 
     private var badgeTopTrailingOffset: CGSize {
@@ -370,6 +386,19 @@ struct AccessoryMarkerView: View {
             return CGSize(width: size.sensorBoolDiameter * 0.34, height: -size.sensorBoolDiameter * 0.34)
         case .sensorNumeric:
             return CGSize(width: size.sensorNumericSize.width * 0.42, height: -size.sensorNumericSize.height * 0.42)
+        case .camera:
+            return .zero
+        }
+    }
+
+    private var energyBadgeTopTrailingOffset: CGSize {
+        switch style {
+        case .controllable:
+            return CGSize(width: size.controllableDiameter * 0.54, height: -size.controllableDiameter * 0.36)
+        case .sensorBoolean:
+            return CGSize(width: size.sensorBoolDiameter * 0.56, height: -size.sensorBoolDiameter * 0.38)
+        case .sensorNumeric:
+            return CGSize(width: size.sensorNumericSize.width * 0.5, height: -size.sensorNumericSize.height * 0.46)
         case .camera:
             return .zero
         }
@@ -409,6 +438,30 @@ struct AccessoryMarkerView: View {
             .background(color, in: Circle())
             .overlay(Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 1))
             .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+    }
+
+    private func energyBadge(_ value: String) -> some View {
+        Text(value)
+            .font(.system(size: 8, weight: .bold, design: .rounded).monospacedDigit())
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 4)
+            .frame(height: 15)
+            .background(Color(.systemGreen), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.9), lineWidth: 1))
+            .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+    }
+
+    private func formattedMarkerWatts(_ watts: Double) -> String {
+        if abs(watts) >= 100 {
+            return "\(Int(watts.rounded()))W"
+        }
+        let formatter = NumberFormatter()
+        formatter.locale = Locale.current
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 1
+        return "\(formatter.string(from: NSNumber(value: watts)) ?? "\(watts)")W"
     }
     
     /// Bordo sottile per sensori (sempre presente, anche se discreto).

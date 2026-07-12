@@ -23,6 +23,41 @@ struct AutomationCharacteristicCapability: Identifiable {
     let defaultOperator: AutomationCapabilityOperator
 }
 
+/// HomeKit-free projection of a capability: everything the matching layers
+/// (AutomationProposalMapper) need, without the live HMCharacteristic — so the
+/// pipeline can run on synthetic capabilities in tests. The real characteristic
+/// is only required when the trigger is actually written to HomeKit
+/// (AutomationCapabilitySelection).
+struct AutomationCapabilityDescriptor: Identifiable {
+    let id: String
+    let accessoryID: UUID
+    let accessoryName: String
+    let roomName: String
+    let characteristicID: UUID
+    let characteristicType: String
+    let title: String
+    let valueKind: AutomationCapabilityValueKind
+    let supportedRoles: Set<AutomationCapabilityRole>
+    let defaultOperator: AutomationCapabilityOperator
+}
+
+extension AutomationCharacteristicCapability {
+    var descriptor: AutomationCapabilityDescriptor {
+        AutomationCapabilityDescriptor(
+            id: id,
+            accessoryID: accessoryID,
+            accessoryName: accessoryName,
+            roomName: roomName,
+            characteristicID: characteristic.uniqueIdentifier,
+            characteristicType: characteristic.characteristicType,
+            title: title,
+            valueKind: valueKind,
+            supportedRoles: supportedRoles,
+            defaultOperator: defaultOperator
+        )
+    }
+}
+
 enum AutomationCapabilityRole: Hashable {
     case trigger
     case condition
@@ -185,6 +220,10 @@ enum AutomationCapabilityCatalog {
                 }
                 return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
             }
+    }
+
+    static func descriptors(in home: HMHome) -> [AutomationCapabilityDescriptor] {
+        capabilities(in: home).map(\.descriptor)
     }
 
     static func triggerCapabilities(in home: HMHome) -> [AutomationCharacteristicCapability] {
