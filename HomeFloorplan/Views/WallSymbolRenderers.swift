@@ -282,8 +282,8 @@ func renderDocument(_ doc: DrawingDocument,
         drawRoomAreaCG(area, context: cgContext, drawText: drawText)
     }
 
-    // Furniture items (after room areas, before walls)
-    for item in doc.furnitureItems {
+    // Furniture items (after room areas, before walls; rugs always first)
+    for item in doc.furnitureDrawOrder {
         drawFurnitureItemCG(item, context: cgContext, drawText: drawText)
     }
 
@@ -348,7 +348,7 @@ private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
 
     drawDarkFurnitureShadowsCG(doc, context: context)
 
-    for item in doc.furnitureItems {
+    for item in doc.furnitureDrawOrder {
         drawDarkFurnitureItemCG(item, context: context, drawText: drawText)
     }
 

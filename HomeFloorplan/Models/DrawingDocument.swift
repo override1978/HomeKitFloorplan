@@ -713,6 +713,13 @@ struct DrawingDocument: Equatable, nonisolated Codable {
         }
     }
 
+    /// Furniture in rendering order: flat items (rugs) first so they always sit
+    /// under everything else, regardless of insertion order. Relative order is
+    /// preserved within each group.
+    var furnitureDrawOrder: [FurnitureItem] {
+        furnitureItems.filter { $0.kind == .rug } + furnitureItems.filter { $0.kind != .rug }
+    }
+
     func wall(for id: UUID) -> WallSegment?           { walls.first         { $0.id == id } }
     func opening(for id: UUID) -> PlacedOpening?      { openings.first      { $0.id == id } }
     func roomLabel(for id: UUID) -> RoomLabel?        { roomLabels.first    { $0.id == id } }

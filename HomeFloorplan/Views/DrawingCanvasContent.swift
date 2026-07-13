@@ -56,8 +56,8 @@ struct DrawingCanvasContent: View {
                 drawPreviewArea(pa, context: &ctx)
             }
 
-            // 0c. Furniture items (after room areas, before grid)
-            for item in document.furnitureItems {
+            // 0c. Furniture items (after room areas, before grid; rugs always first)
+            for item in document.furnitureDrawOrder {
                 let isSelected: Bool
                 if case .furniture(let id) = selection { isSelected = item.id == id } else { isSelected = false }
                 drawFurnitureItem(item, context: &ctx, selected: isSelected)
@@ -827,7 +827,7 @@ struct ScaledDrawingView: View {
             for area in document.roomAreas {
                 drawRoomArea(area, context: &ctx, selected: false)
             }
-            for item in document.furnitureItems {
+            for item in document.furnitureDrawOrder {
                 drawFurnitureItem(item, context: &ctx, selected: false)
             }
             drawGrid(in: canvasRect, spacing: DrawingDocument.gridSpacing, context: &ctx)
