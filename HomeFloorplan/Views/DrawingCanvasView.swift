@@ -837,8 +837,10 @@ struct DrawingCanvasView: UIViewRepresentable {
                     return .roomLabel(label.id)
                 }
             }
-            // Furniture items (checked before walls, last-added wins)
-            for item in doc.furnitureItems.reversed() {
+            // Furniture items (checked before walls). Hit-testing mirrors the
+            // draw order reversed: topmost first, so flat items (rugs) are
+            // checked last and never steal taps from furniture sitting on them.
+            for item in doc.furnitureDrawOrder.reversed() {
                 if item.containsVisualPoint(point) {
                     return .furniture(item.id)
                 }
