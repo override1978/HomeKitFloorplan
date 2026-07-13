@@ -367,9 +367,9 @@ private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
         guard let wall = doc.wall(for: opening.wallID) else { continue }
         switch opening.kind {
         case .door:
-            drawDarkDoorCG(opening, wall: wall, context: context)
+            drawDarkDoorCG(opening, wall: wall, doc: doc, context: context)
         case .window:
-            drawDarkWindowCG(opening, wall: wall, context: context)
+            drawDarkWindowCG(opening, wall: wall, doc: doc, context: context)
         }
     }
 
@@ -687,7 +687,54 @@ private func drawDarkWallHighlightCG(_ wall: WallSegment, context: CGContext) {
     context.strokePath()
 }
 
-private func drawDarkDoorCG(_ opening: PlacedOpening, wall: WallSegment, context: CGContext) {
+/// Erases the wall under an opening by re-painting what lies beneath —
+/// background, the floors of the rooms crossing the band, and the depth
+/// gradient — so textured floors continue through the gap instead of
+/// showing a flat patch of `roomFill`.
+private func eraseOpeningBandDarkCG(_ doc: DrawingDocument,
+                                    from p1: CGPoint, to p2: CGPoint,
+                                    halfWidth: CGFloat,
+                                    context: CGContext) {
+    let dx = p2.x - p1.x, dy = p2.y - p1.y
+    let len = hypot(dx, dy)
+    guard len > 0 else { return }
+    let nx = -dy / len * halfWidth, ny = dx / len * halfWidth
+
+    let band = UIBezierPath()
+    band.move(to: CGPoint(x: p1.x + nx, y: p1.y + ny))
+    band.addLine(to: CGPoint(x: p2.x + nx, y: p2.y + ny))
+    band.addLine(to: CGPoint(x: p2.x - nx, y: p2.y - ny))
+    band.addLine(to: CGPoint(x: p1.x - nx, y: p1.y - ny))
+    band.close()
+
+    context.saveGState()
+    context.addPath(band.cgPath)
+    context.clip()
+
+    context.setFillColor(DarkArchitecturalPalette.background.cgColor)
+    context.fill(band.bounds.insetBy(dx: -2, dy: -2))
+
+    UIGraphicsPushContext(context)
+    for (index, area) in doc.roomAreas.enumerated()
+    where area.boundingRect.intersects(band.bounds.insetBy(dx: -1, dy: -1)) {
+        let path = roomAreaPath(area)
+        if let kind = area.floorKind {
+            drawFloorPatternCG(kind, path: path, bounds: area.boundingRect,
+                               context: context, dark: true)
+        } else {
+            (index.isMultiple(of: 2) ? DarkArchitecturalPalette.roomFill
+                                     : DarkArchitecturalPalette.roomAlternateFill).setFill()
+            path.fill()
+        }
+    }
+    UIGraphicsPopContext()
+
+    drawWallDepthShadowCG(doc, context: context, tightAlpha: 0.55, ambientAlpha: 0.35)
+
+    context.restoreGState()
+}
+
+private func drawDarkDoorCG(_ opening: PlacedOpening, wall: WallSegment, doc: DrawingDocument, context: CGContext) {
     guard let eps = endpointsOf(opening: opening, wall: wall) else { return }
 
     let dx = wall.end.x - wall.start.x
@@ -701,11 +748,11 @@ private func drawDarkDoorCG(_ opening: PlacedOpening, wall: WallSegment, context
     let ny = ux * flip
 
     let wallW = DrawingDocument.wallWidth(for: wall.kind)
-    eraseBandCG(from: eps.start,
-                to: eps.end,
-                halfWidth: wallW / 2 + 1,
-                fillColor: DarkArchitecturalPalette.roomFill.cgColor,
-                context: context)
+    eraseOpeningBandDarkCG(doc,
+                           from: eps.start,
+                           to: eps.end,
+                           halfWidth: wallW / 2 + 1,
+                           context: context)
 
     context.setStrokeColor(DarkArchitecturalPalette.openingLine.cgColor)
     context.setLineWidth(1.8)
@@ -725,7 +772,7 @@ private func drawDarkDoorCG(_ opening: PlacedOpening, wall: WallSegment, context
     context.strokePath()
 }
 
-private func drawDarkWindowCG(_ opening: PlacedOpening, wall: WallSegment, context: CGContext) {
+private func drawDarkWindowCG(_ opening: PlacedOpening, wall: WallSegment, doc: DrawingDocument, context: CGContext) {
     guard let eps = endpointsOf(opening: opening, wall: wall) else { return }
 
     let dx = wall.end.x - wall.start.x
@@ -736,11 +783,11 @@ private func drawDarkWindowCG(_ opening: PlacedOpening, wall: WallSegment, conte
     let ny = dx / len
 
     let wallW = DrawingDocument.wallWidth(for: wall.kind)
-    eraseBandCG(from: eps.start,
-                to: eps.end,
-                halfWidth: wallW / 2 + 1,
-                fillColor: DarkArchitecturalPalette.roomFill.cgColor,
-                context: context)
+    eraseOpeningBandDarkCG(doc,
+                           from: eps.start,
+                           to: eps.end,
+                           halfWidth: wallW / 2 + 1,
+                           context: context)
 
     context.setStrokeColor(DarkArchitecturalPalette.openingLine.cgColor)
     context.setLineCap(.round)
