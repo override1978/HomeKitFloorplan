@@ -611,6 +611,8 @@ private func furnitureShadowPath(_ item: FurnitureItem) -> UIBezierPath {
         // Flat on the floor: the path exists for completeness but rug is skipped
         // by the shadow and sheen passes.
         path = rounded(rect, 8)
+    case .kitchenSink:
+        path = rounded(rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.08), 3)
     case .stairs:
         path = rounded(rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.04), 3)
     case .spiralStairs:
@@ -1399,8 +1401,16 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         line(CGPoint(x: rect.midX, y: basin.minY), CGPoint(x: rect.midX, y: basin.minY - rect.height * 0.12), color: strokeColor)
 
     case .inductionCooktop:
+        // Induction glass is always near-black, regardless of style or tint.
+        let glass = UIColor(red: 0.09, green: 0.10, blue: 0.12, alpha: 0.94)
+        let ring = UIColor(white: 0.78, alpha: 0.75)
         let cooktop = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.10)
-        fillStroke(rounded(cooktop, radius: 5))
+        glass.setFill()
+        rounded(cooktop, radius: 5).fill()
+        strokeColor.setStroke()
+        let body = rounded(cooktop, radius: 5)
+        body.lineWidth = lineWidth
+        body.stroke()
 
         let zoneRadius = min(cooktop.width, cooktop.height) * 0.15
         let zoneCenters = [
@@ -1409,7 +1419,7 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
             CGPoint(x: cooktop.minX + cooktop.width * 0.30, y: cooktop.maxY - cooktop.height * 0.34),
             CGPoint(x: cooktop.maxX - cooktop.width * 0.30, y: cooktop.maxY - cooktop.height * 0.34)
         ]
-        detailColor.setStroke()
+        ring.setStroke()
         for center in zoneCenters {
             let zone = CGRect(x: center.x - zoneRadius, y: center.y - zoneRadius, width: zoneRadius * 2, height: zoneRadius * 2)
             let zonePath = UIBezierPath(ovalIn: zone)
@@ -1421,7 +1431,8 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         }
         line(
             CGPoint(x: cooktop.midX - cooktop.width * 0.18, y: cooktop.maxY - cooktop.height * 0.12),
-            CGPoint(x: cooktop.midX + cooktop.width * 0.18, y: cooktop.maxY - cooktop.height * 0.12)
+            CGPoint(x: cooktop.midX + cooktop.width * 0.18, y: cooktop.maxY - cooktop.height * 0.12),
+            color: ring.withAlphaComponent(0.55)
         )
 
     case .washingMachine:
@@ -1516,6 +1527,24 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         innerRug.lineWidth = lineWidth
         innerRug.setLineDash([5, 4], count: 2, phase: 0)
         innerRug.stroke()
+
+    case .kitchenSink:
+        let body = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.08)
+        fillStroke(rounded(body, radius: 3))
+        detailColor.setStroke()
+        let basin = CGRect(x: body.minX + body.width * 0.12,
+                           y: body.minY + body.height * 0.26,
+                           width: body.width * 0.76,
+                           height: body.height * 0.60)
+        let basinPath = rounded(basin, radius: 4)
+        basinPath.lineWidth = lineWidth
+        basinPath.stroke()
+        detailColor.setFill()
+        UIBezierPath(ovalIn: CGRect(x: basin.midX - 3, y: basin.midY - 3, width: 6, height: 6)).fill()
+        strokeColor.setFill()
+        let faucet = CGPoint(x: body.midX, y: body.minY + body.height * 0.13)
+        UIBezierPath(ovalIn: CGRect(x: faucet.x - 3, y: faucet.y - 3, width: 6, height: 6)).fill()
+        line(faucet, CGPoint(x: faucet.x, y: basin.minY), color: strokeColor)
 
     case .stairs:
         let body = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.04)

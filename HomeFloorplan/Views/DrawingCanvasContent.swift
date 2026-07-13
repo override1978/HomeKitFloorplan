@@ -626,8 +626,11 @@ private func drawFurnitureShape(_ item: FurnitureItem, context: inout GraphicsCo
         strokeLine(CGPoint(x: rect.midX, y: basin.minY), CGPoint(x: rect.midX, y: basin.minY - rect.height * 0.12), color: stroke)
 
     case .inductionCooktop:
+        // Induction glass is always near-black, regardless of theme or tint.
+        let glass = Color(red: 0.09, green: 0.10, blue: 0.12).opacity(0.94)
+        let ring = Color(white: 0.78).opacity(0.75)
         let cooktop = rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.10)
-        context.fill(rounded(cooktop, radius: 5), with: .color(fill))
+        context.fill(rounded(cooktop, radius: 5), with: .color(glass))
         context.stroke(rounded(cooktop, radius: 5), with: .color(stroke), style: style)
 
         let zoneRadius = min(cooktop.width, cooktop.height) * 0.15
@@ -639,13 +642,13 @@ private func drawFurnitureShape(_ item: FurnitureItem, context: inout GraphicsCo
         ]
         for center in zoneCenters {
             let zone = CGRect(x: center.x - zoneRadius, y: center.y - zoneRadius, width: zoneRadius * 2, height: zoneRadius * 2)
-            context.stroke(Path(ellipseIn: zone), with: .color(detail), style: style)
-            context.stroke(Path(ellipseIn: zone.insetBy(dx: zoneRadius * 0.38, dy: zoneRadius * 0.38)), with: .color(detail.opacity(0.7)), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+            context.stroke(Path(ellipseIn: zone), with: .color(ring), style: style)
+            context.stroke(Path(ellipseIn: zone.insetBy(dx: zoneRadius * 0.38, dy: zoneRadius * 0.38)), with: .color(ring.opacity(0.6)), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
         }
         strokeLine(
             CGPoint(x: cooktop.midX - cooktop.width * 0.18, y: cooktop.maxY - cooktop.height * 0.12),
             CGPoint(x: cooktop.midX + cooktop.width * 0.18, y: cooktop.maxY - cooktop.height * 0.12),
-            color: detail
+            color: ring.opacity(0.6)
         )
 
     case .washingMachine:
@@ -718,6 +721,22 @@ private func drawFurnitureShape(_ item: FurnitureItem, context: inout GraphicsCo
         context.stroke(rounded(rect, radius: 8), with: .color(stroke.opacity(0.8)), style: StrokeStyle(lineWidth: 1.2))
         let inner = rect.insetBy(dx: min(9, rect.width * 0.08), dy: min(9, rect.height * 0.08))
         context.stroke(rounded(inner, radius: 5), with: .color(detail), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+
+    case .kitchenSink:
+        let body = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.08)
+        context.fill(rounded(body, radius: 3), with: .color(fill))
+        context.stroke(rounded(body, radius: 3), with: .color(stroke), style: style)
+        let basin = CGRect(x: body.minX + body.width * 0.12,
+                           y: body.minY + body.height * 0.26,
+                           width: body.width * 0.76,
+                           height: body.height * 0.60)
+        context.stroke(rounded(basin, radius: 4), with: .color(detail), style: style)
+        context.fill(Path(ellipseIn: CGRect(x: basin.midX - 3, y: basin.midY - 3, width: 6, height: 6)),
+                     with: .color(detail))
+        let faucet = CGPoint(x: body.midX, y: body.minY + body.height * 0.13)
+        context.fill(Path(ellipseIn: CGRect(x: faucet.x - 3, y: faucet.y - 3, width: 6, height: 6)),
+                     with: .color(stroke))
+        strokeLine(faucet, CGPoint(x: faucet.x, y: basin.minY), color: stroke)
 
     case .stairs:
         let body = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.04)

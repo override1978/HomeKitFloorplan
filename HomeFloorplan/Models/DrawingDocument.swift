@@ -388,6 +388,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     case rug
     case stairs
     case spiralStairs
+    case kitchenSink
 
     var id: String { rawValue }
 
@@ -431,6 +432,8 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
             return String(localized: "drawing.furniture.stairs", defaultValue: "Stairs")
         case .spiralStairs:
             return String(localized: "drawing.furniture.spiralStairs", defaultValue: "Spiral staircase")
+        case .kitchenSink:
+            return String(localized: "drawing.furniture.kitchenSink", defaultValue: "Kitchen sink")
         }
     }
 
@@ -455,6 +458,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         case .rug: return "rectangle.inset.filled"
         case .stairs: return "stairs"
         case .spiralStairs: return "hurricane"
+        case .kitchenSink: return "spigot.fill"
         }
     }
 
@@ -466,7 +470,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
              .wardrobe, .kitchenCounter, .tvUnit, .rug:
             return true
         case .toilet, .sink, .inductionCooktop, .washingMachine,
-             .bathtub, .shower, .plant, .stairs, .spiralStairs:
+             .bathtub, .shower, .plant, .stairs, .spiralStairs, .kitchenSink:
             return false
         }
     }
@@ -492,6 +496,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         case .rug: return CGSize(width: 160, height: 110)
         case .stairs: return CGSize(width: 80, height: 180)
         case .spiralStairs: return CGSize(width: 110, height: 110)
+        case .kitchenSink: return CGSize(width: 80, height: 55)
         }
     }
 }
@@ -509,6 +514,7 @@ enum FurnitureTint: Int, CaseIterable, Identifiable {
     case ocra
     case oliva
     case rosaAntico
+    case cioccolato
 
     var id: Int { rawValue }
 
@@ -521,6 +527,7 @@ enum FurnitureTint: Int, CaseIterable, Identifiable {
         case .ocra:       return String(localized: "drawing.tint.ocra",       defaultValue: "Ochre")
         case .oliva:      return String(localized: "drawing.tint.oliva",      defaultValue: "Olive")
         case .rosaAntico: return String(localized: "drawing.tint.rosaAntico", defaultValue: "Dusty Rose")
+        case .cioccolato: return String(localized: "drawing.tint.cioccolato", defaultValue: "Chocolate")
         }
     }
 
@@ -534,6 +541,7 @@ enum FurnitureTint: Int, CaseIterable, Identifiable {
         case .ocra:       return CGColor(red: 0.86, green: 0.76, blue: 0.54, alpha: 1)
         case .oliva:      return CGColor(red: 0.72, green: 0.73, blue: 0.58, alpha: 1)
         case .rosaAntico: return CGColor(red: 0.85, green: 0.71, blue: 0.70, alpha: 1)
+        case .cioccolato: return CGColor(red: 0.48, green: 0.38, blue: 0.30, alpha: 1)
         }
     }
 
@@ -547,6 +555,7 @@ enum FurnitureTint: Int, CaseIterable, Identifiable {
         case .ocra:       return CGColor(red: 0.55, green: 0.47, blue: 0.30, alpha: 1)
         case .oliva:      return CGColor(red: 0.44, green: 0.46, blue: 0.33, alpha: 1)
         case .rosaAntico: return CGColor(red: 0.53, green: 0.41, blue: 0.41, alpha: 1)
+        case .cioccolato: return CGColor(red: 0.37, green: 0.29, blue: 0.23, alpha: 1)
         }
     }
 }
