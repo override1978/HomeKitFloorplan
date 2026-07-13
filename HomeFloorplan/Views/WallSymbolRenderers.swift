@@ -613,6 +613,14 @@ private func furnitureShadowPath(_ item: FurnitureItem) -> UIBezierPath {
         path = rounded(rect, 8)
     case .kitchenSink:
         path = rounded(rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.08), 3)
+    case .tree:
+        let side = min(rect.width, rect.height)
+        let r = side * 0.46
+        path = UIBezierPath(ovalIn: CGRect(x: rect.midX - r, y: rect.midY - r,
+                                           width: r * 2, height: r * 2))
+    case .hedge:
+        let body = rect.insetBy(dx: rect.width * 0.04, dy: rect.height * 0.10)
+        path = rounded(body, min(body.width, body.height) * 0.40)
     case .stairs:
         path = rounded(rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.04), 3)
     case .spiralStairs:
@@ -1060,9 +1068,49 @@ private func drawFloorPatternCG(_ kind: FloorKind,
         UIColor(red: 0.70, green: 0.69, blue: 0.67,
                 alpha: dark ? 0.45 : 0.32).setFill()
         path.fill()
+
+    case .erba:
+        if dark {
+            UIColor(red: 0.24, green: 0.34, blue: 0.22, alpha: 0.55).setFill()
+            path.fill()
+            drawGrassTuftsCG(bounds: bounds,
+                             color: UIColor(red: 0.45, green: 0.60, blue: 0.38, alpha: 0.45))
+        } else {
+            UIColor(red: 0.55, green: 0.72, blue: 0.45, alpha: 0.30).setFill()
+            path.fill()
+            drawGrassTuftsCG(bounds: bounds,
+                             color: UIColor(red: 0.35, green: 0.52, blue: 0.28, alpha: 0.35))
+        }
     }
 
     context.restoreGState()
+}
+
+/// Grass tufts (small "v" marks) with deterministic hash-based jitter so the
+/// lawn doesn't read as a mechanical grid.
+private func drawGrassTuftsCG(bounds: CGRect, color: UIColor) {
+    color.setStroke()
+    let spacing: CGFloat = 26
+    var row = Int((bounds.minY / spacing).rounded(.down))
+    while CGFloat(row) * spacing <= bounds.maxY {
+        var col = Int((bounds.minX / spacing).rounded(.down))
+        while CGFloat(col) * spacing <= bounds.maxX {
+            let jx = (floorPatternHash(col, row) - 0.5) * spacing * 0.6
+            let jy = (floorPatternHash(row, col &+ 811) - 0.5) * spacing * 0.6
+            let x = CGFloat(col) * spacing + spacing / 2 + jx
+            let y = CGFloat(row) * spacing + spacing / 2 + jy
+            let tuft = UIBezierPath()
+            tuft.move(to: CGPoint(x: x - 2.5, y: y + 3))
+            tuft.addLine(to: CGPoint(x: x, y: y - 2.5))
+            tuft.addLine(to: CGPoint(x: x + 2.5, y: y + 3))
+            tuft.lineWidth = 1
+            tuft.lineCapStyle = .round
+            tuft.lineJoinStyle = .round
+            tuft.stroke()
+            col += 1
+        }
+        row += 1
+    }
 }
 
 private func drawFloorGridCG(bounds: CGRect, spacing: CGFloat, color: UIColor) {
@@ -1527,6 +1575,47 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         innerRug.lineWidth = lineWidth
         innerRug.setLineDash([5, 4], count: 2, phase: 0)
         innerRug.stroke()
+
+    case .tree:
+        let side = min(rect.width, rect.height)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let canopyR = side * 0.46
+        let canopy = CGRect(x: center.x - canopyR, y: center.y - canopyR,
+                            width: canopyR * 2, height: canopyR * 2)
+        UIColor(red: 0.45, green: 0.62, blue: 0.45, alpha: 0.30).setFill()
+        UIBezierPath(ovalIn: canopy).fill()
+        UIColor(red: 0.38, green: 0.55, blue: 0.40, alpha: 0.70).setStroke()
+        let canopyPath = UIBezierPath(ovalIn: canopy)
+        canopyPath.lineWidth = lineWidth * 1.2
+        canopyPath.stroke()
+        UIColor(red: 0.38, green: 0.55, blue: 0.40, alpha: 0.35).setStroke()
+        let innerR = canopyR * 0.58
+        let innerPath = UIBezierPath(ovalIn: CGRect(x: center.x - innerR - canopyR * 0.08,
+                                                    y: center.y - innerR - canopyR * 0.06,
+                                                    width: innerR * 2, height: innerR * 2))
+        innerPath.lineWidth = lineWidth
+        innerPath.stroke()
+        UIColor(red: 0.45, green: 0.35, blue: 0.25, alpha: 0.70).setFill()
+        let trunkR = side * 0.07
+        UIBezierPath(ovalIn: CGRect(x: center.x - trunkR, y: center.y - trunkR,
+                                    width: trunkR * 2, height: trunkR * 2)).fill()
+
+    case .hedge:
+        let body = rect.insetBy(dx: rect.width * 0.04, dy: rect.height * 0.10)
+        let radius = min(body.width, body.height) * 0.40
+        UIColor(red: 0.45, green: 0.62, blue: 0.45, alpha: 0.32).setFill()
+        rounded(body, radius: radius).fill()
+        UIColor(red: 0.38, green: 0.55, blue: 0.40, alpha: 0.65).setStroke()
+        let hedgePath = rounded(body, radius: radius)
+        hedgePath.lineWidth = lineWidth * 1.2
+        hedgePath.stroke()
+        UIColor(red: 0.38, green: 0.55, blue: 0.40, alpha: 0.30).setStroke()
+        let innerHedge = rounded(body.insetBy(dx: min(6, body.width * 0.06),
+                                              dy: min(6, body.height * 0.18)),
+                                 radius: radius * 0.7)
+        innerHedge.lineWidth = lineWidth
+        innerHedge.setLineDash([4, 4], count: 2, phase: 0)
+        innerHedge.stroke()
 
     case .kitchenSink:
         let body = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.08)

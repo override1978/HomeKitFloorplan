@@ -158,6 +158,7 @@ enum FloorKind: String, Codable, CaseIterable, Identifiable {
     case gres       = "gres"
     case marmo      = "marmo"
     case cemento    = "cemento"
+    case erba       = "erba"
 
     var id: String { rawValue }
 
@@ -168,6 +169,7 @@ enum FloorKind: String, Codable, CaseIterable, Identifiable {
         case .gres:       return String(localized: "drawing.floor.gres",       defaultValue: "Stoneware")
         case .marmo:      return String(localized: "drawing.floor.marmo",      defaultValue: "Marble")
         case .cemento:    return String(localized: "drawing.floor.cemento",    defaultValue: "Concrete")
+        case .erba:       return String(localized: "drawing.floor.erba",       defaultValue: "Grass")
         }
     }
 
@@ -178,6 +180,7 @@ enum FloorKind: String, Codable, CaseIterable, Identifiable {
         case .gres:       return "rectangle.split.2x2"
         case .marmo:      return "diamond.fill"
         case .cemento:    return "square.fill"
+        case .erba:       return "leaf.fill"
         }
     }
 }
@@ -389,6 +392,8 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     case stairs
     case spiralStairs
     case kitchenSink
+    case tree
+    case hedge
 
     var id: String { rawValue }
 
@@ -434,6 +439,10 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
             return String(localized: "drawing.furniture.spiralStairs", defaultValue: "Spiral staircase")
         case .kitchenSink:
             return String(localized: "drawing.furniture.kitchenSink", defaultValue: "Kitchen sink")
+        case .tree:
+            return String(localized: "drawing.furniture.tree", defaultValue: "Tree")
+        case .hedge:
+            return String(localized: "drawing.furniture.hedge", defaultValue: "Hedge")
         }
     }
 
@@ -459,6 +468,8 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         case .stairs: return "stairs"
         case .spiralStairs: return "hurricane"
         case .kitchenSink: return "spigot.fill"
+        case .tree: return "tree.fill"
+        case .hedge: return "leaf.circle.fill"
         }
     }
 
@@ -470,7 +481,8 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
              .wardrobe, .kitchenCounter, .tvUnit, .rug:
             return true
         case .toilet, .sink, .inductionCooktop, .washingMachine,
-             .bathtub, .shower, .plant, .stairs, .spiralStairs, .kitchenSink:
+             .bathtub, .shower, .plant, .stairs, .spiralStairs, .kitchenSink,
+             .tree, .hedge:
             return false
         }
     }
@@ -497,6 +509,8 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         case .stairs: return CGSize(width: 80, height: 180)
         case .spiralStairs: return CGSize(width: 110, height: 110)
         case .kitchenSink: return CGSize(width: 80, height: 55)
+        case .tree: return CGSize(width: 90, height: 90)
+        case .hedge: return CGSize(width: 160, height: 40)
         }
     }
 }

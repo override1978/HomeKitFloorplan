@@ -24,7 +24,7 @@ enum ValveType: Int {
     var iconName: String {
         switch self {
         case .generic: return "spigot.fill"
-        case .irrigation: return "drop.fill"
+        case .irrigation: return "sprinkler.and.droplets.fill"
         case .showerHead: return "shower.fill"
         case .waterFaucet: return "spigot.fill"
         }

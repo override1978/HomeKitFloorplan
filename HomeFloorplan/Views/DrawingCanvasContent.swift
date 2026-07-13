@@ -406,6 +406,29 @@ func drawFloorPattern(_ kind: FloorKind,
 
     case .cemento:
         ctx.fill(clipPath, with: .color(Color(red: 0.70, green: 0.69, blue: 0.67).opacity(0.32)))
+
+    case .erba:
+        ctx.fill(clipPath, with: .color(Color(red: 0.55, green: 0.72, blue: 0.45).opacity(0.30)))
+        // Staggered grass tufts (small "v" marks)
+        let spacing: CGFloat = 26
+        let tuftColor = Color(red: 0.35, green: 0.52, blue: 0.28).opacity(0.35)
+        var row = 0
+        var y = (bounds.minY / spacing).rounded(.down) * spacing
+        while y <= bounds.maxY {
+            var x = (bounds.minX / spacing).rounded(.down) * spacing
+                + (row.isMultiple(of: 2) ? 0 : spacing / 2)
+            while x <= bounds.maxX {
+                var tuft = Path()
+                tuft.move(to: CGPoint(x: x - 2.5, y: y + 3))
+                tuft.addLine(to: CGPoint(x: x, y: y - 2.5))
+                tuft.addLine(to: CGPoint(x: x + 2.5, y: y + 3))
+                ctx.stroke(tuft, with: .color(tuftColor),
+                           style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                x += spacing
+            }
+            y += spacing
+            row += 1
+        }
     }
 }
 
@@ -721,6 +744,38 @@ private func drawFurnitureShape(_ item: FurnitureItem, context: inout GraphicsCo
         context.stroke(rounded(rect, radius: 8), with: .color(stroke.opacity(0.8)), style: StrokeStyle(lineWidth: 1.2))
         let inner = rect.insetBy(dx: min(9, rect.width * 0.08), dy: min(9, rect.height * 0.08))
         context.stroke(rounded(inner, radius: 5), with: .color(detail), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+
+    case .tree:
+        let side = min(rect.width, rect.height)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let canopyR = side * 0.46
+        let canopy = CGRect(x: center.x - canopyR, y: center.y - canopyR,
+                            width: canopyR * 2, height: canopyR * 2)
+        let leafFill = Color(red: 0.45, green: 0.62, blue: 0.45).opacity(0.30)
+        let leafStroke = Color(red: 0.38, green: 0.55, blue: 0.40).opacity(0.70)
+        context.fill(Path(ellipseIn: canopy), with: .color(leafFill))
+        context.stroke(Path(ellipseIn: canopy), with: .color(leafStroke), style: StrokeStyle(lineWidth: 1.3))
+        let innerR = canopyR * 0.58
+        let inner = CGRect(x: center.x - innerR - canopyR * 0.08,
+                           y: center.y - innerR - canopyR * 0.06,
+                           width: innerR * 2, height: innerR * 2)
+        context.stroke(Path(ellipseIn: inner), with: .color(leafStroke.opacity(0.5)), style: StrokeStyle(lineWidth: 1))
+        let trunkR = side * 0.07
+        context.fill(Path(ellipseIn: CGRect(x: center.x - trunkR, y: center.y - trunkR,
+                                            width: trunkR * 2, height: trunkR * 2)),
+                     with: .color(Color(red: 0.45, green: 0.35, blue: 0.25).opacity(0.7)))
+
+    case .hedge:
+        let body = rect.insetBy(dx: rect.width * 0.04, dy: rect.height * 0.10)
+        let leafFill = Color(red: 0.45, green: 0.62, blue: 0.45).opacity(0.32)
+        let leafStroke = Color(red: 0.38, green: 0.55, blue: 0.40).opacity(0.65)
+        let radius = min(body.width, body.height) * 0.40
+        context.fill(rounded(body, radius: radius), with: .color(leafFill))
+        context.stroke(rounded(body, radius: radius), with: .color(leafStroke), style: StrokeStyle(lineWidth: 1.3))
+        let inner = body.insetBy(dx: min(6, body.width * 0.06), dy: min(6, body.height * 0.18))
+        context.stroke(rounded(inner, radius: radius * 0.7),
+                       with: .color(leafStroke.opacity(0.45)),
+                       style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
 
     case .kitchenSink:
         let body = rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.08)

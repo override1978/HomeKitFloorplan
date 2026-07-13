@@ -1047,6 +1047,7 @@ extension FloorKind {
         case .gres:       return Color(red: 0.80, green: 0.78, blue: 0.72).opacity(0.70)
         case .marmo:      return Color(red: 0.96, green: 0.95, blue: 0.92).opacity(0.90)
         case .cemento:    return Color(red: 0.70, green: 0.69, blue: 0.67).opacity(0.60)
+        case .erba:       return Color(red: 0.62, green: 0.78, blue: 0.55).opacity(0.65)
         }
     }
 }
