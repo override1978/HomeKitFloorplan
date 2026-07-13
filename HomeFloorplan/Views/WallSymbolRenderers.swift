@@ -217,6 +217,96 @@ func drawWindow(_ opening: PlacedOpening,
                    style: StrokeStyle(lineWidth: DrawingStyle.windowLineWidth * 2, lineCap: .round))
 }
 
+/// Draws a sliding door symbol: two parallel leaves offset to opposite sides
+/// of the wall axis, overlapping slightly at the centre.
+func drawSlidingDoor(_ opening: PlacedOpening,
+                     wall: WallSegment,
+                     context: inout GraphicsContext,
+                     selected: Bool = false) {
+    guard let eps = endpointsOf(opening: opening, wall: wall) else { return }
+
+    let dx = wall.end.x - wall.start.x
+    let dy = wall.end.y - wall.start.y
+    let len = hypot(dx, dy)
+    guard len > 0 else { return }
+    let ux = dx / len, uy = dy / len
+    let flip: CGFloat = opening.flipSide ? -1 : 1
+    let nx = -uy * flip, ny = ux * flip
+
+    let wallW = DrawingDocument.wallWidth(for: wall.kind)
+    eraseBand(from: eps.start, to: eps.end, halfWidth: wallW / 2 + 1, context: &context)
+
+    let off = wallW * 0.24
+    let overlap = opening.width * 0.08
+    let mid = CGPoint(x: (eps.start.x + eps.end.x) / 2, y: (eps.start.y + eps.end.y) / 2)
+
+    var leafA = Path()
+    leafA.move(to: CGPoint(x: eps.start.x + nx * off, y: eps.start.y + ny * off))
+    leafA.addLine(to: CGPoint(x: mid.x + ux * overlap + nx * off,
+                              y: mid.y + uy * overlap + ny * off))
+    var leafB = Path()
+    leafB.move(to: CGPoint(x: mid.x - ux * overlap - nx * off,
+                           y: mid.y - uy * overlap - ny * off))
+    leafB.addLine(to: CGPoint(x: eps.end.x - nx * off, y: eps.end.y - ny * off))
+
+    let color: Color = selected ? DrawingStyle.selectionColor : DrawingStyle.doorArcColor
+    let style = StrokeStyle(lineWidth: DrawingStyle.doorLineWidth + 0.6, lineCap: .round)
+    context.stroke(leafA, with: .color(color), style: style)
+    context.stroke(leafB, with: .color(color), style: style)
+}
+
+/// Draws a French door symbol: two leaves swinging from the jambs and meeting
+/// at the centre, plus a thin glazing line across the gap.
+func drawFrenchDoor(_ opening: PlacedOpening,
+                    wall: WallSegment,
+                    context: inout GraphicsContext,
+                    selected: Bool = false) {
+    guard let eps = endpointsOf(opening: opening, wall: wall) else { return }
+
+    let dx = wall.end.x - wall.start.x
+    let dy = wall.end.y - wall.start.y
+    let len = hypot(dx, dy)
+    guard len > 0 else { return }
+    let ux = dx / len, uy = dy / len
+    let flip: CGFloat = opening.flipSide ? -1 : 1
+    let nx = -uy * flip, ny = ux * flip
+
+    let wallW = DrawingDocument.wallWidth(for: wall.kind)
+    eraseBand(from: eps.start, to: eps.end, halfWidth: wallW / 2 + 1, context: &context)
+
+    let half = opening.width / 2
+    let mid = CGPoint(x: (eps.start.x + eps.end.x) / 2, y: (eps.start.y + eps.end.y) / 2)
+    let color: Color = selected ? DrawingStyle.selectionColor : DrawingStyle.doorArcColor
+
+    var arcs = Path()
+    arcs.addArc(center: eps.start, radius: half,
+                startAngle: Angle(radians: atan2(Double(uy), Double(ux))),
+                endAngle: Angle(radians: atan2(Double(ny), Double(nx))),
+                clockwise: opening.flipSide)
+    arcs.move(to: eps.end)
+    arcs.addArc(center: eps.end, radius: half,
+                startAngle: Angle(radians: atan2(Double(-uy), Double(-ux))),
+                endAngle: Angle(radians: atan2(Double(ny), Double(nx))),
+                clockwise: !opening.flipSide)
+    context.stroke(arcs, with: .color(color),
+                   style: StrokeStyle(lineWidth: DrawingStyle.doorLineWidth, lineCap: .round, dash: [4, 3]))
+
+    var leaves = Path()
+    leaves.move(to: eps.start)
+    leaves.addLine(to: mid)
+    leaves.move(to: eps.end)
+    leaves.addLine(to: mid)
+    context.stroke(leaves, with: .color(color),
+                   style: StrokeStyle(lineWidth: DrawingStyle.doorLineWidth, lineCap: .round))
+
+    // Glazing line across the gap
+    var sill = Path()
+    sill.move(to: eps.start)
+    sill.addLine(to: eps.end)
+    context.stroke(sill, with: .color(selected ? DrawingStyle.selectionColor : DrawingStyle.windowColor),
+                   style: StrokeStyle(lineWidth: DrawingStyle.windowLineWidth, lineCap: .round))
+}
+
 /// Draws the light gray grid on a SwiftUI `GraphicsContext`.
 func drawGrid(in rect: CGRect,
               spacing: CGFloat,
@@ -307,9 +397,23 @@ func renderDocument(_ doc: DrawingDocument,
     // Openings
     for opening in doc.openings {
         guard let wall = doc.wall(for: opening.wallID) else { continue }
+        let wallHalf = DrawingDocument.wallWidth(for: wall.kind) / 2 + 1
         switch opening.kind {
         case .door:   drawDoorCG(opening, wall: wall, context: cgContext)
         case .window: drawWindowCG(opening, wall: wall, context: cgContext)
+        case .slidingDoor:
+            if let eps = endpointsOf(opening: opening, wall: wall) {
+                eraseBandCG(from: eps.start, to: eps.end, halfWidth: wallHalf, context: cgContext)
+            }
+            drawSlidingDoorCG(opening, wall: wall,
+                              strokeColor: DrawingStyle.doorCGColor, context: cgContext)
+        case .frenchDoor:
+            if let eps = endpointsOf(opening: opening, wall: wall) {
+                eraseBandCG(from: eps.start, to: eps.end, halfWidth: wallHalf, context: cgContext)
+            }
+            drawFrenchDoorCG(opening, wall: wall,
+                             strokeColor: DrawingStyle.doorCGColor,
+                             glazingColor: DrawingStyle.windowCGColor, context: cgContext)
         }
     }
 
@@ -365,11 +469,29 @@ private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
 
     for opening in doc.openings {
         guard let wall = doc.wall(for: opening.wallID) else { continue }
+        let wallHalf = DrawingDocument.wallWidth(for: wall.kind) / 2 + 1
         switch opening.kind {
         case .door:
             drawDarkDoorCG(opening, wall: wall, doc: doc, context: context)
         case .window:
             drawDarkWindowCG(opening, wall: wall, doc: doc, context: context)
+        case .slidingDoor:
+            if let eps = endpointsOf(opening: opening, wall: wall) {
+                eraseOpeningBandDarkCG(doc, from: eps.start, to: eps.end,
+                                       halfWidth: wallHalf, context: context)
+            }
+            drawSlidingDoorCG(opening, wall: wall,
+                              strokeColor: DarkArchitecturalPalette.openingLine.cgColor,
+                              context: context)
+        case .frenchDoor:
+            if let eps = endpointsOf(opening: opening, wall: wall) {
+                eraseOpeningBandDarkCG(doc, from: eps.start, to: eps.end,
+                                       halfWidth: wallHalf, context: context)
+            }
+            drawFrenchDoorCG(opening, wall: wall,
+                             strokeColor: DarkArchitecturalPalette.openingLine.cgColor,
+                             glazingColor: DarkArchitecturalPalette.openingLine.withAlphaComponent(0.45).cgColor,
+                             context: context)
         }
     }
 
@@ -1626,6 +1748,78 @@ private func drawWindowCG(_ opening: PlacedOpening, wall: WallSegment, context: 
         context.strokePath()
     }
     context.setLineWidth(DrawingStyle.windowLineWidth * 2)
+    context.move(to: eps.start)
+    context.addLine(to: eps.end)
+    context.strokePath()
+}
+
+/// Shared geometry for sliding/French door symbols on a CGContext.
+/// `strokeColor` draws the leaves/arcs; `glazingColor` the French sill line.
+private func drawSlidingDoorCG(_ opening: PlacedOpening, wall: WallSegment,
+                               strokeColor: CGColor, context: CGContext) {
+    guard let eps = endpointsOf(opening: opening, wall: wall) else { return }
+    let dx = wall.end.x - wall.start.x, dy = wall.end.y - wall.start.y
+    let len = hypot(dx, dy)
+    guard len > 0 else { return }
+    let ux = dx / len, uy = dy / len
+    let flip: CGFloat = opening.flipSide ? -1 : 1
+    let nx = -uy * flip, ny = ux * flip
+
+    let off = DrawingDocument.wallWidth(for: wall.kind) * 0.24
+    let overlap = opening.width * 0.08
+    let mid = CGPoint(x: (eps.start.x + eps.end.x) / 2, y: (eps.start.y + eps.end.y) / 2)
+
+    context.setStrokeColor(strokeColor)
+    context.setLineWidth(DrawingStyle.doorLineWidth + 0.6)
+    context.setLineCap(.round)
+    context.setLineDash(phase: 0, lengths: [])
+    context.move(to: CGPoint(x: eps.start.x + nx * off, y: eps.start.y + ny * off))
+    context.addLine(to: CGPoint(x: mid.x + ux * overlap + nx * off,
+                                y: mid.y + uy * overlap + ny * off))
+    context.strokePath()
+    context.move(to: CGPoint(x: mid.x - ux * overlap - nx * off,
+                             y: mid.y - uy * overlap - ny * off))
+    context.addLine(to: CGPoint(x: eps.end.x - nx * off, y: eps.end.y - ny * off))
+    context.strokePath()
+}
+
+private func drawFrenchDoorCG(_ opening: PlacedOpening, wall: WallSegment,
+                              strokeColor: CGColor, glazingColor: CGColor,
+                              context: CGContext) {
+    guard let eps = endpointsOf(opening: opening, wall: wall) else { return }
+    let dx = wall.end.x - wall.start.x, dy = wall.end.y - wall.start.y
+    let len = hypot(dx, dy)
+    guard len > 0 else { return }
+    let ux = dx / len, uy = dy / len
+    let flip: CGFloat = opening.flipSide ? -1 : 1
+    let nx = -uy * flip, ny = ux * flip
+
+    let half = opening.width / 2
+    let mid = CGPoint(x: (eps.start.x + eps.end.x) / 2, y: (eps.start.y + eps.end.y) / 2)
+
+    context.setStrokeColor(strokeColor)
+    context.setLineWidth(DrawingStyle.doorLineWidth)
+    context.setLineCap(.round)
+    context.setLineDash(phase: 0, lengths: [4, 3])
+    context.addArc(center: eps.start, radius: half,
+                   startAngle: atan2(uy, ux), endAngle: atan2(ny, nx),
+                   clockwise: opening.flipSide)
+    context.strokePath()
+    context.addArc(center: eps.end, radius: half,
+                   startAngle: atan2(-uy, -ux), endAngle: atan2(ny, nx),
+                   clockwise: !opening.flipSide)
+    context.strokePath()
+
+    context.setLineDash(phase: 0, lengths: [])
+    context.move(to: eps.start)
+    context.addLine(to: mid)
+    context.strokePath()
+    context.move(to: eps.end)
+    context.addLine(to: mid)
+    context.strokePath()
+
+    context.setStrokeColor(glazingColor)
+    context.setLineWidth(DrawingStyle.windowLineWidth)
     context.move(to: eps.start)
     context.addLine(to: eps.end)
     context.strokePath()

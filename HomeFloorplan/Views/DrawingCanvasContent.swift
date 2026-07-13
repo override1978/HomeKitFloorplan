@@ -105,8 +105,10 @@ struct DrawingCanvasContent: View {
                 let isSelected: Bool
                 if case .opening(let id) = selection { isSelected = opening.id == id } else { isSelected = false }
                 switch opening.kind {
-                case .door:   drawDoor(opening, wall: wall, context: &ctx, selected: isSelected)
-                case .window: drawWindow(opening, wall: wall, context: &ctx, selected: isSelected)
+                case .door:        drawDoor(opening, wall: wall, context: &ctx, selected: isSelected)
+                case .window:      drawWindow(opening, wall: wall, context: &ctx, selected: isSelected)
+                case .slidingDoor: drawSlidingDoor(opening, wall: wall, context: &ctx, selected: isSelected)
+                case .frenchDoor:  drawFrenchDoor(opening, wall: wall, context: &ctx, selected: isSelected)
                 }
             }
 
@@ -837,8 +839,10 @@ struct ScaledDrawingView: View {
             for opening in document.openings {
                 guard let wall = document.wall(for: opening.wallID) else { continue }
                 switch opening.kind {
-                case .door:   drawDoor(opening, wall: wall, context: &ctx, selected: false)
-                case .window: drawWindow(opening, wall: wall, context: &ctx, selected: false)
+                case .door:        drawDoor(opening, wall: wall, context: &ctx, selected: false)
+                case .window:      drawWindow(opening, wall: wall, context: &ctx, selected: false)
+                case .slidingDoor: drawSlidingDoor(opening, wall: wall, context: &ctx, selected: false)
+                case .frenchDoor:  drawFrenchDoor(opening, wall: wall, context: &ctx, selected: false)
                 }
             }
             for label in document.roomLabels {

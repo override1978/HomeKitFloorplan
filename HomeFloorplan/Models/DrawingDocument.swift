@@ -46,7 +46,44 @@ struct WallSegment: Identifiable, Equatable, Codable {
 
 // MARK: - PlacedOpening
 
-enum OpeningKind: String, Codable, Equatable { case door, window }
+enum OpeningKind: String, Codable, Equatable {
+    case door
+    case window
+    case slidingDoor
+    case frenchDoor
+
+    var localizedName: String {
+        switch self {
+        case .door:
+            return String(localized: "drawing.opening.door", defaultValue: "Door")
+        case .window:
+            return String(localized: "drawing.opening.window", defaultValue: "Window")
+        case .slidingDoor:
+            return String(localized: "drawing.opening.slidingDoor", defaultValue: "Sliding door")
+        case .frenchDoor:
+            return String(localized: "drawing.opening.frenchDoor", defaultValue: "French door")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .door:        return "door.left.hand.open"
+        case .window:      return "rectangle.split.2x1"
+        case .slidingDoor: return "door.sliding.right.hand.closed"
+        case .frenchDoor:  return "door.french.open"
+        }
+    }
+
+    /// Default opening width in canvas points when first placed on a wall.
+    var defaultWidth: CGFloat {
+        switch self {
+        case .door:        return 80
+        case .window:      return 60
+        case .slidingDoor: return 100
+        case .frenchDoor:  return 120
+        }
+    }
+}
 
 struct PlacedOpening: Identifiable, Equatable, Codable {
     let id: UUID

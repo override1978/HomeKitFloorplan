@@ -510,8 +510,7 @@ struct DrawingFloorplanSheet: View {
     private func handlePlaceOpening(kind: OpeningKind, at canvasPoint: CGPoint) {
         let maxDist: CGFloat = 60
         guard let (wallID, t) = document.nearestWall(to: canvasPoint, maxDistance: maxDist) else { return }
-        let defaultWidth: CGFloat = kind == .door ? 80 : 60
-        let opening = PlacedOpening(wallID: wallID, t: t, kind: kind, width: defaultWidth)
+        let opening = PlacedOpening(wallID: wallID, t: t, kind: kind, width: kind.defaultWidth)
         pushUndo()
         document.openings.append(opening)
         selection = .opening(opening.id)

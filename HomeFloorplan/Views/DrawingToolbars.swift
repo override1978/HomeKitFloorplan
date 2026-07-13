@@ -481,13 +481,12 @@ struct PlaceOpeningBanner: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: kind == .door ? "door.left.hand.open" : "rectangle.split.2x1")
+            Image(systemName: kind.systemImage)
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(BrandColor.primary)
 
-            Text(kind == .door
-                 ? String(localized: "drawing.banner.door",   defaultValue: "Tap a wall to add a door")
-                 : String(localized: "drawing.banner.window", defaultValue: "Tap a wall to add a window"))
+            Text(String(localized: "drawing.banner.opening",
+                        defaultValue: "Tap a wall to add: \(kind.localizedName)"))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
 
@@ -609,6 +608,12 @@ struct DrawingToolbar: View {
                 openingButton(kind: .door,
                               icon: "door.left.hand.open",
                               label: String(localized: "drawing.toolbar.door",      defaultValue: "Door"))
+                openingButton(kind: .slidingDoor,
+                              icon: "door.sliding.right.hand.closed",
+                              label: String(localized: "drawing.toolbar.slidingDoor", defaultValue: "Sliding"))
+                openingButton(kind: .frenchDoor,
+                              icon: "door.french.open",
+                              label: String(localized: "drawing.toolbar.frenchDoor", defaultValue: "French"))
                 openingButton(kind: .window,
                               icon: "rectangle.split.2x1",
                               label: String(localized: "drawing.toolbar.window",    defaultValue: "Window"))
