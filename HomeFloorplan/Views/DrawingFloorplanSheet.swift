@@ -281,6 +281,8 @@ struct DrawingFloorplanSheet: View {
                    let wall = document.wall(for: id) {
                     WallInspectorPanel(wall: wall) { newGridUnits in
                         resizeWall(id: id, toGridUnits: newGridUnits)
+                    } onSetGeometry: { lengthPt, angleRadians in
+                        setWallGeometry(id: id, lengthPt: lengthPt, angleRadians: angleRadians)
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -797,6 +799,21 @@ struct DrawingFloorplanSheet: View {
             CGPoint(x: wall.start.x + newLength * ux,
                     y: wall.start.y + newLength * uy)
         )
+    }
+
+    /// Sets the exact wall geometry from numeric input: length in canvas points
+    /// and direction in canvas radians, rotating around the start point.
+    /// No grid snapping — this is the precision path.
+    private func setWallGeometry(id: UUID, lengthPt: CGFloat, angleRadians: Double) {
+        guard let idx = document.walls.firstIndex(where: { $0.id == id }) else { return }
+        pushUndo()
+        let start = document.walls[idx].start
+        let side = DrawingDocument.canvasSize
+        let end = CGPoint(x: start.x + cos(angleRadians) * lengthPt,
+                          y: start.y + sin(angleRadians) * lengthPt)
+        document.walls[idx].end = CGPoint(x: min(max(end.x, 0), side),
+                                          y: min(max(end.y, 0), side))
+        selection = .wall(id)
     }
 
     // MARK: - Wall body movement

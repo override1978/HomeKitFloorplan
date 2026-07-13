@@ -1291,9 +1291,15 @@ struct WallInspectorPanel: View {
     let wall: WallSegment
     /// Called with the new length in grid units (each unit = 20 pt = 20 cm).
     var onResize: (Int) -> Void
+    /// Called with the exact new geometry: length in canvas points and the
+    /// direction angle in canvas radians. Rotates/resizes around the start point.
+    var onSetGeometry: (CGFloat, Double) -> Void
 
     @AppStorage(DimensionUnit.appStorageKey)
     private var dimensionUnitRaw: String = DimensionUnit.metric.rawValue
+
+    @State private var lengthInput: Double = 0
+    @State private var angleInput: Double = 0
 
     private var dimensionUnit: DimensionUnit {
         DimensionUnit(rawValue: dimensionUnitRaw) ?? .metric
@@ -1301,6 +1307,33 @@ struct WallInspectorPanel: View {
 
     private var gridUnits: Int {
         max(1, Int(round(wall.length / DrawingDocument.gridSpacing)))
+    }
+
+    /// Wall length expressed in the user's unit (metres or decimal feet).
+    private var currentLengthInUnit: Double {
+        let meters = Double(wall.length / DrawingDocument.ptsPerMeter)
+        return dimensionUnit == .metric ? meters : meters / 0.3048
+    }
+
+    /// Direction angle in protractor convention (counterclockwise positive,
+    /// 0° pointing right), folded to [0, 360).
+    private var currentAngleDegrees: Double {
+        let deg = -atan2(Double(wall.end.y - wall.start.y),
+                         Double(wall.end.x - wall.start.x)) * 180 / .pi
+        return (deg < 0 ? deg + 360 : deg)
+    }
+
+    private func applyGeometry() {
+        let meters = dimensionUnit == .metric ? lengthInput : lengthInput * 0.3048
+        let lengthPt = CGFloat(meters) * DrawingDocument.ptsPerMeter
+        guard lengthPt >= 5 else { return }
+        let angleRadians = -angleInput * .pi / 180
+        onSetGeometry(lengthPt, angleRadians)
+    }
+
+    private func refreshInputs() {
+        lengthInput = (currentLengthInUnit * 100).rounded() / 100
+        angleInput = (currentAngleDegrees * 10).rounded() / 10
     }
 
     private var kindLabel: String {
@@ -1312,35 +1345,85 @@ struct WallInspectorPanel: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "ruler")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(BrandColor.primary)
-                .frame(width: 28)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Image(systemName: "ruler")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(BrandColor.primary)
+                    .frame(width: 28)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(dimensionUnit.format(pt: wall.length))
-                    .font(.subheadline.weight(.semibold))
-                    .monospacedDigit()
-                Text(kindLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(dimensionUnit.format(pt: wall.length))
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                    Text(kindLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Stepper(
+                    value: Binding(get: { gridUnits }, set: { onResize($0) }),
+                    in: 1...100,
+                    step: 1
+                ) { EmptyView() }
+                .labelsHidden()
             }
 
-            Spacer()
+            // Precise geometry input: length in the current unit + protractor angle.
+            HStack(spacing: 10) {
+                HStack(spacing: 3) {
+                    TextField("", value: $lengthInput, format: .number.precision(.fractionLength(0...2)))
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 64)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                        .onSubmit(applyGeometry)
+                    Text(dimensionUnit == .metric ? "m" : "ft")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
-            Stepper(
-                value: Binding(get: { gridUnits }, set: { onResize($0) }),
-                in: 1...100,
-                step: 1
-            ) { EmptyView() }
-            .labelsHidden()
+                HStack(spacing: 3) {
+                    TextField("", value: $angleInput, format: .number.precision(.fractionLength(0...1)))
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 52)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                        .onSubmit(applyGeometry)
+                    Text("°")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    applyGeometry()
+                } label: {
+                    Text(String(localized: "drawing.inspector.wall.apply", defaultValue: "Set"))
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(BrandColor.primary.opacity(0.12), in: Capsule())
+                        .foregroundStyle(BrandColor.primary)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+            }
+            .monospacedDigit()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
+        .onAppear { refreshInputs() }
+        .onChange(of: wall) { _, _ in refreshInputs() }
     }
 }
 
