@@ -57,6 +57,18 @@ enum DrawingVisualExportStyle: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - DrawingSessionDraft
+
+/// Crash-recovery draft. The drawing lives only in `@State` until "Done", so
+/// the session is persisted whenever the app leaves the foreground and offered
+/// back the next time the editor opens on the same base document.
+private struct DrawingSessionDraft: Codable {
+    var base: DrawingDocument
+    var draft: DrawingDocument
+
+    static let defaultsKey = "drawing.sessionDraft.v1"
+}
+
 // MARK: - DrawingFloorplanSheet
 
 /// Full-screen 2D drawing editor.
@@ -83,12 +95,17 @@ struct DrawingFloorplanSheet: View {
 
     @State private var document: DrawingDocument
 
+    /// Snapshot of the document the editor was opened with — the reference for
+    /// draft matching and "has anything changed" checks.
+    private let initialDocumentSnapshot: DrawingDocument
+
     init(initialDocument: DrawingDocument? = nil,
          initialExteriorFillColorIndex: Int = -1,
          initialVisualExportStyle: DrawingVisualExportStyle = .standard,
          initialExportRotation: DrawingExportRotation = .asDrawn,
          onComplete: @escaping (UIImage, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle, DrawingExportRotation) -> Void) {
         self.onComplete = onComplete
+        self.initialDocumentSnapshot = initialDocument ?? DrawingDocument()
         _document = State(initialValue: initialDocument ?? DrawingDocument())
         _exteriorFillColorIndex = State(initialValue: initialExteriorFillColorIndex)
         _exportRotation = State(initialValue: initialExportRotation)
@@ -132,6 +149,12 @@ struct DrawingFloorplanSheet: View {
     // MARK: Alert for cancel confirmation
 
     @State private var showCancelConfirm = false
+
+    // MARK: Session draft (crash recovery)
+
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var draftToRestore: DrawingDocument?
+    @State private var showDraftRestoreDialog = false
     @State private var isExporting = false
     @State private var showHelpSheet = false
     @State private var showNoLinkedRoomsConfirm = false
@@ -362,8 +385,32 @@ struct DrawingFloorplanSheet: View {
         .confirmationDialog(String(localized: "drawing.cancelDialog.title", defaultValue: "Cancel drawing?"),
                             isPresented: $showCancelConfirm,
                             titleVisibility: .visible) {
-            Button(String(localized: "drawing.cancelDialog.discard", defaultValue: "Discard drawing"), role: .destructive) { dismiss() }
+            Button(String(localized: "drawing.cancelDialog.discard", defaultValue: "Discard drawing"), role: .destructive) {
+                clearSessionDraft()
+                dismiss()
+            }
             Button(String(localized: "drawing.cancelDialog.continue", defaultValue: "Continue drawing"), role: .cancel) {}
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { saveSessionDraftIfNeeded() }
+        }
+        .onAppear { checkForSessionDraft() }
+        .confirmationDialog(String(localized: "drawing.draftDialog.title", defaultValue: "Resume unsaved drawing?"),
+                            isPresented: $showDraftRestoreDialog,
+                            titleVisibility: .visible) {
+            Button(String(localized: "drawing.draftDialog.resume", defaultValue: "Resume draft")) {
+                if let draft = draftToRestore {
+                    undoStack.append(document)
+                    document = draft
+                }
+                draftToRestore = nil
+            }
+            Button(String(localized: "drawing.draftDialog.discard", defaultValue: "Delete draft"), role: .destructive) {
+                clearSessionDraft()
+                draftToRestore = nil
+            }
+        } message: {
+            Text(String(localized: "drawing.draftDialog.message", defaultValue: "A drawing session was interrupted before it was saved."))
         }
         .confirmationDialog(String(localized: "drawing.noRoomsDialog.title", defaultValue: "No HomeKit rooms linked"),
                             isPresented: $showNoLinkedRoomsConfirm,
@@ -692,6 +739,35 @@ struct DrawingFloorplanSheet: View {
         selection = .furniture(id)
     }
 
+    // MARK: - Session draft (crash recovery)
+
+    private func saveSessionDraftIfNeeded() {
+        guard document != initialDocumentSnapshot else {
+            clearSessionDraft()
+            return
+        }
+        let draft = DrawingSessionDraft(base: initialDocumentSnapshot, draft: document)
+        if let data = try? JSONEncoder().encode(draft) {
+            UserDefaults.standard.set(data, forKey: DrawingSessionDraft.defaultsKey)
+        }
+    }
+
+    private func clearSessionDraft() {
+        UserDefaults.standard.removeObject(forKey: DrawingSessionDraft.defaultsKey)
+    }
+
+    /// Offers to restore an interrupted session, but only when the saved draft
+    /// belongs to the same base document this editor was opened with — a draft
+    /// from another floorplan must never leak in.
+    private func checkForSessionDraft() {
+        guard let data = UserDefaults.standard.data(forKey: DrawingSessionDraft.defaultsKey),
+              let saved = try? JSONDecoder().decode(DrawingSessionDraft.self, from: data),
+              saved.base == initialDocumentSnapshot,
+              saved.draft != document else { return }
+        draftToRestore = saved.draft
+        showDraftRestoreDialog = true
+    }
+
     // MARK: - Wall endpoint movement
 
     /// Called repeatedly while the user drags a wall endpoint.
@@ -814,6 +890,7 @@ struct DrawingFloorplanSheet: View {
                 visualStyle: visualExportStyle,
                 exportRotation: exportRotation
             )
+            clearSessionDraft()
             onComplete(image, linkedRooms, document, exteriorFillColorIndex, visualExportStyle, exportRotation)
             dismiss()
         }
