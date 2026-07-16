@@ -1177,12 +1177,11 @@ struct FloorplanEditorView: View {
     private func markerView(item: FloorplanMarkerRenderItem,
                             in imageRect: CGRect,
                             collisionOffset: CGSize) -> some View {
-        let placed = item.placed
         let basePoint = CGPoint(
-            x: imageRect.origin.x + placed.position.x * imageRect.width,
-            y: imageRect.origin.y + placed.position.y * imageRect.height
+            x: imageRect.origin.x + item.position.x * imageRect.width,
+            y: imageRect.origin.y + item.position.y * imageRect.height
         )
-        let delta = dragDeltas[placed.id] ?? .zero
+        let delta = dragDeltas[item.id] ?? .zero
         let livePoint = CGPoint(x: basePoint.x + delta.width,
                                 y: basePoint.y + delta.height)
         let displayPoint = CGPoint(
@@ -1211,20 +1210,20 @@ struct FloorplanEditorView: View {
         .gesture(
             isEditing
             ? nil
-            : markerInteractionGesture(for: placed, accessory: item.accessory, adapter: item.adapter)
+            : markerInteractionGesture(for: item.id, accessory: item.accessory, adapter: item.adapter)
         )
         .simultaneousGesture(
             isEditing
             ? TapGesture()
                 .onEnded {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        selectedMarkerID = (selectedMarkerID == placed.id) ? nil : placed.id
+                        selectedMarkerID = (selectedMarkerID == item.id) ? nil : item.id
                     }
                 }
             : nil
         )
         .gesture(
-            isEditing ? dragGesture(for: placed, imageRect: imageRect) : nil
+            isEditing ? dragGesture(for: item.id, position: item.position, imageRect: imageRect) : nil
         )
     }
 
@@ -1259,7 +1258,7 @@ struct FloorplanEditorView: View {
         )
     }
 
-    private func markerInteractionGesture(for placed: PlacedAccessory,
+    private func markerInteractionGesture(for markerID: UUID,
                                           accessory: HMAccessory?,
                                           adapter: (any AccessoryAdapter)?) -> some Gesture {
         LongPressGesture(minimumDuration: 0.42, maximumDistance: 64)
@@ -1272,7 +1271,7 @@ struct FloorplanEditorView: View {
                         controllingAccessory = accessory
                     }
                 case .second:
-                    handleTap(on: placed, accessory: accessory, adapter: adapter)
+                    handleTap(on: markerID, accessory: accessory, adapter: adapter)
                 }
             }
     }
@@ -1285,14 +1284,14 @@ struct FloorplanEditorView: View {
         case .missingHomeKitAccessory, .duplicateMarker:
             pendingDelete = placed
         case .outsideLinkedRoom:
-            recenterMarker(placed)
+            recenterMarker(id: placed.id)
         case .roomLinkMismatch:
-            alignMarkerRoomLink(placed)
+            alignMarkerRoomLink(id: placed.id)
         }
     }
 
-    private func alignMarkerRoomLink(_ placed: PlacedAccessory) {
-        markerEditingCoordinator.alignMarkerRoomLink(placed)
+    private func alignMarkerRoomLink(id markerID: UUID) {
+        markerEditingCoordinator.alignMarkerRoomLink(id: markerID)
     }
 
     private func markerCollisionOffsets(in imageRect: CGRect) -> [UUID: CGSize] {
@@ -1339,13 +1338,13 @@ struct FloorplanEditorView: View {
     
     // MARK: - Tap handling
     
-    private func handleTap(on placed: PlacedAccessory,
+    private func handleTap(on markerID: UUID,
                            accessory: HMAccessory?,
                            adapter: (any AccessoryAdapter)?) {
         guard !isEditing else { return }
         guard let accessory else { return }
 
-        if suppressNextMarkerTapID == placed.id {
+        if suppressNextMarkerTapID == markerID {
             suppressNextMarkerTapID = nil
             return
         }
@@ -1354,7 +1353,7 @@ struct FloorplanEditorView: View {
 
         // Tap: toggle diretto se supportato, altrimenti apre il pannello dettaglio.
         if let adapter, adapter.supportsQuickToggle {
-            performQuickToggle(adapter: adapter, markerID: placed.id)
+            performQuickToggle(adapter: adapter, markerID: markerID)
         } else {
             controllingAccessory = accessory
         }
@@ -1391,12 +1390,13 @@ struct FloorplanEditorView: View {
     
     // MARK: - Drag dei marker
     
-    private func dragGesture(for placed: PlacedAccessory,
+    private func dragGesture(for markerID: UUID,
+                             position: NormalizedPoint,
                              imageRect: CGRect) -> some Gesture {
         DragGesture()
             .onChanged { value in
                 let s = effectiveScale
-                dragDeltas[placed.id] = CGSize(
+                dragDeltas[markerID] = CGSize(
                     width: value.translation.width / s,
                     height: value.translation.height / s
                 )
@@ -1405,8 +1405,8 @@ struct FloorplanEditorView: View {
                 let s = effectiveScale
                 let tx = value.translation.width / s
                 let ty = value.translation.height / s
-                let basePointX = placed.position.x * imageRect.width
-                let basePointY = placed.position.y * imageRect.height
+                let basePointX = position.x * imageRect.width
+                let basePointY = position.y * imageRect.height
                 let newX = basePointX + tx
                 let newY = basePointY + ty
                 
@@ -1414,9 +1414,9 @@ struct FloorplanEditorView: View {
                     x: max(0, min(1, newX / imageRect.width)),
                     y: max(0, min(1, newY / imageRect.height))
                 )
-                markerEditingCoordinator.moveMarker(placed, to: normalized)
+                markerEditingCoordinator.moveMarker(id: markerID, to: normalized)
                 
-                dragDeltas[placed.id] = .zero
+                dragDeltas[markerID] = .zero
             }
     }
 
@@ -1442,16 +1442,20 @@ struct FloorplanEditorView: View {
     }
 
     private func deleteMarker(_ placed: PlacedAccessory) {
-        markerEditingCoordinator.deleteMarker(placed)
+        markerEditingCoordinator.deleteMarker(id: placed.id)
         selectedMarkerID = nil
     }
 
     private func recenterMarker(_ placed: PlacedAccessory) {
-        markerEditingCoordinator.recenterMarker(placed)
+        recenterMarker(id: placed.id)
+    }
+
+    private func recenterMarker(id markerID: UUID) {
+        markerEditingCoordinator.recenterMarker(id: markerID)
     }
 
     private func applyRename(to placed: PlacedAccessory, newLabel: String) {
-        markerEditingCoordinator.applyRename(to: placed, newLabel: newLabel)
+        markerEditingCoordinator.applyRename(to: placed.id, newLabel: newLabel)
     }
 
     private func backfillMarkerRoomLinksIfNeeded() {

@@ -3,7 +3,10 @@ import HomeKit
 
 struct FloorplanMarkerRenderItem: Identifiable {
     let id: UUID
-    let placed: PlacedAccessory
+    let homeKitAccessoryUUID: UUID
+    let position: NormalizedPoint
+    let linkedRoomUUID: UUID?
+    let customLabel: String?
     let accessory: HMAccessory?
     let adapter: (any AccessoryAdapter)?
     let displayLabel: String
@@ -15,7 +18,11 @@ struct FloorplanMarkerRenderItem: Identifiable {
     let isShaking: Bool
 
     init(
-        placed: PlacedAccessory,
+        id: UUID,
+        homeKitAccessoryUUID: UUID,
+        position: NormalizedPoint,
+        linkedRoomUUID: UUID?,
+        customLabel: String?,
         accessory: HMAccessory?,
         adapter: (any AccessoryAdapter)?,
         displayLabel: String,
@@ -25,12 +32,15 @@ struct FloorplanMarkerRenderItem: Identifiable {
         isExecuting: Bool,
         isShaking: Bool
     ) {
-        self.id = placed.id
-        self.placed = placed
+        self.id = id
+        self.homeKitAccessoryUUID = homeKitAccessoryUUID
+        self.position = position
+        self.linkedRoomUUID = linkedRoomUUID
+        self.customLabel = customLabel
         self.accessory = accessory
         self.adapter = adapter
         self.displayLabel = displayLabel
-        self.hasCustomLabel = placed.customLabel?.isEmpty == false
+        self.hasCustomLabel = customLabel?.isEmpty == false
         self.editIssue = editIssue
         self.allowsCameraSnapshot = allowsCameraSnapshot
         self.isSelected = isSelected

@@ -19,7 +19,11 @@ struct FloorplanMarkerRenderItemBuilder {
         let adapter = accessory.map { AccessoryAdapterFactory.adapter(for: $0, homeKit: homeKit) }
 
         return FloorplanMarkerRenderItem(
-            placed: placed,
+            id: placed.id,
+            homeKitAccessoryUUID: placed.homeKitAccessoryUUID,
+            position: placed.position,
+            linkedRoomUUID: placed.linkedRoomUUID,
+            customLabel: placed.customLabel,
             accessory: accessory,
             adapter: adapter,
             displayLabel: displayLabel(for: placed, accessory: accessory),

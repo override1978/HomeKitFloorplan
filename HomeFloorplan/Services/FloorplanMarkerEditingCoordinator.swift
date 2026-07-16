@@ -43,14 +43,24 @@ struct FloorplanMarkerEditingCoordinator {
     }
 
     func deleteMarker(_ placed: PlacedAccessory) {
+        deleteMarker(id: placed.id)
+    }
+
+    func deleteMarker(id markerID: UUID) {
+        guard let placed = marker(withID: markerID) else { return }
         let uuid = placed.homeKitAccessoryUUID
-        floorplan.accessories.removeAll { $0.id == placed.id }
+        floorplan.accessories.removeAll { $0.id == markerID }
         modelContext.delete(placed)
         saveAndMarkForSync()
         homeKit.stopObserving(accessoryUUIDs: [uuid])
     }
 
     func recenterMarker(_ placed: PlacedAccessory) {
+        recenterMarker(id: placed.id)
+    }
+
+    func recenterMarker(id markerID: UUID) {
+        guard let placed = marker(withID: markerID) else { return }
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             placed.position = .center
         }
@@ -58,6 +68,11 @@ struct FloorplanMarkerEditingCoordinator {
     }
 
     func moveMarker(_ placed: PlacedAccessory, to position: NormalizedPoint) {
+        moveMarker(id: placed.id, to: position)
+    }
+
+    func moveMarker(id markerID: UUID, to position: NormalizedPoint) {
+        guard let placed = marker(withID: markerID) else { return }
         placed.position = position
         placed.linkedRoomUUID = FloorplanRoomMatcher.linkedRoomID(
             containing: position,
@@ -67,12 +82,22 @@ struct FloorplanMarkerEditingCoordinator {
     }
 
     func applyRename(to placed: PlacedAccessory, newLabel: String) {
+        applyRename(to: placed.id, newLabel: newLabel)
+    }
+
+    func applyRename(to markerID: UUID, newLabel: String) {
+        guard let placed = marker(withID: markerID) else { return }
         let trimmed = newLabel.trimmingCharacters(in: .whitespaces)
         placed.customLabel = trimmed.isEmpty ? nil : trimmed
         saveAndMarkForSync()
     }
 
     func alignMarkerRoomLink(_ placed: PlacedAccessory) {
+        alignMarkerRoomLink(id: placed.id)
+    }
+
+    func alignMarkerRoomLink(id markerID: UUID) {
+        guard let placed = marker(withID: markerID) else { return }
         guard let roomID = FloorplanRoomMatcher.linkedRoomID(
             containing: placed.position,
             in: floorplan.linkedRooms
@@ -187,6 +212,10 @@ struct FloorplanMarkerEditingCoordinator {
         floorplan.updatedAt = .now
         try? modelContext.save()
         cloudKitSync.markFloorplanNeedsSync(floorplan.id)
+    }
+
+    private func marker(withID markerID: UUID) -> PlacedAccessory? {
+        floorplan.accessories.first { $0.id == markerID }
     }
 
     private func rotatedLocalPoint(x: Double, y: Double, quarterTurns: Int) -> (x: Double, y: Double) {
