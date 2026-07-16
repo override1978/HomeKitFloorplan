@@ -60,11 +60,7 @@ struct FloorplanEditorView: View {
     @AppStorage("floorplan.help.hasSeen.v1")
     private var hasSeenFloorplanHelp = false
     
-    // Zoom & pan state
-    @State private var zoomScale: CGFloat = 1.0
-    @State private var zoomOffset: CGSize = .zero
-    @State private var liveScale: CGFloat = 1.0
-    @State private var liveOffset: CGSize = .zero
+    @State private var viewport = FloorplanViewportState()
     
     // Auto-hide controls
     @State private var controlsVisible: Bool = true
@@ -178,12 +174,11 @@ struct FloorplanEditorView: View {
     }
     
     private var effectiveScale: CGFloat {
-        zoomScale * liveScale
+        viewport.effectiveScale
     }
     
     private var effectiveOffset: CGSize {
-        CGSize(width: zoomOffset.width + liveOffset.width,
-               height: zoomOffset.height + liveOffset.height)
+        viewport.effectiveOffset
     }
     
     private var shouldShowControls: Bool {
@@ -1225,85 +1220,25 @@ struct FloorplanEditorView: View {
     private func zoomPanGesture(in container: CGSize) -> some Gesture {
         let magnify = MagnificationGesture()
             .onChanged { value in
-                liveScale = value
+                viewport.updateLiveScale(value)
             }
             .onEnded { value in
-                zoomScale = clampedScale(zoomScale * value)
-                liveScale = 1.0
-                if zoomScale <= 1.01 {
-                    withAnimation(.spring(response: 0.4)) {
-                        zoomScale = 1.0
-                        zoomOffset = .zero
-                    }
-                }
-                saveZoom()
+                viewport.finishMagnification(value, floorplanID: floorplan.id)
             }
 
         let drag = DragGesture(minimumDistance: 10)
             .onChanged { value in
-                guard effectiveScale > 1.01 else { return }
-                liveOffset = value.translation
+                viewport.updateLiveOffset(value.translation)
             }
             .onEnded { value in
-                guard zoomScale > 1.01 else {
-                    liveOffset = .zero
-                    return
-                }
-                zoomOffset = CGSize(
-                    width: zoomOffset.width + value.translation.width,
-                    height: zoomOffset.height + value.translation.height
-                )
-                liveOffset = .zero
-                clampOffset(in: container)
-                saveZoom()
+                viewport.finishDrag(value.translation, container: container, floorplanID: floorplan.id)
             }
 
         return magnify.simultaneously(with: drag)
     }
 
-    private func clampedScale(_ scale: CGFloat) -> CGFloat {
-        min(max(scale, 1.0), 4.0)
-    }
-
-    private func clampOffset(in container: CGSize) {
-        let extraW = container.width * (zoomScale - 1) / 2
-        let extraH = container.height * (zoomScale - 1) / 2
-        let maxX = max(0, extraW)
-        let maxY = max(0, extraH)
-
-        let clampedX = min(maxX, max(-maxX, zoomOffset.width))
-        let clampedY = min(maxY, max(-maxY, zoomOffset.height))
-
-        if clampedX != zoomOffset.width || clampedY != zoomOffset.height {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                zoomOffset = CGSize(width: clampedX, height: clampedY)
-            }
-        }
-    }
-
     private func resetZoom() {
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-            zoomScale = 1.0
-            zoomOffset = .zero
-            liveScale = 1.0
-            liveOffset = .zero
-        }
-        saveZoom()
-    }
-
-    // MARK: - Zoom persistence
-
-    /// UserDefaults keys are scoped to the floorplan UUID so each
-    /// planimetria remembers its own zoom and pan state independently.
-    private var zoomScaleKey:   String { "zoom_scale_\(floorplan.id.uuidString)" }
-    private var zoomOffsetXKey: String { "zoom_offsetX_\(floorplan.id.uuidString)" }
-    private var zoomOffsetYKey: String { "zoom_offsetY_\(floorplan.id.uuidString)" }
-
-    private func saveZoom() {
-        let ud = UserDefaults.standard
-        ud.set(Double(zoomScale),        forKey: zoomScaleKey)
-        ud.set(Double(zoomOffset.width), forKey: zoomOffsetXKey)
-        ud.set(Double(zoomOffset.height),forKey: zoomOffsetYKey)
+        viewport.reset(floorplanID: floorplan.id)
     }
 
     private func refreshFloorplanImageCache() {
@@ -1370,17 +1305,7 @@ struct FloorplanEditorView: View {
     }
 
     private func restoreZoom() {
-        let ud = UserDefaults.standard
-        guard ud.object(forKey: zoomScaleKey) != nil else { return }
-        // Disable animations so the zoom/offset snap to the saved state without animating
-        // from the default values (scale 1.0, offset .zero).
-        withTransaction(Transaction(animation: nil)) {
-            zoomScale  = CGFloat(ud.double(forKey: zoomScaleKey))
-            zoomOffset = CGSize(
-                width:  CGFloat(ud.double(forKey: zoomOffsetXKey)),
-                height: CGFloat(ud.double(forKey: zoomOffsetYKey))
-            )
-        }
+        viewport.restore(floorplanID: floorplan.id)
     }
     
     // MARK: - Image rect
