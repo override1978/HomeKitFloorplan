@@ -470,30 +470,23 @@ struct FloorplanEditorView: View {
             initialVisualExportStyle: DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard,
             initialExportRotation: floorplan.drawingExportRotation
         ) { image, rooms, doc, colorIndex, visualStyle, exportRotation in
-            let previousRooms = floorplan.linkedRooms
-            let previousRotation = floorplan.drawingExportRotation
-            if let newData = image.jpegData(compressionQuality: 0.85) {
-                floorplan.imageData = newData
-            }
-            floorplan.drawingDocument = doc
-            floorplan.exteriorFillColorIndex = colorIndex
-            floorplan.drawingVisualExportStyleRaw = visualStyle.rawValue
-            floorplan.drawingExportRotation = exportRotation
-            if !rooms.isEmpty {
-                markerEditingCoordinator.preserveMarkerPositions(
-                    from: previousRooms,
-                    to: rooms,
-                    previousRotation: previousRotation,
-                    newRotation: exportRotation
+            applyDrawingUpdate(
+                FloorplanDrawingUpdate(
+                    image: image,
+                    rooms: rooms,
+                    document: doc,
+                    exteriorFillColorIndex: colorIndex,
+                    visualStyle: visualStyle,
+                    exportRotation: exportRotation
                 )
-                floorplan.linkedRooms = rooms
-            }
-            floorplan.updatedAt = .now
-            try? modelContext.save()
-            cloudKitSync.markFloorplanNeedsSync(floorplan.id)
-            imageLoader.refresh(for: floorplan)
-            refreshOverlayContext()
+            )
         }
+    }
+
+    private func applyDrawingUpdate(_ update: FloorplanDrawingUpdate) {
+        drawingUpdateCoordinator.apply(update)
+        imageLoader.refresh(for: floorplan)
+        refreshOverlayContext()
     }
     
     // MARK: - Chrome lifecycle
@@ -763,6 +756,15 @@ struct FloorplanEditorView: View {
             cloudKitSync: cloudKitSync,
             homeKit: homeKit,
             iconOverrides: iconOverrides
+        )
+    }
+
+    private var drawingUpdateCoordinator: FloorplanDrawingUpdateCoordinator {
+        FloorplanDrawingUpdateCoordinator(
+            floorplan: floorplan,
+            modelContext: modelContext,
+            cloudKitSync: cloudKitSync,
+            markerEditingCoordinator: markerEditingCoordinator
         )
     }
 
