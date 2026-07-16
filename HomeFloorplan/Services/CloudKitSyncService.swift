@@ -39,6 +39,7 @@ final class CloudKitSyncService {
     private static let markerBackfillQueuedKey = "cloudkit.markerBackfillQueued.v2"
     private static let markerIdentityCacheKey = "cloudkit.markerIdentityCache.v1"
     private static let automaticMasterClaimCompletedKey = "cloudkit.automaticMasterClaimCompleted.v1"
+    private static let serverEtagPreflightRecordNamesKey = "cloudkit.serverEtagPreflightRecordNames.v1"
     private static let securityMonitoredAccessoriesField = "securityMonitoredAccessoriesJSON"
     private static let syncedUserPreferenceFields: [String: UserPreferenceField] = [
         "prefMarkerSizeRaw": .string(MarkerSize.appStorageKey),
@@ -129,6 +130,13 @@ final class CloudKitSyncService {
     /// Server records (with correct etag) cached after a serverRecordChanged conflict.
     /// Written by handleSentChanges; consumed once by buildCKRecord on the retry batch.
     private var conflictResolutionRecords: [CKRecord.ID: CKRecord] = [:]
+
+    /// Record names that must be rebuilt from the server record first so the save carries
+    /// CloudKit's current recordChangeTag. Persisted because CKSyncEngine can retry after app relaunch.
+    private var serverEtagPreflightRecordNames: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: Self.serverEtagPreflightRecordNamesKey) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue), forKey: Self.serverEtagPreflightRecordNamesKey) }
+    }
 
     /// UUIDs of SensorAlertThreshold records successfully uploaded to (or downloaded from) CloudKit.
     /// Prevents re-queuing already-synced thresholds on every launch which causes "record to insert
@@ -1248,6 +1256,7 @@ private extension CloudKitSyncService {
             var retryChanges: [CKSyncEngine.PendingRecordZoneChange] = []
             for failure in conflictFailures {
                 let recordID = failure.record.recordID
+                serverEtagPreflightRecordNames.insert(recordID.recordName)
                 guard let serverRecord = failure.error.serverRecord else {
                     retryChanges.append(.saveRecord(recordID))
                     continue
@@ -1275,6 +1284,8 @@ private extension CloudKitSyncService {
             for record in e.savedRecords {
                 descriptor(for: record.recordID)?.markSavedRecord(record)
             }
+            let savedRecordNames = Set(e.savedRecords.map(\.recordID.recordName))
+            serverEtagPreflightRecordNames.subtract(savedRecordNames)
         }
         markSyncCompleted()
         let savedTypes = Dictionary(grouping: e.savedRecords.map(\.recordType), by: { $0 })
@@ -1316,11 +1327,33 @@ private extension CloudKitSyncService {
             return resolved
         }
         let ctx = ModelContext(modelContainer)
+
+        if shouldPreflightServerRecord(for: recordID),
+           let serverRecord = await fetchServerRecord(for: recordID) {
+            applyLocalFields(to: serverRecord, context: ctx)
+            return serverRecord
+        }
+
         guard let descriptor = descriptor(for: recordID),
               let localRecord = descriptor.buildRecord(recordID, ctx)
         else { return nil }
 
         return localRecord
+    }
+
+    func shouldPreflightServerRecord(for recordID: CKRecord.ID) -> Bool {
+        recordID.recordName.hasPrefix(Self.floorplanPrefix)
+            || serverEtagPreflightRecordNames.contains(recordID.recordName)
+    }
+
+    func fetchServerRecord(for recordID: CKRecord.ID) async -> CKRecord? {
+        do {
+            let database = CKContainer(identifier: Self.containerID).privateCloudDatabase
+            return try await database.record(for: recordID)
+        } catch {
+            dprint("[CloudKitSync] ⚠️ Server etag preflight fetch failed \(recordID.recordName): \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// Overlays local SwiftData field values onto a server-provided CKRecord,
