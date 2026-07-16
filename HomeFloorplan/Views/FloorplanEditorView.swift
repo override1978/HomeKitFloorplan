@@ -78,12 +78,7 @@ struct FloorplanEditorView: View {
     /// Shared environment view model used by both the overlay layer and the context panel.
     @State private var overlayEnvVM = EnvironmentViewModel()
 
-    /// Cached floorplan image — loaded once on appear and when the floorplan is updated.
-    /// Avoids repeated decoding on every body re-evaluation.
-    @State private var cachedFloorplanImage: UIImage?
-    @State private var cachedFloorplanImageDate: Date = .distantPast
-    /// True while the image is being loaded from disk — prevents the "not available" state flash.
-    @State private var isLoadingImage: Bool = false
+    @State private var imageCache = FloorplanImageCacheState()
 
     /// Cached overlay context — recomputed only when HomeKit accessories change.
     @State private var cachedOverlayContext: FloorplanOverlayContext = .none
@@ -216,7 +211,7 @@ struct FloorplanEditorView: View {
                 floorplanBackgroundColor
                     .ignoresSafeArea()
 
-                if let image = cachedFloorplanImage {
+                if let image = imageCache.image {
                     imageWithMarkers(image: image, container: proxy.size)
                         .scaleEffect(effectiveScale, anchor: .center)
                         // Sposta l'immagine verso il basso di metà dell'altezza della top bar,
@@ -227,7 +222,7 @@ struct FloorplanEditorView: View {
                         ))
                         .gesture(viewportController.zoomPanGesture(in: proxy.size))
                         .transition(.opacity)
-                } else if isLoadingImage {
+                } else if imageCache.isLoading {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -358,7 +353,7 @@ struct FloorplanEditorView: View {
             }
         }
         .fullScreenCover(item: $drawingEditFloorplan, onDismiss: {
-            refreshFloorplanImageCache()
+            imageLoader.refresh(for: floorplan)
             refreshOverlayContext()
             accessoryObservationCoordinator.subscribe(to: floorplan)
         }) { editingFloorplan in
@@ -397,7 +392,7 @@ struct FloorplanEditorView: View {
                 scheduleAutoHide()
             }
             // Warm up caches
-            refreshFloorplanImageCache()
+            imageLoader.refresh(for: floorplan)
             backfillMarkerRoomLinksIfNeeded()
             refreshOverlayContext()
             showFloorplanHelpIfNeeded()
@@ -426,7 +421,7 @@ struct FloorplanEditorView: View {
             refreshOverlayContext()
         }
         .onChange(of: floorplan.updatedAt) { _, _ in
-            refreshFloorplanImageCache()
+            imageLoader.refresh(for: floorplan)
         }
         .onReceive(NotificationCenter.default.publisher(for: .floorplansDidApplyRemoteChanges)) { notification in
             handleFloorplanRemoteChanges(notification)
@@ -801,7 +796,7 @@ struct FloorplanEditorView: View {
             floorplan.updatedAt = .now
             try? modelContext.save()
             cloudKitSync.markFloorplanNeedsSync(floorplan.id)
-            refreshFloorplanImageCache()
+            imageLoader.refresh(for: floorplan)
             refreshOverlayContext()
         }
     }
@@ -872,7 +867,7 @@ struct FloorplanEditorView: View {
         let adjustedY = (tapLocation.y - centerY - visualYOffset) / effectiveScale + centerY
 
         // Compute the content rect from the cached image to avoid disk I/O on every tap.
-        guard let image = cachedFloorplanImage else { return }
+        guard let image = imageCache.image else { return }
         let imgRect = imageRect(imageSize: image.size, container: containerSize)
         let helper = FloorplanCoordinateHelper(imageRect: imgRect)
 
@@ -900,32 +895,11 @@ struct FloorplanEditorView: View {
         viewportController.reset()
     }
 
-    private func refreshFloorplanImageCache() {
-        let stamp = floorplan.updatedAt
-        guard stamp != cachedFloorplanImageDate || cachedFloorplanImage == nil else { return }
-        cachedFloorplanImageDate = stamp
-        let data = floorplan.currentImageData
-        guard let data else {
-            isLoadingImage = false
-            return
-        }
-        isLoadingImage = true
-        Task {
-            let image = await Task.detached(priority: .userInitiated) {
-                UIImage(data: data)
-            }.value
-            withAnimation(.easeIn(duration: 0.2)) {
-                cachedFloorplanImage = image
-                isLoadingImage = false
-            }
-        }
-    }
-
     private func handleFloorplanRemoteChanges(_ notification: Notification) {
         SyncDiagnosticsLogger.log(
             "Editor observed floorplan remote-change floorplan=\(floorplan.id.uuidString) markers=\(floorplan.accessories.count)"
         )
-        refreshFloorplanImageCache()
+        imageLoader.refresh(for: floorplan)
         refreshOverlayContext()
         accessoryObservationCoordinator.subscribe(to: floorplan)
     }
@@ -1166,6 +1140,10 @@ struct FloorplanEditorView: View {
 
     private var viewportController: FloorplanViewportController {
         FloorplanViewportController(viewport: $viewport, floorplanID: floorplan.id)
+    }
+
+    private var imageLoader: FloorplanImageLoader {
+        FloorplanImageLoader(cache: $imageCache)
     }
 
     private func markerInteractionGesture(for markerID: UUID,
