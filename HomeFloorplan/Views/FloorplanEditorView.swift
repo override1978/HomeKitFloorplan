@@ -173,7 +173,7 @@ struct FloorplanEditorView: View {
     }
     
     private var shouldShowControls: Bool {
-        isEditing || controlsVisible
+        chromeController.shouldShowControls(isEditing: isEditing)
     }
 
     private var shouldSuppressIdleScreensaver: Bool {
@@ -345,11 +345,10 @@ struct FloorplanEditorView: View {
             )
         }
         .sheet(isPresented: $showFloorplanHelp, onDismiss: {
-            hasSeenFloorplanHelp = true
+            chromeController.markHelpSeen()
         }) {
             FloorplanHelpSheet {
-                hasSeenFloorplanHelp = true
-                showFloorplanHelp = false
+                chromeController.dismissHelp()
             }
         }
         .fullScreenCover(item: $drawingEditFloorplan, onDismiss: {
@@ -386,16 +385,15 @@ struct FloorplanEditorView: View {
             viewportController.restore()
             if startInEditMode {
                 isEditing = true
-                controlsVisible = true
-                hideTask?.cancel()
+                chromeController.enterEditingMode()
             } else {
-                scheduleAutoHide()
+                chromeController.scheduleAutoHide(isEditing: isEditing)
             }
             // Warm up caches
             imageLoader.refresh(for: floorplan)
             backfillMarkerRoomLinksIfNeeded()
             refreshOverlayContext()
-            showFloorplanHelpIfNeeded()
+            presentHelpIfNeeded()
         }
         .onChange(of: homeKit.isReady) { _, isReady in
             if isReady {
@@ -434,10 +432,9 @@ struct FloorplanEditorView: View {
         }
         .onChange(of: isEditing) { _, newValue in
             if newValue {
-                controlsVisible = true
-                hideTask?.cancel()
+                chromeController.enterEditingMode()
             } else {
-                scheduleAutoHide()
+                chromeController.scheduleAutoHide(isEditing: newValue)
             }
         }
         .onChange(of: homeKit.allAccessories) { _, _ in
@@ -744,8 +741,7 @@ struct FloorplanEditorView: View {
                 showingPicker = true
             },
             onShowHelp: {
-                hasSeenFloorplanHelp = true
-                showFloorplanHelp = true
+                chromeController.showHelpManually()
             },
             onShowDiagnostics: {
                 showFloorplanDiagnostics = true
@@ -801,38 +797,15 @@ struct FloorplanEditorView: View {
         }
     }
     
-    // MARK: - Auto-hide
+    // MARK: - Chrome lifecycle
 
-    private func showFloorplanHelpIfNeeded() {
-        guard !hasSeenFloorplanHelp else { return }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            guard !hasSeenFloorplanHelp,
-                  !showingPicker,
-                  controllingAccessory == nil,
-                  iconPickerTargetID == nil,
-                  !showFloorplanDiagnostics,
-                  !showScenesPanel else { return }
-            showFloorplanHelp = true
-        }
-    }
-    
-    private func scheduleAutoHide() {
-        hideTask?.cancel()
-        guard !isEditing else {
-            controlsVisible = true
-            return
-        }
-        controlsVisible = true
-        hideTask = Task {
-            try? await Task.sleep(nanoseconds: 3_500_000_000)
-            if !Task.isCancelled, !isEditing {
-                await MainActor.run {
-                    withAnimation(.easeInOut(duration: 0.4)) {
-                        controlsVisible = false
-                    }
-                }
-            }
+    private func presentHelpIfNeeded() {
+        chromeController.presentHelpIfNeeded {
+            !showingPicker
+                && controllingAccessory == nil
+                && iconPickerTargetID == nil
+                && !showFloorplanDiagnostics
+                && !showScenesPanel
         }
     }
     
@@ -847,10 +820,7 @@ struct FloorplanEditorView: View {
 
         // 2. Not editing: show controls
         if !isEditing {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                controlsVisible = true
-            }
-            scheduleAutoHide()
+            chromeController.showControlsAndScheduleAutoHide(isEditing: isEditing)
             return
         }
 
@@ -906,7 +876,7 @@ struct FloorplanEditorView: View {
 
     private func handleDisappear() {
         accessoryObservationCoordinator.unsubscribe(from: floorplan)
-        hideTask?.cancel()
+        chromeController.cancelAutoHide()
     }
 
     // MARK: - Image rect
@@ -1102,6 +1072,15 @@ struct FloorplanEditorView: View {
         FloorplanImageLoader(cache: $imageCache)
     }
 
+    private var chromeController: FloorplanInteractionChromeController {
+        FloorplanInteractionChromeController(
+            controlsVisible: $controlsVisible,
+            hideTask: $hideTask,
+            showHelp: $showFloorplanHelp,
+            hasSeenHelp: $hasSeenFloorplanHelp
+        )
+    }
+
     private func markerInteractionGesture(for markerID: UUID,
                                           accessory: HMAccessory?,
                                           adapter: (any AccessoryAdapter)?) -> some Gesture {
@@ -1111,7 +1090,7 @@ struct FloorplanEditorView: View {
                 switch result {
                 case .first:
                     if let accessory {
-                        scheduleAutoHide()
+                        chromeController.scheduleAutoHide(isEditing: isEditing)
                         controllingAccessory = accessory
                     }
                 case .second:
@@ -1194,7 +1173,7 @@ struct FloorplanEditorView: View {
             return
         }
 
-        scheduleAutoHide()
+        chromeController.scheduleAutoHide(isEditing: isEditing)
 
         // Tap: toggle diretto se supportato, altrimenti apre il pannello dettaglio.
         if let adapter, adapter.supportsQuickToggle {
