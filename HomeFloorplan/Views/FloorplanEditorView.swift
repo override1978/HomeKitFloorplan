@@ -1146,24 +1146,7 @@ struct FloorplanEditorView: View {
             return
         }
 
-        let existingByID = Dictionary(uniqueKeysWithValues: floorplan.accessories.map { ($0.id, $0) })
-        var updatedCount = 0
-
-        for snapshot in snapshots {
-            guard let placed = existingByID[snapshot.id] else { continue }
-            if placed.positionX != snapshot.positionX || placed.positionY != snapshot.positionY {
-                updatedCount += 1
-            }
-            placed.positionX = snapshot.positionX
-            placed.positionY = snapshot.positionY
-            placed.linkedRoomUUID = snapshot.linkedRoomUUID
-            placed.customLabel = snapshot.customLabel
-            if let iconOverride = snapshot.iconOverride {
-                iconOverrides.setIcon(iconOverride, for: placed.homeKitAccessoryUUID)
-            } else {
-                iconOverrides.removeIcon(for: placed.homeKitAccessoryUUID)
-            }
-        }
+        let updatedCount = markerEditingCoordinator.reconcileRemoteSnapshots(snapshots)
 
         if updatedCount > 0 {
             SyncDiagnosticsLogger.log(
@@ -1272,7 +1255,8 @@ struct FloorplanEditorView: View {
             floorplan: floorplan,
             modelContext: modelContext,
             cloudKitSync: cloudKitSync,
-            homeKit: homeKit
+            homeKit: homeKit,
+            iconOverrides: iconOverrides
         )
     }
 
@@ -1431,14 +1415,7 @@ struct FloorplanEditorView: View {
                     x: max(0, min(1, newX / imageRect.width)),
                     y: max(0, min(1, newY / imageRect.height))
                 )
-                placed.position = normalized
-                placed.linkedRoomUUID = FloorplanRoomMatcher.linkedRoomID(
-                    containing: normalized,
-                    in: floorplan.linkedRooms
-                )
-                floorplan.updatedAt = .now
-                try? modelContext.save()
-                cloudKitSync.markFloorplanNeedsSync(floorplan.id)
+                markerEditingCoordinator.moveMarker(placed, to: normalized)
                 
                 dragDeltas[placed.id] = .zero
             }
@@ -1479,23 +1456,7 @@ struct FloorplanEditorView: View {
     }
 
     private func backfillMarkerRoomLinksIfNeeded() {
-        guard !floorplan.linkedRooms.isEmpty else { return }
-
-        var didUpdate = false
-        for marker in floorplan.accessories where marker.linkedRoomUUID == nil {
-            guard let roomID = FloorplanRoomMatcher.linkedRoomID(
-                containing: marker.position,
-                in: floorplan.linkedRooms
-            ) else { continue }
-
-            marker.linkedRoomUUID = roomID
-            didUpdate = true
-        }
-
-        if didUpdate {
-            floorplan.updatedAt = .now
-            try? modelContext.save()
-        }
+        markerEditingCoordinator.backfillMarkerRoomLinksIfNeeded()
     }
 
     private func preserveMarkerPositions(on floorplan: Floorplan,

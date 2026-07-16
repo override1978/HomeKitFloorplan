@@ -7,6 +7,7 @@ struct FloorplanMarkerEditingCoordinator {
     let modelContext: ModelContext
     let cloudKitSync: CloudKitSyncService
     let homeKit: HomeKitService
+    let iconOverrides: IconOverrideStore
 
     func normalizedCenter(for room: LinkedRoom) -> NormalizedPoint {
         if let points = room.normalizedPoints, !points.isEmpty {
@@ -56,6 +57,15 @@ struct FloorplanMarkerEditingCoordinator {
         saveAndMarkForSync()
     }
 
+    func moveMarker(_ placed: PlacedAccessory, to position: NormalizedPoint) {
+        placed.position = position
+        placed.linkedRoomUUID = FloorplanRoomMatcher.linkedRoomID(
+            containing: position,
+            in: floorplan.linkedRooms
+        )
+        saveAndMarkForSync()
+    }
+
     func applyRename(to placed: PlacedAccessory, newLabel: String) {
         let trimmed = newLabel.trimmingCharacters(in: .whitespaces)
         placed.customLabel = trimmed.isEmpty ? nil : trimmed
@@ -69,8 +79,61 @@ struct FloorplanMarkerEditingCoordinator {
         ) else { return }
 
         placed.linkedRoomUUID = roomID
-        floorplan.updatedAt = .now
-        try? modelContext.save()
+        saveAndMarkForSync()
+    }
+
+    func backfillMarkerRoomLinksIfNeeded() {
+        guard !floorplan.linkedRooms.isEmpty else { return }
+
+        var didUpdate = false
+        for marker in floorplan.accessories where marker.linkedRoomUUID == nil {
+            guard let roomID = FloorplanRoomMatcher.linkedRoomID(
+                containing: marker.position,
+                in: floorplan.linkedRooms
+            ) else { continue }
+
+            marker.linkedRoomUUID = roomID
+            didUpdate = true
+        }
+
+        if didUpdate {
+            saveAndMarkForSync()
+        }
+    }
+
+    func reconcileRemoteSnapshots(_ snapshots: [PlacedAccessorySnapshot]) -> Int {
+        let existingByID = Dictionary(uniqueKeysWithValues: floorplan.accessories.map { ($0.id, $0) })
+        var updatedCount = 0
+        var didChange = false
+
+        for snapshot in snapshots {
+            guard let placed = existingByID[snapshot.id] else { continue }
+            if placed.positionX != snapshot.positionX || placed.positionY != snapshot.positionY {
+                updatedCount += 1
+                didChange = true
+            }
+            if placed.linkedRoomUUID != snapshot.linkedRoomUUID || placed.customLabel != snapshot.customLabel {
+                didChange = true
+            }
+            if iconOverrides.icon(for: placed.homeKitAccessoryUUID) != snapshot.iconOverride {
+                didChange = true
+            }
+            placed.positionX = snapshot.positionX
+            placed.positionY = snapshot.positionY
+            placed.linkedRoomUUID = snapshot.linkedRoomUUID
+            placed.customLabel = snapshot.customLabel
+            if let iconOverride = snapshot.iconOverride {
+                iconOverrides.setIcon(iconOverride, for: placed.homeKitAccessoryUUID)
+            } else {
+                iconOverrides.removeIcon(for: placed.homeKitAccessoryUUID)
+            }
+        }
+
+        if didChange {
+            try? modelContext.save()
+        }
+
+        return updatedCount
     }
 
     private func saveAndMarkForSync() {
