@@ -953,56 +953,12 @@ struct FloorplanEditorView: View {
     }
 
     private func editRoomInteractionLayer(container: CGSize, imageRect: CGRect) -> some View {
-        let helper = FloorplanCoordinateHelper(imageRect: imageRect)
-
-        return ZStack(alignment: .topLeading) {
-            Canvas { ctx, _ in
-                for room in floorplan.linkedRooms {
-                    let path = helper.overlayPath(for: room)
-                    let isHighlighted = room.hmRoomUUID == editHighlightedRoomID
-                    let fill = isHighlighted
-                        ? BrandColor.primary.opacity(0.18)
-                        : BrandColor.primary.opacity(0.055)
-                    let stroke = isHighlighted
-                        ? BrandColor.primary.opacity(0.72)
-                        : BrandColor.primary.opacity(0.24)
-
-                    ctx.fill(path, with: .color(fill))
-                    ctx.stroke(
-                        path,
-                        with: .color(stroke),
-                        style: StrokeStyle(lineWidth: isHighlighted ? 2.0 : 1.0, dash: [6, 5])
-                    )
-                }
-            }
-            .frame(width: container.width, height: container.height)
-            .allowsHitTesting(false)
-
-            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
-                let center = helper.centroid(for: room)
-                let isHighlighted = room.hmRoomUUID == editHighlightedRoomID
-
-                Text(room.name)
-                    .font(.caption2.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                    .foregroundStyle(isHighlighted ? .white : BrandColor.primary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(isHighlighted ? BrandColor.primary.opacity(0.92) : Color(.systemBackground).opacity(0.78))
-                    )
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(BrandColor.primary.opacity(isHighlighted ? 0.0 : 0.24), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
-                    .position(center)
-                    .allowsHitTesting(false)
-            }
-        }
-        .frame(width: container.width, height: container.height)
+        FloorplanEditRoomLayer(
+            rooms: floorplan.linkedRooms,
+            containerSize: container,
+            imageRect: imageRect,
+            highlightedRoomID: editHighlightedRoomID
+        )
     }
 
     @ViewBuilder
