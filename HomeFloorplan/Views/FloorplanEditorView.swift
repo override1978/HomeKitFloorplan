@@ -790,7 +790,19 @@ struct FloorplanEditorView: View {
 
                 // Scene: visibile solo in modalità Controlli o in editing
                 if !hideEditButton {
-                    floorplanToolsMenu
+                    FloorplanToolsMenu(
+                        isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
+                        onShowHelp: {
+                            hasSeenFloorplanHelp = true
+                            showFloorplanHelp = true
+                        },
+                        onShowDiagnostics: {
+                            showFloorplanDiagnostics = true
+                        },
+                        onEditDrawing: {
+                            drawingEditFloorplan = floorplan
+                        }
+                    )
 
                     Divider().frame(height: 20)
 
@@ -848,40 +860,6 @@ struct FloorplanEditorView: View {
         .opacity(hideEditButton ? 0 : 1)
         .allowsHitTesting(!hideEditButton)
         .animation(.easeInOut(duration: 0.2), value: hideEditButton)
-    }
-
-    private var floorplanToolsMenu: some View {
-        Menu {
-            Button {
-                hasSeenFloorplanHelp = true
-                showFloorplanHelp = true
-            } label: {
-                Label(String(localized: "floorplan.help.open", defaultValue: "Floorplan help"), systemImage: "info.circle")
-            }
-
-            Button {
-                showFloorplanDiagnostics = true
-            } label: {
-                Label(String(localized: "floorplan.diagnostics.open", defaultValue: "Marker diagnostics"), systemImage: "checklist")
-            }
-
-            Button {
-                drawingEditFloorplan = floorplan
-            } label: {
-                Label(String(localized: "floorplan.drawing.edit", defaultValue: "Edit 2D drawing"), systemImage: "pencil.and.ruler")
-            }
-            .disabled(floorplan.drawingDocumentJSON == nil)
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.subheadline)
-                .foregroundStyle(Color.primary.opacity(0.55))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(String(localized: "floorplan.tools.open", defaultValue: "Floorplan tools"))
-        .help(String(localized: "floorplan.tools.open", defaultValue: "Floorplan tools"))
     }
 
     private func drawingEditor(for floorplan: Floorplan) -> some View {

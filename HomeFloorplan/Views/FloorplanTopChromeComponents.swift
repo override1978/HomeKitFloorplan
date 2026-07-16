@@ -161,6 +161,46 @@ struct FloorplanEditModeBanner: View {
     }
 }
 
+struct FloorplanToolsMenu: View {
+    let isDrawingAvailable: Bool
+    let onShowHelp: () -> Void
+    let onShowDiagnostics: () -> Void
+    let onEditDrawing: () -> Void
+
+    var body: some View {
+        Menu {
+            Button {
+                onShowHelp()
+            } label: {
+                Label(String(localized: "floorplan.help.open", defaultValue: "Floorplan help"), systemImage: "info.circle")
+            }
+
+            Button {
+                onShowDiagnostics()
+            } label: {
+                Label(String(localized: "floorplan.diagnostics.open", defaultValue: "Marker diagnostics"), systemImage: "checklist")
+            }
+
+            Button {
+                onEditDrawing()
+            } label: {
+                Label(String(localized: "floorplan.drawing.edit", defaultValue: "Edit 2D drawing"), systemImage: "pencil.and.ruler")
+            }
+            .disabled(!isDrawingAvailable)
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.subheadline)
+                .foregroundStyle(Color.primary.opacity(0.55))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "floorplan.tools.open", defaultValue: "Floorplan tools"))
+        .help(String(localized: "floorplan.tools.open", defaultValue: "Floorplan tools"))
+    }
+}
+
 struct FloorplanTitleMenu: View {
     let currentFloorplan: Floorplan
     let pinnedFloorplans: [Floorplan]
