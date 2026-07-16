@@ -37,12 +37,25 @@ struct MatterEnergyLiveReport {
     let diagnostics: [String]
 }
 
+struct MatterEnergySubscriptionTarget: Identifiable, Hashable {
+    let id: String
+    let accessoryUUIDs: [UUID]
+    let accessoryName: String
+    let manufacturer: String
+    let nodeID: UInt64
+    let powerEndpointID: UInt16?
+    let energyEndpointID: UInt16?
+}
+
 struct MatterEnergyProvider {
+    private static let readQueue = DispatchQueue(label: "HomeFloorplan.MatterEnergy.read", qos: .utility)
+
     private let evePowerCharacteristicType = "E863F10D-079E-48FF-8F27-9C2605A29F52"
     private let eveEnergyCharacteristicTypes = [
         "E863F10C-079E-48FF-8F27-9C2605A29F52",
         "E863F126-079E-48FF-8F27-9C2605A29F52"
     ]
+    private let endpointCache = MatterEnergyEndpointCache()
 
     private let descriptorClusterID = NSNumber(value: 0x0000001D)
     private let serverListAttributeID = NSNumber(value: 0x00000001)
@@ -51,64 +64,73 @@ struct MatterEnergyProvider {
     private let activePowerAttributeID = NSNumber(value: 0x00000008)
     private let cumulativeEnergyImportedAttributeID = NSNumber(value: 0x00000001)
 
+    func discoverMatterEnergyTargets(home: HMHome) async -> [MatterEnergySubscriptionTarget] {
+        let controller = MTRDeviceController.sharedController(
+            withID: home.matterControllerID as NSString,
+            xpcConnect: home.matterControllerXPCConnectBlock
+        )
+        let nodeGroups = matterNodeGroups(in: home)
+        var targets: [MatterEnergySubscriptionTarget] = []
+
+        for nodeGroup in nodeGroups {
+            let device = MTRBaseDevice(nodeID: NSNumber(value: nodeGroup.nodeID), controller: controller)
+            let endpoints: MatterEnergyEndpointSelection
+            if let cachedEndpoints = await endpointCache.endpoints(for: nodeGroup.nodeID) {
+                endpoints = cachedEndpoints
+            } else {
+                let descriptorRead = await readDescriptorServerList(device: device)
+                guard descriptorRead.error == nil else { continue }
+                endpoints = energyEndpoints(from: descriptorRead.values)
+                await endpointCache.store(endpoints, for: nodeGroup.nodeID)
+            }
+
+            guard endpoints.powerEndpointID != nil || endpoints.energyEndpointID != nil else { continue }
+
+            targets.append(MatterEnergySubscriptionTarget(
+                id: nodeGroup.nodeIDText,
+                accessoryUUIDs: nodeGroup.accessories.map(\.uniqueIdentifier),
+                accessoryName: nodeGroup.displayName,
+                manufacturer: manufacturer(for: nodeGroup.primaryAccessory),
+                nodeID: nodeGroup.nodeID,
+                powerEndpointID: endpoints.powerEndpointID,
+                energyEndpointID: endpoints.energyEndpointID
+            ))
+        }
+
+        return targets
+    }
+
     func readLiveEnergy(home: HMHome) async -> MatterEnergyLiveReport {
         let controller = MTRDeviceController.sharedController(
             withID: home.matterControllerID as NSString,
             xpcConnect: home.matterControllerXPCConnectBlock
         )
-        let nodeGroups = Dictionary(grouping: home.accessories.compactMap(NodeAccessory.init(accessory:)), by: \.nodeID)
-            .map { nodeID, nodeAccessories in
-                MatterNodeGroup(nodeID: nodeID, accessories: nodeAccessories.map(\.accessory))
-            }
-            .sorted { lhs, rhs in
-                lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
-            }
+        let nodeGroups = matterNodeGroups(in: home)
 
         var snapshots: [MatterEnergyDeviceSnapshot] = []
         var diagnostics: [String] = []
 
         for nodeGroup in nodeGroups {
             let device = MTRBaseDevice(nodeID: NSNumber(value: nodeGroup.nodeID), controller: controller)
-            let descriptorRead = await readDescriptorServerList(device: device)
-            guard descriptorRead.error == nil else {
-                diagnostics.append("\(nodeGroup.displayName): Descriptor error \(descriptorRead.statusText)")
-                continue
-            }
-
-            let endpointClusters = endpointClusters(from: descriptorRead.values)
-            let powerEndpointID = endpointClusters
-                .filter { $0.value.contains(electricalPowerMeasurementClusterID.uint32Value) }
-                .map { $0.key }
-                .sorted()
-                .first
-            let energyEndpointID = endpointClusters
-                .filter { $0.value.contains(electricalEnergyMeasurementClusterID.uint32Value) }
-                .map { $0.key }
-                .sorted()
-                .first
-
-            guard powerEndpointID != nil || energyEndpointID != nil else { continue }
-
-            let powerRead: MatterAttributeReadResult? = if let powerEndpointID {
-                await readAttribute(
-                    device: device,
-                    endpointID: NSNumber(value: powerEndpointID),
-                    clusterID: electricalPowerMeasurementClusterID,
-                    attributeID: activePowerAttributeID
-                )
+            let endpoints: MatterEnergyEndpointSelection
+            if let cachedEndpoints = await endpointCache.endpoints(for: nodeGroup.nodeID) {
+                endpoints = cachedEndpoints
             } else {
-                nil
+                let descriptorRead = await readDescriptorServerList(device: device)
+                guard descriptorRead.error == nil else {
+                    diagnostics.append("\(nodeGroup.displayName): Descriptor error \(descriptorRead.statusText)")
+                    continue
+                }
+
+                endpoints = energyEndpoints(from: descriptorRead.values)
+                await endpointCache.store(endpoints, for: nodeGroup.nodeID)
             }
-            let energyRead: MatterAttributeReadResult? = if let energyEndpointID {
-                await readAttribute(
-                    device: device,
-                    endpointID: NSNumber(value: energyEndpointID),
-                    clusterID: electricalEnergyMeasurementClusterID,
-                    attributeID: cumulativeEnergyImportedAttributeID
-                )
-            } else {
-                nil
-            }
+
+            guard endpoints.powerEndpointID != nil || endpoints.energyEndpointID != nil else { continue }
+
+            async let powerRead = readPower(device: device, endpointID: endpoints.powerEndpointID)
+            async let energyRead = readEnergy(device: device, endpointID: endpoints.energyEndpointID)
+            let (resolvedPowerRead, resolvedEnergyRead) = await (powerRead, energyRead)
 
             snapshots.append(MatterEnergyDeviceSnapshot(
                 id: nodeGroup.nodeIDText,
@@ -117,15 +139,15 @@ struct MatterEnergyProvider {
                 manufacturer: manufacturer(for: nodeGroup.primaryAccessory),
                 source: .matter,
                 nodeID: nodeGroup.nodeID,
-                powerEndpointID: powerEndpointID,
-                energyEndpointID: energyEndpointID,
-                activePowerWatts: powerRead?.numericValue.map { Double($0) / 1_000 },
-                cumulativeEnergyKilowattHours: energyRead?.numericValue.map { Double($0) / 1_000_000 },
+                powerEndpointID: endpoints.powerEndpointID,
+                energyEndpointID: endpoints.energyEndpointID,
+                activePowerWatts: resolvedPowerRead?.numericValue.map { Double($0) / 1_000 },
+                cumulativeEnergyKilowattHours: resolvedEnergyRead?.numericValue.map { Double($0) / 1_000_000 },
                 measuredAt: Date(),
-                powerLatencyMilliseconds: powerRead?.latencyMilliseconds,
-                energyLatencyMilliseconds: energyRead?.latencyMilliseconds,
-                powerStatus: powerRead?.statusText ?? "cluster assente",
-                energyStatus: energyRead?.statusText ?? "cluster assente"
+                powerLatencyMilliseconds: resolvedPowerRead?.latencyMilliseconds,
+                energyLatencyMilliseconds: resolvedEnergyRead?.latencyMilliseconds,
+                powerStatus: resolvedPowerRead?.statusText ?? "cluster assente",
+                energyStatus: resolvedEnergyRead?.statusText ?? "cluster assente"
             ))
         }
 
@@ -183,6 +205,26 @@ struct MatterEnergyProvider {
         )
     }
 
+    private func readPower(device: MTRBaseDevice, endpointID: UInt16?) async -> MatterAttributeReadResult? {
+        guard let endpointID else { return nil }
+        return await readAttribute(
+            device: device,
+            endpointID: NSNumber(value: endpointID),
+            clusterID: electricalPowerMeasurementClusterID,
+            attributeID: activePowerAttributeID
+        )
+    }
+
+    private func readEnergy(device: MTRBaseDevice, endpointID: UInt16?) async -> MatterAttributeReadResult? {
+        guard let endpointID else { return nil }
+        return await readAttribute(
+            device: device,
+            endpointID: NSNumber(value: endpointID),
+            clusterID: electricalEnergyMeasurementClusterID,
+            attributeID: cumulativeEnergyImportedAttributeID
+        )
+    }
+
     private func readAttribute(
         device: MTRBaseDevice,
         endpointID: NSNumber?,
@@ -196,7 +238,7 @@ struct MatterEnergyProvider {
                 clusterID: clusterID,
                 attributeID: attributeID,
                 params: nil,
-                queue: .main
+                queue: Self.readQueue
             ) { values, error in
                 let elapsed = start.duration(to: ContinuousClock.now)
                 let milliseconds = max(0, Int(elapsed.components.seconds * 1_000 + elapsed.components.attoseconds / 1_000_000_000_000_000))
@@ -207,6 +249,25 @@ struct MatterEnergyProvider {
                 ))
             }
         }
+    }
+
+    private func energyEndpoints(from values: [[String: Any]]) -> MatterEnergyEndpointSelection {
+        let endpointClusters = endpointClusters(from: values)
+        let powerEndpointID = endpointClusters
+            .filter { $0.value.contains(electricalPowerMeasurementClusterID.uint32Value) }
+            .map { $0.key }
+            .sorted()
+            .first
+        let energyEndpointID = endpointClusters
+            .filter { $0.value.contains(electricalEnergyMeasurementClusterID.uint32Value) }
+            .map { $0.key }
+            .sorted()
+            .first
+
+        return MatterEnergyEndpointSelection(
+            powerEndpointID: powerEndpointID,
+            energyEndpointID: energyEndpointID
+        )
     }
 
     private func endpointClusters(from values: [[String: Any]]) -> [UInt16: [UInt32]] {
@@ -292,6 +353,17 @@ struct MatterEnergyProvider {
         return String(describing: value)
     }
 
+    @MainActor
+    private func matterNodeGroups(in home: HMHome) -> [MatterNodeGroup] {
+        Dictionary(grouping: home.accessories.compactMap(NodeAccessory.init(accessory:)), by: \.nodeID)
+            .map { nodeID, nodeAccessories in
+                MatterNodeGroup(nodeID: nodeID, accessories: nodeAccessories.map(\.accessory))
+            }
+            .sorted { lhs, rhs in
+                lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+    }
+
     private struct NodeAccessory {
         let nodeID: UInt64
         let accessory: HMAccessory
@@ -366,4 +438,21 @@ private struct EveLegacyReadResult {
     let value: Double?
     let latencyMilliseconds: Int?
     let status: String
+}
+
+private struct MatterEnergyEndpointSelection {
+    let powerEndpointID: UInt16?
+    let energyEndpointID: UInt16?
+}
+
+private actor MatterEnergyEndpointCache {
+    private var endpointsByNodeID: [UInt64: MatterEnergyEndpointSelection] = [:]
+
+    func endpoints(for nodeID: UInt64) -> MatterEnergyEndpointSelection? {
+        endpointsByNodeID[nodeID]
+    }
+
+    func store(_ endpoints: MatterEnergyEndpointSelection, for nodeID: UInt64) {
+        endpointsByNodeID[nodeID] = endpoints
+    }
 }

@@ -32,6 +32,7 @@ struct FloorplanEditorView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(HabitAnalysisService.self) private var habitService
     @Environment(SmartLightingEngine.self) private var smartLightingEngine
     @Environment(CloudKitSyncService.self) private var cloudKitSync
@@ -88,6 +89,8 @@ struct FloorplanEditorView: View {
     @State private var cachedFloorplanImageDate: Date = .distantPast
     /// True while the image is being loaded from disk — prevents the "not available" state flash.
     @State private var isLoadingImage: Bool = false
+    @State private var isSystemOverlayTransitionActive = false
+    @State private var systemOverlayTransitionTask: Task<Void, Never>?
 
     /// Cached overlay context — recomputed only when HomeKit accessories change.
     @State private var cachedOverlayContext: FloorplanOverlayContext = .none
@@ -197,12 +200,40 @@ struct FloorplanEditorView: View {
             || pendingDelete != nil
     }
 
+    private var pendingDeleteIsPresented: Binding<Bool> {
+        Binding(
+            get: { pendingDelete != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingDelete = nil
+                }
+            }
+        )
+    }
+
     private var floorplanBackgroundColor: Color {
         let visualStyle = DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard
         if visualStyle == .architecturalDark {
-            return Color(red: 0.075, green: 0.095, blue: 0.120)
+            return DrawingVisualExportStyle.architecturalDarkBackgroundColor
         }
         return ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex).map { $0.swiftUIColor } ?? Color.white
+    }
+
+    private var systemOverlayTransitionPlaceholder: some View {
+        ZStack {
+            floorplanBackgroundColor
+                .ignoresSafeArea()
+
+            VStack(spacing: 10) {
+                Image(systemName: "house")
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.62))
+                Text(floorplan.name)
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.72))
+            }
+            .opacity(0.72)
+        }
     }
     
     var body: some View {
@@ -211,62 +242,66 @@ struct FloorplanEditorView: View {
                 floorplanBackgroundColor
                     .ignoresSafeArea()
 
-                if let image = cachedFloorplanImage {
-                    imageWithMarkers(image: image, container: proxy.size)
-                        .scaleEffect(effectiveScale, anchor: .center)
-                        // Sposta l'immagine verso il basso di metà dell'altezza della top bar,
-                        // così risulta centrata nello spazio libero sotto la barra.
-                        .offset(CGSize(
-                            width:  effectiveOffset.width,
-                            height: effectiveOffset.height + topBarHeight / 2
-                        ))
-                        .gesture(zoomPanGesture(in: proxy.size))
-                        .transition(.opacity)
-                } else if isLoadingImage {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if isSystemOverlayTransitionActive {
+                    systemOverlayTransitionPlaceholder
                 } else {
-                    ContentUnavailableView(
-                        String(localized: "floorplan.image.unavailable", defaultValue: "Image not available"),
-                        systemImage: "photo.badge.exclamationmark"
-                    )
-                }
-                
-                // Top bar: sempre visibile
-                topBar(in: proxy.size)
+                    if let image = cachedFloorplanImage {
+                        imageWithMarkers(image: image, container: proxy.size)
+                            .scaleEffect(effectiveScale, anchor: .center)
+                            // Sposta l'immagine verso il basso di metà dell'altezza della top bar,
+                            // così risulta centrata nello spazio libero sotto la barra.
+                            .offset(CGSize(
+                                width:  effectiveOffset.width,
+                                height: effectiveOffset.height + topBarHeight / 2
+                            ))
+                            .gesture(zoomPanGesture(in: proxy.size))
+                            .transition(.opacity)
+                    } else if isLoadingImage {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ContentUnavailableView(
+                            String(localized: "floorplan.image.unavailable", defaultValue: "Image not available"),
+                            systemImage: "photo.badge.exclamationmark"
+                        )
+                    }
 
-                // Controlli secondari (zoom, toolbar marker): soggetti ad auto-hide
-                secondaryControls(in: proxy.size)
-                    .opacity(shouldShowControls ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
+                    // Top bar: sempre visibile
+                    topBar(in: proxy.size)
 
-                // Pulsante apri-pannello — sempre visibile (non soggetto ad auto-hide)
-                openPanelButton
+                    // Controlli secondari (zoom, toolbar marker): soggetti ad auto-hide
+                    secondaryControls(in: proxy.size)
+                        .opacity(shouldShowControls ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
 
-                // Right-side scenes panel overlay
-                if showScenesPanel {
-                    Color.black.opacity(0.25)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                showScenesPanel = false
+                    // Pulsante apri-pannello — sempre visibile (non soggetto ad auto-hide)
+                    openPanelButton
+
+                    // Right-side scenes panel overlay
+                    if showScenesPanel {
+                        Color.black.opacity(0.25)
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                    showScenesPanel = false
+                                }
                             }
-                        }
-                        .transition(.opacity)
-                }
+                            .transition(.opacity)
+                    }
 
-                HStack(spacing: 0) {
-                    Spacer()
-                    ScenesSidePanel(isPresented: $showScenesPanel)
-                        .frame(width: min(proxy.size.width * 0.72, 320))
-                        .offset(x: showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
-                        .animation(.spring(response: 0.38, dampingFraction: 0.88), value: showScenesPanel)
-                }
-                .ignoresSafeArea(edges: .vertical)
+                    HStack(spacing: 0) {
+                        Spacer()
+                        ScenesSidePanel(isPresented: $showScenesPanel)
+                            .frame(width: min(proxy.size.width * 0.72, 320))
+                            .offset(x: showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
+                            .animation(.spring(response: 0.38, dampingFraction: 0.88), value: showScenesPanel)
+                    }
+                    .ignoresSafeArea(edges: .vertical)
 
-                // Z+4: overlay context panel
-                if let vm = overlayVM {
-                    overlayContextPanel(vm: vm, containerSize: proxy.size)
+                    // Z+4: overlay context panel
+                    if let vm = overlayVM {
+                        overlayContextPanel(vm: vm, containerSize: proxy.size)
+                    }
                 }
             }
             .contentShape(Rectangle())
@@ -349,10 +384,7 @@ struct FloorplanEditorView: View {
         
         
         .alert(String(localized: "floorplan.marker.delete.title", defaultValue: "Remove accessory from floorplan?"),
-               isPresented: Binding(
-                get: { pendingDelete != nil },
-                set: { if !$0 { pendingDelete = nil } }
-               ),
+               isPresented: pendingDeleteIsPresented,
                presenting: pendingDelete) { placed in
             Button(String(localized: "common.delete", defaultValue: "Delete"), role: .destructive) {
                 deleteMarker(placed)
@@ -410,17 +442,13 @@ struct FloorplanEditorView: View {
             refreshFloorplanImageCache()
         }
         .onReceive(NotificationCenter.default.publisher(for: .floorplansDidApplyRemoteChanges)) { notification in
-            reconcileVisibleMarkersIfNeeded(from: notification)
-            SyncDiagnosticsLogger.log(
-                "Editor observed floorplan remote-change floorplan=\(floorplan.id.uuidString) markers=\(floorplan.accessories.count) positions=[\(markerPositionDigest())]"
-            )
-            refreshFloorplanImageCache()
-            refreshOverlayContext()
-            subscribeToAccessories()
+            handleFloorplanRemoteChanges(notification)
         }
         .onDisappear {
-            unsubscribeFromAccessories()
-            hideTask?.cancel()
+            handleDisappear()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            handleScenePhaseChange(phase)
         }
         .onChange(of: floorplan.accessories.count) { _, _ in
             subscribeToAccessories()
@@ -804,6 +832,7 @@ struct FloorplanEditorView: View {
                     Text(floorplan.name)
                         .font(.subheadline)
                         .fontWeight(.medium)
+                        .foregroundStyle(Color.primary.opacity(0.55))
                         .lineLimit(1)
 
                     Image(systemName: "chevron.down")
@@ -993,6 +1022,7 @@ struct FloorplanEditorView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .foregroundStyle(Color.primary.opacity(0.55))
                     .accessibilityLabel(String(localized: "scenes.title", defaultValue: "Scenes"))
                     .help(String(localized: "scenes.open", defaultValue: "Open scenes"))
 
@@ -1018,7 +1048,7 @@ struct FloorplanEditorView: View {
                         }
                         .font(.subheadline)
                         .fontWeight(.medium)
-                        .foregroundStyle(isEditing ? BrandColor.primary : .primary)
+                        .foregroundStyle(isEditing ? BrandColor.primary : Color.primary.opacity(0.55))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .contentShape(Rectangle())
@@ -1056,6 +1086,7 @@ struct FloorplanEditorView: View {
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.subheadline)
+                .foregroundStyle(Color.primary.opacity(0.55))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
@@ -1293,6 +1324,48 @@ struct FloorplanEditorView: View {
                 cachedFloorplanImage = image
                 isLoadingImage = false
             }
+        }
+    }
+
+    private func handleFloorplanRemoteChanges(_ notification: Notification) {
+        reconcileVisibleMarkersIfNeeded(from: notification)
+        SyncDiagnosticsLogger.log(
+            "Editor observed floorplan remote-change floorplan=\(floorplan.id.uuidString) markers=\(floorplan.accessories.count) positions=[\(markerPositionDigest())]"
+        )
+        refreshFloorplanImageCache()
+        refreshOverlayContext()
+        subscribeToAccessories()
+    }
+
+    private func handleDisappear() {
+        unsubscribeFromAccessories()
+        hideTask?.cancel()
+        systemOverlayTransitionTask?.cancel()
+    }
+
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        systemOverlayTransitionTask?.cancel()
+
+        switch phase {
+        case .inactive:
+            withTransaction(Transaction(animation: nil)) {
+                isSystemOverlayTransitionActive = true
+            }
+        case .active:
+            systemOverlayTransitionTask = Task {
+                try? await Task.sleep(for: .milliseconds(420))
+                await MainActor.run {
+                    withTransaction(Transaction(animation: nil)) {
+                        isSystemOverlayTransitionActive = false
+                    }
+                }
+            }
+        case .background:
+            withTransaction(Transaction(animation: nil)) {
+                isSystemOverlayTransitionActive = true
+            }
+        @unknown default:
+            break
         }
     }
 
@@ -1790,6 +1863,7 @@ struct FloorplanEditorView: View {
         
         let inverseScale = 1.0 / effectiveScale
         let editIssue = markerEditIssue(for: placed, accessory: accessory)
+        let allowsCameraSnapshot = !isEditing && overlayVM?.activeMode == .security
         
         AccessoryMarkerView(
             adapter: adapter,
@@ -1798,7 +1872,8 @@ struct FloorplanEditorView: View {
             isExecuting: executingMarkerID == placed.id,
             editIssue: editIssue,
             label: displayLabel,
-            hasCustomLabel: placed.customLabel?.isEmpty == false
+            hasCustomLabel: placed.customLabel?.isEmpty == false,
+            allowsCameraSnapshot: allowsCameraSnapshot
         )
         .scaleEffect(inverseScale)
         .position(displayPoint)

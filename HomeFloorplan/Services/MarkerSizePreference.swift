@@ -94,3 +94,34 @@ enum MarkerSize: String, CaseIterable, Identifiable {
 extension MarkerSize {
     static let appStorageKey = "markerSizePreference"
 }
+
+enum MarkerLabelVisibility: String, CaseIterable, Identifiable {
+    case smart
+    case always
+    case compact
+
+    var id: String { rawValue }
+
+    var localized: String {
+        switch self {
+        case .smart:
+            return String(localized: "marker.labelVisibility.smart", defaultValue: "Smart")
+        case .always:
+            return String(localized: "marker.labelVisibility.always", defaultValue: "Always")
+        case .compact:
+            return String(localized: "marker.labelVisibility.compact", defaultValue: "Compact")
+        }
+    }
+
+    var localizationKey: LocalizedStringKey {
+        switch self {
+        case .smart:   return "marker.labelVisibility.smart"
+        case .always:  return "marker.labelVisibility.always"
+        case .compact: return "marker.labelVisibility.compact"
+        }
+    }
+}
+
+extension MarkerLabelVisibility {
+    static let appStorageKey = "markerLabelVisibilityPreference"
+}

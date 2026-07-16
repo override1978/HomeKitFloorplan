@@ -38,10 +38,15 @@ struct AccessoryMarkerView: View {
     let editIssue: AccessoryMarkerEditIssue?
     let label: String
     let hasCustomLabel: Bool
+    let allowsCameraSnapshot: Bool
 
     @AppStorage(MarkerSize.appStorageKey)
     private var markerSizeRaw: String = MarkerSize.regular.rawValue
 
+    @AppStorage(MarkerLabelVisibility.appStorageKey)
+    private var markerLabelVisibilityRaw: String = MarkerLabelVisibility.smart.rawValue
+
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(IconOverrideStore.self) private var iconOverrides
     @Environment(HomeKitService.self) private var homeKit
     @Environment(MatterEnergyLiveStore.self) private var matterEnergy
@@ -56,7 +61,8 @@ struct AccessoryMarkerView: View {
          isExecuting: Bool,
          editIssue: AccessoryMarkerEditIssue? = nil,
          label: String,
-         hasCustomLabel: Bool) {
+         hasCustomLabel: Bool,
+         allowsCameraSnapshot: Bool = false) {
         self.adapter = adapter
         self.isEditing = isEditing
         self.isSelected = isSelected
@@ -64,10 +70,15 @@ struct AccessoryMarkerView: View {
         self.editIssue = editIssue
         self.label = label
         self.hasCustomLabel = hasCustomLabel
+        self.allowsCameraSnapshot = allowsCameraSnapshot
     }
     
     private var size: MarkerSize {
         MarkerSize(rawValue: markerSizeRaw) ?? .regular
+    }
+
+    private var labelVisibility: MarkerLabelVisibility {
+        MarkerLabelVisibility(rawValue: markerLabelVisibilityRaw) ?? .smart
     }
     
     private var style: MarkerStyle {
@@ -117,6 +128,78 @@ struct AccessoryMarkerView: View {
         return (adapter as? MarkerRuntimeStateProviding)?.markerRuntimeState
     }
 
+    private var shouldShowLabel: Bool {
+        switch labelVisibility {
+        case .always:
+            return true
+        case .compact:
+            return isEditing || isSelected || hasAttentionState
+        case .smart:
+            return isEditing
+                || isSelected
+                || hasCustomLabel
+                || hasAttentionState
+                || isActiveState
+                || hasLiveMetric
+        }
+    }
+
+    private var hasAttentionState: Bool {
+        adapter == nil
+            || isLikelyOffline
+            || isUnreachableButNotLikelyOffline
+            || runtimeState != nil
+            || batteryInfo?.isLow == true
+            || editIssue != nil
+            || urgency == .warning
+            || urgency == .alarm
+    }
+
+    private var isActiveState: Bool {
+        guard let adapter else { return false }
+        return adapter.isOn || urgency == .active || urgency == .ok
+    }
+
+    private var hasLiveMetric: Bool {
+        style == .sensorNumeric || energySnapshot?.activePowerWatts != nil
+    }
+
+    private var hasStrongLabelState: Bool {
+        isEditing || isSelected || hasAttentionState || hasLiveMetric
+    }
+
+    private var hasHighContrastLabelState: Bool {
+        hasStrongLabelState || isActiveState
+    }
+
+    private var labelProminence: Double {
+        hasHighContrastLabelState ? 1.0 : 0.88
+    }
+
+    private var labelBackgroundOpacity: Double {
+        hasHighContrastLabelState ? 0.88 : 0.76
+    }
+
+    private var labelFillGradient: LinearGradient {
+        let colors: [Color] = colorScheme == .dark
+            ? [
+                Color.white.opacity(hasHighContrastLabelState ? 0.16 : 0.10),
+                Color.white.opacity(hasHighContrastLabelState ? 0.06 : 0.04)
+            ]
+            : [
+                Color.white.opacity(0.42),
+                Color(red: 0.82, green: 0.84, blue: 0.87).opacity(0.28)
+            ]
+        return LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
+    }
+
+    private var labelTextColor: Color {
+        if colorScheme == .dark {
+            return Color.white.opacity(hasHighContrastLabelState ? 0.92 : 0.84)
+        }
+        return Color.black.opacity(hasHighContrastLabelState ? 0.90 : 0.82)
+    }
+
     private var isUnreachableButNotLikelyOffline: Bool {
         isOffline && !isLikelyOffline
     }
@@ -128,8 +211,9 @@ struct AccessoryMarkerView: View {
 
     @ViewBuilder
     private var markerContent: some View {
-        // Telecamere: rettangolo con snapshot periodica — gestisce label e wiggle internamente.
-        if style == .camera, let cameraAdapter = adapter as? CameraAdapter {
+        // Telecamere: snapshot periodica solo quando il layer chiamante la abilita
+        // (Security). Negli altri contesti restano marker leggeri.
+        if allowsCameraSnapshot, style == .camera, let cameraAdapter = adapter as? CameraAdapter {
             CameraMarkerView(
                 adapter: cameraAdapter,
                 size: size.cameraMarkerSize,
@@ -165,20 +249,16 @@ struct AccessoryMarkerView: View {
                     value: runtimePulse
                 )
 
-            HStack(spacing: 3) {
-                Text(label)
-                    .font(.caption2)
-                    .lineLimit(1)
+            if shouldShowLabel {
+                labelPill
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.thinMaterial, in: Capsule())
         }
         .scaleEffect(isEditing ? 1.1 : 1.0)
         .rotationEffect(.degrees(wiggleAngle))
         .animation(.spring(response: 0.3), value: isEditing)
         .animation(.spring(response: 0.2), value: isExecuting)
         .animation(.easeInOut(duration: 0.2), value: urgency)
+        .animation(.easeInOut(duration: 0.18), value: shouldShowLabel)
         .onAppear {
             updateRuntimePulse()
         }
@@ -212,6 +292,35 @@ struct AccessoryMarkerView: View {
         }
     }
 
+    private var labelPill: some View {
+        HStack(spacing: 3) {
+            Text(label)
+                .font(.caption2)
+                .fontWeight(hasStrongLabelState ? .medium : .regular)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .foregroundStyle(labelTextColor)
+        .background(.thinMaterial, in: Capsule())
+        .background(
+            Capsule()
+                .fill(labelFillGradient)
+                .opacity(hasHighContrastLabelState ? 0.18 : 0.10)
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(.white.opacity(colorScheme == .dark ? 0.16 : 0.42), lineWidth: 0.5)
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(.black.opacity(colorScheme == .dark ? 0.18 : (hasStrongLabelState ? 0.12 : 0.08)), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.16), radius: 2, x: 0, y: 1)
+        .opacity(labelProminence)
+        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+    }
+
     private func updateRuntimePulse() {
         guard runtimeState == .sensorTriggered || runtimeState == .transitioning else {
             runtimePulse = false
@@ -239,9 +348,7 @@ struct AccessoryMarkerView: View {
         case .sensorNumeric:
             sensorNumericShape
         case .camera:
-            // CameraMarkerView si auto-gestisce (label, wiggle, snapshot cycle).
-            // Viene reso direttamente nel body; qui non emittiamo nulla.
-            EmptyView()
+            controllableShape
         }
     }
     
@@ -394,11 +501,11 @@ struct AccessoryMarkerView: View {
     private var energyBadgeTopTrailingOffset: CGSize {
         switch style {
         case .controllable:
-            return CGSize(width: size.controllableDiameter * 0.54, height: -size.controllableDiameter * 0.36)
+            return CGSize(width: size.controllableDiameter * 0.47, height: -size.controllableDiameter * 0.32)
         case .sensorBoolean:
-            return CGSize(width: size.sensorBoolDiameter * 0.56, height: -size.sensorBoolDiameter * 0.38)
+            return CGSize(width: size.sensorBoolDiameter * 0.49, height: -size.sensorBoolDiameter * 0.34)
         case .sensorNumeric:
-            return CGSize(width: size.sensorNumericSize.width * 0.5, height: -size.sensorNumericSize.height * 0.46)
+            return CGSize(width: size.sensorNumericSize.width * 0.45, height: -size.sensorNumericSize.height * 0.4)
         case .camera:
             return .zero
         }
@@ -442,15 +549,16 @@ struct AccessoryMarkerView: View {
 
     private func energyBadge(_ value: String) -> some View {
         Text(value)
-            .font(.system(size: 8, weight: .bold, design: .rounded).monospacedDigit())
+            .font(.system(size: 7.5, weight: .bold, design: .rounded).monospacedDigit())
             .foregroundStyle(.white)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
-            .padding(.horizontal, 4)
-            .frame(height: 15)
-            .background(Color(.systemGreen), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.9), lineWidth: 1))
-            .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 3.5)
+            .frame(height: 14)
+            .background(Color(.systemGreen).opacity(0.94), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.88), lineWidth: 0.8))
+            .shadow(color: .black.opacity(0.16), radius: 1.5, y: 0.8)
     }
 
     private func formattedMarkerWatts(_ watts: Double) -> String {
@@ -470,10 +578,10 @@ struct AccessoryMarkerView: View {
         if adapter == nil { return .red }
         let urgency = adapter?.visualUrgency ?? .normal
         switch urgency {
-        case .normal:  return Color.secondary.opacity(0.5)
+        case .normal:  return Color(red: 0.70, green: 0.73, blue: 0.76).opacity(0.5)
         case .ok:      return .green
         case .active:  return adapter?.markerTint ?? .yellow
-        case .warning: return Color(.systemOrange)
+        case .warning: return Color.orange
         case .alarm:   return .red
         }
     }
@@ -485,7 +593,7 @@ struct AccessoryMarkerView: View {
     }
 
     private var fillStyle: AnyShapeStyle {
-        if adapter == nil { return AnyShapeStyle(.thinMaterial) }
+        if adapter == nil { return AnyShapeStyle(Color(red: 0.72, green: 0.74, blue: 0.78).opacity(0.86)) }
         return appearance.markerFill
     }
 

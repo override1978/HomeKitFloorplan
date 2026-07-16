@@ -44,6 +44,7 @@ struct GlassCircle<Content: View>: View {
 /// di immagini). Usa .regularMaterial invece di .ultraThinMaterial.
 struct GlassTitlePill<Content: View>: View {
     let content: Content
+    @Environment(\.colorScheme) private var colorScheme
 
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
@@ -54,9 +55,17 @@ struct GlassTitlePill<Content: View>: View {
             .background(.regularMaterial, in: Capsule())
             .overlay(
                 Capsule()
-                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
+                    .strokeBorder(titleBorderColor, lineWidth: 0.6)
             )
-            .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
+            .shadow(color: titleShadowColor, radius: 11, x: 0, y: 3)
+    }
+
+    private var titleBorderColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.35) : Color.black.opacity(0.11)
+    }
+
+    private var titleShadowColor: Color {
+        colorScheme == .dark ? Color.black.opacity(0.12) : Color.black.opacity(0.09)
     }
 }
 

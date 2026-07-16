@@ -32,6 +32,9 @@ struct SettingsView: View {
     @AppStorage(MarkerSize.appStorageKey)
     private var markerSizeRaw: String = MarkerSize.regular.rawValue
 
+    @AppStorage(MarkerLabelVisibility.appStorageKey)
+    private var markerLabelVisibilityRaw: String = MarkerLabelVisibility.smart.rawValue
+
     private var currentMarkerSize: MarkerSize {
         MarkerSize(rawValue: markerSizeRaw) ?? .regular
     }
@@ -76,6 +79,13 @@ struct SettingsView: View {
                 Picker(String(localized: "settings.marker.size.picker", defaultValue: "Size"), selection: $markerSizeRaw) {
                     ForEach(MarkerSize.allCases) { size in
                         Text(size.localizationKey).tag(size.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Picker(String(localized: "settings.marker.labels.picker", defaultValue: "Labels"), selection: $markerLabelVisibilityRaw) {
+                    ForEach(MarkerLabelVisibility.allCases) { visibility in
+                        Text(visibility.localizationKey).tag(visibility.rawValue)
                     }
                 }
                 .pickerStyle(.segmented)

@@ -34,6 +34,9 @@ enum DrawingVisualExportStyle: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    static let architecturalDarkBackgroundUIColor = UIColor(red: 0.145, green: 0.170, blue: 0.195, alpha: 1)
+    static let architecturalDarkBackgroundColor = Color(uiColor: architecturalDarkBackgroundUIColor)
+
     var localizedTitle: String {
         switch self {
         case .standard:
@@ -1020,7 +1023,7 @@ struct DrawingFloorplanSheet: View {
         let renderer = UIGraphicsImageRenderer(size: outputSize, format: fmt)
         let outputBackgroundColor: UIColor = {
             if visualStyle == .architecturalDark {
-                return UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
+                return DrawingVisualExportStyle.architecturalDarkBackgroundUIColor
             }
             if exteriorFillColorIndex >= 0,
                let palette = ExteriorFillPalette(rawValue: exteriorFillColorIndex) {
@@ -1255,7 +1258,7 @@ struct DrawingFloorplanSheet: View {
         let renderer = UIGraphicsImageRenderer(size: outputSize, format: fmt)
         let outputBackgroundColor: UIColor = {
             if visualStyle == .architecturalDark {
-                return UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
+                return DrawingVisualExportStyle.architecturalDarkBackgroundUIColor
             }
             if exteriorFillColorIndex >= 0,
                let palette = ExteriorFillPalette(rawValue: exteriorFillColorIndex) {

@@ -22,7 +22,11 @@ struct CameraMarkerView: View {
     let label: String
     let hasCustomLabel: Bool
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(HomeKitService.self) private var homeKit
+
+    @AppStorage(MarkerLabelVisibility.appStorageKey)
+    private var markerLabelVisibilityRaw: String = MarkerLabelVisibility.smart.rawValue
 
     @State private var snapshotController = CameraSnapshotController()
     @State private var refreshTimer: Timer?
@@ -54,6 +58,68 @@ struct CameraMarkerView: View {
 
     private var cornerRadius: CGFloat { size.height * 0.15 }
 
+    private var labelVisibility: MarkerLabelVisibility {
+        MarkerLabelVisibility(rawValue: markerLabelVisibilityRaw) ?? .smart
+    }
+
+    private var shouldShowLabel: Bool {
+        switch labelVisibility {
+        case .always:
+            return true
+        case .compact:
+            return isEditing || isSelected || hasAttentionState
+        case .smart:
+            return isEditing
+                || isSelected
+                || hasCustomLabel
+                || hasAttentionState
+                || adapter.isOn
+        }
+    }
+
+    private var hasAttentionState: Bool {
+        isOffline
+            || adapter.visualUrgency == .warning
+            || adapter.visualUrgency == .alarm
+            || editIssue != nil
+    }
+
+    private var hasStrongLabelState: Bool {
+        isEditing || isSelected || hasAttentionState
+    }
+
+    private var hasHighContrastLabelState: Bool {
+        hasStrongLabelState || adapter.isOn
+    }
+
+    private var labelProminence: Double {
+        hasHighContrastLabelState ? 1.0 : 0.88
+    }
+
+    private var labelBackgroundOpacity: Double {
+        hasHighContrastLabelState ? 0.88 : 0.76
+    }
+
+    private var labelFillGradient: LinearGradient {
+        let colors: [Color] = colorScheme == .dark
+            ? [
+                Color.white.opacity(hasHighContrastLabelState ? 0.16 : 0.10),
+                Color.white.opacity(hasHighContrastLabelState ? 0.06 : 0.04)
+            ]
+            : [
+                Color.white.opacity(0.42),
+                Color(red: 0.82, green: 0.84, blue: 0.87).opacity(0.28)
+            ]
+        return LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
+    }
+
+    private var labelTextColor: Color {
+        if colorScheme == .dark {
+            return Color.white.opacity(hasHighContrastLabelState ? 0.92 : 0.84)
+        }
+        return Color.black.opacity(hasHighContrastLabelState ? 0.90 : 0.82)
+    }
+
     var body: some View {
         VStack(spacing: 2) {
             thumbnailFrame
@@ -67,19 +133,14 @@ struct CameraMarkerView: View {
                         y: -1)
                 .opacity(isOffline ? 0.6 : 1.0)
 
-            // Label pill (mirrors AccessoryMarkerView)
-            HStack(spacing: 3) {
-                Text(label)
-                    .font(.caption2)
-                    .lineLimit(1)
+            if shouldShowLabel {
+                labelPill
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(.thinMaterial, in: Capsule())
         }
         .scaleEffect(isEditing ? 1.1 : 1.0)
         .rotationEffect(.degrees(wiggleAngle))
         .animation(.spring(response: 0.3), value: isEditing)
+        .animation(.easeInOut(duration: 0.18), value: shouldShowLabel)
         .contentShape(Rectangle())
         .onChange(of: isSelected) { _, selected in
             if selected {
@@ -103,6 +164,35 @@ struct CameraMarkerView: View {
         }
         .onAppear { startSnapshotCycle() }
         .onDisappear { stopSnapshotCycle() }
+    }
+
+    private var labelPill: some View {
+        HStack(spacing: 3) {
+            Text(label)
+                .font(.caption2)
+                .fontWeight(hasStrongLabelState ? .medium : .regular)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .foregroundStyle(labelTextColor)
+        .background(.thinMaterial, in: Capsule())
+        .background(
+            Capsule()
+                .fill(labelFillGradient)
+                .opacity(hasHighContrastLabelState ? 0.18 : 0.10)
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(.white.opacity(colorScheme == .dark ? 0.16 : 0.42), lineWidth: 0.5)
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(.black.opacity(colorScheme == .dark ? 0.18 : (hasStrongLabelState ? 0.12 : 0.08)), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.16), radius: 2, x: 0, y: 1)
+        .opacity(labelProminence)
+        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
     }
 
     // MARK: - Thumbnail frame

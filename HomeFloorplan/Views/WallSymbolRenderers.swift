@@ -8,9 +8,9 @@ enum DrawingStyle {
     /// This fallback is kept for selection highlight math.
     static let wallWidthExterior: CGFloat = 16
     static let wallWidthInterior: CGFloat = 8
-    /// Adaptive wall color: near-black in light mode, near-white in dark mode.
-    static let wallColor: Color          = Color(UIColor { t in t.userInterfaceStyle == .dark ? UIColor(white: 0.90, alpha: 1) : UIColor(white: 0.18, alpha: 1) })
-    static let wallCGColor: CGColor      = CGColor(gray: 0.18, alpha: 1)  // PNG export only — always light bg
+    /// Adaptive wall color: charcoal in light mode, near-white in dark mode.
+    static let wallColor: Color          = Color(UIColor { t in t.userInterfaceStyle == .dark ? UIColor(red: 0.80, green: 0.84, blue: 0.88, alpha: 1) : UIColor(white: 0.26, alpha: 1) })
+    static let wallCGColor: CGColor      = CGColor(gray: 0.26, alpha: 1)  // PNG export only — always light bg
 
     static let selectionColor: Color     = .blue
     static let selectionWidth: CGFloat   = 3
@@ -426,17 +426,17 @@ func renderDocument(_ doc: DrawingDocument,
 }
 
 private enum DarkArchitecturalPalette {
-    static let background = UIColor(red: 0.075, green: 0.095, blue: 0.120, alpha: 1)
-    static let roomFill = UIColor(red: 0.140, green: 0.170, blue: 0.205, alpha: 0.94)
-    static let roomAlternateFill = UIColor(red: 0.120, green: 0.150, blue: 0.185, alpha: 0.94)
-    static let roomStroke = UIColor(red: 0.42, green: 0.50, blue: 0.58, alpha: 0.22)
-    static let wallExterior = UIColor(red: 0.84, green: 0.87, blue: 0.90, alpha: 1)
-    static let wallInterior = UIColor(red: 0.62, green: 0.68, blue: 0.74, alpha: 1)
-    static let wallBalcony = UIColor(red: 0.55, green: 0.61, blue: 0.68, alpha: 0.85)
-    static let openingLine = UIColor(red: 0.72, green: 0.78, blue: 0.84, alpha: 0.62)
-    static let furnitureStroke = UIColor(red: 0.74, green: 0.79, blue: 0.84, alpha: 0.60)
-    static let furnitureFill = UIColor(red: 0.30, green: 0.33, blue: 0.37, alpha: 0.90)
-    static let text = UIColor(red: 0.78, green: 0.82, blue: 0.86, alpha: 0.72)
+    static let background = DrawingVisualExportStyle.architecturalDarkBackgroundUIColor
+    static let roomFill = UIColor(red: 0.175, green: 0.205, blue: 0.235, alpha: 0.94)
+    static let roomAlternateFill = UIColor(red: 0.155, green: 0.185, blue: 0.215, alpha: 0.94)
+    static let roomStroke = UIColor(red: 0.52, green: 0.58, blue: 0.64, alpha: 0.18)
+    static let wallExterior = UIColor(red: 0.70, green: 0.75, blue: 0.78, alpha: 1)
+    static let wallInterior = UIColor(red: 0.63, green: 0.69, blue: 0.73, alpha: 1)
+    static let wallBalcony = UIColor(red: 0.55, green: 0.61, blue: 0.66, alpha: 0.70)
+    static let openingLine = UIColor(red: 0.72, green: 0.78, blue: 0.82, alpha: 0.48)
+    static let furnitureStroke = UIColor(red: 0.68, green: 0.73, blue: 0.77, alpha: 0.30)
+    static let furnitureFill = UIColor(red: 0.30, green: 0.34, blue: 0.38, alpha: 0.46)
+    static let text = UIColor(red: 0.80, green: 0.84, blue: 0.86, alpha: 0.62)
 }
 
 private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
@@ -653,16 +653,16 @@ private func drawDarkFurnitureSheenCG(_ item: FurnitureItem, context: CGContext)
     var toward = CGAffineTransform(translationX: litShift.width, y: litShift.height)
     if let shifted = path.cgPath.copy(using: &toward) {
         context.addPath(shifted)
-        context.setStrokeColor(UIColor.white.withAlphaComponent(0.18).cgColor)
-        context.setLineWidth(3.6)
+        context.setStrokeColor(UIColor.white.withAlphaComponent(0.08).cgColor)
+        context.setLineWidth(2.6)
         context.strokePath()
     }
 
     var away = CGAffineTransform(translationX: -litShift.width, y: -litShift.height)
     if let shifted = path.cgPath.copy(using: &away) {
         context.addPath(shifted)
-        context.setStrokeColor(UIColor.black.withAlphaComponent(0.22).cgColor)
-        context.setLineWidth(3.6)
+        context.setStrokeColor(UIColor.black.withAlphaComponent(0.10).cgColor)
+        context.setLineWidth(2.6)
         context.strokePath()
     }
     context.restoreGState()
@@ -670,6 +670,9 @@ private func drawDarkFurnitureSheenCG(_ item: FurnitureItem, context: CGContext)
 
 private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGContext) {
     for item in doc.furnitureItems where item.kind != .rug {
+        let prominence = darkFurnitureProminence(for: item.kind)
+        guard prominence.shadowAlpha > 0 else { continue }
+
         let path = furnitureShadowPath(item)
         // Shadow reach scales with the object footprint: a chair must not cast
         // the same shadow as a sofa.
@@ -685,7 +688,7 @@ private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGConte
         context.clip(using: .evenOdd)
         context.setShadow(offset: shadowDeviceOffset(context, offset),
                           blur: blur * shadowDeviceScale(context),
-                          color: UIColor.black.withAlphaComponent(0.40).cgColor)
+                          color: UIColor.black.withAlphaComponent(prominence.shadowAlpha).cgColor)
         context.setFillColor(UIColor.black.cgColor)
         context.addPath(path.cgPath)
         context.fillPath()
@@ -694,27 +697,30 @@ private func drawDarkFurnitureShadowsCG(_ doc: DrawingDocument, context: CGConte
 }
 
 private func drawDarkFurnitureItemCG(_ item: FurnitureItem, context: CGContext, drawText: Bool = true) {
+    let prominence = darkFurnitureProminence(for: item.kind)
     let fill: UIColor = {
         if let tint = item.tint, item.kind.supportsTint {
-            return UIColor(cgColor: tint.darkCGColor).withAlphaComponent(0.90)
+            return UIColor(cgColor: tint.darkCGColor).withAlphaComponent(prominence.tintAlpha)
         }
-        return DarkArchitecturalPalette.furnitureFill
+        return DarkArchitecturalPalette.furnitureFill.withAlphaComponent(prominence.fillAlpha)
     }()
     UIGraphicsPushContext(context)
     drawFurnitureBlueprintCG(
         item,
         context: context,
         fillColor: fill,
-        strokeColor: DarkArchitecturalPalette.furnitureStroke,
-        detailColor: DarkArchitecturalPalette.text.withAlphaComponent(0.50),
-        lineWidth: 1.4
+        strokeColor: DarkArchitecturalPalette.furnitureStroke.withAlphaComponent(prominence.strokeAlpha),
+        detailColor: DarkArchitecturalPalette.text.withAlphaComponent(prominence.detailAlpha),
+        lineWidth: prominence.lineWidth
     )
-    drawDarkFurnitureSheenCG(item, context: context)
+    if prominence.hasSheen {
+        drawDarkFurnitureSheenCG(item, context: context)
+    }
 
     if drawText, item.showsName {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: DarkArchitecturalPalette.text.withAlphaComponent(0.58)
+            .foregroundColor: DarkArchitecturalPalette.text.withAlphaComponent(prominence.textAlpha)
         ]
         let nsString = item.name.uppercased() as NSString
         let textSize = nsString.size(withAttributes: attributes)
@@ -723,6 +729,28 @@ private func drawDarkFurnitureItemCG(_ item: FurnitureItem, context: CGContext, 
                       withAttributes: attributes)
     }
     UIGraphicsPopContext()
+}
+
+private func darkFurnitureProminence(for kind: FurnitureKind) -> (fillAlpha: CGFloat,
+                                                                  strokeAlpha: CGFloat,
+                                                                  detailAlpha: CGFloat,
+                                                                  tintAlpha: CGFloat,
+                                                                  textAlpha: CGFloat,
+                                                                  lineWidth: CGFloat,
+                                                                  shadowAlpha: CGFloat,
+                                                                  hasSheen: Bool) {
+    switch kind {
+    case .sofa, .bed, .diningTable, .kitchenCounter, .wardrobe, .tvUnit, .bathtub:
+        return (0.50, 0.72, 0.30, 0.54, 0.38, 1.0, 0.18, true)
+    case .rug, .stairs, .spiralStairs, .tree, .hedge:
+        return (0.24, 0.40, 0.18, 0.32, 0.24, 0.8, 0.00, false)
+    case .chair, .armchair, .plant:
+        return (0.30, 0.46, 0.20, 0.38, 0.26, 0.8, 0.06, false)
+    case .toilet, .sink, .inductionCooktop, .washingMachine, .shower, .kitchenSink:
+        return (0.36, 0.58, 0.24, 0.42, 0.30, 0.9, 0.10, false)
+    case .generic:
+        return (0.38, 0.56, 0.24, 0.42, 0.30, 0.9, 0.10, false)
+    }
 }
 
 private func drawDarkWallShadowsCG(_ doc: DrawingDocument, context: CGContext) {
@@ -737,9 +765,9 @@ private func drawDarkWallShadowsCG(_ doc: DrawingDocument, context: CGContext) {
         let width = DrawingDocument.wallWidth(for: kind)
         let isExterior = kind == .exterior
         context.saveGState()
-        context.setShadow(offset: shadowDeviceOffset(context, CGSize(width: width * 0.45, height: width * 0.55)),
-                          blur: width * 2.2 * shadowDeviceScale(context),
-                          color: UIColor.black.withAlphaComponent(isExterior ? 0.55 : 0.38).cgColor)
+        context.setShadow(offset: shadowDeviceOffset(context, CGSize(width: width * 0.28, height: width * 0.34)),
+                          blur: width * 1.7 * shadowDeviceScale(context),
+                          color: UIColor.black.withAlphaComponent(isExterior ? 0.24 : 0.16).cgColor)
         // Opaque source: shadow strength is multiplied by the source alpha, and the
         // stroke itself is fully covered when the walls are painted afterwards.
         context.setStrokeColor(UIColor.black.cgColor)
@@ -782,6 +810,8 @@ private func drawDarkWallChainsCG(_ doc: DrawingDocument, kind: WallKind, contex
 }
 
 private func drawDarkWallHighlightCG(_ wall: WallSegment, context: CGContext) {
+    guard wall.kind != .exterior else { return }
+
     let dx = wall.end.x - wall.start.x
     let dy = wall.end.y - wall.start.y
     let length = hypot(dx, dy)
@@ -796,22 +826,22 @@ private func drawDarkWallHighlightCG(_ wall: WallSegment, context: CGContext) {
         ? normal
         : CGPoint(x: -normal.x, y: -normal.y)
     let shadedNormal = CGPoint(x: -litNormal.x, y: -litNormal.y)
-    let edgeOffset = width * 0.36
+    let edgeOffset = width * 0.18
     let inset = width * 0.16
     let start = CGPoint(x: wall.start.x + unitX * inset, y: wall.start.y + unitY * inset)
     let end = CGPoint(x: wall.end.x - unitX * inset, y: wall.end.y - unitY * inset)
 
     context.setLineCap(.butt)
-    context.setLineWidth(max(1.5, width * 0.14))
+    context.setLineWidth(max(0.8, width * 0.07))
 
-    context.setStrokeColor(UIColor.white.withAlphaComponent(wall.kind == .exterior ? 0.55 : 0.38).cgColor)
+    context.setStrokeColor(UIColor.white.withAlphaComponent(0.12).cgColor)
     context.move(to: CGPoint(x: start.x + litNormal.x * edgeOffset,
                              y: start.y + litNormal.y * edgeOffset))
     context.addLine(to: CGPoint(x: end.x + litNormal.x * edgeOffset,
                                 y: end.y + litNormal.y * edgeOffset))
     context.strokePath()
 
-    context.setStrokeColor(UIColor.black.withAlphaComponent(wall.kind == .exterior ? 0.38 : 0.28).cgColor)
+    context.setStrokeColor(UIColor.black.withAlphaComponent(0.10).cgColor)
     context.move(to: CGPoint(x: start.x + shadedNormal.x * edgeOffset,
                              y: start.y + shadedNormal.y * edgeOffset))
     context.addLine(to: CGPoint(x: end.x + shadedNormal.x * edgeOffset,
@@ -1026,8 +1056,8 @@ private func drawFloorPatternCG(_ kind: FloorKind,
     case .piastrelle:
         if dark {
             drawDarkTileFloorCG(bounds: bounds, spacing: 30,
-                                base: (red: 0.60, green: 0.62, blue: 0.65),
-                                alpha: 0.32)
+                                base: (red: 0.50, green: 0.55, blue: 0.60),
+                                alpha: 0.14)
         } else {
             UIColor(red: 0.93, green: 0.91, blue: 0.87, alpha: 0.40).setFill()
             path.fill()
@@ -1038,8 +1068,8 @@ private func drawFloorPatternCG(_ kind: FloorKind,
     case .gres:
         if dark {
             drawDarkTileFloorCG(bounds: bounds, spacing: 60,
-                                base: (red: 0.58, green: 0.57, blue: 0.54),
-                                alpha: 0.30)
+                                base: (red: 0.48, green: 0.51, blue: 0.54),
+                                alpha: 0.13)
         } else {
             UIColor(red: 0.87, green: 0.85, blue: 0.80, alpha: 0.38).setFill()
             path.fill()
@@ -1048,11 +1078,15 @@ private func drawFloorPatternCG(_ kind: FloorKind,
         }
 
     case .marmo:
-        UIColor(red: 0.96, green: 0.95, blue: 0.92,
-                alpha: dark ? 0.30 : 0.45).setFill()
+        UIColor(red: dark ? 0.46 : 0.96,
+                green: dark ? 0.50 : 0.95,
+                blue: dark ? 0.54 : 0.92,
+                alpha: dark ? 0.10 : 0.45).setFill()
         path.fill()
-        UIColor(red: 0.68, green: 0.65, blue: 0.62,
-                alpha: dark ? 0.22 : 0.18).setStroke()
+        UIColor(red: dark ? 0.68 : 0.68,
+                green: dark ? 0.73 : 0.65,
+                blue: dark ? 0.76 : 0.62,
+                alpha: dark ? 0.08 : 0.18).setStroke()
         let diag = max(bounds.width, bounds.height) * 2
         var offset: CGFloat = -diag
         while offset <= diag {
@@ -1065,16 +1099,18 @@ private func drawFloorPatternCG(_ kind: FloorKind,
         }
 
     case .cemento:
-        UIColor(red: 0.70, green: 0.69, blue: 0.67,
-                alpha: dark ? 0.45 : 0.32).setFill()
+        UIColor(red: dark ? 0.40 : 0.70,
+                green: dark ? 0.44 : 0.69,
+                blue: dark ? 0.48 : 0.67,
+                alpha: dark ? 0.14 : 0.32).setFill()
         path.fill()
 
     case .erba:
         if dark {
-            UIColor(red: 0.24, green: 0.34, blue: 0.22, alpha: 0.55).setFill()
+            UIColor(red: 0.20, green: 0.29, blue: 0.23, alpha: 0.27).setFill()
             path.fill()
             drawGrassTuftsCG(bounds: bounds,
-                             color: UIColor(red: 0.45, green: 0.60, blue: 0.38, alpha: 0.45))
+                             color: UIColor(red: 0.46, green: 0.58, blue: 0.45, alpha: 0.18))
         } else {
             UIColor(red: 0.55, green: 0.72, blue: 0.45, alpha: 0.30).setFill()
             path.fill()
@@ -1155,14 +1191,14 @@ private func drawDarkWoodPlanksCG(bounds: CGRect) {
     let joint: CGFloat = 0.7
 
     // Joint/base layer, visible only in the gaps between planks
-    UIColor(red: 0.14, green: 0.11, blue: 0.08, alpha: 0.60).setFill()
+    UIColor(red: 0.09, green: 0.11, blue: 0.13, alpha: 0.32).setFill()
     UIBezierPath(rect: bounds).fill()
 
     let tones: [(red: CGFloat, green: CGFloat, blue: CGFloat)] = [
-        (0.40, 0.31, 0.22),
-        (0.35, 0.27, 0.19),
-        (0.44, 0.34, 0.24),
-        (0.31, 0.24, 0.17)
+        (0.36, 0.39, 0.42),
+        (0.32, 0.36, 0.39),
+        (0.40, 0.43, 0.46),
+        (0.29, 0.33, 0.36)
     ]
 
     var row = Int((bounds.minY / plankH).rounded(.down))
@@ -1173,7 +1209,7 @@ private func drawDarkWoodPlanksCG(bounds: CGRect) {
         while CGFloat(col) * plankW + rowOffset <= bounds.maxX {
             let x = CGFloat(col) * plankW + rowOffset
             let tone = tones[Int(floorPatternHash(col, row) * CGFloat(tones.count)) % tones.count]
-            UIColor(red: tone.red, green: tone.green, blue: tone.blue, alpha: 0.55).setFill()
+            UIColor(red: tone.red, green: tone.green, blue: tone.blue, alpha: 0.16).setFill()
             UIBezierPath(rect: CGRect(x: x + joint, y: y + joint,
                                       width: plankW - joint * 2,
                                       height: plankH - joint * 2)).fill()
@@ -1191,14 +1227,14 @@ private func drawDarkTileFloorCG(bounds: CGRect, spacing: CGFloat,
     let grout: CGFloat = 0.6
 
     // Grout layer, visible only in the gaps between tiles
-    UIColor(red: 0.04, green: 0.05, blue: 0.07, alpha: 0.50).setFill()
+    UIColor(red: 0.08, green: 0.10, blue: 0.12, alpha: 0.24).setFill()
     UIBezierPath(rect: bounds).fill()
 
     var row = Int((bounds.minY / spacing).rounded(.down))
     while CGFloat(row) * spacing <= bounds.maxY {
         var col = Int((bounds.minX / spacing).rounded(.down))
         while CGFloat(col) * spacing <= bounds.maxX {
-            let delta = (floorPatternHash(col, row) - 0.5) * 0.10
+            let delta = (floorPatternHash(col, row) - 0.5) * 0.06
             UIColor(red: base.red + delta,
                     green: base.green + delta,
                     blue: base.blue + delta,

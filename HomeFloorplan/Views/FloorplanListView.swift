@@ -317,7 +317,7 @@ struct FloorplanListView: View {
         let cardBackground: Color = {
             guard image != nil else { return .secondary.opacity(0.1) }
             if exportStyle == .architecturalDark {
-                return Color(red: 0.075, green: 0.095, blue: 0.120)
+                return DrawingVisualExportStyle.architecturalDarkBackgroundColor
             }
             if let palette = ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex) {
                 return palette.swiftUIColor

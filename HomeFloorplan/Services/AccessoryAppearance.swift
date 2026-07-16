@@ -12,7 +12,7 @@ struct AccessoryAppearance {
     /// (es. icona nella lista accessori, icona header in DetailView).
     var statusColor: Color {
         switch urgency {
-        case .normal:  return .secondary
+        case .normal:  return Color(red: 0.70, green: 0.73, blue: 0.76)
         case .ok:      return .green
         case .active:  return markerTint ?? .yellow
         case .warning: return .orange
@@ -21,15 +21,15 @@ struct AccessoryAppearance {
     }
     
     /// Stile di riempimento del marker circolare sul floorplan.
-    /// `.normal` usa thinMaterial (look "spento/neutro"),
-    /// gli altri usano il colore di stato con opacità.
+    /// `.normal` uses a solid neutral fill. Avoid materials here: a floorplan can
+    /// contain many markers, and blur-backed materials are expensive on appearance changes.
     var markerFill: AnyShapeStyle {
         switch urgency {
         case .normal:
             if let markerTint {
                 return AnyShapeStyle(markerTint.opacity(0.22))
             }
-            return AnyShapeStyle(.thinMaterial)
+            return AnyShapeStyle(Color(red: 0.74, green: 0.77, blue: 0.80).opacity(0.88))
         case .ok:      return AnyShapeStyle(Color.green.opacity(0.85))
         case .active:  return AnyShapeStyle((markerTint ?? .yellow).opacity(0.85))
         case .warning: return AnyShapeStyle(Color.orange.opacity(0.85))
@@ -37,9 +37,9 @@ struct AccessoryAppearance {
         }
     }
     
-    /// Colore icona DENTRO il marker. Bianca su sfondi colorati, primary su neutro.
+    /// Colore icona DENTRO il marker. Bianca su sfondi colorati, nero su neutro.
     var markerIconColor: Color {
-        urgency == .normal ? .primary : .white
+        urgency == .normal ? Color.black.opacity(0.86) : .white
     }
     
     /// Colore del bordo intorno al marker (solitamente trasparente,
