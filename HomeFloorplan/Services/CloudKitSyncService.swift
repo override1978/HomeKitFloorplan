@@ -1366,8 +1366,23 @@ private extension CloudKitSyncService {
         let descriptor = FetchDescriptor<Floorplan>(predicate: #Predicate { $0.id == id })
 
         if let existing = (try? context.fetch(descriptor))?.first {
-            guard remoteUpdatedAt > existing.updatedAt || hasAccessorySnapshot else { return }
-            populateFloorplanFields(existing, from: record, context: context)
+            let shouldApplyRemoteRecord = remoteUpdatedAt > existing.updatedAt
+            let shouldBootstrapMarkers = existing.accessories.isEmpty && hasAccessorySnapshot
+
+            guard shouldApplyRemoteRecord || shouldBootstrapMarkers else {
+                if hasAccessorySnapshot {
+                    SyncDiagnosticsLogger.log(
+                        "Ignored stale floorplan marker snapshot floorplan=\(id.uuidString) remoteUpdatedAt=\(remoteUpdatedAt) localUpdatedAt=\(existing.updatedAt) localMarkers=\(existing.accessories.count)"
+                    )
+                }
+                return
+            }
+
+            if shouldApplyRemoteRecord {
+                populateFloorplanFields(existing, from: record, context: context)
+            } else {
+                bootstrapFloorplanMarkersIfNeeded(existing, from: record, context: context)
+            }
         } else {
             let fp = Floorplan(name: record["name"] as? String ?? "Untitled")
             fp.id = id
@@ -1375,6 +1390,23 @@ private extension CloudKitSyncService {
             context.insert(fp)
             populateFloorplanFields(fp, from: record, context: context)
         }
+    }
+
+    func bootstrapFloorplanMarkersIfNeeded(_ fp: Floorplan, from record: CKRecord, context: ModelContext) {
+        guard fp.accessories.isEmpty,
+              let data = record["placedAccessoriesJSON"] as? Data,
+              let snapshots = try? JSONDecoder().decode([PlacedAccessorySnapshot].self, from: data),
+              !snapshots.isEmpty else {
+            return
+        }
+
+        let roomIDMap = remapLinkedRooms(on: fp)
+        dprint("[CloudKitSync] Bootstrapping \(snapshots.count) marker snapshot(s) to floorplan \(fp.name)")
+        SyncDiagnosticsLogger.log(
+            "Bootstrapped marker snapshot floorplan=\(fp.id.uuidString) markers=\(snapshots.count)"
+        )
+        appliedFloorplanMarkerSnapshots[fp.id] = snapshots
+        applyAccessorySnapshots(snapshots, to: fp, roomIDMap: roomIDMap, context: context)
     }
 
     func populateFloorplanFields(_ fp: Floorplan, from record: CKRecord, context: ModelContext) {
@@ -1402,8 +1434,8 @@ private extension CloudKitSyncService {
             fp.drawingDocumentJSON = data
         }
 
-        // Markers: full replace from remote snapshot (remote is always authoritative
-        // since the whole Floorplan record is last-write-wins on updatedAt).
+        // Markers: full replace from a newer remote Floorplan record. Stale marker
+        // snapshots are filtered before reaching this method to protect local edits.
         if let data = record["placedAccessoriesJSON"] as? Data,
            let snapshots = try? JSONDecoder().decode([PlacedAccessorySnapshot].self, from: data) {
             dprint("[CloudKitSync] Applying \(snapshots.count) marker snapshot(s) to floorplan \(fp.name)")
