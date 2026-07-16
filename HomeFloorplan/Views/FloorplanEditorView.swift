@@ -806,8 +806,7 @@ struct FloorplanEditorView: View {
             floorplan.drawingVisualExportStyleRaw = visualStyle.rawValue
             floorplan.drawingExportRotation = exportRotation
             if !rooms.isEmpty {
-                preserveMarkerPositions(
-                    on: floorplan,
+                markerEditingCoordinator.preserveMarkerPositions(
                     from: previousRooms,
                     to: rooms,
                     previousRotation: previousRotation,
@@ -1459,67 +1458,6 @@ struct FloorplanEditorView: View {
         markerEditingCoordinator.backfillMarkerRoomLinksIfNeeded()
     }
 
-    private func preserveMarkerPositions(on floorplan: Floorplan,
-                                         from previousRooms: [LinkedRoom],
-                                         to newRooms: [LinkedRoom],
-                                         previousRotation: DrawingExportRotation,
-                                         newRotation: DrawingExportRotation) {
-        guard !previousRooms.isEmpty, !newRooms.isEmpty else { return }
-
-        let previousByID = Dictionary(uniqueKeysWithValues: previousRooms.map { ($0.hmRoomUUID, $0) })
-        let newByID = Dictionary(uniqueKeysWithValues: newRooms.map { ($0.hmRoomUUID, $0) })
-        let rotationDelta = (newRotation.quarterTurns - previousRotation.quarterTurns + 4) % 4
-
-        for marker in floorplan.accessories {
-            let markerPoint = NormalizedPoint(x: marker.positionX, y: marker.positionY)
-            guard let roomID = marker.linkedRoomUUID ?? roomID(containing: markerPoint, in: previousRooms),
-                  let previousRoom = previousByID[roomID],
-                  let newRoom = newByID[roomID] else { continue }
-
-            let previousRect = previousRoom.normalizedRect
-            let newRect = newRoom.normalizedRect
-            guard previousRect.width > 0, previousRect.height > 0 else { continue }
-
-            let localX = (marker.positionX - previousRect.x) / previousRect.width
-            let localY = (marker.positionY - previousRect.y) / previousRect.height
-            let rotatedLocal = rotatedLocalPoint(x: localX, y: localY, quarterTurns: rotationDelta)
-
-            marker.positionX = clamped(markerPosition: newRect.x + rotatedLocal.x * newRect.width)
-            marker.positionY = clamped(markerPosition: newRect.y + rotatedLocal.y * newRect.height)
-            marker.linkedRoomUUID = FloorplanRoomMatcher.linkedRoomID(
-                containing: marker.position,
-                in: newRooms
-            ) ?? roomID
-        }
-    }
-
-    private func rotatedLocalPoint(x: Double, y: Double, quarterTurns: Int) -> (x: Double, y: Double) {
-        switch quarterTurns {
-        case 1:
-            return (1 - y, x)
-        case 2:
-            return (1 - x, 1 - y)
-        case 3:
-            return (y, 1 - x)
-        default:
-            return (x, y)
-        }
-    }
-
-    private func roomID(containing point: NormalizedPoint, in rooms: [LinkedRoom]) -> UUID? {
-        rooms.first { room in
-            let rect = room.normalizedRect
-            return point.x >= rect.x &&
-                point.x <= rect.x + rect.width &&
-                point.y >= rect.y &&
-                point.y <= rect.y + rect.height
-        }?.hmRoomUUID
-    }
-
-    private func clamped(markerPosition value: Double) -> Double {
-        min(1, max(0, value))
-    }
-    
     // MARK: - Top Bar Height PreferenceKey
 
     // MARK: - HomeKit subscriptions
