@@ -6,6 +6,80 @@ struct FloorplanSelectedMarkerToolbarState {
     let auditNotice: MarkerAuditNotice?
 }
 
+struct FloorplanSecondaryControlsLayer: View {
+    let effectiveScale: CGFloat
+    let isEditing: Bool
+    let isOverlayPanelVisible: Bool?
+    let activeOverlayMode: FloorplanOverlayMode?
+    let selectedMarkerID: UUID?
+    let selectedMarker: FloorplanSelectedMarkerToolbarState?
+    let onResetZoom: () -> Void
+    let onRenameMarker: (UUID, String) -> Void
+    let onResetMarkerName: (UUID) -> Void
+    let onRecenterMarker: (UUID) -> Void
+    let onDeleteMarker: (UUID) -> Void
+    let onDismissMarker: () -> Void
+    let onChangeMarkerIcon: (UUID) -> Void
+    let onResolveMarkerAudit: (UUID) -> Void
+
+    var body: some View {
+        FloorplanSecondaryControls(
+            effectiveScale: effectiveScale,
+            isOverlayPanelVisible: isOverlayPanelVisible,
+            activeOverlayMode: activeOverlayMode,
+            selectedMarkerID: selectedMarkerID,
+            selectedMarker: activeSelectedMarker,
+            onResetZoom: onResetZoom,
+            onRenameMarker: renameSelectedMarker,
+            onResetMarkerName: resetSelectedMarkerName,
+            onRecenterMarker: recenterSelectedMarker,
+            onDeleteMarker: deleteSelectedMarker,
+            onDismissMarker: onDismissMarker,
+            onChangeMarkerIcon: changeSelectedMarkerIcon,
+            onResolveMarkerAudit: resolveSelectedMarkerAudit
+        )
+    }
+
+    private var activeSelectedMarker: FloorplanSelectedMarkerToolbarState? {
+        guard isEditing, selectedMarkerID != nil else { return nil }
+        return selectedMarker
+    }
+
+    private var resolveSelectedMarkerAudit: (() -> Void)? {
+        guard let selectedMarkerID,
+              activeSelectedMarker?.auditNotice != nil else { return nil }
+
+        return {
+            onResolveMarkerAudit(selectedMarkerID)
+        }
+    }
+
+    private func renameSelectedMarker(_ newLabel: String) {
+        guard let selectedMarkerID else { return }
+        onRenameMarker(selectedMarkerID, newLabel)
+    }
+
+    private func resetSelectedMarkerName() {
+        guard let selectedMarkerID else { return }
+        onResetMarkerName(selectedMarkerID)
+    }
+
+    private func recenterSelectedMarker() {
+        guard let selectedMarkerID else { return }
+        onRecenterMarker(selectedMarkerID)
+    }
+
+    private func deleteSelectedMarker() {
+        guard let selectedMarkerID else { return }
+        onDeleteMarker(selectedMarkerID)
+    }
+
+    private func changeSelectedMarkerIcon() {
+        guard let selectedMarkerID else { return }
+        onChangeMarkerIcon(selectedMarkerID)
+    }
+}
+
 struct FloorplanSecondaryControls: View {
     let effectiveScale: CGFloat
     let isOverlayPanelVisible: Bool?

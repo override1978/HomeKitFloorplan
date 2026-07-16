@@ -399,75 +399,42 @@ struct FloorplanEditorView: View {
 
     @ViewBuilder
     private func secondaryControls(in size: CGSize) -> some View {
-        if isEditing,
-           let markerID = selectedMarkerID,
-           let toolbarState = selectedMarkerToolbarState(for: markerID) {
-            FloorplanSecondaryControls(
-                effectiveScale: effectiveScale,
-                isOverlayPanelVisible: overlayVM?.isPanelVisible,
-                activeOverlayMode: overlayVM?.activeMode,
-                selectedMarkerID: selectedMarkerID,
-                selectedMarker: toolbarState,
-                onResetZoom: resetZoom,
-                onRenameMarker: { newLabel in
-                    applyRename(to: markerID, newLabel: newLabel)
-                },
-                onResetMarkerName: {
-                    applyRename(to: markerID, newLabel: "")
-                },
-                onRecenterMarker: {
-                    recenterMarker(id: markerID)
-                },
-                onDeleteMarker: {
-                    pendingDeleteMarkerID = markerID
-                },
-                onDismissMarker: {
-                    withAnimation(.spring(response: 0.35)) {
-                        selectedMarkerID = nil
-                    }
-                },
-                onChangeMarkerIcon: {
-                    iconPickerTargetID = markerID
-                },
-                onResolveMarkerAudit: toolbarState.auditNotice == nil ? nil : {
-                    resolveMarkerAudit(for: markerID)
-                }
-            )
-        } else {
-            FloorplanSecondaryControls(
-                effectiveScale: effectiveScale,
-                isOverlayPanelVisible: overlayVM?.isPanelVisible,
-                activeOverlayMode: overlayVM?.activeMode,
-                selectedMarkerID: selectedMarkerID,
-                selectedMarker: nil,
-                onResetZoom: resetZoom,
-                onRenameMarker: { _ in },
-                onResetMarkerName: {},
-                onRecenterMarker: {},
-                onDeleteMarker: {},
-                onDismissMarker: {
-                    withAnimation(.spring(response: 0.35)) {
-                        selectedMarkerID = nil
-                    }
-                },
-                onChangeMarkerIcon: {},
-                onResolveMarkerAudit: nil
-            )
-        }
+        FloorplanSecondaryControlsLayer(
+            effectiveScale: effectiveScale,
+            isEditing: isEditing,
+            isOverlayPanelVisible: overlayVM?.isPanelVisible,
+            activeOverlayMode: overlayVM?.activeMode,
+            selectedMarkerID: selectedMarkerID,
+            selectedMarker: selectedMarkerToolbarState,
+            onResetZoom: resetZoom,
+            onRenameMarker: { markerID, newLabel in
+                applyRename(to: markerID, newLabel: newLabel)
+            },
+            onResetMarkerName: { markerID in
+                applyRename(to: markerID, newLabel: "")
+            },
+            onRecenterMarker: recenterMarker,
+            onDeleteMarker: { markerID in
+                pendingDeleteMarkerID = markerID
+            },
+            onDismissMarker: dismissSelectedMarker,
+            onChangeMarkerIcon: { markerID in
+                iconPickerTargetID = markerID
+            },
+            onResolveMarkerAudit: resolveMarkerAudit
+        )
     }
 
-    private func selectedMarkerToolbarState(for markerID: UUID) -> FloorplanSelectedMarkerToolbarState? {
+    private var selectedMarkerToolbarState: FloorplanSelectedMarkerToolbarState? {
+        guard isEditing, let markerID = selectedMarkerID else { return nil }
         guard let placed = marker(withID: markerID) else { return nil }
-        let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID)
-        let displayName = placed.customLabel?.isEmpty == false
-            ? placed.customLabel!
-            : (accessory?.name ?? "(rimosso)")
+        return selectedMarkerToolbarStateBuilder.state(for: placed)
+    }
 
-        return FloorplanSelectedMarkerToolbarState(
-            markerName: displayName,
-            initialRenameText: placed.customLabel ?? "",
-            auditNotice: markerAuditService.auditNotice(for: placed, accessory: accessory)
-        )
+    private func dismissSelectedMarker() {
+        withAnimation(.spring(response: 0.35)) {
+            selectedMarkerID = nil
+        }
     }
     
     // MARK: - Pulsante apri pannello (sempre visibile, non soggetto ad auto-hide)
@@ -779,6 +746,13 @@ struct FloorplanEditorView: View {
             isEditing: isEditing,
             duplicatedMarkerAccessoryIDs: duplicatedMarkerAccessoryIDs,
             linkedRooms: floorplan.linkedRooms
+        )
+    }
+
+    private var selectedMarkerToolbarStateBuilder: FloorplanSelectedMarkerToolbarStateBuilder {
+        FloorplanSelectedMarkerToolbarStateBuilder(
+            homeKit: homeKit,
+            markerAuditService: markerAuditService
         )
     }
 
