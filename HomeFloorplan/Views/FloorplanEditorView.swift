@@ -186,17 +186,6 @@ struct FloorplanEditorView: View {
             || pendingDeleteMarkerID != nil
     }
 
-    private var pendingDeleteIsPresented: Binding<Bool> {
-        Binding(
-            get: { pendingDeleteMarkerID != nil },
-            set: { isPresented in
-                if !isPresented {
-                    pendingDeleteMarkerID = nil
-                }
-            }
-        )
-    }
-
     private var floorplanBackgroundColor: Color {
         let visualStyle = DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard
         if visualStyle == .architecturalDark {
@@ -282,119 +271,9 @@ struct FloorplanEditorView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $showingPicker, onDismiss: {
-            pickerRoomFilter = nil
-            pendingMarkerPosition = nil
-            editHighlightedRoomID = nil
-        }) {
-            let preferredRoomUUIDs = pickerRoomFilter != nil
-                ? Set([pickerRoomFilter!])
-                : Set(floorplan.linkedRooms.map(\.hmRoomUUID))
-            let preferredRoomNames = Set(
-                floorplan.linkedRooms
-                    .filter { room in
-                        pickerRoomFilter == nil || room.hmRoomUUID == pickerRoomFilter
-                    }
-                    .map { normalizedRoomName($0.name) }
-            )
-            let alreadyPlaced = Set(floorplan.accessories.map(\.homeKitAccessoryUUID))
-            let title = accessoryPickerTitle
-            AccessoryPickerSheet(
-                alreadyPlaced: alreadyPlaced,
-                preferredRoomUUIDs: preferredRoomUUIDs,
-                preferredRoomNames: preferredRoomNames,
-                title: title,
-                onPick: { accessories in
-                    for accessory in accessories {
-                        addAccessory(accessory, at: pendingMarkerPosition)
-                    }
-                }
-            )
-        }
-        .sheet(item: $controllingAccessory) { accessory in
-            AccessoryDetailView(accessory: accessory)
-        }
-        .sheet(isPresented: Binding(
-            get: { iconPickerTargetID != nil },
-            set: { isPresented in
-                if !isPresented {
-                    iconPickerTargetID = nil
-                }
-            }
-        )) {
-            if let markerID = iconPickerTargetID,
-               let placed = marker(withID: markerID),
-               let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID) {
-                let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
-                IconPickerSheet(
-                    accessory: accessory,
-                    defaultIconName: adapter.iconName,
-                    onIconChanged: {
-                        floorplan.updatedAt = .now
-                        try? modelContext.save()
-                        cloudKitSync.markFloorplanNeedsSync(floorplan.id)
-                    }
-                )
-                .presentationDetents([.large])
-            }
-        }
-        .sheet(isPresented: $showFloorplanDiagnostics) {
-            FloorplanDiagnosticsView(
-                report: FloorplanHealthAnalyzer.analyze(floorplan: floorplan, homeKit: homeKit),
-                onAddAccessories: startAssistedPlacement
-            )
-        }
-        .sheet(isPresented: $showFloorplanHelp, onDismiss: {
-            chromeController.markHelpSeen()
-        }) {
-            FloorplanHelpSheet {
-                chromeController.dismissHelp()
-            }
-        }
-        .fullScreenCover(item: $drawingEditFloorplan, onDismiss: {
-            imageLoader.refresh(for: floorplan)
-            refreshOverlayContext()
-            accessoryObservationCoordinator.subscribe(to: floorplan)
-        }) { editingFloorplan in
-            drawingEditor(for: editingFloorplan)
-                .environment(homeKit)
-                .ignoresSafeArea()
-        }
+        .modifier(editorPresentationModifier)
         .suppressesIdleScreensaver(.floorplanInteraction, when: shouldSuppressIdleScreensaver)
-        
-        
-        .alert(String(localized: "floorplan.marker.delete.title", defaultValue: "Remove accessory from floorplan?"),
-               isPresented: pendingDeleteIsPresented) {
-            Button(String(localized: "common.delete", defaultValue: "Delete"), role: .destructive) {
-                if let markerID = pendingDeleteMarkerID {
-                    deleteMarker(id: markerID)
-                }
-            }
-            Button(String(localized: "common.cancel", defaultValue: "Cancel"), role: .cancel) {}
-        } message: {
-            Text(String(localized: "floorplan.marker.delete.message", defaultValue: "The accessory will be removed from the floorplan but will remain active in HomeKit."))
-        }
-        .onAppear {
-            // Initialise the overlay VM once so it's keyed to the real floorplan UUID.
-            if overlayVM == nil {
-                overlayVM = FloorplanOverlayViewModel(floorplanID: floorplan.id)
-            }
-            overlayEnvVM.configure(modelContainer: modelContext.container)
-            overlayEnvVM.loadFromCoreData()
-            accessoryObservationCoordinator.subscribe(to: floorplan)
-            viewportController.restore()
-            if startInEditMode {
-                isEditing = true
-                chromeController.enterEditingMode()
-            } else {
-                chromeController.scheduleAutoHide(isEditing: isEditing)
-            }
-            // Warm up caches
-            imageLoader.refresh(for: floorplan)
-            backfillMarkerRoomLinksIfNeeded()
-            refreshOverlayContext()
-            presentHelpIfNeeded()
-        }
+        .onAppear(perform: handleAppear)
         .onChange(of: homeKit.isReady) { _, isReady in
             if isReady {
                 accessoryObservationCoordinator.subscribe(to: floorplan)
@@ -421,12 +300,11 @@ struct FloorplanEditorView: View {
         .onChange(of: floorplan.updatedAt) { _, _ in
             imageLoader.refresh(for: floorplan)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .floorplansDidApplyRemoteChanges)) { notification in
-            handleFloorplanRemoteChanges(notification)
-        }
-        .onDisappear {
-            handleDisappear()
-        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .floorplansDidApplyRemoteChanges),
+            perform: handleFloorplanRemoteChanges
+        )
+        .onDisappear(perform: handleDisappear)
         .onChange(of: floorplan.accessories.count) { _, _ in
             accessoryObservationCoordinator.subscribe(to: floorplan)
         }
@@ -440,9 +318,29 @@ struct FloorplanEditorView: View {
         .onChange(of: homeKit.allAccessories) { _, _ in
             trackSecurityModeChange()
         }
-        .onAppear {
-            trackSecurityModeChange()
+    }
+
+    private func handleAppear() {
+        if overlayVM == nil {
+            overlayVM = FloorplanOverlayViewModel(floorplanID: floorplan.id)
         }
+        overlayEnvVM.configure(modelContainer: modelContext.container)
+        overlayEnvVM.loadFromCoreData()
+        accessoryObservationCoordinator.subscribe(to: floorplan)
+        viewportController.restore()
+
+        if startInEditMode {
+            isEditing = true
+            chromeController.enterEditingMode()
+        } else {
+            chromeController.scheduleAutoHide(isEditing: isEditing)
+        }
+
+        imageLoader.refresh(for: floorplan)
+        backfillMarkerRoomLinksIfNeeded()
+        refreshOverlayContext()
+        presentHelpIfNeeded()
+        trackSecurityModeChange()
     }
 
     /// Checks if the security system mode has changed and records the activation timestamp.
@@ -879,6 +777,12 @@ struct FloorplanEditorView: View {
         chromeController.cancelAutoHide()
     }
 
+    private func handleDrawingDismiss() {
+        imageLoader.refresh(for: floorplan)
+        refreshOverlayContext()
+        accessoryObservationCoordinator.subscribe(to: floorplan)
+    }
+
     // MARK: - Image rect
     
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
@@ -968,12 +872,6 @@ struct FloorplanEditorView: View {
     }
 
     // MARK: - Marker
-
-    private func normalizedRoomName(_ value: String) -> String {
-        value
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 
     @ViewBuilder
     private func markerView(item: FloorplanMarkerRenderItem,
@@ -1078,6 +976,41 @@ struct FloorplanEditorView: View {
             hideTask: $hideTask,
             showHelp: $showFloorplanHelp,
             hasSeenHelp: $hasSeenFloorplanHelp
+        )
+    }
+
+    private var editorPresentationModifier: FloorplanEditorPresentationModifier {
+        FloorplanEditorPresentationModifier(
+            floorplan: floorplan,
+            homeKit: homeKit,
+            modelContext: modelContext,
+            cloudKitSync: cloudKitSync,
+            accessoryPickerTitle: accessoryPickerTitle,
+            showingPicker: $showingPicker,
+            pickerRoomFilter: $pickerRoomFilter,
+            pendingMarkerPosition: $pendingMarkerPosition,
+            editHighlightedRoomID: $editHighlightedRoomID,
+            controllingAccessory: $controllingAccessory,
+            iconPickerTargetID: $iconPickerTargetID,
+            showFloorplanDiagnostics: $showFloorplanDiagnostics,
+            showFloorplanHelp: $showFloorplanHelp,
+            drawingEditFloorplan: $drawingEditFloorplan,
+            pendingDeleteMarkerID: $pendingDeleteMarkerID,
+            onAddAccessory: { accessory, position in
+                addAccessory(accessory, at: position)
+            },
+            onStartAssistedPlacement: { roomID in
+                startAssistedPlacement(for: roomID)
+            },
+            onHelpDismiss: chromeController.markHelpSeen,
+            onHelpClose: chromeController.dismissHelp,
+            onDrawingDismiss: handleDrawingDismiss,
+            drawingEditor: { editingFloorplan in
+                AnyView(drawingEditor(for: editingFloorplan))
+            },
+            onDeleteMarker: { markerID in
+                deleteMarker(id: markerID)
+            }
         )
     }
 
@@ -1286,7 +1219,7 @@ struct FloorplanEditorView: View {
     // MARK: - Top Bar Height PreferenceKey
 }
 
-private struct FloorplanHelpSheet: View {
+struct FloorplanHelpSheet: View {
     let onDone: () -> Void
 
     var body: some View {
