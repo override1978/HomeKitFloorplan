@@ -1425,18 +1425,21 @@ struct FloorplanEditorView: View {
             // Transizione opacity per evitare un salto brusco al cambio modalità.
             let showMarkers = isEditing || (overlayVM?.activeMode == .controls)
             let collisionOffsets = showMarkers ? markerCollisionOffsets(in: rect) : [:]
+            let markerItems = showMarkers ? markerRenderItems() : []
             Group {
                 if showMarkers {
-                    ForEach(floorplan.accessories) { placed in
+                    FloorplanMarkerLayer(
+                        items: markerItems,
+                        imageRect: rect,
+                        collisionOffsets: collisionOffsets
+                    ) { item, collisionOffset in
                         markerView(
-                            for: placed,
+                            item: item,
                             in: rect,
-                            collisionOffset: collisionOffsets[placed.id] ?? .zero
+                            collisionOffset: collisionOffset
                         )
-                    }
-                    if floorplan.accessories.isEmpty {
+                    } emptyContent: {
                         emptyMarkersHint
-                            .position(x: rect.midX, y: rect.midY)
                     }
                 }
             }
@@ -1821,33 +1824,10 @@ struct FloorplanEditorView: View {
     }
 
     @ViewBuilder
-    private func markerView(for placed: PlacedAccessory,
+    private func markerView(item: FloorplanMarkerRenderItem,
                             in imageRect: CGRect,
                             collisionOffset: CGSize) -> some View {
-        let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID)
-        let displayLabel: String = {
-            if let custom = placed.customLabel, !custom.isEmpty { return custom }
-            guard let accessory else { return "(rimosso)" }
-            let fullName = accessory.name
-            if let roomName = accessory.room?.name {
-                // Suffisso: "Faretti Cucina" → rimuovi " Cucina"
-                let suffix = " " + roomName
-                if fullName.hasSuffix(suffix) {
-                    return String(fullName.dropLast(suffix.count))
-                }
-                // Prefisso con trattino: "Cucina - Faretti" → rimuovi "Cucina - "
-                let prefix = roomName + " - "
-                if fullName.hasPrefix(prefix) {
-                    return String(fullName.dropFirst(prefix.count))
-                }
-            }
-            return fullName
-        }()
-        let adapter: (any AccessoryAdapter)? = accessory.map { acc in
-            AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit)
-        }
-        let isSelected = selectedMarkerID == placed.id
-        
+        let placed = item.placed
         let basePoint = CGPoint(
             x: imageRect.origin.x + placed.position.x * imageRect.width,
             y: imageRect.origin.y + placed.position.y * imageRect.height
@@ -1859,32 +1839,29 @@ struct FloorplanEditorView: View {
             x: livePoint.x + collisionOffset.width,
             y: livePoint.y + collisionOffset.height
         )
-        let shaking = shakeMarkerID == placed.id
         
         let inverseScale = 1.0 / effectiveScale
-        let editIssue = markerEditIssue(for: placed, accessory: accessory)
-        let allowsCameraSnapshot = !isEditing && overlayVM?.activeMode == .security
         
         AccessoryMarkerView(
-            adapter: adapter,
+            adapter: item.adapter,
             isEditing: isEditing,
-            isSelected: isEditing && isSelected,
-            isExecuting: executingMarkerID == placed.id,
-            editIssue: editIssue,
-            label: displayLabel,
-            hasCustomLabel: placed.customLabel?.isEmpty == false,
-            allowsCameraSnapshot: allowsCameraSnapshot
+            isSelected: isEditing && item.isSelected,
+            isExecuting: item.isExecuting,
+            editIssue: item.editIssue,
+            label: item.displayLabel,
+            hasCustomLabel: item.hasCustomLabel,
+            allowsCameraSnapshot: item.allowsCameraSnapshot
         )
         .scaleEffect(inverseScale)
         .position(displayPoint)
-        .offset(x: shaking ? 6 : 0)
-        .animation(shaking ? .default.repeatCount(3, autoreverses: true).speed(8) : .default,
-                   value: shaking)
-        .animation(.spring(response: 0.3), value: isSelected)
+        .offset(x: item.isShaking ? 6 : 0)
+        .animation(item.isShaking ? .default.repeatCount(3, autoreverses: true).speed(8) : .default,
+                   value: item.isShaking)
+        .animation(.spring(response: 0.3), value: item.isSelected)
         .gesture(
             isEditing
             ? nil
-            : markerInteractionGesture(for: placed, accessory: accessory, adapter: adapter)
+            : markerInteractionGesture(for: placed, accessory: item.accessory, adapter: item.adapter)
         )
         .simultaneousGesture(
             isEditing
@@ -1899,6 +1876,19 @@ struct FloorplanEditorView: View {
         .gesture(
             isEditing ? dragGesture(for: placed, imageRect: imageRect) : nil
         )
+    }
+
+    private func markerRenderItems() -> [FloorplanMarkerRenderItem] {
+        FloorplanMarkerRenderItemBuilder(
+            homeKit: homeKit,
+            isEditing: isEditing,
+            allowsCameraSnapshot: !isEditing && overlayVM?.activeMode == .security,
+            selectedMarkerID: selectedMarkerID,
+            executingMarkerID: executingMarkerID,
+            shakeMarkerID: shakeMarkerID,
+            duplicatedMarkerAccessoryIDs: duplicatedMarkerAccessoryIDs,
+            linkedRooms: floorplan.linkedRooms
+        ).makeItems(from: floorplan.accessories)
     }
 
     private func markerInteractionGesture(for placed: PlacedAccessory,
