@@ -360,7 +360,7 @@ struct FloorplanEditorView: View {
         .fullScreenCover(item: $drawingEditFloorplan, onDismiss: {
             refreshFloorplanImageCache()
             refreshOverlayContext()
-            subscribeToAccessories()
+            accessoryObservationCoordinator.subscribe(to: floorplan)
         }) { editingFloorplan in
             drawingEditor(for: editingFloorplan)
                 .environment(homeKit)
@@ -387,7 +387,7 @@ struct FloorplanEditorView: View {
             }
             overlayEnvVM.configure(modelContainer: modelContext.container)
             overlayEnvVM.loadFromCoreData()
-            subscribeToAccessories()
+            accessoryObservationCoordinator.subscribe(to: floorplan)
             restoreZoom()
             if startInEditMode {
                 isEditing = true
@@ -404,7 +404,7 @@ struct FloorplanEditorView: View {
         }
         .onChange(of: homeKit.isReady) { _, isReady in
             if isReady {
-                subscribeToAccessories()
+                accessoryObservationCoordinator.subscribe(to: floorplan)
                 refreshOverlayContext()
             }
         }
@@ -435,7 +435,7 @@ struct FloorplanEditorView: View {
             handleDisappear()
         }
         .onChange(of: floorplan.accessories.count) { _, _ in
-            subscribeToAccessories()
+            accessoryObservationCoordinator.subscribe(to: floorplan)
         }
         .onChange(of: isEditing) { _, newValue in
             if newValue {
@@ -949,11 +949,11 @@ struct FloorplanEditorView: View {
         )
         refreshFloorplanImageCache()
         refreshOverlayContext()
-        subscribeToAccessories()
+        accessoryObservationCoordinator.subscribe(to: floorplan)
     }
 
     private func handleDisappear() {
-        unsubscribeFromAccessories()
+        accessoryObservationCoordinator.unsubscribe(from: floorplan)
         hideTask?.cancel()
     }
 
@@ -1186,6 +1186,10 @@ struct FloorplanEditorView: View {
         )
     }
 
+    private var accessoryObservationCoordinator: FloorplanAccessoryObservationCoordinator {
+        FloorplanAccessoryObservationCoordinator(homeKit: homeKit)
+    }
+
     private func markerInteractionGesture(for markerID: UUID,
                                           accessory: HMAccessory?,
                                           adapter: (any AccessoryAdapter)?) -> some Gesture {
@@ -1389,18 +1393,6 @@ struct FloorplanEditorView: View {
     }
 
     // MARK: - Top Bar Height PreferenceKey
-
-    // MARK: - HomeKit subscriptions
-
-    private func subscribeToAccessories() {
-        let uuids = Set(floorplan.accessories.map(\.homeKitAccessoryUUID))
-        homeKit.startObserving(accessoryUUIDs: uuids)
-    }
-    
-    private func unsubscribeFromAccessories() {
-        let uuids = Set(floorplan.accessories.map(\.homeKitAccessoryUUID))
-        homeKit.stopObserving(accessoryUUIDs: uuids)
-    }
 }
 
 private struct FloorplanHelpSheet: View {
