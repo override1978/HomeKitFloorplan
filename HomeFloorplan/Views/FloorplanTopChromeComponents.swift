@@ -1,5 +1,189 @@
 import SwiftUI
 
+struct TopBarHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct FloorplanTopBarView: View {
+    let size: CGSize
+    let floorplan: Floorplan
+    let presentationStyle: FloorplanEditorView.PresentationStyle
+    let columnVisibility: NavigationSplitViewVisibility
+    let pinnedFloorplans: [Floorplan]
+    let primaryFloorplanID: String
+    let isEditing: Bool
+    let overlayVM: FloorplanOverlayViewModel?
+    let overlayContext: FloorplanOverlayContext
+    let environmentSensorTypes: [SensorServiceType]
+    let isCloudKitMaster: Bool
+    let smartLightingStatus: SmartLightingFloorplanStatus?
+    let securityAdapter: SecuritySystemAdapter?
+    let securityActivationDate: Date?
+    let onOpenSidebar: () -> Void
+    let onDismiss: () -> Void
+    let onSelectFloorplan: ((UUID) -> Void)?
+    let onAddAccessory: () -> Void
+    let onShowHelp: () -> Void
+    let onShowDiagnostics: () -> Void
+    let onEditDrawing: () -> Void
+    let onShowScenes: () -> Void
+    let onToggleEditing: () -> Void
+    let onPauseSmartLighting: () -> Void
+    let onResumeSmartLighting: () -> Void
+    let onTopBarHeightChanged: (CGFloat) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                if !isEditing, let overlayVM {
+                    FloorplanModePill(overlayVM: overlayVM, context: overlayContext)
+                }
+
+                HStack {
+                    HStack(spacing: 10) {
+                        leadingNavigationButton
+
+                        FloorplanTitleMenu(
+                            currentFloorplan: floorplan,
+                            pinnedFloorplans: pinnedFloorplans,
+                            primaryFloorplanID: primaryFloorplanID,
+                            onOpenSidebar: onOpenSidebar,
+                            onSelectFloorplan: onSelectFloorplan
+                        )
+                    }
+
+                    Spacer()
+
+                    FloorplanTopRightActions(
+                        isEditing: isEditing,
+                        isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
+                        showsSceneText: size.width >= 760,
+                        isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
+                        onAddAccessory: onAddAccessory,
+                        onShowHelp: onShowHelp,
+                        onShowDiagnostics: onShowDiagnostics,
+                        onEditDrawing: onEditDrawing,
+                        onShowScenes: onShowScenes,
+                        onToggleEditing: onToggleEditing
+                    )
+                }
+            }
+            .animation(.spring(response: 0.4), value: columnVisibility)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+
+            statusBanners
+
+            Spacer().frame(height: 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+        .animation(.spring(response: 0.35), value: overlayVM?.activeMode)
+        .animation(.spring(response: 0.35), value: floorplan.linkedRooms.isEmpty)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: TopBarHeightKey.self,
+                    value: geo.size.height
+                )
+            }
+        )
+        .onPreferenceChange(TopBarHeightKey.self, perform: onTopBarHeightChanged)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    @ViewBuilder
+    private var leadingNavigationButton: some View {
+        switch presentationStyle {
+        case .splitView:
+            if columnVisibility == .detailOnly {
+                Button(action: onOpenSidebar) {
+                    GlassCircle(size: 40) {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .transition(.scale.combined(with: .opacity))
+            }
+        case .pushed:
+            Button(action: onDismiss) {
+                GlassCircle(size: 40) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.red)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var statusBanners: some View {
+        if !isEditing,
+           overlayVM?.activeMode == .controls,
+           isCloudKitMaster,
+           let smartLightingStatus {
+            FloorplanSmartLightingStatusPill(
+                status: smartLightingStatus,
+                onPause: onPauseSmartLighting,
+                onResume: onResumeSmartLighting
+            )
+            .padding(.top, 10)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+
+        if !isEditing, let overlayVM, overlayVM.activeMode == .environment {
+            EnvironmentFilterBar(
+                overlayVM: overlayVM,
+                availableTypes: environmentSensorTypes
+            )
+            .padding(.top, 4)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+
+        if !isEditing,
+           let overlayVM,
+           overlayVM.activeMode == .security,
+           let securityAdapter {
+            AlarmStatusPill(
+                adapter: securityAdapter,
+                activationDate: securityActivationDate
+            )
+            .padding(.top, 6)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+
+        if isEditing {
+            FloorplanEditModeBanner(onOpenDiagnostics: onShowDiagnostics)
+                .padding(.top, 6)
+                .transition(.opacity)
+        }
+
+        if !isEditing && floorplan.linkedRooms.isEmpty {
+            HStack(spacing: 8) {
+                Image(systemName: "leaf.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+                Text(String(localized: "floorplan.editor.banner.noRooms",
+                            defaultValue: "No rooms linked — open the 2D editor (✏️) to draw the areas and unlock the Environment layer."))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(.regularMaterial, in: Capsule())
+            .padding(.top, 6)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+}
+
 struct FloorplanSmartLightingStatusPill: View {
     let status: SmartLightingFloorplanStatus
     let onPause: () -> Void

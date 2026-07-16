@@ -335,160 +335,64 @@ struct FloorplanEditorView: View {
     private func findSecurityAdapter() -> SecuritySystemAdapter? {
         runtimeContextController.securityAdapter()
     }
+
+    private func openSidebar() {
+        withAnimation(.spring(response: 0.4)) {
+            columnVisibility = .all
+        }
+    }
+
+    private func showAccessoryPicker() {
+        pickerRoomFilter = nil
+        pendingMarkerPosition = nil
+        editHighlightedRoomID = nil
+        showingPicker = true
+    }
+
+    private func toggleEditing() {
+        isEditing.toggle()
+        suppressNextMarkerTapID = nil
+        executingMarkerID = nil
+        if !isEditing {
+            selectedMarkerID = nil
+            editHighlightedRoomID = nil
+        }
+    }
     
     // MARK: - Top bar (sempre visibile)
 
     @ViewBuilder
     private func topBar(in size: CGSize) -> some View {
-        // VStack senza Spacer: si restringe all'altezza reale del contenuto.
-        // Il Spacer esterno (nello ZStack) non è necessario perché la top bar
-        // è allineata al top dello ZStack per natura.
-        VStack(spacing: 0) {
-            ZStack {
-                // Pill — centrata rispetto alla larghezza totale della barra,
-                // indipendente dai pesi dei gruppi laterali.
-                if !isEditing, let vm = overlayVM {
-                    FloorplanModePill(overlayVM: vm, context: cachedOverlayContext)
-                }
-
-                // Sinistra e destra sovrapposti: non influenzano il centro della pill.
-                HStack {
-                    // Sinistra: sidebar / dismiss + nome floorplan
-                    HStack(spacing: 10) {
-                        switch presentationStyle {
-                        case .splitView:
-                            if columnVisibility == .detailOnly {
-                                Button {
-                                    withAnimation(.spring(response: 0.4)) {
-                                        columnVisibility = .all
-                                    }
-                                } label: {
-                                    GlassCircle(size: 40) {
-                                        Image(systemName: "sidebar.left")
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundStyle(.primary)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .transition(.scale.combined(with: .opacity))
-                            }
-                        case .pushed:
-                            Button {
-                                dismiss()
-                            } label: {
-                                GlassCircle(size: 40) {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundStyle(Color.red)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        FloorplanTitleMenu(
-                            currentFloorplan: floorplan,
-                            pinnedFloorplans: pinnedFloorplans,
-                            primaryFloorplanID: primaryFloorplanID,
-                            onOpenSidebar: {
-                                withAnimation(.spring(response: 0.4)) {
-                                    columnVisibility = .all
-                                }
-                            },
-                            onSelectFloorplan: onSelectFloorplan
-                        )
-                    }
-
-                    Spacer()
-
-                    // Destra: azioni (+ / scene / modifica)
-                    topRightActions(in: size)
-                }
-            }
-            .animation(.spring(response: 0.4), value: columnVisibility)
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-
-            if !isEditing,
-               overlayVM?.activeMode == .controls,
-               cloudKitSync.isMaster,
-               let status = smartLightingEngine.floorplanStatus {
-                FloorplanSmartLightingStatusPill(
-                    status: status,
-                    onPause: smartLightingEngine.pauseFromFloorplan,
-                    onResume: smartLightingEngine.resumeFromFloorplan
-                )
-                    .padding(.top, 10)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            // Sub-filter bar: visible only in Environment mode (not in edit mode)
-            if !isEditing, let vm = overlayVM, vm.activeMode == .environment {
-                EnvironmentFilterBar(
-                    overlayVM: vm,
-                    availableTypes: overlayEnvVM.availableSensorTypes
-                )
-                .padding(.top, 4)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            // Security alarm status pill: visible only in Security mode (not in edit mode)
-            if !isEditing, let vm = overlayVM, vm.activeMode == .security,
-               let adapter = findSecurityAdapter() {
-                AlarmStatusPill(
-                    adapter: adapter,
-                    activationDate: securityModeActivationDate > 0
-                        ? Date(timeIntervalSince1970: securityModeActivationDate)
-                        : nil
-                )
-                .padding(.top, 6)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            if isEditing {
-                FloorplanEditModeBanner {
-                    showFloorplanDiagnostics = true
-                }
-                    .padding(.top, 6)
-                    .transition(.opacity)
-            }
-
-            // Hint banner: stanze non collegate → layer Ambiente non disponibile
-            if !isEditing && floorplan.linkedRooms.isEmpty {
-                HStack(spacing: 8) {
-                    Image(systemName: "leaf.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.green)
-                    Text(String(localized: "floorplan.editor.banner.noRooms",
-                                defaultValue: "No rooms linked — open the 2D editor (✏️) to draw the areas and unlock the Environment layer."))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(.regularMaterial, in: Capsule())
-                .padding(.top, 6)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            // Padding inferiore per separare visivamente la barra dal canvas
-            Spacer().frame(height: 8)
-        }
-        .frame(maxWidth: .infinity, alignment: .top)
-        .animation(.spring(response: 0.35), value: overlayVM?.activeMode)
-        .animation(.spring(response: 0.35), value: floorplan.linkedRooms.isEmpty)
-
-        // Misura l'altezza reale della top bar (senza Spacer espanso)
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: TopBarHeightKey.self,
-                    value: geo.size.height
-                )
-            }
+        FloorplanTopBarView(
+            size: size,
+            floorplan: floorplan,
+            presentationStyle: presentationStyle,
+            columnVisibility: columnVisibility,
+            pinnedFloorplans: pinnedFloorplans,
+            primaryFloorplanID: primaryFloorplanID,
+            isEditing: isEditing,
+            overlayVM: overlayVM,
+            overlayContext: cachedOverlayContext,
+            environmentSensorTypes: overlayEnvVM.availableSensorTypes,
+            isCloudKitMaster: cloudKitSync.isMaster,
+            smartLightingStatus: smartLightingEngine.floorplanStatus,
+            securityAdapter: findSecurityAdapter(),
+            securityActivationDate: securityModeActivationDate > 0
+                ? Date(timeIntervalSince1970: securityModeActivationDate)
+                : nil,
+            onOpenSidebar: openSidebar,
+            onDismiss: dismiss.callAsFunction,
+            onSelectFloorplan: onSelectFloorplan,
+            onAddAccessory: showAccessoryPicker,
+            onShowHelp: chromeController.showHelpManually,
+            onShowDiagnostics: { showFloorplanDiagnostics = true },
+            onEditDrawing: { drawingEditFloorplan = floorplan },
+            onShowScenes: { showScenesPanel = true },
+            onToggleEditing: toggleEditing,
+            onPauseSmartLighting: smartLightingEngine.pauseFromFloorplan,
+            onResumeSmartLighting: smartLightingEngine.resumeFromFloorplan,
+            onTopBarHeightChanged: { topBarHeight = $0 }
         )
-        .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
-        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: - Controlli secondari (auto-hide)
@@ -590,43 +494,6 @@ struct FloorplanEditorView: View {
             .transition(.scale(scale: 0.7).combined(with: .opacity))
             .animation(.spring(response: 0.35, dampingFraction: 0.82), value: vm.isPanelVisible)
         }
-    }
-
-    @ViewBuilder
-    private func topRightActions(in size: CGSize) -> some View {
-        FloorplanTopRightActions(
-            isEditing: isEditing,
-            isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
-            showsSceneText: size.width >= 760,
-            isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
-            onAddAccessory: {
-                pickerRoomFilter = nil
-                pendingMarkerPosition = nil
-                editHighlightedRoomID = nil
-                showingPicker = true
-            },
-            onShowHelp: {
-                chromeController.showHelpManually()
-            },
-            onShowDiagnostics: {
-                showFloorplanDiagnostics = true
-            },
-            onEditDrawing: {
-                drawingEditFloorplan = floorplan
-            },
-            onShowScenes: {
-                showScenesPanel = true
-            },
-            onToggleEditing: {
-                isEditing.toggle()
-                suppressNextMarkerTapID = nil
-                executingMarkerID = nil
-                if !isEditing {
-                    selectedMarkerID = nil
-                    editHighlightedRoomID = nil
-                }
-            }
-        )
     }
 
     private func drawingEditor(for floorplan: Floorplan) -> some View {
@@ -1273,17 +1140,5 @@ struct FloorplanHelpSheet: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-// MARK: - TopBarHeightKey
-
-/// Propaga l'altezza misurata della top bar dallo strato della barra
-/// allo ZStack principale, così l'immagine può essere centrata nel
-/// rettangolo libero sotto la barra.
-private struct TopBarHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
     }
 }
