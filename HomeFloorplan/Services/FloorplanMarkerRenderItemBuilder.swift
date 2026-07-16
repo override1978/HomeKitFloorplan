@@ -23,7 +23,7 @@ struct FloorplanMarkerRenderItemBuilder {
             accessory: accessory,
             adapter: adapter,
             displayLabel: displayLabel(for: placed, accessory: accessory),
-            editIssue: markerEditIssue(for: placed, accessory: accessory),
+            editIssue: auditService.editIssue(for: placed, accessory: accessory),
             allowsCameraSnapshot: allowsCameraSnapshot,
             isSelected: selectedMarkerID == placed.id,
             isExecuting: executingMarkerID == placed.id,
@@ -48,72 +48,11 @@ struct FloorplanMarkerRenderItemBuilder {
         return fullName
     }
 
-    private func markerEditIssue(for placed: PlacedAccessory,
-                                 accessory: HMAccessory?) -> AccessoryMarkerEditIssue? {
-        guard isEditing else { return nil }
-
-        if accessory == nil {
-            return .missingHomeKitAccessory
-        }
-
-        if duplicatedMarkerAccessoryIDs.contains(placed.homeKitAccessoryUUID) {
-            return .duplicateMarker
-        }
-
-        guard !linkedRooms.isEmpty else { return nil }
-
-        let containingRoomID = FloorplanRoomMatcher.linkedRoomID(
-            containing: placed.position,
-            in: linkedRooms
+    private var auditService: FloorplanMarkerAuditService {
+        FloorplanMarkerAuditService(
+            isEditing: isEditing,
+            duplicatedMarkerAccessoryIDs: duplicatedMarkerAccessoryIDs,
+            linkedRooms: linkedRooms
         )
-
-        guard let containingRoomID else {
-            if let accessory,
-               isPerimeterMarkerAccessory(accessory),
-               FloorplanRoomMatcher.isNearAnyRoom(
-                placed.position,
-                in: linkedRooms,
-                tolerance: perimeterMarkerRoomTolerance
-               ) {
-                return nil
-            }
-            return .outsideLinkedRoom
-        }
-
-        if placed.linkedRoomUUID != containingRoomID {
-            if let accessory,
-               isPerimeterMarkerAccessory(accessory),
-               let linkedRoomUUID = placed.linkedRoomUUID,
-               let linkedRoom = linkedRooms.first(where: { $0.hmRoomUUID == linkedRoomUUID }),
-               FloorplanRoomMatcher.isNear(
-                placed.position,
-                to: linkedRoom,
-                tolerance: perimeterMarkerRoomTolerance
-               ) {
-                return nil
-            }
-            return .roomLinkMismatch
-        }
-
-        return nil
-    }
-
-    private var perimeterMarkerRoomTolerance: Double {
-        0.035
-    }
-
-    private func isPerimeterMarkerAccessory(_ accessory: HMAccessory) -> Bool {
-        let category = AccessoryCategorizer.categorize(accessory)
-        if category == "doorLock" ||
-            category == "garageDoor" ||
-            category == "windowCovering" {
-            return true
-        }
-
-        let serviceTypes = Set(accessory.services.map(\.serviceType))
-        return serviceTypes.contains(HMServiceTypeContactSensor) ||
-            serviceTypes.contains(HMServiceTypeLockMechanism) ||
-            serviceTypes.contains(HMServiceTypeGarageDoorOpener) ||
-            serviceTypes.contains(HMServiceTypeWindowCovering)
     }
 }
