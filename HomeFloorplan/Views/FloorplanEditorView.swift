@@ -656,85 +656,73 @@ struct FloorplanEditorView: View {
 
     @ViewBuilder
     private func secondaryControls(in size: CGSize) -> some View {
-        // Bottom-right: zoom indicator
-        VStack {
-            Spacer()
-            HStack(alignment: .bottom) {
-                Spacer()
-                VStack(spacing: 10) {
-                    // Zoom indicator (only when zoomed in)
-                    if effectiveScale > 1.01 {
-                        GlassTitlePill {
-                            HStack(spacing: 8) {
-                                Text(String(format: "%.1f×", effectiveScale))
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .monospacedDigit()
-                                Divider().frame(height: 20)
-                                Button {
-                                    resetZoom()
-                                } label: {
-                                    Image(systemName: "1.magnifyingglass")
-                                        .font(.subheadline)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                        }
-                        .transition(.scale.combined(with: .opacity))
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-        }
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: overlayVM?.isPanelVisible)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: overlayVM?.activeMode)
-
-        // Bottom-center: toolbar contestuale per marker selezionato (solo Edit)
         if isEditing, let placed = selectedMarker {
             let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID)
-            let displayName = placed.customLabel?.isEmpty == false
-                ? placed.customLabel!
-                : (accessory?.name ?? "(rimosso)")
-            let auditNotice = markerAuditService.auditNotice(for: placed, accessory: accessory)
-
-            VStack {
-                Spacer()
-                MarkerActionToolbar(
-                    markerName: displayName,
-                    initialRenameText: placed.customLabel ?? "",
-                    onRename: { newLabel in
-                        applyRename(to: placed, newLabel: newLabel)
-                    },
-                    onResetName: {
-                        applyRename(to: placed, newLabel: "")
-                    },
-                    onRecenter: {
-                        recenterMarker(placed)
-                    },
-                    onDelete: {
-                        pendingDelete = placed
-                    },
-                    onDismiss: {
-                        withAnimation(.spring(response: 0.35)) {
-                            selectedMarkerID = nil
-                        }
-                    },
-                    onChangeIcon: {
-                        iconPickerTarget = placed
-                    },
-                    auditNotice: auditNotice,
-                    onResolveAudit: auditNotice == nil ? nil : {
-                        resolveMarkerAudit(for: placed, accessory: accessory)
+            FloorplanSecondaryControls(
+                effectiveScale: effectiveScale,
+                isOverlayPanelVisible: overlayVM?.isPanelVisible,
+                activeOverlayMode: overlayVM?.activeMode,
+                selectedMarkerID: selectedMarkerID,
+                selectedMarker: selectedMarkerToolbarState(for: placed, accessory: accessory),
+                onResetZoom: resetZoom,
+                onRenameMarker: { newLabel in
+                    applyRename(to: placed, newLabel: newLabel)
+                },
+                onResetMarkerName: {
+                    applyRename(to: placed, newLabel: "")
+                },
+                onRecenterMarker: {
+                    recenterMarker(placed)
+                },
+                onDeleteMarker: {
+                    pendingDelete = placed
+                },
+                onDismissMarker: {
+                    withAnimation(.spring(response: 0.35)) {
+                        selectedMarkerID = nil
                     }
-                )
-                .padding(.bottom, 20)
-            }
-            .animation(.spring(response: 0.35, dampingFraction: 0.85),
-                       value: selectedMarkerID)
+                },
+                onChangeMarkerIcon: {
+                    iconPickerTarget = placed
+                },
+                onResolveMarkerAudit: markerAuditService.auditNotice(for: placed, accessory: accessory) == nil ? nil : {
+                    resolveMarkerAudit(for: placed, accessory: accessory)
+                }
+            )
+        } else {
+            FloorplanSecondaryControls(
+                effectiveScale: effectiveScale,
+                isOverlayPanelVisible: overlayVM?.isPanelVisible,
+                activeOverlayMode: overlayVM?.activeMode,
+                selectedMarkerID: selectedMarkerID,
+                selectedMarker: nil,
+                onResetZoom: resetZoom,
+                onRenameMarker: { _ in },
+                onResetMarkerName: {},
+                onRecenterMarker: {},
+                onDeleteMarker: {},
+                onDismissMarker: {
+                    withAnimation(.spring(response: 0.35)) {
+                        selectedMarkerID = nil
+                    }
+                },
+                onChangeMarkerIcon: {},
+                onResolveMarkerAudit: nil
+            )
         }
+    }
+
+    private func selectedMarkerToolbarState(for placed: PlacedAccessory,
+                                            accessory: HMAccessory?) -> FloorplanSelectedMarkerToolbarState {
+        let displayName = placed.customLabel?.isEmpty == false
+            ? placed.customLabel!
+            : (accessory?.name ?? "(rimosso)")
+
+        return FloorplanSelectedMarkerToolbarState(
+            markerName: displayName,
+            initialRenameText: placed.customLabel ?? "",
+            auditNotice: markerAuditService.auditNotice(for: placed, accessory: accessory)
+        )
     }
     
     // MARK: - Pulsante apri pannello (sempre visibile, non soggetto ad auto-hide)
