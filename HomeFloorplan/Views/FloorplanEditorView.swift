@@ -539,7 +539,17 @@ struct FloorplanEditorView: View {
                             .buttonStyle(.plain)
                         }
 
-                        floorplanTitleMenu
+                        FloorplanTitleMenu(
+                            currentFloorplan: floorplan,
+                            pinnedFloorplans: pinnedFloorplans,
+                            primaryFloorplanID: primaryFloorplanID,
+                            onOpenSidebar: {
+                                withAnimation(.spring(response: 0.4)) {
+                                    columnVisibility = .all
+                                }
+                            },
+                            onSelectFloorplan: onSelectFloorplan
+                        )
                     }
 
                     Spacer()
@@ -633,77 +643,6 @@ struct FloorplanEditorView: View {
         )
         .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
         .frame(maxHeight: .infinity, alignment: .top)
-    }
-
-    private var floorplanTitleMenu: some View {
-        Menu {
-            if pinnedFloorplans.isEmpty {
-                Button {
-                    withAnimation(.spring(response: 0.4)) {
-                        columnVisibility = .all
-                    }
-                } label: {
-                    Label(String(localized: "sidebar.open", defaultValue: "Open sidebar"), systemImage: "sidebar.left")
-                }
-            } else {
-                Section(String(localized: "floorplan.quickAccess", defaultValue: "Quick Access")) {
-                    ForEach(pinnedFloorplans) { item in
-                        Button {
-                            guard item.id != floorplan.id else { return }
-                            onSelectFloorplan?(item.id)
-                        } label: {
-                            Label {
-                                HStack {
-                                    Text(item.name)
-                                    if item.id == floorplan.id {
-                                        Text(String(localized: "floorplan.current", defaultValue: "Current"))
-                                    }
-                                }
-                            } icon: {
-                                Image(systemName: titleMenuIcon(for: item))
-                            }
-                        }
-                        .disabled(item.id == floorplan.id || onSelectFloorplan == nil)
-                    }
-                }
-
-                Button {
-                    withAnimation(.spring(response: 0.4)) {
-                        columnVisibility = .all
-                    }
-                } label: {
-                    Label(String(localized: "sidebar.show", defaultValue: "Show sidebar"), systemImage: "sidebar.left")
-                }
-            }
-        } label: {
-            GlassTitlePill {
-                HStack(spacing: 8) {
-                    Text(floorplan.name)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color.primary.opacity(0.55))
-                        .lineLimit(1)
-
-                    Image(systemName: "chevron.down")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            }
-        }
-        .buttonStyle(.plain)
-        .menuOrder(.fixed)
-    }
-
-    private func titleMenuIcon(for item: Floorplan) -> String {
-        if item.id == floorplan.id {
-            return "checkmark.circle.fill"
-        }
-        if item.id.uuidString == primaryFloorplanID {
-            return "star.square.fill"
-        }
-        return "pin.circle.fill"
     }
 
     // MARK: - Controlli secondari (auto-hide)

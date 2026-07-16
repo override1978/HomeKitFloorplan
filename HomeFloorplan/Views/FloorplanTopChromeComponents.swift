@@ -160,3 +160,78 @@ struct FloorplanEditModeBanner: View {
         )
     }
 }
+
+struct FloorplanTitleMenu: View {
+    let currentFloorplan: Floorplan
+    let pinnedFloorplans: [Floorplan]
+    let primaryFloorplanID: String
+    let onOpenSidebar: () -> Void
+    let onSelectFloorplan: ((UUID) -> Void)?
+
+    var body: some View {
+        Menu {
+            if pinnedFloorplans.isEmpty {
+                Button {
+                    onOpenSidebar()
+                } label: {
+                    Label(String(localized: "sidebar.open", defaultValue: "Open sidebar"), systemImage: "sidebar.left")
+                }
+            } else {
+                Section(String(localized: "floorplan.quickAccess", defaultValue: "Quick Access")) {
+                    ForEach(pinnedFloorplans) { item in
+                        Button {
+                            guard item.id != currentFloorplan.id else { return }
+                            onSelectFloorplan?(item.id)
+                        } label: {
+                            Label {
+                                HStack {
+                                    Text(item.name)
+                                    if item.id == currentFloorplan.id {
+                                        Text(String(localized: "floorplan.current", defaultValue: "Current"))
+                                    }
+                                }
+                            } icon: {
+                                Image(systemName: titleMenuIcon(for: item))
+                            }
+                        }
+                        .disabled(item.id == currentFloorplan.id || onSelectFloorplan == nil)
+                    }
+                }
+
+                Button {
+                    onOpenSidebar()
+                } label: {
+                    Label(String(localized: "sidebar.show", defaultValue: "Show sidebar"), systemImage: "sidebar.left")
+                }
+            }
+        } label: {
+            GlassTitlePill {
+                HStack(spacing: 8) {
+                    Text(currentFloorplan.name)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.primary.opacity(0.55))
+                        .lineLimit(1)
+
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+            }
+        }
+        .buttonStyle(.plain)
+        .menuOrder(.fixed)
+    }
+
+    private func titleMenuIcon(for item: Floorplan) -> String {
+        if item.id == currentFloorplan.id {
+            return "checkmark.circle.fill"
+        }
+        if item.id.uuidString == primaryFloorplanID {
+            return "star.square.fill"
+        }
+        return "pin.circle.fill"
+    }
+}
