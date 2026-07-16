@@ -125,16 +125,18 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
     }
 
     private var accessoryPickerContext: AccessoryPickerContext {
-        let preferredRoomUUIDs = pickerRoomFilter != nil
-            ? Set([pickerRoomFilter!])
-            : Set(floorplan.linkedRooms.map(\.hmRoomUUID))
-        let preferredRoomNames = Set(
-            floorplan.linkedRooms
-                .filter { room in
-                    pickerRoomFilter == nil || room.hmRoomUUID == pickerRoomFilter
-                }
-                .map { normalizedRoomName($0.name) }
-        )
+        let preferredRoomUUIDs: Set<UUID>
+        let preferredRoomNames: Set<String>
+
+        if let pickerRoomFilter,
+           let room = floorplan.linkedRooms.first(where: { $0.hmRoomUUID == pickerRoomFilter }) {
+            preferredRoomUUIDs = Set([pickerRoomFilter])
+            preferredRoomNames = Set([normalizedRoomName(room.name)])
+        } else {
+            preferredRoomUUIDs = []
+            preferredRoomNames = []
+        }
+
         let alreadyPlaced = Set(floorplan.accessories.map(\.homeKitAccessoryUUID))
 
         return AccessoryPickerContext(

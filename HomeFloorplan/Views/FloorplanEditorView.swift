@@ -343,10 +343,14 @@ struct FloorplanEditorView: View {
     }
 
     private func showAccessoryPicker() {
+        resetAccessoryPickerContext()
+        showingPicker = true
+    }
+
+    private func resetAccessoryPickerContext() {
         pickerRoomFilter = nil
         pendingMarkerPosition = nil
         editHighlightedRoomID = nil
-        showingPicker = true
     }
 
     private func toggleEditing() {
@@ -518,39 +522,37 @@ struct FloorplanEditorView: View {
 
         // 3. Editing + has linked room areas: detect which area was tapped
         guard !floorplan.linkedRooms.isEmpty else { return }
-
-        // Reverse the zoom/pan transform (scaleEffect anchor: .center, then offset).
-        // The rendered image is additionally shifted by topBarHeight / 2 to stay centered
-        // below the top bar, so the inverse transform must subtract the same visual offset.
-        let centerX = containerSize.width / 2
-        let centerY = containerSize.height / 2
-        let adjustedX = (tapLocation.x - centerX - effectiveOffset.width) / effectiveScale + centerX
-        let visualYOffset = effectiveOffset.height + topBarHeight / 2
-        let adjustedY = (tapLocation.y - centerY - visualYOffset) / effectiveScale + centerY
-
-        // Compute the content rect from the cached image to avoid disk I/O on every tap.
-        guard let image = imageCache.image else { return }
-        let imgRect = imageRect(imageSize: image.size, container: containerSize)
-        let helper = FloorplanCoordinateHelper(imageRect: imgRect)
-
-        // Normalize to [0, 1] within the content rect
-        let normX = (adjustedX - imgRect.origin.x) / imgRect.width
-        let normY = (adjustedY - imgRect.origin.y) / imgRect.height
-        guard normX >= 0, normX <= 1, normY >= 0, normY <= 1 else { return }
-
-        pendingMarkerPosition = NormalizedPoint(x: normX, y: normY)
-
-        // Hit-test linked room areas
-        let tappedRoom = floorplan.linkedRooms.first { room in
-            helper.overlayPath(for: room).contains(CGPoint(x: adjustedX, y: adjustedY))
+        guard let image = imageCache.image,
+              let tapResolution = resolveRoomTap(
+                at: tapLocation,
+                imageSize: image.size,
+                containerSize: containerSize
+              ) else {
+            resetAccessoryPickerContext()
+            return
         }
+
+        pendingMarkerPosition = tapResolution.markerPosition
 
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-            editHighlightedRoomID = tappedRoom?.hmRoomUUID
+            editHighlightedRoomID = tapResolution.roomID
         }
-        pickerRoomFilter = tappedRoom?.hmRoomUUID
+        pickerRoomFilter = tapResolution.roomID
 
         showingPicker = true
+    }
+
+    private func resolveRoomTap(at tapLocation: CGPoint,
+                                imageSize: CGSize,
+                                containerSize: CGSize) -> FloorplanRoomTapResolution? {
+        FloorplanRoomTapResolver(
+            linkedRooms: floorplan.linkedRooms,
+            imageSize: imageSize,
+            containerSize: containerSize,
+            effectiveScale: effectiveScale,
+            effectiveOffset: effectiveOffset,
+            topBarHeight: topBarHeight
+        ).resolve(tapLocation: tapLocation)
     }
     
     private func resetZoom() {

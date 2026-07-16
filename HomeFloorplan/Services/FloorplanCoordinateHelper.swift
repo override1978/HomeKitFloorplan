@@ -104,3 +104,40 @@ struct FloorplanCoordinateHelper {
         return FloorplanCoordinateHelper(imageRect: CGRect(origin: origin, size: size))
     }
 }
+
+struct FloorplanRoomTapResolution {
+    let markerPosition: NormalizedPoint
+    let roomID: UUID?
+}
+
+struct FloorplanRoomTapResolver {
+    let linkedRooms: [LinkedRoom]
+    let imageSize: CGSize
+    let containerSize: CGSize
+    let effectiveScale: CGFloat
+    let effectiveOffset: CGSize
+    let topBarHeight: CGFloat
+
+    func resolve(tapLocation: CGPoint) -> FloorplanRoomTapResolution? {
+        let centerX = containerSize.width / 2
+        let centerY = containerSize.height / 2
+        let adjustedX = (tapLocation.x - centerX - effectiveOffset.width) / effectiveScale + centerX
+        let visualYOffset = effectiveOffset.height + topBarHeight / 2
+        let adjustedY = (tapLocation.y - centerY - visualYOffset) / effectiveScale + centerY
+
+        let imageRect = FloorplanCanvasGeometry.imageRect(imageSize: imageSize, container: containerSize)
+        let normX = (adjustedX - imageRect.origin.x) / imageRect.width
+        let normY = (adjustedY - imageRect.origin.y) / imageRect.height
+        guard normX >= 0, normX <= 1, normY >= 0, normY <= 1 else { return nil }
+
+        let helper = FloorplanCoordinateHelper(imageRect: imageRect)
+        let tappedRoom = linkedRooms.first { room in
+            helper.overlayPath(for: room).contains(CGPoint(x: adjustedX, y: adjustedY))
+        }
+
+        return FloorplanRoomTapResolution(
+            markerPosition: NormalizedPoint(x: normX, y: normY),
+            roomID: tappedRoom?.hmRoomUUID
+        )
+    }
+}
