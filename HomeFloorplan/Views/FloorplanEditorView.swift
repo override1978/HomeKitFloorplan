@@ -131,31 +131,8 @@ struct FloorplanEditorView: View {
         (try? JSONDecoder().decode([String].self, from: Data(pinnedFloorplanIDsRaw.utf8))) ?? []
     }
 
-    private func buildOverlayContext() -> FloorplanOverlayContext {
-        let hasEnv = !floorplan.linkedRooms.isEmpty
-        let hasSecure = homeKit.allAccessories.contains { acc in
-            if acc.category.categoryType == HMAccessoryCategoryTypeIPCamera ||
-                acc.category.categoryType == HMAccessoryCategoryTypeVideoDoorbell {
-                return true
-            }
-            return acc.services.contains { svc in
-                svc.serviceType == HMServiceTypeLockMechanism
-                    || svc.serviceType == HMServiceTypeSecuritySystem
-                    || svc.serviceType == HMServiceTypeGarageDoorOpener
-                    || svc.serviceType == HMServiceTypeDoorbell
-                    || svc.serviceType == HMServiceTypeContactSensor
-            }
-        }
-        return FloorplanOverlayContext(
-            hasEnvironmentData: hasEnv,
-            hasSecurityDevices: hasSecure,
-            hasAIService: isAIEnabled,
-            hasIntelligenceSuggestions: isAIEnabled && !habitService.pendingPatterns.isEmpty
-        )
-    }
-
     private func refreshOverlayContext() {
-        let context = buildOverlayContext()
+        let context = runtimeContextController.overlayContext()
         cachedOverlayContext = context
 
         if let vm = overlayVM,
@@ -345,28 +322,18 @@ struct FloorplanEditorView: View {
 
     /// Checks if the security system mode has changed and records the activation timestamp.
     private func trackSecurityModeChange() {
-        guard let home = homeKit.currentHome else { return }
-        for acc in home.accessories {
-            if let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit) as? SecuritySystemAdapter {
-                let raw = adapter.currentMode.rawValue
-                if raw != lastKnownSecurityModeRaw {
-                    lastKnownSecurityModeRaw = raw
-                    securityModeActivationDate = Date().timeIntervalSince1970
-                }
-                break
-            }
-        }
+        guard let update = runtimeContextController.updatedSecurityActivationDate(
+            previousRawMode: lastKnownSecurityModeRaw,
+            currentActivationDate: securityModeActivationDate
+        ) else { return }
+
+        lastKnownSecurityModeRaw = update.rawMode
+        securityModeActivationDate = update.activationDate
     }
 
     /// Returns the first SecuritySystemAdapter in the current home, if any.
     private func findSecurityAdapter() -> SecuritySystemAdapter? {
-        guard let home = homeKit.currentHome else { return nil }
-        for acc in home.accessories {
-            if let adapter = AccessoryAdapterFactory.adapter(for: acc, homeKit: homeKit) as? SecuritySystemAdapter {
-                return adapter
-            }
-        }
-        return nil
+        runtimeContextController.securityAdapter()
     }
     
     // MARK: - Top bar (sempre visibile)
@@ -968,6 +935,15 @@ struct FloorplanEditorView: View {
 
     private var imageLoader: FloorplanImageLoader {
         FloorplanImageLoader(cache: $imageCache)
+    }
+
+    private var runtimeContextController: FloorplanRuntimeContextController {
+        FloorplanRuntimeContextController(
+            floorplan: floorplan,
+            homeKit: homeKit,
+            isAIEnabled: isAIEnabled,
+            pendingPatternCount: habitService.pendingPatterns.count
+        )
     }
 
     private var chromeController: FloorplanInteractionChromeController {
