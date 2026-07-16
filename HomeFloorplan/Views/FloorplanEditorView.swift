@@ -48,8 +48,8 @@ struct FloorplanEditorView: View {
     @State private var controllingAccessory: HMAccessory?
     @State private var shakeMarkerID: UUID?
     @State private var selectedMarkerID: UUID?
-    @State private var pendingDelete: PlacedAccessory?
-    @State private var iconPickerTarget: PlacedAccessory?
+    @State private var pendingDeleteMarkerID: UUID?
+    @State private var iconPickerTargetID: UUID?
     @State private var showFloorplanDiagnostics = false
     @State private var drawingEditFloorplan: Floorplan?
     @State private var editHighlightedRoomID: UUID?
@@ -101,9 +101,8 @@ struct FloorplanEditorView: View {
     /// Usata per tenere l'immagine al di sotto della barra.
     @State private var topBarHeight: CGFloat = 0
 
-    private var selectedMarker: PlacedAccessory? {
-        guard let id = selectedMarkerID else { return nil }
-        return floorplan.accessories.first { $0.id == id }
+    private func marker(withID markerID: UUID) -> PlacedAccessory? {
+        floorplan.accessories.first { $0.id == markerID }
     }
 
     private var duplicatedMarkerAccessoryIDs: Set<UUID> {
@@ -188,19 +187,19 @@ struct FloorplanEditorView: View {
     private var shouldSuppressIdleScreensaver: Bool {
         showingPicker
             || controllingAccessory != nil
-            || iconPickerTarget != nil
+            || iconPickerTargetID != nil
             || showFloorplanDiagnostics
             || showScenesPanel
             || showFloorplanHelp
-            || pendingDelete != nil
+            || pendingDeleteMarkerID != nil
     }
 
     private var pendingDeleteIsPresented: Binding<Bool> {
         Binding(
-            get: { pendingDelete != nil },
+            get: { pendingDeleteMarkerID != nil },
             set: { isPresented in
                 if !isPresented {
-                    pendingDelete = nil
+                    pendingDeleteMarkerID = nil
                 }
             }
         )
@@ -344,8 +343,17 @@ struct FloorplanEditorView: View {
         .sheet(item: $controllingAccessory) { accessory in
             AccessoryDetailView(accessory: accessory)
         }
-        .sheet(item: $iconPickerTarget) { placed in
-            if let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID) {
+        .sheet(isPresented: Binding(
+            get: { iconPickerTargetID != nil },
+            set: { isPresented in
+                if !isPresented {
+                    iconPickerTargetID = nil
+                }
+            }
+        )) {
+            if let markerID = iconPickerTargetID,
+               let placed = marker(withID: markerID),
+               let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID) {
                 let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
                 IconPickerSheet(
                     accessory: accessory,
@@ -386,13 +394,14 @@ struct FloorplanEditorView: View {
         
         
         .alert(String(localized: "floorplan.marker.delete.title", defaultValue: "Remove accessory from floorplan?"),
-               isPresented: pendingDeleteIsPresented,
-               presenting: pendingDelete) { placed in
+               isPresented: pendingDeleteIsPresented) {
             Button(String(localized: "common.delete", defaultValue: "Delete"), role: .destructive) {
-                deleteMarker(placed)
+                if let markerID = pendingDeleteMarkerID {
+                    deleteMarker(id: markerID)
+                }
             }
             Button(String(localized: "common.cancel", defaultValue: "Cancel"), role: .cancel) {}
-        } message: { _ in
+        } message: {
             Text(String(localized: "floorplan.marker.delete.message", defaultValue: "The accessory will be removed from the floorplan but will remain active in HomeKit."))
         }
         .onAppear {
@@ -656,26 +665,27 @@ struct FloorplanEditorView: View {
 
     @ViewBuilder
     private func secondaryControls(in size: CGSize) -> some View {
-        if isEditing, let placed = selectedMarker {
-            let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID)
+        if isEditing,
+           let markerID = selectedMarkerID,
+           let toolbarState = selectedMarkerToolbarState(for: markerID) {
             FloorplanSecondaryControls(
                 effectiveScale: effectiveScale,
                 isOverlayPanelVisible: overlayVM?.isPanelVisible,
                 activeOverlayMode: overlayVM?.activeMode,
                 selectedMarkerID: selectedMarkerID,
-                selectedMarker: selectedMarkerToolbarState(for: placed, accessory: accessory),
+                selectedMarker: toolbarState,
                 onResetZoom: resetZoom,
                 onRenameMarker: { newLabel in
-                    applyRename(to: placed, newLabel: newLabel)
+                    applyRename(to: markerID, newLabel: newLabel)
                 },
                 onResetMarkerName: {
-                    applyRename(to: placed, newLabel: "")
+                    applyRename(to: markerID, newLabel: "")
                 },
                 onRecenterMarker: {
-                    recenterMarker(placed)
+                    recenterMarker(id: markerID)
                 },
                 onDeleteMarker: {
-                    pendingDelete = placed
+                    pendingDeleteMarkerID = markerID
                 },
                 onDismissMarker: {
                     withAnimation(.spring(response: 0.35)) {
@@ -683,10 +693,10 @@ struct FloorplanEditorView: View {
                     }
                 },
                 onChangeMarkerIcon: {
-                    iconPickerTarget = placed
+                    iconPickerTargetID = markerID
                 },
-                onResolveMarkerAudit: markerAuditService.auditNotice(for: placed, accessory: accessory) == nil ? nil : {
-                    resolveMarkerAudit(for: placed, accessory: accessory)
+                onResolveMarkerAudit: toolbarState.auditNotice == nil ? nil : {
+                    resolveMarkerAudit(for: markerID)
                 }
             )
         } else {
@@ -712,8 +722,9 @@ struct FloorplanEditorView: View {
         }
     }
 
-    private func selectedMarkerToolbarState(for placed: PlacedAccessory,
-                                            accessory: HMAccessory?) -> FloorplanSelectedMarkerToolbarState {
+    private func selectedMarkerToolbarState(for markerID: UUID) -> FloorplanSelectedMarkerToolbarState? {
+        guard let placed = marker(withID: markerID) else { return nil }
+        let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID)
         let displayName = placed.customLabel?.isEmpty == false
             ? placed.customLabel!
             : (accessory?.name ?? "(rimosso)")
@@ -831,7 +842,7 @@ struct FloorplanEditorView: View {
             guard !hasSeenFloorplanHelp,
                   !showingPicker,
                   controllingAccessory == nil,
-                  iconPickerTarget == nil,
+                  iconPickerTargetID == nil,
                   !showFloorplanDiagnostics,
                   !showScenesPanel else { return }
             showFloorplanHelp = true
@@ -1276,17 +1287,18 @@ struct FloorplanEditorView: View {
             }
     }
 
-    private func resolveMarkerAudit(for placed: PlacedAccessory,
-                                    accessory: HMAccessory?) {
+    private func resolveMarkerAudit(for markerID: UUID) {
+        guard let placed = marker(withID: markerID) else { return }
+        let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID)
         guard let issue = markerAuditService.editIssue(for: placed, accessory: accessory) else { return }
 
         switch issue {
         case .missingHomeKitAccessory, .duplicateMarker:
-            pendingDelete = placed
+            pendingDeleteMarkerID = markerID
         case .outsideLinkedRoom:
-            recenterMarker(id: placed.id)
+            recenterMarker(id: markerID)
         case .roomLinkMismatch:
-            alignMarkerRoomLink(id: placed.id)
+            alignMarkerRoomLink(id: markerID)
         }
     }
 
@@ -1441,21 +1453,18 @@ struct FloorplanEditorView: View {
         markerEditingCoordinator.addAccessory(accessory, at: position)
     }
 
-    private func deleteMarker(_ placed: PlacedAccessory) {
-        markerEditingCoordinator.deleteMarker(id: placed.id)
+    private func deleteMarker(id markerID: UUID) {
+        markerEditingCoordinator.deleteMarker(id: markerID)
         selectedMarkerID = nil
-    }
-
-    private func recenterMarker(_ placed: PlacedAccessory) {
-        recenterMarker(id: placed.id)
+        pendingDeleteMarkerID = nil
     }
 
     private func recenterMarker(id markerID: UUID) {
         markerEditingCoordinator.recenterMarker(id: markerID)
     }
 
-    private func applyRename(to placed: PlacedAccessory, newLabel: String) {
-        markerEditingCoordinator.applyRename(to: placed.id, newLabel: newLabel)
+    private func applyRename(to markerID: UUID, newLabel: String) {
+        markerEditingCoordinator.applyRename(to: markerID, newLabel: newLabel)
     }
 
     private func backfillMarkerRoomLinksIfNeeded() {
