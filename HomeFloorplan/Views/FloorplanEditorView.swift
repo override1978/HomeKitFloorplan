@@ -170,11 +170,11 @@ struct FloorplanEditorView: View {
     }
     
     private var effectiveScale: CGFloat {
-        viewport.effectiveScale
+        viewportController.effectiveScale
     }
     
     private var effectiveOffset: CGSize {
-        viewport.effectiveOffset
+        viewportController.effectiveOffset
     }
     
     private var shouldShowControls: Bool {
@@ -225,7 +225,7 @@ struct FloorplanEditorView: View {
                             width:  effectiveOffset.width,
                             height: effectiveOffset.height + topBarHeight / 2
                         ))
-                        .gesture(zoomPanGesture(in: proxy.size))
+                        .gesture(viewportController.zoomPanGesture(in: proxy.size))
                         .transition(.opacity)
                 } else if isLoadingImage {
                     ProgressView()
@@ -388,7 +388,7 @@ struct FloorplanEditorView: View {
             overlayEnvVM.configure(modelContainer: modelContext.container)
             overlayEnvVM.loadFromCoreData()
             accessoryObservationCoordinator.subscribe(to: floorplan)
-            restoreZoom()
+            viewportController.restore()
             if startInEditMode {
                 isEditing = true
                 controlsVisible = true
@@ -896,30 +896,8 @@ struct FloorplanEditorView: View {
         showingPicker = true
     }
     
-    // MARK: - Zoom & pan
-
-    private func zoomPanGesture(in container: CGSize) -> some Gesture {
-        let magnify = MagnificationGesture()
-            .onChanged { value in
-                viewport.updateLiveScale(value)
-            }
-            .onEnded { value in
-                viewport.finishMagnification(value, floorplanID: floorplan.id)
-            }
-
-        let drag = DragGesture(minimumDistance: 10)
-            .onChanged { value in
-                viewport.updateLiveOffset(value.translation)
-            }
-            .onEnded { value in
-                viewport.finishDrag(value.translation, container: container, floorplanID: floorplan.id)
-            }
-
-        return magnify.simultaneously(with: drag)
-    }
-
     private func resetZoom() {
-        viewport.reset(floorplanID: floorplan.id)
+        viewportController.reset()
     }
 
     private func refreshFloorplanImageCache() {
@@ -957,10 +935,6 @@ struct FloorplanEditorView: View {
         hideTask?.cancel()
     }
 
-    private func restoreZoom() {
-        viewport.restore(floorplanID: floorplan.id)
-    }
-    
     // MARK: - Image rect
     
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
@@ -1188,6 +1162,10 @@ struct FloorplanEditorView: View {
 
     private var accessoryObservationCoordinator: FloorplanAccessoryObservationCoordinator {
         FloorplanAccessoryObservationCoordinator(homeKit: homeKit)
+    }
+
+    private var viewportController: FloorplanViewportController {
+        FloorplanViewportController(viewport: $viewport, floorplanID: floorplan.id)
     }
 
     private func markerInteractionGesture(for markerID: UUID,
