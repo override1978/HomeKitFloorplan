@@ -1311,66 +1311,37 @@ struct FloorplanEditorView: View {
     // MARK: - Image rect
     
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
-        let imageAspect = imageSize.width / imageSize.height
-        let containerAspect = container.width / container.height
-        var size = container
-        if imageAspect > containerAspect {
-            size.height = container.width / imageAspect
-        } else {
-            size.width = container.height * imageAspect
-        }
-        let origin = CGPoint(
-            x: (container.width - size.width) / 2,
-            y: (container.height - size.height) / 2
-        )
-        return CGRect(origin: origin, size: size)
+        FloorplanCanvasGeometry.imageRect(imageSize: imageSize, container: container)
     }
     
     private func imageWithMarkers(image: UIImage, container: CGSize) -> some View {
         let rect = imageRect(imageSize: image.size, container: container)
-        return ZStack(alignment: .topLeading) {
-            Color.clear
-
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: rect.width, height: rect.height)
-                .position(x: rect.midX, y: rect.midY)
-
-            // Z+2: overlay layer (environment / security / intelligence)
+        let showMarkers = isEditing || (overlayVM?.activeMode == .controls)
+        return FloorplanCanvasView(
+            image: image,
+            containerSize: container,
+            showOverlayLayer: overlayVM != nil && !isEditing,
+            showEditLayer: isEditing && !floorplan.linkedRooms.isEmpty,
+            showMarkers: showMarkers,
+            markerItems: showMarkers ? markerRenderItems() : [],
+            collisionOffsets: showMarkers ? markerCollisionOffsets(in: rect) : [:]
+        ) { container, imageRect in
             if let vm = overlayVM, !isEditing {
-                overlayLayer(vm: vm, container: container, imageRect: rect)
+                overlayLayer(vm: vm, container: container, imageRect: imageRect)
+            } else {
+                EmptyView()
             }
-
-            if isEditing, !floorplan.linkedRooms.isEmpty {
-                editRoomInteractionLayer(container: container, imageRect: rect)
-            }
-
-            // Marker accessori: visibili solo in modalità Controlli (o in modifica).
-            // Transizione opacity per evitare un salto brusco al cambio modalità.
-            let showMarkers = isEditing || (overlayVM?.activeMode == .controls)
-            let collisionOffsets = showMarkers ? markerCollisionOffsets(in: rect) : [:]
-            let markerItems = showMarkers ? markerRenderItems() : []
-            Group {
-                if showMarkers {
-                    FloorplanMarkerLayer(
-                        items: markerItems,
-                        imageRect: rect,
-                        collisionOffsets: collisionOffsets
-                    ) { item, collisionOffset in
-                        markerView(
-                            item: item,
-                            in: rect,
-                            collisionOffset: collisionOffset
-                        )
-                    } emptyContent: {
-                        emptyMarkersHint
-                    }
-                }
-            }
-            .animation(.easeInOut(duration: 0.25), value: showMarkers)
+        } editLayer: { container, imageRect in
+            editRoomInteractionLayer(container: container, imageRect: imageRect)
+        } markerContent: { item, imageRect, collisionOffset in
+            markerView(
+                item: item,
+                in: imageRect,
+                collisionOffset: collisionOffset
+            )
+        } emptyContent: {
+            emptyMarkersHint
         }
-        .frame(width: container.width, height: container.height)
     }
 
     private func editRoomInteractionLayer(container: CGSize, imageRect: CGRect) -> some View {
