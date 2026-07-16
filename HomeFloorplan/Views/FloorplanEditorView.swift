@@ -32,7 +32,6 @@ struct FloorplanEditorView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(HabitAnalysisService.self) private var habitService
     @Environment(SmartLightingEngine.self) private var smartLightingEngine
     @Environment(CloudKitSyncService.self) private var cloudKitSync
@@ -85,8 +84,6 @@ struct FloorplanEditorView: View {
     @State private var cachedFloorplanImageDate: Date = .distantPast
     /// True while the image is being loaded from disk — prevents the "not available" state flash.
     @State private var isLoadingImage: Bool = false
-    @State private var isSystemOverlayTransitionActive = false
-    @State private var systemOverlayTransitionTask: Task<Void, Never>?
 
     /// Cached overlay context — recomputed only when HomeKit accessories change.
     @State private var cachedOverlayContext: FloorplanOverlayContext = .none
@@ -213,96 +210,75 @@ struct FloorplanEditorView: View {
         return ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex).map { $0.swiftUIColor } ?? Color.white
     }
 
-    private var systemOverlayTransitionPlaceholder: some View {
-        ZStack {
-            floorplanBackgroundColor
-                .ignoresSafeArea()
-
-            VStack(spacing: 10) {
-                Image(systemName: "house")
-                    .font(.system(size: 34, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.62))
-                Text(floorplan.name)
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.72))
-            }
-            .opacity(0.72)
-        }
-    }
-    
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 floorplanBackgroundColor
                     .ignoresSafeArea()
 
-                if isSystemOverlayTransitionActive {
-                    systemOverlayTransitionPlaceholder
+                if let image = cachedFloorplanImage {
+                    imageWithMarkers(image: image, container: proxy.size)
+                        .scaleEffect(effectiveScale, anchor: .center)
+                        // Sposta l'immagine verso il basso di metà dell'altezza della top bar,
+                        // così risulta centrata nello spazio libero sotto la barra.
+                        .offset(CGSize(
+                            width:  effectiveOffset.width,
+                            height: effectiveOffset.height + topBarHeight / 2
+                        ))
+                        .gesture(zoomPanGesture(in: proxy.size))
+                        .transition(.opacity)
+                } else if isLoadingImage {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    if let image = cachedFloorplanImage {
-                        imageWithMarkers(image: image, container: proxy.size)
-                            .scaleEffect(effectiveScale, anchor: .center)
-                            // Sposta l'immagine verso il basso di metà dell'altezza della top bar,
-                            // così risulta centrata nello spazio libero sotto la barra.
-                            .offset(CGSize(
-                                width:  effectiveOffset.width,
-                                height: effectiveOffset.height + topBarHeight / 2
-                            ))
-                            .gesture(zoomPanGesture(in: proxy.size))
-                            .transition(.opacity)
-                    } else if isLoadingImage {
-                        ProgressView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        ContentUnavailableView(
-                            String(localized: "floorplan.image.unavailable", defaultValue: "Image not available"),
-                            systemImage: "photo.badge.exclamationmark"
-                        )
-                    }
+                    ContentUnavailableView(
+                        String(localized: "floorplan.image.unavailable", defaultValue: "Image not available"),
+                        systemImage: "photo.badge.exclamationmark"
+                    )
+                }
 
-                    // Top bar: sempre visibile
-                    topBar(in: proxy.size)
+                // Top bar: sempre visibile
+                topBar(in: proxy.size)
 
-                    // Controlli secondari (zoom, toolbar marker): soggetti ad auto-hide
-                    secondaryControls(in: proxy.size)
-                        .opacity(shouldShowControls ? 1 : 0)
-                        .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
+                // Controlli secondari (zoom, toolbar marker): soggetti ad auto-hide
+                secondaryControls(in: proxy.size)
+                    .opacity(shouldShowControls ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
 
-                    // Pulsante apri-pannello — sempre visibile (non soggetto ad auto-hide)
-                    openPanelButton
+                // Pulsante apri-pannello — sempre visibile (non soggetto ad auto-hide)
+                openPanelButton
 
-                    // Right-side scenes panel overlay
-                    if showScenesPanel {
-                        Color.black.opacity(0.25)
-                            .ignoresSafeArea()
-                            .onTapGesture {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                    showScenesPanel = false
-                                }
+                // Right-side scenes panel overlay
+                if showScenesPanel {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                showScenesPanel = false
                             }
-                            .transition(.opacity)
-                    }
+                        }
+                        .transition(.opacity)
+                }
 
-                    HStack(spacing: 0) {
-                        Spacer()
-                        ScenesSidePanel(isPresented: $showScenesPanel)
-                            .frame(width: min(proxy.size.width * 0.72, 320))
-                            .offset(x: showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
-                            .animation(.spring(response: 0.38, dampingFraction: 0.88), value: showScenesPanel)
-                    }
-                    .ignoresSafeArea(edges: .vertical)
+                HStack(spacing: 0) {
+                    Spacer()
+                    ScenesSidePanel(isPresented: $showScenesPanel)
+                        .frame(width: min(proxy.size.width * 0.72, 320))
+                        .offset(x: showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.88), value: showScenesPanel)
+                }
+                .ignoresSafeArea(edges: .vertical)
 
-                    // Z+4: overlay context panel
-                    if let vm = overlayVM {
-                        FloorplanOverlayContextContent(
-                            overlayVM: vm,
-                            containerWidth: proxy.size.width,
-                            floorplan: floorplan,
-                            homeKit: homeKit,
-                            environmentViewModel: overlayEnvVM,
-                            pendingSuggestionCount: habitService.pendingPatterns.count
-                        )
-                    }
+                // Z+4: overlay context panel
+                if let vm = overlayVM {
+                    FloorplanOverlayContextContent(
+                        overlayVM: vm,
+                        containerWidth: proxy.size.width,
+                        floorplan: floorplan,
+                        homeKit: homeKit,
+                        environmentViewModel: overlayEnvVM,
+                        pendingSuggestionCount: habitService.pendingPatterns.count
+                    )
                 }
             }
             .contentShape(Rectangle())
@@ -457,9 +433,6 @@ struct FloorplanEditorView: View {
         }
         .onDisappear {
             handleDisappear()
-        }
-        .onChange(of: scenePhase) { _, phase in
-            handleScenePhaseChange(phase)
         }
         .onChange(of: floorplan.accessories.count) { _, _ in
             subscribeToAccessories()
@@ -971,9 +944,8 @@ struct FloorplanEditorView: View {
     }
 
     private func handleFloorplanRemoteChanges(_ notification: Notification) {
-        reconcileVisibleMarkersIfNeeded(from: notification)
         SyncDiagnosticsLogger.log(
-            "Editor observed floorplan remote-change floorplan=\(floorplan.id.uuidString) markers=\(floorplan.accessories.count) positions=[\(markerPositionDigest())]"
+            "Editor observed floorplan remote-change floorplan=\(floorplan.id.uuidString) markers=\(floorplan.accessories.count)"
         )
         refreshFloorplanImageCache()
         refreshOverlayContext()
@@ -983,33 +955,6 @@ struct FloorplanEditorView: View {
     private func handleDisappear() {
         unsubscribeFromAccessories()
         hideTask?.cancel()
-        systemOverlayTransitionTask?.cancel()
-    }
-
-    private func handleScenePhaseChange(_ phase: ScenePhase) {
-        systemOverlayTransitionTask?.cancel()
-
-        switch phase {
-        case .inactive:
-            withTransaction(Transaction(animation: nil)) {
-                isSystemOverlayTransitionActive = true
-            }
-        case .active:
-            systemOverlayTransitionTask = Task {
-                try? await Task.sleep(for: .milliseconds(420))
-                await MainActor.run {
-                    withTransaction(Transaction(animation: nil)) {
-                        isSystemOverlayTransitionActive = false
-                    }
-                }
-            }
-        case .background:
-            withTransaction(Transaction(animation: nil)) {
-                isSystemOverlayTransitionActive = true
-            }
-        @unknown default:
-            break
-        }
     }
 
     private func restoreZoom() {
@@ -1149,34 +1094,6 @@ struct FloorplanEditorView: View {
     }
 
     // MARK: - Marker
-
-    private func reconcileVisibleMarkersIfNeeded(from notification: Notification) {
-        guard let snapshotsByFloorplanID = notification.userInfo?[FloorplanRemoteChangeNotification.markerSnapshotsByFloorplanIDKey] as? [UUID: [PlacedAccessorySnapshot]],
-              let snapshots = snapshotsByFloorplanID[floorplan.id] else {
-            return
-        }
-
-        let updatedCount = markerEditingCoordinator.reconcileRemoteSnapshots(snapshots)
-
-        if updatedCount > 0 {
-            SyncDiagnosticsLogger.log(
-                "Editor reconciled remote marker snapshot floorplan=\(floorplan.id.uuidString) updatedMarkers=\(updatedCount)"
-            )
-        }
-    }
-
-    private func markerPositionDigest() -> String {
-        floorplan.accessories
-            .sorted { $0.id.uuidString < $1.id.uuidString }
-            .map {
-                "\($0.id.uuidString.prefix(8))=(\(formatCoordinate($0.positionX)),\(formatCoordinate($0.positionY)))"
-            }
-            .joined(separator: ",")
-    }
-
-    private func formatCoordinate(_ value: Double) -> String {
-        String(format: "%.4f", value)
-    }
 
     private func normalizedRoomName(_ value: String) -> String {
         value
