@@ -1248,12 +1248,7 @@ private extension CloudKitSyncService {
             var retryChanges: [CKSyncEngine.PendingRecordZoneChange] = []
             for failure in conflictFailures {
                 let recordID = failure.record.recordID
-                let serverRecord = if let errorServerRecord = failure.error.serverRecord {
-                    errorServerRecord
-                } else {
-                    await fetchServerRecord(recordID)
-                }
-                guard let serverRecord else {
+                guard let serverRecord = failure.error.serverRecord else {
                     retryChanges.append(.saveRecord(recordID))
                     continue
                 }
@@ -1309,14 +1304,6 @@ private extension CloudKitSyncService {
         )
     }
 
-    func fetchServerRecord(_ recordID: CKRecord.ID) async -> CKRecord? {
-        let database = CKContainer(identifier: Self.containerID).privateCloudDatabase
-        return await withCheckedContinuation { continuation in
-            database.fetch(withRecordID: recordID) { record, _ in
-                continuation.resume(returning: record)
-            }
-        }
-    }
 }
 
 // MARK: - CKRecord Builder
@@ -1333,15 +1320,7 @@ private extension CloudKitSyncService {
               let localRecord = descriptor.buildRecord(recordID, ctx)
         else { return nil }
 
-        // Local-first reconciliation: if the record already exists on CloudKit but this
-        // CKSyncEngine state has no system fields/etag, sending `localRecord` would be an
-        // insert and fail with "record to insert already exists". Fetch the server record,
-        // preserve its etag, and overlay the local fields so the send is an update.
-        guard let serverRecord = await fetchServerRecord(recordID) else {
-            return localRecord
-        }
-        descriptor.overlayLocalFields(serverRecord, ctx)
-        return serverRecord
+        return localRecord
     }
 
     /// Overlays local SwiftData field values onto a server-provided CKRecord,
