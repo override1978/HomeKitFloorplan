@@ -758,108 +758,40 @@ struct FloorplanEditorView: View {
 
     @ViewBuilder
     private func topRightActions(in size: CGSize) -> some View {
-        // Nascondi la pill quando si è in un overlay non-Controlli (Ambiente / Sicurezza / …)
-        // a meno che non si stia già modificando (uscire dall'edit deve essere sempre possibile).
-        let inOverlayMode = (overlayVM?.activeMode ?? .controls) != .controls
-        let hideEditButton = inOverlayMode && !isEditing
-        let showSceneText = size.width >= 760
-
-        GlassTitlePill {
-            HStack(spacing: 0) {
-                // Bottone + solo in edit mode
-                if isEditing {
-                    Button {
-                        pickerRoomFilter = nil
-                        pendingMarkerPosition = nil
-                        editHighlightedRoomID = nil
-                        showingPicker = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.headline)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: "floorplan.addAccessory", defaultValue: "Add accessory"))
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
-
-                    Divider().frame(height: 20)
-                        .transition(.opacity)
-                }
-
-                // Scene: visibile solo in modalità Controlli o in editing
-                if !hideEditButton {
-                    FloorplanToolsMenu(
-                        isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
-                        onShowHelp: {
-                            hasSeenFloorplanHelp = true
-                            showFloorplanHelp = true
-                        },
-                        onShowDiagnostics: {
-                            showFloorplanDiagnostics = true
-                        },
-                        onEditDrawing: {
-                            drawingEditFloorplan = floorplan
-                        }
-                    )
-
-                    Divider().frame(height: 20)
-
-                    Button {
-                        showScenesPanel = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "play.rectangle.on.rectangle")
-                            if showSceneText {
-                                Text(String(localized: "scenes.title", defaultValue: "Scenes"))
-                            }
-                        }
-                        .font(.subheadline)
-                        .fontWeight(showSceneText ? .medium : .regular)
-                        .padding(.horizontal, showSceneText ? 14 : 13)
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.primary.opacity(0.55))
-                    .accessibilityLabel(String(localized: "scenes.title", defaultValue: "Scenes"))
-                    .help(String(localized: "scenes.open", defaultValue: "Open scenes"))
-
-                    Divider().frame(height: 20)
-                }
-
-                // Bottone Modifica/Fine: nascosto negli overlay non-Controlli
-                if !hideEditButton {
-                    Button {
-                        isEditing.toggle()
-                        suppressNextMarkerTapID = nil
-                        executingMarkerID = nil
-                        if !isEditing {
-                            selectedMarkerID = nil
-                            editHighlightedRoomID = nil
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: isEditing ? "checkmark" : "pencil")
-                            Text(isEditing
-                                 ? String(localized: "common.done", defaultValue: "Done")
-                                 : String(localized: "common.edit", defaultValue: "Edit"))
-                        }
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(isEditing ? BrandColor.primary : Color.primary.opacity(0.55))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+        FloorplanTopRightActions(
+            isEditing: isEditing,
+            isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
+            showsSceneText: size.width >= 760,
+            isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
+            onAddAccessory: {
+                pickerRoomFilter = nil
+                pendingMarkerPosition = nil
+                editHighlightedRoomID = nil
+                showingPicker = true
+            },
+            onShowHelp: {
+                hasSeenFloorplanHelp = true
+                showFloorplanHelp = true
+            },
+            onShowDiagnostics: {
+                showFloorplanDiagnostics = true
+            },
+            onEditDrawing: {
+                drawingEditFloorplan = floorplan
+            },
+            onShowScenes: {
+                showScenesPanel = true
+            },
+            onToggleEditing: {
+                isEditing.toggle()
+                suppressNextMarkerTapID = nil
+                executingMarkerID = nil
+                if !isEditing {
+                    selectedMarkerID = nil
+                    editHighlightedRoomID = nil
                 }
             }
-        }
-        .opacity(hideEditButton ? 0 : 1)
-        .allowsHitTesting(!hideEditButton)
-        .animation(.easeInOut(duration: 0.2), value: hideEditButton)
+        )
     }
 
     private func drawingEditor(for floorplan: Floorplan) -> some View {

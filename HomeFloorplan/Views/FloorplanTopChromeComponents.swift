@@ -161,6 +161,101 @@ struct FloorplanEditModeBanner: View {
     }
 }
 
+struct FloorplanTopRightActions: View {
+    let isEditing: Bool
+    let isOverlayMode: Bool
+    let showsSceneText: Bool
+    let isDrawingAvailable: Bool
+    let onAddAccessory: () -> Void
+    let onShowHelp: () -> Void
+    let onShowDiagnostics: () -> Void
+    let onEditDrawing: () -> Void
+    let onShowScenes: () -> Void
+    let onToggleEditing: () -> Void
+
+    private var hidesActions: Bool {
+        isOverlayMode && !isEditing
+    }
+
+    var body: some View {
+        GlassTitlePill {
+            HStack(spacing: 0) {
+                if isEditing {
+                    Button {
+                        onAddAccessory()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.headline)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(String(localized: "floorplan.addAccessory", defaultValue: "Add accessory"))
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+
+                    Divider().frame(height: 20)
+                        .transition(.opacity)
+                }
+
+                if !hidesActions {
+                    FloorplanToolsMenu(
+                        isDrawingAvailable: isDrawingAvailable,
+                        onShowHelp: onShowHelp,
+                        onShowDiagnostics: onShowDiagnostics,
+                        onEditDrawing: onEditDrawing
+                    )
+
+                    Divider().frame(height: 20)
+
+                    Button {
+                        onShowScenes()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "play.rectangle.on.rectangle")
+                            if showsSceneText {
+                                Text(String(localized: "scenes.title", defaultValue: "Scenes"))
+                            }
+                        }
+                        .font(.subheadline)
+                        .fontWeight(showsSceneText ? .medium : .regular)
+                        .padding(.horizontal, showsSceneText ? 14 : 13)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.primary.opacity(0.55))
+                    .accessibilityLabel(String(localized: "scenes.title", defaultValue: "Scenes"))
+                    .help(String(localized: "scenes.open", defaultValue: "Open scenes"))
+
+                    Divider().frame(height: 20)
+
+                    Button {
+                        onToggleEditing()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isEditing ? "checkmark" : "pencil")
+                            Text(isEditing
+                                 ? String(localized: "common.done", defaultValue: "Done")
+                                 : String(localized: "common.edit", defaultValue: "Edit"))
+                        }
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(isEditing ? BrandColor.primary : Color.primary.opacity(0.55))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .opacity(hidesActions ? 0 : 1)
+        .allowsHitTesting(!hidesActions)
+        .animation(.easeInOut(duration: 0.2), value: hidesActions)
+    }
+}
+
 struct FloorplanToolsMenu: View {
     let isDrawingAvailable: Bool
     let onShowHelp: () -> Void
