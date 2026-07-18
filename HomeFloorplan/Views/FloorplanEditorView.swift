@@ -95,6 +95,18 @@ struct FloorplanEditorView: View {
     /// casa e ricostruire adapter ad ogni valutazione del `body`.
     @State private var cachedSecurityAdapter: SecuritySystemAdapter?
 
+    /// Mappa accessorio → adapter condivisa dai marker, ricalcolata solo sugli
+    /// stessi eventi discreti di `cachedSecurityAdapter` (appear, HomeKit pronto,
+    /// cambio elenco accessori). Gli adapter sono @Observable e leggono lo stato
+    /// live dalle caratteristiche, quindi cachare i riferimenti è sicuro; prima
+    /// venivano ricostruiti per ogni marker a ogni valutazione del `body`.
+    @State private var cachedAdapterMap: [UUID: any AccessoryAdapter] = [:]
+
+    /// Cache memoizzante degli offset anti-collisione dei marker (O(n²) nel
+    /// resolver). Classe tenuta in @State: la mutazione interna non re-invalida
+    /// la view; il ricalcolo avviene solo quando cambiano gli input effettivi.
+    @State private var collisionOffsetCache = FloorplanMarkerCollisionOffsetCache()
+
     /// Altezza misurata della top bar (incluse pills secondarie).
     /// Usata per tenere l'immagine al di sotto della barra.
     @State private var topBarHeight: CGFloat = 0
@@ -268,7 +280,7 @@ struct FloorplanEditorView: View {
             if isReady {
                 accessoryObservationCoordinator.subscribe(to: floorplan)
                 refreshOverlayContext()
-                refreshSecurityAdapter()
+                refreshAdapterCaches()
             }
         }
         .onChange(of: homeKit.allAccessories.count) { _, _ in
@@ -307,7 +319,7 @@ struct FloorplanEditorView: View {
             }
         }
         .onChange(of: homeKit.allAccessories) { _, _ in
-            refreshSecurityAdapter()
+            refreshAdapterCaches()
             trackSecurityModeChange()
         }
     }
@@ -331,7 +343,7 @@ struct FloorplanEditorView: View {
         imageLoader.refresh(for: floorplan)
         backfillMarkerRoomLinksIfNeeded()
         refreshOverlayContext()
-        refreshSecurityAdapter()
+        refreshAdapterCaches()
         presentHelpIfNeeded()
         trackSecurityModeChange()
     }
@@ -348,16 +360,28 @@ struct FloorplanEditorView: View {
     }
 
     /// Returns the cached SecuritySystemAdapter for the current home, if any.
-    /// Il valore è aggiornato da `refreshSecurityAdapter()` sui cambi di accessori;
+    /// Il valore è aggiornato da `refreshAdapterCaches()` sui cambi di accessori;
     /// non riscansiona la casa ad ogni render.
     private func findSecurityAdapter() -> SecuritySystemAdapter? {
         cachedSecurityAdapter
     }
 
-    /// Ricalcola l'adapter di sicurezza cache-ato. Chiamato solo su eventi discreti
-    /// (appear, HomeKit pronto, cambio elenco accessori), mai per-frame.
-    private func refreshSecurityAdapter() {
+    /// Ricalcola gli adapter cache-ati (sicurezza + mappa marker). Chiamato solo
+    /// su eventi discreti (appear, HomeKit pronto, cambio elenco accessori),
+    /// mai per-frame.
+    private func refreshAdapterCaches() {
         cachedSecurityAdapter = runtimeContextController.securityAdapter()
+        cachedAdapterMap = AccessoryAdapterFactory.adapterMap(homeKit: homeKit)
+    }
+
+    /// Mappa adapter corrente, con fallback di costruzione inline per la
+    /// primissima valutazione del `body` (che precede `onAppear`): evita un
+    /// frame iniziale con marker senza adapter.
+    private func currentAdapterMap() -> [UUID: any AccessoryAdapter] {
+        if cachedAdapterMap.isEmpty {
+            return AccessoryAdapterFactory.adapterMap(homeKit: homeKit)
+        }
+        return cachedAdapterMap
     }
 
     private func openSidebar() {
@@ -750,7 +774,7 @@ struct FloorplanEditorView: View {
 
     private func markerRenderItems() -> [FloorplanMarkerRenderItem] {
         FloorplanMarkerRenderItemBuilder(
-            homeKit: homeKit,
+            adaptersByUUID: currentAdapterMap(),
             isEditing: isEditing,
             allowsCameraSnapshot: !isEditing && overlayVM?.activeMode == .security,
             selectedMarkerID: selectedMarkerID,
@@ -898,11 +922,12 @@ struct FloorplanEditorView: View {
     }
 
     private func markerCollisionOffsets(in imageRect: CGRect) -> [UUID: CGSize] {
-        FloorplanMarkerCollisionResolver(
+        collisionOffsetCache.offsets(
             markers: floorplan.accessories,
             isEditing: isEditing,
-            effectiveScale: effectiveScale
-        ).offsets(in: imageRect)
+            effectiveScale: effectiveScale,
+            in: imageRect
+        )
     }
     
     // MARK: - Tap handling

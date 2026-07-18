@@ -1,7 +1,10 @@
 import HomeKit
 
 struct FloorplanMarkerRenderItemBuilder {
-    let homeKit: HomeKitService
+    /// Mappa accessorio → adapter costruita a monte (e cache-ata dalla view):
+    /// evita la scansione lineare di `homeKit.accessory(for:)` e la ricostruzione
+    /// dell'adapter per ogni marker a ogni chiamata.
+    let adaptersByUUID: [UUID: any AccessoryAdapter]
     let isEditing: Bool
     let allowsCameraSnapshot: Bool
     let selectedMarkerID: UUID?
@@ -17,8 +20,8 @@ struct FloorplanMarkerRenderItemBuilder {
 
     private func makeItem(for placed: PlacedAccessory,
                           auditService: FloorplanMarkerAuditService) -> FloorplanMarkerRenderItem {
-        let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID)
-        let adapter = accessory.map { AccessoryAdapterFactory.adapter(for: $0, homeKit: homeKit) }
+        let adapter = adaptersByUUID[placed.homeKitAccessoryUUID]
+        let accessory = adapter?.accessory
 
         return FloorplanMarkerRenderItem(
             id: placed.id,
