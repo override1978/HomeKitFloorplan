@@ -8,10 +8,9 @@ import Foundation
 /// testabile. Ogni marker mantiene la propria posizione *relativa* dentro la stanza
 /// di appartenenza; i marker non rimappabili restano invariati.
 ///
-/// - Nota: preserva volutamente l'asimmetria di containment del codice originale —
-///   il fallback sulla stanza *precedente* (quando `linkedRoomUUID == nil`) usa un
-///   test rect-only, mentre l'assegnazione della *nuova* stanza usa
-///   `FloorplanRoomMatcher` (polygon-aware).
+/// Tutto il containment passa da `FloorplanRoomMatcher` (polygon-aware): anche il
+/// fallback sulla stanza *precedente* per marker senza `linkedRoomUUID`, che in
+/// origine usava un test solo-rettangolo e ignorava le stanze poligonali.
 enum FloorplanMarkerRemapper {
 
     /// Snapshot posizionale di un marker, indipendente da SwiftData.
@@ -80,7 +79,7 @@ enum FloorplanMarkerRemapper {
     ) -> Placement {
         let markerPoint = NormalizedPoint(x: placement.positionX, y: placement.positionY)
         guard let roomID = placement.linkedRoomUUID
-                ?? rectContainingRoomID(markerPoint, in: previousRooms),
+                ?? FloorplanRoomMatcher.linkedRoomID(containing: markerPoint, in: previousRooms),
               let previousRoom = previousByID[roomID],
               let newRoom = newByID[roomID] else { return placement }
 
@@ -103,17 +102,6 @@ enum FloorplanMarkerRemapper {
             positionY: newPositionY,
             linkedRoomUUID: newLinkedRoomID
         )
-    }
-
-    /// Containment rect-only (ignora i poligoni), fedele al fallback originale.
-    private static func rectContainingRoomID(_ point: NormalizedPoint, in rooms: [LinkedRoom]) -> UUID? {
-        rooms.first { room in
-            let rect = room.normalizedRect
-            return point.x >= rect.x &&
-                point.x <= rect.x + rect.width &&
-                point.y >= rect.y &&
-                point.y <= rect.y + rect.height
-        }?.hmRoomUUID
     }
 
     private static func clamped(_ value: Double) -> Double {

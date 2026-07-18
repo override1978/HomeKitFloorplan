@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import HomeFloorplan
 
-/// Characterization test della matematica pura di rimappatura marker estratta da
-/// `FloorplanMarkerEditingCoordinator.preserveMarkerPositions`. Blocca il
-/// comportamento ATTUALE — inclusa l'asimmetria di containment (fallback rect-only
-/// sulla stanza precedente, polygon-aware sulla nuova).
+/// Test della matematica pura di rimappatura marker estratta da
+/// `FloorplanMarkerEditingCoordinator.preserveMarkerPositions`.
+/// Tutto il containment è polygon-aware via `FloorplanRoomMatcher`, incluso il
+/// fallback sulla stanza precedente per marker senza `linkedRoomUUID`.
 @Suite("FloorplanMarkerRemapper — rototraslazione marker su cambio stanze")
 struct FloorplanMarkerRemapperTests {
 
@@ -139,8 +139,8 @@ struct FloorplanMarkerRemapperTests {
         #expect(abs(out[0].positionY - 0.2) < 1e-12)
     }
 
-    @Test("Marker con linkedRoomUUID nil usa il fallback rect-only sulla stanza precedente")
-    func nilLinkFallsBackToRectContainment() {
+    @Test("Marker con linkedRoomUUID nil usa il containment sulla stanza precedente")
+    func nilLinkFallsBackToContainment() {
         let a = UUID()
         // marker (0.1,0.1) senza link → cade nel rect precedente (0,0,0.5,0.5) di 'a'
         let placements = [FloorplanMarkerRemapper.Placement(positionX: 0.1, positionY: 0.1, linkedRoomUUID: nil)]
@@ -155,6 +155,59 @@ struct FloorplanMarkerRemapperTests {
         #expect(abs(out[0].positionX - 0.2) < 1e-12)
         #expect(abs(out[0].positionY - 0.2) < 1e-12)
         #expect(out[0].linkedRoomUUID == a)
+    }
+
+    @Test("Marker senza link dentro il poligono di una stanza a L viene rimappato")
+    func nilLinkInsidePolygonIsRemapped() {
+        let a = UUID()
+        // Stanza a L: quadrato (0,0)-(0.4,0.4) meno la tacca in alto a destra.
+        let lShape = [
+            CodablePoint(x: 0.0, y: 0.0),
+            CodablePoint(x: 0.2, y: 0.0),
+            CodablePoint(x: 0.2, y: 0.2),
+            CodablePoint(x: 0.4, y: 0.2),
+            CodablePoint(x: 0.4, y: 0.4),
+            CodablePoint(x: 0.0, y: 0.4)
+        ]
+        let bounding = CodableRect(x: 0, y: 0, width: 0.4, height: 0.4)
+        // (0.1, 0.1) è dentro il braccio verticale della L.
+        let placements = [FloorplanMarkerRemapper.Placement(positionX: 0.1, positionY: 0.1, linkedRoomUUID: nil)]
+        let out = FloorplanMarkerRemapper.remap(
+            placements: placements,
+            previousRooms: [room(a, bounding, points: lShape)],
+            newRooms: [room(a, CodableRect(x: 0.5, y: 0.5, width: 0.4, height: 0.4), points: nil)],
+            previousRotation: .asDrawn,
+            newRotation: .asDrawn
+        )
+        // local (0.25, 0.25) rispetto al bounding rect → nuova pos (0.6, 0.6).
+        #expect(abs(out[0].positionX - 0.6) < 1e-12)
+        #expect(abs(out[0].positionY - 0.6) < 1e-12)
+    }
+
+    @Test("Marker senza link nella tacca di una stanza a L NON viene catturato dal suo bounding rect")
+    func nilLinkInPolygonNotchStaysPut() {
+        let a = UUID()
+        // Stessa L di cui sopra: la tacca (0.2,0)-(0.4,0.2) è fuori dal poligono
+        // ma dentro il bounding rect. Il vecchio fallback rect-only catturava
+        // erroneamente il marker; ora deve restare invariato.
+        let lShape = [
+            CodablePoint(x: 0.0, y: 0.0),
+            CodablePoint(x: 0.2, y: 0.0),
+            CodablePoint(x: 0.2, y: 0.2),
+            CodablePoint(x: 0.4, y: 0.2),
+            CodablePoint(x: 0.4, y: 0.4),
+            CodablePoint(x: 0.0, y: 0.4)
+        ]
+        let bounding = CodableRect(x: 0, y: 0, width: 0.4, height: 0.4)
+        let placements = [FloorplanMarkerRemapper.Placement(positionX: 0.3, positionY: 0.1, linkedRoomUUID: nil)]
+        let out = FloorplanMarkerRemapper.remap(
+            placements: placements,
+            previousRooms: [room(a, bounding, points: lShape)],
+            newRooms: [room(a, CodableRect(x: 0.5, y: 0.5, width: 0.4, height: 0.4), points: nil)],
+            previousRotation: .asDrawn,
+            newRotation: .asDrawn
+        )
+        #expect(out == placements)
     }
 
     @Test("Il risultato è clampato a [0, 1]")
