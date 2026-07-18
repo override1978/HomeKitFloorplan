@@ -145,42 +145,29 @@ struct FloorplanMarkerEditingCoordinator {
                                  to newRooms: [LinkedRoom],
                                  previousRotation: DrawingExportRotation,
                                  newRotation: DrawingExportRotation) {
-        guard !previousRooms.isEmpty, !newRooms.isEmpty else { return }
+        let remapped = FloorplanMarkerRemapper.remap(
+            placements: floorplan.accessories.map {
+                FloorplanMarkerRemapper.Placement(
+                    positionX: $0.positionX,
+                    positionY: $0.positionY,
+                    linkedRoomUUID: $0.linkedRoomUUID
+                )
+            },
+            previousRooms: previousRooms,
+            newRooms: newRooms,
+            previousRotation: previousRotation,
+            newRotation: newRotation
+        )
 
-        let previousByID = Dictionary(uniqueKeysWithValues: previousRooms.map { ($0.hmRoomUUID, $0) })
-        let newByID = Dictionary(uniqueKeysWithValues: newRooms.map { ($0.hmRoomUUID, $0) })
-        let rotationDelta = (newRotation.quarterTurns - previousRotation.quarterTurns + 4) % 4
         var didChange = false
-
-        for marker in floorplan.accessories {
-            let markerPoint = NormalizedPoint(x: marker.positionX, y: marker.positionY)
-            guard let roomID = marker.linkedRoomUUID ?? roomID(containing: markerPoint, in: previousRooms),
-                  let previousRoom = previousByID[roomID],
-                  let newRoom = newByID[roomID] else { continue }
-
-            let previousRect = previousRoom.normalizedRect
-            let newRect = newRoom.normalizedRect
-            guard previousRect.width > 0, previousRect.height > 0 else { continue }
-
-            let localX = (marker.positionX - previousRect.x) / previousRect.width
-            let localY = (marker.positionY - previousRect.y) / previousRect.height
-            let rotatedLocal = rotatedLocalPoint(x: localX, y: localY, quarterTurns: rotationDelta)
-            let newPositionX = clamped(markerPosition: newRect.x + rotatedLocal.x * newRect.width)
-            let newPositionY = clamped(markerPosition: newRect.y + rotatedLocal.y * newRect.height)
-            let newLinkedRoomID = FloorplanRoomMatcher.linkedRoomID(
-                containing: NormalizedPoint(x: newPositionX, y: newPositionY),
-                in: newRooms
-            ) ?? roomID
-
-            if marker.positionX != newPositionX ||
-                marker.positionY != newPositionY ||
-                marker.linkedRoomUUID != newLinkedRoomID {
-                didChange = true
-            }
-
-            marker.positionX = newPositionX
-            marker.positionY = newPositionY
-            marker.linkedRoomUUID = newLinkedRoomID
+        for (marker, new) in zip(floorplan.accessories, remapped) {
+            guard marker.positionX != new.positionX ||
+                    marker.positionY != new.positionY ||
+                    marker.linkedRoomUUID != new.linkedRoomUUID else { continue }
+            didChange = true
+            marker.positionX = new.positionX
+            marker.positionY = new.positionY
+            marker.linkedRoomUUID = new.linkedRoomUUID
         }
 
         if didChange {
@@ -196,32 +183,5 @@ struct FloorplanMarkerEditingCoordinator {
 
     private func marker(withID markerID: UUID) -> PlacedAccessory? {
         floorplan.accessories.first { $0.id == markerID }
-    }
-
-    private func rotatedLocalPoint(x: Double, y: Double, quarterTurns: Int) -> (x: Double, y: Double) {
-        switch quarterTurns {
-        case 1:
-            return (1 - y, x)
-        case 2:
-            return (1 - x, 1 - y)
-        case 3:
-            return (y, 1 - x)
-        default:
-            return (x, y)
-        }
-    }
-
-    private func roomID(containing point: NormalizedPoint, in rooms: [LinkedRoom]) -> UUID? {
-        rooms.first { room in
-            let rect = room.normalizedRect
-            return point.x >= rect.x &&
-                point.x <= rect.x + rect.width &&
-                point.y >= rect.y &&
-                point.y <= rect.y + rect.height
-        }?.hmRoomUUID
-    }
-
-    private func clamped(markerPosition value: Double) -> Double {
-        min(1, max(0, value))
     }
 }
