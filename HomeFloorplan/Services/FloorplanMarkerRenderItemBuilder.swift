@@ -11,10 +11,12 @@ struct FloorplanMarkerRenderItemBuilder {
     let linkedRooms: [LinkedRoom]
 
     func makeItems(from placedAccessories: [PlacedAccessory]) -> [FloorplanMarkerRenderItem] {
-        placedAccessories.map(makeItem)
+        let auditService = self.auditService
+        return placedAccessories.map { makeItem(for: $0, auditService: auditService) }
     }
 
-    private func makeItem(for placed: PlacedAccessory) -> FloorplanMarkerRenderItem {
+    private func makeItem(for placed: PlacedAccessory,
+                          auditService: FloorplanMarkerAuditService) -> FloorplanMarkerRenderItem {
         let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID)
         let adapter = accessory.map { AccessoryAdapterFactory.adapter(for: $0, homeKit: homeKit) }
 
@@ -37,7 +39,9 @@ struct FloorplanMarkerRenderItemBuilder {
 
     private func displayLabel(for placed: PlacedAccessory, accessory: HMAccessory?) -> String {
         if let custom = placed.customLabel, !custom.isEmpty { return custom }
-        guard let accessory else { return "(rimosso)" }
+        guard let accessory else {
+            return String(localized: "marker.accessory.removed", defaultValue: "(removed)")
+        }
         let fullName = accessory.name
         if let roomName = accessory.room?.name {
             let suffix = " " + roomName

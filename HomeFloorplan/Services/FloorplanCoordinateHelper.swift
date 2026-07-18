@@ -86,22 +86,13 @@ struct FloorplanCoordinateHelper {
 
     // MARK: Factory
 
-    /// Computes `imageRect` from an image size and container size using
-    /// the same aspect-fit algorithm as `FloorplanEditorView.imageRect(imageSize:container:)`.
+    /// Computes `imageRect` from an image size and container size.
+    /// Delega a `FloorplanCanvasGeometry.imageRect` — unica sorgente di verità
+    /// per l'algoritmo di aspect-fit condiviso con `FloorplanCanvasView`.
     static func make(imageSize: CGSize, container: CGSize) -> FloorplanCoordinateHelper {
-        let imageAspect     = imageSize.width / imageSize.height
-        let containerAspect = container.width / container.height
-        var size = container
-        if imageAspect > containerAspect {
-            size.height = container.width / imageAspect
-        } else {
-            size.width  = container.height * imageAspect
-        }
-        let origin = CGPoint(
-            x: (container.width  - size.width)  / 2,
-            y: (container.height - size.height) / 2
+        FloorplanCoordinateHelper(
+            imageRect: FloorplanCanvasGeometry.imageRect(imageSize: imageSize, container: container)
         )
-        return FloorplanCoordinateHelper(imageRect: CGRect(origin: origin, size: size))
     }
 }
 
