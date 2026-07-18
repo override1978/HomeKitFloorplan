@@ -192,7 +192,9 @@ final class CloudKitSyncService {
             stateSerialization: stateSerialization,
             delegate: self
         )
-        config.automaticallySync = true
+        // Sync spento nel test host: il CKSyncEngine parte già nell'init e le sue
+        // scritture sul container condiviso renderebbero i test E2E non deterministici.
+        config.automaticallySync = !TestEnvironment.isRunningUnitTests
         syncEngine = CKSyncEngine(config)
     }
 

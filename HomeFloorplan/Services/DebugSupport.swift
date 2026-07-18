@@ -1,3 +1,23 @@
+import Foundation
+
+/// Rileva se il processo è il test host degli unit test.
+///
+/// Usato per rendere inerte l'app host durante i test: i servizi di startup
+/// (root view, auto-sync CloudKit) scrivono sullo stesso ModelContainer che
+/// PipelineEndToEndTests riusa, e al primo avvio su un simulatore clone fresco
+/// le loro scritture concorrenti rendevano i test non deterministici.
+enum TestEnvironment {
+    static var isRunningUnitTests: Bool {
+        #if DEBUG
+        let env = ProcessInfo.processInfo.environment
+        return env["XCTestConfigurationFilePath"] != nil
+            || env["XCTestSessionIdentifier"] != nil
+        #else
+        return false
+        #endif
+    }
+}
+
 #if DEBUG
 import SwiftData
 

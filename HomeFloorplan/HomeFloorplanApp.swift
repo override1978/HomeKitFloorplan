@@ -234,6 +234,19 @@ struct HomeFloorplanApp: App {
 
     var body: some Scene {
         WindowGroup {
+            if TestEnvironment.isRunningUnitTests {
+                // Host inerte durante gli unit test: la root view avvia task e
+                // servizi che scrivono sul ModelContainer condiviso con i test
+                // E2E, rendendoli non deterministici al primo lancio.
+                Color.clear
+            } else {
+                rootView
+            }
+        }
+        .modelContainer(sharedModelContainer)
+    }
+
+    private var rootView: some View {
             HomeFloorplanRootView(
                 sharedModelContainer: sharedModelContainer,
                 homeKit: homeKit,
@@ -259,8 +272,6 @@ struct HomeFloorplanApp: App {
                 cloudKitSync: cloudKitSync,
                 matterEnergyLiveStore: matterEnergyLiveStore
             )
-        }
-        .modelContainer(sharedModelContainer)
     }
 
     private static func normalizedHomeKitToken(_ value: String?) -> String? {
