@@ -956,6 +956,10 @@ struct DrawingFloorplanSheet: View {
             let size = CGSize(width: outputW, height: outputH)
             let fmt  = UIGraphicsImageRendererFormat()
             fmt.scale = scale
+            // sRGB esplicito: i colori baked devono coincidere esattamente con
+            // le costanti renderizzate live da SwiftUI (evita la "cucitura"
+            // visibile dove lo sfondo della view incontra il bordo immagine).
+            fmt.preferredRange = .standard
             return UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
                 UIColor.white.setFill()
                 ctx.fill(CGRect(origin: .zero, size: size))
@@ -1020,6 +1024,10 @@ struct DrawingFloorplanSheet: View {
         let outputSize = CGSize(width: outputW, height: outputH)
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = scale
+        // sRGB esplicito: i colori baked devono coincidere esattamente con le
+        // costanti renderizzate live da SwiftUI (evita la "cucitura" visibile
+        // dove lo sfondo della view incontra il bordo immagine).
+        fmt.preferredRange = .standard
         let renderer = UIGraphicsImageRenderer(size: outputSize, format: fmt)
         let outputBackgroundColor: UIColor = {
             if visualStyle == .architecturalDark {
@@ -1076,6 +1084,8 @@ struct DrawingFloorplanSheet: View {
             let size = CGSize(width: outputW, height: outputH)
             let fmt = UIGraphicsImageRendererFormat()
             fmt.scale = scale
+            // sRGB esplicito — vedi nota nell'altro renderer.
+            fmt.preferredRange = .standard
             return UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
                 UIColor.white.setFill()
                 ctx.fill(CGRect(origin: .zero, size: size))
@@ -1255,6 +1265,10 @@ struct DrawingFloorplanSheet: View {
         let outputSize = CGSize(width: outputW, height: outputH)
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = scale
+        // sRGB esplicito: i colori baked devono coincidere esattamente con le
+        // costanti renderizzate live da SwiftUI (evita la "cucitura" visibile
+        // dove lo sfondo della view incontra il bordo immagine).
+        fmt.preferredRange = .standard
         let renderer = UIGraphicsImageRenderer(size: outputSize, format: fmt)
         let outputBackgroundColor: UIColor = {
             if visualStyle == .architecturalDark {

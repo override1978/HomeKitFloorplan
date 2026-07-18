@@ -20,7 +20,10 @@ struct FloorplanDrawingUpdateCoordinator {
         let previousRooms = floorplan.linkedRooms
         let previousRotation = floorplan.drawingExportRotation
 
-        if let newData = update.image.jpegData(compressionQuality: 0.85) {
+        // PNG lossless: l'export del disegno è a tinte piatte, quindi comprime
+        // bene e — a differenza del JPEG — preserva esattamente i colori baked,
+        // che devono coincidere con lo sfondo live dell'editor (niente cucitura).
+        if let newData = update.image.pngData() {
             floorplan.imageData = newData
         }
         floorplan.drawingDocument = update.document

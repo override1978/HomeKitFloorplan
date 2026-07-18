@@ -158,8 +158,10 @@ struct NewFloorplanSheet: View {
     }
 
     private func save() {
+        // PNG lossless: qui l'immagine proviene sempre dal drawing editor
+        // (tinte piatte) — preserva i colori baked identici allo sfondo live.
         guard let image = selectedImage,
-              let imageData = image.jpegData(compressionQuality: 0.85) else { return }
+              let imageData = image.pngData() else { return }
         isSaving = true
         let floorplan = Floorplan(
             name: name.trimmingCharacters(in: .whitespaces),
