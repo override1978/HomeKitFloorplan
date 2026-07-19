@@ -3,29 +3,9 @@ import SwiftData
 import HomeKit
 
 struct HomeFloorplanRootView: View {
-    let sharedModelContainer: ModelContainer
-    let homeKit: HomeKitService
-    let iconOverrides: IconOverrideStore
-    let scenesService: HomeKitScenesService
-    let onboarding: OnboardingService
-    let idleTimer: IdleTimerService
-    let activityLogger: ActivityLoggerService
-    let automationsService: HomeKitAutomationsService
-    let securityNotifier: SecurityNotificationService
-    let habitAnalysisService: HabitAnalysisService
-    let actionExecutionService: ActionExecutionService
-    let ambientalAIService: AmbientalAIService
-    let behavioralAnalysisService: BehavioralAnalysisService
-    let proactiveIntelligenceService: ProactiveIntelligenceService
-    let occupancyPredictionService: OccupancyPredictionService
-    let locationPresenceService: LocationPresenceService
-    let familyPresenceService: FamilyPresenceService
-    let maintenancePredictionService: MaintenancePredictionService
-    let weatherKitService: WeatherKitService
-    let smartLightingEngine: SmartLightingEngine
-    let aiSettings: AISettings
-    let cloudKitSync: CloudKitSyncService
-    let matterEnergyLiveStore: MatterEnergyLiveStore
+    /// Grafo dei servizi dell'app: un solo riferimento al posto dei 23
+    /// parametri che venivano prop-drillati qui e nei modifier.
+    let services: AppServices
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -51,7 +31,7 @@ struct HomeFloorplanRootView: View {
                 scenePhase: scenePhase,
                 coordinator: foregroundCoordinator
             ))
-            .modifier(CloudKitRemoteNotificationFetchModifier(cloudKitSync: cloudKitSync))
+            .modifier(CloudKitRemoteNotificationFetchModifier(cloudKitSync: services.cloudKitSync))
             .modifier(AppSettingsSyncModifier(
                 coordinator: settingsSyncCoordinator,
                 securityMonitoredUUIDsRaw: securityMonitoredUUIDsRaw,
@@ -65,19 +45,19 @@ struct HomeFloorplanRootView: View {
                 proactiveNotificationsEnabled: proactiveNotificationsEnabled,
                 homeLocationCityName: homeLocationCityName
             ))
-            .onChange(of: homeKit.currentHome, initial: true) { _, newHome in
+            .onChange(of: services.homeKit.currentHome, initial: true) { _, newHome in
                 homeRuntimeCoordinator.currentHomeDidChange(newHome)
             }
-            .onChange(of: homeKit.isReady, initial: true) { _, isReady in
+            .onChange(of: services.homeKit.isReady, initial: true) { _, isReady in
                 guard isReady else { return }
-                cloudKitSync.remapLinkedRoomsToLocalHomeKitIDs()
-                cloudKitSync.remapPlacedAccessoriesToLocalHomeKitIDs()
+                services.cloudKitSync.remapLinkedRoomsToLocalHomeKitIDs()
+                services.cloudKitSync.remapPlacedAccessoriesToLocalHomeKitIDs()
             }
-            .onChange(of: locationPresenceService.presenceState) { _, newState in
-                ambientalAIService.presenceOverride = newState
-                Task { await weatherKitService.refreshIfNeeded() }
+            .onChange(of: services.locationPresenceService.presenceState) { _, newState in
+                services.ambientalAIService.presenceOverride = newState
+                Task { await services.weatherKitService.refreshIfNeeded() }
             }
-            .onChange(of: weatherKitService.currentWeather) { _, newWeather in
+            .onChange(of: services.weatherKitService.currentWeather) { _, newWeather in
                 homeRuntimeCoordinator.currentWeatherDidChange(newWeather)
             }
             .alert(
@@ -95,78 +75,78 @@ struct HomeFloorplanRootView: View {
 
     private var environmentModifier: AppEnvironmentModifier {
         AppEnvironmentModifier(
-            homeKit: homeKit,
-            iconOverrides: iconOverrides,
-            scenesService: scenesService,
-            onboarding: onboarding,
-            idleTimer: idleTimer,
-            activityLogger: activityLogger,
-            automationsService: automationsService,
-            habitAnalysisService: habitAnalysisService,
-            actionExecutionService: actionExecutionService,
-            ambientalAIService: ambientalAIService,
-            behavioralAnalysisService: behavioralAnalysisService,
-            proactiveIntelligenceService: proactiveIntelligenceService,
-            occupancyPredictionService: occupancyPredictionService,
-            locationPresenceService: locationPresenceService,
-            familyPresenceService: familyPresenceService,
-            maintenancePredictionService: maintenancePredictionService,
-            weatherKitService: weatherKitService,
-            smartLightingEngine: smartLightingEngine,
-            aiSettings: aiSettings,
-            cloudKitSync: cloudKitSync,
-            matterEnergyLiveStore: matterEnergyLiveStore,
+            homeKit: services.homeKit,
+            iconOverrides: services.iconOverrides,
+            scenesService: services.scenesService,
+            onboarding: services.onboarding,
+            idleTimer: services.idleTimer,
+            activityLogger: services.activityLogger,
+            automationsService: services.automationsService,
+            habitAnalysisService: services.habitAnalysisService,
+            actionExecutionService: services.actionExecutionService,
+            ambientalAIService: services.ambientalAIService,
+            behavioralAnalysisService: services.behavioralAnalysisService,
+            proactiveIntelligenceService: services.proactiveIntelligenceService,
+            occupancyPredictionService: services.occupancyPredictionService,
+            locationPresenceService: services.locationPresenceService,
+            familyPresenceService: services.familyPresenceService,
+            maintenancePredictionService: services.maintenancePredictionService,
+            weatherKitService: services.weatherKitService,
+            smartLightingEngine: services.smartLightingEngine,
+            aiSettings: services.aiSettings,
+            cloudKitSync: services.cloudKitSync,
+            matterEnergyLiveStore: services.matterEnergyLiveStore,
             locale: AppLanguage.resolved(from: appLanguageRaw).locale
         )
     }
 
     private var launchCoordinator: AppLaunchCoordinator {
         AppLaunchCoordinator(
-            sharedModelContainer: sharedModelContainer,
-            aiSettings: aiSettings,
-            onboarding: onboarding,
-            actionExecutionService: actionExecutionService,
-            securityNotifier: securityNotifier,
-            cloudKitSync: cloudKitSync,
-            weatherKitService: weatherKitService,
-            ambientalAIService: ambientalAIService,
+            sharedModelContainer: services.sharedModelContainer,
+            aiSettings: services.aiSettings,
+            onboarding: services.onboarding,
+            actionExecutionService: services.actionExecutionService,
+            securityNotifier: services.securityNotifier,
+            cloudKitSync: services.cloudKitSync,
+            weatherKitService: services.weatherKitService,
+            ambientalAIService: services.ambientalAIService,
             securityMonitoredUUIDsRaw: securityMonitoredUUIDsRaw
         )
     }
 
     private var foregroundCoordinator: AppForegroundCoordinator {
         AppForegroundCoordinator(
-            sharedModelContainer: sharedModelContainer,
-            homeKit: homeKit,
-            cloudKitSync: cloudKitSync,
-            matterEnergyLiveStore: matterEnergyLiveStore,
-            weatherKitService: weatherKitService,
-            smartLightingEngine: smartLightingEngine,
-            proactiveIntelligenceService: proactiveIntelligenceService,
-            behavioralAnalysisService: behavioralAnalysisService,
-            habitAnalysisService: habitAnalysisService,
-            occupancyPredictionService: occupancyPredictionService,
-            maintenancePredictionService: maintenancePredictionService,
-            locationPresenceService: locationPresenceService
+            sharedModelContainer: services.sharedModelContainer,
+            homeKit: services.homeKit,
+            cloudKitSync: services.cloudKitSync,
+            matterEnergyLiveStore: services.matterEnergyLiveStore,
+            weatherKitService: services.weatherKitService,
+            smartLightingEngine: services.smartLightingEngine,
+            proactiveIntelligenceService: services.proactiveIntelligenceService,
+            behavioralAnalysisService: services.behavioralAnalysisService,
+            habitAnalysisService: services.habitAnalysisService,
+            occupancyPredictionService: services.occupancyPredictionService,
+            maintenancePredictionService: services.maintenancePredictionService,
+            locationPresenceService: services.locationPresenceService
         )
     }
 
     private var settingsSyncCoordinator: AppSettingsSyncCoordinator {
         AppSettingsSyncCoordinator(
-            sharedModelContainer: sharedModelContainer,
-            cloudKitSync: cloudKitSync,
-            securityNotifier: securityNotifier
+            sharedModelContainer: services.sharedModelContainer,
+            cloudKitSync: services.cloudKitSync,
+            securityNotifier: services.securityNotifier
         )
     }
 
     private var homeRuntimeCoordinator: AppHomeRuntimeCoordinator {
         AppHomeRuntimeCoordinator(
-            sharedModelContainer: sharedModelContainer,
-            familyPresenceService: familyPresenceService,
-            behavioralAnalysisService: behavioralAnalysisService,
-            occupancyPredictionService: occupancyPredictionService,
-            matterEnergyLiveStore: matterEnergyLiveStore,
-            ambientalAIService: ambientalAIService
+            sharedModelContainer: services.sharedModelContainer,
+            familyPresenceService: services.familyPresenceService,
+            behavioralAnalysisService: services.behavioralAnalysisService,
+            occupancyPredictionService: services.occupancyPredictionService,
+            matterEnergyLiveStore: services.matterEnergyLiveStore,
+            ambientalAIService: services.ambientalAIService
         )
     }
 

@@ -8,30 +8,9 @@ struct HomeFloorplanApp: App {
 
     @UIApplicationDelegateAdaptor(HomeFloorplanAppDelegate.self) private var appDelegate
 
-    @State private var homeKit = HomeKitService()
-    @State private var iconOverrides = IconOverrideStore()
-    @State private var scenesService: HomeKitScenesService
-    @State private var onboarding = OnboardingService()
-    private var idleTimer: IdleTimerService { IdleTimerService.shared }
-    @State private var activityLogger: ActivityLoggerService
-    @State private var automationsService: HomeKitAutomationsService
-    @State private var securityNotifier: SecurityNotificationService
-    @State private var accessoryEventStore: AccessoryEventStore
-    @State private var habitAnalysisService: HabitAnalysisService
-    @State private var actionExecutionService: ActionExecutionService
-    @State private var ambientalAIService: AmbientalAIService
-    @State private var dataLifecycleService: DataLifecycleService
-    @State private var behavioralAnalysisService: BehavioralAnalysisService
-    @State private var proactiveIntelligenceService: ProactiveIntelligenceService
-    @State private var occupancyPredictionService: OccupancyPredictionService
-    @State private var locationPresenceService: LocationPresenceService
-    @State private var familyPresenceService: FamilyPresenceService
-    @State private var maintenancePredictionService: MaintenancePredictionService
-    @State private var weatherKitService: WeatherKitService
-    @State private var smartLightingEngine: SmartLightingEngine
-    @State private var aiSettings: AISettings
-    @State private var cloudKitSync: CloudKitSyncService
-    @State private var matterEnergyLiveStore = MatterEnergyLiveStore()
+    /// Grafo dei servizi (composition root). Nessun default value: verrebbe
+    /// valutato comunque prima del corpo dell'init (doppia costruzione).
+    @State private var services: AppServices
 
     /// Identifier del task di campionamento sensori in background.
     private static let sensorSampleTaskID = "com.homefloorplan.sensorSample"
@@ -77,141 +56,7 @@ struct HomeFloorplanApp: App {
         let container = Self.makeModelContainer()
         self.sharedModelContainer = container
 
-        let kit = HomeKitService()
-        self._homeKit = State(initialValue: kit)
-        // Le azioni AI/CTA scrivono via HomeKitService (cache + eventi + log),
-        // non direttamente sulla caratteristica: vedi NextActionExecutor.write.
-        NextActionExecutor.homeKit = kit
-        let iconStore = IconOverrideStore()
-        self._iconOverrides = State(initialValue: iconStore)
-        let scenes = HomeKitScenesService(homeKit: kit)
-        self._scenesService = State(initialValue: scenes)
-        let weather = WeatherKitService()
-        self._weatherKitService = State(initialValue: weather)
-        let lightingEngine = SmartLightingEngine(homeKit: kit, weatherKit: weather, scenesService: scenes)
-        kit.smartLightingEngine = lightingEngine
-        self._smartLightingEngine = State(initialValue: lightingEngine)
-
-        #if DEBUG
-        DebugSupport.modelContainer = container
-        #endif
-        lightingEngine.modelContainer = container
-        let logger = ActivityLoggerService(modelContainer: container)
-        kit.activityLogger = logger
-        scenes.activityLogger = logger
-        self._activityLogger = State(initialValue: logger)
-        self._automationsService = State(initialValue: HomeKitAutomationsService(homeKit: kit))
-        let notifier = SecurityNotificationService(homeKit: kit)
-        self._securityNotifier = State(initialValue: notifier)
-        let eventStore = AccessoryEventStore(modelContainer: container)
-        kit.accessoryEventStore = eventStore
-        self._accessoryEventStore = State(initialValue: eventStore)
-        let aiSettings = AISettings()
-        self._aiSettings = State(initialValue: aiSettings)
-        let cloudSync = CloudKitSyncService(modelContainer: container)
-        cloudSync.accessorySnapshotProvider = { uuid in
-            guard let accessory = kit.allAccessories.first(where: { $0.uniqueIdentifier == uuid }) else {
-                return (nil, nil)
-            }
-            return (accessory.name, accessory.room?.name)
-        }
-        cloudSync.markerIconOverrideProvider = { uuid in
-            iconStore.icon(for: uuid)
-        }
-        cloudSync.markerIconOverrideApplyCallback = { uuid, iconName in
-            if let iconName {
-                iconStore.setIcon(iconName, for: uuid)
-            } else {
-                iconStore.removeIcon(for: uuid)
-            }
-        }
-        cloudSync.accessoryUUIDResolver = { remoteUUID, accessoryName, roomName in
-            if kit.allAccessories.contains(where: { $0.uniqueIdentifier == remoteUUID }) {
-                return remoteUUID
-            }
-
-            let normalizedName = Self.normalizedHomeKitToken(accessoryName)
-            let normalizedRoom = Self.normalizedHomeKitToken(roomName)
-            guard let normalizedName else { return nil }
-
-            if let normalizedRoom,
-               let roomMatch = kit.allAccessories.first(where: {
-                   Self.normalizedHomeKitToken($0.name) == normalizedName &&
-                   Self.normalizedHomeKitToken($0.room?.name) == normalizedRoom
-               }) {
-                return roomMatch.uniqueIdentifier
-            }
-
-            return kit.allAccessories.first {
-                Self.normalizedHomeKitToken($0.name) == normalizedName
-            }?.uniqueIdentifier
-        }
-        cloudSync.roomUUIDResolver = { remoteUUID, roomName in
-            guard let home = kit.currentHome else { return nil }
-            if home.rooms.contains(where: { $0.uniqueIdentifier == remoteUUID }) {
-                return remoteUUID
-            }
-
-            let normalizedRoomName = Self.normalizedHomeKitToken(roomName)
-            guard let normalizedRoomName else { return nil }
-
-            return home.rooms.first {
-                Self.normalizedHomeKitToken($0.name) == normalizedRoomName
-            }?.uniqueIdentifier
-        }
-        cloudSync.remoteSettingsApplyCallback = { settings in
-            if let provider = AIProvider(rawValue: settings.aiProviderRaw),
-               provider.isPubliclyAvailable {
-                aiSettings.selectedProvider = provider
-            } else {
-                aiSettings.selectedProvider = .claude
-            }
-            aiSettings.isAIEnabled             = settings.aiIsEnabled
-            aiSettings.suggestionsEnabled      = settings.aiSuggestionsEnabled
-            aiSettings.anomalyDetectionEnabled = settings.aiAnomalyDetectionEnabled
-            aiSettings.ruleEngineEnabled       = settings.aiRuleEngineEnabled
-            aiSettings.hasAIDataConsent        = settings.aiHasDataConsent
-            UserDefaults.standard.set(settings.securityMonitoredUUIDsRaw, forKey: "securityMonitoredUUIDs")
-            notifier.updateMonitored(uuidsRaw: settings.securityMonitoredUUIDsRaw)
-
-            let savedTimeout = UserDefaults.standard.double(forKey: "idleTimeout")
-            if savedTimeout > 0 {
-                IdleTimerService.shared.timeout = savedTimeout
-            } else if savedTimeout == 0 && UserDefaults.standard.object(forKey: "idleTimeout") != nil {
-                IdleTimerService.shared.timeout = .infinity
-            }
-        }
-        self._cloudKitSync = State(initialValue: cloudSync)
-        let habitSvc = HabitAnalysisService(aiSettings: aiSettings, modelContainer: container)
-        self._habitAnalysisService = State(initialValue: habitSvc)
-        // Tracker condiviso tra AmbientalAIService (per dismiss/expiration) e ActionExecutionService
-        // (per trackExecution). Una sola istanza garantisce coerenza del dataset di efficacia.
-        let sharedTracker = ActionEffectivenessTracker(modelContainer: container)
-        self._actionExecutionService = State(initialValue: ActionExecutionService(tracker: sharedTracker, modelContainer: container))
-        let ambientalSvc = AmbientalAIService(
-            aiSettings: aiSettings,
-            modelContainer: container,
-            homeKit: kit,
-            tracker: sharedTracker
-        )
-        // Wire SensorEventRouter so high-priority sensor events bypass the 15-min analysis gate
-        SensorEventRouter.shared.ambientalAI = ambientalSvc
-        kit.sensorEventRouter = SensorEventRouter.shared
-        self._ambientalAIService = State(initialValue: ambientalSvc)
-        self._dataLifecycleService = State(initialValue: DataLifecycleService(modelContainer: container))
-        let behavioralSvc = BehavioralAnalysisService(modelContainer: container)
-        // Anti-duplicazione abitudini: il motore confronta le opportunità con le
-        // automazioni HomeKit esistenti prima di proporle (fotografie fresche a ogni analisi).
-        behavioralSvc.existingAutomationsProvider = { [weak kit] in
-            ExistingAutomationSnapshot.snapshots(from: kit?.currentHome)
-        }
-        behavioralSvc.habitNamingService = habitSvc
-        self._behavioralAnalysisService = State(initialValue: behavioralSvc)
-        self._proactiveIntelligenceService = State(initialValue: ProactiveIntelligenceService(modelContainer: container))
-        self._occupancyPredictionService = State(initialValue: OccupancyPredictionService())
-        self._locationPresenceService = State(initialValue: LocationPresenceService())
-        self._familyPresenceService = State(initialValue: FamilyPresenceService())
-        self._maintenancePredictionService = State(initialValue: MaintenancePredictionService(modelContainer: container))
+        self._services = State(initialValue: AppServices(container: container))
 
         // Apply persisted idle timeout so the screensaver respects the user's setting from launch.
         let savedTimeout = UserDefaults.standard.double(forKey: "idleTimeout")
@@ -228,8 +73,6 @@ struct HomeFloorplanApp: App {
 
         // Registra categorie UNUserNotificationCenter per la Proactive Intelligence
         NotificationDeliveryOrchestrator.registerCategories()
-        SmartLightingIntentBridge.register(engine: lightingEngine)
-
     }
 
     var body: some Scene {
@@ -247,43 +90,15 @@ struct HomeFloorplanApp: App {
     }
 
     private var rootView: some View {
-            HomeFloorplanRootView(
-                sharedModelContainer: sharedModelContainer,
-                homeKit: homeKit,
-                iconOverrides: iconOverrides,
-                scenesService: scenesService,
-                onboarding: onboarding,
-                idleTimer: idleTimer,
-                activityLogger: activityLogger,
-                automationsService: automationsService,
-                securityNotifier: securityNotifier,
-                habitAnalysisService: habitAnalysisService,
-                actionExecutionService: actionExecutionService,
-                ambientalAIService: ambientalAIService,
-                behavioralAnalysisService: behavioralAnalysisService,
-                proactiveIntelligenceService: proactiveIntelligenceService,
-                occupancyPredictionService: occupancyPredictionService,
-                locationPresenceService: locationPresenceService,
-                familyPresenceService: familyPresenceService,
-                maintenancePredictionService: maintenancePredictionService,
-                weatherKitService: weatherKitService,
-                smartLightingEngine: smartLightingEngine,
-                aiSettings: aiSettings,
-                cloudKitSync: cloudKitSync,
-                matterEnergyLiveStore: matterEnergyLiveStore
-            )
-    }
-
-    private static func normalizedHomeKitToken(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.isEmpty ? nil : normalized
+        HomeFloorplanRootView(services: services)
     }
 
     // MARK: - Background Tasks
 
     /// Registra i BGTask: campionamento sensori, intelligence e lifecycle dati.
     private func registerBackgroundTasks() {
+        // Nel test host i BGTask non servono e la pianificazione è solo rumore.
+        guard !TestEnvironment.isRunningUnitTests else { return }
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.sensorSampleTaskID,
             using: nil
@@ -325,14 +140,10 @@ struct HomeFloorplanApp: App {
         scheduleNextSampling()
 
         let container = sharedModelContainer
-        let homeKitService = homeKit
-        let weather = weatherKitService
+        let homeKitService = services.homeKit
+        let weather = services.weatherKitService
 
-        task.expirationHandler = {
-            dprint("⚠️ BGTask scaduto prima del completamento")
-        }
-
-        Task { @MainActor in
+        let work = Task { @MainActor in
             if let home = homeKitService.currentHome {
                 await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: container)
                 await SensorLogger.shared.pruneOldReadings(olderThan: 30, modelContainer: container)
@@ -340,7 +151,16 @@ struct HomeFloorplanApp: App {
             if let snapshot = weather.currentWeather {
                 await SensorLogger.shared.sampleOutdoor(snapshot: snapshot, modelContainer: container)
             }
+            guard !Task.isCancelled else { return }
             task.setTaskCompleted(success: true)
+        }
+
+        // Alla scadenza va SEMPRE chiamato setTaskCompleted, altrimenti iOS
+        // penalizza gli slot futuri dell'app per questo task.
+        task.expirationHandler = {
+            dprint("⚠️ BGTask scaduto prima del completamento")
+            work.cancel()
+            task.setTaskCompleted(success: false)
         }
     }
 
@@ -361,22 +181,18 @@ struct HomeFloorplanApp: App {
     private func handleRuleEvaluationTask(_ task: BGProcessingTask) {
         scheduleNextRuleEvaluation()
 
-        let homeKitSvc  = homeKit
-        let proactive   = proactiveIntelligenceService
-        let behavioral  = behavioralAnalysisService
-        let habitSvc    = habitAnalysisService
-        let occupancy   = occupancyPredictionService
-        let location    = locationPresenceService
-        let maintenance = maintenancePredictionService
-        let weather     = weatherKitService
-        let lighting    = smartLightingEngine
-        let cloudSync   = cloudKitSync
+        let homeKitSvc  = services.homeKit
+        let proactive   = services.proactiveIntelligenceService
+        let behavioral  = services.behavioralAnalysisService
+        let habitSvc    = services.habitAnalysisService
+        let occupancy   = services.occupancyPredictionService
+        let location    = services.locationPresenceService
+        let maintenance = services.maintenancePredictionService
+        let weather     = services.weatherKitService
+        let lighting    = services.smartLightingEngine
+        let cloudSync   = services.cloudKitSync
 
-        task.expirationHandler = {
-            dprint("⚠️ BGTask ruleEvaluation scaduto prima del completamento")
-        }
-
-        Task { @MainActor in
+        let work = Task { @MainActor in
             guard cloudSync.isMaster else {
                 task.setTaskCompleted(success: true)
                 return
@@ -392,7 +208,14 @@ struct HomeFloorplanApp: App {
                 weatherService:     weather,
                 homeKitService:     homeKitSvc
             )
+            guard !Task.isCancelled else { return }
             task.setTaskCompleted(success: true)
+        }
+
+        task.expirationHandler = {
+            dprint("⚠️ BGTask ruleEvaluation scaduto prima del completamento")
+            work.cancel()
+            task.setTaskCompleted(success: false)
         }
     }
 
@@ -433,19 +256,15 @@ struct HomeFloorplanApp: App {
     private func handleLifecycleCycleTask(_ task: BGProcessingTask) {
         scheduleNextLifecycleCycle()
 
-        let lifecycle   = dataLifecycleService
-        let habits      = habitAnalysisService
+        let lifecycle   = services.dataLifecycleService
+        let habits      = services.habitAnalysisService
         let container   = sharedModelContainer
-        let occupancy   = occupancyPredictionService
-        let maintenance = maintenancePredictionService
-        let cloudSync   = cloudKitSync
+        let occupancy   = services.occupancyPredictionService
+        let maintenance = services.maintenancePredictionService
+        let cloudSync   = services.cloudKitSync
 
-        task.expirationHandler = {
-            dprint("⚠️ BGTask lifecycle scaduto prima del completamento")
-        }
-
-        let behavioral = behavioralAnalysisService
-        Task { @MainActor in
+        let behavioral = services.behavioralAnalysisService
+        let work = Task { @MainActor in
             guard cloudSync.isMaster else {
                 task.setTaskCompleted(success: true)
                 return
@@ -461,7 +280,14 @@ struct HomeFloorplanApp: App {
             let snap = StorageHealthMonitor.takeSnapshot(container: container)
             dprint(snap.summary)
             #endif
+            guard !Task.isCancelled else { return }
             task.setTaskCompleted(success: true)
+        }
+
+        task.expirationHandler = {
+            dprint("⚠️ BGTask lifecycle scaduto prima del completamento")
+            work.cancel()
+            task.setTaskCompleted(success: false)
         }
     }
 }
