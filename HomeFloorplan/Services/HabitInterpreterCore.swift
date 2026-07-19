@@ -42,28 +42,34 @@ enum HabitInterpreterCore {
         let external = events.filter { $0.origin == "external" }
         let pool = external.isEmpty ? events : external
 
-        // Igiene del riassunto: solo accessori AZIONABILI (motion/contact fuori —
-        // "Camera Cucina 273 attivazioni" era rumore di movimento, non un'abitudine)
-        // e via i minuti con ≥4 accessori insieme (scene, non gesti umani).
+        // Igiene: solo accessori AZIONABILI (motion/contact = rumore).
         let actionableTypes: Set<String> = [
             "light", "switch", "outlet", "fan", "thermostat",
             "airPurifier", "humidifier", "blind"
         ]
-        var onEvents = pool.filter { $0.state && actionableTypes.contains($0.eventType) }
+        let onEvents = pool.filter { $0.state && actionableTypes.contains($0.eventType) }
 
-        var accessoriesByMinute: [Int: Set<UUID>] = [:]
+        // GAP ANALYSIS: in una casa già automatizzata il segnale interessante
+        // sono i GESTI MANUALI RESIDUI — i buchi del tessuto di automazioni.
+        // L'attività di scena (≥4 accessori nello stesso minuto) non viene
+        // scartata ma ETICHETTATA, così il modello sa cosa la casa fa già.
+        var minuteAccessories: [Int: Set<UUID>] = [:]
+        var minuteNames: [Int: Set<String>] = [:]
         for e in onEvents {
-            accessoriesByMinute[Int(e.timestamp.timeIntervalSince1970 / 60), default: []].insert(e.accessoryID)
+            let m = Int(e.timestamp.timeIntervalSince1970 / 60)
+            minuteAccessories[m, default: []].insert(e.accessoryID)
+            minuteNames[m, default: []].insert(e.accessoryName)
         }
-        let bulkMinutes = Set(accessoriesByMinute.filter { $0.value.count >= 4 }.keys)
-        if !bulkMinutes.isEmpty {
-            onEvents.removeAll { bulkMinutes.contains(Int($0.timestamp.timeIntervalSince1970 / 60)) }
+        let bulkMinutes = Set(minuteAccessories.filter { $0.value.count >= 4 }.keys)
+        let manualEvents = onEvents.filter {
+            !bulkMinutes.contains(Int($0.timestamp.timeIntervalSince1970 / 60))
         }
 
         var lines: [String] = []
+        lines.append("RESIDUAL MANUAL ACTIONS (the automation gaps):")
 
-        // Istogrammi orari per accessorio (solo accensioni).
-        let byAccessory = Dictionary(grouping: onEvents) { $0.accessoryID }
+        // Istogrammi orari per accessorio + contesto post-scena.
+        let byAccessory = Dictionary(grouping: manualEvents) { $0.accessoryID }
         let ranked = byAccessory.values
             .sorted { $0.count > $1.count }
             .prefix(maxAccessories)
@@ -71,20 +77,29 @@ enum HabitInterpreterCore {
         for group in ranked {
             guard let first = group.first else { continue }
             var hourCounts: [Int: Int] = [:]
+            var afterGroup = 0
             for e in group {
                 let h = calendar.component(.hour, from: e.timestamp)
                 hourCounts[h, default: 0] += 1
+                let m = Int(e.timestamp.timeIntervalSince1970 / 60)
+                if (1...5).contains(where: { bulkMinutes.contains(m - $0) }) {
+                    afterGroup += 1
+                }
             }
             let histogram = hourCounts.sorted { $0.key < $1.key }
                 .map { "\($0.key):\($0.value)" }
                 .joined(separator: " ")
             let room = first.roomName.map { " (\($0))" } ?? ""
-            lines.append("\(first.accessoryName)\(room) [\(first.eventType)] on×\(group.count) — h \(histogram)")
+            var line = "\(first.accessoryName)\(room) [\(first.eventType)] on×\(group.count) — h \(histogram)"
+            if afterGroup > 0 {
+                line += " — \(afterGroup) within 5min AFTER an automated group"
+            }
+            lines.append(line)
         }
 
-        // Sequenze A→B: accensioni di B entro 120s da un'accensione di A.
+        // Sequenze manuali A→B: accensioni di B entro 120s da un'accensione di A.
         var pairCounts: [String: Int] = [:]
-        let sorted = onEvents.sorted { $0.timestamp < $1.timestamp }
+        let sorted = manualEvents.sorted { $0.timestamp < $1.timestamp }
         for (i, a) in sorted.enumerated() {
             var j = i + 1
             while j < sorted.count,
@@ -106,6 +121,27 @@ enum HabitInterpreterCore {
             }
         }
 
+        // Gruppi automatizzati già attivi: contesto compresso per fascia oraria,
+        // così il modello NON li ripropone e può agganciarci i gesti residui.
+        if !bulkMinutes.isEmpty {
+            lines.append("AUTOMATED GROUPS already firing (4+ accessories together — do NOT re-propose):")
+            struct HourGroup { var days = Set<Date>(); var names = Set<String>() }
+            var byHour: [Int: HourGroup] = [:]
+            for m in bulkMinutes {
+                let date = Date(timeIntervalSince1970: Double(m) * 60)
+                let h = calendar.component(.hour, from: date)
+                var g = byHour[h] ?? HourGroup()
+                g.days.insert(calendar.startOfDay(for: date))
+                g.names.formUnion(minuteNames[m] ?? [])
+                byHour[h] = g
+            }
+            for (h, g) in byHour.sorted(by: { $0.value.days.count > $1.value.days.count }).prefix(8) {
+                let names = g.names.sorted().prefix(5).joined(separator: ", ")
+                let extra = g.names.count > 5 ? " +\(g.names.count - 5)" : ""
+                lines.append("h\(h) ×\(g.days.count)days: \(names)\(extra)")
+            }
+        }
+
         if !existingAutomations.isEmpty {
             lines.append("EXISTING AUTOMATIONS (do not duplicate):")
             lines.append(contentsOf: existingAutomations.prefix(20))
@@ -117,12 +153,18 @@ enum HabitInterpreterCore {
     /// System prompt: contratto JSON stretto, poche proposte, solo evidenza forte.
     static var systemPrompt: String {
         """
-        You analyze smart-home usage summaries and propose automations.
-        Input: per-accessory hourly ON histograms (hour:count), A -> B sequences, existing automations.
-        Propose AT MOST 3 automations with clear recurring evidence. Skip anything ambiguous, \
-        anything duplicating an existing automation, and sensor-only devices.
-        PREFER "accessoryState" (A turns on -> B) whenever a SEQUENCE line supports it: \
-        sequence triggers survive schedule changes, fixed times do not. \
+        You analyze a smart home that is ALREADY heavily automated. The valuable signal is the \
+        RESIDUAL MANUAL ACTIONS: what the user still does by hand marks the GAPS in their \
+        automation fabric. Input: residual manual actions (hourly ON histograms, with a note when \
+        they happen right after an automated group fires), manual A -> B sequences, the automated \
+        groups already firing, and existing automations.
+        Propose AT MOST 3 automations that CLOSE a gap: a device regularly switched on manually \
+        right after an automated group should be triggered by one of that group's accessories \
+        ("accessoryState") or by the same schedule; a recurring manual evening light suggests a \
+        sunset trigger. NEVER re-propose what the automated groups or existing automations \
+        already cover. Skip anything ambiguous.
+        PREFER "accessoryState" (A turns on -> B) whenever a SEQUENCE or after-group note \
+        supports it: sequence triggers survive schedule changes, fixed times do not. \
         Use "scheduleKind" sunset/sunrise for routines that track daylight (evening lights). \
         Reply ONLY with a JSON array (no prose, no code fences) of objects:
         {"title": string, "explanation": string (mention the observed evidence), \

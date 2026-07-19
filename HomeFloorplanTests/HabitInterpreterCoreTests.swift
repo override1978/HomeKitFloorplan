@@ -46,6 +46,30 @@ struct HabitInterpreterCoreTests {
         #expect(summary.contains("Proiettore -> Ambilight"))
     }
 
+    @Test("Gesto manuale dopo un gruppo automatizzato: annotato come gap, gruppo etichettato")
+    func gapAfterAutomatedGroupIsAnnotated() {
+        // Scena serale: 4 accessori nello stesso minuto, per 5 giorni.
+        let sceneAccessories = (0..<4).map { _ in UUID() }
+        let manual = UUID()
+        var events: [UsageEvidenceBuilder.EventSample] = []
+        for day in 0..<5 {
+            let base = day * 1440
+            for (i, id) in sceneAccessories.enumerated() {
+                events.append(sample("Scena\(i)", id: id, minutesAgo: base))
+            }
+            // Gesto manuale 2 minuti DOPO il gruppo (minutesAgo minore = più tardi).
+            events.append(sample("Presa Divano", id: manual, minutesAgo: base - 2))
+        }
+        let summary = HabitInterpreterCore.buildUsageSummary(events: events, existingAutomations: [])
+        #expect(summary.contains("RESIDUAL MANUAL ACTIONS"))
+        #expect(summary.contains("Presa Divano"))
+        #expect(summary.contains("AFTER an automated group"))
+        #expect(summary.contains("AUTOMATED GROUPS already firing"))
+        // Gli accessori della scena NON devono comparire tra i gesti manuali.
+        let manualSection = summary.components(separatedBy: "AUTOMATED GROUPS").first ?? ""
+        #expect(!manualSection.contains("Scena0"))
+    }
+
     @Test("Le automazioni esistenti sono elencate nel riassunto")
     func existingAutomationsListed() {
         let summary = HabitInterpreterCore.buildUsageSummary(
