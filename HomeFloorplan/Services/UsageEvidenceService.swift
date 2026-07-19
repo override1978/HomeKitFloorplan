@@ -19,8 +19,9 @@ enum UsageEvidenceService {
         UsageEvidenceBuilder.build(from: samples(modelContainer: modelContainer, days: days))
     }
 
-    private static func samples(modelContainer: ModelContainer,
-                                days: Int) -> [UsageEvidenceBuilder.EventSample] {
+    /// Fetch grezzo dei campioni evento (condiviso con l'interprete LLM).
+    static func samples(modelContainer: ModelContainer,
+                        days: Int) -> [UsageEvidenceBuilder.EventSample] {
         let context = ModelContext(modelContainer)
         let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
 

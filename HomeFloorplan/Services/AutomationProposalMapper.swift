@@ -205,6 +205,42 @@ enum AutomationProposalMapper {
         }
     }
 
+    /// Livello B: proposta da un suggerimento dell'interprete LLM.
+    /// Il target è già risolto in UUID dal servizio (match nome normalizzato).
+    static func proposal(
+        from suggestion: HabitInterpreterCore.RoutineSuggestion,
+        targetAccessoryID: UUID?,
+        capabilities: [AutomationCapabilityDescriptor],
+        scenes: [SceneItem]
+    ) -> AutomationProposal {
+        let draft = Draft(
+            source: .opportunity,
+            title: suggestion.title,
+            explanation: suggestion.explanation,
+            confidence: nil,
+            triggerType: suggestion.triggerType,
+            triggerTime: suggestion.triggerTime,
+            triggerWeekdays: suggestion.weekdays ?? Array(1...7),
+            sensorType: nil,
+            sensorRoom: "",
+            sensorAccessoryName: nil,
+            sensorThreshold: nil,
+            sensorDirection: nil,
+            accessoryIDString: targetAccessoryID?.uuidString,
+            actionRaw: suggestion.action,
+            actionValue: nil,
+            actionValue2: nil,
+            sceneName: nil,
+            scheduleKind: nil,
+            scheduleOffsetMinutes: 0,
+            presenceKind: nil,
+            presenceUserScope: nil,
+            triggerAccessoryName: suggestion.triggerAccessoryName,
+            triggerAccessoryActive: suggestion.triggerType == "accessoryState" ? true : nil
+        )
+        return proposal(from: draft, capabilities: capabilities, scenes: scenes)
+    }
+
     /// Pivot evidenze: costruisce una proposta dall'evidenza d'uso osservata.
     /// L'utente è il giudice — la proposta arriva pre-compilata (orario = inizio
     /// finestra, giorni dal pattern) e si rifinisce nel wizard esistente.

@@ -25,6 +25,8 @@ struct HabitsView: View {
     @State private var usageEvidences: [UsageEvidenceBuilder.Evidence] = []
     /// Funnel diagnostico: rende spiegabile una lista vuota.
     @State private var evidenceFunnel: UsageEvidenceBuilder.FunnelReport?
+    /// Livello B: interprete LLM su richiesta.
+    @State private var habitInterpreter: HabitInterpreterService?
     @State private var reviewingProposal: AutomationProposal?
     @State private var reviewingOpportunity: AutomationOpportunity?
     @State private var reviewingHabitPattern: HabitPattern?
@@ -67,6 +69,13 @@ struct HabitsView: View {
                     let report = UsageEvidenceService.evidencesWithReport(modelContainer: modelContext.container)
                     usageEvidences = report.evidences
                     evidenceFunnel = report.funnel
+                    if habitInterpreter == nil {
+                        habitInterpreter = HabitInterpreterService(
+                            aiSettings: AISettings(),
+                            modelContainer: modelContext.container,
+                            homeKit: homeKit
+                        )
+                    }
                     eligibleEvents = behavioralService.eligibleEventCount(days: 30)
                     habitService.scheduleNaming(
                         reports: behavioralService.lastBurstReport,
@@ -149,6 +158,7 @@ struct HabitsView: View {
             readySection
             activeSection
             learningSection
+            aiInterpreterSection
             monitoringSection
             footerSection
         }
@@ -502,6 +512,106 @@ struct HabitsView: View {
                                    name, funnel.bestCandidateDays)
         }
         return text
+    }
+
+    // MARK: - Sezione interprete LLM (livello B del pivot)
+
+    @ViewBuilder
+    private var aiInterpreterSection: some View {
+        if let interpreter = habitInterpreter, interpreter.isAvailable {
+            Section {
+                ForEach(interpreter.suggestions) { suggestion in
+                    aiSuggestionRow(suggestion, interpreter: interpreter)
+                }
+
+                if interpreter.isAnalyzing {
+                    HStack(spacing: 10) {
+                        ProgressView().scaleEffect(0.8)
+                        Text(String(localized: "habits.ai.analyzing",
+                                    defaultValue: "Reading your home's usage…"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Button {
+                        Task { await interpreter.interpret() }
+                    } label: {
+                        Label(
+                            interpreter.lastRunAt == nil
+                                ? String(localized: "habits.ai.interpret", defaultValue: "Interpret with AI")
+                                : String(localized: "habits.ai.interpretAgain", defaultValue: "Interpret again"),
+                            systemImage: "sparkles"
+                        )
+                        .font(.subheadline.weight(.semibold))
+                    }
+                }
+
+                if let error = interpreter.lastError {
+                    Text(error)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                } else if interpreter.lastRunAt != nil,
+                          interpreter.suggestions.isEmpty,
+                          !interpreter.isAnalyzing {
+                    Text(String(localized: "habits.ai.noFindings",
+                                defaultValue: "No routine with clear evidence right now — better an empty list than an invented one."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Label(String(localized: "habits.ai.sectionTitle", defaultValue: "AI-interpreted routines"),
+                      systemImage: "sparkles")
+            } footer: {
+                Text(String(localized: "habits.ai.footer",
+                            defaultValue: "The model reads usage summaries (histograms and sequences) and proposes only what has recurring evidence. You always confirm in the wizard."))
+            }
+        }
+    }
+
+    private func aiSuggestionRow(_ suggestion: HabitInterpreterCore.RoutineSuggestion,
+                                 interpreter: HabitInterpreterService) -> some View {
+        let targetID = interpreter.resolveAccessoryID(named: suggestion.targetAccessoryName)
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(suggestion.title)
+                    .font(.subheadline.weight(.semibold))
+                Text(suggestion.explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if targetID == nil {
+                    Text(String(format: String(localized: "habits.ai.unresolved",
+                                               defaultValue: "Accessory \"%@\" not found in the home"),
+                                suggestion.targetAccessoryName))
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+            }
+            Spacer()
+            Button {
+                reviewingProposal = AutomationProposalMapper.proposal(
+                    from: suggestion,
+                    targetAccessoryID: targetID,
+                    capabilities: homeKit.currentHome.map { AutomationCapabilityCatalog.descriptors(in: $0) } ?? [],
+                    scenes: scenesService.scenes
+                )
+            } label: {
+                Label(String(localized: "habits.evidence.create", defaultValue: "Create"),
+                      systemImage: "plus.circle.fill")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(targetID == nil)
+        }
+        .padding(.vertical, 2)
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                interpreter.dismiss(suggestion)
+            } label: {
+                Label(String(localized: "common.hide", defaultValue: "Hide"), systemImage: "eye.slash")
+            }
+        }
     }
 
     // MARK: - Section 5: Monitoraggio
