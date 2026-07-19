@@ -570,7 +570,15 @@ struct HabitsView: View {
 
     private func aiSuggestionRow(_ suggestion: HabitInterpreterCore.RoutineSuggestion,
                                  interpreter: HabitInterpreterService) -> some View {
-        let targetID = interpreter.resolveAccessoryID(named: suggestion.targetAccessoryName)
+        // Il check giusto è sul CATALOGO capabilities (dove il mapper risolve
+        // l'azione), non su allAccessories: TV/camere possono esistere in casa
+        // ma non essere target automatizzabili.
+        let capabilities = homeKit.currentHome.map { AutomationCapabilityCatalog.descriptors(in: $0) } ?? []
+        let normalized = suggestion.targetAccessoryName.lowercased()
+        let inCatalog = capabilities.contains {
+            let name = $0.accessoryName.lowercased()
+            return name == normalized || name.contains(normalized) || normalized.contains(name)
+        }
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(suggestion.title)
@@ -579,9 +587,9 @@ struct HabitsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if targetID == nil {
+                if !inCatalog {
                     Text(String(format: String(localized: "habits.ai.unresolved",
-                                               defaultValue: "Accessory \"%@\" not found in the home"),
+                                               defaultValue: "\"%@\" is not automatable — add the action manually in the wizard"),
                                 suggestion.targetAccessoryName))
                         .font(.caption2)
                         .foregroundStyle(.orange)
@@ -591,8 +599,8 @@ struct HabitsView: View {
             Button {
                 reviewingProposal = AutomationProposalMapper.proposal(
                     from: suggestion,
-                    targetAccessoryID: targetID,
-                    capabilities: homeKit.currentHome.map { AutomationCapabilityCatalog.descriptors(in: $0) } ?? [],
+                    targetAccessoryID: interpreter.resolveAccessoryID(named: suggestion.targetAccessoryName),
+                    capabilities: capabilities,
                     scenes: scenesService.scenes
                 )
             } label: {
@@ -602,7 +610,6 @@ struct HabitsView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
-            .disabled(targetID == nil)
         }
         .padding(.vertical, 2)
         .swipeActions(edge: .trailing) {

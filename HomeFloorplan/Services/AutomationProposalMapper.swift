@@ -213,7 +213,7 @@ enum AutomationProposalMapper {
         capabilities: [AutomationCapabilityDescriptor],
         scenes: [SceneItem]
     ) -> AutomationProposal {
-        let draft = Draft(
+        var draft = Draft(
             source: .opportunity,
             title: suggestion.title,
             explanation: suggestion.explanation,
@@ -231,13 +231,17 @@ enum AutomationProposalMapper {
             actionValue: nil,
             actionValue2: nil,
             sceneName: nil,
-            scheduleKind: nil,
+            scheduleKind: suggestion.scheduleKind,
             scheduleOffsetMinutes: 0,
             presenceKind: nil,
             presenceUserScope: nil,
             triggerAccessoryName: suggestion.triggerAccessoryName,
             triggerAccessoryActive: suggestion.triggerType == "accessoryState" ? true : nil
         )
+        // Fallback per nome sul catalogo capabilities: il resolver a monte usa
+        // allAccessories, ma l'azione è valida solo se il target è nel catalogo
+        // (era la causa del wizard aperto senza azione: "no valid action target").
+        draft.effectAccessoryName = suggestion.targetAccessoryName
         return proposal(from: draft, capabilities: capabilities, scenes: scenes)
     }
 

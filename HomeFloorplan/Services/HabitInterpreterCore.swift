@@ -25,6 +25,9 @@ enum HabitInterpreterCore {
         let targetAccessoryName: String
         /// "on" | "off".
         let action: String
+        /// "sunrise" | "sunset" | nil — per routine legate alla luce naturale
+        /// (con triggerType "calendar"; ha precedenza sull'orario fisso).
+        let scheduleKind: String?
     }
 
     // MARK: - Riassunto per il prompt
@@ -38,7 +41,24 @@ enum HabitInterpreterCore {
                                   calendar: Calendar = .current) -> String {
         let external = events.filter { $0.origin == "external" }
         let pool = external.isEmpty ? events : external
-        let onEvents = pool.filter(\.state)
+
+        // Igiene del riassunto: solo accessori AZIONABILI (motion/contact fuori —
+        // "Camera Cucina 273 attivazioni" era rumore di movimento, non un'abitudine)
+        // e via i minuti con ≥4 accessori insieme (scene, non gesti umani).
+        let actionableTypes: Set<String> = [
+            "light", "switch", "outlet", "fan", "thermostat",
+            "airPurifier", "humidifier", "blind"
+        ]
+        var onEvents = pool.filter { $0.state && actionableTypes.contains($0.eventType) }
+
+        var accessoriesByMinute: [Int: Set<UUID>] = [:]
+        for e in onEvents {
+            accessoriesByMinute[Int(e.timestamp.timeIntervalSince1970 / 60), default: []].insert(e.accessoryID)
+        }
+        let bulkMinutes = Set(accessoriesByMinute.filter { $0.value.count >= 4 }.keys)
+        if !bulkMinutes.isEmpty {
+            onEvents.removeAll { bulkMinutes.contains(Int($0.timestamp.timeIntervalSince1970 / 60)) }
+        }
 
         var lines: [String] = []
 
@@ -101,11 +121,15 @@ enum HabitInterpreterCore {
         Input: per-accessory hourly ON histograms (hour:count), A -> B sequences, existing automations.
         Propose AT MOST 3 automations with clear recurring evidence. Skip anything ambiguous, \
         anything duplicating an existing automation, and sensor-only devices.
+        PREFER "accessoryState" (A turns on -> B) whenever a SEQUENCE line supports it: \
+        sequence triggers survive schedule changes, fixed times do not. \
+        Use "scheduleKind" sunset/sunrise for routines that track daylight (evening lights). \
         Reply ONLY with a JSON array (no prose, no code fences) of objects:
         {"title": string, "explanation": string (mention the observed evidence), \
         "triggerType": "calendar"|"accessoryState", "triggerTime": "HH:mm" or null, \
         "weekdays": [1-7] or null (1=Sunday), "triggerAccessoryName": string or null, \
-        "targetAccessoryName": string, "action": "on"|"off"}
+        "targetAccessoryName": string, "action": "on"|"off", \
+        "scheduleKind": "sunrise"|"sunset" or null}
         Empty array [] if nothing is clearly supported.
         """
     }
