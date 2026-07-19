@@ -46,6 +46,21 @@ struct EnvironmentOverlayView: View {
             return dict
         }()
 
+        // Scostamento dalle soglie personalizzate (0 = sotto warning,
+        // 0..1 = rampa warning→danger, >1 = oltre danger): il riempimento
+        // diventa proporzionale a "quanto" la stanza sfora, non solo al livello.
+        let deviationByRoom: [String: Double] = {
+            guard !isLoading else { return [:] }
+            var dict: [String: Double] = [:]
+            let filter = overlayVM.selectedSensorFilter
+            for room in floorplan.linkedRooms {
+                guard let roomData = envVM.rooms.first(where: { $0.roomName == room.name }) else { continue }
+                let sensors = filter.map { f in roomData.sensors.filter { $0.serviceType == f } } ?? roomData.sensors
+                dict[room.name] = sensors.map(thresholdDeviation).max() ?? 0
+            }
+            return dict
+        }()
+
         return ZStack(alignment: .topLeading) {
             // Canvas: fill colour transitions smoothly via parent animation
             Canvas { ctx, _ in
@@ -54,7 +69,7 @@ struct EnvironmentOverlayView: View {
                     let u = urgencyByRoom[room.name] ?? .normal
                     let fill = isLoading
                         ? Color(.systemGreen).opacity(0.08)
-                        : urgencyFillColor(u)
+                        : gradedFillColor(urgency: u, deviation: deviationByRoom[room.name] ?? 0)
                     ctx.fill(path, with: .color(fill))
                     ctx.stroke(path, with: .color(fill.opacity(0.6)), lineWidth: 1.5 / effectiveScale)
                 }
@@ -168,6 +183,28 @@ struct EnvironmentOverlayView: View {
         }
     }
 
+    /// 0 = sotto warning; 0..1 = posizione nella banda warning→danger; >1 oltre danger.
+    private func thresholdDeviation(_ sensor: SensorData) -> Double {
+        guard sensor.serviceType != .lightSensor else { return 0 }
+        guard sensor.currentValue >= sensor.warningThreshold else { return 0 }
+        let band = max(sensor.dangerThreshold - sensor.warningThreshold, 0.001)
+        return (sensor.currentValue - sensor.warningThreshold) / band
+    }
+
+    /// Tinta per urgency, intensità proporzionale allo scostamento dalla soglia.
+    private func gradedFillColor(urgency: SensorUrgency, deviation: Double) -> Color {
+        switch urgency {
+        case .normal:
+            return Color(.systemGreen).opacity(0.15)
+        case .warning:
+            // 0.18 → 0.38 man mano che ci si avvicina alla soglia danger
+            return Color.orange.opacity(0.18 + 0.20 * min(max(deviation, 0), 1))
+        case .danger:
+            // 0.28 → 0.55 con lo sforamento oltre danger (cap a 2 bande)
+            return Color.red.opacity(min(0.28 + 0.12 * min(max(deviation - 1, 0), 2), 0.55))
+        }
+    }
+
     private func urgencyBorderColor(_ urgency: SensorUrgency) -> Color {
         switch urgency {
         case .normal:  return Color(.systemGreen)
@@ -274,9 +311,14 @@ struct EnvironmentContextDashboard: View {
                 case .info:    return 0
                 }
             }
-            return svc.insights
+            let ranked = svc.insights
                 .filter { $0.isVisible && !$0.nextActions.isEmpty }
                 .sorted { rank(effectiveSeverity($0)) > rank(effectiveSeverity($1)) }
+            // Stanza selezionata sulla planimetria: i suoi insight vanno in testa,
+            // così il tap su una stanza mostra subito la CTA che la riguarda.
+            guard let selected = highlightedRoomName else { return ranked }
+            return ranked.filter { $0.roomName == selected }
+                + ranked.filter { $0.roomName != selected }
         }()
         // ───────────────────────────────────────────────────────────────
 
@@ -673,6 +715,15 @@ struct EnvironmentContextDashboard: View {
                             .font(.caption)
                             .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
+                        if insight.roomName == highlightedRoomName {
+                            // Marcatore "stanza selezionata sulla planimetria"
+                            Text(insight.roomName)
+                                .font(.system(size: 8, weight: .semibold))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(iColor.opacity(0.14)))
+                                .foregroundStyle(iColor)
+                        }
                     }
 
                     // Action chips
