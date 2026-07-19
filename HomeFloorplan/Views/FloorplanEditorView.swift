@@ -162,7 +162,9 @@ struct FloorplanEditorView: View {
         return ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex).map { $0.swiftUIColor } ?? Color.white
     }
 
-    var body: some View {
+    /// Contenuto canvas separato dalla catena di lifecycle: un'unica espressione
+    /// col GeometryReader + 15 modifier superava il limite del type-checker.
+    private var canvasContent: some View {
         GeometryReader { proxy in
             ZStack {
                 floorplanBackgroundColor
@@ -238,6 +240,10 @@ struct FloorplanEditorView: View {
                 handleBackgroundTap(at: location, in: proxy.size)
             }
         }
+    }
+
+    private var observedCanvas: some View {
+        canvasContent
         .toolbar(.hidden, for: .navigationBar)
         .modifier(editorPresentationModifier)
         .suppressesIdleScreensaver(.floorplanInteraction, when: ui.shouldSuppressIdleScreensaver)
@@ -269,6 +275,10 @@ struct FloorplanEditorView: View {
         .onChange(of: floorplan.updatedAt) { _, _ in
             imageLoader.refresh(for: floorplan)
         }
+    }
+
+    var body: some View {
+        observedCanvas
         .onReceive(
             NotificationCenter.default.publisher(for: .floorplansDidApplyRemoteChanges),
             perform: handleFloorplanRemoteChanges
@@ -287,6 +297,21 @@ struct FloorplanEditorView: View {
         .onChange(of: homeKit.allAccessories) { _, _ in
             refreshAdapterCaches()
             trackSecurityModeChange()
+        }
+        .task(id: overlayVM?.activeMode, refreshEnvironmentOverlayWhileActive)
+    }
+
+    /// Installazioni "a muro": il loop foreground campiona ogni ~5 min, ma
+    /// `overlayEnvVM` veniva caricato solo all'appear dell'editor e l'overlay
+    /// Ambiente restava congelato per ore. Finché la modalità Ambiente è
+    /// attiva, ricarica subito e poi a cadenza allineata al campionamento;
+    /// il task si cancella da solo al cambio modalità o all'uscita.
+    @Sendable
+    private func refreshEnvironmentOverlayWhileActive() async {
+        guard overlayVM?.activeMode == .environment else { return }
+        while !Task.isCancelled {
+            await overlayEnvVM.reloadFromCoreData()
+            try? await Task.sleep(for: .seconds(5 * 60))
         }
     }
 
