@@ -261,6 +261,38 @@ final class HomeKitService: NSObject {
         }
     }
     
+    /// Timestamp dell'ultima notifica push ricevuta per accessorio osservato.
+    /// Diagnostica per lo staleness dei marker su installazioni always-on.
+    private(set) var lastNotificationDates: [UUID: Date] = [:]
+
+    /// Heartbeat per installazioni "a muro": ri-legge i valori correnti e
+    /// ri-arma le notifiche degli accessori osservati. Le app sempre in
+    /// foreground non passano mai dal ciclo background→foreground con cui
+    /// iOS normalmente riallinea gli stati: un buco nelle notifiche push
+    /// (blip di rete, riavvio hub/bridge, riconnessione del daemon) diventa
+    /// staleness permanente. `subscribe(to:)` fa readValue + re-enable delle
+    /// notifiche cadute (il guard su isNotificationEnabled evita re-arm inutili).
+    func refreshObservedAccessories() {
+        for uuid in observedAccessoryUUIDs {
+            guard let accessory = accessory(for: uuid) else { continue }
+
+            if let last = lastNotificationDates[uuid] {
+                let silence = Date().timeIntervalSince(last)
+                if silence > 3600 {
+                    dprint("[ObservationHeartbeat] ⚠️ \(accessory.name): nessuna notifica da \(Int(silence / 60)) min")
+                }
+            } else {
+                dprint("[ObservationHeartbeat] \(accessory.name): nessuna notifica ricevuta da inizio osservazione")
+            }
+
+            for service in accessory.services {
+                for characteristic in service.characteristics {
+                    subscribe(to: characteristic)
+                }
+            }
+        }
+    }
+
     /// Smette di osservare gli accessori (utile in onDisappear della editor view).
     func stopObserving(accessoryUUIDs: Set<UUID>) {
         for uuid in accessoryUUIDs {
@@ -659,6 +691,7 @@ extension HomeKitService: HMAccessoryDelegate {
         if let value = characteristic.value {
             queueCharacteristicUpdate(characteristic.uniqueIdentifier, value: value)
             updateAlarmTriggeredIfNeeded(characteristic, value: value)
+            lastNotificationDates[accessory.uniqueIdentifier] = Date()
 
             // Se HomeKit ci sta consegnando aggiornamenti, l'accessorio è raggiungibile
             // per definizione — indipendentemente da ciò che isReachable riporta.

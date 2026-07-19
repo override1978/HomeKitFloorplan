@@ -20,6 +20,7 @@ struct AppForegroundCoordinator {
         guard isActive else { return }
         let container = sharedModelContainer
         var lastLightSampleAt: Date?
+        var lastObservationHeartbeatAt: Date?
         var lastMatterEnergyRefreshAt: Date?
         var lastSmartLightingEvaluationAt: Date?
         var nextFullSensorSampleAt = Date().addingTimeInterval(45)
@@ -43,6 +44,16 @@ struct AppForegroundCoordinator {
                 if now >= nextFullSensorSampleAt {
                     await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: container)
                     nextFullSensorSampleAt = Date().addingTimeInterval(15 * 60)
+                }
+
+                // Heartbeat osservazione marker: su installazioni always-on le
+                // notifiche push possono cadere senza che l'app se ne accorga
+                // (mai un ciclo background→foreground a riallineare gli stati).
+                // Ri-legge i valori e ri-arma le notifiche ogni 10 minuti.
+                if lastObservationHeartbeatAt == nil ||
+                    now.timeIntervalSince(lastObservationHeartbeatAt ?? .distantPast) >= 10 * 60 {
+                    homeKit.refreshObservedAccessories()
+                    lastObservationHeartbeatAt = Date()
                 }
             }
             await weatherKitService.refreshIfNeeded()
