@@ -9,16 +9,8 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
     let cloudKitSync: CloudKitSyncService
     let accessoryPickerTitle: String
 
-    @Binding var showingPicker: Bool
-    @Binding var pickerRoomFilter: UUID?
-    @Binding var pendingMarkerPosition: NormalizedPoint?
-    @Binding var editHighlightedRoomID: UUID?
-    @Binding var controllingAccessory: HMAccessory?
-    @Binding var iconPickerTargetID: UUID?
-    @Binding var showFloorplanDiagnostics: Bool
-    @Binding var showFloorplanHelp: Bool
-    @Binding var drawingEditFloorplan: Floorplan?
-    @Binding var pendingDeleteMarkerID: UUID?
+    /// Stato UI condiviso con l'editor: sostituisce i 10 @Binding individuali.
+    @Bindable var ui: FloorplanEditorUIState
 
     let onAddAccessory: (HMAccessory, NormalizedPoint?) -> Void
     let onStartAssistedPlacement: (UUID) -> Void
@@ -30,10 +22,10 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
 
     private var pendingDeleteIsPresented: Binding<Bool> {
         Binding(
-            get: { pendingDeleteMarkerID != nil },
+            get: { ui.pendingDeleteMarkerID != nil },
             set: { isPresented in
                 if !isPresented {
-                    pendingDeleteMarkerID = nil
+                    ui.pendingDeleteMarkerID = nil
                 }
             }
         )
@@ -41,25 +33,25 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $showingPicker, onDismiss: resetAccessoryPicker) {
+            .sheet(isPresented: $ui.showingPicker, onDismiss: resetAccessoryPicker) {
                 accessoryPickerSheet
             }
-            .sheet(item: $controllingAccessory) { accessory in
+            .sheet(item: $ui.controllingAccessory) { accessory in
                 AccessoryDetailView(accessory: accessory)
             }
             .sheet(isPresented: iconPickerIsPresented) {
                 iconPickerSheet
             }
-            .sheet(isPresented: $showFloorplanDiagnostics) {
+            .sheet(isPresented: $ui.showFloorplanDiagnostics) {
                 FloorplanDiagnosticsView(
                     report: FloorplanHealthAnalyzer.analyze(floorplan: floorplan, homeKit: homeKit),
                     onAddAccessories: onStartAssistedPlacement
                 )
             }
-            .sheet(isPresented: $showFloorplanHelp, onDismiss: onHelpDismiss) {
+            .sheet(isPresented: $ui.showFloorplanHelp, onDismiss: onHelpDismiss) {
                 FloorplanHelpSheet(onDone: onHelpClose)
             }
-            .fullScreenCover(item: $drawingEditFloorplan, onDismiss: onDrawingDismiss) { editingFloorplan in
+            .fullScreenCover(item: $ui.drawingEditFloorplan, onDismiss: onDrawingDismiss) { editingFloorplan in
                 drawingEditor(editingFloorplan)
                     .environment(homeKit)
                     .ignoresSafeArea()
@@ -69,7 +61,7 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
                 isPresented: pendingDeleteIsPresented
             ) {
                 Button(String(localized: "common.delete", defaultValue: "Delete"), role: .destructive) {
-                    if let markerID = pendingDeleteMarkerID {
+                    if let markerID = ui.pendingDeleteMarkerID {
                         onDeleteMarker(markerID)
                     }
                 }
@@ -81,10 +73,10 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
 
     private var iconPickerIsPresented: Binding<Bool> {
         Binding(
-            get: { iconPickerTargetID != nil },
+            get: { ui.iconPickerTargetID != nil },
             set: { isPresented in
                 if !isPresented {
-                    iconPickerTargetID = nil
+                    ui.iconPickerTargetID = nil
                 }
             }
         )
@@ -99,7 +91,7 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
             title: accessoryPickerTitle,
             onPick: { accessories in
                 for accessory in accessories {
-                    onAddAccessory(accessory, pendingMarkerPosition)
+                    onAddAccessory(accessory, ui.pendingMarkerPosition)
                 }
             }
         )
@@ -107,7 +99,7 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
 
     @ViewBuilder
     private var iconPickerSheet: some View {
-        if let markerID = iconPickerTargetID,
+        if let markerID = ui.iconPickerTargetID,
            let placed = floorplan.accessories.first(where: { $0.id == markerID }),
            let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID) {
             let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
@@ -128,7 +120,7 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
         let preferredRoomUUIDs: Set<UUID>
         let preferredRoomNames: Set<String>
 
-        if let pickerRoomFilter,
+        if let pickerRoomFilter = ui.pickerRoomFilter,
            let room = floorplan.linkedRooms.first(where: { $0.hmRoomUUID == pickerRoomFilter }) {
             preferredRoomUUIDs = Set([pickerRoomFilter])
             preferredRoomNames = Set([normalizedRoomName(room.name)])
@@ -147,9 +139,7 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
     }
 
     private func resetAccessoryPicker() {
-        pickerRoomFilter = nil
-        pendingMarkerPosition = nil
-        editHighlightedRoomID = nil
+        ui.resetAccessoryPickerContext()
     }
 
     private func normalizedRoomName(_ value: String) -> String {

@@ -35,27 +35,10 @@ struct FloorplanEditorView: View {
     @Environment(HabitAnalysisService.self) private var habitService
     @Environment(SmartLightingEngine.self) private var smartLightingEngine
     @Environment(CloudKitSyncService.self) private var cloudKitSync
-    @Environment(IconOverrideStore.self) private var iconOverrides
     
-    @State private var isEditing: Bool = false
-    @State private var showingPicker: Bool = false
-    /// When set, the picker shows this room prominently (tap on room area).
-    @State private var pickerRoomFilter: UUID?
-    /// Normalized position where the user tapped — new accessories placed here.
-    @State private var pendingMarkerPosition: NormalizedPoint?
-    @State private var dragDeltas: [UUID: CGSize] = [:]
-    @State private var controllingAccessory: HMAccessory?
-    @State private var shakeMarkerID: UUID?
-    @State private var selectedMarkerID: UUID?
-    @State private var pendingDeleteMarkerID: UUID?
-    @State private var iconPickerTargetID: UUID?
-    @State private var showFloorplanDiagnostics = false
-    @State private var drawingEditFloorplan: Floorplan?
-    @State private var editHighlightedRoomID: UUID?
-    @State private var suppressNextMarkerTapID: UUID?
-    @State private var executingMarkerID: UUID?
+    /// Stato UI raggruppato: editing/selezione marker, picker, presentazioni.
+    @State private var ui = FloorplanEditorUIState()
 
-    @State private var showFloorplanHelp = false
     @AppStorage("floorplan.help.hasSeen.v1")
     private var hasSeenFloorplanHelp = false
     
@@ -66,7 +49,6 @@ struct FloorplanEditorView: View {
     @State private var hideTask: Task<Void, Never>?
     
     @Environment(HomeKitScenesService.self) private var scenesService
-    @State private var showScenesPanel = false
 
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var allFloorplans: [Floorplan]
 
@@ -123,7 +105,7 @@ struct FloorplanEditorView: View {
     }
 
     private var accessoryPickerTitle: String {
-        guard let pickerRoomFilter,
+        guard let pickerRoomFilter = ui.pickerRoomFilter,
               let room = floorplan.linkedRooms.first(where: { $0.hmRoomUUID == pickerRoomFilter }) else {
             return String(localized: "floorplan.accessoryPicker.title", defaultValue: "Add accessories")
         }
@@ -168,25 +150,9 @@ struct FloorplanEditorView: View {
     }
     
     private var shouldShowControls: Bool {
-        chromeController.shouldShowControls(isEditing: isEditing)
+        chromeController.shouldShowControls(isEditing: ui.isEditing)
     }
 
-    /// Sheet/overlay modali che, se presenti, bloccano la comparsa dell'aiuto
-    /// contestuale. Sorgente unica condivisa con `shouldSuppressIdleScreensaver`
-    /// per evitare drift tra le due liste.
-    private var hasBlockingModalPresentation: Bool {
-        showingPicker
-            || controllingAccessory != nil
-            || iconPickerTargetID != nil
-            || showFloorplanDiagnostics
-            || showScenesPanel
-    }
-
-    private var shouldSuppressIdleScreensaver: Bool {
-        hasBlockingModalPresentation
-            || showFloorplanHelp
-            || pendingDeleteMarkerID != nil
-    }
 
     private var floorplanBackgroundColor: Color {
         let visualStyle = DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard
@@ -235,12 +201,12 @@ struct FloorplanEditorView: View {
                 openPanelButton
 
                 // Right-side scenes panel overlay
-                if showScenesPanel {
+                if ui.showScenesPanel {
                     Color.black.opacity(0.25)
                         .ignoresSafeArea()
                         .onTapGesture {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                showScenesPanel = false
+                                ui.showScenesPanel = false
                             }
                         }
                         .transition(.opacity)
@@ -248,10 +214,10 @@ struct FloorplanEditorView: View {
 
                 HStack(spacing: 0) {
                     Spacer()
-                    ScenesSidePanel(isPresented: $showScenesPanel)
+                    ScenesSidePanel(isPresented: $ui.showScenesPanel)
                         .frame(width: min(proxy.size.width * 0.72, 320))
-                        .offset(x: showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
-                        .animation(.spring(response: 0.38, dampingFraction: 0.88), value: showScenesPanel)
+                        .offset(x: ui.showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.88), value: ui.showScenesPanel)
                 }
                 .ignoresSafeArea(edges: .vertical)
 
@@ -274,7 +240,7 @@ struct FloorplanEditorView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .modifier(editorPresentationModifier)
-        .suppressesIdleScreensaver(.floorplanInteraction, when: shouldSuppressIdleScreensaver)
+        .suppressesIdleScreensaver(.floorplanInteraction, when: ui.shouldSuppressIdleScreensaver)
         .onAppear(perform: handleAppear)
         .onChange(of: homeKit.isReady) { _, isReady in
             if isReady {
@@ -311,7 +277,7 @@ struct FloorplanEditorView: View {
         .onChange(of: floorplan.accessories.count) { _, _ in
             accessoryObservationCoordinator.subscribe(to: floorplan)
         }
-        .onChange(of: isEditing) { _, newValue in
+        .onChange(of: ui.isEditing) { _, newValue in
             if newValue {
                 chromeController.enterEditingMode()
             } else {
@@ -334,10 +300,10 @@ struct FloorplanEditorView: View {
         viewportController.restore()
 
         if startInEditMode {
-            isEditing = true
+            ui.isEditing = true
             chromeController.enterEditingMode()
         } else {
-            chromeController.scheduleAutoHide(isEditing: isEditing)
+            chromeController.scheduleAutoHide(isEditing: ui.isEditing)
         }
 
         imageLoader.refresh(for: floorplan)
@@ -391,26 +357,10 @@ struct FloorplanEditorView: View {
     }
 
     private func showAccessoryPicker() {
-        resetAccessoryPickerContext()
-        showingPicker = true
+        ui.resetAccessoryPickerContext()
+        ui.showingPicker = true
     }
 
-    private func resetAccessoryPickerContext() {
-        pickerRoomFilter = nil
-        pendingMarkerPosition = nil
-        editHighlightedRoomID = nil
-    }
-
-    private func toggleEditing() {
-        isEditing.toggle()
-        suppressNextMarkerTapID = nil
-        executingMarkerID = nil
-        if !isEditing {
-            selectedMarkerID = nil
-            editHighlightedRoomID = nil
-        }
-    }
-    
     // MARK: - Top bar (sempre visibile)
 
     @ViewBuilder
@@ -422,7 +372,7 @@ struct FloorplanEditorView: View {
             columnVisibility: columnVisibility,
             pinnedFloorplans: pinnedFloorplans,
             primaryFloorplanID: primaryFloorplanID,
-            isEditing: isEditing,
+            isEditing: ui.isEditing,
             overlayVM: overlayVM,
             overlayContext: cachedOverlayContext,
             environmentSensorTypes: overlayEnvVM.availableSensorTypes,
@@ -437,10 +387,10 @@ struct FloorplanEditorView: View {
             onSelectFloorplan: onSelectFloorplan,
             onAddAccessory: showAccessoryPicker,
             onShowHelp: chromeController.showHelpManually,
-            onShowDiagnostics: { showFloorplanDiagnostics = true },
-            onEditDrawing: { drawingEditFloorplan = floorplan },
-            onShowScenes: { showScenesPanel = true },
-            onToggleEditing: toggleEditing,
+            onShowDiagnostics: { ui.showFloorplanDiagnostics = true },
+            onEditDrawing: { ui.drawingEditFloorplan = floorplan },
+            onShowScenes: { ui.showScenesPanel = true },
+            onToggleEditing: ui.toggleEditing,
             onPauseSmartLighting: smartLightingEngine.pauseFromFloorplan,
             onResumeSmartLighting: smartLightingEngine.resumeFromFloorplan,
             onTopBarHeightChanged: updateTopBarHeight
@@ -458,10 +408,10 @@ struct FloorplanEditorView: View {
     private func secondaryControls(in size: CGSize) -> some View {
         FloorplanSecondaryControlsLayer(
             effectiveScale: effectiveScale,
-            isEditing: isEditing,
+            isEditing: ui.isEditing,
             isOverlayPanelVisible: overlayVM?.isPanelVisible,
             activeOverlayMode: overlayVM?.activeMode,
-            selectedMarkerID: selectedMarkerID,
+            selectedMarkerID: ui.selectedMarkerID,
             selectedMarker: selectedMarkerToolbarState,
             onResetZoom: resetZoom,
             onRenameMarker: { markerID, newLabel in
@@ -472,35 +422,29 @@ struct FloorplanEditorView: View {
             },
             onRecenterMarker: recenterMarker,
             onDeleteMarker: { markerID in
-                pendingDeleteMarkerID = markerID
+                ui.pendingDeleteMarkerID = markerID
             },
-            onDismissMarker: dismissSelectedMarker,
+            onDismissMarker: ui.dismissSelectedMarker,
             onChangeMarkerIcon: { markerID in
-                iconPickerTargetID = markerID
+                ui.iconPickerTargetID = markerID
             },
             onResolveMarkerAudit: resolveMarkerAudit
         )
     }
 
     private var selectedMarkerToolbarState: FloorplanSelectedMarkerToolbarState? {
-        guard isEditing, let markerID = selectedMarkerID else { return nil }
+        guard ui.isEditing, let markerID = ui.selectedMarkerID else { return nil }
         guard let placed = marker(withID: markerID) else { return nil }
         return selectedMarkerToolbarStateBuilder.state(for: placed)
     }
 
-    private func dismissSelectedMarker() {
-        withAnimation(.spring(response: 0.35)) {
-            selectedMarkerID = nil
-        }
-    }
-    
     // MARK: - Pulsante apri pannello (sempre visibile, non soggetto ad auto-hide)
 
     /// Bottone bottom-right che apre il pannello contestuale.
     /// Vive in un proprio layer ZStack così non scompare con l'auto-hide dei controlli secondari.
     @ViewBuilder
     private var openPanelButton: some View {
-        if !isEditing, let vm = overlayVM,
+        if !ui.isEditing, let vm = overlayVM,
            vm.activeMode != .controls, !vm.isPanelVisible {
             VStack {
                 Spacer()
@@ -550,22 +494,22 @@ struct FloorplanEditorView: View {
 
     private func presentHelpIfNeeded() {
         chromeController.presentHelpIfNeeded {
-            !hasBlockingModalPresentation
+            !ui.hasBlockingModalPresentation
         }
     }
     
     private func handleBackgroundTap(at tapLocation: CGPoint, in containerSize: CGSize) {
         // 1. Deselect marker in edit mode
-        if isEditing && selectedMarkerID != nil {
+        if ui.isEditing && ui.selectedMarkerID != nil {
             withAnimation(.spring(response: 0.35)) {
-                selectedMarkerID = nil
+                ui.selectedMarkerID = nil
             }
             return
         }
 
         // 2. Not editing: show controls
-        if !isEditing {
-            chromeController.showControlsAndScheduleAutoHide(isEditing: isEditing)
+        if !ui.isEditing {
+            chromeController.showControlsAndScheduleAutoHide(isEditing: ui.isEditing)
             return
         }
 
@@ -577,18 +521,18 @@ struct FloorplanEditorView: View {
                 imageSize: image.size,
                 containerSize: containerSize
               ) else {
-            resetAccessoryPickerContext()
+            ui.resetAccessoryPickerContext()
             return
         }
 
-        pendingMarkerPosition = tapResolution.markerPosition
+        ui.pendingMarkerPosition = tapResolution.markerPosition
 
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-            editHighlightedRoomID = tapResolution.roomID
+            ui.editHighlightedRoomID = tapResolution.roomID
         }
-        pickerRoomFilter = tapResolution.roomID
+        ui.pickerRoomFilter = tapResolution.roomID
 
-        showingPicker = true
+        ui.showingPicker = true
     }
 
     private func resolveRoomTap(at tapLocation: CGPoint,
@@ -636,17 +580,17 @@ struct FloorplanEditorView: View {
     
     private func imageWithMarkers(image: UIImage, container: CGSize) -> some View {
         let rect = imageRect(imageSize: image.size, container: container)
-        let showMarkers = isEditing || (overlayVM?.activeMode == .controls)
+        let showMarkers = ui.isEditing || (overlayVM?.activeMode == .controls)
         return FloorplanCanvasView(
             image: image,
             containerSize: container,
-            showOverlayLayer: overlayVM != nil && !isEditing,
-            showEditLayer: isEditing && !floorplan.linkedRooms.isEmpty,
+            showOverlayLayer: overlayVM != nil && !ui.isEditing,
+            showEditLayer: ui.isEditing && !floorplan.linkedRooms.isEmpty,
             showMarkers: showMarkers,
             markerItems: showMarkers ? markerRenderItems() : [],
             collisionOffsets: showMarkers ? markerCollisionOffsets(in: rect) : [:]
         ) { container, imageRect in
-            if let vm = overlayVM, !isEditing {
+            if let vm = overlayVM, !ui.isEditing {
                 overlayLayer(vm: vm, container: container, imageRect: imageRect)
             } else {
                 EmptyView()
@@ -663,9 +607,9 @@ struct FloorplanEditorView: View {
             FloorplanEmptyMarkersHint(
                 hasAreas: !floorplan.linkedRooms.isEmpty,
                 onAddAccessory: {
-                    pickerRoomFilter = nil
-                    pendingMarkerPosition = nil
-                    showingPicker = true
+                    ui.pickerRoomFilter = nil
+                    ui.pendingMarkerPosition = nil
+                    ui.showingPicker = true
                 }
             )
         }
@@ -676,7 +620,7 @@ struct FloorplanEditorView: View {
             rooms: floorplan.linkedRooms,
             containerSize: container,
             imageRect: imageRect,
-            highlightedRoomID: editHighlightedRoomID
+            highlightedRoomID: ui.editHighlightedRoomID
         )
     }
 
@@ -726,7 +670,7 @@ struct FloorplanEditorView: View {
             x: imageRect.origin.x + item.position.x * imageRect.width,
             y: imageRect.origin.y + item.position.y * imageRect.height
         )
-        let delta = dragDeltas[item.id] ?? .zero
+        let delta = ui.dragDeltas[item.id] ?? .zero
         let livePoint = CGPoint(x: basePoint.x + delta.width,
                                 y: basePoint.y + delta.height)
         let displayPoint = CGPoint(
@@ -738,8 +682,8 @@ struct FloorplanEditorView: View {
         
         AccessoryMarkerView(
             adapter: item.adapter,
-            isEditing: isEditing,
-            isSelected: isEditing && item.isSelected,
+            isEditing: ui.isEditing,
+            isSelected: ui.isEditing && item.isSelected,
             isExecuting: item.isExecuting,
             editIssue: item.editIssue,
             label: item.displayLabel,
@@ -753,33 +697,33 @@ struct FloorplanEditorView: View {
                    value: item.isShaking)
         .animation(.spring(response: 0.3), value: item.isSelected)
         .gesture(
-            isEditing
+            ui.isEditing
             ? nil
             : markerInteractionGesture(for: item.id, accessory: item.accessory, adapter: item.adapter)
         )
         .simultaneousGesture(
-            isEditing
+            ui.isEditing
             ? TapGesture()
                 .onEnded {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        selectedMarkerID = (selectedMarkerID == item.id) ? nil : item.id
+                        ui.selectedMarkerID = (ui.selectedMarkerID == item.id) ? nil : item.id
                     }
                 }
             : nil
         )
         .gesture(
-            isEditing ? dragGesture(for: item.id, position: item.position, imageRect: imageRect) : nil
+            ui.isEditing ? dragGesture(for: item.id, position: item.position, imageRect: imageRect) : nil
         )
     }
 
     private func markerRenderItems() -> [FloorplanMarkerRenderItem] {
         FloorplanMarkerRenderItemBuilder(
             adaptersByUUID: currentAdapterMap(),
-            isEditing: isEditing,
-            allowsCameraSnapshot: !isEditing && overlayVM?.activeMode == .security,
-            selectedMarkerID: selectedMarkerID,
-            executingMarkerID: executingMarkerID,
-            shakeMarkerID: shakeMarkerID,
+            isEditing: ui.isEditing,
+            allowsCameraSnapshot: !ui.isEditing && overlayVM?.activeMode == .security,
+            selectedMarkerID: ui.selectedMarkerID,
+            executingMarkerID: ui.executingMarkerID,
+            shakeMarkerID: ui.shakeMarkerID,
             duplicatedMarkerAccessoryIDs: duplicatedMarkerAccessoryIDs,
             linkedRooms: floorplan.linkedRooms
         ).makeItems(from: floorplan.accessories)
@@ -787,7 +731,7 @@ struct FloorplanEditorView: View {
 
     private var markerAuditService: FloorplanMarkerAuditService {
         FloorplanMarkerAuditService(
-            isEditing: isEditing,
+            isEditing: ui.isEditing,
             duplicatedMarkerAccessoryIDs: duplicatedMarkerAccessoryIDs,
             linkedRooms: floorplan.linkedRooms
         )
@@ -805,8 +749,7 @@ struct FloorplanEditorView: View {
             floorplan: floorplan,
             modelContext: modelContext,
             cloudKitSync: cloudKitSync,
-            homeKit: homeKit,
-            iconOverrides: iconOverrides
+            homeKit: homeKit
         )
     }
 
@@ -844,7 +787,7 @@ struct FloorplanEditorView: View {
         FloorplanInteractionChromeController(
             controlsVisible: $controlsVisible,
             hideTask: $hideTask,
-            showHelp: $showFloorplanHelp,
+            showHelp: $ui.showFloorplanHelp,
             hasSeenHelp: $hasSeenFloorplanHelp
         )
     }
@@ -856,16 +799,7 @@ struct FloorplanEditorView: View {
             modelContext: modelContext,
             cloudKitSync: cloudKitSync,
             accessoryPickerTitle: accessoryPickerTitle,
-            showingPicker: $showingPicker,
-            pickerRoomFilter: $pickerRoomFilter,
-            pendingMarkerPosition: $pendingMarkerPosition,
-            editHighlightedRoomID: $editHighlightedRoomID,
-            controllingAccessory: $controllingAccessory,
-            iconPickerTargetID: $iconPickerTargetID,
-            showFloorplanDiagnostics: $showFloorplanDiagnostics,
-            showFloorplanHelp: $showFloorplanHelp,
-            drawingEditFloorplan: $drawingEditFloorplan,
-            pendingDeleteMarkerID: $pendingDeleteMarkerID,
+            ui: ui,
             onAddAccessory: { accessory, position in
                 addAccessory(accessory, at: position)
             },
@@ -893,8 +827,8 @@ struct FloorplanEditorView: View {
                 switch result {
                 case .first:
                     if let accessory {
-                        chromeController.scheduleAutoHide(isEditing: isEditing)
-                        controllingAccessory = accessory
+                        chromeController.scheduleAutoHide(isEditing: ui.isEditing)
+                        ui.controllingAccessory = accessory
                     }
                 case .second:
                     handleTap(on: markerID, accessory: accessory, adapter: adapter)
@@ -909,7 +843,7 @@ struct FloorplanEditorView: View {
 
         switch issue {
         case .missingHomeKitAccessory, .duplicateMarker:
-            pendingDeleteMarkerID = markerID
+            ui.pendingDeleteMarkerID = markerID
         case .outsideLinkedRoom:
             recenterMarker(id: markerID)
         case .roomLinkMismatch:
@@ -924,7 +858,7 @@ struct FloorplanEditorView: View {
     private func markerCollisionOffsets(in imageRect: CGRect) -> [UUID: CGSize] {
         collisionOffsetCache.offsets(
             markers: floorplan.accessories,
-            isEditing: isEditing,
+            isEditing: ui.isEditing,
             effectiveScale: effectiveScale,
             in: imageRect
         )
@@ -935,28 +869,28 @@ struct FloorplanEditorView: View {
     private func handleTap(on markerID: UUID,
                            accessory: HMAccessory?,
                            adapter: (any AccessoryAdapter)?) {
-        guard !isEditing else { return }
+        guard !ui.isEditing else { return }
         guard let accessory else { return }
 
-        if suppressNextMarkerTapID == markerID {
-            suppressNextMarkerTapID = nil
+        if ui.suppressNextMarkerTapID == markerID {
+            ui.suppressNextMarkerTapID = nil
             return
         }
 
-        chromeController.scheduleAutoHide(isEditing: isEditing)
+        chromeController.scheduleAutoHide(isEditing: ui.isEditing)
 
         // Tap: toggle diretto se supportato, altrimenti apre il pannello dettaglio.
         if let adapter, adapter.supportsQuickToggle {
             performQuickToggle(adapter: adapter, markerID: markerID)
         } else {
-            controllingAccessory = accessory
+            ui.controllingAccessory = accessory
         }
     }
     
     private func performQuickToggle(adapter: any AccessoryAdapter, markerID: UUID) {
         let haptic = UIImpactFeedbackGenerator(style: .medium)
         haptic.impactOccurred()
-        executingMarkerID = markerID
+        ui.executingMarkerID = markerID
         
         Task {
             do {
@@ -966,18 +900,18 @@ struct FloorplanEditorView: View {
                 notif.notificationOccurred(.error)
             }
             await MainActor.run {
-                if executingMarkerID == markerID {
-                    executingMarkerID = nil
+                if ui.executingMarkerID == markerID {
+                    ui.executingMarkerID = nil
                 }
             }
         }
     }
     
     private func triggerShake(for id: UUID) {
-        shakeMarkerID = id
+        ui.shakeMarkerID = id
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            if shakeMarkerID == id {
-                shakeMarkerID = nil
+            if ui.shakeMarkerID == id {
+                ui.shakeMarkerID = nil
             }
         }
     }
@@ -990,7 +924,7 @@ struct FloorplanEditorView: View {
         DragGesture()
             .onChanged { value in
                 let s = effectiveScale
-                dragDeltas[markerID] = CGSize(
+                ui.dragDeltas[markerID] = CGSize(
                     width: value.translation.width / s,
                     height: value.translation.height / s
                 )
@@ -1010,24 +944,24 @@ struct FloorplanEditorView: View {
                 )
                 markerEditingCoordinator.moveMarker(id: markerID, to: normalized)
                 
-                dragDeltas[markerID] = .zero
+                ui.dragDeltas[markerID] = .zero
             }
     }
 
     // MARK: - Marker actions
 
     private func startAssistedPlacement(for roomID: UUID) {
-        pickerRoomFilter = roomID
-        editHighlightedRoomID = roomID
-        pendingMarkerPosition = floorplan.linkedRooms
+        ui.pickerRoomFilter = roomID
+        ui.editHighlightedRoomID = roomID
+        ui.pendingMarkerPosition = floorplan.linkedRooms
             .first { $0.hmRoomUUID == roomID }
             .map(markerEditingCoordinator.normalizedCenter)
 
-        showFloorplanDiagnostics = false
+        ui.showFloorplanDiagnostics = false
 
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 250_000_000)
-            showingPicker = true
+            ui.showingPicker = true
         }
     }
     
@@ -1037,8 +971,8 @@ struct FloorplanEditorView: View {
 
     private func deleteMarker(id markerID: UUID) {
         markerEditingCoordinator.deleteMarker(id: markerID)
-        selectedMarkerID = nil
-        pendingDeleteMarkerID = nil
+        ui.selectedMarkerID = nil
+        ui.pendingDeleteMarkerID = nil
     }
 
     private func recenterMarker(id markerID: UUID) {
