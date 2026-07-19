@@ -69,6 +69,29 @@ struct UsageEvidenceBuilderTests {
         #expect(out[0].weekdayPattern == .weekdays)
     }
 
+    @Test("Sensori contatto/movimento sono esclusi (non azionabili)")
+    func sensorTypesExcluded() {
+        let a = UUID()
+        let events = (0..<6).map { d -> UsageEvidenceBuilder.EventSample in
+            let base = event(a, name: "Finestra", daysAgo: d, hour: 23)
+            return .init(accessoryID: base.accessoryID, accessoryName: base.accessoryName,
+                         roomName: base.roomName, eventType: "contact",
+                         state: true, timestamp: base.timestamp)
+        }
+        #expect(UsageEvidenceBuilder.build(from: events).isEmpty)
+    }
+
+    @Test("Eventi sincronizzati di molti accessori nello stesso minuto sono scartati (scene)")
+    func bulkSynchronizedEventsExcluded() {
+        // 5 accessori che "si accendono" tutti alle 23:00 in punto per 6 giorni:
+        // è una scena serale, non 5 abitudini umane.
+        let accessories = (0..<5).map { _ in UUID() }
+        let events = (0..<6).flatMap { day in
+            accessories.map { event($0, daysAgo: day, hour: 23, minute: 0) }
+        }
+        #expect(UsageEvidenceBuilder.build(from: events).isEmpty)
+    }
+
     @Test("Accessori diversi producono evidenze separate, ordinate per forza")
     func multipleAccessoriesSortedByStrength() {
         let strong = UUID(), weak = UUID()

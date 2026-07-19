@@ -65,6 +65,17 @@ enum UsageEvidenceBuilder {
         var minDistinctDays: Int = 4
         /// Quota per classificare feriali/weekend (es. 0.9 = 90%).
         var weekdayDominance: Double = 0.9
+        /// Solo accessori AZIONABILI: un'evidenza "accendi" su un sensore
+        /// contatto/movimento non è automatizzabile (feedback device: finestre
+        /// proposte nel builder senza accessorio da controllare).
+        var allowedEventTypes: Set<String> = [
+            "light", "switch", "outlet", "fan", "thermostat", "airPurifier", "humidifier"
+        ]
+        /// Eventi di almeno N accessori DISTINTI nello stesso minuto = attività
+        /// sincronizzata (scena/automazione/sistema), non abitudine umana:
+        /// quei timestamp vengono esclusi (feedback device: tutte le evidenze
+        /// identiche alle 23:00 per 6 accessori diversi).
+        var bulkAccessoryThreshold: Int = 4
 
         init() {}
     }
@@ -73,7 +84,30 @@ enum UsageEvidenceBuilder {
     static func build(from events: [EventSample],
                       configuration: Configuration = Configuration(),
                       calendar: Calendar = .current) -> [Evidence] {
-        let onEvents = events.filter(\.state)
+        var onEvents = events.filter { event in
+            event.state &&
+            (configuration.allowedEventTypes.isEmpty
+                || configuration.allowedEventTypes.contains(event.eventType))
+        }
+
+        // Filtro anti-scena: minuti in cui scattano ≥ soglia accessori distinti
+        // sono attività sincronizzata di sistema, non gesti umani.
+        if configuration.bulkAccessoryThreshold > 0 {
+            var accessoriesByMinute: [Int: Set<UUID>] = [:]
+            for event in onEvents {
+                let bucket = Int(event.timestamp.timeIntervalSince1970 / 60)
+                accessoriesByMinute[bucket, default: []].insert(event.accessoryID)
+            }
+            let bulkMinutes = Set(accessoriesByMinute.filter {
+                $0.value.count >= configuration.bulkAccessoryThreshold
+            }.keys)
+            if !bulkMinutes.isEmpty {
+                onEvents.removeAll {
+                    bulkMinutes.contains(Int($0.timestamp.timeIntervalSince1970 / 60))
+                }
+            }
+        }
+
         guard !onEvents.isEmpty else { return [] }
 
         let grouped = Dictionary(grouping: onEvents) { "\($0.accessoryID.uuidString)|\($0.eventType)" }
