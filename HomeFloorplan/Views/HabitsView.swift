@@ -23,6 +23,8 @@ struct HabitsView: View {
     @Environment(\.modelContext) private var modelContext
     /// Evidenze d'uso (pivot): calcolate al task iniziale della view.
     @State private var usageEvidences: [UsageEvidenceBuilder.Evidence] = []
+    /// Funnel diagnostico: rende spiegabile una lista vuota.
+    @State private var evidenceFunnel: UsageEvidenceBuilder.FunnelReport?
     @State private var reviewingProposal: AutomationProposal?
     @State private var reviewingOpportunity: AutomationOpportunity?
     @State private var reviewingHabitPattern: HabitPattern?
@@ -62,7 +64,9 @@ struct HabitsView: View {
                         .presentationDragIndicator(.visible)
                 }
                 .task {
-                    usageEvidences = UsageEvidenceService.evidences(modelContainer: modelContext.container)
+                    let report = UsageEvidenceService.evidencesWithReport(modelContainer: modelContext.container)
+                    usageEvidences = report.evidences
+                    evidenceFunnel = report.funnel
                     eligibleEvents = behavioralService.eligibleEventCount(days: 30)
                     habitService.scheduleNaming(
                         reports: behavioralService.lastBurstReport,
@@ -476,9 +480,28 @@ struct HabitsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let funnel = evidenceFunnel, funnel.totalEvents > 0 {
+                    // Funnel diagnostico: lo zero non è mai opaco.
+                    Text(evidenceFunnelText(funnel))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(.vertical, 6)
+    }
+
+    private func evidenceFunnelText(_ funnel: UsageEvidenceBuilder.FunnelReport) -> String {
+        var text = String(format: String(localized: "habits.evidence.funnel",
+                                         defaultValue: "%d events · %d actionable · %d after scene filter"),
+                          funnel.totalEvents, funnel.actionableOnEvents, funnel.afterBulkFilter)
+        if let name = funnel.bestCandidateName {
+            text += " · " + String(format: String(localized: "habits.evidence.funnel.best",
+                                                  defaultValue: "best: %@ (%d days)"),
+                                   name, funnel.bestCandidateDays)
+        }
+        return text
     }
 
     // MARK: - Section 5: Monitoraggio

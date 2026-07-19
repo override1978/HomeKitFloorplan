@@ -6,9 +6,21 @@ import SwiftData
 @MainActor
 enum UsageEvidenceService {
 
+    /// Evidenze + funnel diagnostico dagli ultimi `days` giorni.
+    static func evidencesWithReport(modelContainer: ModelContainer,
+                                    days: Int = 21)
+    -> (evidences: [UsageEvidenceBuilder.Evidence], funnel: UsageEvidenceBuilder.FunnelReport) {
+        UsageEvidenceBuilder.buildWithReport(from: samples(modelContainer: modelContainer, days: days))
+    }
+
     /// Evidenze dagli ultimi `days` giorni, ordinate per forza.
     static func evidences(modelContainer: ModelContainer,
                           days: Int = 21) -> [UsageEvidenceBuilder.Evidence] {
+        UsageEvidenceBuilder.build(from: samples(modelContainer: modelContainer, days: days))
+    }
+
+    private static func samples(modelContainer: ModelContainer,
+                                days: Int) -> [UsageEvidenceBuilder.EventSample] {
         let context = ModelContext(modelContainer)
         let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
 
@@ -19,7 +31,7 @@ enum UsageEvidenceService {
         descriptor.fetchLimit = 4000
 
         let events = (try? context.fetch(descriptor)) ?? []
-        let samples = events.map {
+        return events.map {
             UsageEvidenceBuilder.EventSample(
                 accessoryID: $0.accessoryID,
                 accessoryName: $0.accessoryName,
@@ -29,6 +41,5 @@ enum UsageEvidenceService {
                 timestamp: $0.timestamp
             )
         }
-        return UsageEvidenceBuilder.build(from: samples)
     }
 }

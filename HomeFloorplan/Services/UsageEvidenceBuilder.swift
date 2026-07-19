@@ -80,10 +80,40 @@ enum UsageEvidenceBuilder {
         init() {}
     }
 
+    /// Report del "funnel": dove si svuota la pipeline delle evidenze.
+    /// Rende lo zero spiegabile invece che opaco (lezione del vecchio motore).
+    struct FunnelReport: Equatable {
+        var totalEvents = 0
+        var actionableOnEvents = 0
+        var afterBulkFilter = 0
+        /// Miglior candidata ANCHE sotto soglia: nome e giorni distinti raggiunti.
+        var bestCandidateName: String?
+        var bestCandidateDays = 0
+    }
+
+    /// Come `build`, ma restituisce anche il funnel diagnostico.
+    static func buildWithReport(from events: [EventSample],
+                                configuration: Configuration = Configuration(),
+                                calendar: Calendar = .current) -> (evidences: [Evidence], funnel: FunnelReport) {
+        var funnel = FunnelReport(totalEvents: events.count)
+        let evidences = build(from: events, configuration: configuration,
+                              calendar: calendar, funnel: &funnel)
+        return (evidences, funnel)
+    }
+
     /// Estrae le evidenze dalle accensioni (`state == true`), ordinate per forza.
     static func build(from events: [EventSample],
                       configuration: Configuration = Configuration(),
                       calendar: Calendar = .current) -> [Evidence] {
+        var funnel = FunnelReport()
+        return build(from: events, configuration: configuration,
+                     calendar: calendar, funnel: &funnel)
+    }
+
+    private static func build(from events: [EventSample],
+                              configuration: Configuration,
+                              calendar: Calendar,
+                              funnel: inout FunnelReport) -> [Evidence] {
         var onEvents = events.filter { event in
             event.state &&
             (configuration.allowedEventTypes.isEmpty
@@ -107,6 +137,12 @@ enum UsageEvidenceBuilder {
                 }
             }
         }
+
+        funnel.actionableOnEvents = events.filter { e in
+            e.state && (configuration.allowedEventTypes.isEmpty
+                        || configuration.allowedEventTypes.contains(e.eventType))
+        }.count
+        funnel.afterBulkFilter = onEvents.count
 
         guard !onEvents.isEmpty else { return [] }
 
@@ -133,6 +169,11 @@ enum UsageEvidenceBuilder {
                 let end = start + configuration.windowMinutes
                 let inWindow = stamps.filter { $0.minute >= start && $0.minute < end }
                 let days = Set(inWindow.map(\.day))
+
+                if days.count > funnel.bestCandidateDays {
+                    funnel.bestCandidateDays = days.count
+                    funnel.bestCandidateName = sample.accessoryName
+                }
 
                 if days.count >= configuration.minDistinctDays,
                    days.count > (best?.distinctDays ?? 0) ||
