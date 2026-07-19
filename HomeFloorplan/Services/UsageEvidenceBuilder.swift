@@ -74,7 +74,8 @@ enum UsageEvidenceBuilder {
         /// contatto/movimento non è automatizzabile (feedback device: finestre
         /// proposte nel builder senza accessorio da controllare).
         var allowedEventTypes: Set<String> = [
-            "light", "switch", "outlet", "fan", "thermostat", "airPurifier", "humidifier"
+            "light", "switch", "outlet", "fan", "thermostat",
+            "airPurifier", "humidifier", "blind"
         ]
         /// Eventi di almeno N accessori DISTINTI nello stesso minuto = attività
         /// sincronizzata (scena/automazione/sistema), non abitudine umana:

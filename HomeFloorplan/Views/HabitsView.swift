@@ -27,6 +27,7 @@ struct HabitsView: View {
     @State private var evidenceFunnel: UsageEvidenceBuilder.FunnelReport?
     /// Livello B: interprete LLM su richiesta.
     @State private var habitInterpreter: HabitInterpreterService?
+    @State private var showInterpreterSummary = false
     @State private var reviewingProposal: AutomationProposal?
     @State private var reviewingOpportunity: AutomationOpportunity?
     @State private var reviewingHabitPattern: HabitPattern?
@@ -552,6 +553,34 @@ struct HabitsView: View {
                             systemImage: "sparkles"
                         )
                         .font(.subheadline.weight(.semibold))
+                    }
+                }
+
+                if interpreter.lastSummary != nil, !interpreter.isAnalyzing {
+                    // Trasparenza totale: cosa ha visto ESATTAMENTE il modello.
+                    Button {
+                        showInterpreterSummary = true
+                    } label: {
+                        Label(String(localized: "habits.ai.showSummary",
+                                     defaultValue: "What did the model see?"),
+                              systemImage: "doc.text.magnifyingglass")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .sheet(isPresented: $showInterpreterSummary) {
+                        NavigationStack {
+                            ScrollView {
+                                Text(interpreter.lastSummary ?? "")
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding()
+                                    .textSelection(.enabled)
+                            }
+                            .navigationTitle(String(localized: "habits.ai.summaryTitle",
+                                                    defaultValue: "Model input"))
+                            .navigationBarTitleDisplayMode(.inline)
+                        }
+                        .presentationDetents([.large])
                     }
                 }
 

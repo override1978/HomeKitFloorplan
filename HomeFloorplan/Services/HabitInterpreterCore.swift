@@ -26,7 +26,7 @@ enum HabitInterpreterCore {
         /// Altri accessori con lo stesso pattern (es. luci della stessa stanza):
         /// UNA proposta con più azioni invece di n proposte fotocopia.
         let additionalTargetNames: [String]?
-        /// "on" | "off".
+        /// "on" | "off" | "open" | "close" (open/close per tende e coperture).
         let action: String
         /// "sunrise" | "sunset" | nil — per routine legate alla luce naturale
         /// (con triggerType "calendar"; ha precedenza sull'orario fisso).
@@ -172,12 +172,14 @@ enum HabitInterpreterCore {
         PREFER "accessoryState" (A turns on -> B) whenever a SEQUENCE or after-group note \
         supports it: sequence triggers survive schedule changes, fixed times do not. \
         Use "scheduleKind" sunset/sunrise for routines that track daylight (evening lights). \
+        BLINDS ([blind] lines) matter: manual blind usage almost always tracks daylight — \
+        propose sunrise/sunset schedules with action "open"/"close" for recurring blind patterns. \
         Reply ONLY with a JSON array (no prose, no code fences) of objects:
         {"title": string, "explanation": string (mention the observed evidence), \
         "triggerType": "calendar"|"accessoryState", "triggerTime": "HH:mm" or null, \
         "weekdays": [1-7] or null (1=Sunday), "triggerAccessoryName": string or null, \
         "targetAccessoryName": string, "additionalTargetNames": [string] or null, \
-        "action": "on"|"off", "scheduleKind": "sunrise"|"sunset" or null}
+        "action": "on"|"off"|"open"|"close", "scheduleKind": "sunrise"|"sunset" or null}
         Empty array [] if nothing is clearly supported.
         """
     }
@@ -196,7 +198,7 @@ enum HabitInterpreterCore {
             return []
         }
         return parsed.filter { suggestion in
-            (suggestion.action == "on" || suggestion.action == "off") &&
+            ["on", "off", "open", "close"].contains(suggestion.action) &&
             (suggestion.triggerType == "calendar" || suggestion.triggerType == "accessoryState") &&
             !suggestion.targetAccessoryName.isEmpty
         }

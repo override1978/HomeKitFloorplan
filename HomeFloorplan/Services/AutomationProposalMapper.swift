@@ -290,7 +290,7 @@ enum AutomationProposalMapper {
             sensorThreshold: nil,
             sensorDirection: nil,
             accessoryIDString: evidence.accessoryID.uuidString,
-            actionRaw: "on",
+            actionRaw: evidence.eventType == "blind" ? "open" : "on",
             actionValue: nil,
             actionValue2: nil,
             sceneName: nil,

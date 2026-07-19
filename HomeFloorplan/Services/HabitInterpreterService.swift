@@ -21,6 +21,9 @@ final class HabitInterpreterService {
     private(set) var isAnalyzing = false
     private(set) var lastError: String?
     private(set) var lastRunAt: Date?
+    /// Ultimo riassunto inviato al modello — ispezionabile dalla UI per
+    /// capire ESATTAMENTE cosa vede l'interprete (fine del tirare a indovinare).
+    private(set) var lastSummary: String?
 
     init(aiSettings: AISettings,
          modelContainer: ModelContainer,
@@ -50,6 +53,7 @@ final class HabitInterpreterService {
             events: events,
             existingAutomations: existing
         )
+        lastSummary = summary
 
         guard !summary.isEmpty else {
             suggestions = []
