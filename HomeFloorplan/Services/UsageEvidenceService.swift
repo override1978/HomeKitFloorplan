@@ -38,7 +38,8 @@ enum UsageEvidenceService {
                 roomName: $0.roomName,
                 eventType: $0.eventType,
                 state: $0.state,
-                timestamp: $0.timestamp
+                timestamp: $0.timestamp,
+                origin: $0.originRaw
             )
         }
     }

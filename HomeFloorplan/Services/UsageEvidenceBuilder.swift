@@ -19,15 +19,20 @@ enum UsageEvidenceBuilder {
         let eventType: String
         let state: Bool
         let timestamp: Date
+        /// "app" = scrittura di app/engine (echi inclusi); "external" = mano
+        /// umana o automazione HomeKit nativa.
+        let origin: String
 
         init(accessoryID: UUID, accessoryName: String, roomName: String?,
-             eventType: String, state: Bool, timestamp: Date) {
+             eventType: String, state: Bool, timestamp: Date,
+             origin: String = "external") {
             self.accessoryID = accessoryID
             self.accessoryName = accessoryName
             self.roomName = roomName
             self.eventType = eventType
             self.state = state
             self.timestamp = timestamp
+            self.origin = origin
         }
     }
 
@@ -76,6 +81,9 @@ enum UsageEvidenceBuilder {
         /// quei timestamp vengono esclusi (feedback device: tutte le evidenze
         /// identiche alle 23:00 per 6 accessori diversi).
         var bulkAccessoryThreshold: Int = 4
+        /// Origini escluse: le scritture dell'app/engine non sono abitudini
+        /// umane. (I dati storici pre-flag hanno origin "external" e passano.)
+        var excludedOrigins: Set<String> = ["app"]
 
         init() {}
     }
@@ -116,6 +124,7 @@ enum UsageEvidenceBuilder {
                               funnel: inout FunnelReport) -> [Evidence] {
         var onEvents = events.filter { event in
             event.state &&
+            !configuration.excludedOrigins.contains(event.origin) &&
             (configuration.allowedEventTypes.isEmpty
                 || configuration.allowedEventTypes.contains(event.eventType))
         }

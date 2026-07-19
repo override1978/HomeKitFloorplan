@@ -27,6 +27,10 @@ final class AccessoryEvent {
     var eventType: String
     /// Family profile active when this event was recorded. Nil = global / no profile.
     var profileID: UUID?
+    /// Origine del cambiamento: "app" (scritture di app/engine, echi inclusi)
+    /// o "external" (mano umana o automazioni HomeKit native). Permette alle
+    /// analisi di distinguere l'uso reale dall'attività generata dal sistema.
+    var originRaw: String = "external"
 
     init(
         id: UUID = UUID(),
@@ -38,8 +42,10 @@ final class AccessoryEvent {
         brightness: Double? = nil,
         timestamp: Date = Date(),
         eventType: String,
-        profileID: UUID? = nil
+        profileID: UUID? = nil,
+        originRaw: String = "external"
     ) {
+        self.originRaw = originRaw
         self.id = id
         self.accessoryID = accessoryID
         self.accessoryName = accessoryName
@@ -82,6 +88,9 @@ struct AccessoryEventDTO {
     let state: Bool
     let brightness: Double?
     let eventType: String
+    /// Vedi `AccessoryEvent.originRaw`. Default "external"; i call site delle
+    /// scritture dell'app la impostano a "app".
+    var origin: String = "external"
 }
 
 // MARK: - AccessoryPattern

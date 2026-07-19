@@ -386,11 +386,13 @@ final class HomeKitService: NSObject {
                 pauseSmartLightingAfterManualLightChange(accessory: accessory, characteristic: characteristic)
             }
 
-            // Registra evento per lo storico AI (solo tipi rilevanti)
+            // Registra evento per lo storico AI (solo tipi rilevanti).
+            // Origine "app": è una scrittura nostra (utente in-app o engine).
             if let store = accessoryEventStore,
                let accessory = characteristic.service?.accessory,
-               let dto = AccessoryEventStore.makeDTO(
+               var dto = AccessoryEventStore.makeDTO(
                    from: characteristic, value: value, accessory: accessory) {
+                dto.origin = "app"
                 await MainActor.run {
                     store.saveEvent(dto)
                 }
@@ -716,10 +718,13 @@ extension HomeKitService: HMAccessoryDelegate {
 
             pauseSmartLightingAfterManualLightChange(accessory: accessory, characteristic: characteristic)
 
-            // Registra evento per lo storico AI (solo tipi rilevanti)
+            // Registra evento per lo storico AI (solo tipi rilevanti).
+            // Eco di una nostra scrittura recente → origine "app";
+            // altrimenti "external" (mano umana o automazione HomeKit nativa).
             if let store = accessoryEventStore,
-               let dto = AccessoryEventStore.makeDTO(
+               var dto = AccessoryEventStore.makeDTO(
                    from: characteristic, value: value, accessory: accessory) {
+                dto.origin = wasRecentlyWritten(characteristic, within: 5) ? "app" : "external"
                 store.saveEvent(dto)
             }
 

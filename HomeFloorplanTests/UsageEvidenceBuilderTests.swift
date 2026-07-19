@@ -69,6 +69,18 @@ struct UsageEvidenceBuilderTests {
         #expect(out[0].weekdayPattern == .weekdays)
     }
 
+    @Test("Eventi originati dall'app/engine sono esclusi")
+    func appOriginatedEventsExcluded() {
+        let a = UUID()
+        let events = (0..<6).map { d -> UsageEvidenceBuilder.EventSample in
+            let base = event(a, daysAgo: d, hour: 21)
+            return .init(accessoryID: base.accessoryID, accessoryName: base.accessoryName,
+                         roomName: base.roomName, eventType: base.eventType,
+                         state: true, timestamp: base.timestamp, origin: "app")
+        }
+        #expect(UsageEvidenceBuilder.build(from: events).isEmpty)
+    }
+
     @Test("Sensori contatto/movimento sono esclusi (non azionabili)")
     func sensorTypesExcluded() {
         let a = UUID()

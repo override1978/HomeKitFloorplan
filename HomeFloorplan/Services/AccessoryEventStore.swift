@@ -48,7 +48,8 @@ final class AccessoryEventStore {
             state:         dto.state,
             brightness:    dto.brightness,
             eventType:     dto.eventType,
-            profileID:     activeProfileID
+            profileID:     activeProfileID,
+            originRaw:     dto.origin
         )
         context.insert(event)
 
