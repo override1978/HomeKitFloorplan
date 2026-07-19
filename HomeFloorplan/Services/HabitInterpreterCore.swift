@@ -23,6 +23,9 @@ enum HabitInterpreterCore {
         /// Nome dell'accessorio causa — solo per triggerType == "accessoryState".
         let triggerAccessoryName: String?
         let targetAccessoryName: String
+        /// Altri accessori con lo stesso pattern (es. luci della stessa stanza):
+        /// UNA proposta con più azioni invece di n proposte fotocopia.
+        let additionalTargetNames: [String]?
         /// "on" | "off".
         let action: String
         /// "sunrise" | "sunset" | nil — per routine legate alla luce naturale
@@ -163,6 +166,9 @@ enum HabitInterpreterCore {
         ("accessoryState") or by the same schedule; a recurring manual evening light suggests a \
         sunset trigger. NEVER re-propose what the automated groups or existing automations \
         already cover. Skip anything ambiguous.
+        GROUP, never repeat: if several devices share the same pattern (typically same room, \
+        same hours), emit ONE proposal — primary device in targetAccessoryName, the others in \
+        additionalTargetNames. NEVER emit two proposals with the same trigger or overlapping targets.
         PREFER "accessoryState" (A turns on -> B) whenever a SEQUENCE or after-group note \
         supports it: sequence triggers survive schedule changes, fixed times do not. \
         Use "scheduleKind" sunset/sunrise for routines that track daylight (evening lights). \
@@ -170,8 +176,8 @@ enum HabitInterpreterCore {
         {"title": string, "explanation": string (mention the observed evidence), \
         "triggerType": "calendar"|"accessoryState", "triggerTime": "HH:mm" or null, \
         "weekdays": [1-7] or null (1=Sunday), "triggerAccessoryName": string or null, \
-        "targetAccessoryName": string, "action": "on"|"off", \
-        "scheduleKind": "sunrise"|"sunset" or null}
+        "targetAccessoryName": string, "additionalTargetNames": [string] or null, \
+        "action": "on"|"off", "scheduleKind": "sunrise"|"sunset" or null}
         Empty array [] if nothing is clearly supported.
         """
     }

@@ -511,6 +511,15 @@ struct HabitsView: View {
                                                   defaultValue: "best: %@ (%d days)"),
                                    name, funnel.bestCandidateDays)
         }
+        if !funnel.onEventsByType.isEmpty {
+            // Breakdown per tipo: l'ASSENZA di un tipo (es. "blind") qui
+            // significa che quegli accessori non generano proprio eventi.
+            let types = funnel.onEventsByType
+                .sorted { $0.value > $1.value }
+                .map { "\($0.key) \($0.value)" }
+                .joined(separator: ", ")
+            text += "\n" + types
+        }
         return text
     }
 

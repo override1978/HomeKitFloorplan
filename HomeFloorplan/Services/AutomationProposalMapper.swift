@@ -38,6 +38,9 @@ enum AutomationProposalMapper {
         /// per-device: le opportunity sincronizzate da un altro device arrivano
         /// con UUID estranei).
         var effectAccessoryName: String? = nil
+        /// Target aggiuntivi (per nome) risolti in azioni extra con la stessa
+        /// actionRaw: una proposta raggruppata invece di n proposte fotocopia.
+        var additionalTargetNames: [String] = []
     }
 
     static func chatbotProposal(
@@ -242,6 +245,7 @@ enum AutomationProposalMapper {
         // allAccessories, ma l'azione è valida solo se il target è nel catalogo
         // (era la causa del wizard aperto senza azione: "no valid action target").
         draft.effectAccessoryName = suggestion.targetAccessoryName
+        draft.additionalTargetNames = suggestion.additionalTargetNames ?? []
         return proposal(from: draft, capabilities: capabilities, scenes: scenes)
     }
 
@@ -475,6 +479,23 @@ enum AutomationProposalMapper {
 
         if let action = action(from: draft, capabilities: capabilities, scenes: scenes, limitations: &limitations) {
             actions.append(action)
+        }
+
+        // Azioni extra per i target aggiuntivi (proposte raggruppate).
+        for extraName in draft.additionalTargetNames {
+            var extraDraft = draft
+            extraDraft.accessoryIDString = nil
+            extraDraft.sceneName = nil
+            extraDraft.effectAccessoryName = extraName
+            var extraLimitations: [String] = []
+            if let extra = action(from: extraDraft, capabilities: capabilities,
+                                  scenes: scenes, limitations: &extraLimitations) {
+                actions.append(extra)
+            } else {
+                limitations.append(String(format: String(localized: "automation.proposal.limit.extraTarget",
+                                                         defaultValue: "\"%@\" could not be added as an action."),
+                                          extraName))
+            }
         }
 
         let unsupportedReason: String?

@@ -84,12 +84,14 @@ struct HabitInterpreterCoreTests {
         let json = """
         [{"title":"Sera","explanation":"vista alle 19","triggerType":"calendar",\
         "triggerTime":"19:30","weekdays":[2,3,4,5,6],"triggerAccessoryName":null,\
-        "targetAccessoryName":"Lampada","action":"on"}]
+        "targetAccessoryName":"Lampada","additionalTargetNames":["Treppiede","Parentesi"],\
+        "action":"on"}]
         """
         let out = HabitInterpreterCore.parseSuggestions(json)
         #expect(out.count == 1)
         #expect(out[0].targetAccessoryName == "Lampada")
         #expect(out[0].triggerTime == "19:30")
+        #expect(out[0].additionalTargetNames == ["Treppiede", "Parentesi"])
     }
 
     @Test("Parsing: tollera code fence e testo attorno; scarta azioni non valide")

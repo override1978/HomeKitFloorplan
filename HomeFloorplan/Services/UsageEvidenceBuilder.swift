@@ -94,6 +94,9 @@ enum UsageEvidenceBuilder {
         var totalEvents = 0
         var actionableOnEvents = 0
         var afterBulkFilter = 0
+        /// Conteggio accensioni per tipo su TUTTI gli eventi (anche non
+        /// azionabili): risponde a "le tende generano eventi oppure no?".
+        var onEventsByType: [String: Int] = [:]
         /// Miglior candidata ANCHE sotto soglia: nome e giorni distinti raggiunti.
         var bestCandidateName: String?
         var bestCandidateDays = 0
@@ -152,6 +155,9 @@ enum UsageEvidenceBuilder {
                         || configuration.allowedEventTypes.contains(e.eventType))
         }.count
         funnel.afterBulkFilter = onEvents.count
+        for e in events where e.state {
+            funnel.onEventsByType[e.eventType, default: 0] += 1
+        }
 
         guard !onEvents.isEmpty else { return [] }
 
