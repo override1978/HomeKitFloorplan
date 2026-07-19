@@ -69,6 +69,19 @@ enum SensorUrgency: Int, Comparable {
 // MARK: - SensorData
 
 /// Dati di un singolo sensore (o gruppo aggregato) da mostrare nella UI.
+/// Direzione di un valore sensore rispetto a ~45+ minuti fa.
+enum SensorTrend {
+    case rising, falling, steady
+
+    var symbolName: String? {
+        switch self {
+        case .rising:  return "arrow.up.right"
+        case .falling: return "arrow.down.right"
+        case .steady:  return nil
+        }
+    }
+}
+
 struct SensorData: Identifiable {
     let id: UUID
     /// UUID di tutti gli accessori che contribuiscono a questo dato aggregato.
@@ -82,6 +95,9 @@ struct SensorData: Identifiable {
     let dangerThreshold: Double
     /// Numero di sensori fisici aggregati (> 1 quando ci sono duplicati per tipo/stanza).
     let sourceCount: Int
+
+    /// Direzione rispetto alla lettura di ~45+ minuti fa (default per i mock).
+    var trend: SensorTrend = .steady
 
     /// Retrocompatibilità: primo UUID (o stringa vuota se lista vuota).
     var accessoryUUID: String { accessoryUUIDs.first ?? "" }
@@ -367,6 +383,30 @@ final class EnvironmentViewModel {
                     aggregatedValue = group.reduce(0.0) { $0 + $1.value } / Double(group.count)
                 }
 
+                // Trend: confronta l'aggregato con la lettura più recente ma più
+                // vecchia di 45 min per gli stessi accessori (rawReadings è già
+                // ordinato per timestamp decrescente — nessuna query aggiuntiva).
+                var trend = SensorTrend.steady
+                if !serviceType.isBooleanAlert && serviceType != .airQuality {
+                    let cutoff = Date().addingTimeInterval(-45 * 60)
+                    let accessorySet = Set(group.map(\.accessoryUUID))
+                    if let older = rawReadings.first(where: { r in
+                        r.serviceTypeRaw == serviceType.rawValue &&
+                        accessorySet.contains(r.accessoryUUID) &&
+                        r.timestamp < cutoff
+                    }) {
+                        let epsilon: Double
+                        switch serviceType {
+                        case .temperature: epsilon = 0.3
+                        case .humidity:    epsilon = 2
+                        default:           epsilon = max(abs(older.value) * 0.05, 0.5)
+                        }
+                        let delta = aggregatedValue - older.value
+                        if delta > epsilon { trend = .rising }
+                        else if delta < -epsilon { trend = .falling }
+                    }
+                }
+
                 let syntheticID = UUID(uuidString: stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
 
                 byRoom[roomName, default: []].append(SensorData(
@@ -378,7 +418,8 @@ final class EnvironmentViewModel {
                     lastUpdated: group.map(\.timestamp).max() ?? first.timestamp,
                     warningThreshold: threshold?.warningValue ?? serviceType.defaultWarning,
                     dangerThreshold:  threshold?.dangerValue  ?? serviceType.defaultDanger,
-                    sourceCount: group.count
+                    sourceCount: group.count,
+                    trend: trend
                 ))
             }
 

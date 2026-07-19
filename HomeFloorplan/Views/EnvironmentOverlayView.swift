@@ -112,11 +112,17 @@ struct EnvironmentOverlayView: View {
                 .lineLimit(1)
 
             if let sensor = filtSensor {
-                // Filtered mode: show the specific sensor's value
-                Text(sensor.formattedValue)
-                    .font(.caption.weight(.bold))
-                    .monospacedDigit()
-                    .foregroundStyle(urgencyBorderColor(sensor.urgency))
+                // Filtered mode: show the specific sensor's value (+ trend)
+                HStack(spacing: 2) {
+                    Text(sensor.formattedValue)
+                        .font(.caption.weight(.bold))
+                        .monospacedDigit()
+                    if let trendSymbol = sensor.trend.symbolName {
+                        Image(systemName: trendSymbol)
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                }
+                .foregroundStyle(urgencyBorderColor(sensor.urgency))
             } else if let data = roomData {
                 // All-types mode: score % + label
                 HStack(spacing: 3) {
@@ -197,6 +203,7 @@ struct EnvironmentContextDashboard: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
     @Environment(ActionExecutionService.self) private var executionService
+    @Environment(WeatherKitService.self) private var weatherKit
     @State private var aiService: AmbientalAIService?
     @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
 
@@ -276,6 +283,20 @@ struct EnvironmentContextDashboard: View {
         return VStack(spacing: 14) {
             // ── Card 1: Health Score / graph ───────────────────────────────
             healthScoreCard
+
+            // ── Confronto dentro/fuori (meteo già campionato dal loop) ─────
+            if let weather = weatherKit.currentWeather {
+                IndoorOutdoorCompareRow(
+                    outdoorTemp: weather.outdoorTemperature,
+                    outdoorSymbol: weather.symbolName,
+                    indoorAvgTemp: {
+                        let temps = allSensors
+                            .filter { $0.serviceType == .temperature }
+                            .map(\.currentValue)
+                        return temps.isEmpty ? nil : temps.reduce(0, +) / Double(temps.count)
+                    }()
+                )
+            }
 
             // ── Card 2: Assistant narrative ────────────────────────────────
             HomeDigestSummaryCard(
@@ -501,13 +522,28 @@ struct EnvironmentContextDashboard: View {
                         .foregroundStyle(sensor.urgency.color)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(sensor.formattedValue)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(sensor.urgency.color)
-                        .monospacedDigit()
+                    HStack(spacing: 3) {
+                        Text(sensor.formattedValue)
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                        if let trendSymbol = sensor.trend.symbolName {
+                            Image(systemName: trendSymbol)
+                                .font(.system(size: 11, weight: .bold))
+                                .opacity(0.85)
+                        }
+                    }
+                    .foregroundStyle(sensor.urgency.color)
                     Text("\(sensor.serviceType.displayName) · \(sensor.roomName)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    // Freschezza auto-aggiornante (Text .relative si ridisegna da solo)
+                    HStack(spacing: 2) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 8))
+                        Text(sensor.lastUpdated, style: .relative)
+                            .font(.system(size: 9))
+                    }
+                    .foregroundStyle(.tertiary)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: sensor.urgency.sfSymbol)
@@ -896,5 +932,70 @@ private struct AIActionChip: View {
                 state = .idle
             }
         }
+    }
+}
+
+// MARK: - IndoorOutdoorCompareRow
+
+/// Riga compatta "Dentro X° · Fuori Y°" con hint quando la differenza è
+/// significativa. Usa il meteo già campionato dal loop foreground.
+private struct IndoorOutdoorCompareRow: View {
+    let outdoorTemp: Double
+    let outdoorSymbol: String
+    let indoorAvgTemp: Double?
+
+    @AppStorage(TemperatureUnit.appStorageKey)
+    private var temperatureUnitRaw: String = TemperatureUnit.celsius.rawValue
+
+    private var unit: TemperatureUnit {
+        TemperatureUnit(rawValue: temperatureUnitRaw) ?? .celsius
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: outdoorSymbol)
+                .symbolRenderingMode(.multicolor)
+                .font(.system(size: 18))
+
+            if let indoor = indoorAvgTemp {
+                Text("\(String(localized: "env.compare.indoor", defaultValue: "Indoor")) \(unit.format(indoor)) · \(String(localized: "env.compare.outdoor", defaultValue: "Outdoor")) \(unit.format(outdoorTemp))")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+            } else {
+                Text("\(String(localized: "env.compare.outdoor", defaultValue: "Outdoor")) \(unit.format(outdoorTemp))")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+            }
+
+            Spacer(minLength: 0)
+
+            if let hint {
+                Text(hint)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.regularMaterial)
+        )
+    }
+
+    /// Hint solo con differenza ≥ 2°: sotto è rumore.
+    private var hint: String? {
+        guard let indoor = indoorAvgTemp else { return nil }
+        let delta = outdoorTemp - indoor
+        if delta <= -2 {
+            return String(localized: "env.compare.coolerOutside",
+                          defaultValue: "Cooler outside — good time to air out")
+        }
+        if delta >= 2 {
+            return String(localized: "env.compare.warmerOutside",
+                          defaultValue: "Warmer outside — keep windows closed")
+        }
+        return nil
     }
 }
