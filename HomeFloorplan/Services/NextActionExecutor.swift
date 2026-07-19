@@ -36,7 +36,7 @@ final class NextActionExecutor {
 
     private static func write(_ value: Any, to characteristic: HMCharacteristic) async throws {
         if let homeKit {
-            try await homeKit.write(value, to: characteristic)
+            try await homeKit.write(value, to: characteristic, origin: "engine")
         } else {
             try await characteristic.writeValue(value)
         }

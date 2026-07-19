@@ -42,8 +42,9 @@ enum HabitInterpreterCore {
                                   existingAutomations: [String],
                                   maxAccessories: Int = 25,
                                   calendar: Calendar = .current) -> String {
-        let external = events.filter { $0.origin == "external" }
-        let pool = external.isEmpty ? events : external
+        // Fuori SOLO le azioni dell'engine: i tap dell'utente nell'app
+        // ("user"/"app") sono abitudini genuine quanto quelle "external".
+        let pool = events.filter { $0.origin != "engine" }
 
         // Igiene: solo accessori AZIONABILI (motion/contact = rumore).
         let actionableTypes: Set<String> = [

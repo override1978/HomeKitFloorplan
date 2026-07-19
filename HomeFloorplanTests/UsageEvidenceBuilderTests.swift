@@ -69,16 +69,31 @@ struct UsageEvidenceBuilderTests {
         #expect(out[0].weekdayPattern == .weekdays)
     }
 
-    @Test("Eventi originati dall'app/engine sono esclusi")
-    func appOriginatedEventsExcluded() {
+    @Test("Eventi originati dall'engine sono esclusi (i tap utente restano)")
+    func engineOriginatedEventsExcluded() {
         let a = UUID()
         let events = (0..<6).map { d -> UsageEvidenceBuilder.EventSample in
             let base = event(a, daysAgo: d, hour: 21)
             return .init(accessoryID: base.accessoryID, accessoryName: base.accessoryName,
                          roomName: base.roomName, eventType: base.eventType,
-                         state: true, timestamp: base.timestamp, origin: "app")
+                         state: true, timestamp: base.timestamp, origin: "engine")
         }
         #expect(UsageEvidenceBuilder.build(from: events).isEmpty)
+    }
+
+    @Test("stateTransitions comprime le riconsegne a stato invariato")
+    func stateTransitionsCollapsesRepeats() {
+        let a = UUID()
+        // on, on(fantasma), on(fantasma), off, on → restano on, off, on
+        let states = [true, true, true, false, true]
+        let events = states.enumerated().map { i, s -> UsageEvidenceBuilder.EventSample in
+            let base = event(a, daysAgo: 0, hour: 10, minute: i * 10)
+            return .init(accessoryID: base.accessoryID, accessoryName: base.accessoryName,
+                         roomName: base.roomName, eventType: base.eventType,
+                         state: s, timestamp: base.timestamp)
+        }
+        let out = UsageEvidenceBuilder.stateTransitions(events)
+        #expect(out.map(\.state) == [true, false, true])
     }
 
     @Test("Sensori contatto/movimento sono esclusi (non azionabili)")

@@ -32,7 +32,7 @@ enum UsageEvidenceService {
         descriptor.fetchLimit = 4000
 
         let events = (try? context.fetch(descriptor)) ?? []
-        return events.map {
+        return UsageEvidenceBuilder.stateTransitions(events.map {
             UsageEvidenceBuilder.EventSample(
                 accessoryID: $0.accessoryID,
                 accessoryName: $0.accessoryName,
@@ -42,6 +42,6 @@ enum UsageEvidenceService {
                 timestamp: $0.timestamp,
                 origin: $0.originRaw
             )
-        }
+        })
     }
 }

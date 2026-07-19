@@ -82,9 +82,10 @@ enum UsageEvidenceBuilder {
         /// quei timestamp vengono esclusi (feedback device: tutte le evidenze
         /// identiche alle 23:00 per 6 accessori diversi).
         var bulkAccessoryThreshold: Int = 4
-        /// Origini escluse: le scritture dell'app/engine non sono abitudini
-        /// umane. (I dati storici pre-flag hanno origin "external" e passano.)
-        var excludedOrigins: Set<String> = ["app"]
+        /// Origini escluse: SOLO le azioni dell'engine (SmartLighting/AI/regole).
+        /// I tap dell'utente nell'app ("user", storicamente "app") SONO abitudini
+        /// genuine — su un iPad a muro l'app è l'interruttore di casa.
+        var excludedOrigins: Set<String> = ["engine"]
 
         init() {}
     }
@@ -101,6 +102,25 @@ enum UsageEvidenceBuilder {
         /// Miglior candidata ANCHE sotto soglia: nome e giorni distinti raggiunti.
         var bestCandidateName: String?
         var bestCandidateDays = 0
+    }
+
+    /// Comprime gli eventi alle sole TRANSIZIONI di stato per (accessorio, tipo).
+    /// Le riconsegne di massa HomeKit (riconnessione notturna, heartbeat)
+    /// ripubblicano valori invariati che diventavano eventi fantasma — pulisce
+    /// retroattivamente anche lo storico già inquinato.
+    static func stateTransitions(_ events: [EventSample]) -> [EventSample] {
+        let grouped = Dictionary(grouping: events) { "\($0.accessoryID.uuidString)|\($0.eventType)" }
+        var result: [EventSample] = []
+        result.reserveCapacity(events.count)
+        for group in grouped.values {
+            let sorted = group.sorted { $0.timestamp < $1.timestamp }
+            var lastState: Bool?
+            for event in sorted where event.state != lastState {
+                result.append(event)
+                lastState = event.state
+            }
+        }
+        return result.sorted { $0.timestamp < $1.timestamp }
     }
 
     /// Come `build`, ma restituisce anche il funnel diagnostico.

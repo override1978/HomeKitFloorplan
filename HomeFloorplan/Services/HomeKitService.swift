@@ -354,9 +354,19 @@ final class HomeKitService: NSObject {
     /// Dopo questo tempo dall'ultimo errore, il flag si auto-cancella alla prossima lettura.
     private static let offlineWindow: TimeInterval = 300  // 5 minuti
     
+    /// Ultimo stato SALVATO come AccessoryEvent per caratteristica: gli eventi
+    /// si registrano solo alle TRANSIZIONI. Le riconsegne di massa di HomeKit
+    /// (riconnessione notturna, heartbeat readValue) ripubblicano valori
+    /// invariati che diventavano eventi fantasma — i "gruppi da 39 accessori
+    /// alle 23:00" che inquinavano l'analisi abitudini.
+    private var lastSavedEventStates: [UUID: Bool] = [:]
+
     /// Scrive un valore su una caratteristica (es. accende una luce).
     /// Aggiorna anche localmente per dare risposta UI immediata (ottimistico).
-    func write(_ value: Any, to characteristic: HMCharacteristic) async throws {
+    /// `origin`: "user" (default — tap dell'utente nell'app, è un'abitudine
+    /// genuina) o "engine" (SmartLighting/AI/regole — da escludere dall'analisi).
+    func write(_ value: Any, to characteristic: HMCharacteristic,
+               origin: String = "user") async throws {
         do {
             try await characteristic.writeValue(value)
             characteristicValues[characteristic.uniqueIdentifier] = value
@@ -386,14 +396,17 @@ final class HomeKitService: NSObject {
                 pauseSmartLightingAfterManualLightChange(accessory: accessory, characteristic: characteristic)
             }
 
-            // Registra evento per lo storico AI (solo tipi rilevanti).
-            // Origine "app": è una scrittura nostra (utente in-app o engine).
+            // Registra evento per lo storico AI (solo tipi rilevanti),
+            // ma solo se lo stato è davvero cambiato (transizione).
             if let store = accessoryEventStore,
                let accessory = characteristic.service?.accessory,
                var dto = AccessoryEventStore.makeDTO(
                    from: characteristic, value: value, accessory: accessory) {
-                dto.origin = "app"
+                dto.origin = origin
+                let charID = characteristic.uniqueIdentifier
                 await MainActor.run {
+                    guard self.lastSavedEventStates[charID] != dto.state else { return }
+                    self.lastSavedEventStates[charID] = dto.state
                     store.saveEvent(dto)
                 }
             }
@@ -718,14 +731,19 @@ extension HomeKitService: HMAccessoryDelegate {
 
             pauseSmartLightingAfterManualLightChange(accessory: accessory, characteristic: characteristic)
 
-            // Registra evento per lo storico AI (solo tipi rilevanti).
-            // Eco di una nostra scrittura recente → origine "app";
-            // altrimenti "external" (mano umana o automazione HomeKit nativa).
+            // Registra evento per lo storico AI (solo tipi rilevanti), solo
+            // alle TRANSIZIONI di stato: gli echi delle nostre scritture e le
+            // riconsegne di massa (riconnessioni, heartbeat) hanno stato
+            // invariato e vengono soppressi qui — niente più eventi fantasma.
             if let store = accessoryEventStore,
                var dto = AccessoryEventStore.makeDTO(
                    from: characteristic, value: value, accessory: accessory) {
-                dto.origin = wasRecentlyWritten(characteristic, within: 5) ? "app" : "external"
-                store.saveEvent(dto)
+                dto.origin = "external"
+                let charID = characteristic.uniqueIdentifier
+                if lastSavedEventStates[charID] != dto.state {
+                    lastSavedEventStates[charID] = dto.state
+                    store.saveEvent(dto)
+                }
             }
 
             // Instrada letture sensore verso la pipeline unificata di analisi.

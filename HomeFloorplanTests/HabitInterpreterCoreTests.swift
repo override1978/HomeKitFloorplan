@@ -24,13 +24,15 @@ struct HabitInterpreterCoreTests {
         #expect(summary.contains("on×5"))
     }
 
-    @Test("Con eventi external presenti, gli eventi app sono esclusi dal riassunto")
-    func externalPreferredOverApp() {
-        let a = UUID(), b = UUID()
+    @Test("Le azioni dell'engine sono escluse; i tap in-app dell'utente restano")
+    func engineExcludedUserKept() {
+        let a = UUID(), b = UUID(), c = UUID()
         let events = (0..<3).map { sample("Manuale", id: a, minutesAgo: $0 * 1440) }
-            + (0..<10).map { sample("Engine", id: b, minutesAgo: $0 * 720, origin: "app") }
+            + (0..<3).map { sample("TapInApp", id: c, minutesAgo: $0 * 1440 + 60, origin: "user") }
+            + (0..<10).map { sample("Engine", id: b, minutesAgo: $0 * 720, origin: "engine") }
         let summary = HabitInterpreterCore.buildUsageSummary(events: events, existingAutomations: [])
         #expect(summary.contains("Manuale"))
+        #expect(summary.contains("TapInApp"))
         #expect(!summary.contains("Engine"))
     }
 
