@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import HomeKit
 
 // MARK: - HabitsView
@@ -19,6 +20,9 @@ struct HabitsView: View {
 
     @State private var showAISettings       = false
     @State private var showAllOpportunities = false
+    @Environment(\.modelContext) private var modelContext
+    /// Evidenze d'uso (pivot): calcolate al task iniziale della view.
+    @State private var usageEvidences: [UsageEvidenceBuilder.Evidence] = []
     @State private var reviewingProposal: AutomationProposal?
     @State private var reviewingOpportunity: AutomationOpportunity?
     @State private var reviewingHabitPattern: HabitPattern?
@@ -58,6 +62,7 @@ struct HabitsView: View {
                         .presentationDragIndicator(.visible)
                 }
                 .task {
+                    usageEvidences = UsageEvidenceService.evidences(modelContainer: modelContext.container)
                     eligibleEvents = behavioralService.eligibleEventCount(days: 30)
                     habitService.scheduleNaming(
                         reports: behavioralService.lastBurstReport,
@@ -382,28 +387,78 @@ struct HabitsView: View {
     // MARK: - Section 4: Learning
 
     @ViewBuilder
+    /// Pivot "da giudice a testimone": al posto del limbo "Sto Imparando"
+    /// (pattern statistici mai promossi), evidenze d'uso osservate — l'utente
+    /// giudica e con un tap apre il wizard pre-compilato.
     private var learningSection: some View {
-        let learning = learningPatterns
         Section {
-            if learning.isEmpty {
+            if usageEvidences.isEmpty {
                 learningMicroState
             } else {
-                ForEach(learning) { pattern in
-                    learningPatternRow(pattern)
+                ForEach(usageEvidences.prefix(6)) { evidence in
+                    evidenceRow(evidence)
                 }
             }
         } header: {
             Label(
-                String(format: String(localized: "habits.learning.sectionTitle",
-                                      defaultValue: "Learning · %d"),
-                       learning.count),
-                systemImage: "brain.head.profile"
+                String(format: String(localized: "habits.evidence.sectionTitle",
+                                      defaultValue: "Observed routines · %d"),
+                       usageEvidences.count),
+                systemImage: "chart.bar.doc.horizontal"
             )
         } footer: {
-            if !learning.isEmpty {
-                Text(String(localized: "habits.learning.footer",
-                            defaultValue: "Swipe left to hide a habit you are not interested in."))
+            if !usageEvidences.isEmpty {
+                Text(String(localized: "habits.evidence.footer",
+                            defaultValue: "Recurring usage observed in your home. You decide which ones become automations."))
             }
+        }
+    }
+
+    private func evidenceRow(_ evidence: UsageEvidenceBuilder.Evidence) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(evidence.roomName.map { "\(evidence.accessoryName) · \($0)" } ?? evidence.accessoryName)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text("\(evidenceWindowText(evidence)) · \(evidenceDaysText(evidence))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(String(format: String(localized: "habits.evidence.strength",
+                                           defaultValue: "%d different days out of the last %d"),
+                            evidence.distinctDays, evidence.observedSpanDays))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Button {
+                reviewingProposal = AutomationProposalMapper.proposal(
+                    from: evidence,
+                    capabilities: homeKit.currentHome.map { AutomationCapabilityCatalog.descriptors(in: $0) } ?? [],
+                    scenes: scenesService.scenes
+                )
+            } label: {
+                Label(String(localized: "habits.evidence.create", defaultValue: "Create"),
+                      systemImage: "plus.circle.fill")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func evidenceWindowText(_ evidence: UsageEvidenceBuilder.Evidence) -> String {
+        String(format: "%02d:%02d–%02d:%02d",
+               evidence.windowStartMinute / 60, evidence.windowStartMinute % 60,
+               evidence.windowEndMinute / 60, evidence.windowEndMinute % 60)
+    }
+
+    private func evidenceDaysText(_ evidence: UsageEvidenceBuilder.Evidence) -> String {
+        switch evidence.weekdayPattern {
+        case .everyDay: return String(localized: "habits.evidence.everyDay", defaultValue: "every day")
+        case .weekdays: return String(localized: "habits.evidence.weekdays", defaultValue: "weekdays")
+        case .weekend:  return String(localized: "habits.evidence.weekend", defaultValue: "weekend")
+        case .days:     return String(localized: "habits.evidence.someDays", defaultValue: "specific days")
         }
     }
 

@@ -205,6 +205,60 @@ enum AutomationProposalMapper {
         }
     }
 
+    /// Pivot evidenze: costruisce una proposta dall'evidenza d'uso osservata.
+    /// L'utente è il giudice — la proposta arriva pre-compilata (orario = inizio
+    /// finestra, giorni dal pattern) e si rifinisce nel wizard esistente.
+    static func proposal(
+        from evidence: UsageEvidenceBuilder.Evidence,
+        capabilities: [AutomationCapabilityDescriptor],
+        scenes: [SceneItem]
+    ) -> AutomationProposal {
+        let time = String(format: "%02d:%02d",
+                          evidence.windowStartMinute / 60,
+                          evidence.windowStartMinute % 60)
+        let endTime = String(format: "%02d:%02d",
+                             evidence.windowEndMinute / 60,
+                             evidence.windowEndMinute % 60)
+
+        let weekdays: [Int]
+        switch evidence.weekdayPattern {
+        case .everyDay:      weekdays = Array(1...7)
+        case .weekdays:      weekdays = [2, 3, 4, 5, 6]
+        case .weekend:       weekdays = [1, 7]
+        case .days(let set): weekdays = set.sorted()
+        }
+
+        let draft = Draft(
+            source: .opportunity,
+            title: String(format: String(localized: "evidence.proposal.title",
+                                         defaultValue: "Turn on %@ at %@"),
+                          evidence.accessoryName, time),
+            explanation: String(format: String(localized: "evidence.proposal.explanation",
+                                               defaultValue: "Observed on between %@ and %@ on %d different days over the last %d days."),
+                                time, endTime, evidence.distinctDays, evidence.observedSpanDays),
+            confidence: nil,
+            triggerType: "calendar",
+            triggerTime: time,
+            triggerWeekdays: weekdays,
+            sensorType: nil,
+            sensorRoom: evidence.roomName ?? "",
+            sensorAccessoryName: nil,
+            sensorThreshold: nil,
+            sensorDirection: nil,
+            accessoryIDString: evidence.accessoryID.uuidString,
+            actionRaw: "on",
+            actionValue: nil,
+            actionValue2: nil,
+            sceneName: nil,
+            scheduleKind: nil,
+            scheduleOffsetMinutes: 0,
+            presenceKind: nil,
+            presenceUserScope: nil
+        )
+
+        return proposal(from: draft, capabilities: capabilities, scenes: scenes)
+    }
+
     static func proposal(
         from pattern: HabitPattern,
         capabilities: [AutomationCapabilityDescriptor],
