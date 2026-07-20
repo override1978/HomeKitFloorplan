@@ -5,6 +5,7 @@ import CoreLocation
 import UserNotifications
 
 struct SettingsView: View {
+    @AppStorage("habits.sectionVisible") private var habitsSectionVisible = false
     @Environment(HomeKitService.self)       private var homeKit
     @Environment(OnboardingService.self)    private var onboarding
     @Environment(WeatherKitService.self)    private var weatherKit
@@ -255,6 +256,21 @@ struct SettingsView: View {
                         statusColor: aiStatusColor
                     )
                 }
+
+                // Abitudini in beta: fuori dalla sidebar di default (build App
+                // Store pulita), attivabile qui per il testing su TestFlight.
+                Toggle(isOn: $habitsSectionVisible) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(String(localized: "settings.habits.beta.title", defaultValue: "Habits (beta)"))
+                            Text(String(localized: "settings.habits.beta.subtitle", defaultValue: "Show the experimental Habits section in the sidebar."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "brain.head.profile")
+                    }
+                }
             } header: {
                 Text(String(localized: "settings.ai.header", defaultValue: "Home Intelligence"))
             } footer: {
@@ -306,21 +322,24 @@ struct SettingsView: View {
                 }
             }
 
-            // MARK: - Diagnostics (visibile in tutte le build, sezione demo inclusa:
-            // serve a verificare la pipeline abitudini sui device di test)
+            // MARK: - Diagnostics — legata al toggle "Habits (beta)": visibile
+            // solo per chi testa la pipeline abitudini (TestFlight a muro),
+            // invisibile nella build App Store di default.
 
-            Section {
-                NavigationLink {
-                    HabitsDiagnosticsView()
-                } label: {
-                    settingsLinkRow(
-                        icon: "brain.head.profile.fill",
-                        title: String(localized: "settings.diagnostics.habits", defaultValue: "Habits Diagnostics"),
-                        subtitle: String(localized: "settings.diagnostics.habits.subtitle", defaultValue: "Inspect the habits engine: events, gates, patterns and opportunities.")
-                    )
+            if habitsSectionVisible {
+                Section {
+                    NavigationLink {
+                        HabitsDiagnosticsView()
+                    } label: {
+                        settingsLinkRow(
+                            icon: "brain.head.profile.fill",
+                            title: String(localized: "settings.diagnostics.habits", defaultValue: "Habits Diagnostics"),
+                            subtitle: String(localized: "settings.diagnostics.habits.subtitle", defaultValue: "Inspect the habits engine: events, gates, patterns and opportunities.")
+                        )
+                    }
+                } header: {
+                    Text(String(localized: "settings.diagnostics.header", defaultValue: "Diagnostics"))
                 }
-            } header: {
-                Text(String(localized: "settings.diagnostics.header", defaultValue: "Diagnostics"))
             }
 
 #if DEBUG

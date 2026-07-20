@@ -27,7 +27,9 @@ struct SidebarView: View {
     @AppStorage("sidebar.section.analysis.expanded")   private var analysisExpanded:   Bool = true
     @AppStorage("sidebar.section.scenes.expanded")     private var scenesExpanded:     Bool = true
     @AppStorage("sidebar.section.settings.expanded")   private var settingsExpanded:   Bool = true
-    @AppStorage("ai.isEnabled")                        private var areHabitsEnabled:  Bool = false
+    /// Sezione Abitudini (beta): nascosta di default nella build App Store,
+    /// riattivabile da Impostazioni → Home Intelligence per il testing.
+    @AppStorage("habits.sectionVisible")               private var areHabitsEnabled:  Bool = false
 
     @State private var showingNewFloorplan = false
     @State private var pendingDeleteFloorplan: Floorplan?
