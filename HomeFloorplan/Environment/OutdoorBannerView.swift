@@ -55,6 +55,7 @@ struct OutdoorBannerView: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
+                    AppleWeatherAttributionView()
                 }
             }
 
@@ -176,5 +177,28 @@ struct OutdoorBannerView: View {
         case let c where c.contains("clear"):                         return "sun.max.fill"
         default:                                                       return "cloud.sun.fill"
         }
+    }
+}
+
+// MARK: - Apple Weather attribution
+
+/// Attribution richiesta dai termini WeatherKit ovunque siano mostrati dati
+/// meteo: brand Apple Weather + link alla pagina legale delle fonti.
+/// (La sua assenza è motivo documentato di rejection in App Review.)
+struct AppleWeatherAttributionView: View {
+    var body: some View {
+        Link(destination: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!) {
+            HStack(spacing: 3) {
+                Image(systemName: "apple.logo")
+                    .font(.system(size: 8))
+                Text(verbatim: "Weather")
+                    .font(.system(size: 9, weight: .medium))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 7, weight: .semibold))
+            }
+            .foregroundStyle(.tertiary)
+        }
+        .accessibilityLabel(String(localized: "weather.attribution.accessibility",
+                                   defaultValue: "Weather data by Apple Weather. Opens legal attribution."))
     }
 }

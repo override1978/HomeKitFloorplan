@@ -328,16 +328,21 @@ struct EnvironmentContextDashboard: View {
 
             // ── Confronto dentro/fuori (meteo già campionato dal loop) ─────
             if let weather = weatherKit.currentWeather {
-                IndoorOutdoorCompareRow(
-                    outdoorTemp: weather.outdoorTemperature,
-                    outdoorSymbol: weather.symbolName,
-                    indoorAvgTemp: {
-                        let temps = allSensors
-                            .filter { $0.serviceType == .temperature }
-                            .map(\.currentValue)
-                        return temps.isEmpty ? nil : temps.reduce(0, +) / Double(temps.count)
-                    }()
-                )
+                VStack(alignment: .trailing, spacing: 3) {
+                    IndoorOutdoorCompareRow(
+                        outdoorTemp: weather.outdoorTemperature,
+                        outdoorSymbol: weather.symbolName,
+                        indoorAvgTemp: {
+                            let temps = allSensors
+                                .filter { $0.serviceType == .temperature }
+                                .map(\.currentValue)
+                            return temps.isEmpty ? nil : temps.reduce(0, +) / Double(temps.count)
+                        }()
+                    )
+                    // Attribution WeatherKit: obbligatoria ovunque appaiano dati meteo.
+                    AppleWeatherAttributionView()
+                        .padding(.trailing, 2)
+                }
             }
 
             // ── Card 2: Assistant narrative ────────────────────────────────
