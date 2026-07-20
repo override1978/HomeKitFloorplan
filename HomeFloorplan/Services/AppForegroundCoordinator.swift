@@ -20,7 +20,11 @@ struct AppForegroundCoordinator {
         guard isActive else { return }
         let container = sharedModelContainer
         var lastLightSampleAt: Date?
-        var lastObservationHeartbeatAt: Date?
+        // Inizializzato a "adesso": il primo heartbeat scatta a +10 min, NON
+        // all'avvio — le letture iniziali le fa già startObserving all'appear
+        // dell'editor, e un burst di readValue a freddo (centinaia di letture
+        // con molti marker) rallenterebbe il lancio duplicando lavoro.
+        var lastObservationHeartbeatAt: Date? = Date()
         var lastMatterEnergyRefreshAt: Date?
         var lastSmartLightingEvaluationAt: Date?
         var nextFullSensorSampleAt = Date().addingTimeInterval(45)
