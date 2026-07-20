@@ -369,12 +369,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = HomeFloorplan;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "HomeFloorplan accede ai tuoi dispositivi HomeKit per mostrarne lo stato sulla planimetria e permetterti di controllarli.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "HomeFloorplan usa la tua posizione per impostare la posizione di casa, ottenere il meteo locale e configurare automazioni geofence.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HomeFloorplan usa il microfono per trascrivere in testo le domande vocali all'assistente Home AI.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "HomeFloorplan accede alla Libreria Foto per importare un'immagine da usare come planimetria.";
-				INFOPLIST_KEY_NSSensorKitUsageDescription = "Usiamo il sensore LiDAR per rilevare le pareti e creare la planimetria automatica.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "HomeFloorplan usa il riconoscimento vocale per convertire la voce in testo nelle domande all'assistente Home AI.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -426,12 +424,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = HomeFloorplan;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_NSHomeKitUsageDescription = "HomeFloorplan accede ai tuoi dispositivi HomeKit per mostrarne lo stato sulla planimetria e permetterti di controllarli.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "HomeFloorplan usa la tua posizione per impostare la posizione di casa, ottenere il meteo locale e configurare automazioni geofence.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HomeFloorplan usa il microfono per trascrivere in testo le domande vocali all'assistente Home AI.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "HomeFloorplan accede alla Libreria Foto per importare un'immagine da usare come planimetria.";
-				INFOPLIST_KEY_NSSensorKitUsageDescription = "Usiamo il sensore LiDAR per rilevare le pareti e creare la planimetria automatica.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "HomeFloorplan usa il riconoscimento vocale per convertire la voce in testo nelle domande all'assistente Home AI.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
