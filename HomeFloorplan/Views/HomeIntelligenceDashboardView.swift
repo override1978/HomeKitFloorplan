@@ -165,9 +165,6 @@ struct HomeIntelligenceDashboardView: View {
 
     @State private var service: HomeKnowledgeService?
     @State private var isRefreshing: Bool = false
-    @State private var reviewingProposal: AutomationProposal?
-    @State private var reviewingOpportunity: AutomationOpportunity?
-    @State private var reviewingHabitPattern: HabitPattern?
     @State private var isDiaryExpanded: Bool = false
     @State private var selectedDomain: IntelligenceVisualDomain?
     @State private var isShowingOperationalPolicy: Bool = false
@@ -199,22 +196,6 @@ struct HomeIntelligenceDashboardView: View {
             .navigationBarTitleDisplayMode(.large)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .toolbar { toolbarContent }
-            .sheet(item: $reviewingProposal, onDismiss: {
-                reviewingOpportunity = nil
-                reviewingHabitPattern = nil
-            }) { proposal in
-                AutomationWizardSheet(proposal: proposal) { _ in
-                    if let reviewingOpportunity {
-                        behavioralService.markApproved(reviewingOpportunity)
-                    }
-                    if let reviewingHabitPattern {
-                        habitService.approve(reviewingHabitPattern)
-                    }
-                    automationsService.refresh()
-                }
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-            }
             .sheet(item: $selectedDomain) { domain in
                 IntelligenceDomainDetailSheet(
                     domain: domain,
@@ -250,36 +231,6 @@ struct HomeIntelligenceDashboardView: View {
             }
         }
         .task { await performRefresh() }
-    }
-
-    private func reviewOpportunity(_ opportunity: AutomationOpportunity) {
-        let proposal = proposal(from: opportunity)
-        guard proposal.isReadyForBuilder else { return }
-        reviewingHabitPattern = nil
-        reviewingOpportunity = opportunity
-        reviewingProposal = proposal
-    }
-
-    private func reviewHabitPattern(_ pattern: HabitPattern) {
-        let proposal = proposal(from: pattern)
-        guard proposal.isReadyForBuilder else { return }
-        reviewingOpportunity = nil
-        reviewingHabitPattern = pattern
-        reviewingProposal = proposal
-    }
-
-    private func proposal(from opportunity: AutomationOpportunity) -> AutomationProposal {
-        scenesService.refresh()
-        let capabilities = homeKit.currentHome.map {
-            AutomationCapabilityCatalog.descriptors(in: $0)
-        } ?? []
-
-        return AutomationProposalMapper.proposal(
-            from: opportunity,
-            capabilities: capabilities,
-            scenes: scenesService.scenes,
-            sourcePattern: behavioralService.patterns.first { $0.id == opportunity.patternID }
-        )
     }
 
     private func proposal(from pattern: HabitPattern) -> AutomationProposal {
@@ -806,104 +757,6 @@ struct HomeIntelligenceDashboardView: View {
 
     // MARK: - Section: Assistant Summary
 
-    private func assistantSummaryCard(svc: HomeKnowledgeService) -> some View {
-        let priorities = assistantPriorities(svc: svc)
-        let pendingCount = habitService.pendingPatterns.count + behavioralService.pendingOpportunities.count
-        let activeInsightCount = svc.recentInsights.filter { $0.statusRaw == HomeInsightStatus.active.rawValue }.count
-
-        let title: String
-        let message: String
-        let color: Color
-        let icon: String
-
-        if pendingCount > 0 {
-            title = String(localized: "intelligence.assistant.ready.title", defaultValue: "Something is ready")
-            message = String(
-                format: String(localized: "intelligence.assistant.ready.message",
-                               defaultValue: "%d suggestion(s) can become automations after your confirmation."),
-                pendingCount
-            )
-            color = BrandColor.primary
-            icon = "sparkles"
-        } else if activeInsightCount > 0 || !predictiveInsights.isEmpty {
-            title = String(localized: "intelligence.assistant.watch.title", defaultValue: "The home needs attention")
-            message = String(localized: "intelligence.assistant.watch.message",
-                             defaultValue: "I found some environmental or predictive signals to review.")
-            color = .orange
-            icon = "exclamationmark.triangle.fill"
-        } else if behavioralService.visiblePatternCount > 0 {
-            title = String(localized: "intelligence.assistant.learning.title", defaultValue: "Learning routines")
-            message = String(
-                format: String(localized: "intelligence.assistant.learning.message",
-                               defaultValue: "%d behavior(s) are being observed before becoming suggestions."),
-                behavioralService.visiblePatternCount
-            )
-            color = .indigo
-            icon = "brain.head.profile"
-        } else {
-            title = String(localized: "intelligence.assistant.ok.title", defaultValue: "The home is stable")
-            message = String(localized: "intelligence.assistant.ok.message",
-                             defaultValue: "I don't see urgent actions. I will keep observing environment, security, and habits.")
-            color = .green
-            icon = "checkmark.circle.fill"
-        }
-
-        return IntelligenceAssistantSummaryCard(
-            title: title,
-            message: message,
-            icon: icon,
-            color: color,
-            priorities: priorities
-        )
-    }
-
-    private func assistantPriorities(svc: HomeKnowledgeService) -> [IntelligenceAssistantPriority] {
-        var items: [IntelligenceAssistantPriority] = []
-
-        if let opp = behavioralService.pendingOpportunities.first {
-            items.append(IntelligenceAssistantPriority(
-                icon: "wand.and.sparkles",
-                title: String(localized: "intelligence.assistant.priority.automation", defaultValue: "Automazione pronta"),
-                detail: opp.naturalLanguage,
-                color: BrandColor.primary
-            ))
-        }
-
-        if let insight = svc.recentInsights.first(where: { $0.statusRaw == HomeInsightStatus.active.rawValue }) {
-            items.append(IntelligenceAssistantPriority(
-                icon: insight.severity == .anomaly ? "exclamationmark.octagon.fill" : "waveform.path.ecg",
-                title: insight.roomName.isEmpty
-                    ? String(localized: "intelligence.assistant.priority.environment", defaultValue: "Ambiente")
-                    : insight.roomName,
-                detail: insight.message,
-                color: insight.severity == .anomaly ? .red : .orange
-            ))
-        }
-
-        if let insight = predictiveInsights.first {
-            items.append(IntelligenceAssistantPriority(
-                icon: "clock.arrow.2.circlepath",
-                title: String(localized: "intelligence.assistant.priority.prediction", defaultValue: "Previsto a breve"),
-                detail: insight.message,
-                color: .blue
-            ))
-        }
-
-        if items.count < 3, let pattern = behavioralService.patterns
-            .filter({ $0.status == .active && $0.confidence >= 0.15 })
-            .sorted(by: { $0.confidence > $1.confidence })
-            .first {
-            items.append(IntelligenceAssistantPriority(
-                icon: pattern.sfSymbol,
-                title: String(localized: "intelligence.assistant.priority.learning", defaultValue: "Abitudine emergente"),
-                detail: habitService.name(for: pattern) ?? pattern.localizedTitle,
-                color: .indigo
-            ))
-        }
-
-        return Array(items.prefix(3))
-    }
-
     // MARK: - Section: Home Briefing
 
     private func homeBriefingCard(svc: HomeKnowledgeService) -> some View {
@@ -1032,124 +885,7 @@ struct HomeIntelligenceDashboardView: View {
 
     // MARK: - Section: Opportunities
 
-    @ViewBuilder
-    private func opportunitiesSection() -> some View {
-        let pendingHabits = Array(habitService.pendingPatterns.prefix(2))
-        let pendingBehavioral = Array(behavioralService.pendingOpportunities.prefix(2))
-
-        if pendingHabits.isEmpty && pendingBehavioral.isEmpty {
-            HStack(spacing: 12) {
-                Image(systemName: "wand.and.stars.inverse")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 26)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(String(localized: "intelligence.opportunities.empty.title",
-                                defaultValue: "No automation is ready yet"))
-                        .font(.subheadline.weight(.medium))
-                    Text(String(localized: "intelligence.opportunities.empty.detail",
-                                defaultValue: "Habit candidates stay in Habits until they become actionable."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                NavigationLink(destination: HabitsView()) {
-                    Text(String(localized: "intelligence.learning.openHabits", defaultValue: "Habits"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(BrandColor.primary)
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-            )
-        } else {
-            VStack(spacing: 12) {
-                ForEach(pendingBehavioral) { opp in
-                    BehavioralOpportunityCard(
-                        opportunity: opp,
-                        onApprove: {
-                            reviewOpportunity(opp)
-                        },
-                        onSnooze:  { behavioralService.snooze(opp) },
-                        onDismiss: { behavioralService.dismiss(opp) }
-                    )
-                }
-
-                ForEach(pendingHabits) { pattern in
-                    AISuggestionCard(
-                        pattern: pattern,
-                        onApprove: {
-                            reviewHabitPattern(pattern)
-                        },
-                        onDismiss: { habitService.dismiss(pattern) }
-                    )
-                }
-            }
-        }
-    }
-
     // MARK: - Section: Learning Summary
-
-    private func learningSummarySection(svc: HomeKnowledgeService) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: svc.learningPhase.icon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(svc.learningPhase.accentColor)
-                    .frame(width: 32, height: 32)
-                    .background(svc.learningPhase.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(svc.learningPhase.localizedTitle)
-                        .font(.headline.weight(.semibold))
-                    Text(svc.learningNarrative)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 8)
-
-                NavigationLink(destination: HabitsView()) {
-                    Text(String(localized: "intelligence.learning.openHabits", defaultValue: "Habits"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(BrandColor.primary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(BrandColor.primary.opacity(0.10), in: Capsule())
-                }
-            }
-
-            HStack(spacing: 10) {
-                LearningMetricTile(
-                    value: "\(behavioralService.visiblePatternCount)",
-                    label: String(localized: "intelligence.learning.metric.beingLearned", defaultValue: "Being learned"),
-                    color: .indigo
-                )
-                LearningMetricTile(
-                    value: "\(habitService.pendingPatterns.count + behavioralService.pendingOpportunities.count)",
-                    label: String(localized: "intelligence.learning.metric.ready", defaultValue: "Ready"),
-                    color: BrandColor.primary
-                )
-                LearningMetricTile(
-                    value: "\(svc.stableHabitsCount)",
-                    label: String(localized: "intelligence.learning.metric.stable", defaultValue: "Stable"),
-                    color: .green
-                )
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(svc.learningPhase.accentColor.opacity(0.16), lineWidth: 1)
-                )
-        )
-    }
 
     // MARK: - Section: Relevant Trends
 
@@ -1176,141 +912,6 @@ struct HomeIntelligenceDashboardView: View {
     }
 
     // MARK: - Section: Abitudini (unified 3-tier)
-
-    @ViewBuilder
-    private func abitudiniSection() -> some View {
-        let pendingHabits     = Array(habitService.pendingPatterns.prefix(3))
-        let pendingBehavioral = Array(behavioralService.pendingOpportunities.prefix(3))
-        let visibleCount      = behavioralService.visiblePatternCount
-        let isAnalyzing       = habitService.isAnalyzing || behavioralService.isAnalyzing
-        let hasContent        = !pendingHabits.isEmpty || !pendingBehavioral.isEmpty
-                             || visibleCount > 0
-
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center) {
-                sectionHeader(
-                    icon: "brain.head.profile",
-                    title: String(localized: "abitudini.section.header", defaultValue: "Habits")
-                )
-                Spacer(minLength: 8)
-                if isAnalyzing {
-                    ProgressView()
-                        .scaleEffect(0.75)
-                        .padding(.trailing, 4)
-                }
-                Button {
-                    Task { await habitService.analyzeHabits(knownPatterns: behavioralService.stablePatterns) }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(BrandColor.primary)
-                }
-                .disabled(isAnalyzing)
-            }
-
-            if !hasContent && !isAnalyzing {
-                // Nothing yet — early observation phase
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.secondary.opacity(0.10))
-                            .frame(width: 40, height: 40)
-                        Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(String(localized: "abitudini.empty.title",
-                                    defaultValue: "Learning your habits"))
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
-                        Text(String(localized: "abitudini.empty.subtitle",
-                                    defaultValue: "After a few days of use, the first suggestion will appear here."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial))
-
-            } else {
-
-                // ── Tier 1: Suggerite ─────────────────────────────
-                if !pendingHabits.isEmpty || !pendingBehavioral.isEmpty {
-                    abitudiniTierLabel(
-                        title: String(localized: "abitudini.tier.suggerite", defaultValue: "Suggested"),
-                        icon: "sparkles"
-                    )
-                    ForEach(pendingBehavioral) { opp in
-                        BehavioralOpportunityCard(
-                            opportunity: opp,
-                            onApprove: {
-                                reviewOpportunity(opp)
-                            },
-                            onSnooze:  { behavioralService.snooze(opp) },
-                            onDismiss: { behavioralService.dismiss(opp) }
-                        )
-                    }
-                    ForEach(pendingHabits) { pattern in
-                        AISuggestionCard(
-                            pattern: pattern,
-                            onApprove: {
-                                reviewHabitPattern(pattern)
-                            },
-                            onDismiss: { habitService.dismiss(pattern) }
-                        )
-                    }
-                }
-
-                // ── Tier 2: In ascolto ────────────────────────────
-                if visibleCount > 0 {
-                    abitudiniTierLabel(
-                        title: String(localized: "abitudini.tier.inAscolto", defaultValue: "Listening"),
-                        icon: "antenna.radiowaves.left.and.right"
-                    )
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle()
-                                .fill(BrandColor.primary.opacity(0.10))
-                                .frame(width: 40, height: 40)
-                            Image(systemName: "brain")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(BrandColor.primary)
-                        }
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(
-                                String(
-                                    format: String(localized: "abitudini.inAscolto.title",
-                                                   defaultValue: "%d behaviors being learned"),
-                                    visibleCount
-                                )
-                            )
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
-                            Text(String(localized: "abitudini.inAscolto.subtitle",
-                                        defaultValue: "When confidence is sufficient, a suggestion will appear."))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(.regularMaterial)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .strokeBorder(BrandColor.primary.opacity(0.12), lineWidth: 1)
-                            )
-                    )
-                }
-
-            }
-        }
-    }
 
     private func abitudiniTierLabel(title: String, icon: String) -> some View {
         Label(title, systemImage: icon)
@@ -1776,7 +1377,7 @@ struct HomeIntelligenceDashboardView: View {
             tracker: executionService.tracker,
             aiIsOperational: AISettings().isOperational
         )
-        await behavioralService.analyzeIfNeeded()
+        // Motore statistico ritirato: nessuna analisi comportamentale.
         await proactiveService.runCycle(
             behavioralService:  behavioralService,
             habitService:       habitService,
