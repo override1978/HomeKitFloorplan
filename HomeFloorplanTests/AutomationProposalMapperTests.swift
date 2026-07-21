@@ -6,6 +6,28 @@ import Testing
 @Suite("AutomationProposalMapper chatbot proposals")
 struct AutomationProposalMapperTests {
 
+    /// UUID stabile per l'accessorio demo usato nel test di fallback-per-nome.
+    static let climaSoggiornoID = UUID(uuidString: "DE300000-0000-4000-8000-000000000001")!
+
+    /// Fixture capability minima (accessorio azionabile "Demo Clima Soggiorno"),
+    /// inlined dopo la rimozione di HabitScenarioFactory col ritiro del motore.
+    private func demoCapabilities() -> [AutomationCapabilityDescriptor] {
+        [
+            AutomationCapabilityDescriptor(
+                id: "\(Self.climaSoggiornoID.uuidString)-power",
+                accessoryID: Self.climaSoggiornoID,
+                accessoryName: "Demo Clima Soggiorno",
+                roomName: "Demo Soggiorno",
+                characteristicID: UUID(uuidString: "DE300000-0000-4000-8000-0000000000AA")!,
+                characteristicType: "00000025-0000-1000-8000-0026BB765291", // PowerState
+                title: "Power",
+                valueKind: .boolean(activeLabel: "On", inactiveLabel: "Off"),
+                supportedRoles: [.trigger, .condition],
+                defaultOperator: .equals
+            )
+        ]
+    }
+
     @Test("setMode keeps secondary target temperature")
     func setModeKeepsSecondaryTargetTemperature() {
         let accessoryID = UUID()
@@ -46,7 +68,7 @@ struct AutomationProposalMapperTests {
 
         let proposal = AutomationProposalMapper.proposal(
             from: pattern,
-            capabilities: HabitScenarioFactory.demoCapabilityDescriptors(),
+            capabilities: demoCapabilities(),
             scenes: []
         )
 
@@ -54,7 +76,7 @@ struct AutomationProposalMapperTests {
             Issue.record("Expected accessory action resolved by name fallback")
             return
         }
-        #expect(action.accessoryID == HabitScenarioFactory.DemoID.climaSoggiorno)
+        #expect(action.accessoryID == Self.climaSoggiornoID)
         #expect(action.accessoryID != foreignID)
     }
 
@@ -69,7 +91,7 @@ struct AutomationProposalMapperTests {
 
         let proposal = AutomationProposalMapper.proposal(
             from: pattern,
-            capabilities: HabitScenarioFactory.demoCapabilityDescriptors(),
+            capabilities: demoCapabilities(),
             scenes: []
         )
 
