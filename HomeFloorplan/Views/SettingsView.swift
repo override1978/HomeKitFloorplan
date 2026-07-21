@@ -322,25 +322,6 @@ struct SettingsView: View {
                 }
             }
 
-            // MARK: - Diagnostics — legata al toggle "Habits (beta)": visibile
-            // solo per chi testa la pipeline abitudini (TestFlight a muro),
-            // invisibile nella build App Store di default.
-
-            if habitsSectionVisible {
-                Section {
-                    NavigationLink {
-                        HabitsDiagnosticsView()
-                    } label: {
-                        settingsLinkRow(
-                            icon: "brain.head.profile.fill",
-                            title: String(localized: "settings.diagnostics.habits", defaultValue: "Habits Diagnostics"),
-                            subtitle: String(localized: "settings.diagnostics.habits.subtitle", defaultValue: "Inspect the habits engine: events, gates, patterns and opportunities.")
-                        )
-                    }
-                } header: {
-                    Text(String(localized: "settings.diagnostics.header", defaultValue: "Diagnostics"))
-                }
-            }
 
 #if DEBUG
             // MARK: - Developer

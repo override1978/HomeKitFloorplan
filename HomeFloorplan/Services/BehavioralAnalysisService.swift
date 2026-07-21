@@ -63,11 +63,9 @@ final class BehavioralAnalysisService {
     var lastAnalyzedEventLatestAt: Date?
 
     /// Burst cluster reports from the last analysis run (populated by PatternDetectionEngine).
-    var lastBurstReport: [BurstReport] = []
     /// Total AccessoryEvents absorbed by burst detection in the last run.
     var lastAbsorbedEventCount: Int = 0
     /// Coupled device-pair reports from the last analysis run.
-    var lastCoupledPairs: [CoupledPairReport] = []
 
     /// Wired up from HomeFloorplanApp after both services are created.
     /// Called at the end of analyze() to trigger cluster naming without tying to view lifecycle.
@@ -86,7 +84,6 @@ final class BehavioralAnalysisService {
     private(set) var lastSceneDrivenExcludedCount: Int = 0
 
     /// Esiti della correlazione contestuale dell'ultima analisi (P2, diagnostica).
-    private(set) var lastContextualOutcomes: [ContextualCorrelationEngine.CorrelationOutcome] = []
 
     // MARK: - Computed
 
@@ -227,204 +224,9 @@ final class BehavioralAnalysisService {
 
     /// Forces a full analysis regardless of interval.
     func analyze() async {
+        // Motore statistico ritirato: no-op. Il corpo (rilevamento pattern,
+        // opportunity, naming) è stato rimosso col pivot Abitudini.
         guard !Self.engineRetired else { return }
-        guard !isAnalyzing else { return }
-        isAnalyzing = true
-        defer {
-            isAnalyzing = false
-            lastAnalyzed = Date()
-            persist()
-            dprint("🧠 BehavioralAnalysis: persisted \(patterns.count) patterns to SwiftData [\(patternKey)]")
-        }
-
-        let context = ModelContext(modelContainer)
-        let cutoff  = Date().addingTimeInterval(-30 * 24 * 3600)
-
-        let accDescriptor = FetchDescriptor<AccessoryEvent>(
-            predicate: #Predicate { $0.timestamp >= cutoff },
-            sortBy:    [SortDescriptor(\.timestamp, order: .reverse)]
-        )
-
-        let sceneRaw = ActivityEventCategory.sceneExecution.rawValue
-        let actDescriptor = FetchDescriptor<ActivityEvent>(
-            predicate: #Predicate { $0.timestamp >= cutoff && $0.categoryRaw == sceneRaw }
-        )
-
-        let allAccessory = (try? context.fetch(accDescriptor)) ?? []
-
-        // Include events recorded in global mode (profileID == nil) so that history
-        // captured before a profile was selected is not silently dropped.
-        let rawAccessory: [AccessoryEvent]
-        if let pid = activeProfileID {
-            rawAccessory = allAccessory.filter { $0.profileID == pid || $0.profileID == nil }
-        } else {
-            rawAccessory = allAccessory
-        }
-        let rawActivity  = (try? context.fetch(actDescriptor)) ?? []
-
-        guard !rawAccessory.isEmpty || !rawActivity.isEmpty else { return }
-
-        // Anti-rumore: gli eventi a ridosso di un'esecuzione scena sono effetti della
-        // scena (o dello SmartLightingEngine, che agisce via scene), non abitudini umane.
-        // Senza questo filtro il motore impara dalle proprie automazioni.
-        let humanAccessory = HabitNoiseFilter.excludingSceneDrivenEvents(
-            rawAccessory,
-            sceneExecutionTimestamps: rawActivity.map(\.timestamp)
-        )
-        lastSceneDrivenExcludedCount = rawAccessory.count - humanAccessory.count
-
-        // Normalize to BehavioralEvent
-        let accessoryEvents = humanAccessory.map { BehavioralEventPreprocessor.convert($0) }
-        let sceneEvents     = rawActivity.map  { BehavioralEventPreprocessor.convert($0) }
-
-        // Track stats for diagnostics (same eligibility filter as the engine)
-        let eligibleSet: Set<String> = ["light", "blind", "switch", "thermostat", "fan", "airPurifier", "humidifier", "outlet"]
-        let eligibleForStats = accessoryEvents.filter { eligibleSet.contains($0.eventTypeRaw) }
-        lastAnalyzedEventCount      = eligibleForStats.count
-        lastAnalyzedEventEarliestAt = eligibleForStats.map(\.timestamp).min()
-        lastAnalyzedEventLatestAt   = eligibleForStats.map(\.timestamp).max()
-
-        // Harvest user decisions from existing burst-cluster scene patterns before removing them.
-        // Burst-cluster patterns are re-derived fresh each run; only the approved/dismissed decisions
-        // are preserved across analyses so a dismissed pattern stays dismissed after re-detection.
-        for p in patterns {
-            guard p.patternType == .scene,
-                  let sig = p.causeSignature, sig.hasPrefix("burst_cluster:"),
-                  p.status == .approved || p.status == .dismissed else { continue }
-            burstClusterDecisions[sig] = p.status
-        }
-
-        // Remove ALL scene-type burst patterns — they are always re-derived fresh.
-        // Covers legacy signature formats ("burst:" prefix or nil) so fossils from
-        // earlier engine versions can never linger with frozen statistics.
-        patterns.removeAll { $0.patternType == .scene }
-
-        // Detect patterns
-        let detected = PatternDetectionEngine.detect(
-            accessoryEvents: accessoryEvents,
-            sceneEvents: sceneEvents,
-            existingPatterns: patterns
-        )
-        patterns = detected
-
-        // Re-apply persisted user decisions to freshly derived burst-cluster patterns.
-        for i in patterns.indices {
-            guard patterns[i].patternType == .scene,
-                  let sig = patterns[i].causeSignature,
-                  sig.hasPrefix("burst_cluster:"),
-                  let decision = burstClusterDecisions[sig] else { continue }
-            patterns[i].status = decision
-            if decision == .approved  && patterns[i].approvedAt  == nil { patterns[i].approvedAt  = Date() }
-            if decision == .dismissed && patterns[i].dismissedAt == nil { patterns[i].dismissedAt = Date() }
-        }
-
-        // Copy diagnostics from the engine
-        lastBurstReport        = PatternDetectionEngine.lastBurstReport
-        lastAbsorbedEventCount = PatternDetectionEngine.lastAbsorbedEventCount
-        lastCoupledPairs       = PatternDetectionEngine.lastCoupledPairs
-
-        // P2 — Contextual Phase: correla i candidati respinti dal gate orario con le
-        // condizioni ambientali. I pattern .contextual sono ri-derivati freschi a ogni
-        // run (come i burst-cluster); le decisioni utente sopravvivono per chiave stabile.
-        var contextualDecisions: [String: BehavioralPatternStatus] = [:]
-        for p in patterns where p.patternType == .contextual && (p.status == .approved || p.status == .dismissed) {
-            contextualDecisions[Self.contextualDecisionKey(for: p)] = p.status
-        }
-        patterns.removeAll { $0.patternType == .contextual }
-
-        // Letture sensore per la correlazione: SOLO le stanze dei candidati
-        // contestuali (+ la stanza outdoor, correlabile con qualsiasi stanza).
-        // Il vecchio limite globale di 6000 letture più recenti, su una casa
-        // che campiona ogni 15', copriva ~2 giorni: la baseline moriva di fame
-        // e la correlazione non trovava mai nulla sui device con molti sensori.
-        // Filtrando per stanza il backstop resta una protezione, non il percorso.
-        let contextualCandidates = PatternDetectionEngine.lastContextualCandidates
-        let outdoorRoomName = UserDefaults.standard.string(forKey: "outdoorRoomName") ?? ""
-        let sensorReadings: [SensorReading]
-        if contextualCandidates.isEmpty {
-            sensorReadings = []
-        } else {
-            var relevantRooms = Set(contextualCandidates.compactMap(\.roomName))
-            if !outdoorRoomName.isEmpty { relevantRooms.insert(outdoorRoomName) }
-            let hasRoomlessCandidate = contextualCandidates.contains { $0.roomName == nil }
-
-            let readingsDescriptor: FetchDescriptor<SensorReading> = {
-                var d: FetchDescriptor<SensorReading>
-                if hasRoomlessCandidate || relevantRooms.isEmpty {
-                    d = FetchDescriptor<SensorReading>(
-                        predicate: #Predicate { $0.timestamp >= cutoff },
-                        sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-                    )
-                } else {
-                    let rooms = Array(relevantRooms)
-                    d = FetchDescriptor<SensorReading>(
-                        predicate: #Predicate { $0.timestamp >= cutoff && rooms.contains($0.roomName) },
-                        sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-                    )
-                }
-                d.fetchLimit = 24_000
-                return d
-            }()
-            sensorReadings = (try? context.fetch(readingsDescriptor)) ?? []
-        }
-
-        var contextualPatterns = ContextualCorrelationEngine.detect(
-            candidates: contextualCandidates,
-            accessoryEvents: accessoryEvents,
-            readings: sensorReadings,
-            outdoorRoomName: outdoorRoomName
-        )
-        for i in contextualPatterns.indices {
-            if let decision = contextualDecisions[Self.contextualDecisionKey(for: contextualPatterns[i])] {
-                contextualPatterns[i].status = decision
-                if decision == .approved  { contextualPatterns[i].approvedAt  = Date() }
-                if decision == .dismissed { contextualPatterns[i].dismissedAt = Date() }
-            }
-        }
-        patterns += contextualPatterns
-        lastContextualOutcomes = ContextualCorrelationEngine.lastOutcomes
-        if !contextualPatterns.isEmpty {
-            dprint("🧠 BehavioralAnalysis: \(contextualPatterns.count) pattern contestuali derivati (P2)")
-        }
-
-        // Remove sequential artefacts: active/decaying patterns not re-detected in this run
-        // that were recently observed — these are burst fragments from prior analyses.
-        // Temporal/scene artefacts are left to decay naturally; sequential ones are the noisy ones.
-        let detectedKeys = PatternDetectionEngine.lastDetectedKeys
-        patterns.removeAll { p in
-            guard p.status == .active || p.status == .decaying else { return false }
-            guard p.patternType == .sequential else { return false }
-            guard !detectedKeys.contains(p.deduplicationKey) else { return false }
-            return -p.lastObservedAt.timeIntervalSinceNow / 86400 < 14
-        }
-
-        // Cleanup one-time: remove auto-referential sequential patterns where the cause is a
-        // burst cluster and the effect is a member of that same cluster.
-        // These are cascade tails artefacts — the burst "caused" a device that was already in it.
-        patterns.removeAll { p in
-            guard p.patternType == .sequential,
-                  p.status != .approved, p.status != .dismissed,
-                  let cs = p.causeSignature else { return false }
-            if cs.hasPrefix("burst_cluster:") {
-                let part    = String(cs.dropFirst("burst_cluster:".count))
-                let members = Set(part.split(separator: "|").map(String.init))
-                return members.contains(p.accessoryName)
-            }
-            // Legacy format "burst:label:activate" — heuristic: effectName appears in causeName
-            if cs.hasPrefix("burst:") {
-                return p.causeName.map { !p.accessoryName.isEmpty && $0.contains(p.accessoryName) } ?? false
-            }
-            return false
-        }
-
-        // Generate opportunities from qualifying patterns
-        rebuildOpportunities()
-
-        dprint("🧠 BehavioralAnalysis: \(patterns.count) patterns (\(lastBurstReport.count) burst sigs, \(lastAbsorbedEventCount) events absorbed), \(opportunities.count) opportunities")
-
-        // Trigger cluster naming after each analysis run (AI-01).
-        // scheduleNaming spawns its own unstructured Task so naming is never cancelled by a view.
-        habitNamingService?.scheduleNaming(reports: lastBurstReport, patterns: patterns)
     }
 
     /// User dismisses an opportunity permanently.

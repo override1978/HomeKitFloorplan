@@ -26,7 +26,6 @@ struct HabitsView: View {
     @State private var habitInterpreter: HabitInterpreterService?
     @State private var showInterpreterSummary = false
     @State private var reviewingProposal: AutomationProposal?
-    @State private var reviewingHabitPattern: HabitPattern?
     @State private var showManualAutomationWizard = false
     @State private var eligibleEvents: Int  = 0
 
@@ -39,13 +38,8 @@ struct HabitsView: View {
                 .sheet(isPresented: $showAISettings) {
                     NavigationStack { AISettingsView() }
                 }
-                .sheet(item: $reviewingProposal, onDismiss: {
-                    reviewingHabitPattern = nil
-                }) { proposal in
+                .sheet(item: $reviewingProposal) { proposal in
                     AutomationWizardSheet(proposal: proposal) { _ in
-                        if let reviewingHabitPattern {
-                            habitService.approve(reviewingHabitPattern)
-                        }
                         automationsService.refresh()
                     }
                         .presentationDetents([.large])
@@ -575,18 +569,14 @@ struct HabitsView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             Button {
-                habitService.scheduleNaming(
-                    reports: behavioralService.lastBurstReport,
-                    patterns: behavioralService.patterns
-                )
-            } label: {
-                if habitService.isAnalyzing {
-                    ProgressView().frame(width: 20, height: 20)
-                } else {
-                    Image(systemName: "arrow.clockwise")
+                Task {
+                    let report = UsageEvidenceService.evidencesWithReport(modelContainer: modelContext.container)
+                    usageEvidences = report.evidences
+                    evidenceFunnel = report.funnel
                 }
+            } label: {
+                Image(systemName: "arrow.clockwise")
             }
-            .disabled(habitService.isAnalyzing)
         }
     }
 

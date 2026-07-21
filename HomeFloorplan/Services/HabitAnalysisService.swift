@@ -73,40 +73,6 @@ final class HabitAnalysisService {
 
     // MARK: - Cluster Naming (primary entry point)
 
-    /// Called from BehavioralAnalysisService.analyze() and from HabitsView.task.
-    /// Spawns an unstructured Task so the LLM call is not bound to any view lifecycle.
-    /// When `reports` is empty (app just launched, analyze() not yet run this session),
-    /// falls back to deriving cluster inputs from persisted .scene patterns so unnamed
-    /// clusters are named without waiting for the next 12h analyze() cycle.
-    func scheduleNaming(reports: [BurstReport], patterns: [BehavioralPattern]) {
-        guard aiSettings.isOperational, aiSettings.suggestionsEnabled else {
-            lastCallResult = .skipped(reason: "AI not configured or suggestions disabled")
-            return
-        }
-        // Build inputs: prefer live BurstReport data; fall back to persisted .scene patterns
-        // when no analysis has run yet this session (lastBurstReport is empty on first launch).
-        let inputs: [ClusterNamingInput]
-        if !reports.isEmpty {
-            inputs = buildInputs(from: reports, patterns: patterns)
-        } else {
-            inputs = buildInputsFromPatterns(patterns)
-        }
-        guard !inputs.isEmpty else { return }
-
-        // Throttle: skip only when ALL clusters already have a name AND ran recently.
-        // If any cluster is unnamed, proceed regardless of the interval (covers first run and new clusters).
-        let hasUnnamed = inputs.contains { clusterNames[$0.clusterID] == nil }
-        if !hasUnnamed,
-           let last = lastAnalyzed,
-           Date().timeIntervalSince(last) < minIntervalBetweenNaming {
-            return
-        }
-
-        Task {
-            await nameClusters(inputs: inputs)
-        }
-    }
-
     // MARK: - Cluster name lookup
 
     /// Returns the LLM-assigned name for a burst-cluster BehavioralPattern, or nil.
@@ -206,26 +172,6 @@ final class HabitAnalysisService {
                 dominantRoom:     nil,
                 typicalTime:      pattern.avgTimeString,
                 matchedSceneName: nil
-            )
-        }
-    }
-
-    private func buildInputs(from reports: [BurstReport], patterns: [BehavioralPattern]) -> [ClusterNamingInput] {
-        reports.map { report in
-            let members = String(report.signature.dropFirst("burst_cluster:".count))
-                .split(separator: "|").map(String.init)
-
-            // Match temporal context from a BehavioralPattern with the same causeSignature
-            let typicalTime = patterns.first {
-                $0.patternType == .scene && $0.causeSignature == report.signature
-            }?.avgTimeString ?? "?"
-
-            return ClusterNamingInput(
-                clusterID:        report.signature,
-                memberNames:      members,
-                dominantRoom:     nil,
-                typicalTime:      typicalTime,
-                matchedSceneName: report.matchedSceneName
             )
         }
     }
