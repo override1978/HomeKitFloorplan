@@ -110,3 +110,35 @@ Avoid screenshots showing:
 - Personal home address/location.
 - Real private room names if not intended.
 - API keys or provider settings.
+
+---
+
+## App Review Notes (paste into App Store Connect → App Review Information → Notes)
+
+Thank you for reviewing Home Floorplan. Some context that may help:
+
+**WHAT THE APP IS**
+Home Floorplan is a HomeKit companion for iPad: users draw the floorplan of their home and see and control their existing Apple Home accessories directly on it (live markers, environment/security overlays). It is designed for iPads used as a wall-mounted home dashboard.
+
+**HOMEKIT DEPENDENCY**
+The app requires an Apple Home with accessories to show its full value. Without one:
+- First launch shows onboarding and requests HomeKit permission through the system prompt.
+- With no home or accessories configured, the app presents guided empty states — it does not crash or appear broken.
+- A demo video showing the full experience on a real home is attached to this submission.
+Any HomeKit-compatible accessory (including simulated accessories from the HomeKit Accessory Simulator) added to an Apple Home will appear in the app for interactive testing.
+
+**OPTIONAL AI FEATURES**
+AI features (environmental suggestions, assistant) are OFF by default and require both (1) the user's explicit in-app consent and (2) the user's own API key for a third-party provider (e.g. Anthropic or OpenAI), stored in the device Keychain. No key ships with the app and no Home Floorplan server exists. All core floorplan and HomeKit features work fully without AI — reviewers do not need an API key.
+
+**DATA & PRIVACY**
+- Home data is processed on device; detailed history is kept locally for ~30 days.
+- Optional multi-device sync uses the user's private iCloud database (CloudKit). The developer runs no server and cannot access user data.
+- Weather comes from Apple WeatherKit, with Apple Weather attribution shown in-app. The optional home/away presence feature uses a single on-device geofence; coordinates are never transmitted.
+- Privacy policy: https://gethomefloorplan.app/privacy.html
+
+**OTHER NOTES**
+- There is no account or login, so no demo credentials are provided.
+- An experimental "Habits (beta)" section is off by default and can be enabled under Settings → Home Intelligence. It is labeled as beta and fully optional.
+- If the device is not signed into iCloud, first launch briefly checks for existing data (a few seconds) and then continues locally — this is expected behavior.
+
+Contact for review questions: hello@gethomefloorplan.app
