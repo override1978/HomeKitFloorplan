@@ -121,14 +121,7 @@ struct AppForegroundCoordinator {
                 await matterEnergyLiveStore.refreshIfNeeded(home: home)
             }
         }
-        guard cloudKitSync.isMaster else { return }
-        let key = "behavioral.foregroundAnalysis.lastTriggered"
-        let last = UserDefaults.standard.object(forKey: key) as? Date ?? .distantPast
-        guard Date().timeIntervalSince(last) >= 12 * 3600 else { return }
-        UserDefaults.standard.set(Date(), forKey: key)
-        let behavioral = behavioralAnalysisService
-        Task {
-            await behavioral.analyze()
-        }
+        // Motore statistico ritirato: nessuna analisi comportamentale al
+        // foreground (pivot Abitudini — evidenze + interprete LLM on-demand).
     }
 }

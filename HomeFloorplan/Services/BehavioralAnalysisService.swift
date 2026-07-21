@@ -188,15 +188,38 @@ final class BehavioralAnalysisService {
 
     // MARK: - Init
 
+    /// MOTORE RITIRATO (pivot Abitudini, 2026-07): l'analisi statistica non
+    /// produceva valore su dati domestici reali ed è sostituita da evidenze
+    /// deterministiche (UsageEvidenceBuilder) + interprete LLM
+    /// (HabitInterpreterCore/Service). La classe resta come stub inerte finché
+    /// i consumer non vengono smontati (fase 2 della rimozione): patterns e
+    /// opportunities restano vuoti e l'analisi è un no-op.
+    static let engineRetired = true
+
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
-        loadPersisted()
+        if Self.engineRetired {
+            // Motore ritirato: `patterns`/`opportunities` restano vuoti in
+            // memoria (nessun `loadPersisted()`), quindi ogni consumer vede
+            // liste vuote e la UI legacy si nasconde da sola. NON si cancellano
+            // i record persistiti: `PersistedBehavioralPattern` e
+            // `AutomationOpportunity` sono tipi SINCRONIZZATI via CloudKit —
+            // un delete locale propagherebbe agli altri device o entrerebbe in
+            // conflitto con installazioni non aggiornate. I record orfani su
+            // disco sono inerti (nessuno li legge) e verranno rimossi nella
+            // fase 2 con una migrazione dedicata.
+            patterns = []
+            opportunities = []
+        } else {
+            loadPersisted()
+        }
     }
 
     // MARK: - Public API
 
     /// Runs a full behavioral analysis cycle if sufficient time has passed.
     func analyzeIfNeeded() async {
+        guard !Self.engineRetired else { return }
         if let last = lastAnalyzed,
            Date().timeIntervalSince(last) < minAnalysisInterval { return }
         await analyze()
@@ -204,6 +227,7 @@ final class BehavioralAnalysisService {
 
     /// Forces a full analysis regardless of interval.
     func analyze() async {
+        guard !Self.engineRetired else { return }
         guard !isAnalyzing else { return }
         isAnalyzing = true
         defer {

@@ -263,7 +263,6 @@ struct HomeFloorplanApp: App {
         let maintenance = services.maintenancePredictionService
         let cloudSync   = services.cloudKitSync
 
-        let behavioral = services.behavioralAnalysisService
         let work = Task { @MainActor in
             guard cloudSync.isMaster else {
                 task.setTaskCompleted(success: true)
@@ -271,8 +270,8 @@ struct HomeFloorplanApp: App {
             }
             await lifecycle.runFullCycle()
             habits.cleanupStalePatterns()
-            await behavioral.analyze()
-            behavioral.cleanupStale()
+            // Motore statistico ritirato: niente analyze()/cleanupStale nel
+            // ciclo giornaliero (pivot Abitudini).
             await occupancy.analyzeHistory(modelContainer: container)
             await EnvironmentalPatternAnalyzer.analyze(modelContainer: container)
             await maintenance.analyze()
