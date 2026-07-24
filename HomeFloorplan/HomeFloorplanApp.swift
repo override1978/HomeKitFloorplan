@@ -73,6 +73,13 @@ struct HomeFloorplanApp: App {
 
         // Registra categorie UNUserNotificationCenter per la Proactive Intelligence
         NotificationDeliveryOrchestrator.registerCategories()
+
+        #if DEBUG
+        // Diagnostica freeze (temporanea): logga i blocchi del main actor.
+        if !TestEnvironment.isRunningUnitTests {
+            MainThreadWatchdog.start()
+        }
+        #endif
     }
 
     var body: some Scene {

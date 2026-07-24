@@ -619,21 +619,27 @@ extension HomeKitService: HMHomeManagerDelegate {
         reachabilitySettled = false
 
         //currentHome = manager.homes.first
-        refreshAccessoriesList()
+        measureMain("homesUpdate.refreshList") {
+            refreshAccessoriesList()
+        }
 
         // Seed iniziale della reachability map con lo stato attuale.
         // Il delegate è già impostato da refreshAccessoriesList() chiamata sopra.
-        for accessory in allAccessories {
-            reachabilityMap[accessory.uniqueIdentifier] = accessory.isReachable
+        measureMain("homesUpdate.reachabilitySeed") {
+            for accessory in allAccessories {
+                reachabilityMap[accessory.uniqueIdentifier] = accessory.isReachable
+            }
+            reachabilityVersion += 1
         }
-        reachabilityVersion += 1
 
         authorizationStatus = manager.authorizationStatus
         isReady = true
 
         // Abilita immediatamente le notifiche HomeKit sul sistema di allarme,
         // così gli aggiornamenti di stato arrivano anche quando SecurityView non è visibile.
-        startObservingSecuritySystems()
+        measureMain("homesUpdate.observeSecurity") {
+            startObservingSecuritySystems()
+        }
 
         // HomeKit impiega alcuni secondi dopo il lancio per completare la discovery
         // e aggiornare isReachable. Eseguiamo due refresh differiti: uno precoce

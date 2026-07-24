@@ -244,15 +244,22 @@ struct FloorplanEditorView: View {
 
     private var observedCanvas: some View {
         canvasContent
+        .environment(\.isLiquidGlassSuppressed, ui.isEditing)
         .toolbar(.hidden, for: .navigationBar)
         .modifier(editorPresentationModifier)
         .suppressesIdleScreensaver(.floorplanInteraction, when: ui.shouldSuppressIdleScreensaver)
         .onAppear(perform: handleAppear)
         .onChange(of: homeKit.isReady) { _, isReady in
             if isReady {
-                accessoryObservationCoordinator.subscribe(to: floorplan)
-                refreshOverlayContext()
-                refreshAdapterCaches()
+                measureMain("isReady.subscribe") {
+                    accessoryObservationCoordinator.subscribe(to: floorplan)
+                }
+                measureMain("isReady.overlayContext") {
+                    refreshOverlayContext()
+                }
+                measureMain("isReady.adapterCaches") {
+                    refreshAdapterCaches()
+                }
             }
         }
         .onChange(of: homeKit.allAccessories.count) { _, _ in
@@ -316,27 +323,45 @@ struct FloorplanEditorView: View {
     }
 
     private func handleAppear() {
-        if overlayVM == nil {
-            overlayVM = FloorplanOverlayViewModel(floorplanID: floorplan.id)
-        }
-        overlayEnvVM.configure(modelContainer: modelContext.container)
-        overlayEnvVM.loadFromCoreData()
-        accessoryObservationCoordinator.subscribe(to: floorplan)
-        viewportController.restore()
+        measureMain("appear.total") {
+            if overlayVM == nil {
+                overlayVM = FloorplanOverlayViewModel(floorplanID: floorplan.id)
+            }
+            measureMain("appear.envConfigure") {
+                overlayEnvVM.configure(modelContainer: modelContext.container)
+                overlayEnvVM.loadFromCoreData()
+            }
+            measureMain("appear.subscribe") {
+                accessoryObservationCoordinator.subscribe(to: floorplan)
+            }
+            measureMain("appear.viewportRestore") {
+                viewportController.restore()
+            }
 
-        if startInEditMode {
-            ui.isEditing = true
-            chromeController.enterEditingMode()
-        } else {
-            chromeController.scheduleAutoHide(isEditing: ui.isEditing)
-        }
+            if startInEditMode {
+                ui.isEditing = true
+                chromeController.enterEditingMode()
+            } else {
+                chromeController.scheduleAutoHide(isEditing: ui.isEditing)
+            }
 
-        imageLoader.refresh(for: floorplan)
-        backfillMarkerRoomLinksIfNeeded()
-        refreshOverlayContext()
-        refreshAdapterCaches()
-        presentHelpIfNeeded()
-        trackSecurityModeChange()
+            measureMain("appear.imageRefresh") {
+                imageLoader.refresh(for: floorplan)
+            }
+            measureMain("appear.backfillRoomLinks") {
+                backfillMarkerRoomLinksIfNeeded()
+            }
+            measureMain("appear.overlayContext") {
+                refreshOverlayContext()
+            }
+            measureMain("appear.adapterCaches") {
+                refreshAdapterCaches()
+            }
+            measureMain("appear.help+security") {
+                presentHelpIfNeeded()
+                trackSecurityModeChange()
+            }
+        }
     }
 
     /// Checks if the security system mode has changed and records the activation timestamp.

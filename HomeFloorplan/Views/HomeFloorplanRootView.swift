@@ -15,6 +15,7 @@ struct HomeFloorplanRootView: View {
     @AppStorage("idleTimeout") private var idleTimeoutSeconds: Double = 90
     @AppStorage(TemperatureUnit.appStorageKey) private var temperatureUnitRaw = TemperatureUnit.celsius.rawValue
     @AppStorage(DimensionUnit.appStorageKey) private var dimensionUnitRaw = DimensionUnit.metric.rawValue
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey) private var isLiquidGlassEnabled = false
     @AppStorage("alertNotificationsEnabled") private var alertNotificationsEnabled = false
     @AppStorage(SecurityNotificationService.enabledKey) private var securityNotificationsEnabled = false
     @AppStorage("proactiveIntelligenceNotificationsEnabled") private var proactiveNotificationsEnabled = false
@@ -40,6 +41,7 @@ struct HomeFloorplanRootView: View {
                 temperatureUnitRaw: temperatureUnitRaw,
                 appLanguageRaw: appLanguageRaw,
                 dimensionUnitRaw: dimensionUnitRaw,
+                isLiquidGlassEnabled: isLiquidGlassEnabled,
                 alertNotificationsEnabled: alertNotificationsEnabled,
                 securityNotificationsEnabled: securityNotificationsEnabled,
                 proactiveNotificationsEnabled: proactiveNotificationsEnabled,
@@ -50,8 +52,12 @@ struct HomeFloorplanRootView: View {
             }
             .onChange(of: services.homeKit.isReady, initial: true) { _, isReady in
                 guard isReady else { return }
-                services.cloudKitSync.remapLinkedRoomsToLocalHomeKitIDs()
-                services.cloudKitSync.remapPlacedAccessoriesToLocalHomeKitIDs()
+                measureMain("isReady.remapRooms") {
+                    services.cloudKitSync.remapLinkedRoomsToLocalHomeKitIDs()
+                }
+                measureMain("isReady.remapAccessories") {
+                    services.cloudKitSync.remapPlacedAccessoriesToLocalHomeKitIDs()
+                }
             }
             .onChange(of: services.locationPresenceService.presenceState) { _, newState in
                 services.ambientalAIService.presenceOverride = newState
@@ -179,6 +185,7 @@ private struct AppSettingsSyncModifier: ViewModifier {
     let temperatureUnitRaw: String
     let appLanguageRaw: String
     let dimensionUnitRaw: String
+    let isLiquidGlassEnabled: Bool
     let alertNotificationsEnabled: Bool
     let securityNotificationsEnabled: Bool
     let proactiveNotificationsEnabled: Bool
@@ -194,6 +201,7 @@ private struct AppSettingsSyncModifier: ViewModifier {
             .onChange(of: temperatureUnitRaw) { _, _ in coordinator.markSettingsNeedsSync() }
             .onChange(of: appLanguageRaw) { _, _ in coordinator.markSettingsNeedsSync() }
             .onChange(of: dimensionUnitRaw) { _, _ in coordinator.markSettingsNeedsSync() }
+            .onChange(of: isLiquidGlassEnabled) { _, _ in coordinator.markSettingsNeedsSync() }
             .onChange(of: alertNotificationsEnabled) { _, _ in coordinator.markSettingsNeedsSync() }
             .onChange(of: securityNotificationsEnabled) { _, _ in coordinator.markSettingsNeedsSync() }
             .onChange(of: proactiveNotificationsEnabled) { _, _ in coordinator.markSettingsNeedsSync() }
