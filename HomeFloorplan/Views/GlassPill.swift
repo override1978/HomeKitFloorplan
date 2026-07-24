@@ -1,13 +1,73 @@
 import SwiftUI
 
+enum AppAppearanceSettings {
+    static let liquidGlassEnabledKey = "appearance.liquidGlassEnabled"
+}
+
+private struct LiquidGlassSuppressionKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var isLiquidGlassSuppressed: Bool {
+        get { self[LiquidGlassSuppressionKey.self] }
+        set { self[LiquidGlassSuppressionKey.self] = newValue }
+    }
+}
+
+struct LiquidGlassContainer<Content: View>: View {
+    let spacing: CGFloat?
+    let content: Content
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+    init(spacing: CGFloat? = nil, @ViewBuilder content: () -> Content) {
+        self.spacing = spacing
+        self.content = content()
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if isLiquidGlassEnabled && !isLiquidGlassSuppressed {
+            if #available(iOS 26.0, *) {
+                GlassEffectContainer(spacing: spacing) {
+                    content
+                }
+            } else {
+                content
+            }
+        } else {
+            content
+        }
+    }
+}
+
 struct GlassPill<Content: View>: View {
     let content: Content
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
     
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
     
+    @ViewBuilder
     var body: some View {
+        if isLiquidGlassEnabled && !isLiquidGlassSuppressed {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular, in: Capsule())
+            } else {
+                legacyBody
+            }
+        } else {
+            legacyBody
+        }
+    }
+
+    private var legacyBody: some View {
         content
             .background(.ultraThinMaterial, in: Capsule())
             .overlay(
@@ -21,13 +81,31 @@ struct GlassPill<Content: View>: View {
 struct GlassCircle<Content: View>: View {
     let content: Content
     let size: CGFloat
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
     
     init(size: CGFloat = 40, @ViewBuilder content: () -> Content) {
         self.size = size
         self.content = content()
     }
     
+    @ViewBuilder
     var body: some View {
+        if isLiquidGlassEnabled && !isLiquidGlassSuppressed {
+            if #available(iOS 26.0, *) {
+                content
+                    .frame(width: size, height: size)
+                    .glassEffect(.clear.interactive(), in: Circle())
+            } else {
+                legacyBody
+            }
+        } else {
+            legacyBody
+        }
+    }
+
+    private var legacyBody: some View {
         content
             .frame(width: size, height: size)
             .background(.regularMaterial, in: Circle())
@@ -45,12 +123,29 @@ struct GlassCircle<Content: View>: View {
 struct GlassTitlePill<Content: View>: View {
     let content: Content
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
 
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
+    @ViewBuilder
     var body: some View {
+        if isLiquidGlassEnabled && !isLiquidGlassSuppressed {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(.regular, in: Capsule())
+            } else {
+                legacyBody
+            }
+        } else {
+            legacyBody
+        }
+    }
+
+    private var legacyBody: some View {
         content
             .background(.regularMaterial, in: Capsule())
             .overlay(

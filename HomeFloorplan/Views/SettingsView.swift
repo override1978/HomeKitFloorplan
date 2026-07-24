@@ -54,6 +54,9 @@ struct SettingsView: View {
     @AppStorage(DimensionUnit.appStorageKey)
     private var dimensionUnitRaw: String = DimensionUnit.metric.rawValue
 
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled: Bool = false
+
     @AppStorage("alertNotificationsEnabled")
     private var alertNotificationsEnabled: Bool = false
 
@@ -142,6 +145,19 @@ struct SettingsView: View {
                     Text(String(localized: "settings.screensaver.never",  defaultValue: "Never")).tag(0.0)
                 }
                 .pickerStyle(.menu)
+
+                Toggle(isOn: $isLiquidGlassEnabled) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(String(localized: "settings.appearance.liquidGlass", defaultValue: "Liquid Glass"))
+                            Text(String(localized: "settings.appearance.liquidGlass.subtitle", defaultValue: "Use the new glass effect on floorplan controls where supported."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "sparkles.rectangle.stack")
+                    }
+                }
 
                 HStack {
                     Text(String(localized: "settings.info.version", defaultValue: "Version"))

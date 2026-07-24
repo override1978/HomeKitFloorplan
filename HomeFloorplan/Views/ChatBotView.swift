@@ -69,6 +69,8 @@ struct ChatBotView: View {
     @State private var isPreparing   = false
     @State private var voiceSubmitTask: Task<Void, Never>?
     @State private var expandedSuggestionCategoryID: String?
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
 
     #if DEBUG
     @State private var debugLogs: [AgentLogEntry] = []
@@ -1308,7 +1310,7 @@ struct ChatBotView: View {
                         .frame(width: 96, height: 96)
                         .scaleEffect(micPulse ? 1.08 : 0.85)
                 }
-                // Core content with Liquid Glass
+                // Core content
                 Group {
                     if isRunning {
                         ProgressView().controlSize(.regular).tint(.secondary)
@@ -1321,11 +1323,11 @@ struct ChatBotView: View {
                     }
                 }
                 .frame(width: 68, height: 68)
-                .glassEffect(
-                    speechService.isRecording
-                        ? .regular.tint(.red).interactive()
-                        : .regular.interactive(),
-                    in: Circle()
+                .modifier(
+                    VoiceMicSurfaceModifier(
+                        isLiquidGlassEnabled: isLiquidGlassEnabled,
+                        isRecording: speechService.isRecording
+                    )
                 )
                 // Rainbow ring — only during AI processing
                 if isRunning {
@@ -1576,6 +1578,43 @@ private struct RainbowBorderView: View {
                 )
                 .blur(radius: 0.8)
         }
+    }
+}
+
+private struct VoiceMicSurfaceModifier: ViewModifier {
+    let isLiquidGlassEnabled: Bool
+    let isRecording: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isLiquidGlassEnabled {
+            if #available(iOS 26.0, *) {
+                content
+                    .glassEffect(
+                        isRecording
+                            ? .regular.tint(.red).interactive()
+                            : .clear.interactive(),
+                        in: Circle()
+                    )
+            } else {
+                legacyBody(content)
+            }
+        } else {
+            legacyBody(content)
+        }
+    }
+
+    private func legacyBody(_ content: Content) -> some View {
+        content
+            .background(.regularMaterial, in: Circle())
+            .overlay(
+                Circle()
+                    .strokeBorder(
+                        isRecording ? Color.red.opacity(0.45) : Color.white.opacity(0.35),
+                        lineWidth: 0.8
+                    )
+            )
+            .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
     }
 }
 
