@@ -47,6 +47,7 @@ final class CloudKitSyncService {
         "prefTemperatureUnitRaw": .string(TemperatureUnit.appStorageKey),
         "prefAppLanguageRaw": .string(AppLanguage.appStorageKey),
         "prefDimensionUnitRaw": .string(DimensionUnit.appStorageKey),
+        "prefLiquidGlassEnabled": .bool(AppAppearanceSettings.liquidGlassEnabledKey),
         "prefAlertNotificationsEnabled": .bool("alertNotificationsEnabled"),
         "prefSecurityNotificationsEnabled": .bool(SecurityNotificationService.enabledKey),
         "prefProactiveNotificationsEnabled": .bool("proactiveIntelligenceNotificationsEnabled"),
