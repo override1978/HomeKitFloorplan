@@ -353,6 +353,18 @@ final class EnvironmentViewModel {
 
         // ── Fase 2: elaborazione su main actor (veloce, in-memory) ──────
 
+            // 0. Indice per il trend: per ogni coppia accessoryUUID+serviceType,
+            //    la lettura più recente ANTERIORE al cutoff. Precomputato una
+            //    volta sola — prima ogni gruppo rifaceva una scansione lineare
+            //    di rawReadings (fino a 500) sul main actor, cioè decine di
+            //    migliaia di confronti per reload.
+            let trendCutoff = Date().addingTimeInterval(-45 * 60)
+            var olderByDevice: [String: RawSensorReading] = [:]
+            for r in rawReadings where r.timestamp < trendCutoff {
+                let key = "\(r.accessoryUUID)-\(r.serviceTypeRaw)"
+                if olderByDevice[key] == nil { olderByDevice[key] = r }
+            }
+
             // 1. Ultima lettura per ogni coppia accessoryUUID+serviceType
             var latestByDevice: [String: RawSensorReading] = [:]
             for r in rawReadings {
@@ -388,13 +400,12 @@ final class EnvironmentViewModel {
                 // ordinato per timestamp decrescente — nessuna query aggiuntiva).
                 var trend = SensorTrend.steady
                 if !serviceType.isBooleanAlert && serviceType != .airQuality {
-                    let cutoff = Date().addingTimeInterval(-45 * 60)
-                    let accessorySet = Set(group.map(\.accessoryUUID))
-                    if let older = rawReadings.first(where: { r in
-                        r.serviceTypeRaw == serviceType.rawValue &&
-                        accessorySet.contains(r.accessoryUUID) &&
-                        r.timestamp < cutoff
-                    }) {
+                    // Lookup O(gruppo) sull'indice precomputato invece della
+                    // scansione lineare di tutte le letture per ogni gruppo.
+                    let older = group
+                        .compactMap { olderByDevice["\($0.accessoryUUID)-\(serviceType.rawValue)"] }
+                        .max { $0.timestamp < $1.timestamp }
+                    if let older {
                         let epsilon: Double
                         switch serviceType {
                         case .temperature: epsilon = 0.3

@@ -1,13 +1,5 @@
 import SwiftUI
 
-struct TopBarHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 struct FloorplanTopBarView: View {
     let size: CGSize
     let floorplan: Floorplan
@@ -38,38 +30,40 @@ struct FloorplanTopBarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ZStack {
-                if !isEditing, let overlayVM {
-                    FloorplanModePill(overlayVM: overlayVM, context: overlayContext)
-                }
-
-                HStack {
-                    HStack(spacing: 10) {
-                        leadingNavigationButton
-
-                        FloorplanTitleMenu(
-                            currentFloorplan: floorplan,
-                            pinnedFloorplans: pinnedFloorplans,
-                            primaryFloorplanID: primaryFloorplanID,
-                            onOpenSidebar: onOpenSidebar,
-                            onSelectFloorplan: onSelectFloorplan
-                        )
+            LiquidGlassContainer(spacing: 12) {
+                ZStack {
+                    if !isEditing, let overlayVM {
+                        FloorplanModePill(overlayVM: overlayVM, context: overlayContext)
                     }
 
-                    Spacer()
+                    HStack {
+                        HStack(spacing: 10) {
+                            leadingNavigationButton
 
-                    FloorplanTopRightActions(
-                        isEditing: isEditing,
-                        isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
-                        showsSceneText: size.width >= 760,
-                        isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
-                        onAddAccessory: onAddAccessory,
-                        onShowHelp: onShowHelp,
-                        onShowDiagnostics: onShowDiagnostics,
-                        onEditDrawing: onEditDrawing,
-                        onShowScenes: onShowScenes,
-                        onToggleEditing: onToggleEditing
-                    )
+                            FloorplanTitleMenu(
+                                currentFloorplan: floorplan,
+                                pinnedFloorplans: pinnedFloorplans,
+                                primaryFloorplanID: primaryFloorplanID,
+                                onOpenSidebar: onOpenSidebar,
+                                onSelectFloorplan: onSelectFloorplan
+                            )
+                        }
+
+                        Spacer()
+
+                        FloorplanTopRightActions(
+                            isEditing: isEditing,
+                            isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
+                            showsSceneText: size.width >= 760,
+                            isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
+                            onAddAccessory: onAddAccessory,
+                            onShowHelp: onShowHelp,
+                            onShowDiagnostics: onShowDiagnostics,
+                            onEditDrawing: onEditDrawing,
+                            onShowScenes: onShowScenes,
+                            onToggleEditing: onToggleEditing
+                        )
+                    }
                 }
             }
             .animation(.spring(response: 0.4), value: columnVisibility)
@@ -83,15 +77,18 @@ struct FloorplanTopBarView: View {
         .frame(maxWidth: .infinity, alignment: .top)
         .animation(.spring(response: 0.35), value: overlayVM?.activeMode)
         .animation(.spring(response: 0.35), value: floorplan.linkedRooms.isEmpty)
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: TopBarHeightKey.self,
-                    value: geo.size.height
-                )
-            }
-        )
-        .onPreferenceChange(TopBarHeightKey.self, perform: onTopBarHeightChanged)
+        // Misura via onGeometryChange (rimpiazzo Apple del pattern
+        // GeometryReader+PreferenceKey): il preference tree veniva aggiornato
+        // più volte per frame durante le animazioni spring qui sopra, e ogni
+        // update invalidava il body dell'editor — con Liquid Glass attivo ogni
+        // invalidazione forza il ricampionamento del backdrop di tutte le
+        // superfici glass, da cui i freeze. L'arrotondamento al punto intero
+        // elimina il churn sub-pixel dei frame intermedi dell'animazione.
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height.rounded()
+        } action: { newHeight in
+            onTopBarHeightChanged(newHeight)
+        }
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
