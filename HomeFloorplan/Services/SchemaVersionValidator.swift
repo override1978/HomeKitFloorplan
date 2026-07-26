@@ -12,29 +12,30 @@ import SwiftData
 //   • If a migration is non-lightweight (e.g. custom mapping), create a
 //     VersionedSchema + SchemaMigrationPlan before shipping.
 //
-// Current schema — v23 (17 @Model types):
+// Current schema — v24 (16 @Model types):
+//   v24: Rule removed — an empty legacy table with no reader and no writer
+//        (entity removal, lightweight migration)
 //   v23: HabitPattern removed — nothing produced it once the behavioral
 //        engine was retired (entity removal, lightweight migration)
 //   v22: AutomationOpportunity + PersistedBehavioralPattern removed with the
 //        retired behavioral analysis engine (entity removal, lightweight migration)
 //   v21: PersistedHomeInsight += signalTypeRaw: String? (lightweight migration)
-//   1.  Floorplan
-//   2.  PlacedAccessory
-//   3.  ActivityEvent
-//   4.  SensorReading
-//   5.  SensorAlertEvent
-//   6.  SensorAlertThreshold
-//   7.  AccessoryEvent
-//   8.  Rule
-//   9.  ActionEffectivenessEvent
-//   10. PersistedInsight (legacy environmental insight bridge)
-//   11. RoomAnalysisState
-//   12. DailySensorSummary
-//   13. AccessoryUsageSummary
-//   14. EffectivenessSummary
-//   15. PersistedHomeInsight (primary unified insight store)
-//   16. ProactiveNotification
-//   17. SyncableSettings
+//   1 . Floorplan
+//   2 . PlacedAccessory
+//   3 . ActivityEvent
+//   4 . SensorReading
+//   5 . SensorAlertEvent
+//   6 . SensorAlertThreshold
+//   7 . AccessoryEvent
+//   8 . ActionEffectivenessEvent
+//   9 . PersistedInsight (legacy environmental insight bridge)
+//   10. RoomAnalysisState
+//   11. DailySensorSummary
+//   12. AccessoryUsageSummary
+//   13. EffectivenessSummary
+//   14. PersistedHomeInsight (primary unified insight store)
+//   15. ProactiveNotification
+//   16. SyncableSettings
 //
 // NOTE: Automated migration tests require a dedicated test target.
 // The project currently has no test target. When one is added, create a
@@ -48,7 +49,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 23
+    static let currentVersion: Int = 24
 
     // MARK: - Persistence
 

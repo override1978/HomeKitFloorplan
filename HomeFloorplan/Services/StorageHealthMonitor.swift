@@ -37,7 +37,6 @@ struct StorageHealthMonitor {
 
         // MARK: Config / reference counts (permanent, small)
         let roomAnalysisStateCount:      Int
-        let ruleCount:                   Int
         let floorplanCount:              Int
 
         // MARK: UserDefaults (not SwiftData)
@@ -60,7 +59,7 @@ struct StorageHealthMonitor {
 
         /// Total SwiftData rows across all models.
         var totalRows: Int {
-            totalRawRows + totalKnowledgeRows + roomAnalysisStateCount + ruleCount + floorplanCount
+            totalRawRows + totalKnowledgeRows + roomAnalysisStateCount + floorplanCount
         }
 
         /// Rough database size estimate. Assumes 150 bytes per row average.
@@ -127,7 +126,6 @@ struct StorageHealthMonitor {
             │    ─────────────────────── \(totalKnowledgeRows) total knowledge rows
             │
             │  CONFIG (permanent, small):
-            │    Rules:                  \(ruleCount)
             │    Floorplans:             \(floorplanCount)
             │    RoomAnalysisState:      \(roomAnalysisStateCount)
             │
@@ -170,7 +168,6 @@ struct StorageHealthMonitor {
             accessoryUsageSummaryCount: count(AccessoryUsageSummary.self),
             effectivenessSummaryCount:  count(EffectivenessSummary.self),
             roomAnalysisStateCount:     count(RoomAnalysisState.self),
-            ruleCount:                  count(Rule.self),
             floorplanCount:             count(Floorplan.self),
             lastLifecycleCycleDate:     UserDefaults.standard.object(
                 forKey: "dataLifecycle.lastCycleDate") as? Date

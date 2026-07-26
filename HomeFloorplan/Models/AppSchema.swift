@@ -16,7 +16,6 @@ enum AppSchema {
         SensorAlertEvent.self,
         SensorAlertThreshold.self,
         AccessoryEvent.self,
-        Rule.self,
         ActionEffectivenessEvent.self,
         PersistedInsight.self,
         RoomAnalysisState.self,
