@@ -13,8 +13,6 @@ struct AppLaunchCoordinator {
 
     func run() async {
         await ImageMigrationService.runIfNeeded(context: sharedModelContainer.mainContext)
-        await OpportunityMigrationService.runIfNeeded(context: sharedModelContainer.mainContext)
-        await PatternMigrationService.runIfNeeded(context: sharedModelContainer.mainContext)
         await HabitPatternMigrationService.runIfNeeded(context: sharedModelContainer.mainContext)
         await SettingsMigrationService.runIfNeeded(
             context: sharedModelContainer.mainContext,

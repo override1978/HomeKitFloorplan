@@ -102,20 +102,6 @@ struct HabitAntiDuplicationTests {
         #expect(AutomationProposalMapper.causeTriggerState(fromSignature: "malformed") == nil)
     }
 
-    @Test("Opportunità da pattern sequenziale: trigger accessoryState, strutturalmente convertibile")
-    func sequentialPatternProducesConvertibleOpportunity() {
-        let pattern = makeSequentialPattern(
-            effectName: "Luce Corridoio",
-            effectID: UUID(),
-            causeName: "TV Soggiorno",
-            causeSignature: "switch:TV Soggiorno:on"
-        )
-
-        let opportunity = AutomationOpportunity(from: pattern)
-        #expect(opportunity.triggerType == "accessoryState")
-        #expect(opportunity.isStructurallyConvertibleToAutomation)
-    }
-
     // MARK: - Helper
 
     private func makeSnapshot(
@@ -130,42 +116,6 @@ struct HabitAntiDuplicationTests {
             targetAccessoryIDs: accessories,
             triggeredSceneNames: [],
             fireMinuteOfDay: fireMinute
-        )
-    }
-
-    private func makeSequentialPattern(
-        effectName: String,
-        effectID: UUID,
-        causeName: String,
-        causeSignature: String
-    ) -> BehavioralPattern {
-        BehavioralPattern(
-            id: UUID(),
-            patternType: .sequential,
-            detectedAt: Date(),
-            accessoryName: effectName,
-            accessoryID: effectID,
-            roomName: "Corridoio",
-            eventTypeRaw: "light",
-            action: .on,
-            numericValue: nil,
-            avgMinuteOfDay: 21 * 60,
-            timeDeviationMinutes: 5,
-            weekdays: [],
-            dayType: nil,
-            causeSignature: causeSignature,
-            causeName: causeName,
-            avgGapSeconds: 120,
-            observations: 12,
-            validations: 12,
-            firstObservedAt: Date().addingTimeInterval(-14 * 24 * 3600),
-            lastObservedAt: Date(),
-            stabilityDays: 14,
-            distinctActiveDays: 10,
-            status: .active,
-            dismissedAt: nil,
-            approvedAt: nil,
-            naturalLanguageDescription: "Quando accendi TV Soggiorno, accendi Luce Corridoio"
         )
     }
 

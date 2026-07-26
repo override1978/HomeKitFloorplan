@@ -58,10 +58,8 @@ final class CloudKitSyncService {
 
     private static let floorplanPrefix   = "floorplan:"
     private static let settingsPrefix    = "settings:"
-    private static let opportunityPrefix = "opportunity:"
     private static let thresholdPrefix   = "threshold:"
     private static let insightPrefix     = "insight:"
-    private static let behaviorPrefix    = "behavior:"
     private static let habitPrefix       = "habit:"
 
     private static func formatCoordinate(_ value: Double) -> String {
@@ -587,10 +585,6 @@ final class CloudKitSyncService {
         addPendingRecordZoneChanges([.saveRecord(floorplanRecordID(id))])
     }
 
-    func markOpportunityDeleted(_ id: UUID) {
-        addPendingRecordZoneChanges([.deleteRecord(opportunityRecordID(id))])
-    }
-
     func markThresholdDeleted(_ id: UUID) {
         var synced = syncedThresholdIDs
         synced.remove(id.uuidString)
@@ -645,20 +639,12 @@ final class CloudKitSyncService {
         CKRecord.ID(recordName: "\(Self.settingsPrefix)\(id.uuidString)", zoneID: Self.zoneID)
     }
 
-    private func opportunityRecordID(_ id: UUID) -> CKRecord.ID {
-        CKRecord.ID(recordName: "\(Self.opportunityPrefix)\(id.uuidString)", zoneID: Self.zoneID)
-    }
-
     private func thresholdRecordID(_ id: UUID) -> CKRecord.ID {
         CKRecord.ID(recordName: "\(Self.thresholdPrefix)\(id.uuidString)", zoneID: Self.zoneID)
     }
 
     private func insightRecordID(_ id: UUID) -> CKRecord.ID {
         CKRecord.ID(recordName: "\(Self.insightPrefix)\(id.uuidString)", zoneID: Self.zoneID)
-    }
-
-    private func behaviorRecordID(_ id: UUID) -> CKRecord.ID {
-        CKRecord.ID(recordName: "\(Self.behaviorPrefix)\(id.uuidString)", zoneID: Self.zoneID)
     }
 
     private func habitRecordID(_ id: UUID) -> CKRecord.ID {
@@ -677,9 +663,7 @@ final class CloudKitSyncService {
         [
             floorplanDescriptor,
             settingsDescriptor,
-            opportunityDescriptor,
             thresholdDescriptor,
-            behaviorDescriptor,
             habitDescriptor
         ]
     }
@@ -786,38 +770,6 @@ private extension CloudKitSyncService {
         )
     }
 
-    var opportunityDescriptor: CloudKitSyncDescriptor {
-        CloudKitSyncDescriptor(
-            recordType: "AutomationOpportunity",
-            recordPrefix: Self.opportunityPrefix,
-            pendingChanges: { [self] context, cutoff in
-                let opportunities = (try? context.fetch(FetchDescriptor<AutomationOpportunity>())) ?? []
-                return opportunities
-                    .filter { $0.modifiedAt > (cutoff ?? .distantPast) }
-                    .map { .saveRecord(opportunityRecordID($0.id)) }
-            },
-            buildRecord: { [self] recordID, context in
-                guard let id = uuid(from: recordID, prefix: Self.opportunityPrefix) else { return nil }
-                let descriptor = FetchDescriptor<AutomationOpportunity>(predicate: #Predicate { $0.id == id })
-                guard let opp = (try? context.fetch(descriptor))?.first else { return nil }
-                return opp.toCKRecord(recordID: recordID)
-            },
-            applyRecord: { [self] record, context in
-                applyOpportunityRecord(record, context: context)
-            },
-            deleteRecord: { [self] recordID, context in
-                deleteOpportunityRecord(name: recordID.recordName, context: context)
-            },
-            overlayLocalFields: { [self] serverRecord, context in
-                guard let id = uuid(from: serverRecord.recordID, prefix: Self.opportunityPrefix) else { return }
-                let descriptor = FetchDescriptor<AutomationOpportunity>(predicate: #Predicate { $0.id == id })
-                guard let opp = (try? context.fetch(descriptor))?.first else { return }
-                overlayFields(from: opp.toCKRecord(recordID: serverRecord.recordID), to: serverRecord)
-            },
-            markSavedRecord: { _ in }
-        )
-    }
-
     var thresholdDescriptor: CloudKitSyncDescriptor {
         CloudKitSyncDescriptor(
             recordType: "SensorAlertThreshold",
@@ -886,42 +838,6 @@ private extension CloudKitSyncService {
                 let descriptor = FetchDescriptor<PersistedInsight>(predicate: #Predicate { $0.id == id })
                 guard let insight = (try? context.fetch(descriptor))?.first else { return }
                 overlayFields(from: insight.toCKRecord(recordID: serverRecord.recordID), to: serverRecord)
-            },
-            markSavedRecord: { _ in }
-        )
-    }
-
-    var behaviorDescriptor: CloudKitSyncDescriptor {
-        CloudKitSyncDescriptor(
-            recordType: "PersistedBehavioralPattern",
-            recordPrefix: Self.behaviorPrefix,
-            pendingChanges: { [self] context, cutoff in
-                guard isAISyncEnabled(context: context) else { return [] }
-                let patterns = (try? context.fetch(FetchDescriptor<PersistedBehavioralPattern>())) ?? []
-                return patterns
-                    .filter { $0.modifiedAt > (cutoff ?? .distantPast) }
-                    .map { .saveRecord(behaviorRecordID($0.id)) }
-            },
-            buildRecord: { [self] recordID, context in
-                guard isAISyncEnabled(context: context),
-                      let id = uuid(from: recordID, prefix: Self.behaviorPrefix)
-                else { return nil }
-                let descriptor = FetchDescriptor<PersistedBehavioralPattern>(predicate: #Predicate { $0.id == id })
-                guard let pattern = (try? context.fetch(descriptor))?.first else { return nil }
-                return pattern.toCKRecord(recordID: recordID)
-            },
-            applyRecord: { [self] record, context in
-                guard isAISyncEnabled(context: context) else { return }
-                applyBehaviorRecord(record, context: context)
-            },
-            deleteRecord: { _, _ in },
-            overlayLocalFields: { [self] serverRecord, context in
-                guard isAISyncEnabled(context: context),
-                      let id = uuid(from: serverRecord.recordID, prefix: Self.behaviorPrefix)
-                else { return }
-                let descriptor = FetchDescriptor<PersistedBehavioralPattern>(predicate: #Predicate { $0.id == id })
-                guard let pattern = (try? context.fetch(descriptor))?.first else { return }
-                overlayFields(from: pattern.toCKRecord(recordID: serverRecord.recordID), to: serverRecord)
             },
             markSavedRecord: { _ in }
         )
@@ -1658,94 +1574,6 @@ private extension CloudKitSyncService {
         }
     }
 
-    // MARK: - AutomationOpportunity
-
-    func applyOpportunityRecord(_ record: CKRecord, context: ModelContext) {
-        guard let uuidStr = record["id"] as? String,
-              let id = UUID(uuidString: uuidStr)
-        else { return }
-
-        let remoteModifiedAt = record["modifiedAt"] as? Date ?? .distantPast
-        let descriptor = FetchDescriptor<AutomationOpportunity>(predicate: #Predicate { $0.id == id })
-
-        if let existing = (try? context.fetch(descriptor))?.first {
-            guard remoteModifiedAt > existing.modifiedAt else { return }
-            populateOpportunityFields(existing, from: record)
-        } else {
-            let opp = AutomationOpportunity(
-                id: id,
-                profileID: (record["profileID"] as? String).flatMap(UUID.init),
-                createdAt: record["createdAt"] as? Date ?? .now,
-                lastUpdatedAt: record["lastUpdatedAt"] as? Date ?? .now,
-                title: record["title"] as? String ?? "",
-                naturalLanguage: record["naturalLanguage"] as? String ?? "",
-                roomName: record["roomName"] as? String ?? "",
-                patternID: (record["patternID"] as? String).flatMap(UUID.init) ?? UUID(),
-                confidence: record["confidence"] as? Double ?? 0,
-                observations: record["observations"] as? Int ?? 0,
-                firstObservedAt: record["firstObservedAt"] as? Date ?? .now,
-                lastObservedAt: record["lastObservedAt"] as? Date ?? .now,
-                avgTimeString: record["avgTimeString"] as? String,
-                timeDeviationMinutes: record["timeDeviationMinutes"] as? Int ?? 0,
-                dayTypeLabel: record["dayTypeLabel"] as? String ?? "",
-                patternTypeRaw: record["patternTypeRaw"] as? String ?? "",
-                triggerType: record["triggerType"] as? String ?? "",
-                triggerTime: record["triggerTime"] as? String,
-                triggerWeekdaysRaw: record["triggerWeekdaysRaw"] as? String,
-                triggerSensorType: record["triggerSensorType"] as? String,
-                triggerThreshold: record["triggerThreshold"] as? Double,
-                triggerDirection: record["triggerDirection"] as? String,
-                triggerConditionsRaw: record["triggerConditionsRaw"] as? String,
-                effectAccessoryIDString: record["effectAccessoryIDString"] as? String,
-                effectActionRaw: record["effectActionRaw"] as? String ?? "",
-                effectValue: record["effectValue"] as? Double,
-                effectValue2: record["effectValue2"] as? Double,
-                effectSceneName: record["effectSceneName"] as? String,
-                statusRaw: record["statusRaw"] as? String ?? OpportunityStatus.pending.rawValue,
-                snoozedUntil: record["snoozedUntil"] as? Date,
-                dismissedAt: record["dismissedAt"] as? Date,
-                approvedAt: record["approvedAt"] as? Date,
-                originRaw: record["originRaw"] as? String ?? OpportunityOrigin.detected.rawValue
-            )
-            opp.modifiedAt = remoteModifiedAt
-            context.insert(opp)
-        }
-    }
-
-    func populateOpportunityFields(_ opp: AutomationOpportunity, from record: CKRecord) {
-        opp.modifiedAt              = record["modifiedAt"] as? Date ?? opp.modifiedAt
-        opp.lastUpdatedAt           = record["lastUpdatedAt"] as? Date ?? opp.lastUpdatedAt
-        opp.title                   = record["title"] as? String ?? opp.title
-        opp.naturalLanguage         = record["naturalLanguage"] as? String ?? opp.naturalLanguage
-        opp.confidence              = record["confidence"] as? Double ?? opp.confidence
-        opp.observations            = record["observations"] as? Int ?? opp.observations
-        opp.lastObservedAt          = record["lastObservedAt"] as? Date ?? opp.lastObservedAt
-        opp.avgTimeString           = record["avgTimeString"] as? String ?? opp.avgTimeString
-        opp.triggerTime             = record["triggerTime"] as? String ?? opp.triggerTime
-        opp.triggerWeekdaysRaw      = record["triggerWeekdaysRaw"] as? String ?? opp.triggerWeekdaysRaw
-        opp.triggerThreshold        = record["triggerThreshold"] as? Double ?? opp.triggerThreshold
-        opp.triggerDirection        = record["triggerDirection"] as? String ?? opp.triggerDirection
-        opp.triggerConditionsRaw    = record["triggerConditionsRaw"] as? String ?? opp.triggerConditionsRaw
-        opp.effectAccessoryIDString = record["effectAccessoryIDString"] as? String ?? opp.effectAccessoryIDString
-        opp.effectActionRaw         = record["effectActionRaw"] as? String ?? opp.effectActionRaw
-        opp.effectValue             = record["effectValue"] as? Double ?? opp.effectValue
-        opp.effectValue2            = record["effectValue2"] as? Double ?? opp.effectValue2
-        opp.effectSceneName         = record["effectSceneName"] as? String ?? opp.effectSceneName
-        opp.statusRaw               = record["statusRaw"] as? String ?? opp.statusRaw
-        opp.snoozedUntil            = record["snoozedUntil"] as? Date ?? opp.snoozedUntil
-        opp.dismissedAt             = record["dismissedAt"] as? Date ?? opp.dismissedAt
-        opp.approvedAt              = record["approvedAt"] as? Date ?? opp.approvedAt
-    }
-
-    func deleteOpportunityRecord(name: String, context: ModelContext) {
-        let uuidStr = String(name.dropFirst(Self.opportunityPrefix.count))
-        guard let id = UUID(uuidString: uuidStr) else { return }
-        let descriptor = FetchDescriptor<AutomationOpportunity>(predicate: #Predicate { $0.id == id })
-        if let opp = (try? context.fetch(descriptor))?.first {
-            context.delete(opp)
-        }
-    }
-
     // MARK: - SensorAlertThreshold
 
     func applyThresholdRecord(_ record: CKRecord, context: ModelContext) {
@@ -1846,71 +1674,6 @@ private extension CloudKitSyncService {
         insight.sourceAccessoryName  = record["sourceAccessoryName"] as? String ?? insight.sourceAccessoryName
         insight.sourceServiceType    = record["sourceServiceType"] as? String ?? insight.sourceServiceType
         insight.promptVersion        = record["promptVersion"] as? String ?? insight.promptVersion
-    }
-
-    func applyBehaviorRecord(_ record: CKRecord, context: ModelContext) {
-        guard let uuidStr = record["id"] as? String,
-              let id = UUID(uuidString: uuidStr)
-        else { return }
-
-        let remoteModifiedAt = record["modifiedAt"] as? Date ?? .distantPast
-        let descriptor = FetchDescriptor<PersistedBehavioralPattern>(predicate: #Predicate { $0.id == id })
-
-        if let existing = (try? context.fetch(descriptor))?.first {
-            guard remoteModifiedAt > existing.modifiedAt else { return }
-            populateBehaviorFields(existing, from: record)
-        } else {
-            let pattern = PersistedBehavioralPattern(
-                id: id,
-                profileID: (record["profileID"] as? String).flatMap(UUID.init),
-                patternTypeRaw: record["patternTypeRaw"] as? String ?? BehavioralPatternType.temporal.rawValue,
-                detectedAt: record["detectedAt"] as? Date ?? .now,
-                accessoryName: record["accessoryName"] as? String ?? "",
-                accessoryID: (record["accessoryID"] as? String).flatMap(UUID.init),
-                roomName: record["roomName"] as? String ?? "",
-                eventTypeRaw: record["eventTypeRaw"] as? String ?? "",
-                actionRaw: record["actionRaw"] as? String ?? BehavioralAction.on.rawValue,
-                numericValue: record["numericValue"] as? Double,
-                avgMinuteOfDay: record["avgMinuteOfDay"] as? Int ?? 0,
-                timeDeviationMinutes: record["timeDeviationMinutes"] as? Int ?? 0,
-                weekdaysRaw: record["weekdaysRaw"] as? String,
-                dayTypeRaw: record["dayTypeRaw"] as? String,
-                causeSignature: record["causeSignature"] as? String,
-                causeName: record["causeName"] as? String,
-                avgGapSeconds: record["avgGapSeconds"] as? Double,
-                observations: record["observations"] as? Int ?? 0,
-                validations: record["validations"] as? Int ?? 0,
-                firstObservedAt: record["firstObservedAt"] as? Date ?? .now,
-                lastObservedAt: record["lastObservedAt"] as? Date ?? .now,
-                stabilityDays: record["stabilityDays"] as? Int ?? 0,
-                distinctActiveDays: record["distinctActiveDays"] as? Int,
-                statusRaw: record["statusRaw"] as? String ?? BehavioralPatternStatus.active.rawValue,
-                dismissedAt: record["dismissedAt"] as? Date,
-                approvedAt: record["approvedAt"] as? Date,
-                naturalLanguageDescription: record["naturalLanguageDescription"] as? String ?? ""
-            )
-            pattern.modifiedAt = remoteModifiedAt
-            context.insert(pattern)
-        }
-    }
-
-    func populateBehaviorFields(_ pattern: PersistedBehavioralPattern, from record: CKRecord) {
-        pattern.modifiedAt                 = record["modifiedAt"] as? Date ?? pattern.modifiedAt
-        pattern.observations               = record["observations"] as? Int ?? pattern.observations
-        pattern.validations                = record["validations"] as? Int ?? pattern.validations
-        pattern.lastObservedAt             = record["lastObservedAt"] as? Date ?? pattern.lastObservedAt
-        pattern.distinctActiveDays         = record["distinctActiveDays"] as? Int ?? pattern.distinctActiveDays
-        pattern.statusRaw                  = record["statusRaw"] as? String ?? pattern.statusRaw
-        pattern.dismissedAt                = record["dismissedAt"] as? Date ?? pattern.dismissedAt
-        pattern.approvedAt                 = record["approvedAt"] as? Date ?? pattern.approvedAt
-        pattern.naturalLanguageDescription = record["naturalLanguageDescription"] as? String ?? pattern.naturalLanguageDescription
-        pattern.weekdaysRaw                = record["weekdaysRaw"] as? String ?? pattern.weekdaysRaw
-        pattern.avgMinuteOfDay             = record["avgMinuteOfDay"] as? Int ?? pattern.avgMinuteOfDay
-        pattern.timeDeviationMinutes       = record["timeDeviationMinutes"] as? Int ?? pattern.timeDeviationMinutes
-        pattern.numericValue               = record["numericValue"] as? Double ?? pattern.numericValue
-        pattern.causeSignature             = record["causeSignature"] as? String ?? pattern.causeSignature
-        pattern.causeName                  = record["causeName"] as? String ?? pattern.causeName
-        pattern.avgGapSeconds              = record["avgGapSeconds"] as? Double ?? pattern.avgGapSeconds
     }
 
     func applyHabitRecord(_ record: CKRecord, context: ModelContext) {

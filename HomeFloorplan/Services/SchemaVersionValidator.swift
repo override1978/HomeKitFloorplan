@@ -12,7 +12,9 @@ import SwiftData
 //   • If a migration is non-lightweight (e.g. custom mapping), create a
 //     VersionedSchema + SchemaMigrationPlan before shipping.
 //
-// Current schema — v21 (20 @Model types):
+// Current schema — v22 (18 @Model types):
+//   v22: AutomationOpportunity + PersistedBehavioralPattern removed with the
+//        retired behavioral analysis engine (entity removal, lightweight migration)
 //   v21: PersistedHomeInsight += signalTypeRaw: String? (lightweight migration)
 //   1.  Floorplan
 //   2.  PlacedAccessory
@@ -30,10 +32,8 @@ import SwiftData
 //   14. EffectivenessSummary
 //   15. PersistedHomeInsight (primary unified insight store)
 //   16. ProactiveNotification
-//   17. AutomationOpportunity
-//   18. PersistedBehavioralPattern
-//   19. HabitPattern
-//   20. SyncableSettings
+//   17. HabitPattern
+//   18. SyncableSettings
 //
 // NOTE: Automated migration tests require a dedicated test target.
 // The project currently has no test target. When one is added, create a
@@ -47,7 +47,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 21
+    static let currentVersion: Int = 22
 
     // MARK: - Persistence
 

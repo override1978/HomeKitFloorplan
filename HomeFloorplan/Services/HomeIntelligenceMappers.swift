@@ -292,32 +292,6 @@ enum HomeInsightMapper {
         )
     }
 
-    static func map(_ opportunity: AutomationOpportunity) -> HomeInsight {
-        return HomeInsight(
-            id: opportunity.id,
-            kind: .opportunity,
-            category: .automation,
-            severity: opportunity.confidence >= 0.80 ? .medium : .low,
-            status: HomeInsightStatus(opportunityStatus: opportunity.status),
-            title: opportunity.title,
-            message: opportunity.naturalLanguage,
-            whyExplanation: opportunity.scheduleSummary,
-            recommendation: opportunity.isStructurallyConvertibleToAutomation ? "Review automation" : "Create manually",
-            sourceEntityID: opportunity.effectAccessoryIDString,
-            roomName: opportunity.roomName,
-            createdAt: opportunity.createdAt,
-            updatedAt: opportunity.lastUpdatedAt,
-            startedAt: opportunity.firstObservedAt,
-            resolvedAt: opportunity.approvedAt ?? opportunity.dismissedAt,
-            confidence: opportunity.confidence,
-            dedupeKey: "automationOpportunity|\(opportunity.patternID.uuidString)",
-            suggestedActionJSON: encodeOpportunityAction(opportunity),
-            sourceRecordType: String(describing: AutomationOpportunity.self),
-            sourceRecordID: opportunity.id.uuidString,
-            syncPolicy: .syncFull
-        )
-    }
-
     static func map(_ insight: SecurityInsight) -> HomeInsight {
         HomeInsight(
             id: insight.id,
@@ -519,36 +493,6 @@ enum HomeInsightMapper {
         }
     }
 
-    private static func encodeOpportunityAction(_ opportunity: AutomationOpportunity) -> String? {
-        struct Payload: Codable {
-            var triggerType: String
-            var triggerTime: String?
-            var triggerWeekdays: [Int]
-            var triggerSensorType: String?
-            var triggerThreshold: Double?
-            var triggerDirection: String?
-            var effectAccessoryID: String?
-            var effectAction: String
-            var effectValue: Double?
-            var effectValue2: Double?
-            var effectSceneName: String?
-        }
-        let payload = Payload(
-            triggerType: opportunity.triggerType,
-            triggerTime: opportunity.triggerTime,
-            triggerWeekdays: opportunity.triggerWeekdays,
-            triggerSensorType: opportunity.triggerSensorType,
-            triggerThreshold: opportunity.triggerThreshold,
-            triggerDirection: opportunity.triggerDirection,
-            effectAccessoryID: opportunity.effectAccessoryIDString,
-            effectAction: opportunity.effectActionRaw,
-            effectValue: opportunity.effectValue,
-            effectValue2: opportunity.effectValue2,
-            effectSceneName: opportunity.effectSceneName
-        )
-        guard let data = try? JSONEncoder().encode(payload) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
 }
 
 private extension HomeInsightScore {
@@ -668,21 +612,6 @@ private extension HomeInsightStatus {
             self = .executed
         case .active, nil:
             self = .active
-        }
-    }
-
-    init(opportunityStatus: OpportunityStatus) {
-        switch opportunityStatus {
-        case .pending:
-            self = .active
-        case .snoozed:
-            self = .snoozed
-        case .approved:
-            self = .accepted
-        case .dismissed:
-            self = .dismissed
-        case .expired:
-            self = .expired
         }
     }
 

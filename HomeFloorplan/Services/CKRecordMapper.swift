@@ -88,50 +88,6 @@ extension Floorplan {
     }
 }
 
-// MARK: - AutomationOpportunity → CKRecord
-
-extension AutomationOpportunity {
-
-    func toCKRecord(recordID: CKRecord.ID) -> CKRecord {
-        let record = CKRecord(recordType: "AutomationOpportunity", recordID: recordID)
-        record["id"]                      = id.uuidString
-        record["profileID"]               = profileID?.uuidString
-        record["modifiedAt"]              = modifiedAt
-        record["createdAt"]               = createdAt
-        record["lastUpdatedAt"]           = lastUpdatedAt
-        record["title"]                   = title
-        record["naturalLanguage"]         = naturalLanguage
-        record["roomName"]                = roomName
-        record["patternID"]               = patternID.uuidString
-        record["confidence"]              = confidence
-        record["observations"]            = observations
-        record["firstObservedAt"]         = firstObservedAt
-        record["lastObservedAt"]          = lastObservedAt
-        record["avgTimeString"]           = avgTimeString
-        record["timeDeviationMinutes"]    = timeDeviationMinutes
-        record["dayTypeLabel"]            = dayTypeLabel
-        record["patternTypeRaw"]          = patternTypeRaw
-        record["triggerType"]             = triggerType
-        record["triggerTime"]             = triggerTime
-        record["triggerWeekdaysRaw"]      = triggerWeekdaysRaw
-        record["triggerSensorType"]       = triggerSensorType
-        record["triggerThreshold"]        = triggerThreshold
-        record["triggerDirection"]        = triggerDirection
-        record["triggerConditionsRaw"]    = triggerConditionsRaw
-        record["effectAccessoryIDString"] = effectAccessoryIDString
-        record["effectActionRaw"]         = effectActionRaw
-        record["effectValue"]             = effectValue
-        record["effectValue2"]            = effectValue2
-        record["effectSceneName"]         = effectSceneName
-        record["statusRaw"]               = statusRaw
-        record["snoozedUntil"]            = snoozedUntil
-        record["dismissedAt"]             = dismissedAt
-        record["approvedAt"]              = approvedAt
-        record["originRaw"]               = originRaw
-        return record
-    }
-}
-
 // MARK: - SensorAlertThreshold → CKRecord
 
 extension SensorAlertThreshold {
@@ -194,44 +150,6 @@ extension PersistedInsight {
         record["sourceAccessoryName"]  = sourceAccessoryName
         record["sourceServiceType"]    = sourceServiceType
         record["promptVersion"]        = promptVersion
-        return record
-    }
-}
-
-// MARK: - PersistedBehavioralPattern -> CKRecord
-
-extension PersistedBehavioralPattern {
-
-    func toCKRecord(recordID: CKRecord.ID) -> CKRecord {
-        let record = CKRecord(recordType: "PersistedBehavioralPattern", recordID: recordID)
-        record["id"]                         = id.uuidString
-        record["profileID"]                  = profileID?.uuidString
-        record["modifiedAt"]                 = modifiedAt
-        record["patternTypeRaw"]             = patternTypeRaw
-        record["detectedAt"]                 = detectedAt
-        record["accessoryName"]              = accessoryName
-        record["accessoryID"]                = accessoryID?.uuidString
-        record["roomName"]                   = roomName
-        record["eventTypeRaw"]               = eventTypeRaw
-        record["actionRaw"]                  = actionRaw
-        record["numericValue"]               = numericValue
-        record["avgMinuteOfDay"]             = avgMinuteOfDay
-        record["timeDeviationMinutes"]       = timeDeviationMinutes
-        record["weekdaysRaw"]                = weekdaysRaw
-        record["dayTypeRaw"]                 = dayTypeRaw
-        record["causeSignature"]             = causeSignature
-        record["causeName"]                  = causeName
-        record["avgGapSeconds"]              = avgGapSeconds
-        record["observations"]               = observations
-        record["validations"]                = validations
-        record["firstObservedAt"]            = firstObservedAt
-        record["lastObservedAt"]             = lastObservedAt
-        record["stabilityDays"]              = stabilityDays
-        record["distinctActiveDays"]         = distinctActiveDays
-        record["statusRaw"]                  = statusRaw
-        record["dismissedAt"]                = dismissedAt
-        record["approvedAt"]                 = approvedAt
-        record["naturalLanguageDescription"] = naturalLanguageDescription
         return record
     }
 }

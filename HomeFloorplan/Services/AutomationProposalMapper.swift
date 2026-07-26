@@ -138,63 +138,6 @@ enum AutomationProposalMapper {
         return self.action(from: draft, capabilities: [], scenes: [], limitations: &limitations)
     }
 
-    static func proposal(
-        from opportunity: AutomationOpportunity,
-        capabilities: [AutomationCapabilityDescriptor],
-        scenes: [SceneItem],
-        sourcePattern: BehavioralPattern? = nil
-    ) -> AutomationProposal {
-        var draft = Draft(
-            source: source(from: opportunity.origin),
-            title: opportunity.title,
-            explanation: opportunity.naturalLanguage,
-            confidence: opportunity.confidence,
-            triggerType: opportunity.triggerType,
-            triggerTime: opportunity.triggerTime ?? opportunity.avgTimeString,
-            triggerWeekdays: opportunity.triggerWeekdays,
-            sensorType: opportunity.triggerSensorType,
-            sensorRoom: opportunity.roomName,
-            sensorAccessoryName: nil,
-            sensorThreshold: opportunity.triggerThreshold,
-            sensorDirection: opportunity.triggerDirection,
-            accessoryIDString: opportunity.effectAccessoryIDString,
-            actionRaw: opportunity.effectActionRaw,
-            actionValue: opportunity.effectValue,
-            actionValue2: opportunity.effectValue2,
-            sceneName: opportunity.effectSceneName,
-            scheduleKind: nil,
-            scheduleOffsetMinutes: 0,
-            presenceKind: nil,
-            presenceUserScope: nil
-        )
-
-        // Sequenze A→B: la causa vive nel pattern sorgente (nome + azione dalla signature).
-        if opportunity.triggerType == "accessoryState", let pattern = sourcePattern {
-            draft.triggerAccessoryName = pattern.causeName
-            draft.triggerAccessoryActive = pattern.causeSignature.flatMap(causeTriggerState(fromSignature:))
-        }
-
-        draft.effectAccessoryName = sourcePattern?.accessoryName
-
-        // P2 v2 — condizioni multiple: vivono nell'opportunità stessa (autosufficiente),
-        // NON nel pattern sorgente, che per i contestuali è effimero (UUID nuovo a ogni
-        // run → patternID dangling su opportunità snoozed o sincronizzate).
-        if opportunity.triggerType == "characteristic",
-           let raw = opportunity.triggerConditionsRaw,
-           let conditions = ContextualCondition.parseConditions(fromSignature: raw),
-           let primary = conditions.first {
-            if !primary.roomName.isEmpty {
-                draft.sensorRoom = primary.roomName
-            }
-            draft.secondaryConditions = Array(conditions.dropFirst())
-        }
-
-        return proposal(from: draft, capabilities: capabilities, scenes: scenes)
-    }
-
-    /// Stato che innesca la sequenza, estratto dalla causeSignature
-    /// ("eventType:accessoryName:action"): true = attivazione, false = spegnimento.
-    /// Nil per azioni non riconducibili a uno stato on/off (trigger non costruibile).
     static func causeTriggerState(fromSignature signature: String) -> Bool? {
         let parts = signature.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count >= 3, let action = parts.last else { return nil }
@@ -521,15 +464,6 @@ enum AutomationProposalMapper {
             unsupportedReason: unsupportedReason,
             shouldEnableAutomation: true
         )
-    }
-
-    private static func source(from origin: OpportunityOrigin) -> AutomationProposalSource {
-        switch origin {
-        case .detected, .contextual:
-            return .opportunity
-        case .conversational:
-            return .chatbot
-        }
     }
 
     private static func triggerType(for pattern: BehavioralPattern) -> String {

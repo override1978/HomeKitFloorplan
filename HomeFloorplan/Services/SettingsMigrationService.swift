@@ -70,13 +70,13 @@ struct SettingsMigrationService {
 
         // Only clean up keys whose migration gates are confirmed done
         let ud = UserDefaults.standard
-        var migratedPrefixes: [String] = []
-        if ud.bool(forKey: OpportunityMigrationService.migrationDoneKey) {
-            migratedPrefixes.append("behavioral.opportunities.v1")
-        }
-        if ud.bool(forKey: PatternMigrationService.migrationDoneKey) {
-            migratedPrefixes.append("behavioral.patterns.v1")
-        }
+        // The behavioral engine and its two @Model types are gone: whatever is
+        // left of their legacy VersionedStore files is unreadable garbage, so
+        // these two prefixes are cleaned unconditionally (no gate to check).
+        var migratedPrefixes: [String] = [
+            "behavioral.opportunities.v1",
+            "behavioral.patterns.v1"
+        ]
         if ud.bool(forKey: HabitPatternMigrationService.migrationDoneKey) {
             migratedPrefixes.append(HabitPatternMigrationService.legacyStoreKey)
         }
