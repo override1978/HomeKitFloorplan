@@ -107,10 +107,6 @@ final class DataLifecycleService {
 
             // ── Phase 3: Persist all changes ──────────────────────────────────
             try? ctx.save()
-
-            // ── Phase 4: Clean up UserDefaults miss counters for deleted patterns ─
-            let activePatternIDs = Self.fetchActiveBehavioralPatternIDs(context: ctx)
-            BehavioralDeviationDetector.cleanup(keepPatternIDs: activePatternIDs)
         }.value
 
         UserDefaults.standard.set(Date(), forKey: Self.lastCycleDateKey)
@@ -487,22 +483,6 @@ final class DataLifecycleService {
         #endif
     }
 
-    // MARK: - Phase 4 helper: fetch active BehavioralPattern IDs
-
-    // BehavioralPattern is NOT a SwiftData model — it lives in UserDefaults as JSON.
-    // Keys: "behavioral.patterns.v1" (global) and "behavioral.patterns.v1.<profileUUID>" (per-profile).
-    private nonisolated static func fetchActiveBehavioralPatternIDs(context: ModelContext) -> Set<UUID> {
-        let ud = UserDefaults.standard
-        let prefix = "behavioral.patterns.v1"
-        var ids = Set<UUID>()
-        for key in ud.dictionaryRepresentation().keys where key == prefix || key.hasPrefix(prefix + ".") {
-            if let data = ud.data(forKey: key),
-               let patterns = try? JSONDecoder().decode([BehavioralPattern].self, from: data) {
-                ids.formUnion(patterns.map(\.id))
-            }
-        }
-        return ids
-    }
 
     // MARK: - Phase 2b: Prune SensorAlertEvent
 

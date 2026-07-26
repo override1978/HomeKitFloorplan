@@ -279,47 +279,6 @@ enum AutomationProposalMapper {
         return proposal(from: draft, capabilities: capabilities, scenes: scenes)
     }
 
-    static func proposal(
-        from pattern: BehavioralPattern,
-        capabilities: [AutomationCapabilityDescriptor],
-        scenes: [SceneItem]
-    ) -> AutomationProposal {
-        var draft = Draft(
-            source: .opportunity,
-            title: pattern.localizedTitle,
-            explanation: pattern.naturalLanguageDescription,
-            confidence: pattern.confidence,
-            triggerType: triggerType(for: pattern),
-            triggerTime: pattern.avgTimeString,
-            triggerWeekdays: pattern.weekdays,
-            sensorType: nil,
-            sensorRoom: pattern.roomName,
-            sensorAccessoryName: nil,
-            sensorThreshold: nil,
-            sensorDirection: nil,
-            accessoryIDString: pattern.patternType == .scene ? nil : pattern.accessoryID?.uuidString,
-            actionRaw: pattern.action.rawValue,
-            actionValue: actionValue(for: pattern),
-            actionValue2: nil,
-            sceneName: sceneName(for: pattern),
-            scheduleKind: nil,
-            scheduleOffsetMinutes: 0,
-            presenceKind: nil,
-            presenceUserScope: nil
-        )
-
-        if pattern.patternType == .sequential {
-            draft.triggerAccessoryName = pattern.causeName
-            draft.triggerAccessoryActive = pattern.causeSignature.flatMap(causeTriggerState(fromSignature:))
-        }
-
-        if pattern.patternType != .scene {
-            draft.effectAccessoryName = pattern.accessoryName
-        }
-
-        return proposal(from: draft, capabilities: capabilities, scenes: scenes)
-    }
-
     private static func proposal(
         from draft: Draft,
         capabilities: [AutomationCapabilityDescriptor],
@@ -464,33 +423,6 @@ enum AutomationProposalMapper {
             unsupportedReason: unsupportedReason,
             shouldEnableAutomation: true
         )
-    }
-
-    private static func triggerType(for pattern: BehavioralPattern) -> String {
-        switch pattern.patternType {
-        case .sequential:
-            return "accessoryState"
-        case .contextual:
-            return "characteristic"
-        case .temporal, .lighting, .scene:
-            return "calendar"
-        }
-    }
-
-    private static func actionValue(for pattern: BehavioralPattern) -> Double? {
-        switch pattern.action {
-        case .dim:
-            return pattern.numericValue
-        default:
-            return nil
-        }
-    }
-
-    private static func sceneName(for pattern: BehavioralPattern) -> String? {
-        guard pattern.patternType == .scene else { return nil }
-        return pattern.causeName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            ? pattern.causeName
-            : pattern.accessoryName
     }
 
     private static func startEvent(

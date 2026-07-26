@@ -137,10 +137,6 @@ final class ProactiveIntelligenceService {
             occupancyIsAway:  occupancyService?.isLikelyAway ?? false
         )
 
-        // 0. Habit analysis — AI-powered, throttled internally (max once/hour).
-        await habitService.analyzeHabits()
-        mark("habitAI")
-
         // 1. Predictive environmental alerts (pattern-based, before-the-fact)
         if !context.suppressNonCritical {
             let recurrence = EnvironmentalPatternAnalyzer.loadPatterns()
@@ -149,7 +145,7 @@ final class ProactiveIntelligenceService {
             upsertHomeInsights(predictiveInsights)
             autoResolvePredictiveInsights(currentSignals: predictive)
         }
-        mark("opportunities+predictive")
+        mark("predictive")
 
         // 5. Sensor anomaly detection (device health)
         let anomalies = await SensorAnomalyDetector.detect(modelContainer: modelContainer)
@@ -244,11 +240,6 @@ final class ProactiveIntelligenceService {
         notification.dismissCount += 1
         notification.lastUpdatedAt = Date()
         updatePersistedHomeInsightStatus(for: notification, status: .dismissed)
-        // Record miss for behavioral patterns to track repeated dismissals
-        if let sourceID = notification.sourceID, let patternID = UUID(uuidString: sourceID),
-           notification.category == .behavioralAI {
-            BehavioralDeviationDetector.recordMiss(for: patternID)
-        }
         save()
         loadNotifications()
     }
@@ -266,10 +257,6 @@ final class ProactiveIntelligenceService {
         notification.status       = .actedOn
         notification.lastUpdatedAt = Date()
         updatePersistedHomeInsightStatus(for: notification, status: .executed)
-        if let sourceID = notification.sourceID, let patternID = UUID(uuidString: sourceID),
-           notification.category == .behavioralAI {
-            BehavioralDeviationDetector.resetMisses(for: patternID)
-        }
         save()
         loadNotifications()
     }
@@ -559,22 +546,6 @@ final class ProactiveIntelligenceService {
         }
     }
 
-    private func autoResolveDeviationInsights(currentSignals: [DeviationSignal]) {
-        let activeKeys = Set(currentSignals.map { HomeInsightMapper.map($0).dedupeKey })
-        let ctx = modelContainer.mainContext
-        let descriptor = FetchDescriptor<PersistedHomeInsight>(
-            predicate: #Predicate {
-                $0.statusRaw == "active"
-            }
-        )
-        let persisted = (try? ctx.fetch(descriptor)) ?? []
-        for insight in persisted
-        where insight.sourceRecordType == String(describing: DeviationSignal.self)
-            && !activeKeys.contains(insight.dedupeKey) {
-            insight.markResolved()
-        }
-    }
-
     private func autoResolveMaintenanceInsights(currentSignals: [MaintenanceSignal]) {
         let activeKeys = Set(currentSignals.map(\.semanticKey))
         let ctx = modelContainer.mainContext
@@ -707,26 +678,6 @@ final class ProactiveIntelligenceService {
             }
         )
         return (try? ctx.fetch(descriptor).isEmpty) == false
-    }
-
-    private func fetchRecentEventSignatures() async -> Set<String> {
-        let context = ModelContext(modelContainer)
-        let cutoff  = Date().addingTimeInterval(-2 * 3600)
-        let descriptor = FetchDescriptor<AccessoryEvent>(
-            predicate: #Predicate { $0.timestamp >= cutoff }
-        )
-        let events = (try? context.fetch(descriptor)) ?? []
-        var sigs = Set<String>()
-        for e in events {
-            let action: BehavioralAction
-            if let brightness = e.brightness, e.state {
-                action = brightness < 0.95 ? .dim : .on
-            } else {
-                action = e.state ? .on : .off
-            }
-            sigs.insert("\(e.eventType):\(e.accessoryName):\(action.rawValue)")
-        }
-        return sigs
     }
 
     private func save() {

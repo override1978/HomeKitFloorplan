@@ -53,21 +53,15 @@ struct AutomationProposalMapperTests {
         #expect(action.secondaryValue == 24)
     }
 
-    @Test("UUID effetto estraneo: riabbinato per nome+stanza alle capability locali")
+    @Test("UUID effetto estraneo: riabbinato per nome alle capability locali")
     func staleEffectAccessoryIDResolvesByName() {
-        // Scenario device slave: l'opportunity/pattern arriva via sync con un UUID
-        // HomeKit di un ALTRO device. Il mapper deve riabbinare per nome invece
-        // di produrre una proposta senza azioni.
+        // Scenario device slave: il target risolto a monte porta un UUID HomeKit
+        // di un ALTRO device, assente dal catalogo capabilities. Il mapper deve
+        // riabbinare per nome invece di produrre una proposta senza azioni.
         let foreignID = UUID()
-        let pattern = makeContextualPattern(
-            accessoryID: foreignID,
-            accessoryName: "Clima Soggiorno",
-            roomName: "Soggiorno",
-            causeSignature: "context:temperature:above:28"
-        )
-
         let proposal = AutomationProposalMapper.proposal(
-            from: pattern,
+            from: makeSuggestion(targetAccessoryName: "Clima Soggiorno"),
+            targetAccessoryID: foreignID,
             capabilities: demoCapabilities(),
             scenes: []
         )
@@ -82,15 +76,9 @@ struct AutomationProposalMapperTests {
 
     @Test("UUID estraneo senza nome abbinabile: nessuna azione, limitation esplicita")
     func unresolvableEffectAccessoryYieldsNoAction() {
-        let pattern = makeContextualPattern(
-            accessoryID: UUID(),
-            accessoryName: "Accessorio Inesistente",
-            roomName: "Cantina",
-            causeSignature: "context:temperature:above:28"
-        )
-
         let proposal = AutomationProposalMapper.proposal(
-            from: pattern,
+            from: makeSuggestion(targetAccessoryName: "Accessorio Inesistente"),
+            targetAccessoryID: UUID(),
             capabilities: demoCapabilities(),
             scenes: []
         )
@@ -166,39 +154,18 @@ struct AutomationProposalMapperTests {
         #expect(schedule.weekdays == Set([2, 3, 4, 5, 6]))
     }
 
-    private func makeContextualPattern(
-        accessoryID: UUID,
-        accessoryName: String,
-        roomName: String,
-        causeSignature: String
-    ) -> BehavioralPattern {
-        BehavioralPattern(
-            id: UUID(),
-            patternType: .contextual,
-            detectedAt: Date(),
-            accessoryName: accessoryName,
-            accessoryID: accessoryID,
-            roomName: roomName,
-            eventTypeRaw: "thermostat",
-            action: .on,
-            numericValue: nil,
-            avgMinuteOfDay: 14 * 60,
-            timeDeviationMinutes: 120,
-            weekdays: [],
-            dayType: nil,
-            causeSignature: causeSignature,
-            causeName: "test",
-            avgGapSeconds: nil,
-            observations: 8,
-            validations: 8,
-            firstObservedAt: Date().addingTimeInterval(-12 * 24 * 3600),
-            lastObservedAt: Date(),
-            stabilityDays: 12,
-            distinctActiveDays: 8,
-            status: .active,
-            dismissedAt: nil,
-            approvedAt: nil,
-            naturalLanguageDescription: "test"
+    private func makeSuggestion(targetAccessoryName: String) -> HabitInterpreterCore.RoutineSuggestion {
+        HabitInterpreterCore.RoutineSuggestion(
+            title: "Test routine",
+            explanation: "test",
+            triggerType: "calendar",
+            triggerTime: "14:00",
+            weekdays: nil,
+            triggerAccessoryName: nil,
+            targetAccessoryName: targetAccessoryName,
+            additionalTargetNames: nil,
+            action: "on",
+            scheduleKind: nil
         )
     }
 

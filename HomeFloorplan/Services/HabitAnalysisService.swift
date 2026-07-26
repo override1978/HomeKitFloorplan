@@ -8,7 +8,7 @@ struct ClusterNamingInput {
     let clusterID:        String    // "burst_cluster:A|B|C|D"
     let memberNames:      [String]  // parsed from clusterID (top-4 accessories)
     let dominantRoom:     String?   // nil — burst clusters span multiple rooms
-    let typicalTime:      String    // e.g. "22:30" from matching BehavioralPattern
+    let typicalTime:      String    // e.g. "22:30"
     let matchedSceneName: String?   // HomeKit scene name if matched
 }
 
@@ -70,19 +70,6 @@ final class HabitAnalysisService {
         loadPersistedClusterNames()
     }
 
-    // MARK: - Cluster Naming (primary entry point)
-
-    // MARK: - Cluster name lookup
-
-    /// Returns the LLM-assigned name for a burst-cluster BehavioralPattern, or nil.
-    func name(for pattern: BehavioralPattern) -> String? {
-        guard pattern.patternType == .scene,
-              let sig = pattern.causeSignature,
-              sig.hasPrefix("burst_cluster:")
-        else { return nil }
-        return clusterNames[sig]
-    }
-
     // MARK: - Approve / Dismiss (legacy HabitPattern card actions)
 
     func approve(_ pattern: HabitPattern) {
@@ -99,10 +86,6 @@ final class HabitAnalysisService {
     }
 
     // MARK: - Backward-compat stub (call sites in ProactiveIntelligenceService, HabitsView, App)
-
-    func analyzeHabits(knownPatterns: [BehavioralPattern] = []) async {
-        // No-op: naming is triggered by scheduleNaming().
-    }
 
     // MARK: - Stale Pattern Cleanup
 
@@ -154,24 +137,6 @@ final class HabitAnalysisService {
         } catch {
             lastCallResult = .error(message: error.localizedDescription)
             dprint("❌ HabitNaming: \(error.localizedDescription)")
-        }
-    }
-
-    private func buildInputsFromPatterns(_ patterns: [BehavioralPattern]) -> [ClusterNamingInput] {
-        patterns.compactMap { pattern -> ClusterNamingInput? in
-            guard pattern.patternType == .scene,
-                  let sig = pattern.causeSignature,
-                  sig.hasPrefix("burst_cluster:")
-            else { return nil }
-            let members = String(sig.dropFirst("burst_cluster:".count))
-                .split(separator: "|").map(String.init)
-            return ClusterNamingInput(
-                clusterID:        sig,
-                memberNames:      members,
-                dominantRoom:     nil,
-                typicalTime:      pattern.avgTimeString,
-                matchedSceneName: nil
-            )
         }
     }
 

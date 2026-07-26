@@ -2,8 +2,8 @@ import Foundation
 
 // MARK: - ContextualCondition
 
-/// Condizione ambientale di un pattern contestuale, codificata nella
-/// `causeSignature` del BehavioralPattern — zero schema change, stessa strategia dei
+/// Condizione ambientale di un pattern contestuale, codificata in una
+/// signature testuale — zero schema change, stessa strategia dei
 /// sequenziali P1.
 ///
 /// Formato legacy (mono-condizione, stanza dell'effetto):

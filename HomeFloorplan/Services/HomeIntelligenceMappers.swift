@@ -416,30 +416,6 @@ enum HomeInsightMapper {
         )
     }
 
-    static func map(_ signal: DeviationSignal) -> HomeInsight {
-        HomeInsight(
-            kind: .anomaly,
-            category: .habits,
-            severity: signal.consecutiveMisses >= 2 ? .medium : .low,
-            status: .active,
-            title: BehavioralDeviationDetector.headline(for: signal),
-            message: BehavioralDeviationDetector.body(for: signal),
-            whyExplanation: BehavioralDeviationDetector.whyExplanation(for: signal),
-            sourceEntityID: signal.pattern.accessoryID?.uuidString,
-            sourceEntityName: signal.pattern.accessoryName,
-            roomName: signal.pattern.roomName,
-            createdAt: Date(),
-            updatedAt: Date(),
-            startedAt: signal.expectedAt,
-            confidence: signal.pattern.confidence,
-            score: HomeInsightScore(BehavioralDeviationDetector.score(for: signal)),
-            dedupeKey: "behavioral|\(signal.pattern.accessoryName)|\(signal.pattern.action.rawValue)",
-            sourceRecordType: String(describing: DeviationSignal.self),
-            sourceRecordID: signal.pattern.id.uuidString,
-            syncPolicy: .localOnly
-        )
-    }
-
     static func map(_ notification: ProactiveNotification) -> HomeInsight {
         let mappedScore = notification.score.map {
             HomeInsightScore(
