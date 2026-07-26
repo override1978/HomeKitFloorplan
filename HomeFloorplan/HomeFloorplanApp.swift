@@ -75,7 +75,8 @@ struct HomeFloorplanApp: App {
         NotificationDeliveryOrchestrator.registerCategories()
 
         #if DEBUG
-        // Diagnostica freeze (temporanea): logga i blocchi del main actor.
+        // Diagnostica freeze (temporanea): logga i blocchi del main actor su
+        // os.Logger, così è leggibile in Console.app anche senza debugger.
         if !TestEnvironment.isRunningUnitTests {
             MainThreadWatchdog.start()
         }
