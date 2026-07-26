@@ -21,7 +21,6 @@ final class AppServices {
     let automationsService: HomeKitAutomationsService
     let securityNotifier: SecurityNotificationService
     let accessoryEventStore: AccessoryEventStore
-    let habitAnalysisService: HabitAnalysisService
     let actionExecutionService: ActionExecutionService
     let ambientalAIService: AmbientalAIService
     let dataLifecycleService: DataLifecycleService
@@ -136,8 +135,6 @@ final class AppServices {
             }
         }
         self.cloudKitSync = cloudSync
-        let habitSvc = HabitAnalysisService(aiSettings: aiSettings, modelContainer: container)
-        self.habitAnalysisService = habitSvc
         // Tracker condiviso tra AmbientalAIService (per dismiss/expiration) e ActionExecutionService
         // (per trackExecution). Una sola istanza garantisce coerenza del dataset di efficacia.
         let sharedTracker = ActionEffectivenessTracker(modelContainer: container)

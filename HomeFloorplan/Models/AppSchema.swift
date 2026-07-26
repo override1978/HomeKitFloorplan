@@ -25,7 +25,6 @@ enum AppSchema {
         EffectivenessSummary.self,
         PersistedHomeInsight.self,
         ProactiveNotification.self,
-        HabitPattern.self,
         SyncableSettings.self,
     ]) }
 }

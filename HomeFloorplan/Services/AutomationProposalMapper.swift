@@ -246,39 +246,6 @@ enum AutomationProposalMapper {
         return proposal(from: draft, capabilities: capabilities, scenes: scenes)
     }
 
-    static func proposal(
-        from pattern: HabitPattern,
-        capabilities: [AutomationCapabilityDescriptor],
-        scenes: [SceneItem]
-    ) -> AutomationProposal {
-        let legacy = legacyHabitDraft(from: pattern)
-        let draft = Draft(
-            source: .opportunity,
-            title: pattern.displayTitle,
-            explanation: pattern.patternDescription,
-            confidence: pattern.confidence,
-            triggerType: legacy.triggerType,
-            triggerTime: legacy.triggerTime,
-            triggerWeekdays: legacy.weekdays,
-            sensorType: nil,
-            sensorRoom: pattern.roomName,
-            sensorAccessoryName: nil,
-            sensorThreshold: nil,
-            sensorDirection: nil,
-            accessoryIDString: pattern.patternType == .scene ? nil : pattern.accessoryID.uuidString,
-            actionRaw: legacy.actionRaw,
-            actionValue: legacy.actionValue,
-            actionValue2: legacy.actionValue2,
-            sceneName: pattern.sceneName,
-            scheduleKind: nil,
-            scheduleOffsetMinutes: 0,
-            presenceKind: nil,
-            presenceUserScope: nil
-        )
-
-        return proposal(from: draft, capabilities: capabilities, scenes: scenes)
-    }
-
     private static func proposal(
         from draft: Draft,
         capabilities: [AutomationCapabilityDescriptor],
@@ -853,45 +820,6 @@ enum AutomationProposalMapper {
             return nil
         }
         return (hour, minute)
-    }
-
-    private struct LegacyHabitDraft {
-        var triggerType: String
-        var triggerTime: String?
-        var weekdays: [Int]
-        var actionRaw: String
-        var actionValue: Double?
-        var actionValue2: Double?
-    }
-
-    private static func legacyHabitDraft(from pattern: HabitPattern) -> LegacyHabitDraft {
-        guard let data = pattern.suggestedRuleJSON.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return LegacyHabitDraft(
-                triggerType: "calendar",
-                triggerTime: nil,
-                weekdays: Array(1...7),
-                actionRaw: "on",
-                actionValue: nil,
-                actionValue2: nil
-            )
-        }
-
-        let action = dict["action"] as? String
-            ?? dict["actionType"] as? String
-            ?? "on"
-        let explicitValue = dict["value"] as? Double
-            ?? dict["actionValue"] as? Double
-        let parsed = parseLegacyAction(action, explicitValue: explicitValue)
-
-        return LegacyHabitDraft(
-            triggerType: dict["triggerType"] as? String ?? "calendar",
-            triggerTime: dict["time"] as? String ?? dict["triggerTime"] as? String,
-            weekdays: dict["weekdays"] as? [Int] ?? dict["triggerWeekdays"] as? [Int] ?? Array(1...7),
-            actionRaw: parsed.action,
-            actionValue: parsed.value,
-            actionValue2: dict["actionValue2"] as? Double
-        )
     }
 
     private static func parseLegacyAction(

@@ -154,24 +154,3 @@ extension PersistedInsight {
     }
 }
 
-// MARK: - HabitPattern -> CKRecord
-
-extension HabitPattern {
-
-    func toCKRecord(recordID: CKRecord.ID) -> CKRecord {
-        let record = CKRecord(recordType: "HabitPattern", recordID: recordID)
-        record["id"]                 = id.uuidString
-        record["patternTypeRaw"]     = patternTypeRaw
-        record["accessoryName"]      = accessoryName
-        record["accessoryID"]        = accessoryID.uuidString
-        record["sceneName"]          = sceneName
-        record["roomName"]           = roomName
-        record["patternDescription"] = patternDescription
-        record["detectedAt"]         = detectedAt
-        record["confidence"]         = confidence
-        record["suggestedRuleJSON"]  = suggestedRuleJSON
-        record["statusRaw"]          = statusRaw
-        record["modifiedAt"]         = modifiedAt
-        return record
-    }
-}

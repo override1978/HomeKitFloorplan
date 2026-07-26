@@ -7,7 +7,6 @@ struct FloorplanOverlayContextContent: View {
     let floorplan: Floorplan
     let homeKit: HomeKitService
     let environmentViewModel: EnvironmentViewModel
-    let pendingSuggestionCount: Int
 
     private var mode: FloorplanOverlayMode {
         overlayVM.activeMode
@@ -21,9 +20,6 @@ struct FloorplanOverlayContextContent: View {
             accentColor: mode.accentColor
         ) {
             VStack(spacing: 14) {
-                if mode == .intelligence, pendingSuggestionCount > 0 {
-                    floorplanOverviewCard(for: mode)
-                }
 
                 switch mode {
                 case .controls:
@@ -61,7 +57,6 @@ struct FloorplanOverlayContextContent: View {
             }
         let attentionRooms = attentionRoomList.count
         let topEnvironmentRoom = attentionRoomList.first
-        let suggestions = pendingSuggestionCount
         let issueCount = health.criticalCount + health.warningCount
         let securityDeviceCount = homeKit.allAccessories.filter { accessory in
             accessory.services.contains { service in
@@ -80,9 +75,6 @@ struct FloorplanOverlayContextContent: View {
         } else if mode == .security, securityDeviceCount == 0 {
             color = .orange
             icon = "lock.shield"
-        } else if mode == .intelligence, suggestions > 0 {
-            color = .orange
-            icon = "sparkles"
         } else if issueCount > 0 {
             color = .orange
             icon = "checklist"
@@ -107,11 +99,6 @@ struct FloorplanOverlayContextContent: View {
                 }
                 return String(localized: "floorplan.status.security.available", defaultValue: "Security available")
             case .intelligence:
-                if suggestions > 0 {
-                    return suggestions == 1
-                        ? String(localized: "floorplan.status.intelligence.oneSuggestion", defaultValue: "One suggestion ready")
-                        : String(localized: "floorplan.status.intelligence.manySuggestions", defaultValue: "\(suggestions) suggestions ready")
-                }
                 return String(localized: "floorplan.status.intelligence.learning", defaultValue: "Intelligence is learning")
             case .controls:
                 if issueCount > 0 {
@@ -137,9 +124,6 @@ struct FloorplanOverlayContextContent: View {
                 }
                 return String(localized: "floorplan.status.security.message.available", defaultValue: "Use the cards below to review system status, monitored sensors, and highlighted rooms.")
             case .intelligence:
-                if suggestions > 0 {
-                    return String(localized: "floorplan.status.intelligence.message.suggestions", defaultValue: "Review the recommendations below. You can approve or ignore them directly from this panel.")
-                }
                 return String(localized: "floorplan.status.intelligence.message.learning", defaultValue: "No actions are ready. The home is still collecting patterns and will show reliable opportunities here.")
             case .controls:
                 if issueCount > 0 {
@@ -156,7 +140,6 @@ struct FloorplanOverlayContextContent: View {
             color: color,
             metrics: [
                 FloorplanStatusMetric(value: "\(attentionRooms)", label: String(localized: "floorplan.metric.toCheck", defaultValue: "To check")),
-                FloorplanStatusMetric(value: "\(suggestions)", label: String(localized: "floorplan.metric.suggestions", defaultValue: "Suggestions")),
                 FloorplanStatusMetric(value: "\(health.linkableUnplacedCount)", label: String(localized: "floorplan.metric.toPlace", defaultValue: "To place"))
             ]
         )

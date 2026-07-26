@@ -5,14 +5,13 @@ struct FloorplanRuntimeContextController {
     let floorplan: Floorplan
     let homeKit: HomeKitService
     let isAIEnabled: Bool
-    let pendingPatternCount: Int
 
     func overlayContext() -> FloorplanOverlayContext {
         FloorplanOverlayContext(
             hasEnvironmentData: !floorplan.linkedRooms.isEmpty,
             hasSecurityDevices: hasSecurityDevices,
             hasAIService: isAIEnabled,
-            hasIntelligenceSuggestions: isAIEnabled && pendingPatternCount > 0
+            hasIntelligenceSuggestions: false
         )
     }
 

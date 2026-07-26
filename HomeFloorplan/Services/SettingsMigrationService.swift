@@ -68,20 +68,15 @@ struct SettingsMigrationService {
             .contentsOfDirectory(at: storeDir, includingPropertiesForKeys: nil)
         else { return }
 
-        // Only clean up keys whose migration gates are confirmed done
-        let ud = UserDefaults.standard
-        // The behavioral engine and its two @Model types are gone: whatever is
-        // left of their legacy VersionedStore files is unreadable garbage, so
-        // these two prefixes are cleaned unconditionally (no gate to check).
-        var migratedPrefixes: [String] = [
+        // The habits engine and every model it fed are gone, so whatever is left
+        // of their VersionedStore files is unreadable: no migration gate to check,
+        // these prefixes are always safe to delete.
+        let migratedPrefixes = [
             "behavioral.opportunities.v1",
-            "behavioral.patterns.v1"
+            "behavioral.patterns.v1",
+            "habit.patterns.v1",
+            "habit.clusterNames.v1"
         ]
-        if ud.bool(forKey: HabitPatternMigrationService.migrationDoneKey) {
-            migratedPrefixes.append(HabitPatternMigrationService.legacyStoreKey)
-        }
-
-        guard !migratedPrefixes.isEmpty else { return }
 
         var cleaned = 0
         for file in allFiles {

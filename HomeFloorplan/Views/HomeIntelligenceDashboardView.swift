@@ -126,7 +126,6 @@ private enum LocalizedInsightCopy {
 ///   6. AI Effectiveness     — trust score + per-intent breakdown
 struct HomeIntelligenceDashboardView: View {
 
-    @Environment(HabitAnalysisService.self)          private var habitService
     @Environment(HomeKitService.self)                private var homeKit
     @Environment(HomeKitScenesService.self)          private var scenesService
     @Environment(HomeKitAutomationsService.self)     private var automationsService
@@ -230,19 +229,6 @@ struct HomeIntelligenceDashboardView: View {
             }
         }
         .task { await performRefresh() }
-    }
-
-    private func proposal(from pattern: HabitPattern) -> AutomationProposal {
-        scenesService.refresh()
-        let capabilities = homeKit.currentHome.map {
-            AutomationCapabilityCatalog.descriptors(in: $0)
-        } ?? []
-
-        return AutomationProposalMapper.proposal(
-            from: pattern,
-            capabilities: capabilities,
-            scenes: scenesService.scenes
-        )
     }
 
     // MARK: - Scroll content
@@ -760,8 +746,8 @@ struct HomeIntelligenceDashboardView: View {
 
     private func homeBriefingCard(svc: HomeKnowledgeService) -> some View {
         let attentionCount = needsAttentionItems(svc: svc).count
-        let opportunityCount = habitService.pendingPatterns.count
-        let learningCount = svc.stableHabitsCount
+        let opportunityCount = 0
+        let learningCount = 0
 
         let title: String
         let message: String
@@ -1372,12 +1358,10 @@ struct HomeIntelligenceDashboardView: View {
             service = HomeKnowledgeService(modelContainer: modelContext.container)
         }
         await service?.refresh(
-            habitPatterns: habitService.patterns,
             tracker: executionService.tracker,
             aiIsOperational: AISettings().isOperational
         )
         await proactiveService.runCycle(
-            habitService:       habitService,
             occupancyService:   occupancyService,
             maintenanceService: maintenanceService,
             presenceOverride:   locationService.presenceState,
@@ -2372,16 +2356,6 @@ private struct PhaseHeroCard: View {
                     label: String(localized: "intelligence.hero.eventsAnalyzed",
                                   defaultValue: "Data collected")
                 )
-                Divider()
-                    .frame(width: 1, height: 36)
-                    .padding(.horizontal, 14)
-                    .opacity(0.4)
-                statChip(
-                    icon: "star.fill",
-                    value: "\(svc.stableHabitsCount)",
-                    label: String(localized: "intelligence.hero.stableHabits",
-                                  defaultValue: "Stable")
-                )
                 Spacer()
             }
             .padding(.horizontal, 20)
@@ -2496,90 +2470,6 @@ private struct TrustScoreCard: View {
         )
     }
 
-}
-
-// MARK: - AISuggestionCard
-
-private struct AISuggestionCard: View {
-
-    let pattern: HabitPattern
-    let onApprove: () -> Void
-    let onDismiss: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: pattern.sfSymbol)
-                    .font(.system(size: 20))
-                    .foregroundStyle(BrandColor.primary)
-                    .frame(width: 28)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(pattern.patternDescription)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: 6) {
-                        if !pattern.roomName.isEmpty {
-                            Text(pattern.roomName)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("·")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                        Text(pattern.confidenceLabel)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(confidenceColor)
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-
-            HStack(spacing: 10) {
-                Button(action: onApprove) {
-                    Label(
-                        String(localized: "intelligence.suggestions.approve",
-                               defaultValue: "Review automation"),
-                        systemImage: "plus.circle.fill"
-                    )
-                    .font(.subheadline.weight(.medium))
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(BrandColor.primary)
-                .controlSize(.small)
-
-                Button(action: onDismiss) {
-                    Text(String(localized: "intelligence.suggestions.dismiss",
-                                defaultValue: "Dismiss"))
-                        .font(.subheadline)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .tint(.secondary)
-                .controlSize(.small)
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(BrandColor.primary.opacity(0.15), lineWidth: 1)
-                )
-        )
-    }
-
-    private var confidenceColor: Color {
-        switch pattern.confidence {
-        case 0.80...1.0:  return .green
-        case 0.60..<0.80: return Color(red: 0.7, green: 0.6, blue: 0.0)
-        default:          return .orange
-        }
-    }
 }
 
 // MARK: - AIInsightTimelineRow

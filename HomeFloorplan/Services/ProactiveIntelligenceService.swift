@@ -84,7 +84,6 @@ final class ProactiveIntelligenceService {
     // MARK: - Public Cycle API
 
     func runCycleIfNeeded(
-        habitService:       HabitAnalysisService,
         occupancyService:   OccupancyPredictionService?   = nil,
         maintenanceService: MaintenancePredictionService? = nil,
         presenceOverride:   PresenceState?                = nil,
@@ -94,7 +93,6 @@ final class ProactiveIntelligenceService {
         if let last = lastCycleAt,
            Date().timeIntervalSince(last) < minCycleInterval { return }
         await runCycle(
-            habitService:       habitService,
             occupancyService:   occupancyService,
             maintenanceService: maintenanceService,
             presenceOverride:   presenceOverride,
@@ -104,7 +102,6 @@ final class ProactiveIntelligenceService {
     }
 
     func runCycle(
-        habitService:       HabitAnalysisService,
         occupancyService:   OccupancyPredictionService?   = nil,
         maintenanceService: MaintenancePredictionService? = nil,
         presenceOverride:   PresenceState?                = nil,

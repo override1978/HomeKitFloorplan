@@ -15,7 +15,6 @@ struct IntelligenceOverlayView: View {
     let effectiveScale: CGFloat
     let effectiveOffset: CGSize
 
-    @Environment(HabitAnalysisService.self) private var habitService
     @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
     @Query(
         filter: #Predicate<PersistedHomeInsight> { $0.statusRaw == "active" },
@@ -30,7 +29,6 @@ struct IntelligenceOverlayView: View {
 
     private enum RoomIntelligenceState {
         case situation(FloorplanRoomSituationSummary)
-        case ready(count: Int, confidence: Double)
         case learning
         case needsSetup
         case disabled
@@ -263,12 +261,6 @@ struct IntelligenceOverlayView: View {
             return .situation(summary)
         }
 
-        let patterns = patterns(for: room)
-        if !patterns.isEmpty {
-            let confidence = patterns.map(\.confidence).max() ?? 0
-            return .ready(count: patterns.count, confidence: confidence)
-        }
-
         return hasPlacedMarker(in: room) ? .learning : .needsSetup
     }
 
@@ -319,12 +311,6 @@ struct IntelligenceOverlayView: View {
         return FloorplanRoomMatcher.matches(roomName: insight.relatedEntityName, linkedRoom: room)
     }
 
-    private func patterns(for room: LinkedRoom) -> [HabitPattern] {
-        habitService.pendingPatterns.filter {
-            FloorplanRoomMatcher.matches(roomName: $0.roomName, linkedRoom: room)
-        }
-    }
-
     private func hasPlacedMarker(in room: LinkedRoom) -> Bool {
         floorplan.accessories.contains { accessory in
             if accessory.linkedRoomUUID == room.hmRoomUUID {
@@ -338,8 +324,6 @@ struct IntelligenceOverlayView: View {
         switch state {
         case .situation(let summary):
             return summary.color.opacity(summary.severity >= .high ? 0.30 : 0.22)
-        case .ready(_, let confidence):
-            return Color(.systemIndigo).opacity(confidence >= 0.8 ? 0.34 : 0.26)
         case .learning: return Color(.systemIndigo).opacity(0.08)
         case .needsSetup: return Color.gray.opacity(0.05)
         case .disabled: return Color.gray.opacity(0.03)
@@ -349,7 +333,6 @@ struct IntelligenceOverlayView: View {
     private func borderColor(for state: RoomIntelligenceState) -> Color {
         switch state {
         case .situation(let summary): return summary.color
-        case .ready: return Color(.systemIndigo)
         case .learning: return Color(.systemIndigo).opacity(0.26)
         case .needsSetup: return Color.gray.opacity(0.22)
         case .disabled: return Color.gray.opacity(0.16)
@@ -359,7 +342,6 @@ struct IntelligenceOverlayView: View {
     private func badgeBackground(for state: RoomIntelligenceState) -> Color {
         switch state {
         case .situation(let summary): return summary.color.opacity(0.94)
-        case .ready: return Color(.systemIndigo).opacity(0.92)
         case .learning: return Color(.systemBackground).opacity(0.82)
         case .needsSetup: return Color(.systemBackground).opacity(0.72)
         case .disabled: return Color(.systemBackground).opacity(0.64)
@@ -369,7 +351,6 @@ struct IntelligenceOverlayView: View {
     private func badgeIcon(for state: RoomIntelligenceState) -> String {
         switch state {
         case .situation(let summary): return summary.iconName
-        case .ready: return "sparkles"
         case .learning: return "brain.head.profile"
         case .needsSetup: return "plus.viewfinder"
         case .disabled: return "sparkles.slash"
@@ -379,7 +360,6 @@ struct IntelligenceOverlayView: View {
     private func badgeText(room: LinkedRoom, state: RoomIntelligenceState) -> String {
         switch state {
         case .situation(let summary): return "\(summary.count)"
-        case .ready(let count, _): return "\(count)"
         case .learning: return room.name
         case .needsSetup: return "Completa"
         case .disabled: return room.name
@@ -387,7 +367,6 @@ struct IntelligenceOverlayView: View {
     }
 
     private func isReady(_ state: RoomIntelligenceState) -> Bool {
-        if case .ready = state { return true }
         if case .situation = state { return true }
         return false
     }
@@ -450,7 +429,6 @@ private struct FloorplanRoomSituationSummary {
 /// that room's recommendation rows are visually highlighted — content never changes.
 struct IntelligenceContextDashboard: View {
 
-    @Environment(HabitAnalysisService.self) private var habitService
     @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
     @Query(
         filter: #Predicate<PersistedHomeInsight> { $0.statusRaw == "active" },
@@ -469,27 +447,6 @@ struct IntelligenceContextDashboard: View {
         guard let id = highlightedRoomID else { return nil }
         return linkedRooms.first { $0.hmRoomUUID == id }?.name
     }
-
-    private var sortedPatterns: [HabitPattern] {
-        habitService.pendingPatterns.sorted { lhs, rhs in
-            let lhsHighlighted = FloorplanRoomMatcher.matches(
-                roomName: lhs.roomName,
-                highlightedRoomName: highlightedRoomName
-            )
-            let rhsHighlighted = FloorplanRoomMatcher.matches(
-                roomName: rhs.roomName,
-                highlightedRoomName: highlightedRoomName
-            )
-
-            if lhsHighlighted != rhsHighlighted {
-                return lhsHighlighted
-            }
-
-            return lhs.confidence > rhs.confidence
-        }
-    }
-
-    private var topAction: HabitPattern? { sortedPatterns.first }
 
     private var relevantInsights: [HomeInsight] {
         activeHomeInsights
@@ -521,18 +478,6 @@ struct IntelligenceContextDashboard: View {
         highlightedRoomSituations.isEmpty ? situations : highlightedRoomSituations
     }
 
-    private var highlightedRoomPatterns: [HabitPattern] {
-        guard let highlightedRoomName else { return [] }
-        return habitService.pendingPatterns
-            .filter {
-                FloorplanRoomMatcher.matches(
-                    roomName: $0.roomName,
-                    highlightedRoomName: highlightedRoomName
-                )
-            }
-            .sorted { $0.confidence > $1.confidence }
-    }
-
     // MARK: Body
 
     var body: some View {
@@ -542,27 +487,6 @@ struct IntelligenceContextDashboard: View {
             if !visibleSituations.isEmpty {
                 intelligenceSectionCard {
                     situationsSection
-                }
-            }
-
-            // ── Recommendations ───────────────────────────────────────────
-            if !sortedPatterns.isEmpty {
-                intelligenceSectionCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(String(localized: "intelligence.recommendations", defaultValue: "Recommendations"))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        ForEach(sortedPatterns) { pattern in
-                            let highlighted = FloorplanRoomMatcher.matches(
-                                roomName: pattern.roomName,
-                                highlightedRoomName: highlightedRoomName
-                            )
-                            recommendationRow(pattern, highlighted: highlighted)
-                            if pattern.id != sortedPatterns.last?.id {
-                                Divider().padding(.leading, 26)
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -623,14 +547,7 @@ struct IntelligenceContextDashboard: View {
 
     @ViewBuilder
     private var nextUsefulCard: some View {
-        if habitService.isAnalyzing {
-            FloorplanEmptyStateCard(
-                title: String(localized: "intelligence.analysis.running.title", defaultValue: "Analysis in progress"),
-                message: String(localized: "intelligence.analysis.running.message", defaultValue: "Updating patterns and opportunities. Recommendations will appear here when they are reliable."),
-                icon: "sparkles",
-                color: accent
-            )
-        } else if !isAIEnabled {
+        if !isAIEnabled {
             FloorplanEmptyStateCard(
                 title: String(localized: "intelligence.disabled.title", defaultValue: "Intelligence disabled"),
                 message: String(localized: "intelligence.disabled.message", defaultValue: "Enable AI in Settings to analyze habits and automation opportunities."),
@@ -652,24 +569,6 @@ struct IntelligenceContextDashboard: View {
                 situation: situation,
                 count: situations.count
             )
-        } else if let pattern = highlightedRoomPatterns.first, let roomName = highlightedRoomName {
-            nextActionCard(
-                title: String(localized: "intelligence.nextAction.room", defaultValue: "Next action in \(roomName)"),
-                pattern: pattern,
-                metrics: [
-                    FloorplanStatusMetric(value: pattern.confidenceLabel, label: String(localized: "intelligence.confidence", defaultValue: "Confidence")),
-                    FloorplanStatusMetric(value: "\(highlightedRoomPatterns.count)", label: String(localized: "intelligence.ready", defaultValue: "Ready"))
-                ]
-            )
-        } else if let pattern = topAction {
-            nextActionCard(
-                title: String(localized: "intelligence.nextAutomation.title", defaultValue: "Next automation to review"),
-                pattern: pattern,
-                metrics: [
-                    FloorplanStatusMetric(value: pattern.confidenceLabel, label: String(localized: "intelligence.confidence", defaultValue: "Confidence")),
-                    FloorplanStatusMetric(value: "\(sortedPatterns.count)", label: String(localized: "intelligence.total", defaultValue: "Total"))
-                ]
-            )
         } else if let roomName = highlightedRoomName {
             FloorplanEmptyStateCard(
                 title: String(localized: "intelligence.learning.room", defaultValue: "Learning \(roomName)"),
@@ -685,20 +584,6 @@ struct IntelligenceContextDashboard: View {
                 color: accent
             )
         }
-    }
-
-    private func nextActionCard(
-        title: String,
-        pattern: HabitPattern,
-        metrics: [FloorplanStatusMetric]
-    ) -> some View {
-        FloorplanStatusSummaryCard(
-            title: title,
-            message: pattern.patternDescription,
-            icon: pattern.sfSymbol,
-            color: accent,
-            metrics: metrics
-        )
     }
 
     private func situationSummaryCard(title: String, situation: HomeSituation, count: Int) -> some View {
@@ -798,69 +683,4 @@ struct IntelligenceContextDashboard: View {
 
     // MARK: Recommendation row
 
-    private func recommendationRow(_ pattern: HabitPattern, highlighted: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: pattern.sfSymbol)
-                    .font(.caption)
-                    .foregroundStyle(highlighted ? .white : accent)
-                    .frame(width: 18)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(pattern.displayTitle)
-                        .font(.caption.weight(.semibold))
-                    Text(pattern.patternDescription)
-                        .font(.caption)
-                        .foregroundStyle(highlighted ? .white.opacity(0.85) : .secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if !pattern.roomName.isEmpty {
-                        Text(pattern.roomName)
-                            .font(.caption2)
-                            .foregroundStyle(highlighted ? .white.opacity(0.7) : accent.opacity(0.7))
-                    }
-                }
-                Spacer(minLength: 4)
-                Text(pattern.confidenceLabel)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(highlighted ? .white : accent)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(highlighted ? Color.white.opacity(0.25) : accent.opacity(0.12)))
-            }
-
-            // Approve / dismiss
-            HStack(spacing: 8) {
-                Button {
-                    habitService.approve(pattern)
-                } label: {
-                    Label(String(localized: "common.approve", defaultValue: "Approve"), systemImage: "checkmark")
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(highlighted ? Color.white.opacity(0.2) : accent.opacity(0.15)))
-                        .foregroundStyle(highlighted ? .white : accent)
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    habitService.dismiss(pattern)
-                } label: {
-                    Label(String(localized: "common.ignore", defaultValue: "Ignore"), systemImage: "xmark")
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(highlighted ? Color.white.opacity(0.1) : Color(.systemGray5)))
-                        .foregroundStyle(highlighted ? .white.opacity(0.8) : .secondary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.leading, 26)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, highlighted ? 8 : 2)
-        .background(
-            highlighted ? accent.opacity(0.85) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .animation(.easeInOut(duration: 0.2), value: highlighted)
-    }
 }

@@ -32,7 +32,6 @@ struct FloorplanEditorView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @Environment(HabitAnalysisService.self) private var habitService
     @Environment(SmartLightingEngine.self) private var smartLightingEngine
     @Environment(CloudKitSyncService.self) private var cloudKitSync
     
@@ -230,8 +229,7 @@ struct FloorplanEditorView: View {
                         containerWidth: proxy.size.width,
                         floorplan: floorplan,
                         homeKit: homeKit,
-                        environmentViewModel: overlayEnvVM,
-                        pendingSuggestionCount: habitService.pendingPatterns.count
+                        environmentViewModel: overlayEnvVM
                     )
                 }
             }
@@ -268,12 +266,6 @@ struct FloorplanEditorView: View {
         .onChange(of: floorplan.linkedRooms.count) { _, _ in
             // Ricalcola il contesto quando le stanze linkate cambiano,
             // così la pill "Ambiente" appare non appena si collega la prima stanza.
-            refreshOverlayContext()
-        }
-        .onChange(of: habitService.pendingPatterns.count) { _, _ in
-            refreshOverlayContext()
-        }
-        .onChange(of: habitService.isAnalyzing) { _, _ in
             refreshOverlayContext()
         }
         .onChange(of: isAIEnabled) { _, _ in
@@ -828,8 +820,7 @@ struct FloorplanEditorView: View {
         FloorplanRuntimeContextController(
             floorplan: floorplan,
             homeKit: homeKit,
-            isAIEnabled: isAIEnabled,
-            pendingPatternCount: habitService.pendingPatterns.count
+            isAIEnabled: isAIEnabled
         )
     }
 

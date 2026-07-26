@@ -8,7 +8,7 @@ import Observation
 /// user-friendly snapshot for the Home Intelligence Dashboard.
 ///
 /// This is a read-only presentation layer — it never writes to any store.
-/// All business logic remains in HabitAnalysisService and ActionEffectivenessTracker.
+/// All business logic remains in ActionEffectivenessTracker.
 /// This service only reads and aggregates.
 @Observable
 @MainActor
@@ -28,8 +28,6 @@ final class HomeKnowledgeService {
     /// Per-domain maturity, ordered for display.
     var domainMaturities: [DomainMaturity] = []
 
-    /// Natural-language observations derived from HabitPattern descriptions.
-    var observations: [String] = []
 
     /// Total AI suggestion chips executed in the last 30 days.
     var totalExecuted: Int = 0
@@ -40,8 +38,6 @@ final class HomeKnowledgeService {
     /// Raw intent string of the most effective AI intent (for display mapping in view).
     var bestIntentRaw: String? = nil
 
-    /// Descriptions of pending HabitPatterns (opportunities the user has not yet approved).
-    var opportunityDescriptions: [String] = []
 
     /// Per-intent effectiveness scores (last 30 days, only intents with ≥ 1 measurement).
     var effectivenessBreakdown: [IntentEffectiveness] = []
@@ -64,11 +60,8 @@ final class HomeKnowledgeService {
     /// Deterministic natural-language summary of what the system has learned (Sprint 25.B).
     var learningNarrative: String = ""
 
-    /// Count of HabitPatterns with confidence ≥ 0.80 and status != dismissed.
-    var stableHabitsCount: Int = 0
 
     /// Count of user-approved habit patterns.
-    var acceptedSuggestionsCount: Int = 0
 
     /// True while an async refresh is running.
     var isLoading: Bool = false
@@ -115,7 +108,6 @@ final class HomeKnowledgeService {
     ///
     /// All SwiftData fetches run on a background thread to keep the main actor free.
     func refresh(
-        habitPatterns: [HabitPattern],
         tracker: ActionEffectivenessTracker,
         aiIsOperational: Bool
     ) async {
@@ -126,17 +118,6 @@ final class HomeKnowledgeService {
         let summaryStats = tracker.summaryStats(days: 30)
         let outcomeStats = tracker.outcomeStats(days: 30)
 
-        // Pre-extract HabitPattern values before background work
-        // (SwiftData @Model instances must not escape the main actor).
-        let patternCount  = habitPatterns.filter { $0.status != .dismissed }.count
-        let stableCount   = habitPatterns.filter { $0.status != .dismissed && $0.confidence >= 0.80 }.count
-        let acceptedCount = habitPatterns.filter { $0.status == .approved }.count
-        let pendingDescs  = habitPatterns.filter { $0.status == .pending }.prefix(4).map(\.patternDescription)
-        let topObs        = habitPatterns
-            .filter  { $0.status != .dismissed }
-            .sorted  { $0.confidence > $1.confidence }
-            .prefix(6)
-            .map(\.patternDescription)
 
         let container = modelContainer
         let rawScene  = ActivityEventCategory.sceneExecution.rawValue
@@ -228,22 +209,18 @@ final class HomeKnowledgeService {
             Calendar.current.startOfDay(for: $0.timestamp)
         }).count
 
-        let daysFactor:     Double = min(1.0, Double(daysWithEvents) / 14.0)
-        let patternsFactor: Double = min(1.0, Double(patternCount)   / 5.0)
+        let daysFactor: Double = min(1.0, Double(daysWithEvents) / 14.0)
 
         // Base score from observable behavior only. Capped at 1.0 regardless of AI key,
         // so users without an API key are never penalised — AI is a product choice, not
         // a quality prerequisite (Sprint 25.B).
-        let baseScore = daysFactor * 0.40 + patternsFactor * 0.30
+        let baseScore = daysFactor * 0.70
         learningProgress = min(1.0, baseScore / 0.90)
 
         houseKnowledgeScore      = Int(learningProgress * 100)
         learningPhase            = LearningPhase(score: houseKnowledgeScore)
-        stableHabitsCount        = stableCount
-        acceptedSuggestionsCount = acceptedCount
 
         domainMaturities = buildDomains(events14: snapshot.events14, sceneCount14: snapshot.sceneCount14)
-        observations     = Array(topObs)
 
         totalExecuted = summaryStats.map { $0.executed }.reduce(0, +)
 
@@ -268,14 +245,12 @@ final class HomeKnowledgeService {
                 .reduce(0, +) / Double(totalSamples) * 100)
             : 0
 
-        opportunityDescriptions = Array(pendingDescs)
         environmentalTrends     = buildTrends(readings: snapshot.sensorReadings7)
         recentInsights          = snapshot.recentInsights
 
         // Sprint 25.B — deterministic narrative
         learningNarrative = buildNarrative(
             phase:                   learningPhase,
-            stableHabitsCount:       stableCount,
             totalExecuted:           totalExecuted,
             totalHelpful:            totalHelpful,
             daysSinceLearningStarted: daysSinceLearningStarted
@@ -371,7 +346,6 @@ final class HomeKnowledgeService {
 
     private func buildNarrative(
         phase:                    LearningPhase,
-        stableHabitsCount:        Int,
         totalExecuted:            Int,
         totalHelpful:             Int,
         daysSinceLearningStarted: Int
@@ -384,14 +358,6 @@ final class HomeKnowledgeService {
             return String(localized: "narrative.building",
                           defaultValue: "I have started recognizing the first behavioral patterns.")
         case .recognizing:
-            if stableHabitsCount > 0 {
-                return String(
-                    format: String(localized: "narrative.recognizing.habits",
-                                   defaultValue: "I have learned %lld stable habit%@ in your home."),
-                    Int64(stableHabitsCount),
-                    stableHabitsCount == 1 ? "" : "s"
-                )
-            }
             return String(localized: "narrative.recognizing",
                           defaultValue: "I am recognizing your main habits.")
         case .understanding:
@@ -406,11 +372,9 @@ final class HomeKnowledgeService {
                           defaultValue: "I have a clear view of your home's routines.")
         case .mature:
             return String(
-                format: String(localized: "narrative.mature",
-                               defaultValue: "I have known your home for %lld days, with %lld stable habit%@ detected."),
-                Int64(daysSinceLearningStarted),
-                Int64(stableHabitsCount),
-                stableHabitsCount == 1 ? "" : "s"
+                format: String(localized: "narrative.mature.days",
+                               defaultValue: "I have known your home for %lld days."),
+                Int64(daysSinceLearningStarted)
             )
         }
     }

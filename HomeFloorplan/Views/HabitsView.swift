@@ -10,7 +10,6 @@ import HomeKit
 /// 3. Monitoraggio     — metriche raccolta dati + footer
 struct HabitsView: View {
 
-    @Environment(HabitAnalysisService.self)      private var habitService
     @Environment(HomeKitService.self)            private var homeKit
     @Environment(HomeKitScenesService.self)      private var scenesService
     @Environment(HomeKitAutomationsService.self) private var automationsService

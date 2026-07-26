@@ -60,7 +60,6 @@ final class CloudKitSyncService {
     private static let settingsPrefix    = "settings:"
     private static let thresholdPrefix   = "threshold:"
     private static let insightPrefix     = "insight:"
-    private static let habitPrefix       = "habit:"
 
     private static func formatCoordinate(_ value: Double) -> String {
         String(format: "%.4f", value)
@@ -647,10 +646,6 @@ final class CloudKitSyncService {
         CKRecord.ID(recordName: "\(Self.insightPrefix)\(id.uuidString)", zoneID: Self.zoneID)
     }
 
-    private func habitRecordID(_ id: UUID) -> CKRecord.ID {
-        CKRecord.ID(recordName: "\(Self.habitPrefix)\(id.uuidString)", zoneID: Self.zoneID)
-    }
-
     private func addPendingRecordZoneChanges(_ changes: [CKSyncEngine.PendingRecordZoneChange]) {
         let existing = Set(syncEngine.state.pendingRecordZoneChanges)
         let uniqueChanges = changes.filter { !existing.contains($0) }
@@ -663,8 +658,7 @@ final class CloudKitSyncService {
         [
             floorplanDescriptor,
             settingsDescriptor,
-            thresholdDescriptor,
-            habitDescriptor
+            thresholdDescriptor
         ]
     }
 
@@ -838,42 +832,6 @@ private extension CloudKitSyncService {
                 let descriptor = FetchDescriptor<PersistedInsight>(predicate: #Predicate { $0.id == id })
                 guard let insight = (try? context.fetch(descriptor))?.first else { return }
                 overlayFields(from: insight.toCKRecord(recordID: serverRecord.recordID), to: serverRecord)
-            },
-            markSavedRecord: { _ in }
-        )
-    }
-
-    var habitDescriptor: CloudKitSyncDescriptor {
-        CloudKitSyncDescriptor(
-            recordType: "HabitPattern",
-            recordPrefix: Self.habitPrefix,
-            pendingChanges: { [self] context, cutoff in
-                guard isAISyncEnabled(context: context) else { return [] }
-                let habits = (try? context.fetch(FetchDescriptor<HabitPattern>())) ?? []
-                return habits
-                    .filter { $0.modifiedAt > (cutoff ?? .distantPast) }
-                    .map { .saveRecord(habitRecordID($0.id)) }
-            },
-            buildRecord: { [self] recordID, context in
-                guard isAISyncEnabled(context: context),
-                      let id = uuid(from: recordID, prefix: Self.habitPrefix)
-                else { return nil }
-                let descriptor = FetchDescriptor<HabitPattern>(predicate: #Predicate { $0.id == id })
-                guard let habit = (try? context.fetch(descriptor))?.first else { return nil }
-                return habit.toCKRecord(recordID: recordID)
-            },
-            applyRecord: { [self] record, context in
-                guard isAISyncEnabled(context: context) else { return }
-                applyHabitRecord(record, context: context)
-            },
-            deleteRecord: { _, _ in },
-            overlayLocalFields: { [self] serverRecord, context in
-                guard isAISyncEnabled(context: context),
-                      let id = uuid(from: serverRecord.recordID, prefix: Self.habitPrefix)
-                else { return }
-                let descriptor = FetchDescriptor<HabitPattern>(predicate: #Predicate { $0.id == id })
-                guard let habit = (try? context.fetch(descriptor))?.first else { return }
-                overlayFields(from: habit.toCKRecord(recordID: serverRecord.recordID), to: serverRecord)
             },
             markSavedRecord: { _ in }
         )
@@ -1676,48 +1634,4 @@ private extension CloudKitSyncService {
         insight.promptVersion        = record["promptVersion"] as? String ?? insight.promptVersion
     }
 
-    func applyHabitRecord(_ record: CKRecord, context: ModelContext) {
-        guard let uuidStr = record["id"] as? String,
-              let id = UUID(uuidString: uuidStr),
-              let accessoryIDString = record["accessoryID"] as? String,
-              let accessoryID = UUID(uuidString: accessoryIDString)
-        else { return }
-
-        let remoteModifiedAt = record["modifiedAt"] as? Date ?? .distantPast
-        let descriptor = FetchDescriptor<HabitPattern>(predicate: #Predicate { $0.id == id })
-
-        if let existing = (try? context.fetch(descriptor))?.first {
-            guard remoteModifiedAt > existing.modifiedAt else { return }
-            populateHabitFields(existing, from: record)
-        } else {
-            let habit = HabitPattern(
-                id: id,
-                patternTypeRaw: record["patternTypeRaw"] as? String ?? PatternType.accessory.rawValue,
-                accessoryName: record["accessoryName"] as? String ?? "",
-                accessoryID: accessoryID,
-                sceneName: record["sceneName"] as? String,
-                roomName: record["roomName"] as? String ?? "",
-                patternDescription: record["patternDescription"] as? String ?? "",
-                detectedAt: record["detectedAt"] as? Date ?? .now,
-                confidence: record["confidence"] as? Double ?? 0,
-                suggestedRuleJSON: record["suggestedRuleJSON"] as? String ?? "{}",
-                statusRaw: record["statusRaw"] as? String ?? PatternStatus.pending.rawValue
-            )
-            habit.modifiedAt = remoteModifiedAt
-            context.insert(habit)
-        }
-    }
-
-    func populateHabitFields(_ habit: HabitPattern, from record: CKRecord) {
-        habit.patternTypeRaw     = record["patternTypeRaw"] as? String ?? habit.patternTypeRaw
-        habit.accessoryName      = record["accessoryName"] as? String ?? habit.accessoryName
-        habit.sceneName          = record["sceneName"] as? String ?? habit.sceneName
-        habit.roomName           = record["roomName"] as? String ?? habit.roomName
-        habit.patternDescription = record["patternDescription"] as? String ?? habit.patternDescription
-        habit.detectedAt         = record["detectedAt"] as? Date ?? habit.detectedAt
-        habit.confidence         = record["confidence"] as? Double ?? habit.confidence
-        habit.suggestedRuleJSON  = record["suggestedRuleJSON"] as? String ?? habit.suggestedRuleJSON
-        habit.statusRaw          = record["statusRaw"] as? String ?? habit.statusRaw
-        habit.modifiedAt         = record["modifiedAt"] as? Date ?? habit.modifiedAt
-    }
 }

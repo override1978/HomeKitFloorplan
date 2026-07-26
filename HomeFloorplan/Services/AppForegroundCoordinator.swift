@@ -10,7 +10,6 @@ struct AppForegroundCoordinator {
     let weatherKitService: WeatherKitService
     let smartLightingEngine: SmartLightingEngine
     let proactiveIntelligenceService: ProactiveIntelligenceService
-    let habitAnalysisService: HabitAnalysisService
     let occupancyPredictionService: OccupancyPredictionService
     let maintenancePredictionService: MaintenancePredictionService
     let locationPresenceService: LocationPresenceService
@@ -105,7 +104,6 @@ struct AppForegroundCoordinator {
 
             if Cadence.isDue(Cadence.proactiveCycle, interval: 15 * 60, now: now) {
                 await proactiveIntelligenceService.runCycleIfNeeded(
-                    habitService:       habitAnalysisService,
                     occupancyService:   occupancyPredictionService,
                     maintenanceService: maintenancePredictionService,
                     presenceOverride:   locationPresenceService.presenceState,

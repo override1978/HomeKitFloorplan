@@ -41,7 +41,6 @@ struct StorageHealthMonitor {
         let floorplanCount:              Int
 
         // MARK: UserDefaults (not SwiftData)
-        let habitPatternCount:           Int
 
         // MARK: Lifecycle metadata
         let lastLifecycleCycleDate:      Date?
@@ -131,7 +130,6 @@ struct StorageHealthMonitor {
             │    Rules:                  \(ruleCount)
             │    Floorplans:             \(floorplanCount)
             │    RoomAnalysisState:      \(roomAnalysisStateCount)
-            │    HabitPatterns (UD):     \(habitPatternCount)
             │
             │  TOTALS:
             │    All SwiftData rows:     \(totalRows)
@@ -174,7 +172,6 @@ struct StorageHealthMonitor {
             roomAnalysisStateCount:     count(RoomAnalysisState.self),
             ruleCount:                  count(Rule.self),
             floorplanCount:             count(Floorplan.self),
-            habitPatternCount:          count(HabitPattern.self),
             lastLifecycleCycleDate:     UserDefaults.standard.object(
                 forKey: "dataLifecycle.lastCycleDate") as? Date
         )
