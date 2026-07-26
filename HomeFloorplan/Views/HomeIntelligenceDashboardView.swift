@@ -2134,28 +2134,6 @@ private struct IntelligenceSparkline: Shape {
     }
 }
 
-private struct LearningMetricTile: View {
-    let value: String
-    let label: String
-    let color: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value)
-                .font(.system(.title3, design: .rounded).weight(.bold))
-                .foregroundStyle(color)
-                .monospacedDigit()
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(color.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
 // MARK: - IntelligenceAssistantSummaryCard
 
 private struct IntelligenceAssistantPriority: Identifiable {

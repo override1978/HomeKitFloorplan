@@ -22,54 +22,6 @@ struct ExistingAutomationSnapshot {
 /// proporre ciò che l'utente ha già automatizzato. Senza questo controllo il motore
 /// impara dagli eventi generati dalle automazioni stesse (perfettamente regolari)
 /// e ripropone all'utente esattamente ciò che già possiede.
-enum AutomationDuplicateChecker {
-
-    /// Tolleranza per considerare "stesso orario" un timer-trigger esistente.
-    static let timerToleranceMinutes = 45
-
-    /// Nome dell'automazione esistente che copre già il pattern temporale, nil se nessuna.
-    ///
-    /// - Timer-trigger sullo stesso accessorio: coperto se l'orario dista ≤ tolleranza
-    ///   (confronto circolare: 23:50 e 00:20 distano 30 minuti, non 1410).
-    /// - Event-trigger sullo stesso accessorio: coperto a prescindere dall'orario —
-    ///   l'accessorio è già automatizzato reattivamente e il pattern osservato
-    ///   è quasi certamente l'eco di quell'automazione.
-    static func automationCovering(
-        accessoryID: UUID,
-        avgMinuteOfDay: Int,
-        in snapshots: [ExistingAutomationSnapshot]
-    ) -> String? {
-        for snapshot in snapshots where snapshot.isEnabled && snapshot.targetAccessoryIDs.contains(accessoryID) {
-            guard let fireMinute = snapshot.fireMinuteOfDay else {
-                return snapshot.name
-            }
-            let diff = abs(fireMinute - avgMinuteOfDay)
-            let circularDiff = min(diff, 1440 - diff)
-            if circularDiff <= timerToleranceMinutes {
-                return snapshot.name
-            }
-        }
-        return nil
-    }
-
-    /// Nome dell'automazione esistente che esegue già questa scena, nil se nessuna.
-    /// Un burst-cluster che matcha una scena già schedulata non ha nulla da proporre.
-    static func automationTriggering(
-        sceneName: String,
-        in snapshots: [ExistingAutomationSnapshot]
-    ) -> String? {
-        let normalized = sceneName
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        guard !normalized.isEmpty else { return nil }
-        return snapshots.first { snapshot in
-            snapshot.isEnabled && snapshot.triggeredSceneNames.contains {
-                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized
-            }
-        }?.name
-    }
-}
-
 // MARK: - Snapshot builder (HomeKit)
 
 extension ExistingAutomationSnapshot {
