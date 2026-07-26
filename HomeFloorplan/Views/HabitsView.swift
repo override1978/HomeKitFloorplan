@@ -11,7 +11,6 @@ import HomeKit
 struct HabitsView: View {
 
     @Environment(HabitAnalysisService.self)      private var habitService
-    @Environment(BehavioralAnalysisService.self) private var behavioralService
     @Environment(HomeKitService.self)            private var homeKit
     @Environment(HomeKitScenesService.self)      private var scenesService
     @Environment(HomeKitAutomationsService.self) private var automationsService
@@ -63,7 +62,9 @@ struct HabitsView: View {
                             homeKit: homeKit
                         )
                     }
-                    eligibleEvents = behavioralService.eligibleEventCount(days: 30)
+                    eligibleEvents = UsageEvidenceService.eligibleEventCount(
+                        modelContainer: modelContext.container, days: 30
+                    )
                 }
         }
     }
@@ -355,9 +356,6 @@ struct HabitsView: View {
     private var monitoringSection: some View {
         Section {
             monitoringMetricCards
-            if behavioralService.patterns.count > 0 {
-                tierChipsRow
-            }
         } header: {
             Label(String(localized: "habits.monitoring.header", defaultValue: "Monitoring"),
                   systemImage: "waveform.path.ecg")
@@ -371,22 +369,13 @@ struct HabitsView: View {
     private var monitoringMetricCards: some View {
         HStack(spacing: 10) {
             metricCard(
-                value: "\(behavioralService.patterns.count)",
-                title: String(localized: "habits.monitoring.behaviors.title",
-                              defaultValue: "Raw Patterns"),
-                subtitle: String(localized: "habits.monitoring.behaviors.subtitle",
-                                 defaultValue: "engine total"),
+                value: "\(usageEvidences.count)",
+                title: String(localized: "habits.monitoring.evidences.title",
+                              defaultValue: "Observed Routines"),
+                subtitle: String(localized: "habits.monitoring.evidences.subtitle",
+                                 defaultValue: "above threshold"),
                 icon: "chart.bar.fill",
                 color: BrandColor.primary
-            )
-            metricCard(
-                value: "\(behavioralService.visiblePatternCount)",
-                title: String(localized: "habits.monitoring.learning.title",
-                              defaultValue: "Being Learned"),
-                subtitle: String(localized: "habits.monitoring.learning.subtitle",
-                                 defaultValue: "visible signals"),
-                icon: "brain.head.profile",
-                color: .indigo
             )
             metricCard(
                 value: "\(eligibleEvents)",
@@ -429,42 +418,6 @@ struct HabitsView: View {
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.15), lineWidth: 1))
     }
 
-    @ViewBuilder
-    private var tierChipsRow: some View {
-        let emerging = behavioralService.patterns.filter { $0.tier == .emerging }.count
-        let forming  = behavioralService.patterns.filter { $0.tier == .forming  }.count
-        let stable   = behavioralService.patterns.filter {
-            $0.tier == .stable || $0.tier == .highConfidence
-        }.count
-
-        VStack(alignment: .leading, spacing: 8) {
-            if let last = behavioralService.lastAnalyzed {
-                Text(
-                    String(format: String(localized: "habits.monitoring.lastScan",
-                                          defaultValue: "Last scan: %@"),
-                           last.formatted(.relative(presentation: .named)))
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            HStack(spacing: 10) {
-                tierPill(count: emerging,
-                         label: String(localized: "habits.tier.emerging",
-                                       defaultValue: "Emerging"),
-                         color: .secondary)
-                tierPill(count: forming,
-                         label: String(localized: "habits.tier.forming",
-                                       defaultValue: "Forming"),
-                         color: .orange)
-                tierPill(count: stable,
-                         label: String(localized: "habits.tier.stable",
-                                       defaultValue: "Stable"),
-                         color: .green)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
     // MARK: - Footer section (encouragement)
 
     @ViewBuilder
@@ -489,78 +442,6 @@ struct HabitsView: View {
             .padding(.vertical, 6)
         }
         .listRowBackground(BrandColor.surfaceLight)
-    }
-
-    // MARK: - Shared helpers
-
-    private func tierPill(count: Int, label: String, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Text("\(count)")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(color)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(color.opacity(0.10), in: Capsule())
-    }
-
-    private func learningProgressColor(_ confidence: Double) -> Color {
-        switch confidence {
-        case 0.45...: return .green
-        case 0.25..<0.45: return .orange
-        default: return Color.secondary
-        }
-    }
-
-    private func learningStatusLabel(for pattern: BehavioralPattern) -> String {
-        if !isPatternConvertibleToAutomation(pattern), pattern.confidence >= 0.45 {
-            return String(localized: "habits.learning.statusInsightOnly",
-                          defaultValue: "Pattern observed — insight only for now")
-        }
-
-        switch pattern.confidence {
-        case ..<0.25:
-            return String(localized: "habits.learning.statusLow",
-                          defaultValue: "Still observing this habit")
-        case 0.25..<0.45:
-            return String(localized: "habits.learning.statusMid",
-                          defaultValue: "Confidence is growing — a few more days")
-        default:
-            return String(localized: "habits.learning.statusHigh",
-                          defaultValue: "Almost ready to become a suggestion")
-        }
-    }
-
-    private func isPatternConvertibleToAutomation(_ pattern: BehavioralPattern) -> Bool {
-        switch pattern.patternType {
-        case .temporal, .lighting:
-            return pattern.accessoryID != nil && isSupportedAutomationAction(pattern.action)
-
-        case .scene:
-            let sceneName = pattern.causeName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return !sceneName.isEmpty
-
-        case .sequential, .contextual:
-            return false
-        }
-    }
-
-    private func isSupportedAutomationAction(_ action: BehavioralAction) -> Bool {
-        switch action {
-        case .on, .off, .dim, .activate, .lock, .unlock, .open, .close:
-            return true
-        }
-    }
-
-    private func confidenceColor(_ confidence: Double) -> Color {
-        switch confidence {
-        case 0.9...1.0: return .green
-        case 0.75..<0.9: return .orange
-        default: return .gray
-        }
     }
 
     // MARK: - Toolbar

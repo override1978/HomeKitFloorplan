@@ -91,7 +91,6 @@ struct HomeFloorplanRootView: View {
             habitAnalysisService: services.habitAnalysisService,
             actionExecutionService: services.actionExecutionService,
             ambientalAIService: services.ambientalAIService,
-            behavioralAnalysisService: services.behavioralAnalysisService,
             proactiveIntelligenceService: services.proactiveIntelligenceService,
             occupancyPredictionService: services.occupancyPredictionService,
             locationPresenceService: services.locationPresenceService,
@@ -129,7 +128,6 @@ struct HomeFloorplanRootView: View {
             weatherKitService: services.weatherKitService,
             smartLightingEngine: services.smartLightingEngine,
             proactiveIntelligenceService: services.proactiveIntelligenceService,
-            behavioralAnalysisService: services.behavioralAnalysisService,
             habitAnalysisService: services.habitAnalysisService,
             occupancyPredictionService: services.occupancyPredictionService,
             maintenancePredictionService: services.maintenancePredictionService,
@@ -149,7 +147,6 @@ struct HomeFloorplanRootView: View {
         AppHomeRuntimeCoordinator(
             sharedModelContainer: services.sharedModelContainer,
             familyPresenceService: services.familyPresenceService,
-            behavioralAnalysisService: services.behavioralAnalysisService,
             occupancyPredictionService: services.occupancyPredictionService,
             matterEnergyLiveStore: services.matterEnergyLiveStore,
             ambientalAIService: services.ambientalAIService
@@ -220,7 +217,6 @@ private struct AppEnvironmentModifier: ViewModifier {
     let habitAnalysisService: HabitAnalysisService
     let actionExecutionService: ActionExecutionService
     let ambientalAIService: AmbientalAIService
-    let behavioralAnalysisService: BehavioralAnalysisService
     let proactiveIntelligenceService: ProactiveIntelligenceService
     let occupancyPredictionService: OccupancyPredictionService
     let locationPresenceService: LocationPresenceService
@@ -245,7 +241,6 @@ private struct AppEnvironmentModifier: ViewModifier {
             .environment(habitAnalysisService)
             .environment(actionExecutionService)
             .environment(ambientalAIService)
-            .environment(behavioralAnalysisService)
             .environment(proactiveIntelligenceService)
             .environment(occupancyPredictionService)
             .environment(locationPresenceService)

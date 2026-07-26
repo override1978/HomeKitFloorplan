@@ -44,4 +44,17 @@ enum UsageEvidenceService {
             )
         })
     }
+
+    /// Numero di `AccessoryEvent` di tipo azionabile registrati negli ultimi
+    /// `days` giorni — metrica di raccolta dati mostrata in HabitsView.
+    static func eligibleEventCount(modelContainer: ModelContainer, days: Int = 30) -> Int {
+        let context = ModelContext(modelContainer)
+        let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
+        let descriptor = FetchDescriptor<AccessoryEvent>(
+            predicate: #Predicate { $0.timestamp >= cutoff }
+        )
+        let allowed = UsageEvidenceBuilder.Configuration().allowedEventTypes
+        let all = (try? context.fetch(descriptor)) ?? []
+        return all.filter { allowed.contains($0.eventType) }.count
+    }
 }

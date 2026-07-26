@@ -191,7 +191,6 @@ struct HomeFloorplanApp: App {
 
         let homeKitSvc  = services.homeKit
         let proactive   = services.proactiveIntelligenceService
-        let behavioral  = services.behavioralAnalysisService
         let habitSvc    = services.habitAnalysisService
         let occupancy   = services.occupancyPredictionService
         let location    = services.locationPresenceService
@@ -208,7 +207,6 @@ struct HomeFloorplanApp: App {
             await lighting.evaluate()
             occupancy.updateNextArrival()
             await proactive.runCycleIfNeeded(
-                behavioralService:  behavioral,
                 habitService:       habitSvc,
                 occupancyService:   occupancy,
                 maintenanceService: maintenance,

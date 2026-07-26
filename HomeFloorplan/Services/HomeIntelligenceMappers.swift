@@ -395,36 +395,6 @@ enum HomeInsightMapper {
         )
     }
 
-    static func map(_ signal: LearningMilestoneSignal) -> HomeInsight {
-        let pattern = signal.pattern
-        return HomeInsight(
-            id: pattern.id,
-            kind: .habit,
-            category: .habits,
-            severity: .info,
-            status: .active,
-            title: String(localized: "notif.learning.headline",
-                          defaultValue: "New Behavior Learned"),
-            message: pattern.naturalLanguageDescription,
-            whyExplanation: String(format:
-                String(localized: "notif.learning.why",
-                       defaultValue: "Detected in %d sessions with %@ confidence."),
-                pattern.observations, pattern.confidenceLabel),
-            sourceEntityID: pattern.accessoryID?.uuidString,
-            sourceEntityName: pattern.accessoryName,
-            roomName: pattern.roomName,
-            createdAt: pattern.detectedAt,
-            updatedAt: Date(),
-            startedAt: pattern.firstObservedAt,
-            confidence: signal.score.confidence,
-            score: HomeInsightScore(signal.score),
-            dedupeKey: signal.semanticKey,
-            sourceRecordType: String(describing: LearningMilestoneSignal.self),
-            sourceRecordID: pattern.id.uuidString,
-            syncPolicy: .localOnly
-        )
-    }
-
     static func map(_ signal: AnomalySignal) -> HomeInsight {
         HomeInsight(
             kind: .anomaly,

@@ -30,12 +30,6 @@ struct WeatherPredictionSignal {
     let score: IntelligenceScore
 }
 
-struct LearningMilestoneSignal {
-    let pattern: BehavioralPattern
-    let semanticKey: String
-    let score: IntelligenceScore
-}
-
 // MARK: - ProactiveIntelligenceService
 
 /// Main orchestrator for Sprint 15 Proactive Intelligence Engine.
@@ -90,7 +84,6 @@ final class ProactiveIntelligenceService {
     // MARK: - Public Cycle API
 
     func runCycleIfNeeded(
-        behavioralService:  BehavioralAnalysisService,
         habitService:       HabitAnalysisService,
         occupancyService:   OccupancyPredictionService?   = nil,
         maintenanceService: MaintenancePredictionService? = nil,
@@ -101,7 +94,6 @@ final class ProactiveIntelligenceService {
         if let last = lastCycleAt,
            Date().timeIntervalSince(last) < minCycleInterval { return }
         await runCycle(
-            behavioralService:  behavioralService,
             habitService:       habitService,
             occupancyService:   occupancyService,
             maintenanceService: maintenanceService,
@@ -112,7 +104,6 @@ final class ProactiveIntelligenceService {
     }
 
     func runCycle(
-        behavioralService:  BehavioralAnalysisService,
         habitService:       HabitAnalysisService,
         occupancyService:   OccupancyPredictionService?   = nil,
         maintenanceService: MaintenancePredictionService? = nil,
@@ -146,37 +137,11 @@ final class ProactiveIntelligenceService {
             occupancyIsAway:  occupancyService?.isLikelyAway ?? false
         )
 
-        // 0. Habit analysis — AI-powered, enriched with on-device behavioral patterns.
-        //    Passing visiblePatterns lets the AI use pre-validated scaffolding instead of
-        //    re-deriving habits from raw events, improving quality and reducing API payload.
-        //    analyzeHabits() is throttled internally (max once/hour).
-        let visiblePatterns = behavioralService.patterns.filter { $0.tier.isVisible }
-        await habitService.analyzeHabits(knownPatterns: visiblePatterns)
+        // 0. Habit analysis — AI-powered, throttled internally (max once/hour).
+        await habitService.analyzeHabits()
         mark("habitAI")
 
-        // 1. Behavioral deviations
-        if !context.suppressNonCritical {
-            let sigs   = await fetchRecentEventSignatures()
-            let devs   = BehavioralDeviationDetector.detect(
-                patterns:              behavioralService.stablePatterns,
-                recentEventSignatures: sigs,
-                context:               context
-            )
-            let deviationInsights = devs.map(HomeInsightMapper.map)
-            upsertHomeInsights(deviationInsights)
-            autoResolveDeviationInsights(currentSignals: devs)
-        }
-        mark("behavioral")
-
-        // 2. Automation opportunities
-        let automationOpportunities = Array(behavioralService.pendingOpportunities.prefix(3))
-        let automationInsights = automationOpportunities.map(HomeInsightMapper.map)
-        upsertHomeInsights(automationInsights)
-
-        // 3. Learning milestones
-        await processLearningMilestones(behavioralService: behavioralService)
-
-        // 4. Predictive environmental alerts (pattern-based, before-the-fact)
+        // 1. Predictive environmental alerts (pattern-based, before-the-fact)
         if !context.suppressNonCritical {
             let recurrence = EnvironmentalPatternAnalyzer.loadPatterns()
             let predictive = PredictiveAlertBuilder.build(patterns: recurrence)
@@ -441,30 +406,6 @@ final class ProactiveIntelligenceService {
             ]
         }
         return []
-    }
-
-    private func processLearningMilestones(behavioralService: BehavioralAnalysisService) async {
-        var notifiedIDs = notifiedPatternIDsSet()
-
-        let newlyStable = behavioralService.patterns.filter {
-            ($0.tier == .stable || $0.tier == .highConfidence) &&
-            $0.status == .active &&
-            !notifiedIDs.contains($0.id)
-        }
-
-        for pattern in newlyStable.prefix(2) {
-            let key = "learning|\(pattern.id.uuidString)"
-
-            let score = IntelligenceScore(
-                relevance: 0.70, confidence: pattern.confidence,
-                urgency: 0.10, actionability: 0.60, novelty: 0.90
-            )
-            let milestone = LearningMilestoneSignal(pattern: pattern, semanticKey: key, score: score)
-            upsertHomeInsights([HomeInsightMapper.map(milestone)])
-            notifiedIDs.insert(pattern.id)
-        }
-
-        saveNotifiedPatternIDs(notifiedIDs)
     }
 
     // MARK: - Auto-resolve / Auto-expire

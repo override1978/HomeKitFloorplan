@@ -6,9 +6,8 @@ import Observation
 
 /// Manages the list of household member profiles and tracks who is currently active.
 ///
-/// When an active profile is set, AccessoryEvents are tagged with that profile's ID
-/// and BehavioralAnalysisService filters its pattern detection to that profile's
-/// event history — enabling distinct behavioral models per family member.
+/// When an active profile is set, AccessoryEvents are tagged with that profile's ID,
+/// so per-member event history stays distinguishable in the event store.
 @Observable
 @MainActor
 final class FamilyPresenceService {
@@ -63,7 +62,6 @@ final class FamilyPresenceService {
     }
 
     /// Sets (or clears) the active profile.
-    /// Callers should trigger `BehavioralAnalysisService.switchProfile(to:)` after this.
     func setActive(_ profile: FamilyProfile?) {
         activeProfileID = profile?.id
     }

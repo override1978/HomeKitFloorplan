@@ -38,7 +38,6 @@ enum HabitCallResult {
 
 /// Assigns human-readable names to burst-cluster routines using the on-device LLM.
 ///
-/// Triggered by BehavioralAnalysisService at the end of each analyze() run.
 /// The naming call runs in an unstructured Task so it is never cancelled by a view lifecycle.
 /// Names are persisted via VersionedStore and only un-named clusters are sent to the LLM.
 @Observable
@@ -102,7 +101,7 @@ final class HabitAnalysisService {
     // MARK: - Backward-compat stub (call sites in ProactiveIntelligenceService, HabitsView, App)
 
     func analyzeHabits(knownPatterns: [BehavioralPattern] = []) async {
-        // Naming is now triggered by scheduleNaming() from BehavioralAnalysisService.
+        // No-op: naming is triggered by scheduleNaming().
     }
 
     // MARK: - Stale Pattern Cleanup

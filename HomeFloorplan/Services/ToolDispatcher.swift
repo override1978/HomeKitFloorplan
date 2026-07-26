@@ -15,7 +15,6 @@ final class ToolDispatcher {
     private let accessoriesVM:        AccessoriesViewModel
     private let homeKit:              HomeKitService
     private let weatherKit:           WeatherKitService
-    private let behavioralService:    BehavioralAnalysisService
     private let modelContainer:       ModelContainer
     private let smartLightingEngine:  SmartLightingEngine
     private let scenesService:        HomeKitScenesService
@@ -36,7 +35,6 @@ final class ToolDispatcher {
         accessoriesVM:       AccessoriesViewModel,
         homeKit:             HomeKitService,
         weatherKit:          WeatherKitService,
-        behavioralService:   BehavioralAnalysisService,
         modelContainer:      ModelContainer,
         smartLightingEngine: SmartLightingEngine,
         scenesService:       HomeKitScenesService
@@ -45,7 +43,6 @@ final class ToolDispatcher {
         self.accessoriesVM       = accessoriesVM
         self.homeKit             = homeKit
         self.weatherKit          = weatherKit
-        self.behavioralService   = behavioralService
         self.modelContainer      = modelContainer
         self.smartLightingEngine = smartLightingEngine
         self.scenesService       = scenesService
@@ -1075,33 +1072,42 @@ final class ToolDispatcher {
     // MARK: - getHabits
 
     private func getHabits(input: [String: Any]) -> String {
-        let stable  = behavioralService.stablePatterns
-        let pending = behavioralService.pendingOpportunities
+        let evidences = UsageEvidenceService.evidences(modelContainer: modelContainer)
 
-        if stable.isEmpty && pending.isEmpty {
-            return "Nessuna abitudine rilevata. L'analisi richiede alcune settimane di utilizzo."
+        guard !evidences.isEmpty else {
+            return "Nessuna routine osservata. Servono più giorni di utilizzo manuale, "
+                 + "oppure la casa è già coperta dalle automazioni esistenti."
         }
 
-        var lines: [String] = []
-
-        if !stable.isEmpty {
-            lines.append("Abitudini confermate (\(stable.count)):")
-            for p in stable.prefix(8) {
-                let pct = Int(p.confidence * 100)
-                lines.append("- \(p.accessoryName) [\(p.roomName)]: \(p.observations) osservazioni, \(pct)% confidenza")
-            }
-            if stable.count > 8 { lines.append("  (+ altri \(stable.count - 8))") }
+        var lines = ["Routine osservate (\(evidences.count)):"]
+        for e in evidences.prefix(8) {
+            let room = e.roomName.map { " [\($0)]" } ?? ""
+            lines.append(
+                "- \(e.accessoryName)\(room): \(Self.formatWindow(e)) \(Self.formatWeekdays(e.weekdayPattern)), "
+                + "\(e.distinctDays) giorni distinti su \(e.observedSpanDays)"
+            )
         }
-
-        if !pending.isEmpty {
-            lines.append("Opportunità di automazione in attesa (\(pending.count)):")
-            for opp in pending.prefix(5) {
-                lines.append("- \(opp.title): \(opp.naturalLanguage)")
-            }
-            if pending.count > 5 { lines.append("  (+ altre \(pending.count - 5))") }
-        }
+        if evidences.count > 8 { lines.append("  (+ altre \(evidences.count - 8))") }
 
         return lines.joined(separator: "\n")
+    }
+
+    private static func formatWindow(_ e: UsageEvidenceBuilder.Evidence) -> String {
+        func hhmm(_ minutes: Int) -> String {
+            String(format: "%02d:%02d", minutes / 60, minutes % 60)
+        }
+        return "\(hhmm(e.windowStartMinute))-\(hhmm(e.windowEndMinute))"
+    }
+
+    private static func formatWeekdays(_ pattern: UsageEvidenceBuilder.WeekdayPattern) -> String {
+        switch pattern {
+        case .everyDay: return "tutti i giorni"
+        case .weekdays: return "lun-ven"
+        case .weekend:  return "sab-dom"
+        case .days(let set):
+            let names = ["", "dom", "lun", "mar", "mer", "gio", "ven", "sab"]
+            return set.sorted().compactMap { names.indices.contains($0) ? names[$0] : nil }.joined(separator: "/")
+        }
     }
 
     // MARK: - diagnoseAutomations

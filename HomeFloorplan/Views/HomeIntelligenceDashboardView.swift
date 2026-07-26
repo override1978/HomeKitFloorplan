@@ -127,7 +127,6 @@ private enum LocalizedInsightCopy {
 struct HomeIntelligenceDashboardView: View {
 
     @Environment(HabitAnalysisService.self)          private var habitService
-    @Environment(BehavioralAnalysisService.self)     private var behavioralService
     @Environment(HomeKitService.self)                private var homeKit
     @Environment(HomeKitScenesService.self)          private var scenesService
     @Environment(HomeKitAutomationsService.self)     private var automationsService
@@ -761,8 +760,8 @@ struct HomeIntelligenceDashboardView: View {
 
     private func homeBriefingCard(svc: HomeKnowledgeService) -> some View {
         let attentionCount = needsAttentionItems(svc: svc).count
-        let opportunityCount = habitService.pendingPatterns.count + behavioralService.pendingOpportunities.count
-        let learningCount = behavioralService.visiblePatternCount + svc.stableHabitsCount
+        let opportunityCount = habitService.pendingPatterns.count
+        let learningCount = svc.stableHabitsCount
 
         let title: String
         let message: String
@@ -1377,9 +1376,7 @@ struct HomeIntelligenceDashboardView: View {
             tracker: executionService.tracker,
             aiIsOperational: AISettings().isOperational
         )
-        // Motore statistico ritirato: nessuna analisi comportamentale.
         await proactiveService.runCycle(
-            behavioralService:  behavioralService,
             habitService:       habitService,
             occupancyService:   occupancyService,
             maintenanceService: maintenanceService,

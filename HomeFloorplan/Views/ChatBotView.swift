@@ -38,7 +38,6 @@ struct ChatBotView: View {
 
     @Environment(HomeKitService.self)            private var homeKit
     @Environment(WeatherKitService.self)         private var weatherKit
-    @Environment(BehavioralAnalysisService.self) private var behavioralService
     @Environment(AISettings.self)               private var aiSettings
     @Environment(SmartLightingEngine.self)       private var smartLightingEngine
     @Environment(HomeKitScenesService.self)      private var scenesService
@@ -1443,7 +1442,6 @@ struct ChatBotView: View {
             accessoriesVM:       accessoriesVM,
             homeKit:             homeKit,
             weatherKit:          weatherKit,
-            behavioralService:   behavioralService,
             modelContainer:      modelContext.container,
             smartLightingEngine: smartLightingEngine,
             scenesService:       scenesService

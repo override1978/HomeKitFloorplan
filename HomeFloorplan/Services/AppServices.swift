@@ -25,7 +25,6 @@ final class AppServices {
     let actionExecutionService: ActionExecutionService
     let ambientalAIService: AmbientalAIService
     let dataLifecycleService: DataLifecycleService
-    let behavioralAnalysisService: BehavioralAnalysisService
     let proactiveIntelligenceService: ProactiveIntelligenceService
     let occupancyPredictionService: OccupancyPredictionService
     let locationPresenceService: LocationPresenceService
@@ -154,14 +153,6 @@ final class AppServices {
         kit.sensorEventRouter = SensorEventRouter.shared
         self.ambientalAIService = ambientalSvc
         self.dataLifecycleService = DataLifecycleService(modelContainer: container)
-        let behavioralSvc = BehavioralAnalysisService(modelContainer: container)
-        // Anti-duplicazione abitudini: il motore confronta le opportunità con le
-        // automazioni HomeKit esistenti prima di proporle (fotografie fresche a ogni analisi).
-        behavioralSvc.existingAutomationsProvider = { [weak kit] in
-            ExistingAutomationSnapshot.snapshots(from: kit?.currentHome)
-        }
-        behavioralSvc.habitNamingService = habitSvc
-        self.behavioralAnalysisService = behavioralSvc
         self.proactiveIntelligenceService = ProactiveIntelligenceService(modelContainer: container)
         self.occupancyPredictionService = OccupancyPredictionService()
         self.locationPresenceService = LocationPresenceService()
