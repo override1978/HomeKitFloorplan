@@ -191,7 +191,6 @@ struct HomeFloorplanApp: App {
 
         let homeKitSvc  = services.homeKit
         let proactive   = services.proactiveIntelligenceService
-        let occupancy   = services.occupancyPredictionService
         let location    = services.locationPresenceService
         let maintenance = services.maintenancePredictionService
         let weather     = services.weatherKitService
@@ -204,9 +203,7 @@ struct HomeFloorplanApp: App {
                 return
             }
             await lighting.evaluate()
-            occupancy.updateNextArrival()
             await proactive.runCycleIfNeeded(
-                occupancyService:   occupancy,
                 maintenanceService: maintenance,
                 presenceOverride:   location.presenceState,
                 weatherService:     weather,
@@ -262,7 +259,6 @@ struct HomeFloorplanApp: App {
 
         let lifecycle   = services.dataLifecycleService
         let container   = sharedModelContainer
-        let occupancy   = services.occupancyPredictionService
         let maintenance = services.maintenancePredictionService
         let cloudSync   = services.cloudKitSync
 
@@ -274,7 +270,6 @@ struct HomeFloorplanApp: App {
             await lifecycle.runFullCycle()
             // Motore statistico ritirato: niente analyze()/cleanupStale nel
             // ciclo giornaliero (pivot Abitudini).
-            await occupancy.analyzeHistory(modelContainer: container)
             await EnvironmentalPatternAnalyzer.analyze(modelContainer: container)
             await maintenance.analyze()
             #if DEBUG

@@ -131,7 +131,6 @@ struct HomeIntelligenceDashboardView: View {
     @Environment(HomeKitAutomationsService.self)     private var automationsService
     @Environment(ActionExecutionService.self)        private var executionService
     @Environment(ProactiveIntelligenceService.self)  private var proactiveService
-    @Environment(OccupancyPredictionService.self)    private var occupancyService
     @Environment(LocationPresenceService.self)       private var locationService
     @Environment(MaintenancePredictionService.self)  private var maintenanceService
     @Environment(FamilyPresenceService.self)         private var familyPresenceService
@@ -1362,7 +1361,6 @@ struct HomeIntelligenceDashboardView: View {
             aiIsOperational: AISettings().isOperational
         )
         await proactiveService.runCycle(
-            occupancyService:   occupancyService,
             maintenanceService: maintenanceService,
             presenceOverride:   locationService.presenceState,
             homeKitService:     homeKit

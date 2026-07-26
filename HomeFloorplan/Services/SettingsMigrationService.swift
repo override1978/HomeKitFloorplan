@@ -75,7 +75,9 @@ struct SettingsMigrationService {
             "behavioral.opportunities.v1",
             "behavioral.patterns.v1",
             "habit.patterns.v1",
-            "habit.clusterNames.v1"
+            "habit.clusterNames.v1",
+            "occupancy.patterns.v1",
+            "occupancy.departurePatterns.v1"
         ]
 
         var cleaned = 0

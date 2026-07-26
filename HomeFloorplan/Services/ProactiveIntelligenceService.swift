@@ -84,7 +84,6 @@ final class ProactiveIntelligenceService {
     // MARK: - Public Cycle API
 
     func runCycleIfNeeded(
-        occupancyService:   OccupancyPredictionService?   = nil,
         maintenanceService: MaintenancePredictionService? = nil,
         presenceOverride:   PresenceState?                = nil,
         weatherService:     WeatherKitService?            = nil,
@@ -93,7 +92,6 @@ final class ProactiveIntelligenceService {
         if let last = lastCycleAt,
            Date().timeIntervalSince(last) < minCycleInterval { return }
         await runCycle(
-            occupancyService:   occupancyService,
             maintenanceService: maintenanceService,
             presenceOverride:   presenceOverride,
             weatherService:     weatherService,
@@ -102,7 +100,6 @@ final class ProactiveIntelligenceService {
     }
 
     func runCycle(
-        occupancyService:   OccupancyPredictionService?   = nil,
         maintenanceService: MaintenancePredictionService? = nil,
         presenceOverride:   PresenceState?                = nil,
         weatherService:     WeatherKitService?            = nil,
@@ -131,7 +128,7 @@ final class ProactiveIntelligenceService {
 
         let context = ContextResolver.resolve(
             presenceOverride: presenceOverride,
-            occupancyIsAway:  occupancyService?.isLikelyAway ?? false
+            occupancyIsAway:  HomePresenceHeuristic.isLikelyAway(modelContainer: modelContainer)
         )
 
         // 1. Predictive environmental alerts (pattern-based, before-the-fact)

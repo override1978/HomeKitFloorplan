@@ -91,7 +91,6 @@ struct HomeFloorplanRootView: View {
             actionExecutionService: services.actionExecutionService,
             ambientalAIService: services.ambientalAIService,
             proactiveIntelligenceService: services.proactiveIntelligenceService,
-            occupancyPredictionService: services.occupancyPredictionService,
             locationPresenceService: services.locationPresenceService,
             familyPresenceService: services.familyPresenceService,
             maintenancePredictionService: services.maintenancePredictionService,
@@ -127,7 +126,6 @@ struct HomeFloorplanRootView: View {
             weatherKitService: services.weatherKitService,
             smartLightingEngine: services.smartLightingEngine,
             proactiveIntelligenceService: services.proactiveIntelligenceService,
-            occupancyPredictionService: services.occupancyPredictionService,
             maintenancePredictionService: services.maintenancePredictionService,
             locationPresenceService: services.locationPresenceService
         )
@@ -145,7 +143,6 @@ struct HomeFloorplanRootView: View {
         AppHomeRuntimeCoordinator(
             sharedModelContainer: services.sharedModelContainer,
             familyPresenceService: services.familyPresenceService,
-            occupancyPredictionService: services.occupancyPredictionService,
             matterEnergyLiveStore: services.matterEnergyLiveStore,
             ambientalAIService: services.ambientalAIService
         )
@@ -215,7 +212,6 @@ private struct AppEnvironmentModifier: ViewModifier {
     let actionExecutionService: ActionExecutionService
     let ambientalAIService: AmbientalAIService
     let proactiveIntelligenceService: ProactiveIntelligenceService
-    let occupancyPredictionService: OccupancyPredictionService
     let locationPresenceService: LocationPresenceService
     let familyPresenceService: FamilyPresenceService
     let maintenancePredictionService: MaintenancePredictionService
@@ -238,7 +234,6 @@ private struct AppEnvironmentModifier: ViewModifier {
             .environment(actionExecutionService)
             .environment(ambientalAIService)
             .environment(proactiveIntelligenceService)
-            .environment(occupancyPredictionService)
             .environment(locationPresenceService)
             .environment(familyPresenceService)
             .environment(maintenancePredictionService)

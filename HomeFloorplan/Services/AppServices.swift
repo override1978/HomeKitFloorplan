@@ -25,7 +25,6 @@ final class AppServices {
     let ambientalAIService: AmbientalAIService
     let dataLifecycleService: DataLifecycleService
     let proactiveIntelligenceService: ProactiveIntelligenceService
-    let occupancyPredictionService: OccupancyPredictionService
     let locationPresenceService: LocationPresenceService
     let familyPresenceService: FamilyPresenceService
     let maintenancePredictionService: MaintenancePredictionService
@@ -151,7 +150,6 @@ final class AppServices {
         self.ambientalAIService = ambientalSvc
         self.dataLifecycleService = DataLifecycleService(modelContainer: container)
         self.proactiveIntelligenceService = ProactiveIntelligenceService(modelContainer: container)
-        self.occupancyPredictionService = OccupancyPredictionService()
         self.locationPresenceService = LocationPresenceService()
         self.familyPresenceService = FamilyPresenceService()
         self.maintenancePredictionService = MaintenancePredictionService(modelContainer: container)

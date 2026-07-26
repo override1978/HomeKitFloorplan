@@ -65,7 +65,7 @@ enum ContextResolver {
     /// - Parameters:
     ///   - presenceOverride: When non-nil (e.g. from LocationPresenceService geofencing),
     ///     this value takes priority over all heuristics.
-    ///   - occupancyIsAway: When true (from OccupancyPredictionService.isLikelyAway),
+    ///   - occupancyIsAway: When true (from HomePresenceHeuristic.isLikelyAway),
     ///     marks presence as `.away` during waking hours if no override is set.
     ///     Nighttime hours (23:00–07:00) still resolve to `.sleeping` regardless.
     static func resolve(presenceOverride: PresenceState? = nil, occupancyIsAway: Bool = false) -> ContextSnapshot {

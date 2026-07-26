@@ -4,7 +4,6 @@ import HomeKit
 struct AppHomeRuntimeCoordinator {
     let sharedModelContainer: ModelContainer
     let familyPresenceService: FamilyPresenceService
-    let occupancyPredictionService: OccupancyPredictionService
     let matterEnergyLiveStore: MatterEnergyLiveStore
     let ambientalAIService: AmbientalAIService
 
@@ -12,7 +11,6 @@ struct AppHomeRuntimeCoordinator {
         guard let home else { return }
         familyPresenceService.autoActivateForCurrentUser(home: home)
         let profileID = familyPresenceService.activeProfileID
-        occupancyPredictionService.switchProfile(to: profileID)
         Task {
             await matterEnergyLiveStore.refreshIfNeeded(home: home)
         }
