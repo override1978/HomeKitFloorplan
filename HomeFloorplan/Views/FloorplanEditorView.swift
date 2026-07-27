@@ -242,7 +242,6 @@ struct FloorplanEditorView: View {
 
     private var observedCanvas: some View {
         canvasContent
-        .environment(\.isLiquidGlassSuppressed, ui.isEditing)
         .toolbar(.hidden, for: .navigationBar)
         .modifier(editorPresentationModifier)
         .suppressesIdleScreensaver(.floorplanInteraction, when: ui.shouldSuppressIdleScreensaver)

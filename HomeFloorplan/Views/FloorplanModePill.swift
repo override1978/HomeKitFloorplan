@@ -10,24 +10,69 @@ struct FloorplanModePill: View {
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let context: FloorplanOverlayContext
 
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+    /// Namespace condiviso dall'indicatore di selezione: dando lo STESSO id al
+    /// solo elemento attivo, il container fa morphare la capsula di vetro da un
+    /// tab all'altro invece di farla sparire e riapparire.
+    @Namespace private var selectionNamespace
+
+    /// Frame di ogni voce nello spazio della barra: serve al drag per sapere
+    /// sopra quale modalità si trova il dito. Non partecipa al layout, quindi
+    /// non innesca cicli di rimisura.
+    @State private var modeFrames: [String: CGRect] = [:]
+
+    private var usesGlass: Bool { isLiquidGlassEnabled && !isLiquidGlassSuppressed }
+
     private var modes: [FloorplanOverlayMode] {
         overlayVM.availableModes(context: context)
     }
 
+    private static let barSpace = "floorplan.mode.bar"
+
+    /// Unica curva della selezione: tap e drag devono condividerla, altrimenti
+    /// il vetro riceve più animazioni concorrenti sullo stesso cambio di stato
+    /// e il movimento diventa meccanico. Smorzamento basso = più liquido.
+    private static let selectionAnimation: Animation = .spring(response: 0.38,
+                                                              dampingFraction: 0.7)
+    private static let selectionID = "floorplan.mode.selection"
+
     var body: some View {
         // Collapse when only one mode is available.
         if modes.count > 1 {
-            GlassTitlePill {
-                HStack(spacing: 0) {
+            LiquidGlassContainer(spacing: 120) {
+                HStack(spacing: 4) {
                     ForEach(modes) { mode in
                         modeButton(mode)
-                        if mode != modes.last {
-                            Divider().frame(height: 20)
-                        }
                     }
                 }
             }
+            .padding(4)
+            .modifier(ModeBarSurface(usesGlass: usesGlass))
+            .coordinateSpace(name: Self.barSpace)
+            // Scorrere il dito lungo la barra trascina la selezione. La
+            // soglia lascia passare i tap ai bottoni: sotto gli 8 punti è
+            // un tocco, sopra è un trascinamento.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.barSpace))
+                    .onChanged { value in select(at: value.location) }
+            )
+            .sensoryFeedback(.selection, trigger: overlayVM.activeMode)
             .transition(.scale(scale: 0.8).combined(with: .opacity))
+        }
+    }
+
+    /// Attiva la modalità sotto il dito, se diversa da quella corrente.
+    private func select(at point: CGPoint) {
+        guard let hit = modes.first(where: { mode in
+            guard let frame = modeFrames[mode.id] else { return false }
+            return point.x >= frame.minX && point.x <= frame.maxX
+        }), hit != overlayVM.activeMode else { return }
+
+        withAnimation(Self.selectionAnimation) {
+            overlayVM.activeMode = hit
         }
     }
 
@@ -35,7 +80,7 @@ struct FloorplanModePill: View {
     private func modeButton(_ mode: FloorplanOverlayMode) -> some View {
         let isActive = overlayVM.activeMode == mode
         Button {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            withAnimation(Self.selectionAnimation) {
                 overlayVM.activeMode = mode
             }
         } label: {
@@ -52,7 +97,83 @@ struct FloorplanModePill: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .animation(.spring(response: 0.3), value: isActive)
+        .modifier(ModeSelectionHighlight(
+            isActive: isActive,
+            usesGlass: usesGlass,
+            modeID: mode.id,
+            tint: mode.accentColor,
+            namespace: selectionNamespace
+        ))
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .named(Self.barSpace))
+        } action: { frame in
+            modeFrames[mode.id] = frame
+        }
+    }
+
+}
+
+// MARK: - ModeSelectionHighlight
+
+/// Vetro solo sulla voce attiva, con un id **unico per modalità**.
+///
+/// È la parte che avevo sbagliato: con un id costante SwiftUI vede sempre la
+/// stessa forma e non ha nulla da morphare. Dando a ogni voce il proprio id,
+/// al cambio di selezione una forma scompare e un'altra compare, e
+/// `glassEffectTransition(.matchedGeometry)` le fonde l'una nell'altra — è la
+/// deformazione a goccia. Perché avvenga le due devono rientrare nello
+/// `spacing` del container, che per questo è molto più largo della barra.
+private struct ModeSelectionHighlight: ViewModifier {
+    let isActive: Bool
+    let usesGlass: Bool
+    let modeID: String
+    /// Colore della modalità. Su fondo scuro e piatto il vetro non ha nulla da
+    /// rifrangere e degrada a una macchia grigia: la tinta gli restituisce
+    /// identità senza dipendere dal contenuto sottostante.
+    let tint: Color
+    let namespace: Namespace.ID
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if usesGlass, #available(iOS 26.0, *) {
+            if isActive {
+                content
+                    .glassEffect(.regular.tint(tint.opacity(0.22)).interactive(), in: Capsule())
+                    .glassEffectID(modeID, in: namespace)
+                    .glassEffectTransition(.matchedGeometry)
+            } else {
+                content
+            }
+        } else if isActive {
+            content.background(Capsule().fill(Color.primary.opacity(0.10)))
+        } else {
+            content
+        }
+    }
+}
+
+// MARK: - ModeBarSurface
+
+/// Sfondo della barra.
+///
+/// Usa `.regular` e NON `.clear`: la planimetria è un'immagine dell'utente, di
+/// luminosità sconosciuta, e il tema di sistema può essere l'opposto del suo
+/// (iOS scuro su planimetria chiara). `.clear` non stabilisce alcun fondo,
+/// quindi `Color.primary` diventava bianco su bianco. `.regular` porta con sé
+/// una superficie adattiva e rende le voci leggibili su qualunque sfondo —
+/// costa un po' di trasparenza, ma l'alternativa è testo invisibile.
+private struct ModeBarSurface: ViewModifier {
+    let usesGlass: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if usesGlass, #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: Capsule())
+        } else {
+            content
+                .background(.regularMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+        }
     }
 }
 

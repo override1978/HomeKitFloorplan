@@ -16,6 +16,7 @@ struct EnvironmentFilterBar: View {
 
     /// The pill row content — shared between fixed and scrollable layouts.
     private var pillRow: some View {
+        LiquidGlassContainer(spacing: 0) {
         HStack(spacing: 8) {
             filterPill(
                 label: String(localized: "filter.all", defaultValue: "Tutto"),
@@ -40,6 +41,7 @@ struct EnvironmentFilterBar: View {
             }
         }
         .padding(.vertical, 4)
+        }
     }
 
     var body: some View {
@@ -55,6 +57,45 @@ struct EnvironmentFilterBar: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 pillRow
                     .padding(.horizontal, 20)
+            }
+        }
+    }
+
+    // MARK: Pill surface
+
+    /// Superficie del chip filtro. Col vetro attivo la selezione è una tinta
+    /// verde sul vetro invece di un riempimento pieno; il bordo manuale sparisce
+    /// perché il vetro porta il proprio. Nel fallback il bordo è theme-aware:
+    /// era un bianco fisso, invisibile su planimetria chiara.
+    private struct FilterPillSurface: ViewModifier {
+        let isSelected: Bool
+        @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+        private var isLiquidGlassEnabled = false
+        @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+        @Environment(\.colorScheme) private var colorScheme
+
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+                // NIENTE .interactive(): installa una propria gestione del
+                // tocco che compete col Button che avvolge il contenuto, e il
+                // primo tap va perso.
+                content.glassEffect(
+                    isSelected ? .regular.tint(Color(.systemGreen)) : .regular,
+                    in: Capsule()
+                )
+            } else {
+                content
+                    .background(
+                        Capsule().fill(isSelected ? AnyShapeStyle(Color(.systemGreen))
+                                                  : AnyShapeStyle(.regularMaterial))
+                    )
+                    .overlay(
+                        Capsule().strokeBorder(
+                            isSelected ? Color.clear : legacyGlassBorderColor(colorScheme),
+                            lineWidth: 0.5
+                        )
+                    )
             }
         }
     }
@@ -77,22 +118,10 @@ struct EnvironmentFilterBar: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .foregroundStyle(isSelected ? .white : Color.primary.opacity(0.7))
-            .background(
-                Group {
-                    if isSelected {
-                        Capsule().fill(Color(.systemGreen))
-                    } else {
-                        Capsule().fill(.regularMaterial)
-                    }
-                }
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(
-                        isSelected ? Color.clear : Color.white.opacity(0.25),
-                        lineWidth: 0.5
-                    )
-            )
+            .modifier(FilterPillSurface(isSelected: isSelected))
+            // Area sensibile dichiarata esplicitamente: senza, il tocco deriva
+            // da ciò che il vetro disegna e i tap sul padding vanno persi.
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isSelected)

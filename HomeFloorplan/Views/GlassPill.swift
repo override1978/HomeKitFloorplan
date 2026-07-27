@@ -43,8 +43,16 @@ struct LiquidGlassContainer<Content: View>: View {
     }
 }
 
+/// Bordo del fallback non-vetro, adattato al tema: un bianco fisso sparisce su
+/// fondo chiaro. Condiviso da GlassPill e GlassCircle, che prima lo avevano
+/// cablato mentre GlassTitlePill lo calcolava già correttamente.
+func legacyGlassBorderColor(_ scheme: ColorScheme) -> Color {
+    scheme == .dark ? Color.white.opacity(0.35) : Color.black.opacity(0.11)
+}
+
 struct GlassPill<Content: View>: View {
     let content: Content
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
     private var isLiquidGlassEnabled = false
     @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
@@ -72,7 +80,7 @@ struct GlassPill<Content: View>: View {
             .background(.ultraThinMaterial, in: Capsule())
             .overlay(
                 Capsule()
-                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
+                    .strokeBorder(legacyGlassBorderColor(colorScheme), lineWidth: 0.5)
             )
             .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
     }
@@ -81,6 +89,7 @@ struct GlassPill<Content: View>: View {
 struct GlassCircle<Content: View>: View {
     let content: Content
     let size: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
     private var isLiquidGlassEnabled = false
     @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
@@ -96,7 +105,7 @@ struct GlassCircle<Content: View>: View {
             if #available(iOS 26.0, *) {
                 content
                     .frame(width: size, height: size)
-                    .glassEffect(.clear.interactive(), in: Circle())
+                    .glassEffect(.regular.interactive(), in: Circle())
             } else {
                 legacyBody
             }
@@ -111,7 +120,7 @@ struct GlassCircle<Content: View>: View {
             .background(.regularMaterial, in: Circle())
             .overlay(
                 Circle()
-                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
+                    .strokeBorder(legacyGlassBorderColor(colorScheme), lineWidth: 0.5)
             )
             .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
     }

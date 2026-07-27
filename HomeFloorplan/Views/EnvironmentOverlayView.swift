@@ -77,7 +77,10 @@ struct EnvironmentOverlayView: View {
             .frame(width: containerSize.width, height: containerSize.height)
             .allowsHitTesting(false)
 
-            // Badges: stesso ForEach, contenuto condizionale in base allo stato
+            // Badges: stesso ForEach, contenuto condizionale in base allo stato.
+            // Il container raggruppa le superfici di vetro delle stanze — sono
+            // una per stanza, e la documentazione lo raccomanda per gruppi.
+            LiquidGlassContainer(spacing: 0) {
             ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
                 let center  = h.centroid(for: room)
                 let urgency = urgencyByRoom[room.name] ?? .normal
@@ -92,8 +95,7 @@ struct EnvironmentOverlayView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
-                        .background(.regularMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .modifier(EnvironmentBadgeSurface())
                         .foregroundStyle(.secondary)
                     } else {
                         Button {
@@ -107,12 +109,32 @@ struct EnvironmentOverlayView: View {
                 .scaleEffect(inverseScale)
                 .position(center)
             }
+            }
         }
         // Un singolo modificatore anima sia il canvas sia i badge
         .animation(.easeInOut(duration: 0.4), value: isLoading)
     }
 
     // MARK: Badge
+
+    /// Superficie dei badge stanza: vetro quando il Liquid Glass è attivo,
+    /// materiale altrimenti. Usa `.regular` e non `.clear` perché la planimetria
+    /// sotto è un'immagine dell'utente di luminosità sconosciuta.
+    private struct EnvironmentBadgeSurface: ViewModifier {
+        @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+        private var isLiquidGlassEnabled = false
+        @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+                content.glassEffect(.regular, in: shape)
+            } else {
+                content.background(.regularMaterial).clipShape(shape)
+            }
+        }
+    }
 
     private func environmentBadge(room: LinkedRoom, urgency: SensorUrgency) -> some View {
         let roomData   = envVM.rooms.first { $0.roomName == room.name }
@@ -162,8 +184,7 @@ struct EnvironmentOverlayView: View {
                 .fill(borderColor.opacity(0.7))
                 .frame(height: 3)
         }
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .modifier(EnvironmentBadgeSurface())
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(borderColor.opacity(0.35), lineWidth: 1)
