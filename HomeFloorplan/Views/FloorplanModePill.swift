@@ -19,10 +19,16 @@ struct FloorplanModePill: View {
     /// tab all'altro invece di farla sparire e riapparire.
     @Namespace private var selectionNamespace
 
-    /// Frame di ogni voce nello spazio della barra: serve al drag per sapere
-    /// sopra quale modalità si trova il dito. Non partecipa al layout, quindi
-    /// non innesca cicli di rimisura.
-    @State private var modeFrames: [String: CGRect] = [:]
+    /// Frame di ogni voce nello spazio della barra: servono SOLO al drag, per
+    /// sapere sopra quale modalità si trova il dito.
+    ///
+    /// Tenuti in una classe e non in `@State` di proposito. Con `@State`, ogni
+    /// scrittura invalidava la view: durante l'animazione della capsula i frame
+    /// cambiano a ogni fotogramma, quindi si rimisurava e riscriveva in ciclo —
+    /// da cui il warning `glassEffect() tried to update multiple times per
+    /// frame`. Sono dati per il gesto, non per il rendering, e non devono
+    /// partecipare al ciclo di layout.
+    @State private var modeFrames = ModeFrameStore()
 
     private var usesGlass: Bool { isLiquidGlassEnabled && !isLiquidGlassSuppressed }
 
@@ -42,11 +48,16 @@ struct FloorplanModePill: View {
     var body: some View {
         // Collapse when only one mode is available.
         if modes.count > 1 {
-            LiquidGlassContainer(spacing: 120) {
-                HStack(spacing: 4) {
-                    ForEach(modes) { mode in
-                        modeButton(mode)
-                    }
+            // NIENTE container qui: la pill vive già dentro il
+            // LiquidGlassContainer della top chrome. Annidarne un secondo,
+            // per giunta con uno spacing di fusione in conflitto (120 contro
+            // 12), faceva rimbalzare gli aggiornamenti tra i due nello stesso
+            // frame — da cui `glassEffect() tried to update multiple times per
+            // frame`. Il morph della selezione resta: lo gestisce il container
+            // esterno, che vede comunque i glassEffectID nel namespace.
+            HStack(spacing: 4) {
+                ForEach(modes) { mode in
+                    modeButton(mode)
                 }
             }
             .padding(4)
@@ -67,7 +78,7 @@ struct FloorplanModePill: View {
     /// Attiva la modalità sotto il dito, se diversa da quella corrente.
     private func select(at point: CGPoint) {
         guard let hit = modes.first(where: { mode in
-            guard let frame = modeFrames[mode.id] else { return false }
+            guard let frame = modeFrames.frames[mode.id] else { return false }
             return point.x >= frame.minX && point.x <= frame.maxX
         }), hit != overlayVM.activeMode else { return }
 
@@ -107,10 +118,18 @@ struct FloorplanModePill: View {
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .named(Self.barSpace))
         } action: { frame in
-            modeFrames[mode.id] = frame
+            modeFrames.frames[mode.id] = frame
         }
     }
 
+}
+
+// MARK: - ModeFrameStore
+
+/// Contenitore non osservabile per i frame delle voci: scriverci non invalida
+/// la view, che è esattamente ciò che serve per dati letti solo dai gesti.
+private final class ModeFrameStore {
+    var frames: [String: CGRect] = [:]
 }
 
 // MARK: - ModeSelectionHighlight
