@@ -12,9 +12,12 @@ struct HomeIntelligenceDebugView: View {
 
     @Environment(ProactiveIntelligenceService.self) private var proactiveService
     @Environment(CloudKitSyncService.self) private var cloudKitSync
+    @Environment(HomeKitService.self) private var homeKit
+    @Environment(DataLifecycleService.self) private var dataLifecycleService
     @Environment(\.modelContext) private var modelContext
 
     @State private var selectedTab: DebugTab = .insights
+    @State private var environmentalProbeReport: String?
 
     private enum DebugTab: String, CaseIterable, Identifiable {
         case insights = "Insights"
@@ -90,6 +93,60 @@ struct HomeIntelligenceDebugView: View {
         insights.filter { $0.syncPolicy != .localOnly }.count
     }
 
+    /// Prova a vuoto del suggeritore di automazioni ambientali: mostra cosa
+    /// proporrebbe sui dati reali di questa casa, prima di costruire la feature.
+    /// Card temporanea, si rimuove col file EnvironmentalAutomationProbe.
+    @ViewBuilder
+    private var environmentalAutomationProbeCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Prova a vuoto — automazioni ambientali", systemImage: "flask")
+                .font(.subheadline.weight(.bold))
+            Text("Cosa proporrebbe il suggeritore sulle ricorrenze già raccolte. Non crea nulla.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Button("Esegui la prova") { runEnvironmentalProbe() }
+                    .buttonStyle(.borderedProminent)
+
+                // Il ciclo dati gira ogni 24h: senza questo, verificare una
+                // modifica all'aggregazione o alla potatura significa aspettare
+                // un giorno.
+                Button("Esegui il ciclo dati ora") {
+                    Task {
+                        await dataLifecycleService.runFullCycle()
+                        runEnvironmentalProbe()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(dataLifecycleService.isRunning)
+            }
+
+            if let environmentalProbeReport {
+                Text(environmentalProbeReport)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.regularMaterial))
+    }
+
+    private func runEnvironmentalProbe() {
+        let resolver = ActionResolver(homeKit: homeKit)
+        let report = EnvironmentalAutomationProbe.dryRun(
+            patterns: EnvironmentalPatternAnalyzer.loadPatterns()
+        ) { intents, roomName in
+            resolver.resolve(intents: intents, roomName: roomName)
+                .first { !$0.isTip }?
+                .label
+        }
+        environmentalProbeReport = EnvironmentalAutomationProbe.upstreamReport(
+            modelContainer: modelContext.container
+        ) + "\n\n" + EnvironmentalAutomationProbe.format(report)
+    }
+
     /// Timing dell'ultimo runCycle (diagnosi M6): step ordinati per costo.
     @ViewBuilder
     private var cycleTimingsCard: some View {
@@ -127,6 +184,7 @@ struct HomeIntelligenceDebugView: View {
                 header
                 summaryGrid
                 cycleTimingsCard
+                environmentalAutomationProbeCard
                 Picker("Debug section", selection: $selectedTab) {
                     ForEach(DebugTab.allCases) { tab in
                         Text(tab.rawValue).tag(tab)
