@@ -30,6 +30,8 @@ final class CloudKitSyncService {
     private static let engineStateKey        = "cloudkit.syncEngineState"
     private static let lastSyncedKey         = "cloudkit.lastSyncedAt"
     private static let zoneCreatedKey        = "cloudkit.zoneCreated"
+    private static let subscriptionCreatedKey = "cloudkit.subscriptionCreated.v1"
+    private static let subscriptionID         = "homefloorplan-zone-changes"
     private static let syncedThresholdIDsKey = "cloudkit.syncedThresholdIDs"
     private static let localFirstSafetyVersionKey = "cloudkit.localFirstSafetyVersion"
     private static let currentLocalFirstSafetyVersion = 1
@@ -180,6 +182,42 @@ final class CloudKitSyncService {
         if !UserDefaults.standard.bool(forKey: Self.zoneCreatedKey) {
             syncEngine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.zoneID))])
             dprint("[CloudKitSync] Zone not confirmed — scheduled zone creation")
+        }
+
+        Task { await ensureZoneSubscription() }
+    }
+
+    // MARK: - Push subscription
+
+    /// Registra la sottoscrizione che fa arrivare le push quando la zona cambia.
+    ///
+    /// Registrarsi con APNs (AppDelegate) apre il canale, ma non basta: senza una
+    /// CKSubscription il server non ha motivo di inviare nulla. È il motivo per
+    /// cui la diagnostica mostrava "registration succeeded" e zero notifiche
+    /// ricevute, con la sincronizzazione tenuta in piedi solo dal poll a 20s.
+    ///
+    /// `shouldSendContentAvailable` la rende silenziosa: nessun avviso a schermo,
+    /// solo il risveglio dell'app per andare a prendere le modifiche.
+    private func ensureZoneSubscription() async {
+        guard !UserDefaults.standard.bool(forKey: Self.subscriptionCreatedKey) else { return }
+
+        let subscription = CKRecordZoneSubscription(zoneID: Self.zoneID,
+                                                   subscriptionID: Self.subscriptionID)
+        let info = CKSubscription.NotificationInfo()
+        info.shouldSendContentAvailable = true
+        subscription.notificationInfo = info
+
+        let db = CKContainer(identifier: Self.containerID).privateCloudDatabase
+        do {
+            _ = try await db.modifySubscriptions(saving: [subscription], deleting: [])
+            UserDefaults.standard.set(true, forKey: Self.subscriptionCreatedKey)
+            SyncDiagnosticsLogger.log("Zone push subscription registered id=\(Self.subscriptionID)")
+            dprint("[CloudKitSync] ✅ Push subscription registered")
+        } catch {
+            // Non fatale: il poll continua a coprire la sincronizzazione. Si
+            // riproverà al prossimo avvio, il flag resta abbassato.
+            SyncDiagnosticsLogger.log("Zone push subscription failed: \(error.localizedDescription)")
+            dprint("[CloudKitSync] ⚠️ Push subscription failed: \(error)")
         }
     }
 
@@ -1113,6 +1151,9 @@ private extension CloudKitSyncService {
         }
         if !zoneNotFoundIDs.isEmpty {
             UserDefaults.standard.removeObject(forKey: Self.zoneCreatedKey)
+            // La subscription è legata alla zona: se la zona non c'è più va
+            // ricreata anche quella, altrimenti le push non tornano mai.
+            UserDefaults.standard.removeObject(forKey: Self.subscriptionCreatedKey)
             syncEngine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.zoneID))])
             addPendingRecordZoneChanges(zoneNotFoundIDs.map { .saveRecord($0) })
             dprint("[CloudKitSync] ⚠️ Zone not found (\(zoneNotFoundIDs.count) records) — re-scheduled zone + records")

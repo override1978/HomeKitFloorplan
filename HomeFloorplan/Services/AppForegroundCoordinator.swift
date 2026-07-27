@@ -119,19 +119,30 @@ struct AppForegroundCoordinator {
         }
     }
 
+    /// Rete di sicurezza del sync, non il canale principale.
+    ///
+    /// La propagazione live è affidata alle push della CKRecordZoneSubscription
+    /// (misurata: ~0,5 s dalla notifica all'aggiornamento della vista). Questo
+    /// loop copre solo i casi in cui una push si perde o l'app riparte con lo
+    /// stato di sync disallineato, quindi può permettersi un intervallo lungo.
+    ///
+    /// Era a 20 s quando le push non arrivavano affatto — mancava la
+    /// subscription — e produceva ~4.300 fetch al giorno su un pannello sempre
+    /// in foreground, con blocchi del main thread sparsi tutta la notte.
     func runCloudKitActivePollLoop(isActive: Bool) async {
         guard isActive else { return }
+        let interval: TimeInterval = 5 * 60
         while !Task.isCancelled {
             await cloudKitSync.fetchRemoteChangesIfNeeded(
                 reason: "active-poll",
-                minimumInterval: 20
+                minimumInterval: interval
             )
             await cloudKitSync.fetchZoneChangesDeterministicallyIfNeeded(
                 reason: "active-poll",
-                minimumInterval: 20
+                minimumInterval: interval
             )
             do {
-                try await Task.sleep(for: .seconds(20))
+                try await Task.sleep(for: .seconds(interval))
             } catch {
                 break
             }
