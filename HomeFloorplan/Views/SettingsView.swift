@@ -30,33 +30,6 @@ struct SettingsView: View {
         return s.masterDeviceID.isEmpty || s.masterDeviceID == DeviceIdentity.id
     }
 
-    @AppStorage(MarkerSize.appStorageKey)
-    private var markerSizeRaw: String = MarkerSize.regular.rawValue
-
-    @AppStorage(MarkerLabelVisibility.appStorageKey)
-    private var markerLabelVisibilityRaw: String = MarkerLabelVisibility.smart.rawValue
-
-    private var currentMarkerSize: MarkerSize {
-        MarkerSize(rawValue: markerSizeRaw) ?? .regular
-    }
-
-    /// Timeout salvo in secondi. Default 90s (= 1m 30s).
-    @AppStorage("idleTimeout")
-    private var idleTimeoutSeconds: Double = 90
-
-    /// Unità di misura temperatura (celsius / fahrenheit).
-    @AppStorage(TemperatureUnit.appStorageKey)
-    private var temperatureUnitRaw: String = TemperatureUnit.celsius.rawValue
-
-    @AppStorage(AppLanguage.appStorageKey)
-    private var appLanguageRaw: String = AppLanguage.english.rawValue
-
-    @AppStorage(DimensionUnit.appStorageKey)
-    private var dimensionUnitRaw: String = DimensionUnit.metric.rawValue
-
-    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
-    private var isLiquidGlassEnabled: Bool = false
-
     @AppStorage("alertNotificationsEnabled")
     private var alertNotificationsEnabled: Bool = false
 
@@ -65,181 +38,65 @@ struct SettingsView: View {
 
     // MARK: - Home Location state
     @State private var showsLocationPicker = false
-    @State private var showLanguageRestartAlert = false
     @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
     @AppStorage("homeLocation.cityName") private var homeLocationCityName: String = ""
 
     var body: some View {
         Form {
-            // MARK: - Home & Floorplan
+            // MARK: - Casa
 
             Section {
                 homeKitSection
-
-                MarkerPreviewView(size: currentMarkerSize)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.85),
-                               value: markerSizeRaw)
-
-                Picker(String(localized: "settings.marker.size.picker", defaultValue: "Size"), selection: $markerSizeRaw) {
-                    ForEach(MarkerSize.allCases) { size in
-                        Text(size.localizationKey).tag(size.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Picker(String(localized: "settings.marker.labels.picker", defaultValue: "Labels"), selection: $markerLabelVisibilityRaw) {
-                    ForEach(MarkerLabelVisibility.allCases) { visibility in
-                        Text(visibility.localizationKey).tag(visibility.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-#if DEBUG
-                NavigationLink {
-                    HomeKitDebugView()
-                } label: {
-                    settingsLinkRow(
-                        icon: "stethoscope",
-                        title: String(localized: "settings.homekit.diagnostics", defaultValue: "Support Diagnostics"),
-                        subtitle: String(localized: "settings.homekit.diagnostics.subtitle", defaultValue: "Export HomeKit accessory details for troubleshooting.")
-                    )
-                }
-#endif
+                homeLocationSection
             } header: {
-                Text(String(localized: "settings.section.homeFloorplan", defaultValue: "Home & Floorplan"))
+                Text(String(localized: "settings.section.home", defaultValue: "Home"))
             } footer: {
                 if homeKit.availableHomes.count > 1 {
                     Text(String(localized: "settings.homekit.footer.multi", defaultValue: "You can have multiple homes configured in Apple Home. Choose which one to manage with HomeFloorplan."))
-                } else {
-                    Text(String(localized: "settings.homekit.footer.single", defaultValue: "The active home determines which accessories and floorplans are visible."))
                 }
             }
 
-            // MARK: - App
-
-            Section {
-                Picker(selection: $appLanguageRaw) {
-                    ForEach(AppLanguage.selectableLanguages) { language in
-                        Text(language.displayName).tag(language.rawValue)
-                    }
-                } label: {
-                    Label(String(localized: "settings.language.picker", defaultValue: "App Language"), systemImage: "globe")
-                }
-                .pickerStyle(.menu)
-
-                Picker(selection: $dimensionUnitRaw) {
-                    Text(String(localized: "settings.drawing.dimensionUnit.metric",   defaultValue: "m – Metric")).tag(DimensionUnit.metric.rawValue)
-                    Text(String(localized: "settings.drawing.dimensionUnit.imperial", defaultValue: "ft – Imperial")).tag(DimensionUnit.imperial.rawValue)
-                } label: {
-                    Label(String(localized: "settings.drawing.dimensionUnit", defaultValue: "Measurements"), systemImage: "ruler")
-                }
-                .pickerStyle(.menu)
-
-                Picker(String(localized: "settings.screensaver.picker", defaultValue: "Activate after"), selection: $idleTimeoutSeconds) {
-                    Text(String(localized: "settings.screensaver.30s",    defaultValue: "30 seconds")).tag(30.0)
-                    Text(String(localized: "settings.screensaver.1m",     defaultValue: "1 minute")).tag(60.0)
-                    Text(String(localized: "settings.screensaver.1m30s",  defaultValue: "1 min 30 sec")).tag(90.0)
-                    Text(String(localized: "settings.screensaver.2m",     defaultValue: "2 minutes")).tag(120.0)
-                    Text(String(localized: "settings.screensaver.5m",     defaultValue: "5 minutes")).tag(300.0)
-                    Text(String(localized: "settings.screensaver.10m",    defaultValue: "10 minutes")).tag(600.0)
-                    Text(String(localized: "settings.screensaver.never",  defaultValue: "Never")).tag(0.0)
-                }
-                .pickerStyle(.menu)
-
-                Toggle(isOn: $isLiquidGlassEnabled) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(String(localized: "settings.appearance.liquidGlass", defaultValue: "Liquid Glass"))
-                            Text(String(localized: "settings.appearance.liquidGlass.subtitle", defaultValue: "Use the new glass effect on floorplan controls where supported."))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "sparkles.rectangle.stack")
-                    }
-                }
-
-                HStack {
-                    Text(String(localized: "settings.info.version", defaultValue: "Version"))
-                    Spacer()
-                    Text(Bundle.main.appVersion)
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text(String(localized: "settings.section.app", defaultValue: "App"))
-            } footer: {
-                Text(String(localized: "settings.language.restartHint", defaultValue: "Language changes are applied after closing and reopening the app on iPad."))
-            }
-            .onChange(of: idleTimeoutSeconds) { _, newValue in
-                if newValue == 0 {
-                    IdleTimerService.shared.timeout = .infinity
-                } else {
-                    IdleTimerService.shared.timeout = newValue
-                }
-                IdleTimerService.shared.resetTimer()
-            }
-            .onChange(of: appLanguageRaw) { _, newValue in
-                AppLanguage.apply(rawValue: newValue)
-                showLanguageRestartAlert = true
-            }
-            .alert(String(localized: "settings.language.restartAlert.title", defaultValue: "Restart required"),
-                   isPresented: $showLanguageRestartAlert) {
-                Button(String(localized: "button.ok", defaultValue: "OK")) {}
-            } message: {
-                Text(String(localized: "settings.language.restartAlert.message", defaultValue: "Close and reopen Home Floorplan on this iPad to apply the selected language everywhere."))
-            }
-
-            // MARK: - Notifications
+            // MARK: - Personalizza
 
             Section {
                 NavigationLink {
-                    NotificationSettingsView()
+                    AppearanceSettingsView()
                 } label: {
                     settingsLinkRow(
-                        icon: "bell.badge",
-                        title: String(localized: "settings.notifications.center.link", defaultValue: "Notifications"),
-                        subtitle: String(localized: "settings.notifications.center.subtitle", defaultValue: "Manage security, environment, and intelligence notifications."),
-                        status: notificationsSummaryText,
-                        statusColor: notificationsSummaryColor
+                        icon: "paintbrush",
+                        title: String(localized: "settings.appearance.title", defaultValue: "Appearance"),
+                        subtitle: String(localized: "settings.appearance.subtitle", defaultValue: "Markers, glass effect, and screen saver.")
                     )
                 }
-            } header: {
-                Text(String(localized: "settings.notifications.center.header", defaultValue: "Notifications"))
-            } footer: {
-                Text(String(localized: "settings.notifications.center.footer", defaultValue: "Choose which events can interrupt you and which should stay in the app."))
-            }
-
-            // MARK: - Environment
-
-            Section {
-                Picker(selection: $temperatureUnitRaw) {
-                    Text("°C – Celsius").tag(TemperatureUnit.celsius.rawValue)
-                    Text("°F – Fahrenheit").tag(TemperatureUnit.fahrenheit.rawValue)
-                } label: {
-                    Label(String(localized: "settings.environment.temperature", defaultValue: "Temperature"), systemImage: "thermometer.medium")
-                }
-                .pickerStyle(.menu)
-
-                homeLocationSection
 
                 NavigationLink {
-                    EnvironmentSettingsView()
+                    LanguageAndUnitsSettingsView()
                 } label: {
                     settingsLinkRow(
-                        icon: "leaf",
-                        title: String(localized: "settings.environment.settings.link", defaultValue: "Environment Settings"),
-                        subtitle: String(localized: "settings.environment.settings.subtitle", defaultValue: "Outdoor sensors, environmental alerts, and thresholds.")
+                        icon: "globe",
+                        title: String(localized: "settings.languageUnits.title", defaultValue: "Language & Units"),
+                        subtitle: String(localized: "settings.languageUnits.subtitle", defaultValue: "App language, measurements, and temperature.")
                     )
                 }
             } header: {
-                Text(String(localized: "settings.environment.header", defaultValue: "Environment"))
-            } footer: {
-                Text(String(localized: "settings.homeLocation.footer", defaultValue: "Used by WeatherKit to record outdoor temperature and humidity. Type your city or address and tap Set."))
+                Text(String(localized: "settings.section.customize", defaultValue: "Customize"))
             }
 
-            // MARK: - Automations
+            // MARK: - Intelligenza
 
             Section {
+                NavigationLink {
+                    AISettingsView()
+                } label: {
+                    settingsLinkRow(
+                        icon: "brain",
+                        title: String(localized: "settings.ai.link", defaultValue: "Home Intelligence"),
+                        subtitle: String(localized: "settings.ai.summary", defaultValue: "AI insights, habit suggestions, anomaly summaries, and assistant features."),
+                        status: aiStatusText,
+                        statusColor: aiStatusColor
+                    )
+                }
+
                 NavigationLink {
                     SmartLightingSettingsView()
                 } label: {
@@ -252,24 +109,14 @@ struct SettingsView: View {
                         badge: String(localized: "settings.badge.advanced", defaultValue: "Advanced")
                     )
                 }
-            } header: {
-                Text(String(localized: "settings.automations.header", defaultValue: "Automations"))
-            } footer: {
-                Text(String(localized: "settings.automations.footer", defaultValue: "Automatic scene activation based on sunrise/sunset times and ambient light."))
-            }
 
-            // MARK: - Home Intelligence
-
-            Section {
                 NavigationLink {
-                    AISettingsView()
+                    EnvironmentSettingsView()
                 } label: {
                     settingsLinkRow(
-                        icon: "brain",
-                        title: String(localized: "settings.ai.link", defaultValue: "Home Intelligence"),
-                        subtitle: String(localized: "settings.ai.summary", defaultValue: "AI insights, habit suggestions, anomaly summaries, and assistant features."),
-                        status: aiStatusText,
-                        statusColor: aiStatusColor
+                        icon: "leaf",
+                        title: String(localized: "settings.environment.settings.link", defaultValue: "Environment Settings"),
+                        subtitle: String(localized: "settings.environment.settings.subtitle", defaultValue: "Outdoor sensors, environmental alerts, and thresholds.")
                     )
                 }
 
@@ -288,9 +135,25 @@ struct SettingsView: View {
                     }
                 }
             } header: {
-                Text(String(localized: "settings.ai.header", defaultValue: "Home Intelligence"))
-            } footer: {
-                Text(String(localized: "settings.ai.footer", defaultValue: "Configure the AI provider and API keys to enable suggestions, anomalies, and predictive rules."))
+                Text(String(localized: "settings.section.intelligence", defaultValue: "Intelligence"))
+            }
+
+            // MARK: - Notifiche
+
+            Section {
+                NavigationLink {
+                    NotificationSettingsView()
+                } label: {
+                    settingsLinkRow(
+                        icon: "bell.badge",
+                        title: String(localized: "settings.notifications.center.link", defaultValue: "Notifications"),
+                        subtitle: String(localized: "settings.notifications.center.subtitle", defaultValue: "Manage security, environment, and intelligence notifications."),
+                        status: notificationsSummaryText,
+                        statusColor: notificationsSummaryColor
+                    )
+                }
+            } header: {
+                Text(String(localized: "settings.notifications.center.header", defaultValue: "Notifications"))
             }
 
             // MARK: - iCloud
@@ -312,22 +175,13 @@ struct SettingsView: View {
                 }
 
                 iCloudSyncRow
+
                 ShareLink(item: SyncDiagnosticsLogger.fileURL) {
                     Label(
                         String(localized: "settings.icloud.diagnostics.export", defaultValue: "Export Sync Diagnostics"),
                         systemImage: "square.and.arrow.up"
                     )
                 }
-#if DEBUG
-                Button(role: .destructive) {
-                    SyncDiagnosticsLogger.clear()
-                } label: {
-                    Label(
-                        String(localized: "settings.icloud.diagnostics.clear", defaultValue: "Clear Sync Diagnostics"),
-                        systemImage: "trash"
-                    )
-                }
-#endif
             } header: {
                 Text(String(localized: "settings.icloud.header", defaultValue: "iCloud"))
             } footer: {
@@ -338,9 +192,19 @@ struct SettingsView: View {
                 }
             }
 
+            // MARK: - Info
+
+            Section {
+                HStack {
+                    Text(String(localized: "settings.info.version", defaultValue: "Version"))
+                    Spacer()
+                    Text(Bundle.main.appVersion)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
 #if DEBUG
-            // MARK: - Developer
+            // MARK: - Avanzate
 
             Section {
                 Button {
@@ -359,14 +223,21 @@ struct SettingsView: View {
                     )
                 }
                 NavigationLink {
+                    HomeKitDebugView()
+                } label: {
+                    settingsLinkRow(
+                        icon: "stethoscope",
+                        title: String(localized: "settings.homekit.diagnostics", defaultValue: "Support Diagnostics"),
+                        subtitle: String(localized: "settings.homekit.diagnostics.subtitle", defaultValue: "Export HomeKit accessory details for troubleshooting.")
+                    )
+                }
+                NavigationLink {
                     AITraceView()
                 } label: {
                     Label("AI Pipeline Trace", systemImage: "waveform.and.magnifyingglass")
                 }
             } header: {
                 Text(String(localized: "settings.developer.header", defaultValue: "Developer"))
-            } footer: {
-                Text(String(localized: "settings.developer.footer", defaultValue: "Reset the first-run experience. Close and reopen the app to see the onboarding."))
             }
 #endif
         }
@@ -587,11 +458,6 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if let settings = syncableSettings {
-                    Text("Settings: \(settings.masterDeviceID == DeviceIdentity.id ? "Primary" : "Secondary") · AI \(settings.aiIsEnabled ? "On" : "Off")")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
             }
 
             Spacer()
