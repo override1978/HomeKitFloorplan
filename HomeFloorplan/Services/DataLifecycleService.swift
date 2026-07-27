@@ -62,6 +62,30 @@ final class DataLifecycleService {
         self.modelContainer = modelContainer
     }
 
+    // MARK: - Diagnostica salute dati
+
+    /// Scrive nel log diagnostico esportabile lo stato dello strato aggregati.
+    ///
+    /// Serve a rispondere da remoto — su un pannello a muro in TestFlight, dove
+    /// non si può attaccare Xcode senza spostare il device sull'ambiente CloudKit
+    /// di sviluppo — a una domanda sola: **il ciclo giornaliero è mai girato qui?**
+    ///
+    /// Va in `SyncDiagnosticsLogger` e non dietro `#if DEBUG` di proposito: è
+    /// l'unico canale leggibile in produzione, esportabile da Impostazioni →
+    /// iCloud. Costa tre fetchCount all'avvio.
+    nonisolated static func logDataHealth(modelContainer: ModelContainer, isMaster: Bool) {
+        let ctx = ModelContext(modelContainer)
+        let readings  = (try? ctx.fetchCount(FetchDescriptor<SensorReading>())) ?? -1
+        let summaries = (try? ctx.fetchCount(FetchDescriptor<DailySensorSummary>())) ?? -1
+        let usage     = (try? ctx.fetchCount(FetchDescriptor<AccessoryUsageSummary>())) ?? -1
+        let lastCycle = UserDefaults.standard.object(forKey: lastCycleDateKey) as? Date
+
+        SyncDiagnosticsLogger.log(
+            "Data health: lastLifecycleCycle=\(lastCycle.map { ISO8601DateFormatter().string(from: $0) } ?? "NEVER") "
+            + "readings=\(readings) dailySummaries=\(summaries) usageSummaries=\(usage) isMaster=\(isMaster)"
+        )
+    }
+
     // MARK: - Full Cycle
 
     /// Runs the complete lifecycle cycle: aggregate raw telemetry into permanent knowledge,
@@ -103,11 +127,23 @@ final class DataLifecycleService {
                 Self.pruneSensorAlertEvents(context: ctx)
                 Self.pruneActionEffectivenessEvents(context: ctx)
                 Self.pruneRoomAnalysisStates(context: ctx)
+
+                // Il grezzo per ultimo: le Fasi 1 l'hanno appena distillato in
+                // summary permanenti, quindi ora è ridondante. L'ordine conta —
+                // potare prima di aggregare butterebbe conoscenza.
+                Self.pruneRawTelemetry(context: ctx)
             }
 
             // ── Phase 3: Persist all changes ──────────────────────────────────
             try? ctx.save()
         }.value
+
+        // Le ricorrenze ambientali derivano dai DailySensorSummary appena
+        // prodotti: stanno nello stesso ciclo, non fuori. Erano invocate solo
+        // dal BGProcessingTask, quindi con quel task mai concesso non sono mai
+        // state calcolate — ed è il motivo per cui la prova a vuoto sulle
+        // automazioni ambientali trovava zero ricorrenze.
+        await EnvironmentalPatternAnalyzer.analyze(modelContainer: container)
 
         UserDefaults.standard.set(Date(), forKey: Self.lastCycleDateKey)
         dprint("🗂 DataLifecycle: cycle complete in \(String(format: "%.2f", Date().timeIntervalSince(start)))s")
@@ -420,6 +456,88 @@ final class DataLifecycleService {
     }
 
     // MARK: - Phase 2a: Prune PersistedInsight
+
+    // MARK: - Phase 2e: Potatura della telemetria grezza
+
+    /// Numero massimo di record grezzi cancellati per ciclo.
+    ///
+    /// Il primo giro su un device che non ha mai potato trova oltre 150.000
+    /// letture: cancellarle in una transazione bloccherebbe il pannello per
+    /// minuti. Con questo tetto lo smaltimento si distribuisce su qualche
+    /// giorno, invisibile all'uso.
+    private static let maxRawDeletionsPerCycle = 20_000
+    private static let rawDeletionBatchSize    = 1_000
+
+    /// Cancella letture ed eventi grezzi già distillati negli aggregati.
+    ///
+    /// Non esisteva: il file dichiara "Raw data is temporary, knowledge is
+    /// permanent", ma per `SensorReading` e `AccessoryEvent` la seconda metà
+    /// non era mai stata scritta. Da qui i 166.555 record trovati sul device
+    /// primario, mai potati in mesi.
+    private nonisolated static func pruneRawTelemetry(context: ModelContext) {
+        // Guardia di sicurezza: se l'aggregazione non ha prodotto NULLA, il
+        // grezzo è l'unica copia dei dati e non va toccato. Protegge dal caso
+        // in cui la Fase 1 fallisca in silenzio.
+        let summaries = (try? context.fetchCount(FetchDescriptor<DailySensorSummary>())) ?? 0
+        guard summaries > 0 else {
+            dprint("🗂 DataLifecycle: potatura grezzo saltata — nessun aggregato, il grezzo è l'unica copia")
+            return
+        }
+
+        let sensorCutoff = Date().addingTimeInterval(-Double(DLCRetention.sensorRaw) * 86400)
+        let deletedReadings = deleteInBatches(
+            context: context,
+            descriptor: FetchDescriptor<SensorReading>(
+                predicate: #Predicate<SensorReading> { $0.timestamp < sensorCutoff }
+            )
+        )
+
+        let eventCutoff = Date().addingTimeInterval(-Double(DLCRetention.accessoryRaw) * 86400)
+        let deletedEvents = deleteInBatches(
+            context: context,
+            descriptor: FetchDescriptor<AccessoryEvent>(
+                predicate: #Predicate<AccessoryEvent> { $0.timestamp < eventCutoff }
+            )
+        )
+
+        // Logga SEMPRE, anche a zero: "non ha girato" e "ha girato senza
+        // trovare nulla" sono diagnosi opposte e vanno distinte. Include la
+        // lettura più vecchia rimasta, che dice se la soglia dei 30 giorni sta
+        // effettivamente mordendo o se l'archivio è già in equilibrio.
+        var oldest = FetchDescriptor<SensorReading>(
+            sortBy: [SortDescriptor(\SensorReading.timestamp, order: .forward)]
+        )
+        oldest.fetchLimit = 1
+        let oldestDate = (try? context.fetch(oldest))?.first?.timestamp
+        let oldestText = oldestDate.map { ISO8601DateFormatter().string(from: $0) } ?? "none"
+
+        dprint("🗂 DataLifecycle: potati \(deletedReadings) SensorReading e \(deletedEvents) AccessoryEvent · più vecchia rimasta \(oldestText)")
+        SyncDiagnosticsLogger.log(
+            "Raw pruning: readings=\(deletedReadings) events=\(deletedEvents) "
+            + "cutoff=\(ISO8601DateFormatter().string(from: sensorCutoff)) oldestRemaining=\(oldestText)"
+        )
+    }
+
+    /// Cancella a lotti con un save per lotto, fermandosi al tetto del ciclo.
+    /// Un unico save da decine di migliaia di delete tiene il contesto in
+    /// memoria e blocca a lungo; così il lavoro è limitato e ripetibile.
+    private nonisolated static func deleteInBatches<T: PersistentModel>(
+        context: ModelContext,
+        descriptor: FetchDescriptor<T>
+    ) -> Int {
+        var deleted = 0
+        while deleted < maxRawDeletionsPerCycle {
+            var batch = descriptor
+            batch.fetchLimit = rawDeletionBatchSize
+            let records = (try? context.fetch(batch)) ?? []
+            guard !records.isEmpty else { break }
+            records.forEach { context.delete($0) }
+            try? context.save()
+            deleted += records.count
+            if records.count < rawDeletionBatchSize { break }
+        }
+        return deleted
+    }
 
     private nonisolated static func prunePersistedInsights(context: ModelContext) {
         let cutoff = Date().addingTimeInterval(-Double(DLCRetention.insight) * 86400)

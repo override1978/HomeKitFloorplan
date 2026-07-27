@@ -87,6 +87,7 @@ struct HomeFloorplanRootView: View {
             onboarding: services.onboarding,
             idleTimer: services.idleTimer,
             activityLogger: services.activityLogger,
+            dataLifecycleService: services.dataLifecycleService,
             automationsService: services.automationsService,
             actionExecutionService: services.actionExecutionService,
             ambientalAIService: services.ambientalAIService,
@@ -127,7 +128,8 @@ struct HomeFloorplanRootView: View {
             smartLightingEngine: services.smartLightingEngine,
             proactiveIntelligenceService: services.proactiveIntelligenceService,
             maintenancePredictionService: services.maintenancePredictionService,
-            locationPresenceService: services.locationPresenceService
+            locationPresenceService: services.locationPresenceService,
+            dataLifecycleService: services.dataLifecycleService
         )
     }
 
@@ -208,6 +210,7 @@ private struct AppEnvironmentModifier: ViewModifier {
     let onboarding: OnboardingService
     let idleTimer: IdleTimerService
     let activityLogger: ActivityLoggerService
+    let dataLifecycleService: DataLifecycleService
     let automationsService: HomeKitAutomationsService
     let actionExecutionService: ActionExecutionService
     let ambientalAIService: AmbientalAIService
@@ -230,6 +233,7 @@ private struct AppEnvironmentModifier: ViewModifier {
             .environment(onboarding)
             .environment(idleTimer)
             .environment(activityLogger)
+            .environment(dataLifecycleService)
             .environment(automationsService)
             .environment(actionExecutionService)
             .environment(ambientalAIService)

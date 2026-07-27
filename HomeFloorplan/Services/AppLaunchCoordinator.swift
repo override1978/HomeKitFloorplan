@@ -18,6 +18,13 @@ struct AppLaunchCoordinator {
             aiSettings: aiSettings,
             securityMonitoredUUIDsRaw: securityMonitoredUUIDsRaw
         )
+        // Stato dello strato aggregati, nel log esportabile: dice se il ciclo
+        // giornaliero è mai girato su QUESTO device, ambiente compreso.
+        DataLifecycleService.logDataHealth(
+            modelContainer: sharedModelContainer,
+            isMaster: cloudKitSync.isMaster
+        )
+
         if cloudKitSync.isMaster {
             cloudKitSync.updateSettingsFromRuntime(
                 aiSettings: aiSettings,

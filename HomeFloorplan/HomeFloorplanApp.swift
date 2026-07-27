@@ -154,7 +154,11 @@ struct HomeFloorplanApp: App {
         let work = Task { @MainActor in
             if let home = homeKitService.currentHome {
                 await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: container)
-                await SensorLogger.shared.pruneOldReadings(olderThan: 30, modelContainer: container)
+                // La potatura delle letture è passata al ciclo dati: là gira
+                // DOPO l'aggregazione e solo se gli aggregati esistono. Qui
+                // viveva in un BGProcessingTask mai concesso su un pannello
+                // sempre acceso, e avrebbe potuto cancellare grezzo non ancora
+                // distillato.
             }
             if let snapshot = weather.currentWeather {
                 await SensorLogger.shared.sampleOutdoor(snapshot: snapshot, modelContainer: container)
@@ -260,17 +264,14 @@ struct HomeFloorplanApp: App {
         let lifecycle   = services.dataLifecycleService
         let container   = sharedModelContainer
         let maintenance = services.maintenancePredictionService
-        let cloudSync   = services.cloudKitSync
 
         let work = Task { @MainActor in
-            guard cloudSync.isMaster else {
-                task.setTaskCompleted(success: true)
-                return
-            }
+            // Nessuna guardia isMaster: ogni device aggrega e pota il PROPRIO
+            // store locale. Gli aggregati non sono sincronizzati, quindi
+            // gatarli sul primario condannava il secondario a non averli mai.
+            // runFullCycle include ora anche l'analisi delle ricorrenze
+            // ambientali, che dagli aggregati dipende.
             await lifecycle.runFullCycle()
-            // Motore statistico ritirato: niente analyze()/cleanupStale nel
-            // ciclo giornaliero (pivot Abitudini).
-            await EnvironmentalPatternAnalyzer.analyze(modelContainer: container)
             await maintenance.analyze()
             #if DEBUG
             let snap = StorageHealthMonitor.takeSnapshot(container: container)

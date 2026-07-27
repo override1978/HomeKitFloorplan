@@ -12,6 +12,7 @@ struct AppForegroundCoordinator {
     let proactiveIntelligenceService: ProactiveIntelligenceService
     let maintenancePredictionService: MaintenancePredictionService
     let locationPresenceService: LocationPresenceService
+    let dataLifecycleService: DataLifecycleService
 
     /// Cadenze del loop foreground, persistite fuori dal task.
     ///
@@ -99,6 +100,23 @@ struct AppForegroundCoordinator {
                Cadence.isDue(Cadence.smartLighting, interval: 5 * 60, now: now) {
                 await smartLightingEngine.evaluate()
                 Cadence.stamp(Cadence.smartLighting)
+            }
+
+            // Ciclo dati: il BGProcessingTask che lo ospitava non è MAI stato
+            // concesso da iOS su questo tipo di device — un pannello sempre
+            // acceso e in primo piano non entra mai nello stato di inattività
+            // che quel task richiede. Misurato: lastCycleCycle=NEVER con 166.555
+            // letture grezze mai aggregate né potate. Qui è una rete di
+            // sicurezza, non il canale primario: il BG task resta per i device
+            // che davvero si mettono in idle.
+            //
+            // NON gated su isMaster: aggregare e potare le PROPRIE letture
+            // locali non ha effetti duplicabili tra device. La guardia serve a
+            // ciò che duplicherebbe effetti esterni — notifiche, scritture
+            // CloudKit — e resta sul ciclo intelligence qui sotto.
+            let lastLifecycle = dataLifecycleService.lastCycleDate
+            if lastLifecycle == nil || now.timeIntervalSince(lastLifecycle!) >= 24 * 3600 {
+                await dataLifecycleService.runFullCycle()
             }
 
             if Cadence.isDue(Cadence.proactiveCycle, interval: 15 * 60, now: now) {
