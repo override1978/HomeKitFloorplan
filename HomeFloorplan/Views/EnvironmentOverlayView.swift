@@ -78,9 +78,19 @@ struct EnvironmentOverlayView: View {
             .allowsHitTesting(false)
 
             // Badges: stesso ForEach, contenuto condizionale in base allo stato.
-            // Il container raggruppa le superfici di vetro delle stanze — sono
-            // una per stanza, e la documentazione lo raccomanda per gruppi.
-            LiquidGlassContainer(spacing: 0) {
+            //
+            // Niente GlassEffectContainer qui. C'era, per raggruppare le
+            // superfici di vetro come raccomanda la documentazione, ma il
+            // contenitore ridispone i propri figli e questi usano `.position()`,
+            // cioè coordinate assolute calcolate dai centroidi delle stanze: le
+            // due cose si contendono la disposizione e sopravvivevano solo due
+            // badge su sei. I riempimenti si salvavano perché disegnati nel
+            // Canvas, fuori dal contenitore — ed è quello il motivo per cui il
+            // sintomo sembrava incoerente (stanze colorate, badge assenti).
+            //
+            // Il raggruppamento era un'ottimizzazione, non un requisito: ogni
+            // badge porta la propria superficie, che oggi non è più di vetro
+            // (vedi EnvironmentBadgeSurface).
             ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
                 let center  = h.centroid(for: room)
                 let urgency = urgencyByRoom[room.name] ?? .normal
@@ -109,7 +119,6 @@ struct EnvironmentOverlayView: View {
                 .scaleEffect(inverseScale)
                 .position(center)
             }
-            }
         }
         // Un singolo modificatore anima sia il canvas sia i badge
         .animation(.easeInOut(duration: 0.4), value: isLoading)
@@ -117,22 +126,22 @@ struct EnvironmentOverlayView: View {
 
     // MARK: Badge
 
-    /// Superficie dei badge stanza: vetro quando il Liquid Glass è attivo,
-    /// materiale altrimenti. Usa `.regular` e non `.clear` perché la planimetria
-    /// sotto è un'immagine dell'utente di luminosità sconosciuta.
+    /// Superficie dei badge stanza: materiale opaco, senza vetro.
+    ///
+    /// Il vetro c'era, ed era la scelta sbagliata proprio qui. Questi badge
+    /// portano un numero da leggere e stanno sopra una planimetria che
+    /// *l'overlay stesso* tinge di verde o di rosso in base all'urgenza: una
+    /// superficie translucida lascia passare quella tinta e il testo perde
+    /// contrasto quando conta di più, cioè quando una stanza è in allarme.
+    ///
+    /// Era già stato scelto `.regular` invece di `.clear` per lo stesso motivo —
+    /// il fondo è imprevedibile — ma non bastava. Qui la leggibilità viene
+    /// prima dell'effetto.
     private struct EnvironmentBadgeSurface: ViewModifier {
-        @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
-        private var isLiquidGlassEnabled = false
-        @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
-
-        @ViewBuilder
         func body(content: Content) -> some View {
-            let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-            if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
-                content.glassEffect(.regular, in: shape)
-            } else {
-                content.background(.regularMaterial).clipShape(shape)
-            }
+            content
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 
