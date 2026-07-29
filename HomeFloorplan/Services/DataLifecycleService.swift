@@ -72,17 +72,28 @@ final class DataLifecycleService {
     ///
     /// Va in `SyncDiagnosticsLogger` e non dietro `#if DEBUG` di proposito: è
     /// l'unico canale leggibile in produzione, esportabile da Impostazioni →
-    /// iCloud. Costa tre fetchCount all'avvio.
+    /// iCloud. Costa quattro fetchCount all'avvio.
+    ///
+    /// `events` è il conteggio degli `AccessoryEvent` grezzi, e mancava. È
+    /// l'unico ingresso da cui dipende tutta la pila delle Abitudini
+    /// (`UsageEvidenceService` legge solo quelli), quindi senza quel numero non
+    /// si distingue "le evidenze d'uso non trovano nulla" da "non c'è nulla da
+    /// cui trovarlo" — che è la stessa ambiguità che ha fatto costruire per
+    /// intero tre motori abitudini prima di scoprire che giravano a vuoto.
+    /// `usageSummaries` non basta a scioglierla: l'aggregazione chiude solo le
+    /// settimane ISO complete, quindi resta ferma per giorni anche quando gli
+    /// eventi arrivano.
     nonisolated static func logDataHealth(modelContainer: ModelContainer, isMaster: Bool) {
         let ctx = ModelContext(modelContainer)
         let readings  = (try? ctx.fetchCount(FetchDescriptor<SensorReading>())) ?? -1
         let summaries = (try? ctx.fetchCount(FetchDescriptor<DailySensorSummary>())) ?? -1
         let usage     = (try? ctx.fetchCount(FetchDescriptor<AccessoryUsageSummary>())) ?? -1
+        let events    = (try? ctx.fetchCount(FetchDescriptor<AccessoryEvent>())) ?? -1
         let lastCycle = UserDefaults.standard.object(forKey: lastCycleDateKey) as? Date
 
         SyncDiagnosticsLogger.log(
             "Data health: lastLifecycleCycle=\(lastCycle.map { ISO8601DateFormatter().string(from: $0) } ?? "NEVER") "
-            + "readings=\(readings) dailySummaries=\(summaries) usageSummaries=\(usage) isMaster=\(isMaster)"
+            + "readings=\(readings) events=\(events) dailySummaries=\(summaries) usageSummaries=\(usage) isMaster=\(isMaster)"
         )
     }
 
