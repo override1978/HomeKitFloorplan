@@ -115,8 +115,20 @@ enum EnvironmentPreProcessor {
     ///   - room: Dati ambientali correnti della stanza.
     ///   - baselineByType: Baseline 7 giorni pre-calcolata: [serviceType.rawValue: (avg, stdDev)].
     ///   - outdoorRoomName: Nome stanza outdoor da UserDefaults (AppStorage "outdoorRoomName").
-    /// Stale threshold: sensors with no update in the last 60 minutes are flagged.
-    static let staleThresholdMinutes: Int = 60
+    /// Da quanto un sensore deve tacere prima di considerarlo fermo.
+    ///
+    /// **Deve restare più grande del battito di `SensorSampleGate`**, ed è per
+    /// questo che lo deriva invece di ripeterlo. Da quando le letture ripetute
+    /// non vengono più archiviate, un sensore stabile scrive una riga solo ogni
+    /// `maxGap`: con i due valori uguali (erano entrambi 60 minuti) ogni sensore
+    /// tranquillo sarebbe finito sul confine e sarebbe stato dichiarato fermo —
+    /// e più sotto `isStale` disattiva il controllo delle anomalie. La
+    /// deduplica avrebbe spento silenziosamente il rilevamento proprio sui
+    /// sensori più stabili.
+    ///
+    /// Il fattore 2 è il margine: due battiti mancati sono un silenzio vero,
+    /// non un effetto della soglia di scrittura.
+    static let staleThresholdMinutes: Int = Int(SensorSampleGate.maxGap / 60) * 2
 
     static func preProcess(
         room: RoomEnvironmentData,

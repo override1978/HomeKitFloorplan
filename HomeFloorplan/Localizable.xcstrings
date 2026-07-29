@@ -45478,6 +45478,22 @@
         }
       }
     },
+    "sensor.unchangedFor" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unchanged for"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "invariato da"
+          }
+        }
+      }
+    },
     "sensor.vocDensity" : {
       "localizations" : {
         "en" : {

@@ -604,10 +604,19 @@ struct EnvironmentContextDashboard: View {
                     Text("\(sensor.serviceType.displayName) · \(sensor.roomName)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    // Freschezza auto-aggiornante (Text .relative si ridisegna da solo)
+                    // Da quando il valore non si muove (Text .relative si ridisegna da solo).
+                    //
+                    // Diceva "5 minuti fa", lasciando intendere l'ora della misura.
+                    // Non lo è mai stata: è l'ora dell'ultima riga che abbiamo
+                    // scritto. Da quando le letture identiche non vengono più
+                    // archiviate quella data significa una cosa sola e precisa —
+                    // da quando il valore è fermo — che è anche più utile di
+                    // quella che sembrava dire.
                     HStack(spacing: 2) {
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 8))
+                        Text(String(localized: "sensor.unchangedFor", defaultValue: "unchanged for"))
+                            .font(.system(size: 9))
                         Text(sensor.lastUpdated, style: .relative)
                             .font(.system(size: 9))
                     }

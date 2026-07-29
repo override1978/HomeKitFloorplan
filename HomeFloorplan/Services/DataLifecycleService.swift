@@ -185,10 +185,9 @@ final class DataLifecycleService {
             guard !existingKeys.contains(key), let first = rds.first else { continue }
             let day    = cal.startOfDay(for: first.timestamp)
             let values = rds.map(\.value)
-            let avg    = values.reduce(0, +) / Double(values.count)
+            let (avg, stdDev) = Self.timeWeightedStats(rds, dayStart: day, calendar: cal)
             let mn     = values.min() ?? avg
             let mx     = values.max() ?? avg
-            let variance = values.reduce(0.0) { $0 + pow($1 - avg, 2) } / Double(values.count)
             let peak = rds.max { $0.value < $1.value }
 
             context.insert(DailySensorSummary(
@@ -199,7 +198,7 @@ final class DataLifecycleService {
                 average: avg,
                 minimum: mn,
                 maximum: mx,
-                standardDeviation: sqrt(variance),
+                standardDeviation: stdDev,
                 peakValue: peak?.value ?? mx,
                 peakAt: peak?.timestamp ?? day,
                 isOutlierDay: values.count < 8
@@ -209,6 +208,84 @@ final class DataLifecycleService {
         #if DEBUG
         if inserted > 0 { print("🗂  → \(inserted) DailySensorSummary created") }
         #endif
+    }
+
+    /// Media e deviazione standard giornaliere, pesate sul tempo.
+    ///
+    /// Erano una media semplice sui campioni, e funzionava finché i campioni
+    /// erano equispaziati. Da quando `SensorSampleGate` non archivia più le
+    /// letture ripetute non lo sono più: un'ora di valore fermo lascia una riga,
+    /// un'ora movimentata ne lascia quattro. La media semplice avrebbe quindi
+    /// dato quattro volte più peso alle ore agitate — e siccome queste medie
+    /// diventano le baseline con cui si giudicano le anomalie, l'errore non
+    /// sarebbe rimasto confinato alla statistica.
+    ///
+    /// Pesando ogni lettura per quanto è rimasta valida, il risultato descrive
+    /// la giornata invece del nostro criterio di scrittura: gli aggregati
+    /// vecchi e quelli nuovi restano confrontabili, e cambiare di nuovo le
+    /// soglie in futuro non li sposterà.
+    ///
+    /// Il peso si calcola **dentro ogni sensore**, non sul gruppo mescolato, e
+    /// non è un dettaglio: un gruppo è una coppia (stanza, tipo), quindi due
+    /// termometri nella stessa stanza finiscono nello stesso gruppo con letture
+    /// separate da frazioni di secondo. Misurando la distanza dalla riga
+    /// successiva senza distinguere il sensore, il primo dei due avrebbe pesato
+    /// pochi decimi di secondo e il secondo si sarebbe preso l'intero
+    /// intervallo: una stanza con due sensori ne avrebbe di fatto ignorato uno.
+    ///
+    /// I pesi restano però in secondi, senza normalizzare per sensore: due
+    /// sensori che campionano allo stesso ritmo si equivalgono da soli, mentre
+    /// uno che ha risposto solo per mezz'ora pesa per quella mezz'ora e non
+    /// quanto uno che ha coperto l'intera giornata.
+    ///
+    /// Internal e non private: è l'unico calcolo di questo file che produce
+    /// numeri di cui ci si fida a valle, e vale la pena poterlo provare da solo.
+    nonisolated static func timeWeightedStats(
+        _ readings: [SensorReading],
+        dayStart: Date,
+        calendar: Calendar
+    ) -> (average: Double, standardDeviation: Double) {
+        guard !readings.isEmpty else { return (0, 0) }
+
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+
+        // (valore, secondi per cui quel valore è rimasto valido).
+        var weighted: [(value: Double, weight: Double)] = []
+        weighted.reserveCapacity(readings.count)
+
+        for (_, perSensor) in Dictionary(grouping: readings, by: \.accessoryUUID) {
+            let sorted = perSensor.sorted { $0.timestamp < $1.timestamp }
+            guard let last = sorted.last else { continue }
+
+            // L'ultima lettura vale fino a fine giornata, ma non oltre un
+            // battito: se il sensore ha smesso di rispondere a mezzogiorno,
+            // quel valore non può reclamare le dodici ore successive.
+            let tail = min(max(dayEnd.timeIntervalSince(last.timestamp), 0), SensorSampleGate.maxGap)
+
+            var spans: [Double] = []
+            spans.reserveCapacity(sorted.count)
+            for (i, r) in sorted.enumerated() {
+                let span = i < sorted.count - 1
+                    ? sorted[i + 1].timestamp.timeIntervalSince(r.timestamp)
+                    : tail
+                spans.append(max(span, 0))
+            }
+
+            if spans.reduce(0, +) > 0 {
+                for (i, r) in sorted.enumerated() { weighted.append((r.value, spans[i])) }
+            } else {
+                // Letture tutte allo stesso istante: il tempo non distingue
+                // nulla, contano una a testa.
+                for r in sorted { weighted.append((r.value, 1)) }
+            }
+        }
+
+        let totalWeight = weighted.reduce(0) { $0 + $1.weight }
+        guard totalWeight > 0 else { return (0, 0) }
+
+        let avg = weighted.reduce(0) { $0 + $1.value * $1.weight } / totalWeight
+        let variance = weighted.reduce(0) { $0 + pow($1.value - avg, 2) * $1.weight } / totalWeight
+        return (avg, sqrt(variance))
     }
 
     // MARK: - Phase 1b: Accessory Event Aggregation

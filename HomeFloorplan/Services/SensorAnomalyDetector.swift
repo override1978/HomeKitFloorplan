@@ -50,7 +50,23 @@ enum SensorAnomalyDetector {
         }
     }
     /// Duration above which a completely stuck value is considered anomalous.
-    private static let stuckDuration: TimeInterval = 30 * 60   // 30 min
+    ///
+    /// Internal e non private perché `SensorSampleGate` ci si appoggia: la
+    /// deduplica in scrittura deve garantire che, quando un valore si blocca,
+    /// nell'archivio restino abbastanza righe identiche perché questo controllo
+    /// possa ancora vederle.
+    static let stuckDuration: TimeInterval = 30 * 60   // 30 min
+
+    /// Se su questo tipo di sensore ha senso fare statistica.
+    ///
+    /// Gli allarmi booleani stanno a 0 per sempre e il sensore di luminosità
+    /// varia per natura (nuvole, tende, giorno/notte): per entrambi "fermo" e
+    /// "oscillante" non dicono niente sullo stato di salute. Vive qui, e non
+    /// duplicato altrove, perché anche `SensorSampleGate` deve sapere su quali
+    /// tipi vale la pena conservare le prove di un blocco.
+    static func evaluatesStatistically(_ type: SensorServiceType) -> Bool {
+        !type.isBooleanAlert && type != .lightSensor
+    }
     /// Lookback window for readings.
     private static let lookbackSeconds: Double = 2 * 3600      // 2 h
 
@@ -80,11 +96,7 @@ enum SensorAnomalyDetector {
             guard let first = group.first,
                   let sensorType = SensorServiceType(rawValue: first.serviceTypeRaw)
             else { continue }
-            // Boolean-alert sensors are not evaluated for statistical anomalies
-            guard !sensorType.isBooleanAlert else { continue }
-            // Il sensore di luminosità varia per natura (nuvole, tende, giorno/notte):
-            // oscillazione e stallo non indicano un guasto. Escluso dai check statistici.
-            guard sensorType != .lightSensor else { continue }
+            guard Self.evaluatesStatistically(sensorType) else { continue }
 
             let roomName = first.roomName
             // Stanze tecniche escluse dai calcoli (switch virtuali, dispositivi di servizio).

@@ -28,6 +28,20 @@ final class SensorLogger {
     private var lastOutdoorSampleAt: Date?
     private let outdoorSampleInterval: TimeInterval = 3600  // 1 snapshot/hour
 
+    // MARK: - Deduplica in scrittura
+
+    /// Filtra le letture ripetute prima che diventino righe. Vedi
+    /// `SensorSampleGate` per il ragionamento e le soglie.
+    ///
+    /// Non tocca `sampleOutdoor`, che ha già un limite di uno snapshot all'ora:
+    /// due righe orarie non sono un problema di storage e passarle dal gate non
+    /// cambierebbe nulla se non aggiungere un percorso di codice.
+    private var sampleGate = SensorSampleGate()
+
+    /// TEMPORANEO — vedi `SensorSampleGate.Stats`. Quando è stata scritta
+    /// l'ultima riga di diagnostica sul log esportabile.
+    private var lastGateStatsLoggedAt: Date?
+
     // MARK: - Campionamento principale
 
     /// Campiona tutti i sensori ambientali della casa e salva le letture.
@@ -51,28 +65,55 @@ final class SensorLogger {
 
         // Salva in background context per non bloccare la UI
         let backgroundContext = ModelContext(modelContainer)
+        let now = Date()
+        var stored = 0
 
         for reading in readings {
-            let entity = SensorReading(
+            guard sampleGate.shouldWrite(
+                accessoryUUID: reading.accessoryUUID,
+                type:          reading.serviceType,
+                value:         reading.value,
+                now:           now
+            ) else { continue }
+
+            backgroundContext.insert(SensorReading(
                 accessoryUUID: reading.accessoryUUID,
                 serviceType: reading.serviceType,
                 roomName: reading.roomName,
                 value: reading.value
+            ))
+            stored += 1
+        }
+
+        if stored > 0 {
+            do {
+                try backgroundContext.save()
+                dprint("✅ SensorLogger: \(stored)/\(readings.count) letture archiviate — \(readings.count - stored) invariate")
+            } catch {
+                dprint("❌ SensorLogger save error: \(error)")
+            }
+        } else {
+            dprint("✅ SensorLogger: \(readings.count) letture campionate, nessuna variazione da archiviare")
+        }
+
+        // TEMPORANEO — diagnostica per tarare le soglie della deduplica sui dati
+        // veri. Una riga l'ora sul log esportabile, non a ogni giro: serve a
+        // vedere il rapporto archiviate/campionate e quanto pesa la regola sui
+        // sensori bloccati, che a tavolino non si può stimare.
+        // Da togliere insieme a `SensorSampleGate.Stats`.
+        if lastGateStatsLoggedAt == nil || now.timeIntervalSince(lastGateStatsLoggedAt!) >= 3600 {
+            lastGateStatsLoggedAt = now
+            let total = (try? backgroundContext.fetchCount(FetchDescriptor<SensorReading>())) ?? -1
+            SyncDiagnosticsLogger.log(
+                "📊 Campionamento: \(sampleGate.stats.summary) · righe in archivio \(total)"
             )
-            backgroundContext.insert(entity)
         }
 
-        do {
-            try backgroundContext.save()
-            dprint("✅ SensorLogger: salvate \(readings.count) letture")
-        } catch {
-            dprint("❌ SensorLogger save error: \(error)")
-        }
-
-        // Sprint 5B: notifica il tracker per chiudere le misurazioni "pending"
-        // corrispondenti alle nuove letture appena salvate.
+        // Sprint 5B: notifica il tracker per chiudere le misurazioni "pending".
+        // Riceve TUTTE le letture campionate, non solo quelle archiviate: misura
+        // l'effetto reale di un'azione sulla casa, e quell'effetto esiste anche
+        // quando il valore è troppo stabile per meritare una riga.
         if let tracker = effectivenessTracker {
-            let now = Date()
             for reading in readings {
                 tracker.recordOutcome(
                     roomName: reading.roomName,
@@ -91,12 +132,18 @@ final class SensorLogger {
     /// Non esegue threshold-check né recordOutcome — scopo puramente data-collection.
     func sampleLightSensors(home: HMHome, modelContainer: ModelContainer) async {
         var count = 0
+        var sampled = 0
         let ctx = ModelContext(modelContainer)
+        let now = Date()
         for accessory in home.accessories {
             let roomName = accessory.room?.name ?? String(localized: "room.none", defaultValue: "No room")
             if let value = await readValue(for: .lightSensor, from: accessory) {
+                sampled += 1
+                let uuid = accessory.uniqueIdentifier.uuidString
+                guard sampleGate.shouldWrite(accessoryUUID: uuid, type: .lightSensor, value: value, now: now)
+                else { continue }
                 ctx.insert(SensorReading(
-                    accessoryUUID: accessory.uniqueIdentifier.uuidString,
+                    accessoryUUID: uuid,
                     serviceType:   .lightSensor,
                     roomName:      roomName,
                     value:         value
@@ -104,10 +151,13 @@ final class SensorLogger {
                 count += 1
             }
         }
-        guard count > 0 else { return }
+        guard count > 0 else {
+            if sampled > 0 { dprint("💡 SensorLogger: \(sampled) lux letti, nessuna variazione da archiviare") }
+            return
+        }
         do {
             try ctx.save()
-            dprint("💡 SensorLogger: lux salvati — \(count) sensore/i")
+            dprint("💡 SensorLogger: lux archiviati — \(count)/\(sampled) sensore/i")
         } catch {
             dprint("❌ SensorLogger lux save error: \(error)")
         }
