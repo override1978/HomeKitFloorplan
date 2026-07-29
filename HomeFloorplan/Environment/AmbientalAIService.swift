@@ -127,8 +127,30 @@ final class AmbientalAIService {
             let readings = loadHistory(for: room)
             guard !readings.isEmpty else { continue }
 
-            await analyzeRoom(room, readings: readings)
+            // Il cancello si chiude PRIMA della sospensione, non dopo.
+            //
+            // Scritto dopo l'await era una verifica-poi-agisci a cavallo di una
+            // sospensione: questa classe è @MainActor, ma `await` rilascia
+            // l'attore, e nei ~3 secondi della chiamata AI un secondo task
+            // entrava, trovava il cancello ancora aperto e analizzava la stessa
+            // stanza una seconda volta. Si vedevano due richieste AI distinte
+            // per la stessa stanza nello stesso secondo, con due risposte
+            // diverse. Gli altri due filtri — fingerprint e IntentDedup —
+            // cadevano per lo stesso motivo: leggono lo stato prima dell'await e
+            // lo scrivono dopo.
             lastAnalysisByRoom[room.roomName] = now
+
+            // Chiudere il cancello in anticipo però rischia di zittire una
+            // stanza per 15 minuti se la chiamata fallisce, senza che l'analisi
+            // sia mai avvenuta. `analyzeRoom` non propaga errori (degrada in
+            // silenzio) ma marca `lastAnalysisFailedAt` nel suo catch e lo
+            // azzera in caso di successo: se quel marcatore si è mosso, la
+            // stanza non è stata analizzata e il cancello va riaperto.
+            let failureMarkBefore = lastAnalysisFailedAt
+            await analyzeRoom(room, readings: readings)
+            if lastAnalysisFailedAt != failureMarkBefore {
+                lastAnalysisByRoom[room.roomName] = nil
+            }
         }
 
         lastAnalyzed = Date()

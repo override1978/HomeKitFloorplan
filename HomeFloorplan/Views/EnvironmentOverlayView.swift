@@ -265,13 +265,27 @@ struct EnvironmentContextDashboard: View {
     /// Linked rooms — used to resolve the highlighted room name.
     let linkedRooms: [LinkedRoom]
 
-    // MARK: AI service (mirroring EnvironmentDashboardView pattern)
+    // MARK: AI service
 
     @Environment(HomeKitService.self) private var homeKit
-    @Environment(\.modelContext) private var modelContext
     @Environment(ActionExecutionService.self) private var executionService
     @Environment(WeatherKitService.self) private var weatherKit
-    @State private var aiService: AmbientalAIService?
+
+    /// L'istanza condivisa, la stessa che usa EnvironmentDashboardView.
+    ///
+    /// Qui prima se ne costruiva una privata in `onAppear`, e nasceva menomata
+    /// rispetto a quella condivisa: `AISettings()` nuova invece di quella
+    /// iniettata, nessun `ActionEffectivenessTracker` condiviso — violando
+    /// l'invariante che AppServices dichiara a parole, "una sola istanza
+    /// garantisce coerenza del dataset di efficacia" — e soprattutto né
+    /// `currentWeather` né `presenceOverride`, che i coordinatori scrivono solo
+    /// sull'istanza di AppServices. Le baseline non venivano quindi corrette per
+    /// il meteo, e `SensorEventRouter`, agganciato pure lui alla sola istanza
+    /// condivisa, non poteva scavalcare il cancello dei 15 minuti.
+    ///
+    /// Iniettata alla radice in HomeFloorplanRootView, quindi sempre presente
+    /// qui sotto.
+    @Environment(AmbientalAIService.self) private var aiService
     @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
 
     // MARK: Private helpers
@@ -333,7 +347,7 @@ struct EnvironmentContextDashboard: View {
         }()
         let topAlert: SensorData? = filtered.first { $0.urgency == .danger } ?? filtered.first { $0.urgency == .warning }
         let aiInsights: [AmbientalAIInsight] = {
-            guard let svc = aiService else { return [] }
+            let svc = aiService
             let rank: (InsightSeverity) -> Int = {
                 switch $0 {
                 case .anomaly: return 2
@@ -428,21 +442,18 @@ struct EnvironmentContextDashboard: View {
                 }
             }
         }
+        // Entrambi i trigger servono e non sono ridondanti: se i dati sono già
+        // freschi quando l'overlay appare, `lastRefresh` non cambia e solo
+        // `onAppear` fa partire l'analisi; se invece una ricarica si completa
+        // dopo, solo `onChange` la intercetta. Che possano sovrapporsi è un
+        // problema di `analyzeRooms`, non loro, ed è risolto là.
         .onAppear {
-            // Lazy-init AI service (same pattern as EnvironmentDashboardView)
-            if aiService == nil {
-                aiService = AmbientalAIService(
-                    aiSettings: AISettings(),
-                    modelContainer: modelContext.container,
-                    homeKit: homeKit
-                )
-            }
             guard !envVM.rooms.isEmpty else { return }
-            Task { await aiService?.analyzeRooms(envVM.rooms) }
+            Task { await aiService.analyzeRooms(envVM.rooms) }
         }
         .onChange(of: envVM.lastRefresh) { _, _ in
             guard !envVM.rooms.isEmpty else { return }
-            Task { await aiService?.analyzeRooms(envVM.rooms) }
+            Task { await aiService.analyzeRooms(envVM.rooms) }
         }
     }
 
@@ -739,7 +750,7 @@ struct EnvironmentContextDashboard: View {
                     .tracking(0.5)
                     .foregroundStyle(.secondary)
                 Spacer()
-                if aiService?.isAnalyzing == true {
+                if aiService.isAnalyzing {
                     ProgressView().scaleEffect(0.6)
                 }
             }
