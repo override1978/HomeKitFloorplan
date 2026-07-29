@@ -71,7 +71,13 @@ struct FloorplanModePill: View {
                     .onChanged { value in select(at: value.location) }
             )
             .sensoryFeedback(.selection, trigger: overlayVM.activeMode)
-            .transition(.scale(scale: 0.8).combined(with: .opacity))
+            // Solo opacità, niente scala: scalare una superficie di vetro ne
+            // cambia la geometria a ogni fotogramma della transizione, e il
+            // glassEffect deve rivalutarsi altrettante volte — mentre la
+            // capsula di selezione sta già facendo il proprio morph. Verifica
+            // dell'ipotesi sul warning `tried to update multiple times per
+            // frame`.
+            .transition(.opacity)
         }
     }
 

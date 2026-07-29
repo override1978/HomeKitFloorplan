@@ -438,8 +438,24 @@ struct FloorplanEditorView: View {
         )
     }
 
+    /// Soglia di propagazione dell'altezza della barra superiore.
+    ///
+    /// L'altezza rientra nel calcolo della posizione dell'immagine, quindi ogni
+    /// aggiornamento invalida il body dell'editor — e con Liquid Glass attivo
+    /// ogni invalidazione fa ricampionare il backdrop di TUTTE le superfici di
+    /// vetro. La chrome ha due `.animation(.spring)` sopra la misurazione: con
+    /// la vecchia soglia di 0,5 punti ogni fotogramma intermedio di quelle molle
+    /// propagava, da cui `glassEffect() tried to update multiple times per
+    /// frame`.
+    ///
+    /// Otto punti separano i due casi: i fotogrammi intermedi di un'animazione
+    /// vengono ignorati — l'immagine si sposterebbe di quattro punti, invisibile
+    /// — mentre i cambiamenti reali della chrome (barra filtri che compare,
+    /// banner di stato) valgono decine di punti e passano.
+    private static let topBarHeightPropagationThreshold: CGFloat = 8
+
     private func updateTopBarHeight(_ newHeight: CGFloat) {
-        guard abs(topBarHeight - newHeight) > 0.5 else { return }
+        guard abs(topBarHeight - newHeight) > Self.topBarHeightPropagationThreshold else { return }
         topBarHeight = newHeight
     }
 

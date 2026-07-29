@@ -181,6 +181,32 @@ struct FloorplanTopBarView: View {
     }
 }
 
+/// Superficie della pill Smart Lighting.
+///
+/// Era rimasta l'ultima della chrome superiore in `.regularMaterial`, con un
+/// bordo bianco fisso: in mezzo alle superfici di vetro si notava, ed era anche
+/// invisibile su planimetria chiara. Niente `.interactive()`, perché la pill
+/// contiene due bottoni e il vetro interattivo ne ruberebbe i tocchi.
+private struct SmartLightingPillSurface: ViewModifier {
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+    @Environment(\.colorScheme) private var colorScheme
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: Capsule())
+        } else {
+            content
+                .background(.regularMaterial, in: Capsule())
+                .overlay(
+                    Capsule().strokeBorder(legacyGlassBorderColor(colorScheme), lineWidth: 0.5)
+                )
+        }
+    }
+}
+
 struct FloorplanSmartLightingStatusPill: View {
     let status: SmartLightingFloorplanStatus
     let onPause: () -> Void
@@ -240,11 +266,7 @@ struct FloorplanSmartLightingStatusPill: View {
                 .accessibilityLabel(String(localized: "smartlighting.floorplan.resume", defaultValue: "Resume Smart Lighting"))
             }
         }
-        .background(.regularMaterial, in: Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
-        )
+        .modifier(SmartLightingPillSurface())
         .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
     }
 
