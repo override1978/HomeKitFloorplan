@@ -163,10 +163,10 @@ enum EnvironmentalAutomationProbe {
         } else {
             out.append("--- Cosa proporrebbe ---")
             for c in report.candidates {
-                let day = Self.weekdayName(c.pattern.weekday)
+                let day = c.pattern.dayType.localizedLabel
                 let target = c.resolvedAccessory ?? "⚠️ nessun accessorio — sarebbe solo un consiglio"
-                out.append(String(format: "• %@, %@ verso le %02d:00 — %@ arriva a %.0f (%d/%d giorni)",
-                                  c.pattern.roomName, day, c.pattern.hourOfDay,
+                out.append(String(format: "• %@, %@ di %@ (verso le %02d:00) — %@ arriva a %.0f (%d/%d giorni)",
+                                  c.pattern.roomName, day, c.pattern.timeOfDay.localizedLabel, c.pattern.hourOfDay,
                                   c.pattern.sensorTypeRaw, c.pattern.meanPeakValue,
                                   c.pattern.aboveWarningCount, c.pattern.sampleCount))
                 out.append("  → alle \(c.triggerTime): \(target)")
@@ -221,28 +221,74 @@ enum EnvironmentalAutomationProbe {
             out.append("Giorni distinti .................. \(Set(dates.map { Calendar.current.startOfDay(for: $0) }).count)")
         }
 
-        // Quanti gruppi (stanza, sensore, giorno, ora) raggiungerebbero i 3
-        // campioni che l'analyzer richiede: predice se le ricorrenze POTREBBERO
-        // formarsi, indipendentemente dal fatto che il ciclo sia mai girato.
+        // Due raggruppamenti a confronto, ed è il cuore del referto.
+        //
+        // La prima versione di questo blocco usava `component(.hour, from: s.date)`
+        // — ma `s.date` è uno startOfDay, quindi l'ora era sempre zero e il
+        // raggruppamento risultava 24 volte più grossolano di quello vero.
+        // Contava 224 gruppi maturi e concludeva "il materiale c'è" mentre
+        // l'analyzer ne salvava sei: lo strumento diagnostico mentiva, ed è il
+        // difetto peggiore che possa avere.
         let cal = Calendar.current
-        var groups: [String: Int] = [:]
+
+        // A) La chiave REALE dell'analyzer, replicata alla lettera da
+        //    EnvironmentalPatternAnalyzer: l'ora viene da `peakAt`, non da `date`.
+        var strict: [String: Int] = [:]
         for s in summaries {
-            let key = "\(s.roomName)|\(s.serviceTypeRaw)|\(cal.component(.weekday, from: s.date))|\(cal.component(.hour, from: s.date))"
-            groups[key, default: 0] += 1
+            let key = "\(s.roomName)|\(s.serviceTypeRaw)|\(cal.component(.weekday, from: s.date))"
+                    + "|\(cal.component(.hour, from: s.peakAt))|\(CalendarSeason.season(for: s.date).rawValue)"
+            strict[key, default: 0] += 1
         }
-        let mature = groups.values.filter { $0 >= 3 }.count
+        let strictMature = strict.values.filter { $0 >= 3 }.count
+
+        // B) L'alternativa in valutazione: fascia oraria invece di ora esatta,
+        //    feriale/festivo invece di giorno esatto. L'ora del picco è la
+        //    dimensione più volatile che esista — basta una finestra aperta o una
+        //    cena diversa e slitta — quindi frammenta i bucket senza aggiungere
+        //    significato. Serve a rispondere con numeri, non a intuito, alla
+        //    domanda: allargare il raggruppamento renderebbe le ricorrenze
+        //    raggiungibili?
+        var loose: [String: Int] = [:]
+        for s in summaries {
+            let weekday = cal.component(.weekday, from: s.date)
+            let dayType = (weekday == 1 || weekday == 7) ? "festivo" : "feriale"
+            let key = "\(s.roomName)|\(s.serviceTypeRaw)|\(dayType)|\(Self.timeBand(cal.component(.hour, from: s.peakAt)))"
+            loose[key, default: 0] += 1
+        }
+        let looseMature = loose.values.filter { $0 >= 3 }.count
+        let looseRich   = loose.values.filter { $0 >= 8 }.count
+
         out.append("")
-        out.append("Gruppi (stanza·sensore·giorno·ora) . \(groups.count)")
-        out.append("  di cui con ≥3 campioni ......... \(mature)   ← soglia dell'analyzer")
+        out.append("— Raggruppamento attuale (giorno esatto · ora del picco · stagione) —")
+        out.append("Gruppi ........................... \(strict.count)")
+        out.append("  di cui con ≥3 campioni ......... \(strictMature)   ← soglia dell'analyzer")
         out.append("")
-        out.append(mature > 0
-            ? "→ Il materiale c'è: basta far girare l'analisi."
-            : "→ Aggregati presenti ma troppo sparsi: nessun gruppo raggiunge 3 campioni.")
+        out.append("— Alternativa (feriale/festivo · fascia oraria) —")
+        out.append("Gruppi ........................... \(loose.count)")
+        out.append("  di cui con ≥3 campioni ......... \(looseMature)")
+        out.append("  di cui con ≥8 campioni ......... \(looseRich)   ← davvero mature")
+        out.append("")
+        if strict.isEmpty {
+            out.append("→ Nessun aggregato utilizzabile.")
+        } else {
+            let gain = strictMature > 0 ? Double(looseMature) / Double(strictMature) : Double(looseMature)
+            out.append(String(format: "→ Allargare il raggruppamento moltiplica i gruppi maturi per %.1f×.", gain))
+            out.append("  Media campioni per gruppo: \(strict.count > 0 ? summaries.count / strict.count : 0) stretto, \(loose.count > 0 ? summaries.count / loose.count : 0) allargato.")
+        }
         return out.joined(separator: "\n")
     }
 
-    private static func weekdayName(_ weekday: Int) -> String {
-        let names = ["", "domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"]
-        return names.indices.contains(weekday) ? names[weekday] : "giorno \(weekday)"
+    /// Fascia oraria al posto dell'ora esatta. I confini sono quelli che una
+    /// persona userebbe descrivendo la propria giornata, non quartili: "lo
+    /// Studio ha aria viziata la sera" è un'abitudine riconoscibile, "picco di
+    /// CO₂ il martedì alle 21" è un artefatto statistico.
+    static func timeBand(_ hour: Int) -> String {
+        switch hour {
+        case 6..<12:  return "mattina"
+        case 12..<18: return "pomeriggio"
+        case 18..<23: return "sera"
+        default:      return "notte"
+        }
     }
+
 }

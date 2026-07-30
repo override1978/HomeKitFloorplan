@@ -27,13 +27,13 @@ enum PredictiveAlertBuilder {
 
         let now        = Date()
         let cal        = Calendar.current
-        let curWeekday = cal.component(.weekday, from: now)
+        let curDayType = DayType(weekday: cal.component(.weekday, from: now))
         let curMinute  = cal.component(.hour,    from: now) * 60
                        + cal.component(.minute,  from: now)
 
         var signals: [PredictiveSignal] = []
         for pattern in patterns {
-            guard pattern.weekday == curWeekday else { continue }
+            guard pattern.dayType == curDayType else { continue }
             guard pattern.sensorType != nil    else { continue }
 
             let patternMinute = pattern.hourOfDay * 60
@@ -51,7 +51,7 @@ enum PredictiveAlertBuilder {
             signals.append(PredictiveSignal(
                 pattern:           pattern,
                 expectedInMinutes: lead,
-                semanticKey:       "predictive|\(pattern.roomName)|\(pattern.sensorTypeRaw)|\(pattern.weekday)",
+                semanticKey:       "predictive|\(pattern.roomName)|\(pattern.sensorTypeRaw)|\(pattern.dayType.rawValue)|\(pattern.timeOfDay.rawValue)",
                 score:             score
             ))
         }
