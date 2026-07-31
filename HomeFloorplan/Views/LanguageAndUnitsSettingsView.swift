@@ -12,7 +12,7 @@ struct LanguageAndUnitsSettingsView: View {
     @Environment(CloudKitSyncService.self) private var cloudKitSync
 
     @AppStorage(AppLanguage.appStorageKey)
-    private var appLanguageRaw: String = AppLanguage.english.rawValue
+    private var appLanguageRaw: String = AppLanguage.system.rawValue
 
     @AppStorage(DimensionUnit.appStorageKey)
     private var dimensionUnitRaw: String = DimensionUnit.metric.rawValue

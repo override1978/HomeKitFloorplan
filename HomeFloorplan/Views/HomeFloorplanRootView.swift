@@ -10,7 +10,7 @@ struct HomeFloorplanRootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @AppStorage("securityMonitoredUUIDs") private var securityMonitoredUUIDsRaw: String = ""
-    @AppStorage(AppLanguage.appStorageKey) private var appLanguageRaw = AppLanguage.english.rawValue
+    @AppStorage(AppLanguage.appStorageKey) private var appLanguageRaw = AppLanguage.system.rawValue
     @AppStorage(MarkerSize.appStorageKey) private var markerSizeRaw = MarkerSize.regular.rawValue
     @AppStorage("idleTimeout") private var idleTimeoutSeconds: Double = 90
     @AppStorage(TemperatureUnit.appStorageKey) private var temperatureUnitRaw = TemperatureUnit.celsius.rawValue
