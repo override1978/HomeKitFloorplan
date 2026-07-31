@@ -17,14 +17,12 @@ struct SensorSampleGateTests {
         #expect(wrote)
     }
 
-    /// Il caso sano: la temperatura non si muove in modo apprezzabile, ma il
-    /// sensore ha rumore sull'ultima cifra. Nessuna di queste letture merita
-    /// una riga.
-    ///
-    /// I valori non sono mai *identici* di proposito: un numero che si ripete
-    /// tale e quale è il segno di un sensore bloccato, e lì vale la regola
-    /// opposta — vedi `frozenSensorLeavesEvidence`.
-    @Test("Un valore stabile con rumore non produce righe")
+    /// Un valore fermo, con o senza rumore sull'ultima cifra, non produce
+    /// righe fino al battito. Prima faceva eccezione il valore *identico*
+    /// ripetuto, che veniva riscritto per alimentare il check "sensore
+    /// bloccato": quel controllo non esiste più, perché segnalava come guasti i
+    /// dispositivi a risoluzione grossolana e costava il 60% delle scritture.
+    @Test("Un valore stabile non produce righe")
     func stableValueIsSkipped() {
         var gate = SensorSampleGate()
         _ = gate.shouldWrite(accessoryUUID: Self.sensor, type: .temperature, value: 21.40, now: Self.t0)
@@ -108,81 +106,6 @@ struct SensorSampleGateTests {
         let heartbeatMinutes = SensorSampleGate.maxGap / 60
         #expect(Double(EnvironmentPreProcessor.staleThresholdMinutes) > heartbeatMinutes,
                 "un sensore stabile scrive ogni \(heartbeatMinutes) min e non deve mai risultare fermo")
-    }
-
-    // MARK: - Le prove di un blocco devono sopravvivere alla deduplica
-
-    /// Simula un sensore congelato e conta cosa resta in archivio. Le tre
-    /// condizioni verificate sono esattamente quelle che `SensorAnomalyDetector`
-    /// pretende: almeno 4 righe nel gruppo, tutte identiche, che coprano almeno
-    /// mezz'ora. Se questo test passa, il detector continua a vedere il guasto
-    /// senza che gli sia stata cambiata una riga.
-    @Test("Un sensore congelato lascia abbastanza tracce per il detector")
-    func frozenSensorLeavesEvidence() {
-        var gate = SensorSampleGate()
-        var writes: [Date] = []
-
-        // Due ore di campionamento ogni 15 minuti, sempre lo stesso numero.
-        for step in 0...8 {
-            let now = Self.t0.addingTimeInterval(Double(step) * 900)
-            if gate.shouldWrite(accessoryUUID: Self.sensor, type: .temperature, value: 21.4, now: now) {
-                writes.append(now)
-            }
-        }
-
-        #expect(writes.count >= 4, "solo \(writes.count) righe: il detector ne pretende 4")
-        guard let first = writes.first, let last = writes.last else { return }
-        let span = last.timeIntervalSince(first)
-        #expect(span >= SensorAnomalyDetector.stuckDuration,
-                "le righe coprono \(Int(span / 60)) min, ne servono \(Int(SensorAnomalyDetector.stuckDuration / 60))")
-    }
-
-    /// Il contraltare: un sensore sano non deve pagare la regola. Il rumore
-    /// sull'ultima cifra — che è il segno di vita — azzera la striscia, quindi
-    /// si continua a scrivere solo al battito.
-    @Test("Un sensore sano con rumore non scrive più del dovuto")
-    func healthySensorKeepsSaving() {
-        var gate = SensorSampleGate()
-        var writes = 0
-
-        // Due ore a 15 minuti, oscillando tra 21,4 e 21,5: sotto la soglia di
-        // significatività, ma abbastanza per non essere "lo stesso numero".
-        for step in 0...8 {
-            let now = Self.t0.addingTimeInterval(Double(step) * 900)
-            let value = step.isMultiple(of: 2) ? 21.4 : 21.5
-            if gate.shouldWrite(accessoryUUID: Self.sensor, type: .temperature, value: value, now: now) {
-                writes += 1
-            }
-        }
-
-        // La prima più i battiti orari: tre righe in due ore, non nove.
-        #expect(writes <= 3, "\(writes) righe in 2 ore: la deduplica non sta risparmiando")
-    }
-
-    /// I lux stanno a zero tutta la notte e gli allarmi booleani a zero per
-    /// sempre: il detector li ignora, quindi conservarne le prove sarebbe solo
-    /// un fiume di righe che nessuno legge.
-    @Test("Sui tipi che il detector ignora non si accumulano prove")
-    func excludedTypesDoNotAccumulate() {
-        var gate = SensorSampleGate()
-        var writes = 0
-
-        for step in 0...8 {
-            let now = Self.t0.addingTimeInterval(Double(step) * 900)
-            if gate.shouldWrite(accessoryUUID: Self.sensor, type: .lightSensor, value: 0, now: now) {
-                writes += 1
-            }
-        }
-
-        #expect(writes <= 3, "\(writes) righe di lux a zero: si sta archiviando il buio")
-    }
-
-    @Test("La cadenza fitta basta a riempire la finestra del detector")
-    func evidenceGapFitsDetectorWindow() {
-        // Quattro intervalli fitti devono stare dentro una finestra di stallo,
-        // altrimenti le righe non farebbero mai il numero richiesto in tempo.
-        #expect(SensorSampleGate.stuckEvidenceGap * 4 <= SensorAnomalyDetector.stuckDuration)
-        #expect(SensorSampleGate.stuckEvidenceAfter < SensorAnomalyDetector.stuckDuration)
     }
 
     // MARK: - Sensori indipendenti

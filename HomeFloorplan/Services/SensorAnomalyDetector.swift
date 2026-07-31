@@ -6,7 +6,17 @@ import SwiftData
 struct AnomalySignal {
     enum Kind {
         case oscillating  // high-frequency value swings
-        case stuck        // identical value for an implausibly long period
+        /// Non più prodotto. Il controllo si reggeva sul rumore dell'ultima
+        /// cifra — un sensore vivo oscilla tra 21,4 e 21,5, uno rotto ripete lo
+        /// stesso numero — ma misurato su una casa vera quella premessa è falsa:
+        /// purificatori, termostati e condizionatori riportano interi ripetuti
+        /// per ore perché hanno risoluzione grossolana, non perché siano guasti.
+        /// Segnalava quei dispositivi come bloccati, e tenerlo vivo costava il
+        /// 60% di tutte le scritture del campionamento.
+        ///
+        /// Il caso sopravvive perché gli insight già in archivio lo portano
+        /// scritto e la Dashboard deve continuare a renderli fino a scadenza.
+        case stuck
         case outOfRange   // physically impossible reading
     }
     let kind:          Kind
@@ -49,21 +59,11 @@ enum SensorAnomalyDetector {
         case .lightSensor:                      return .infinity // mai (escluso a monte)
         }
     }
-    /// Duration above which a completely stuck value is considered anomalous.
-    ///
-    /// Internal e non private perché `SensorSampleGate` ci si appoggia: la
-    /// deduplica in scrittura deve garantire che, quando un valore si blocca,
-    /// nell'archivio restino abbastanza righe identiche perché questo controllo
-    /// possa ancora vederle.
-    static let stuckDuration: TimeInterval = 30 * 60   // 30 min
-
     /// Se su questo tipo di sensore ha senso fare statistica.
     ///
     /// Gli allarmi booleani stanno a 0 per sempre e il sensore di luminosità
     /// varia per natura (nuvole, tende, giorno/notte): per entrambi "fermo" e
-    /// "oscillante" non dicono niente sullo stato di salute. Vive qui, e non
-    /// duplicato altrove, perché anche `SensorSampleGate` deve sapere su quali
-    /// tipi vale la pena conservare le prove di un blocco.
+    /// "oscillante" non dicono niente sullo stato di salute.
     static func evaluatesStatistically(_ type: SensorServiceType) -> Bool {
         !type.isBooleanAlert && type != .lightSensor
     }
@@ -92,7 +92,6 @@ enum SensorAnomalyDetector {
 
         var signals: [AnomalySignal] = []
         for (_, group) in groups {
-            guard group.count >= 4 else { continue }
             guard let first = group.first,
                   let sensorType = SensorServiceType(rawValue: first.serviceTypeRaw)
             else { continue }
@@ -112,8 +111,18 @@ enum SensorAnomalyDetector {
             let base     = "anomaly|\(roomName)|\(sensorType.rawValue)"
 
             // — Oscillation check —
+            //
+            // Le 4 letture minime stanno qui e non più in cima al ciclo. Erano
+            // una guardia sull'intero blocco, e la deduplica in scrittura le
+            // rendeva irraggiungibili per i sensori tranquilli: un valore fermo
+            // lascia solo i battiti orari, cioè 2 righe in una finestra di 2h.
+            // Il fuori-scala ne restava escluso senza motivo — un valore
+            // fisicamente impossibile è già prova con una lettura sola, non
+            // serve una distribuzione — mentre l'oscillazione una distribuzione
+            // la richiede davvero.
             let relStddev = valRange > 0 ? stddev / valRange : 0
-            if relStddev > oscillationRelStddev,
+            if group.count >= 4,
+               relStddev > oscillationRelStddev,
                valRange > oscillationMinRange,
                stddev >= minimumOscillationStddev(for: sensorType) {
                 let score = IntelligenceScore(
@@ -135,30 +144,6 @@ enum SensorAnomalyDetector {
                     score:         score,
                     numericDetail: stddev
                 ))
-            }
-
-            // — Stuck sensor check —
-            if let first = sorted.first, let last = sorted.last,
-               last.timestamp.timeIntervalSince(first.timestamp) >= stuckDuration {
-                let allSame = values.allSatisfy { abs($0 - values[0]) < 0.01 }
-                if allSame {
-                    let score = IntelligenceScore(
-                        relevance: 0.80, confidence: 0.90,
-                        urgency: 0.50, actionability: 0.85, novelty: 0.90
-                    )
-                    signals.append(AnomalySignal(
-                        kind:          .stuck,
-                        sensorType:    sensorType,
-                        roomName:      roomName,
-                        description:   String(format:
-                            String(localized: "anomaly.stuck.detail",
-                                   defaultValue: "Value unchanged (%.1f%@) for over 30 minutes. The sensor may be stuck."),
-                            values[0], sensorType.unit),
-                        semanticKey:   "\(base)|stuck",
-                        score:         score,
-                        numericDetail: values[0]
-                    ))
-                }
             }
 
             // — Out-of-range check —
