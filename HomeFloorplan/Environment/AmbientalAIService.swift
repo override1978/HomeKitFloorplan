@@ -686,7 +686,7 @@ final class AmbientalAIService {
         let confidence = computeConfidence(preResult: preResult)
 
         // 24.E: language quality flag — Italian insights should contain at least one non-ASCII char
-        let suspect = languageSuspect(message: message)
+        let suspect = Self.languageSuspect(message: message)
         #if DEBUG
         if suspect {
             dprint("⚠️ [AI] Language suspect in \(roomName): message appears to be in English instead of Italian")
@@ -771,11 +771,49 @@ final class AmbientalAIService {
 
     // MARK: - Language Validation (24.E)
 
-    /// Returns true when the Italian device locale is expected but the message contains
-    /// only ASCII characters — a heuristic signal that the LLM responded in English.
-    private func languageSuspect(message: String) -> Bool {
-        guard AILocale.outputLanguage == "Italian", !message.isEmpty else { return false }
-        return message.unicodeScalars.allSatisfy { $0.value < 128 }
+    /// Marcatori: parole ad altissima frequenza che una frase di senso compiuto
+    /// contiene quasi sempre e che non si somigliano fra le due lingue. Sono
+    /// incluse anche alcune parole di dominio ("aria", "stanza") perché questi
+    /// messaggi sono corti — una o due frasi — e sui testi brevi le sole parole
+    /// grammaticali possono non bastare.
+    static let italianMarkers: Set<String> = [
+        "il", "lo", "la", "i", "gli", "le", "di", "del", "della", "che", "è", "e",
+        "per", "non", "un", "una", "con", "nel", "nella", "sono", "più", "molto",
+        "aria", "stanza", "casa", "alta", "alto", "apri", "finestra"
+    ]
+    static let englishMarkers: Set<String> = [
+        "the", "is", "are", "in", "for", "and", "with", "to", "of", "this", "your",
+        "has", "been", "high", "air", "room", "home", "open", "window", "level", "levels"
+    ]
+
+    /// Se il modello ha risposto in una lingua diversa da quella richiesta.
+    ///
+    /// Prima il criterio era "il messaggio contiene solo caratteri ASCII", il che
+    /// dichiarava inglese **qualsiasi frase italiana priva di accenti**. Nel log
+    /// del pannello segnalava come sospetta "Studio: aria viziata di notte,
+    /// ventilare subito per dormire bene" — italiano perfetto. Un avviso che
+    /// grida al lupo a ogni frase è peggio di nessun avviso, perché insegna a
+    /// ignorarlo.
+    ///
+    /// Ora confronta quante parole tipiche di ciascuna lingua compaiono. È una
+    /// euristica anche questa, ma sbaglia nella direzione giusta: tace quando è
+    /// incerta, invece di accusare per default.
+    ///
+    /// È anche simmetrico. Il controllo precedente esaminava solo il caso
+    /// italiano, quindi un utente inglese che riceveva risposte in italiano non
+    /// se ne accorgeva.
+    static func languageSuspect(message: String, expected: String = AILocale.outputLanguage) -> Bool {
+        let words = message.lowercased()
+            .split { !$0.isLetter && $0 != "à" && $0 != "è" && $0 != "é" && $0 != "ì" && $0 != "ò" && $0 != "ù" }
+            .map(String.init)
+        guard words.count >= 3 else { return false }   // troppo corto per giudicare
+
+        let it = words.filter(italianMarkers.contains).count
+        let en = words.filter(englishMarkers.contains).count
+
+        // Serve uno scarto netto: uno a zero su una frase breve non dice nulla.
+        if expected == "Italian" { return en > it && en >= 2 }
+        return it > en && it >= 2
     }
 
     private func extractJSON(from string: String) -> String {
