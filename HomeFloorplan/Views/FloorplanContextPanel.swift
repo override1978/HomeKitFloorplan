@@ -39,55 +39,19 @@ struct FloorplanContextPanel<Content: View>: View {
             // tocco sulla planimetria è già impegnato — `handleBackgroundTap`
             // risolve i tap sulle stanze e piazza i marker — e assegnargli anche
             // la chiusura renderebbe ambiguo ogni tocco fuori dal pannello.
-            GlassDismissButton {
-                overlayVM.dismissPanel()
+            // Tondo e senza etichetta: la ✕ da sola è un'affordance di chiusura
+            // universale, e la scritta "Chiudi" costringeva a una capsula larga
+            // in fondo al pannello. 52 punti è un bersaglio comodo — più grande
+            // dei 40 della chrome, perché questo è l'unico modo per uscire.
+            GlassIconButton(size: 52, action: overlayVM.dismissPanel) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.red)
             }
+            // L'etichetta accessibile prende il posto del testo rimosso: senza,
+            // VoiceOver leggerebbe solo "xmark".
+            .accessibilityLabel(String(localized: "common.dismiss", defaultValue: "Chiudi"))
             .padding(.bottom, 16)
-        }
-    }
-}
-
-// MARK: - GlassDismissButton
-
-/// Chiusura del pannello, in vetro.
-///
-/// Era una capsula rossa piena con un'ombra rossa disegnata a mano: il modo
-/// pre-vetro di dare peso a un'azione. Con `.buttonStyle(.glass)` la superficie
-/// **è** il controllo — si comprime e risponde al tocco — e il rosso resta dove
-/// serve davvero, cioè sul contenuto, a dire cosa fa il bottone senza gridarlo.
-private struct GlassDismissButton: View {
-    let action: () -> Void
-
-    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
-    private var isLiquidGlassEnabled = false
-    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
-
-    private var label: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "xmark")
-                .font(.system(size: 12, weight: .bold))
-            Text(String(localized: "common.dismiss", defaultValue: "Chiudi"))
-                .font(.caption.weight(.semibold))
-        }
-    }
-
-    @ViewBuilder
-    var body: some View {
-        if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
-            Button(action: action) {
-                label.foregroundStyle(Color.red)
-            }
-            .buttonStyle(.glass)
-        } else {
-            Button(action: action) {
-                label
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(Color.red.opacity(0.85), in: Capsule())
-                    .shadow(color: .red.opacity(0.30), radius: 8, y: 3)
-            }
-            .buttonStyle(.plain)
         }
     }
 }
