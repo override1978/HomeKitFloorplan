@@ -61,10 +61,17 @@ struct FloorplanStatusSummaryCard: View {
                 .fill(color.opacity(0.6))
                 .frame(height: 3)
         }
-        .background(.regularMaterial)
+        // È la card di riepilogo che TUTTI E TRE gli overlay mostrano in cima —
+        // "Ambiente casa", "Sicurezza casa", "Priorità della casa". Vive in un
+        // file suo, fuori dai tre overlay, ed è per questo che era sfuggita: chi
+        // cercava le superfici dentro EnvironmentOverlayView, SecurityOverlayView
+        // e IntelligenceOverlayView non poteva trovarla.
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: color.opacity(0.12), radius: 12, x: 0, y: 4)
-        .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            tint: color.opacity(0.12),
+            legacyShadow: GlassChromeShadow(color: color.opacity(0.12), radius: 12, y: 4)
+        )
     }
 }
 
@@ -93,12 +100,14 @@ struct FloorplanEmptyStateCard: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial)
+        // Stessa conversione della card qui sopra: bordo colorato disegnato a
+        // mano sostituito dalla tinta, che sul vetro è il mezzo previsto.
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(color.opacity(0.16), lineWidth: 1)
-        }
-        .shadow(color: color.opacity(0.08), radius: 10, x: 0, y: 3)
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous),
+            tint: color.opacity(0.12),
+            legacyBorder: color.opacity(0.16),
+            legacyShadow: GlassChromeShadow(color: color.opacity(0.08), radius: 10, y: 3)
+        )
     }
 }
