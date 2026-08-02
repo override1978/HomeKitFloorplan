@@ -48,21 +48,28 @@ struct FloorplanModePill: View {
     var body: some View {
         // Collapse when only one mode is available.
         if modes.count > 1 {
-            // Container PROPRIO, con uno spacing largo quanto la barra.
+            // Container PROPRIO, con lo spacing tarato sui BORDI delle capsule.
             //
             // È la distanza entro cui due superfici di vetro si attraggono e si
-            // fondono: la capsula di selezione deve poter raggiungere la voce
-            // successiva, che dista un centinaio di punti. Appoggiarsi al
-            // container della top chrome — spacing 12, tarato sui suoi bottoni
-            // — lasciava la fusione fuori portata, ed è il motivo per cui la
-            // deformazione a goccia non si era mai vista.
+            // fondono, e la capsula di selezione deve poter raggiungere quella
+            // della voce accanto. Appoggiarsi al container della top chrome
+            // (spacing 12, tarato sui suoi bottoni) lasciava la fusione fuori
+            // portata, ed è il motivo per cui il morph non si era mai visto.
+            //
+            // ⚠️ Ma 120 era altrettanto sbagliato in eccesso: l'avevo tarato
+            // sulla distanza fra i CENTRI delle voci, mentre a fondersi sono i
+            // bordi, che distano pochi punti. Uno spacing enorme allarga la
+            // regione di vetro del contenitore ben oltre la pill, che finiva
+            // per sovrapporsi alle azioni in alto a destra coprendo l'ultima
+            // modalità. Regola: lo spacing è un raggio di fusione fra bordi
+            // vicini, non la larghezza del controllo.
             //
             // Il container era stato tolto perché ANNIDATO in quello della top
             // chrome: due container con spacing in conflitto si rimbalzavano gli
             // aggiornamenti nello stesso frame (`glassEffect() tried to update
             // multiple times per frame`). Ora la pill è sorella del container
             // della barra, non figlia: nessun annidamento, nessun rimbalzo.
-            LiquidGlassContainer(spacing: 120) {
+            LiquidGlassContainer(spacing: 24) {
                 HStack(spacing: 4) {
                     ForEach(modes) { mode in
                         modeButton(mode)
