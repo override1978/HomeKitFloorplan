@@ -22,9 +22,10 @@ struct FloorplanModePill: View {
     let availableWidth: CGFloat
 
     /// Spazio occupato attorno alla pill: bottone sidebar più menu del titolo a
-    /// sinistra, azioni a destra, margini esterni. Stimato per eccesso, così la
-    /// forma compatta scatta un po' prima della collisione invece che dopo.
-    private static let sideChromeWidth: CGFloat = 560
+    /// sinistra, azioni a destra, margini esterni. Lo passa la barra, perché
+    /// dipende da quanto le azioni si sono già compattate.
+    let sideChromeWidth: CGFloat
+
     /// Larghezza di una voce con la sua etichetta ("Intelligenza" è la più lunga).
     private static let modeWidthWithLabel: CGFloat = 120
 
@@ -32,7 +33,7 @@ struct FloorplanModePill: View {
     /// quella soglia le etichette cadono e restano le icone, tranne sulla voce
     /// attiva — che è l'unica che serve leggere, le altre sono bersagli.
     private var showsLabels: Bool {
-        availableWidth - Self.sideChromeWidth >= CGFloat(modes.count) * Self.modeWidthWithLabel
+        availableWidth - sideChromeWidth >= CGFloat(modes.count) * Self.modeWidthWithLabel
     }
 
     @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
@@ -256,7 +257,8 @@ private struct ModeBarSurface: ViewModifier {
                         // Larghezza da iPad in orizzontale: la preview mostra la
                         // forma estesa. Abbassandola sotto i ~1040 si vede quella
                         // compatta, che è ciò che compare ruotando in verticale.
-                        availableWidth: 1366
+                        availableWidth: 1366,
+                        sideChromeWidth: 560
                     )
                     .padding(.bottom, 40)
                 }

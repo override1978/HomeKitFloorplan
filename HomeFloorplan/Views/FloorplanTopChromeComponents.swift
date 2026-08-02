@@ -27,6 +27,20 @@ struct FloorplanTopBarView: View {
     let onPauseSmartLighting: () -> Void
     let onResumeSmartLighting: () -> Void
 
+    /// Scene e Modifica finiscono nel menu solo quando la barra è stretta.
+    ///
+    /// Tenerli sempre nel menu costava un tocco in più *sempre*, per risolvere
+    /// una collisione che esiste solo in verticale — e questo iPad vive al muro
+    /// in orizzontale. Collassare in base allo spazio è anche il comportamento
+    /// normale delle toolbar di sistema, quindi non sorprende nessuno.
+    ///
+    /// La soglia è la somma di ciò che deve stare in riga: titolo e bottone
+    /// sidebar (~290), azioni per esteso (~240), la pill con quattro etichette
+    /// (~480) e i margini (~40).
+    private var collapsesActions: Bool {
+        size.width < 1050
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // La mode pill sta FUORI da questo container, non dentro.
@@ -44,7 +58,8 @@ struct FloorplanTopBarView: View {
                 if !isEditing, let overlayVM {
                     FloorplanModePill(overlayVM: overlayVM,
                                       context: overlayContext,
-                                      availableWidth: size.width)
+                                      availableWidth: size.width,
+                                      sideChromeWidth: collapsesActions ? 360 : 560)
                 }
 
                 LiquidGlassContainer(spacing: 12) {
@@ -66,6 +81,7 @@ struct FloorplanTopBarView: View {
                         FloorplanTopRightActions(
                             isEditing: isEditing,
                             isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
+                            collapsesActions: collapsesActions,
                             isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
                             onAddAccessory: onAddAccessory,
                             onShowHelp: onShowHelp,
@@ -370,6 +386,8 @@ struct FloorplanEditModeBanner: View {
 struct FloorplanTopRightActions: View {
     let isEditing: Bool
     let isOverlayMode: Bool
+    /// Vero quando la barra è stretta: Scene e Modifica passano nel menu.
+    let collapsesActions: Bool
     let isDrawingAvailable: Bool
     let onAddAccessory: () -> Void
     let onShowHelp: () -> Void
@@ -411,7 +429,7 @@ struct FloorplanTopRightActions: View {
                     // esattamente nel caso che ora si è liberato.
                     FloorplanToolsMenu(
                         isDrawingAvailable: isDrawingAvailable,
-                        showsSceneAndEdit: !isEditing,
+                        showsSceneAndEdit: collapsesActions && !isEditing,
                         onShowHelp: onShowHelp,
                         onShowDiagnostics: onShowDiagnostics,
                         onEditDrawing: onEditDrawing,
@@ -419,22 +437,46 @@ struct FloorplanTopRightActions: View {
                         onToggleEditing: onToggleEditing
                     )
 
-                    // "Fatto" resta un bottone visibile: è l'uscita dalla
-                    // modalità, e nasconderla in un menu significherebbe far
-                    // cercare all'utente come tornare indietro.
-                    if isEditing {
+                    // Scene per esteso quando la barra è larga.
+                    if !collapsesActions && !isEditing {
+                        Divider().frame(height: 20)
+
+                        Button {
+                            onShowScenes()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "play.rectangle.on.rectangle")
+                                Text(String(localized: "scenes.title", defaultValue: "Scenes"))
+                            }
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.primary.opacity(0.55))
+                        .accessibilityLabel(String(localized: "scenes.title", defaultValue: "Scenes"))
+                    }
+
+                    // "Modifica" per esteso quando c'è spazio; "Fatto" SEMPRE,
+                    // perché è l'uscita dalla modalità e nasconderla in un menu
+                    // significherebbe far cercare come tornare indietro.
+                    if isEditing || !collapsesActions {
                         Divider().frame(height: 20)
 
                         Button {
                             onToggleEditing()
                         } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: "checkmark")
-                                Text(String(localized: "common.done", defaultValue: "Done"))
+                                Image(systemName: isEditing ? "checkmark" : "pencil")
+                                Text(isEditing
+                                     ? String(localized: "common.done", defaultValue: "Done")
+                                     : String(localized: "common.edit", defaultValue: "Edit"))
                             }
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundStyle(BrandColor.primary)
+                            .foregroundStyle(isEditing ? BrandColor.primary : Color.primary.opacity(0.55))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .contentShape(Rectangle())
