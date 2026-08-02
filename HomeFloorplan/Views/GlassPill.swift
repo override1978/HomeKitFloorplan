@@ -290,9 +290,6 @@ struct OverlayPanelMarkerButton: View {
     let mode: FloorplanOverlayMode
     let action: () -> Void
 
-    @State private var pulseScale: CGFloat = 1.0
-    @State private var pulseOpacity: Double = 0.55
-
     private let circleSize: CGFloat = 48
 
     var body: some View {
@@ -307,10 +304,26 @@ struct OverlayPanelMarkerButton: View {
                     // dietro la propria forma, e l'anello non ci entra mai —
                     // altrimenti un'animazione `repeatForever` lo costringerebbe
                     // a ricampionare il backdrop a ogni fotogramma, per sempre.
+                    //
+                    // La pulsazione è guidata da `phaseAnimator`, non più da
+                    // `withAnimation(.repeatForever)` dentro `onAppear`. Quel
+                    // `onAppear` scattava DENTRO la transazione del cambio
+                    // modalità, e la molla ambientale sovrascriveva il
+                    // repeatForever: l'anello andava una volta sola al suo stato
+                    // finale — opacità 0 — e restava invisibile. Ecco perché
+                    // arrivando su Sicurezza o Intelligenza non pulsava nulla.
+                    // Il phaseAnimator si guida da sé: non dipende da quando
+                    // `onAppear` scatta né da quale animazione è in corso.
                     Circle()
-                        .stroke(mode.accentColor.opacity(pulseOpacity), lineWidth: 2.5)
+                        .stroke(mode.accentColor, lineWidth: 2.5)
                         .frame(width: circleSize + 14, height: circleSize + 14)
-                        .scaleEffect(pulseScale)
+                        .phaseAnimator([false, true]) { ring, isExpanded in
+                            ring
+                                .scaleEffect(isExpanded ? 1.18 : 1.0)
+                                .opacity(isExpanded ? 0 : 0.55)
+                        } animation: { _ in
+                            .easeInOut(duration: 1.3)
+                        }
 
                     // Cerchio e icona sono ora una cosa sola: il vetro è la
                     // superficie del controllo, non un riempimento sotto di
@@ -333,10 +346,18 @@ struct OverlayPanelMarkerButton: View {
                     .foregroundStyle(mode.accentColor)
                     .modifier(MarkerLabelSurface(tint: mode.accentColor))
             }
+            // Area sensibile esplicita su TUTTO il controllo, anello compreso.
+            //
+            // Prima il cerchio era una forma riempita, che offre da sé area
+            // toccabile su tutti i suoi punti. Ora è un'icona su `glassEffect`,
+            // e il vetro non contribuisce in modo affidabile all'area sensibile:
+            // il tocco si riduceva più o meno al glifo, da cui "difficilmente
+            // tappabile". Vale ogni volta che una superficie riempita diventa
+            // vetro — non è una particolarità di questo bottone.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .id(mode)              // force view recreation when mode changes → resets @State + restarts onAppear
-        .onAppear { startPulse() }
+        .id(mode)              // ricrea la view al cambio modalità: riavvia il phaseAnimator
     }
 
     /// Superficie del cerchio.
@@ -390,16 +411,4 @@ struct OverlayPanelMarkerButton: View {
         }
     }
 
-    private func startPulse() {
-        // Reset to initial values before animating so the new mode's color takes effect immediately.
-        pulseScale = 1.0
-        pulseOpacity = 0.55
-        withAnimation(
-            .easeInOut(duration: 1.3)
-            .repeatForever(autoreverses: true)
-        ) {
-            pulseScale = 1.18
-            pulseOpacity = 0.0
-        }
-    }
 }
