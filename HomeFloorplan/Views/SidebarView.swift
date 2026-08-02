@@ -187,8 +187,13 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
-        .background(BrandColor.subtleGradient)
+        // NIENTE sfondo custom qui, ed è la prima voce dell'elenco "cosa
+        // evitare" della guida Apple, che nomina `NavigationSplitView`
+        // esplicitamente. Nascondere lo sfondo di sistema e dipingerci sopra un
+        // gradiente copriva il Liquid Glass della sidebar e teneva disattivato
+        // lo scroll edge effect — il trattamento che mantiene leggibile il
+        // contenuto mentre scorre sotto il bordo. Il gradiente di brand è stato
+        // sacrificato consapevolmente: qui l'identità la dà il sistema.
         .tint(BrandColor.primary)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -196,7 +201,11 @@ struct SidebarView: View {
                 EmptyView()
             }
         }
-        .safeAreaInset(edge: .bottom) {
+        // `safeAreaBar` invece di `safeAreaInset`: è l'API che iOS 26 ha
+        // introdotto per le barre ancorate a un bordo, e porta con sé la
+        // superficie di vetro e lo scroll edge effect che prima ci disegnavamo
+        // a mano con un materiale.
+        .safeAreaBar(edge: .bottom) {
             homeHint
         }
         .sheet(isPresented: $showingNewFloorplan) {
@@ -286,7 +295,9 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .background(.regularMaterial)
+            // Nessun materiale: la superficie ora la mette `safeAreaBar`, e
+            // sovrapporgliene uno significherebbe posare un materiale sopra il
+            // vetro di sistema.
         }
     }
 
