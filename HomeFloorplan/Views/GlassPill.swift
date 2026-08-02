@@ -205,7 +205,10 @@ struct GlassIconButton<Label: View>: View {
     private var isLiquidGlassEnabled = false
     @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
 
-    init(size: CGFloat = 40,
+    /// 44 punti di default: è il minimo che le HIG danno per un bersaglio
+    /// tattile. I 40 di prima erano sotto, e su un iPad tenuto a braccio teso
+    /// su un muro la differenza si sente.
+    init(size: CGFloat = 44,
          action: @escaping () -> Void,
          @ViewBuilder label: () -> Label) {
         self.size = size

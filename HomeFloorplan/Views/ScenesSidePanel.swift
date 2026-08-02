@@ -79,6 +79,12 @@ struct ScenesSidePanel: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title3)
                     .foregroundStyle(.secondary)
+                    // Il bersaglio era il GLIFO, una ventina di punti: meno
+                    // della metà dei 44 che le HIG danno come minimo. Il frame
+                    // con `contentShape` lo porta a misura senza ingrandire il
+                    // simbolo, che a `.title3` sta bene com'è.
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
         }

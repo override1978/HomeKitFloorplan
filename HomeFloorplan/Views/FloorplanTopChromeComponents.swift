@@ -99,7 +99,7 @@ struct FloorplanTopBarView: View {
         switch presentationStyle {
         case .splitView:
             if columnVisibility == .detailOnly {
-                GlassIconButton(size: 40, action: onOpenSidebar) {
+                GlassIconButton(size: 44, action: onOpenSidebar) {
                     Image(systemName: "sidebar.left")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.primary)
@@ -110,7 +110,7 @@ struct FloorplanTopBarView: View {
                 .transition(.opacity)
             }
         case .pushed:
-            GlassIconButton(size: 40, action: onDismiss) {
+            GlassIconButton(size: 44, action: onDismiss) {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Color.red)
