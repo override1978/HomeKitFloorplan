@@ -537,7 +537,11 @@ struct SecurityContextDashboard: View {
                     warnings: warnings,
                     monitoredCount: monitored.count,
                     highlightedRoomName: highlightName
-                )
+                ),
+                // L'etichetta ripeteva "SICUREZZA CASA" già scritta sulla card
+                // sopra, e contendendo la riga al chip finiva pure troncata.
+                // Il chip resta: "Tutto OK" è uno stato che non c'è altrove.
+                showsTitle: false
             )
 
             // Card 3 — Suggested action
@@ -673,30 +677,58 @@ struct SecurityContextDashboard: View {
             .frame(height: 5)
 
             // Alarm mode pills (if system present)
+            //
+            // Era uno `ScrollView` orizzontale: le quattro modalità non entrano
+            // in 320 punti, quindi l'ultima restava tagliata sul bordo — e uno
+            // scorrimento senza alcun segnale che si possa scorrere è peggio di
+            // un taglio, perché nasconde un controllo facendolo sembrare rotto.
+            //
+            // `ViewThatFits` prova prima la riga completa e ripiega su quella
+            // con le sole icone, dove solo la modalità attiva tiene la sua
+            // scritta — che è l'unica che serve leggere: le altre sono bersagli.
+            // Così tutte e quattro restano visibili, e se un domani il pannello
+            // si allarga la riga estesa torna da sé.
             if let sys = system {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(sys.adapter.supportedModes) { mode in
-                            let isActive = sys.adapter.currentMode == mode
-                            HStack(spacing: 4) {
-                                Image(systemName: mode.symbolName)
-                                    .font(.caption2)
-                                Text(mode.displayName)
-                                    .font(.caption2.weight(.medium))
-                            }
-                            .foregroundStyle(isActive ? .white : mode.tintColor)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(
-                                Capsule()
-                                    .fill(isActive ? AnyShapeStyle(mode.tintColor) : AnyShapeStyle(mode.tintColor.opacity(0.12)))
-                            )
-                        }
-                    }
+                ViewThatFits(in: .horizontal) {
+                    alarmModeRow(sys, showsAllLabels: true)
+                    alarmModeRow(sys, showsAllLabels: false)
                 }
             }
         }
         .modifier(PanelCardModifier(accentColor: scoreColor))
+    }
+
+    /// Riga delle modalità antifurto. Con `showsAllLabels` a false tiene la
+    /// scritta solo sulla modalità attiva; le altre restano icone, con
+    /// l'etichetta accessibile al posto del testo tolto.
+    @ViewBuilder
+    private func alarmModeRow(
+        _ sys: (accessory: HMAccessory, adapter: SecuritySystemAdapter),
+        showsAllLabels: Bool
+    ) -> some View {
+        HStack(spacing: 6) {
+            ForEach(sys.adapter.supportedModes) { mode in
+                let isActive = sys.adapter.currentMode == mode
+                HStack(spacing: 4) {
+                    Image(systemName: mode.symbolName)
+                        .font(.caption2)
+                    if showsAllLabels || isActive {
+                        Text(mode.displayName)
+                            .font(.caption2.weight(.medium))
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .foregroundStyle(isActive ? .white : mode.tintColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(isActive ? AnyShapeStyle(mode.tintColor) : AnyShapeStyle(mode.tintColor.opacity(0.12)))
+                )
+                .accessibilityLabel(mode.displayName)
+            }
+        }
     }
 
     // MARK: Card 2 — Active alerts

@@ -296,6 +296,12 @@ struct HomeDigestSummaryCard: View {
     /// Sicurezza invece porta uno stato ("Tutto OK") che non è scritto altrove.
     var showsStatusLabel: Bool = true
 
+    /// L'etichetta in maiuscoletto sopra il titolo. Spegnibile perché in
+    /// Sicurezza ripete parola per parola l'intestazione della card sopra
+    /// ("SICUREZZA CASA" due volte, una sotto l'altra) e in più si contendeva
+    /// la riga col chip di stato, finendo troncata in "SICUREZZA C…".
+    var showsTitle: Bool = true
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 10) {
@@ -321,24 +327,28 @@ struct HomeDigestSummaryCard: View {
                 // sta su una riga sola, e il titolo recupera la larghezza piena
                 // della colonna: da ~150 a ~240 punti.
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(summary.title)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .textCase(.uppercase)
-                            .tracking(0.5)
-                            .lineLimit(1)
+                    if showsTitle || showsStatusLabel {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            if showsTitle {
+                                Text(summary.title)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
+                                    .tracking(0.5)
+                                    .lineLimit(1)
+                            }
 
-                        if showsStatusLabel {
                             Spacer(minLength: 4)
 
-                            Text(summary.statusLabel)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(summary.color)
-                                .lineLimit(1)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 5)
-                                .background(summary.color.opacity(0.10), in: Capsule())
+                            if showsStatusLabel {
+                                Text(summary.statusLabel)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(summary.color)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 5)
+                                    .background(summary.color.opacity(0.10), in: Capsule())
+                            }
                         }
                     }
 
