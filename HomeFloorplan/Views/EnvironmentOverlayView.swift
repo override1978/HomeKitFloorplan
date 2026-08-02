@@ -370,31 +370,29 @@ struct EnvironmentContextDashboard: View {
             // ── Card 1: Health Score / graph ───────────────────────────────
             healthScoreCard
 
-            // ── Confronto dentro/fuori (meteo già campionato dal loop) ─────
-            if let weather = weatherKit.currentWeather {
-                VStack(alignment: .trailing, spacing: 3) {
-                    IndoorOutdoorCompareRow(
-                        outdoorTemp: weather.outdoorTemperature,
-                        outdoorSymbol: weather.symbolName,
-                        indoorAvgTemp: {
-                            let temps = allSensors
-                                .filter { $0.serviceType == .temperature }
-                                .map(\.currentValue)
-                            return temps.isEmpty ? nil : temps.reduce(0, +) / Double(temps.count)
-                        }()
-                    )
-                    // Attribution WeatherKit: obbligatoria ovunque appaiano dati meteo.
-                    AppleWeatherAttributionView()
-                        .padding(.trailing, 2)
-                }
+            // ── Card 2: quante cose non vanno ──────────────────────────────
+            //
+            // Sale dal fondo alla seconda posizione: è la card che in un colpo
+            // d'occhio dice quanto c'è da preoccuparsi, e chi apre il pannello
+            // vuole sapere prima *quanto* e poi *cosa*. In fondo alla pila
+            // quell'informazione arrivava dopo la narrazione che la spiegava.
+            if !envVM.rooms.isEmpty {
+                summaryCard(dangerCount: dangerCount,
+                            warningCount: warningCount,
+                            normalCount: normalCount)
             }
 
-            // ── Card 2: Assistant narrative ────────────────────────────────
+            // ── Card 3: Assistant narrative ────────────────────────────────
+            //
+            // Senza chip di stato: diceva "3 da controllare", cioè lo stesso che
+            // la card qui sopra ora dice meglio e con più dettaglio, e in cambio
+            // rubava larghezza al titolo — che è la parte che si legge davvero.
             HomeDigestSummaryCard(
                 summary: HomeAssistantDigestService.environmentDigest(
                     rooms: envVM.rooms,
                     highlightedRoomName: highlightedRoomName
-                )
+                ),
+                showsStatusLabel: false
             )
 
             if envVM.isLoading {
@@ -432,9 +430,6 @@ struct EnvironmentContextDashboard: View {
                         color: .secondary
                     )
                 }
-
-                // ── Card 4: Summary ────────────────────────────────────────
-                summaryCard(dangerCount: dangerCount, warningCount: warningCount, normalCount: normalCount)
 
                 // ── Card 5: Context drill-down ─────────────────────────────
                 if highlightedRoomName != nil || overlayVM.selectedSensorFilter != nil {
@@ -540,6 +535,29 @@ struct EnvironmentContextDashboard: View {
             .frame(height: 5)
             .padding(.horizontal, 20)
             .padding(.bottom, 18)
+
+            // Il confronto dentro/fuori vive DENTRO questa card, non in una
+            // striscia sua. Da solo non valeva una card: una riga di due
+            // temperature con la sua superficie, la sua ombra e il suo margine
+            // spezzava la pila senza aggiungere gerarchia. Qui completa il
+            // quadro dello stato della casa, che è quello che la card racconta.
+            if let weather = weatherKit.currentWeather {
+                Divider()
+                    .padding(.horizontal, 20)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    IndoorOutdoorCompareRow(
+                        outdoorTemp: weather.outdoorTemperature,
+                        outdoorSymbol: weather.symbolName,
+                        indoorAvgTemp: indoorAverageTemperature
+                    )
+                    // Attribution WeatherKit: obbligatoria ovunque appaiano dati meteo.
+                    AppleWeatherAttributionView()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 16)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) {
@@ -559,6 +577,18 @@ struct EnvironmentContextDashboard: View {
             tint: envVM.globalColor.opacity(0.12),
             legacyShadow: GlassChromeShadow(color: envVM.globalColor.opacity(0.12), radius: 12, y: 4)
         )
+    }
+
+    /// Media delle temperature interne. Era calcolata inline nel body, dove
+    /// `allSensors` è una costante locale; spostando il confronto dentro/fuori
+    /// dentro la card serviva qui, e una proprietà è comunque il posto giusto
+    /// per un calcolo che non ha nulla a che vedere con il layout.
+    private var indoorAverageTemperature: Double? {
+        let temps = envVM.rooms
+            .flatMap(\.sensors)
+            .filter { $0.serviceType == .temperature }
+            .map(\.currentValue)
+        return temps.isEmpty ? nil : temps.reduce(0, +) / Double(temps.count)
     }
 
     /// SF Symbol matching the global health score — mirrors EnvironmentHeroView.

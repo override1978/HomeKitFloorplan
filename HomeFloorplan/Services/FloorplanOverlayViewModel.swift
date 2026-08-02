@@ -290,6 +290,12 @@ enum HomeAssistantDigestService {
 struct HomeDigestSummaryCard: View {
     let summary: HomeDigestSummary
 
+    /// Il chip di stato in alto a destra. Spegnibile perché non sempre aggiunge
+    /// qualcosa: in Ambiente ripeteva il conteggio che la card dei numeri dà
+    /// meglio, e in cambio sottraeva larghezza alla riga dell'etichetta. In
+    /// Sicurezza invece porta uno stato ("Tutto OK") che non è scritto altrove.
+    var showsStatusLabel: Bool = true
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 10) {
@@ -321,16 +327,19 @@ struct HomeDigestSummaryCard: View {
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
                             .tracking(0.5)
-
-                        Spacer(minLength: 4)
-
-                        Text(summary.statusLabel)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(summary.color)
                             .lineLimit(1)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(summary.color.opacity(0.10), in: Capsule())
+
+                        if showsStatusLabel {
+                            Spacer(minLength: 4)
+
+                            Text(summary.statusLabel)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(summary.color)
+                                .lineLimit(1)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(summary.color.opacity(0.10), in: Capsule())
+                        }
                     }
 
                     Text(summary.message)
