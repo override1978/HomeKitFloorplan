@@ -521,6 +521,22 @@ struct SecurityContextDashboard: View {
             return dict.map { (roomName: $0.key, accessories: $0.value) }.sorted { $0.roomName < $1.roomName }
         }()
         let highlightName = highlightedRoomName
+
+        // Dispositivi di sicurezza presenti in casa ma NON inclusi nel set
+        // monitorato configurato nella vista Sicurezza: sono quelli che non
+        // contribuiscono al punteggio pur potendolo fare.
+        let monitoredIDSet = Set(monitored.map(\.accessory.uniqueIdentifier))
+        let unmonitored = allAdapters.filter {
+            !monitoredIDSet.contains($0.accessory.uniqueIdentifier)
+        }
+
+        // Stanze della planimetria senza NESSUN dispositivo di sicurezza: buchi
+        // di copertura veri, che nessun elenco di ciò che c'è può rivelare.
+        let coveredRoomNames = Set(byRoom.map(\.roomName))
+        let uncoveredRooms = linkedRooms
+            .map(\.name)
+            .filter { !coveredRoomNames.contains($0) }
+            .sorted()
         // ────────────────────────────────────────────────────────────────
 
         return VStack(spacing: 12) {
@@ -576,9 +592,22 @@ struct SecurityContextDashboard: View {
                                      highlightName: highlightName)
             }
 
-            // Card 6 — Devices by room
-            if !byRoom.isEmpty {
-                devicesCard(byRoom: byRoom, highlightName: highlightName)
+            // Card 6 — Copertura: cosa NON è sorvegliato
+            //
+            // Al posto dell'elenco dei dispositivi per stanza, che ripeteva
+            // raggruppati gli stessi sensori già elencati dalla card sopra —
+            // venti righe che l'utente conosce già, perché sono i suoi.
+            //
+            // Qui c'è invece quello che non sa: dispositivi che esistono ma non
+            // entrano nel punteggio, e stanze senza alcuna copertura. È anche
+            // ciò che dà la misura vera al "Tutto OK" della prima card, che
+            // altrimenti dice tutto ok *di quello che guardi*, non della casa.
+            if !allAdapters.isEmpty {
+                coverageCard(unmonitored: unmonitored,
+                             uncoveredRooms: uncoveredRooms,
+                             monitoredCount: monitored.count,
+                             deviceCount: allAdapters.count,
+                             highlightName: highlightName)
             }
         }
         .padding(.horizontal, 12)
@@ -946,55 +975,117 @@ struct SecurityContextDashboard: View {
 
     // MARK: Card 4 — Devices by room
 
-    private func devicesCard(
-        byRoom: [(roomName: String, accessories: [HMAccessory])],
+    /// Copertura: cosa resta fuori dalla sorveglianza.
+    ///
+    /// Quando non c'è nulla da segnalare si riduce a una riga di conferma, che
+    /// è il caso normale — l'elenco che sostituisce occupava venti righe anche
+    /// quando andava tutto bene.
+    private func coverageCard(
+        unmonitored: [(accessory: HMAccessory, adapter: any AccessoryAdapter)],
+        uncoveredRooms: [String],
+        monitoredCount: Int,
+        deviceCount: Int,
         highlightName: String?
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Section label
+        let unmonitoredByRoom: [(roomName: String, names: [String])] = {
+            var dict: [String: [String]] = [:]
+            for item in unmonitored {
+                let room = item.accessory.room?.name ?? String(localized: "room.other", defaultValue: "Other Room")
+                dict[room, default: []].append(item.accessory.name)
+            }
+            return dict.map { (roomName: $0.key, names: $0.value.sorted()) }
+                .sorted { $0.roomName < $1.roomName }
+        }()
+
+        let isFullyCovered = unmonitored.isEmpty && uncoveredRooms.isEmpty
+
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "lock.rectangle.stack.fill")
+                Image(systemName: isFullyCovered ? "checkmark.shield.fill" : "shield.lefthalf.filled")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(accent)
-                Text(String(localized: "security.panel.devicesByRoom", defaultValue: "DEVICES BY ROOM"))
+                    .foregroundStyle(isFullyCovered ? .green : accent)
+                Text(String(localized: "security.panel.coverage", defaultValue: "COVERAGE"))
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
                     .tracking(0.5)
             }
 
-            ForEach(byRoom, id: \.roomName) { group in
-                let isHighlighted = group.roomName == highlightName
-                deviceGroupRow(group.roomName, accessories: group.accessories, highlighted: isHighlighted)
+            if isFullyCovered {
+                Text(String(localized: "security.panel.coverage.complete",
+                            defaultValue: "Complete: \(monitoredCount) of \(deviceCount) devices monitored, every room covered."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                if !unmonitoredByRoom.isEmpty {
+                    Text(String(localized: "security.panel.coverage.unmonitored",
+                                defaultValue: "Present but not monitored — they do not count towards the score"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    ForEach(unmonitoredByRoom, id: \.roomName) { group in
+                        coverageRow(room: group.roomName,
+                                    detail: group.names.joined(separator: ", "),
+                                    icon: "eye.slash",
+                                    color: .orange,
+                                    highlighted: group.roomName == highlightName)
+                    }
+                }
+
+                if !uncoveredRooms.isEmpty {
+                    Text(String(localized: "security.panel.coverage.noDevices",
+                                defaultValue: "Rooms with no security device"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, unmonitoredByRoom.isEmpty ? 0 : 4)
+
+                    ForEach(uncoveredRooms, id: \.self) { room in
+                        coverageRow(room: room,
+                                    detail: nil,
+                                    icon: "questionmark.circle",
+                                    color: .secondary,
+                                    highlighted: room == highlightName)
+                    }
+                }
             }
         }
-        .modifier(PanelCardModifier(accentColor: accent))
+        .modifier(PanelCardModifier(accentColor: isFullyCovered ? .green : accent))
     }
 
-    private func deviceGroupRow(_ roomName: String,
-                                accessories: [HMAccessory],
-                                highlighted: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(roomName)
+    private func coverageRow(
+        room: String,
+        detail: String?,
+        icon: String,
+        color: Color,
+        highlighted: Bool
+    ) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(highlighted ? accent : .secondary)
-                .padding(.leading, 2)
-            ForEach(accessories, id: \.uniqueIdentifier) { acc in
-                deviceRow(acc, highlighted: highlighted)
+                .foregroundStyle(color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(room)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                if let detail {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, highlighted ? 6 : 0)
+        .padding(.vertical, highlighted ? 4 : 0)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(highlighted ? accent.opacity(0.10) : Color.clear)
+                .fill(highlighted ? color.opacity(0.10) : Color.clear)
         )
-        .overlay {
-            if highlighted {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(accent.opacity(0.35), lineWidth: 1)
-            }
-        }
         .animation(.easeInOut(duration: 0.2), value: highlighted)
     }
 
