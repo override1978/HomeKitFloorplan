@@ -256,6 +256,14 @@ struct FloorplanEditorView: View {
                         homeKit: homeKit,
                         environmentViewModel: overlayEnvVM
                     )
+                    // Il pannello segue la planimetria come il resto della
+                    // chrome: era l'ultimo pezzo flottante rimasto appeso al
+                    // tema di sistema. Con iOS scuro e planimetria chiara la
+                    // differenza si vedeva a occhio, perché il vetro si adatta a
+                    // ciò che ha dietro mentre un materiale obbedisce a iOS —
+                    // così una card non ancora convertita restava scura in mezzo
+                    // a card chiare.
+                    .environment(\.colorScheme, chromeColorScheme)
                 }
             }
             .contentShape(Rectangle())
