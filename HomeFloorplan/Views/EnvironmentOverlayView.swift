@@ -1125,9 +1125,12 @@ private struct IndoorOutdoorCompareRow: View {
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        // Nessuna superficie propria: questa riga vive DENTRO la card Salute
+        // Casa, e una scatola dentro una scatola la faceva leggere ancora come
+        // un elemento a sé — con in più il divisore sopra, cioè due separazioni
+        // per la stessa giunzione. È contenuto della card, non una card.
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
     }
 
     /// Hint solo con differenza ≥ 2°: sotto è rumore.
