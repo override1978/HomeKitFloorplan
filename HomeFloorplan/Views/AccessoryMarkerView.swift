@@ -306,7 +306,8 @@ struct AccessoryMarkerView: View {
             tint: labelFillGradient,
             tintOpacity: hasHighContrastLabelState ? 0.18 : 0.10,
             hasStrongState: hasStrongLabelState,
-            colorScheme: colorScheme
+            colorScheme: colorScheme,
+            isEditing: isEditing
         ))
         .opacity(labelProminence)
         // Sola opacità, niente scala: questa etichetta è già scalata dal marker
@@ -632,6 +633,12 @@ private struct AccessoryLabelSurface: ViewModifier {
     let tintOpacity: Double
     let hasStrongState: Bool
     let colorScheme: ColorScheme
+    /// In modifica il marker oscilla con un wiggle `repeatForever`, e una
+    /// superficie di vetro che ruota di continuo si sdoppia visivamente. È
+    /// l'unico stato in cui il vetro qui non regge — verificato con l'A/B del
+    /// toggle: spento il difetto sparisce — quindi si cede solo quello, non
+    /// tutta l'adozione sull'etichetta.
+    let isEditing: Bool
 
     @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
     private var isLiquidGlassEnabled = false
@@ -639,7 +646,7 @@ private struct AccessoryLabelSurface: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+        if isLiquidGlassEnabled, !isLiquidGlassSuppressed, !isEditing, #available(iOS 26.0, *) {
             // Nient'altro che il vetro.
             //
             // Ci avevo lasciato sotto anche la capsula del gradiente, e sono
