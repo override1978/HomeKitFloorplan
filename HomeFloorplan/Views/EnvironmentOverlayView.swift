@@ -961,13 +961,6 @@ private struct PanelCardModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            // La forma del contenitore va DICHIARATA, non dedotta dal clipShape:
-            // `ConcentricRectangle` legge questa, e senza di essa non ha nulla da
-            // cui derivare il proprio raggio — cade su un default e il risultato
-            // è indistinguibile da un raggio scritto a mano. Sta prima del
-            // padding perché è il contenuto dentro il padding a doversi
-            // rapportare al bordo della card.
-            .containerShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
