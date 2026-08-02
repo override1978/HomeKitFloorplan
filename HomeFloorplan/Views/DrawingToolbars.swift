@@ -185,12 +185,11 @@ struct DrawingTopBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.14), radius: 18, x: 0, y: 8)
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous),
+            legacyBorder: Color.white.opacity(0.28),
+            legacyShadow: GlassChromeShadow(color: .black.opacity(0.14), radius: 18, y: 8)
+        )
     }
 }
 
@@ -361,12 +360,11 @@ struct DrawingRoomLinkStatusPill: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .background(.regularMaterial, in: Capsule())
-        .overlay {
-            Capsule()
-                .strokeBorder(tint.opacity(0.28), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.10), radius: 10, y: 4)
+        .glassChromeSurface(
+            in: Capsule(),
+            legacyBorder: tint.opacity(0.28),
+            legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 10, y: 4)
+        )
     }
 
     private var statusText: String {
@@ -500,7 +498,7 @@ struct PlaceOpeningBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -638,7 +636,12 @@ struct DrawingToolbar: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
+        // La barra è UNA superficie di vetro continua. I gruppi segmentati qui
+        // sopra (modalità, tipo di muro) restano a materiale e non diventano
+        // vetro a loro volta: sovrapporre vetro a vetro è esattamente ciò che
+        // Apple dice di evitare, e cancellerebbe la lettura "segmenti su una
+        // barra" che quei gruppi hanno il compito di dare.
+        .glassChromeSurface(in: Rectangle())
         .animation(.spring(response: 0.3), value: hasSelection)
     }
 
@@ -845,7 +848,7 @@ struct PlaceRoomLabelBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -917,7 +920,7 @@ struct DrawRoomAreaBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1084,7 +1087,7 @@ struct PlaceFurnitureBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .transition(.move(edge: .bottom).combined(with: .opacity))

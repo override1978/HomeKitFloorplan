@@ -126,6 +126,82 @@ struct GlassCircle<Content: View>: View {
     }
 }
 
+// MARK: - Superficie di chrome flottante
+
+/// Ombra del ramo legacy, quando la superficie ne aveva una.
+struct GlassChromeShadow {
+    let color: Color
+    let radius: CGFloat
+    let y: CGFloat
+
+    init(color: Color, radius: CGFloat, y: CGFloat) {
+        self.color = color
+        self.radius = radius
+        self.y = y
+    }
+}
+
+extension View {
+    /// Superficie per la chrome che **fluttua sopra il contenuto** — barre,
+    /// pannelli, banner: vetro col toggle attivo, esattamente il materiale di
+    /// prima altrimenti.
+    ///
+    /// Serve a smettere di riscrivere a mano `background + overlay(bordo) +
+    /// shadow` in ogni file: era il motivo per cui `DrawingToolbars.swift`
+    /// (12 superfici flottanti) era rimasto interamente fuori dall'adozione
+    /// senza che nessun audit se ne accorgesse.
+    ///
+    /// Bordo e ombra vivono **solo** nel ramo legacy: il vetro porta con sé il
+    /// proprio bordo e la propria profondità, e sovrapporgliene di disegnati a
+    /// mano è la ricetta per la superficie "quasi vetro" che stona.
+    func glassChromeSurface<S: InsettableShape>(
+        in shape: S,
+        legacyMaterial: Material = .regularMaterial,
+        legacyBorder: Color? = nil,
+        legacyBorderWidth: CGFloat = 1,
+        legacyShadow: GlassChromeShadow? = nil
+    ) -> some View {
+        modifier(GlassChromeSurface(
+            shape: shape,
+            legacyMaterial: legacyMaterial,
+            legacyBorder: legacyBorder,
+            legacyBorderWidth: legacyBorderWidth,
+            legacyShadow: legacyShadow
+        ))
+    }
+}
+
+private struct GlassChromeSurface<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let legacyMaterial: Material
+    let legacyBorder: Color?
+    let legacyBorderWidth: CGFloat
+    let legacyShadow: GlassChromeShadow?
+
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content
+                .background(legacyMaterial, in: shape)
+                .overlay {
+                    if let legacyBorder {
+                        shape.strokeBorder(legacyBorder, lineWidth: legacyBorderWidth)
+                    }
+                }
+                .shadow(color: legacyShadow?.color ?? .clear,
+                        radius: legacyShadow?.radius ?? 0,
+                        x: 0,
+                        y: legacyShadow?.y ?? 0)
+        }
+    }
+}
+
 // MARK: - GlassIconButton
 
 /// Bottone circolare con icona, in vetro **interattivo**.
