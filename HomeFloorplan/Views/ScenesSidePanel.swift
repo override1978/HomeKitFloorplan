@@ -18,28 +18,36 @@ struct ScenesSidePanel: View {
     @State private var usageStore: SceneUsageStore?
 
     var body: some View {
-        VStack(spacing: 0) {
-            panelHeader
-            Divider()
-            searchBar
-            if !scenesService.representedRooms.isEmpty {
-                roomFilterBar
-                Divider()
+        // Due card invece di un pannello unico, come gli overlay Ambiente,
+        // Sicurezza e Intelligenza: i comandi in una, il contenuto nell'altra.
+        //
+        // Da lastra unica, intestazione e ricerca stavano nello stesso blocco
+        // della lista e servivano dei `Divider` a fare il lavoro che ora fa lo
+        // spazio fra le card. Separandole, i comandi restano fermi mentre la
+        // lista scorre — che è il motivo vero della divisione, non l'estetica.
+        VStack(spacing: 12) {
+            // ── Card 1: comandi ────────────────────────────────────────────
+            VStack(spacing: 0) {
+                panelHeader
+                searchBar
+                if !scenesService.representedRooms.isEmpty {
+                    roomFilterBar
+                }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                legacyShadow: GlassChromeShadow(color: .black.opacity(0.14), radius: 14, x: -3, y: 0)
+            )
+
+            // ── Card 2: le scene ───────────────────────────────────────────
             sceneList
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .glassChromeSurface(
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                    legacyShadow: GlassChromeShadow(color: .black.opacity(0.14), radius: 14, x: -3, y: 0)
+                )
         }
-        // Il ritaglio precede la superficie: così il contenuto della lista resta
-        // dentro gli angoli tondi, mentre sfondo e ombra del ramo legacy si
-        // disegnano attorno senza venire tagliati — l'ordine che aveva prima.
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        // L'ombra spostata a sinistra era il modo pre-vetro di dire "sto
-        // fluttuando, entro da destra". Sul vetro non serve: la profondità la
-        // porta il materiale, e un'ombra disegnata a mano sopra è ciò che fa
-        // sembrare una superficie quasi-ma-non-del-tutto vetro.
-        .glassChromeSurface(
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
-            legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 20, x: -4, y: 0)
-        )
         .padding(.vertical, 12)
         .padding(.trailing, 12)
         .task {
