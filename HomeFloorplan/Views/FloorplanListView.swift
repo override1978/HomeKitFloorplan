@@ -198,7 +198,7 @@ struct FloorplanListView: View {
             HStack {
                 HStack(spacing: 10) {
                     if columnVisibility == .detailOnly {
-                        GlassIconButton(size: 44) {
+                        GlassIconButton(size: 28) {
                             withAnimation(.spring(response: 0.4)) {
                                 columnVisibility = .all
                             }

@@ -212,10 +212,11 @@ struct GlassIconButton<Label: View>: View {
     private var isLiquidGlassEnabled = false
     @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
 
-    /// 44 punti di default: è il minimo che le HIG danno per un bersaglio
-    /// tattile. I 40 di prima erano sotto, e su un iPad tenuto a braccio teso
-    /// su un muro la differenza si sente.
-    init(size: CGFloat = 44,
+    /// Default 28, che col padding del vetro attorno rende un controllo sui 48
+    /// punti: sopra il minimo di 44 delle HIG, e alla stessa altezza delle pill
+    /// che gli stanno accanto nella chrome. Chiedere qui i 44 del minimo darebbe
+    /// un bottone da una sessantina di punti, più alto della pill del titolo.
+    init(size: CGFloat = 28,
          action: @escaping () -> Void,
          @ViewBuilder label: () -> Label) {
         self.size = size
