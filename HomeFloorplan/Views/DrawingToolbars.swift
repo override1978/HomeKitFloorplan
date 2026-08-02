@@ -185,11 +185,24 @@ struct DrawingTopBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .glassChromeSurface(
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous),
-            legacyBorder: Color.white.opacity(0.28),
-            legacyShadow: GlassChromeShadow(color: .black.opacity(0.14), radius: 18, y: 8)
-        )
+        // ⚠️ NIENTE vetro su questa barra, ed è una regola non un'omissione.
+        //
+        // La barra contiene tre `Menu`. Su iOS 26, aprire un menu ancorato a una
+        // superficie di vetro fa sollevare QUELLA SUPERFICIE dentro il popover in
+        // vetro del menu (`GlassPopoverContentViewRepresentable`). Se la
+        // superficie è l'intera barra, è l'intera barra a sparire finché il menu
+        // resta aperto. Provato e verificato sul campo: una lastra unica di vetro
+        // che contiene dei Menu non è una composizione supportata.
+        //
+        // Per riavere il vetro qui servirebbe la struttura di Apple — un
+        // GlassEffectContainer con il vetro sui SINGOLI elementi — così che il
+        // sollevamento prenda solo il bottone del menu.
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.14), radius: 18, x: 0, y: 8)
     }
 }
 
@@ -653,7 +666,11 @@ struct DrawingToolbar: View {
         // vetro a loro volta: sovrapporre vetro a vetro è esattamente ciò che
         // Apple dice di evitare, e cancellerebbe la lettura "segmenti su una
         // barra" che quei gruppi hanno il compito di dare.
-        .glassChromeSurface(in: Rectangle())
+        // NIENTE vetro: come la barra superiore, questa contiene un `Menu`
+        // (scelta del mobile) e una lastra unica di vetro verrebbe sollevata
+        // per intero nel popover del menu, facendo sparire la barra finché
+        // resta aperto. Vedi la nota estesa in DrawingTopBar.
+        .background(.ultraThinMaterial)
         .animation(.spring(response: 0.3), value: hasSelection)
     }
 
