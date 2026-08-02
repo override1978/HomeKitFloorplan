@@ -915,10 +915,15 @@ private struct PanelCardModifier: ViewModifier {
                     .fill(accentColor.opacity(0.6))
                     .frame(height: 3)
             }
-            .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: accentColor.opacity(0.12), radius: 12, x: 0, y: 4)
-            .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
+            // Modifier CONDIVISO: lo usano quasi tutte le card dei pannelli
+            // overlay. Convertire il solo contenitore della dashboard lasciava
+            // indietro tutte queste — da qui il "solo alcune per overlay".
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                tint: accentColor.opacity(0.12),
+                legacyShadow: GlassChromeShadow(color: accentColor.opacity(0.12), radius: 12, y: 4)
+            )
     }
 }
 
@@ -1092,10 +1097,7 @@ private struct IndoorOutdoorCompareRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.regularMaterial)
-        )
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     /// Hint solo con differenza ≥ 2°: sotto è rumore.

@@ -502,13 +502,16 @@ struct IntelligenceContextDashboard: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial)
+            // Queste card SONO il pannello, non contenuto dentro un contenitore:
+            // ognuna galleggia per conto suo sulla planimetria. Avevo letto male
+            // la struttura e le avevo lasciate a materiale.
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(accent.opacity(0.14), lineWidth: 1)
-            }
-            .shadow(color: accent.opacity(0.08), radius: 10, x: 0, y: 3)
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous),
+                tint: accent.opacity(0.12),
+                legacyBorder: accent.opacity(0.14),
+                legacyShadow: GlassChromeShadow(color: accent.opacity(0.08), radius: 10, y: 3)
+            )
             .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
     }
 
