@@ -102,9 +102,9 @@ struct FloorplanEmptyStateCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // Stessa conversione della card qui sopra: bordo colorato disegnato a
         // mano sostituito dalla tinta, che sul vetro è il mezzo previsto.
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .glassChromeSurface(
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
             tint: color.opacity(0.12),
             legacyBorder: color.opacity(0.16),
             legacyShadow: GlassChromeShadow(color: color.opacity(0.08), radius: 10, y: 3)

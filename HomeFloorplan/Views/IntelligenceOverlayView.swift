@@ -523,9 +523,9 @@ struct IntelligenceContextDashboard: View {
             // Queste card SONO il pannello, non contenuto dentro un contenitore:
             // ognuna galleggia per conto suo sulla planimetria. Avevo letto male
             // la struttura e le avevo lasciate a materiale.
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .glassChromeSurface(
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous),
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous),
                 tint: accent.opacity(0.12),
                 legacyBorder: accent.opacity(0.14),
                 legacyShadow: GlassChromeShadow(color: accent.opacity(0.08), radius: 10, y: 3)
