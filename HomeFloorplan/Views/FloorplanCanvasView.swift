@@ -82,18 +82,47 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
 }
 
 enum FloorplanCanvasGeometry {
-    static func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
+
+    /// Spazio riservato in alto alla chrome flottante.
+    ///
+    /// Serve perché in Ambiente e Sicurezza sotto la barra compaiono altre
+    /// superfici — chip filtro, pill antifurto — che finivano sopra il disegno.
+    /// È una **costante**, non una misura: applicata qui dentro non cambia mai a
+    /// runtime, quindi non invalida nulla e non ricrea l'anello che avevamo
+    /// appena smontato con `topBarHeight`. È costante anche fra le modalità di
+    /// proposito: farla dipendere dalla modalità attiva significherebbe far
+    /// cambiare dimensione alla planimetria a ogni cambio, un movimento in più
+    /// da guardare per un guadagno nullo.
+    ///
+    /// Unico numero da ritoccare se il margine risulta troppo o troppo poco:
+    /// la barra da sola misura una sessantina di punti, un banner ne aggiunge
+    /// una quarantina.
+    static let chromeTopInset: CGFloat = 88
+
+    /// Inscrive l'immagine nel contenitore, riservando `topInset` in alto.
+    ///
+    /// Il margine è un parametro con valore di default, non un termine che i
+    /// chiamanti sommano per conto loro: renderer, marker, overlay, collisioni e
+    /// risolutore dei tap passano tutti di qui, quindi lo ereditano senza poter
+    /// divergere. È la differenza con `topBarHeight`, che viveva sommato in un
+    /// punto e sottratto in un altro. Passare `topInset: 0` isola l'inscrizione
+    /// pura, che è come i test la verificano.
+    static func imageRect(imageSize: CGSize,
+                          container: CGSize,
+                          topInset: CGFloat = chromeTopInset) -> CGRect {
+        let available = CGSize(width: container.width,
+                               height: max(container.height - topInset, 1))
         let imageAspect = imageSize.width / imageSize.height
-        let containerAspect = container.width / container.height
-        var size = container
+        let containerAspect = available.width / available.height
+        var size = available
         if imageAspect > containerAspect {
-            size.height = container.width / imageAspect
+            size.height = available.width / imageAspect
         } else {
-            size.width = container.height * imageAspect
+            size.width = available.height * imageAspect
         }
         let origin = CGPoint(
-            x: (container.width - size.width) / 2,
-            y: (container.height - size.height) / 2
+            x: (available.width - size.width) / 2,
+            y: topInset + (available.height - size.height) / 2
         )
         return CGRect(origin: origin, size: size)
     }
