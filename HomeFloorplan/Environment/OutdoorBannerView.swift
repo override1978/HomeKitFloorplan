@@ -196,8 +196,17 @@ struct AppleWeatherAttributionView: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 7, weight: .semibold))
             }
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
         }
+        // `Link` colora il proprio contenuto col colore d'accento, che qui
+        // vinceva sul `.tertiary` e faceva risaltare l'attribuzione come un
+        // link vero in mezzo al contenuto. `.plain` toglie quella tinta.
+        //
+        // ⚠️ Silenziosa sì, invisibile NO: `.secondary` resta leggibile ed è
+        // come la mostra Apple stessa. Abbassarla fino a confonderla col fondo
+        // equivarrebbe a rimuoverla — stessa violazione dei termini WeatherKit,
+        // più un problema di accessibilità.
+        .buttonStyle(.plain)
         .accessibilityLabel(String(localized: "weather.attribution.accessibility",
                                    defaultValue: "Weather data by Apple Weather. Opens legal attribution."))
     }
