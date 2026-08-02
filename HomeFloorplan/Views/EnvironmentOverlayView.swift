@@ -436,6 +436,20 @@ struct EnvironmentContextDashboard: View {
                     insightsCard(rows: rows)
                 }
             }
+
+            // Attribution WeatherKit: OBBLIGATORIA dove compaiono dati meteo, e
+            // non è una scelta estetica — è nei termini della licenza, ed era
+            // uno dei rischi di rejection già mitigati per la submission.
+            //
+            // Sta in fondo al pannello, una volta sola, invece che dentro la
+            // card Salute Casa: la licenza chiede che sia presente nella
+            // schermata, non che sia attaccata alla riga dei dati. Se un domani
+            // il confronto interno/esterno sparisce, deve sparire anche questa.
+            if weatherKit.currentWeather != nil {
+                AppleWeatherAttributionView()
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 4)
+            }
         }
         // Entrambi i trigger servono e non sono ridondanti: se i dati sono già
         // freschi quando l'overlay appare, `lastRefresh` non cambia e solo
@@ -545,15 +559,15 @@ struct EnvironmentContextDashboard: View {
                 Divider()
                     .padding(.horizontal, 20)
 
-                VStack(alignment: .trailing, spacing: 3) {
-                    IndoorOutdoorCompareRow(
-                        outdoorTemp: weather.outdoorTemperature,
-                        outdoorSymbol: weather.symbolName,
-                        indoorAvgTemp: indoorAverageTemperature
-                    )
-                    // Attribution WeatherKit: obbligatoria ovunque appaiano dati meteo.
-                    AppleWeatherAttributionView()
-                }
+                // L'attribuzione WeatherKit non sta più qui ma in fondo al
+                // pannello: è obbligatoria dove compaiono i dati meteo, ma la
+                // licenza non impone che sia incollata alla riga. Dentro la card
+                // sembrava un link in mezzo al contenuto.
+                IndoorOutdoorCompareRow(
+                    outdoorTemp: weather.outdoorTemperature,
+                    outdoorSymbol: weather.symbolName,
+                    indoorAvgTemp: indoorAverageTemperature
+                )
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
                 .padding(.bottom, 16)
