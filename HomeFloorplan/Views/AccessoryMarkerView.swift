@@ -302,23 +302,17 @@ struct AccessoryMarkerView: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .foregroundStyle(labelTextColor)
-        .background(.thinMaterial, in: Capsule())
-        .background(
-            Capsule()
-                .fill(labelFillGradient)
-                .opacity(hasHighContrastLabelState ? 0.18 : 0.10)
-        )
-        .overlay(
-            Capsule()
-                .strokeBorder(.white.opacity(colorScheme == .dark ? 0.16 : 0.42), lineWidth: 0.5)
-        )
-        .overlay(
-            Capsule()
-                .strokeBorder(.black.opacity(colorScheme == .dark ? 0.18 : (hasStrongLabelState ? 0.12 : 0.08)), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.16), radius: 2, x: 0, y: 1)
+        .modifier(AccessoryLabelSurface(
+            tint: labelFillGradient,
+            tintOpacity: hasHighContrastLabelState ? 0.18 : 0.10,
+            hasStrongState: hasStrongLabelState,
+            colorScheme: colorScheme
+        ))
         .opacity(labelProminence)
-        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+        // Sola opacità, niente scala: questa etichetta è già scalata dal marker
+        // (che si contro-scala sullo zoom) e scalare una superficie di vetro ne
+        // cambia la geometria a ogni fotogramma. Stessa scelta fatta ovunque.
+        .transition(.opacity)
     }
 
     private func updateRuntimePulse() {
@@ -614,5 +608,54 @@ struct AccessoryMarkerView: View {
             endPoint: .bottom
         )
         .allowsHitTesting(false)
+    }
+}
+
+// MARK: - AccessoryLabelSurface
+
+/// Superficie dell'etichetta del marker.
+///
+/// Il ramo legacy sono i cinque strati che c'erano prima — materiale sottile,
+/// capsula col gradiente di stato, due bordi disegnati a mano (bianco e nero) e
+/// un'ombra — cioè cinque livelli per simulare a mano ciò che il vetro è: una
+/// superficie translucida con bordo e profondità che si adattano al fondo.
+///
+/// Sul vetro il gradiente di stato diventa **tinta**, che è il mezzo previsto, e
+/// bordi e ombra spariscono perché il materiale li porta con sé.
+///
+/// ⚠️ Da valutare sul device, ed è l'unico modo: queste etichette sono ~40 per
+/// planimetria e si muovono con l'immagine. Ogni superficie di vetro campiona
+/// ciò che ha dietro, e durante pan e zoom quel dietro cambia per tutte a ogni
+/// fotogramma. Se la fluidità cala, questa conversione è la prima da annullare.
+private struct AccessoryLabelSurface: ViewModifier {
+    let tint: LinearGradient
+    let tintOpacity: Double
+    let hasStrongState: Bool
+    let colorScheme: ColorScheme
+
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+            content
+                .background(Capsule().fill(tint).opacity(tintOpacity))
+                .glassEffect(.regular, in: Capsule())
+        } else {
+            content
+                .background(.thinMaterial, in: Capsule())
+                .background(Capsule().fill(tint).opacity(tintOpacity))
+                .overlay(
+                    Capsule()
+                        .strokeBorder(.white.opacity(colorScheme == .dark ? 0.16 : 0.42), lineWidth: 0.5)
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(.black.opacity(colorScheme == .dark ? 0.18 : (hasStrongState ? 0.12 : 0.08)), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.16), radius: 2, x: 0, y: 1)
+        }
     }
 }
