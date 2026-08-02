@@ -43797,6 +43797,70 @@
         }
       }
     },
+    "security.panel.coverage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "COVERAGE"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "COPERTURA"
+          }
+        }
+      }
+    },
+    "security.panel.coverage.complete" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Complete: %1$lld of %2$lld devices monitored, every room covered."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Completa: %1$lld dispositivi su %2$lld monitorati, tutte le stanze coperte."
+          }
+        }
+      }
+    },
+    "security.panel.coverage.noDevices" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rooms with no security device"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanze senza dispositivi di sicurezza"
+          }
+        }
+      }
+    },
+    "security.panel.coverage.unmonitored" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Present but not monitored \u2014 they do not count towards the score"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Presenti ma non monitorati \u2014 non contano nel punteggio"
+          }
+        }
+      }
+    },
     "security.panel.devicesByRoom" : {
       "localizations" : {
         "en" : {

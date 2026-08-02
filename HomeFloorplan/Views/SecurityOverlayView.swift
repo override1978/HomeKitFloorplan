@@ -610,8 +610,10 @@ struct SecurityContextDashboard: View {
                              highlightName: highlightName)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        // Niente padding orizzontale: lo mette già `FloorplanContextPanel`
+        // attorno al contenuto. Aggiungerne un secondo rendeva le card di
+        // Sicurezza 24 punti più strette di quelle di Ambiente, che invece si
+        // affida solo a quello del contenitore.
         .onAppear { cachedAdapters = buildAllSecurityAdapters() }
         .task(id: homeKit.allAccessories.count) { cachedAdapters = buildAllSecurityAdapters() }
     }
