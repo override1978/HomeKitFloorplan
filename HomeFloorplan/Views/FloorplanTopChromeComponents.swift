@@ -66,7 +66,6 @@ struct FloorplanTopBarView: View {
                         FloorplanTopRightActions(
                             isEditing: isEditing,
                             isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
-                            showsSceneText: size.width >= 760,
                             isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
                             onAddAccessory: onAddAccessory,
                             onShowHelp: onShowHelp,
@@ -371,7 +370,6 @@ struct FloorplanEditModeBanner: View {
 struct FloorplanTopRightActions: View {
     let isEditing: Bool
     let isOverlayMode: Bool
-    let showsSceneText: Bool
     let isDrawingAvailable: Bool
     let onAddAccessory: () -> Void
     let onShowHelp: () -> Void
@@ -406,54 +404,43 @@ struct FloorplanTopRightActions: View {
                 }
 
                 if !hidesActions {
+                    // Fuori dalla modifica resta il solo menu: Scene e Modifica
+                    // sono dentro di esso. Erano due bottoni con testo, circa
+                    // duecento punti che in verticale mancavano alla mode pill —
+                    // e la pill compare proprio solo fuori dalla modifica, cioè
+                    // esattamente nel caso che ora si è liberato.
                     FloorplanToolsMenu(
                         isDrawingAvailable: isDrawingAvailable,
+                        showsSceneAndEdit: !isEditing,
                         onShowHelp: onShowHelp,
                         onShowDiagnostics: onShowDiagnostics,
-                        onEditDrawing: onEditDrawing
+                        onEditDrawing: onEditDrawing,
+                        onShowScenes: onShowScenes,
+                        onToggleEditing: onToggleEditing
                     )
 
-                    Divider().frame(height: 20)
+                    // "Fatto" resta un bottone visibile: è l'uscita dalla
+                    // modalità, e nasconderla in un menu significherebbe far
+                    // cercare all'utente come tornare indietro.
+                    if isEditing {
+                        Divider().frame(height: 20)
 
-                    Button {
-                        onShowScenes()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "play.rectangle.on.rectangle")
-                            if showsSceneText {
-                                Text(String(localized: "scenes.title", defaultValue: "Scenes"))
+                        Button {
+                            onToggleEditing()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark")
+                                Text(String(localized: "common.done", defaultValue: "Done"))
                             }
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(BrandColor.primary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
                         }
-                        .font(.subheadline)
-                        .fontWeight(showsSceneText ? .medium : .regular)
-                        .padding(.horizontal, showsSceneText ? 14 : 13)
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.primary.opacity(0.55))
-                    .accessibilityLabel(String(localized: "scenes.title", defaultValue: "Scenes"))
-                    .help(String(localized: "scenes.open", defaultValue: "Open scenes"))
-
-                    Divider().frame(height: 20)
-
-                    Button {
-                        onToggleEditing()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: isEditing ? "checkmark" : "pencil")
-                            Text(isEditing
-                                 ? String(localized: "common.done", defaultValue: "Done")
-                                 : String(localized: "common.edit", defaultValue: "Edit"))
-                        }
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(isEditing ? BrandColor.primary : Color.primary.opacity(0.55))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -465,12 +452,36 @@ struct FloorplanTopRightActions: View {
 
 struct FloorplanToolsMenu: View {
     let isDrawingAvailable: Bool
+    /// Scene e Modifica sono qui dentro solo fuori dalla modalità modifica: in
+    /// modifica "Fatto" resta un bottone a sé, perché la via d'USCITA da una
+    /// modalità non va nascosta in un menu — un'azione sì, un modo di uscire no.
+    let showsSceneAndEdit: Bool
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
     let onEditDrawing: () -> Void
+    let onShowScenes: () -> Void
+    let onToggleEditing: () -> Void
 
     var body: some View {
         Menu {
+            if showsSceneAndEdit {
+                Button {
+                    onShowScenes()
+                } label: {
+                    Label(String(localized: "scenes.title", defaultValue: "Scenes"),
+                          systemImage: "play.rectangle.on.rectangle")
+                }
+
+                Button {
+                    onToggleEditing()
+                } label: {
+                    Label(String(localized: "common.edit", defaultValue: "Edit"),
+                          systemImage: "pencil")
+                }
+
+                Divider()
+            }
+
             Button {
                 onShowHelp()
             } label: {
