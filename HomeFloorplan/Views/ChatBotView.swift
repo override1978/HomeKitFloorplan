@@ -182,6 +182,10 @@ struct ChatBotView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 36, height: 36)
                         .background(Color(.tertiarySystemBackground), in: Circle())
+                        // Il cerchio resta 36; cresce solo l'area sensibile,
+                        // che a 36 era sotto i 44 delle HIG.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .transition(.scale.combined(with: .opacity))
@@ -193,6 +197,8 @@ struct ChatBotView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 36, height: 36)
                     .background(Color(.tertiarySystemBackground), in: Circle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             #endif
