@@ -197,13 +197,16 @@ struct IntelligenceOverlayView: View {
             .padding(.horizontal, 11)
             .padding(.vertical, 9)
             .frame(maxWidth: 270, alignment: .leading)
-            .background(.regularMaterial)
+            // Il callout fluttua sopra la planimetria, quindi va nel vetro. Il
+            // bordo colorato disegnato a mano diventa tinta: sul vetro un bordo
+            // a mano è ciò che fa sembrare una superficie quasi-vetro.
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(summary.color.opacity(0.24), lineWidth: 1)
-            }
-            .shadow(color: summary.color.opacity(0.16), radius: 12, y: 4)
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                tint: summary.color.opacity(0.16),
+                legacyBorder: summary.color.opacity(0.24),
+                legacyShadow: GlassChromeShadow(color: summary.color.opacity(0.16), radius: 12, y: 4)
+            )
             .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
         }
         .buttonStyle(.plain)

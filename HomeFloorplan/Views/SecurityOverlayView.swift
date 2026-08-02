@@ -1062,9 +1062,13 @@ private struct PanelCardModifier: ViewModifier {
                     .fill(accentColor.opacity(0.6))
                     .frame(height: 3)
             }
-            .background(.regularMaterial)
+            // Stessa conversione del pannello Ambiente: barretta d'accento
+            // conservata, ombra colorata sostituita dalla tinta del vetro.
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: accentColor.opacity(0.12), radius: 12, x: 0, y: 4)
-            .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                tint: accentColor.opacity(0.12),
+                legacyShadow: GlassChromeShadow(color: accentColor.opacity(0.12), radius: 12, y: 4)
+            )
     }
 }

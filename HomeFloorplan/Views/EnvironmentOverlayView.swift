@@ -547,10 +547,18 @@ struct EnvironmentContextDashboard: View {
                 .fill(envVM.globalColor.opacity(0.6))
                 .frame(height: 3)
         }
-        .background(.regularMaterial)
+        // Ritaglio prima della superficie, così la barretta d'accento resta
+        // dentro gli angoli tondi e l'ombra del ramo legacy non viene tagliata.
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: envVM.globalColor.opacity(0.12), radius: 12, x: 0, y: 4)
-        .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
+        // La barretta colorata in basso resta: è la firma del pannello e la
+        // conosci. La tinta si aggiunge invece all'ombra colorata, che sul vetro
+        // non ha senso — la profondità la porta il materiale, e sopra una
+        // planimetria pallida è la tinta a impedire che degradi a lastra grigia.
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            tint: envVM.globalColor.opacity(0.12),
+            legacyShadow: GlassChromeShadow(color: envVM.globalColor.opacity(0.12), radius: 12, y: 4)
+        )
     }
 
     /// SF Symbol matching the global health score — mirrors EnvironmentHeroView.
