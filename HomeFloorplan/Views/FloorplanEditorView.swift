@@ -225,6 +225,28 @@ struct FloorplanEditorView: View {
                 openPanelButton
                     .environment(\.colorScheme, chromeColorScheme)
 
+                // Right-side scenes panel overlay
+                if ui.showScenesPanel {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                ui.showScenesPanel = false
+                            }
+                        }
+                        .transition(.opacity)
+                }
+
+                HStack(spacing: 0) {
+                    Spacer()
+                    ScenesSidePanel(isPresented: $ui.showScenesPanel)
+                        .frame(width: min(proxy.size.width * 0.72, 320))
+                        .offset(x: ui.showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.88), value: ui.showScenesPanel)
+                }
+                .ignoresSafeArea(edges: .vertical)
+                .environment(\.colorScheme, chromeColorScheme)
+
                 // Z+4: overlay context panel
                 if let vm = overlayVM {
                     FloorplanOverlayContextContent(
@@ -280,24 +302,6 @@ struct FloorplanEditorView: View {
 
     var body: some View {
         observedCanvas
-        // Le scene sono una COLONNA, non una scatola sopra il disegno.
-        //
-        // Da overlay copriva ciò che le stava sotto — azioni in alto a destra,
-        // bottone dell'assistente, un pezzo di planimetria — su una schermata
-        // il cui unico scopo è la planimetria. Ed era già alta quanto lo
-        // schermo, quindi gli angoli tondi non dicevano più "sono temporanea":
-        // pagava i costi di una colonna senza averne i vantaggi.
-        //
-        // Come inspector l'area del canvas si restringe e il disegno si
-        // re-inscrive da sé (si calcola da `proxy.size`), la chrome si ridispone
-        // nello spazio rimasto invece di finire sotto, e il bordo diventa
-        // trascinabile — comportamento di sistema, non da scrivere. Il vetro lo
-        // mette il sistema, quindi il pannello non porta più una superficie
-        // propria.
-        .inspector(isPresented: $ui.showScenesPanel) {
-            ScenesSidePanel(isPresented: $ui.showScenesPanel)
-                .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
-        }
         .onReceive(
             NotificationCenter.default.publisher(for: .floorplansDidApplyRemoteChanges),
             perform: handleFloorplanRemoteChanges
