@@ -157,6 +157,29 @@ struct FloorplanEditorView: View {
         return ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex).map { $0.swiftUIColor } ?? Color.white
     }
 
+    /// Tema della chrome flottante, dedotto dalla **planimetria** e non da iOS.
+    ///
+    /// Le due cose sono indipendenti: una planimetria può essere bianca o scura
+    /// con qualunque tema di sistema, e lo stile "architectural dark" la rende
+    /// scura anche a iOS chiaro. Finora la chrome seguiva il sistema, quindi
+    /// capitava regolarmente di avere una lastra chiara sopra un disegno scuro,
+    /// o vetro scuro sopra un foglio bianco — nel secondo caso il vetro degrada
+    /// a macchia grigia opaca, che è il modo più diretto per far sembrare
+    /// l'effetto un materiale qualunque.
+    ///
+    /// Il colore di fondo del canvas è il riferimento giusto perché è ciò su cui
+    /// la chrome galleggia davvero: è il fondo del disegno e la cornice attorno
+    /// a un'immagine importata.
+    private var chromeColorScheme: ColorScheme {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(floorplanBackgroundColor).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        // Luminanza relativa: il verde pesa quasi tre volte il rosso e dieci
+        // volte il blu nella percezione, quindi una media semplice sbaglierebbe
+        // proprio sui fondi colorati della palette esterni.
+        let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        return luminance < 0.5 ? .dark : .light
+    }
+
     /// Contenuto canvas separato dalla catena di lifecycle: un'unica espressione
     /// col GeometryReader + 15 modifier superava il limite del type-checker.
     private var canvasContent: some View {
@@ -190,14 +213,17 @@ struct FloorplanEditorView: View {
 
                 // Top bar: sempre visibile
                 topBar(in: proxy.size)
+                    .environment(\.colorScheme, chromeColorScheme)
 
                 // Controlli secondari (zoom, toolbar marker): soggetti ad auto-hide
                 secondaryControls(in: proxy.size)
                     .opacity(shouldShowControls ? 1 : 0)
                     .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
+                    .environment(\.colorScheme, chromeColorScheme)
 
                 // Pulsante apri-pannello — sempre visibile (non soggetto ad auto-hide)
                 openPanelButton
+                    .environment(\.colorScheme, chromeColorScheme)
 
                 // Right-side scenes panel overlay
                 if ui.showScenesPanel {
