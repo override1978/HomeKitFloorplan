@@ -10,6 +10,31 @@ struct FloorplanModePill: View {
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let context: FloorplanOverlayContext
 
+    /// Larghezza della barra in cui questa pill deve convivere con il titolo a
+    /// sinistra e le azioni a destra.
+    ///
+    /// Serve perché la pill vive in uno `ZStack`: è centrata in assoluto e non
+    /// partecipa al flusso orizzontale, quindi né lei né l'HStack accanto sanno
+    /// dell'altro. Finché c'è spazio non si vede; ruotando l'iPad in verticale
+    /// la somma supera la larghezza e le pill si sovrappongono. Senza questo
+    /// numero la pill non ha modo di accorgersene — `ViewThatFits` qui non
+    /// servirebbe, perché dentro uno ZStack vede sempre tutta la larghezza.
+    let availableWidth: CGFloat
+
+    /// Spazio occupato attorno alla pill: bottone sidebar più menu del titolo a
+    /// sinistra, azioni a destra, margini esterni. Stimato per eccesso, così la
+    /// forma compatta scatta un po' prima della collisione invece che dopo.
+    private static let sideChromeWidth: CGFloat = 560
+    /// Larghezza di una voce con la sua etichetta ("Intelligenza" è la più lunga).
+    private static let modeWidthWithLabel: CGFloat = 120
+
+    /// Con quattro modalità servono circa 480 punti solo per la pill: sotto
+    /// quella soglia le etichette cadono e restano le icone, tranne sulla voce
+    /// attiva — che è l'unica che serve leggere, le altre sono bersagli.
+    private var showsLabels: Bool {
+        availableWidth - Self.sideChromeWidth >= CGFloat(modes.count) * Self.modeWidthWithLabel
+    }
+
     @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
     private var isLiquidGlassEnabled = false
     @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
@@ -110,14 +135,22 @@ struct FloorplanModePill: View {
             VStack(spacing: 3) {
                 Image(systemName: mode.pillIcon)
                     .font(.system(size: 15, weight: .semibold))
-                Text(mode.label)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
+                if showsLabels || isActive {
+                    Text(mode.label)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
             }
             .foregroundStyle(isActive ? mode.accentColor : Color.primary.opacity(0.55))
-            .padding(.horizontal, 15)
+            .padding(.horizontal, showsLabels ? 15 : 12)
             .padding(.vertical, 7)
+            .frame(minWidth: 44)
             .contentShape(Rectangle())
+            // L'etichetta accessibile resta anche quando il testo cade, come per
+            // le modalità dell'antifurto.
+            .accessibilityLabel(mode.label)
         }
         .buttonStyle(.plain)
         .modifier(ModeSelectionHighlight(
@@ -219,7 +252,11 @@ private struct ModeBarSurface: ViewModifier {
                             hasSecurityDevices: true,
                             hasAIService: true,
                             hasIntelligenceSuggestions: true
-                        )
+                        ),
+                        // Larghezza da iPad in orizzontale: la preview mostra la
+                        // forma estesa. Abbassandola sotto i ~1040 si vede quella
+                        // compatta, che è ciò che compare ruotando in verticale.
+                        availableWidth: 1366
                     )
                     .padding(.bottom, 40)
                 }

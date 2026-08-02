@@ -42,7 +42,9 @@ struct FloorplanTopBarView: View {
             // aveva motivato la rimozione.
             ZStack {
                 if !isEditing, let overlayVM {
-                    FloorplanModePill(overlayVM: overlayVM, context: overlayContext)
+                    FloorplanModePill(overlayVM: overlayVM,
+                                      context: overlayContext,
+                                      availableWidth: size.width)
                 }
 
                 LiquidGlassContainer(spacing: 12) {
