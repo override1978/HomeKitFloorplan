@@ -481,13 +481,25 @@ struct IntelligenceContextDashboard: View {
         highlightedRoomSituations.isEmpty ? situations : highlightedRoomSituations
     }
 
+    /// Le situazioni da ELENCARE, cioè senza quella già promossa dalla card in
+    /// cima al pannello.
+    ///
+    /// La card "Priorità della casa" mostra `visibleSituations.first`, e
+    /// l'elenco partiva dallo stesso elemento: la prima riga ripeteva parola per
+    /// parola la card sopra, sempre — non per caso ma per costruzione. Con
+    /// l'intelligenza spenta nessuna situazione viene promossa (la card diventa
+    /// uno stato vuoto), quindi lì l'elenco resta intero.
+    private var listedSituations: [HomeSituation] {
+        isAIEnabled ? Array(visibleSituations.dropFirst()) : visibleSituations
+    }
+
     // MARK: Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             nextUsefulCard
 
-            if !visibleSituations.isEmpty {
+            if !listedSituations.isEmpty {
                 intelligenceSectionCard {
                     situationsSection
                 }
@@ -521,17 +533,17 @@ struct IntelligenceContextDashboard: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            ForEach(visibleSituations.prefix(6)) { situation in
+            ForEach(listedSituations.prefix(6)) { situation in
                 situationRow(situation)
-                if situation.id != visibleSituations.prefix(6).last?.id {
+                if situation.id != listedSituations.prefix(6).last?.id {
                     Divider().padding(.leading, 26)
                 }
             }
 
-            if visibleSituations.count > 6 {
+            if listedSituations.count > 6 {
                 Text(String(format: String(localized: "intelligence.floorplan.situations.more",
                                            defaultValue: "%d more in Intelligence dashboard"),
-                            visibleSituations.count - 6))
+                            listedSituations.count - 6))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .padding(.leading, 26)
