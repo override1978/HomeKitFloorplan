@@ -302,26 +302,42 @@ struct HomeDigestSummaryCard: View {
                         .foregroundStyle(summary.color)
                 }
 
+                // Il chip di stato sta sulla riga dell'ETICHETTA, non accanto al
+                // titolo.
+                //
+                // Prima era fratello del testo nello stesso HStack, quindi
+                // sottraeva larghezza a tutta l'altezza della colonna e non solo
+                // alla prima riga: il titolo lavorava su ~150 punti dei 320 del
+                // pannello e diventava una torre di cinque o sei righe. Anche il
+                // chip ne soffriva, andando a capo per conto suo.
+                //
+                // Accanto all'etichetta — che è corta e maiuscoletta — il chip
+                // sta su una riga sola, e il titolo recupera la larghezza piena
+                // della colonna: da ~150 a ~240 punti.
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(summary.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(summary.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
+
+                        Spacer(minLength: 4)
+
+                        Text(summary.statusLabel)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(summary.color)
+                            .lineLimit(1)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(summary.color.opacity(0.10), in: Capsule())
+                    }
+
                     Text(summary.message)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Spacer()
-
-                Text(summary.statusLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(summary.color)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(summary.color.opacity(0.10), in: Capsule())
             }
 
             if !summary.lines.isEmpty {
