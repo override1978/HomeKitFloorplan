@@ -86,46 +86,6 @@ struct GlassPill<Content: View>: View {
     }
 }
 
-struct GlassCircle<Content: View>: View {
-    let content: Content
-    let size: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
-    private var isLiquidGlassEnabled = false
-    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
-    
-    init(size: CGFloat = 40, @ViewBuilder content: () -> Content) {
-        self.size = size
-        self.content = content()
-    }
-    
-    @ViewBuilder
-    var body: some View {
-        if isLiquidGlassEnabled && !isLiquidGlassSuppressed {
-            if #available(iOS 26.0, *) {
-                content
-                    .frame(width: size, height: size)
-                    .glassEffect(.regular.interactive(), in: Circle())
-            } else {
-                legacyBody
-            }
-        } else {
-            legacyBody
-        }
-    }
-
-    private var legacyBody: some View {
-        content
-            .frame(width: size, height: size)
-            .background(.regularMaterial, in: Circle())
-            .overlay(
-                Circle()
-                    .strokeBorder(legacyGlassBorderColor(colorScheme), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
-    }
-}
-
 // MARK: - Superficie di chrome flottante
 
 /// Ombra del ramo legacy, quando la superficie ne aveva una.
@@ -154,8 +114,15 @@ extension View {
     /// Bordo e ombra vivono **solo** nel ramo legacy: il vetro porta con sé il
     /// proprio bordo e la propria profondità, e sovrapporgliene di disegnati a
     /// mano è la ricetta per la superficie "quasi vetro" che stona.
+    /// `tint` dà identità alla superficie **nel vetro**. Serve quando quella
+    /// identità oggi è affidata a un bordo colorato: il bordo disegnato a mano
+    /// non va portato sul vetro, e la tinta è il modo previsto per ottenere lo
+    /// stesso significato. Aiuta anche dove il vetro non ha nulla da rifrangere
+    /// — sopra una planimetria chiara e ferma degrada a lastra grigia, e la
+    /// tinta gli restituisce carattere senza dipendere dallo sfondo.
     func glassChromeSurface<S: InsettableShape>(
         in shape: S,
+        tint: Color? = nil,
         legacyMaterial: Material = .regularMaterial,
         legacyBorder: Color? = nil,
         legacyBorderWidth: CGFloat = 1,
@@ -163,6 +130,7 @@ extension View {
     ) -> some View {
         modifier(GlassChromeSurface(
             shape: shape,
+            tint: tint,
             legacyMaterial: legacyMaterial,
             legacyBorder: legacyBorder,
             legacyBorderWidth: legacyBorderWidth,
@@ -173,6 +141,7 @@ extension View {
 
 private struct GlassChromeSurface<S: InsettableShape>: ViewModifier {
     let shape: S
+    let tint: Color?
     let legacyMaterial: Material
     let legacyBorder: Color?
     let legacyBorderWidth: CGFloat
@@ -185,7 +154,7 @@ private struct GlassChromeSurface<S: InsettableShape>: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: shape)
+            content.glassEffect(tint.map { .regular.tint($0) } ?? .regular, in: shape)
         } else {
             content
                 .background(legacyMaterial, in: shape)

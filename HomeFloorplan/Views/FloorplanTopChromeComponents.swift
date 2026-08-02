@@ -182,7 +182,7 @@ struct FloorplanTopBarView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .background(.regularMaterial, in: Capsule())
+            .glassChromeSurface(in: Capsule())
             .padding(.top, 6)
             .transition(.move(edge: .top).combined(with: .opacity))
         }
@@ -364,10 +364,13 @@ struct FloorplanEditModeBanner: View {
         .padding(.vertical, 9)
         .frame(maxWidth: 560, alignment: .leading)
         .padding(.horizontal, 20)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(BrandColor.primary.opacity(0.18), lineWidth: 1)
+        // La tinta prende il posto del bordo di brand: nel vetro un bordo
+        // disegnato a mano stona, mentre la tinta porta lo stesso significato
+        // — "sei in modifica" — con il mezzo che il materiale prevede.
+        .glassChromeSurface(
+            in: Capsule(),
+            tint: BrandColor.primary.opacity(0.18),
+            legacyBorder: BrandColor.primary.opacity(0.18)
         )
     }
 }
