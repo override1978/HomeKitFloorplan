@@ -92,11 +92,13 @@ struct GlassPill<Content: View>: View {
 struct GlassChromeShadow {
     let color: Color
     let radius: CGFloat
+    let x: CGFloat
     let y: CGFloat
 
-    init(color: Color, radius: CGFloat, y: CGFloat) {
+    init(color: Color, radius: CGFloat, x: CGFloat = 0, y: CGFloat) {
         self.color = color
         self.radius = radius
+        self.x = x
         self.y = y
     }
 }
@@ -168,7 +170,7 @@ private struct GlassChromeSurface<S: InsettableShape>: ViewModifier {
                 }
                 .shadow(color: legacyShadow?.color ?? .clear,
                         radius: legacyShadow?.radius ?? 0,
-                        x: 0,
+                        x: legacyShadow?.x ?? 0,
                         y: legacyShadow?.y ?? 0)
         }
     }

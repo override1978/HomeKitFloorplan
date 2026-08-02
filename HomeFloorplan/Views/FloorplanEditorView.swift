@@ -245,6 +245,7 @@ struct FloorplanEditorView: View {
                         .animation(.spring(response: 0.38, dampingFraction: 0.88), value: ui.showScenesPanel)
                 }
                 .ignoresSafeArea(edges: .vertical)
+                .environment(\.colorScheme, chromeColorScheme)
 
                 // Z+4: overlay context panel
                 if let vm = overlayVM {

@@ -28,9 +28,18 @@ struct ScenesSidePanel: View {
             }
             sceneList
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        // Il ritaglio precede la superficie: così il contenuto della lista resta
+        // dentro gli angoli tondi, mentre sfondo e ombra del ramo legacy si
+        // disegnano attorno senza venire tagliati — l'ordine che aveva prima.
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.18), radius: 20, x: -4, y: 0)
+        // L'ombra spostata a sinistra era il modo pre-vetro di dire "sto
+        // fluttuando, entro da destra". Sul vetro non serve: la profondità la
+        // porta il materiale, e un'ombra disegnata a mano sopra è ciò che fa
+        // sembrare una superficie quasi-ma-non-del-tutto vetro.
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 20, x: -4, y: 0)
+        )
         .padding(.vertical, 12)
         .padding(.trailing, 12)
         .task {
