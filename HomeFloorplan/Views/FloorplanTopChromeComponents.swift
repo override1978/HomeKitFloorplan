@@ -30,12 +30,23 @@ struct FloorplanTopBarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LiquidGlassContainer(spacing: 12) {
-                ZStack {
-                    if !isEditing, let overlayVM {
-                        FloorplanModePill(overlayVM: overlayVM, context: overlayContext)
-                    }
+            // La mode pill sta FUORI da questo container, non dentro.
+            //
+            // Dentro, ereditava lo `spacing: 12` pensato per i controlli della
+            // barra, mentre le sue voci distano un centinaio di punti: si
+            // chiedeva al vetro di fondersi a 12pt su forme lontane 100, e la
+            // deformazione a goccia non poteva avvenire. Da qui la conclusione
+            // sbagliata che il morph fosse esclusiva della tab bar di sistema.
+            // La pill si porta ora il proprio container, con lo spacing giusto;
+            // non essendo più annidato non torna il warning
+            // `glassEffect() tried to update multiple times per frame` che
+            // aveva motivato la rimozione.
+            ZStack {
+                if !isEditing, let overlayVM {
+                    FloorplanModePill(overlayVM: overlayVM, context: overlayContext)
+                }
 
+                LiquidGlassContainer(spacing: 12) {
                     HStack {
                         HStack(spacing: 10) {
                             leadingNavigationButton
@@ -97,25 +108,19 @@ struct FloorplanTopBarView: View {
         switch presentationStyle {
         case .splitView:
             if columnVisibility == .detailOnly {
-                Button(action: onOpenSidebar) {
-                    GlassCircle(size: 40) {
-                        Image(systemName: "sidebar.left")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.primary)
-                    }
+                GlassIconButton(size: 40, action: onOpenSidebar) {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.primary)
                 }
-                .buttonStyle(.plain)
                 .transition(.scale.combined(with: .opacity))
             }
         case .pushed:
-            Button(action: onDismiss) {
-                GlassCircle(size: 40) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.red)
-                }
+            GlassIconButton(size: 40, action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.red)
             }
-            .buttonStyle(.plain)
         }
     }
 

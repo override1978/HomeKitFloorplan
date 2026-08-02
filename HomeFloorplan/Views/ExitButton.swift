@@ -5,16 +5,11 @@ struct ExitButton: View {
     let action: () -> Void
     
     var body: some View {
-        Button {
-            action()
-        } label: {
-            GlassCircle(size: 40) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.red)
-            }
+        GlassIconButton(size: 40, action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.red)
         }
-        .buttonStyle(.plain)
     }
 }
 

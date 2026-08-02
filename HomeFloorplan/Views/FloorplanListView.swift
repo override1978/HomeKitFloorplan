@@ -198,18 +198,15 @@ struct FloorplanListView: View {
             HStack {
                 HStack(spacing: 10) {
                     if columnVisibility == .detailOnly {
-                        Button {
+                        GlassIconButton(size: 40) {
                             withAnimation(.spring(response: 0.4)) {
                                 columnVisibility = .all
                             }
                         } label: {
-                            GlassCircle(size: 40) {
-                                Image(systemName: "sidebar.left")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundStyle(.primary)
-                            }
+                            Image(systemName: "sidebar.left")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.primary)
                         }
-                        .buttonStyle(.plain)
                         .transition(.scale.combined(with: .opacity))
                     }
                     

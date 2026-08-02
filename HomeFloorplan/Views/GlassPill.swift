@@ -126,6 +126,68 @@ struct GlassCircle<Content: View>: View {
     }
 }
 
+// MARK: - GlassIconButton
+
+/// Bottone circolare con icona, in vetro **interattivo**.
+///
+/// Rimpiazza il pattern `Button { GlassCircle { … } }.buttonStyle(.plain)`, che
+/// era l'anti-pattern indicato da Apple: il vetro finiva DENTRO la label, così
+/// restava una lastra ferma mentre il bottone gestiva il tocco per conto suo.
+/// Il risultato era vetro che non reagisce — cioè tutto il "glass" e niente del
+/// "liquid". Con `.buttonStyle(.glass)` la superficie **è** il controllo: si
+/// comprime, rimbalza e sposta il riflesso sotto il dito.
+///
+/// ⚠️ Non ottenere lo stesso effetto mettendo `.interactive()` a mano sul vetro
+/// dentro la label di un Button: i due gestori del tocco competono e i tap si
+/// perdono (regressione già vista sui chip filtro dell'overlay Ambiente).
+///
+/// Il frame è applicato DOPO lo stile, non alla label: lo stile aggiunge un
+/// padding proprio, quindi vincolare la label darebbe un controllo più grande
+/// di `size`. Proponendo la misura al bottone intero, la superficie di vetro si
+/// disegna esattamente in `size`, come faceva GlassCircle.
+struct GlassIconButton<Label: View>: View {
+    private let size: CGFloat
+    private let action: () -> Void
+    private let label: Label
+
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+    init(size: CGFloat = 40,
+         action: @escaping () -> Void,
+         @ViewBuilder label: () -> Label) {
+        self.size = size
+        self.action = action
+        self.label = label()
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+            Button(action: action) { label }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .frame(width: size, height: size)
+        } else {
+            Button(action: action) { legacyLabel }
+                .buttonStyle(.plain)
+        }
+    }
+
+    private var legacyLabel: some View {
+        label
+            .frame(width: size, height: size)
+            .background(.regularMaterial, in: Circle())
+            .overlay(
+                Circle()
+                    .strokeBorder(legacyGlassBorderColor(colorScheme), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 3)
+    }
+}
+
 /// Variante più opaca del GlassPill, usata quando serve massima leggibilità
 /// del testo sopra contenuti molto variabili (es. titolo sopra una galleria
 /// di immagini). Usa .regularMaterial invece di .ultraThinMaterial.

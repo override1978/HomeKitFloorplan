@@ -48,28 +48,42 @@ struct FloorplanModePill: View {
     var body: some View {
         // Collapse when only one mode is available.
         if modes.count > 1 {
-            // NIENTE container qui: la pill vive già dentro il
-            // LiquidGlassContainer della top chrome. Annidarne un secondo,
-            // per giunta con uno spacing di fusione in conflitto (120 contro
-            // 12), faceva rimbalzare gli aggiornamenti tra i due nello stesso
-            // frame — da cui `glassEffect() tried to update multiple times per
-            // frame`. Il morph della selezione resta: lo gestisce il container
-            // esterno, che vede comunque i glassEffectID nel namespace.
-            HStack(spacing: 4) {
-                ForEach(modes) { mode in
-                    modeButton(mode)
+            // Container PROPRIO, con uno spacing largo quanto la barra.
+            //
+            // È la distanza entro cui due superfici di vetro si attraggono e si
+            // fondono: la capsula di selezione deve poter raggiungere la voce
+            // successiva, che dista un centinaio di punti. Appoggiarsi al
+            // container della top chrome — spacing 12, tarato sui suoi bottoni
+            // — lasciava la fusione fuori portata, ed è il motivo per cui la
+            // deformazione a goccia non si era mai vista.
+            //
+            // Il container era stato tolto perché ANNIDATO in quello della top
+            // chrome: due container con spacing in conflitto si rimbalzavano gli
+            // aggiornamenti nello stesso frame (`glassEffect() tried to update
+            // multiple times per frame`). Ora la pill è sorella del container
+            // della barra, non figlia: nessun annidamento, nessun rimbalzo.
+            LiquidGlassContainer(spacing: 120) {
+                HStack(spacing: 4) {
+                    ForEach(modes) { mode in
+                        modeButton(mode)
+                    }
                 }
+                .padding(4)
+                .modifier(ModeBarSurface(usesGlass: usesGlass))
+                // Spazio di coordinate e gesto restano sulla barra, DENTRO il
+                // container: `GlassEffectContainer` ridispone i propri figli, e
+                // ancorarci lo spazio di coordinate significherebbe misurare i
+                // frame delle voci contro una geometria che non è quella della
+                // barra — il drag colpirebbe la modalità sbagliata.
+                .coordinateSpace(name: Self.barSpace)
+                // Scorrere il dito lungo la barra trascina la selezione. La
+                // soglia lascia passare i tap ai bottoni: sotto gli 8 punti è
+                // un tocco, sopra è un trascinamento.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.barSpace))
+                        .onChanged { value in select(at: value.location) }
+                )
             }
-            .padding(4)
-            .modifier(ModeBarSurface(usesGlass: usesGlass))
-            .coordinateSpace(name: Self.barSpace)
-            // Scorrere il dito lungo la barra trascina la selezione. La
-            // soglia lascia passare i tap ai bottoni: sotto gli 8 punti è
-            // un tocco, sopra è un trascinamento.
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.barSpace))
-                    .onChanged { value in select(at: value.location) }
-            )
             .sensoryFeedback(.selection, trigger: overlayVM.activeMode)
             // Solo opacità, niente scala: scalare una superficie di vetro ne
             // cambia la geometria a ogni fotogramma della transizione, e il
