@@ -702,24 +702,12 @@ struct EnvironmentContextDashboard: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: 52)
-            // `ConcentricRectangle` ricava il raggio dal contenitore invece di
-            // averlo scritto qui. Questa riga riempie la larghezza dentro il
-            // padding della card, quindi ne tocca il bordo interno: con un
-            // raggio fisso di 12 dentro una card da 20 con 16 di padding, il
-            // divario fra le due curve era 16 punti sui lati dritti e molto meno
-            // negli angoli. Ora la relazione la tiene il sistema — e regge anche
-            // se domani cambia il raggio della card o il suo padding, che con un
-            // numero cablato si romperebbe in silenzio.
-            //
-            // `stroke` e non `strokeBorder`: la forma non è `InsettableShape`.
-            // A un punto di spessore la differenza è mezzo punto oltre il bordo,
-            // invisibile qui.
             .background(
-                ConcentricRectangle()
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(sensor.urgency.cardBackground)
                     .overlay(
-                        ConcentricRectangle()
-                            .stroke(sensor.urgency.color.opacity(0.4), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(sensor.urgency.color.opacity(0.4), lineWidth: 1)
                     )
             )
 
