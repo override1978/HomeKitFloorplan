@@ -355,9 +355,18 @@ struct HomeDigestSummaryCard: View {
                 .fill(summary.color.opacity(0.6))
                 .frame(height: 3)
         }
-        .background(.regularMaterial)
+        // Card "Ambiente casa" / "Sicurezza casa": la terza dall'alto nei
+        // pannelli overlay. Mi è sfuggita per tre giri perché è una View che
+        // vive in un file di Services, e tutte le ricerche erano ristrette a
+        // Views/. Restava a materiale mentre le vicine erano passate al vetro,
+        // e siccome il materiale segue il tema di iOS mentre il vetro si adatta
+        // a ciò che ha dietro, su planimetria chiara con iOS scuro era l'unica
+        // card scura in mezzo alle chiare.
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: summary.color.opacity(0.12), radius: 12, x: 0, y: 4)
-        .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            tint: summary.color.opacity(0.12),
+            legacyShadow: GlassChromeShadow(color: summary.color.opacity(0.12), radius: 12, y: 4)
+        )
     }
 }

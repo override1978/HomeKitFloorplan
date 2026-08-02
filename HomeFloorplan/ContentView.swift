@@ -149,9 +149,11 @@ struct ContentView: View {
                 if showChatPanel && aiSettings.isAIEnabled {
                     ChatBotView()
                         .frame(width: chatPanelWidth, height: chatPanelHeight)
-                        .background(.regularMaterial)
                         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                        .shadow(color: .black.opacity(0.18), radius: 28, x: -4, y: 10)
+                        .glassChromeSurface(
+                            in: RoundedRectangle(cornerRadius: 28, style: .continuous),
+                            legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 28, x: -4, y: 10)
+                        )
                         .padding(.top, 20)
                         .padding(.trailing, 20)
                         .ignoresSafeArea(.keyboard)
