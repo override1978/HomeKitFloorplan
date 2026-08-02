@@ -300,27 +300,28 @@ struct OverlayPanelMarkerButton: View {
             VStack(spacing: 4) {
                 // ── Marker circle with pulsing ring ──────────────────────
                 ZStack {
-                    // Outer pulse ring
+                    // Anello che pulsa. Resta FUORI dal vetro, e non per caso:
+                    // ha diametro 62 (fino a ~73 pulsando) contro i 48 del
+                    // cerchio, quindi il suo tratto sta a raggio 31+ mentre il
+                    // vetro ha raggio 24. Il vetro campiona solo ciò che sta
+                    // dietro la propria forma, e l'anello non ci entra mai —
+                    // altrimenti un'animazione `repeatForever` lo costringerebbe
+                    // a ricampionare il backdrop a ogni fotogramma, per sempre.
                     Circle()
                         .stroke(mode.accentColor.opacity(pulseOpacity), lineWidth: 2.5)
                         .frame(width: circleSize + 14, height: circleSize + 14)
                         .scaleEffect(pulseScale)
 
-                    // Inner filled circle (matches AccessoryMarkerView style)
-                    Circle()
-                        .fill(.regularMaterial)
-                        .overlay(
-                            Circle()
-                                .strokeBorder(mode.accentColor.opacity(0.45), lineWidth: 1.5)
-                        )
-                        .frame(width: circleSize, height: circleSize)
-                        .shadow(color: mode.accentColor.opacity(0.30), radius: 8, y: 3)
-                        .shadow(color: .black.opacity(0.14), radius: 3, y: 1)
-
-                    // Icon
+                    // Cerchio e icona sono ora una cosa sola: il vetro è la
+                    // superficie del controllo, non un riempimento sotto di
+                    // esso. La tinta prende il posto di bordo e alone colorati,
+                    // che erano il modo pre-vetro di dire "questo non è un
+                    // bottone qualsiasi, appartiene a questa modalità".
                     Image(systemName: mode.pillIcon)
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(mode.accentColor)
+                        .frame(width: circleSize, height: circleSize)
+                        .modifier(MarkerCircleSurface(tint: mode.accentColor))
                 }
 
                 // ── Label pill (mirrors AccessoryMarkerView label) ────────
@@ -329,17 +330,64 @@ struct OverlayPanelMarkerButton: View {
                     .lineLimit(1)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(.thinMaterial, in: Capsule())
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(mode.accentColor.opacity(0.25), lineWidth: 0.5)
-                    )
                     .foregroundStyle(mode.accentColor)
+                    .modifier(MarkerLabelSurface(tint: mode.accentColor))
             }
         }
         .buttonStyle(.plain)
         .id(mode)              // force view recreation when mode changes → resets @State + restarts onAppear
         .onAppear { startPulse() }
+    }
+
+    /// Superficie del cerchio.
+    ///
+    /// Niente `.interactive()`: il vetro vive dentro la label di un Button, e i
+    /// due gestori del tocco competono facendo perdere i tap. Niente ombre sul
+    /// ramo vetro: le porta con sé.
+    private struct MarkerCircleSurface: ViewModifier {
+        let tint: Color
+        @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+        private var isLiquidGlassEnabled = false
+        @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+                content.glassEffect(.regular.tint(tint.opacity(0.28)), in: Circle())
+            } else {
+                content
+                    .background(.regularMaterial, in: Circle())
+                    .overlay(
+                        Circle()
+                            .strokeBorder(tint.opacity(0.45), lineWidth: 1.5)
+                    )
+                    .shadow(color: tint.opacity(0.30), radius: 8, y: 3)
+                    .shadow(color: .black.opacity(0.14), radius: 3, y: 1)
+            }
+        }
+    }
+
+    /// Superficie dell'etichetta sotto il cerchio. Tinta più leggera: è
+    /// contenuto secondario e non deve competere col cerchio.
+    private struct MarkerLabelSurface: ViewModifier {
+        let tint: Color
+        @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+        private var isLiquidGlassEnabled = false
+        @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+                content.glassEffect(.regular.tint(tint.opacity(0.16)), in: Capsule())
+            } else {
+                content
+                    .background(.thinMaterial, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(tint.opacity(0.25), lineWidth: 0.5)
+                    )
+            }
+        }
     }
 
     private func startPulse() {
