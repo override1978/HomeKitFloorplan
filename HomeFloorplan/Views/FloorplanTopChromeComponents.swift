@@ -26,7 +26,6 @@ struct FloorplanTopBarView: View {
     let onToggleEditing: () -> Void
     let onPauseSmartLighting: () -> Void
     let onResumeSmartLighting: () -> Void
-    let onTopBarHeightChanged: (CGFloat) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -88,18 +87,10 @@ struct FloorplanTopBarView: View {
         .frame(maxWidth: .infinity, alignment: .top)
         .animation(.spring(response: 0.35), value: overlayVM?.activeMode)
         .animation(.spring(response: 0.35), value: floorplan.linkedRooms.isEmpty)
-        // Misura via onGeometryChange (rimpiazzo Apple del pattern
-        // GeometryReader+PreferenceKey): il preference tree veniva aggiornato
-        // più volte per frame durante le animazioni spring qui sopra, e ogni
-        // update invalidava il body dell'editor — con Liquid Glass attivo ogni
-        // invalidazione forza il ricampionamento del backdrop di tutte le
-        // superfici glass, da cui i freeze. L'arrotondamento al punto intero
-        // elimina il churn sub-pixel dei frame intermedi dell'animazione.
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height.rounded()
-        } action: { newHeight in
-            onTopBarHeightChanged(newHeight)
-        }
+        // Questa barra non viene più misurata: nessuno ha bisogno della sua
+        // altezza. Era l'unica ragione dell'anello misura → stato → posizione
+        // dell'immagine → rilayout → rimisura, con tutta la meccanica di soglie
+        // che serviva a smorzarlo.
         .frame(maxHeight: .infinity, alignment: .top)
     }
 

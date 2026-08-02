@@ -88,10 +88,6 @@ struct FloorplanEditorView: View {
     /// la view; il ricalcolo avviene solo quando cambiano gli input effettivi.
     @State private var collisionOffsetCache = FloorplanMarkerCollisionOffsetCache()
 
-    /// Altezza misurata della top bar (incluse pills secondarie).
-    /// Usata per tenere l'immagine al di sotto della barra.
-    @State private var topBarHeight: CGFloat = 0
-
     private func marker(withID markerID: UUID) -> PlacedAccessory? {
         floorplan.accessories.first { $0.id == markerID }
     }
@@ -172,12 +168,14 @@ struct FloorplanEditorView: View {
                 if let image = imageCache.image {
                     imageWithMarkers(image: image, container: proxy.size)
                         .scaleEffect(effectiveScale, anchor: .center)
-                        // Sposta l'immagine verso il basso di metà dell'altezza della top bar,
-                        // così risulta centrata nello spazio libero sotto la barra.
-                        .offset(CGSize(
-                            width:  effectiveOffset.width,
-                            height: effectiveOffset.height + topBarHeight / 2
-                        ))
+                        // La planimetria è centrata nel canvas INTERO, non nello
+                        // spazio libero sotto la barra. La chrome è sovrapposta
+                        // in questo stesso ZStack, non impilata sopra: nessun
+                        // layout obbliga l'immagine a scansarsi, e trattare la
+                        // barra come opaca — spostando l'immagine di metà della
+                        // sua altezza — impediva al disegno di scorrere sotto il
+                        // vetro, che è esattamente ciò per cui il vetro esiste.
+                        .offset(effectiveOffset)
                         .gesture(viewportController.zoomPanGesture(in: proxy.size))
                         .transition(.opacity)
                 } else if imageCache.isLoading {
@@ -433,30 +431,8 @@ struct FloorplanEditorView: View {
             onShowScenes: { ui.showScenesPanel = true },
             onToggleEditing: ui.toggleEditing,
             onPauseSmartLighting: smartLightingEngine.pauseFromFloorplan,
-            onResumeSmartLighting: smartLightingEngine.resumeFromFloorplan,
-            onTopBarHeightChanged: updateTopBarHeight
+            onResumeSmartLighting: smartLightingEngine.resumeFromFloorplan
         )
-    }
-
-    /// Soglia di propagazione dell'altezza della barra superiore.
-    ///
-    /// L'altezza rientra nel calcolo della posizione dell'immagine, quindi ogni
-    /// aggiornamento invalida il body dell'editor — e con Liquid Glass attivo
-    /// ogni invalidazione fa ricampionare il backdrop di TUTTE le superfici di
-    /// vetro. La chrome ha due `.animation(.spring)` sopra la misurazione: con
-    /// la vecchia soglia di 0,5 punti ogni fotogramma intermedio di quelle molle
-    /// propagava, da cui `glassEffect() tried to update multiple times per
-    /// frame`.
-    ///
-    /// Otto punti separano i due casi: i fotogrammi intermedi di un'animazione
-    /// vengono ignorati — l'immagine si sposterebbe di quattro punti, invisibile
-    /// — mentre i cambiamenti reali della chrome (barra filtri che compare,
-    /// banner di stato) valgono decine di punti e passano.
-    private static let topBarHeightPropagationThreshold: CGFloat = 8
-
-    private func updateTopBarHeight(_ newHeight: CGFloat) {
-        guard abs(topBarHeight - newHeight) > Self.topBarHeightPropagationThreshold else { return }
-        topBarHeight = newHeight
     }
 
     // MARK: - Controlli secondari (auto-hide)
@@ -600,8 +576,7 @@ struct FloorplanEditorView: View {
             imageSize: imageSize,
             containerSize: containerSize,
             effectiveScale: effectiveScale,
-            effectiveOffset: effectiveOffset,
-            topBarHeight: topBarHeight
+            effectiveOffset: effectiveOffset
         ).resolve(tapLocation: tapLocation)
     }
     

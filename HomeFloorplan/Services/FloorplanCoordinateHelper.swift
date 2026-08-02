@@ -107,14 +107,12 @@ struct FloorplanRoomTapResolver {
     let containerSize: CGSize
     let effectiveScale: CGFloat
     let effectiveOffset: CGSize
-    let topBarHeight: CGFloat
 
     func resolve(tapLocation: CGPoint) -> FloorplanRoomTapResolution? {
         let centerX = containerSize.width / 2
         let centerY = containerSize.height / 2
         let adjustedX = (tapLocation.x - centerX - effectiveOffset.width) / effectiveScale + centerX
-        let visualYOffset = effectiveOffset.height + topBarHeight / 2
-        let adjustedY = (tapLocation.y - centerY - visualYOffset) / effectiveScale + centerY
+        let adjustedY = (tapLocation.y - centerY - effectiveOffset.height) / effectiveScale + centerY
 
         let imageRect = FloorplanCanvasGeometry.imageRect(imageSize: imageSize, container: containerSize)
         let normX = (adjustedX - imageRect.origin.x) / imageRect.width

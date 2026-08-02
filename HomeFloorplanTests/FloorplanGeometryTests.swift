@@ -126,16 +126,14 @@ struct FloorplanRoomTapResolverTests {
         imageSize: CGSize = CGSize(width: 100, height: 100),
         container: CGSize = CGSize(width: 100, height: 100),
         scale: CGFloat = 1,
-        offset: CGSize = .zero,
-        topBar: CGFloat = 0
+        offset: CGSize = .zero
     ) -> FloorplanRoomTapResolver {
         FloorplanRoomTapResolver(
             linkedRooms: rooms,
             imageSize: imageSize,
             containerSize: container,
             effectiveScale: scale,
-            effectiveOffset: offset,
-            topBarHeight: topBar
+            effectiveOffset: offset
         )
     }
 
@@ -155,11 +153,16 @@ struct FloorplanRoomTapResolverTests {
         #expect(resolver.resolve(tapLocation: CGPoint(x: 10, y: 50)) == nil)
     }
 
-    @Test("La topBar sposta la mappatura verticale del tap")
-    func topBarShiftsVerticalMapping() {
-        // visualYOffset = offset.height + topBar/2 = 0 + 20 = 20.
+    /// Sostituisce il vecchio `topBarShiftsVerticalMapping`: l'altezza della top
+    /// bar non entra più nella mappatura — la planimetria è centrata nel canvas
+    /// intero e scorre sotto la chrome, che le è sovrapposta. Resta però da
+    /// coprire la matematica verticale, che ora dipende dal solo offset di
+    /// scorrimento: è lo stesso termine che l'immagine applica, e i due devono
+    /// continuare ad annullarsi.
+    @Test("L'offset verticale sposta la mappatura del tap")
+    func verticalOffsetShiftsMapping() {
         // adjustedY = (tapY - 50 - 20)/1 + 50 = tapY - 20 → tap a y=70 mappa al centro.
-        let resolver = makeResolver(topBar: 40)
+        let resolver = makeResolver(offset: CGSize(width: 0, height: 20))
         let result = resolver.resolve(tapLocation: CGPoint(x: 50, y: 70))
         #expect(result != nil)
         #expect(abs((result?.markerPosition.y ?? -1) - 0.5) < 1e-9)
