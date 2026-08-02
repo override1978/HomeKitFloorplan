@@ -481,6 +481,24 @@ struct IntelligenceContextDashboard: View {
         Array(visibleSituations.dropFirst())
     }
 
+    private struct SeverityGroup: Identifiable {
+        let severity: HomeInsightSeverity
+        let situations: [HomeSituation]
+        var id: String { "\(severity)" }
+    }
+
+    /// Le situazioni mostrate, raggruppate per severità e in ordine decrescente.
+    ///
+    /// Il taglio a sei resta applicato PRIMA del raggruppamento, così i gruppi
+    /// descrivono ciò che si vede davvero: un'intestazione "Alta 4" sopra due
+    /// righe sarebbe una bugia.
+    private var severityGroups: [SeverityGroup] {
+        let shown = Array(listedSituations.prefix(6))
+        return Dictionary(grouping: shown) { $0.primary.severity }
+            .map { SeverityGroup(severity: $0.key, situations: $0.value) }
+            .sorted { groupRank($0.severity) > groupRank($1.severity) }
+    }
+
     // MARK: Body
 
     var body: some View {
@@ -521,10 +539,36 @@ struct IntelligenceContextDashboard: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            ForEach(listedSituations.prefix(6)) { situation in
-                situationRow(situation)
-                if situation.id != listedSituations.prefix(6).last?.id {
-                    Divider().padding(.leading, 26)
+            // Raggruppate per severità invece che in fila piatta.
+            //
+            // Il chip "Alta"/"Media" si ripeteva su ogni riga e, stando a destra
+            // nello stesso HStack del testo, ne sottraeva larghezza per tutta
+            // l'altezza — lo stesso difetto già corretto sulla card digest.
+            // Come intestazione di gruppo lo dici una volta, e in più si vede la
+            // FORMA del problema: quante cose sono davvero urgenti e quante no,
+            // che in un elenco piatto di ventinove voci non si legge.
+            ForEach(severityGroups) { group in
+                HStack(spacing: 6) {
+                    Text(severityLabel(group.severity))
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(groupColor(group.severity))
+                        .textCase(.uppercase)
+                        .tracking(0.4)
+                    Text("\(group.situations.count)")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(groupColor(group.severity))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(groupColor(group.severity).opacity(0.12)))
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, group.id == severityGroups.first?.id ? 0 : 6)
+
+                ForEach(group.situations) { situation in
+                    situationRow(situation)
+                    if situation.id != group.situations.last?.id {
+                        Divider().padding(.leading, 26)
+                    }
                 }
             }
 
@@ -636,14 +680,10 @@ struct IntelligenceContextDashboard: View {
                 }
             }
 
-            Spacer(minLength: 4)
-
-            Text(severityLabel(insight.severity))
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(color)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Capsule().fill(color.opacity(0.12)))
+            // Niente chip di severità qui: lo dice l'intestazione del gruppo.
+            // Toglierlo restituisce al testo la larghezza che gli sottraeva per
+            // tutta l'altezza della riga, stando nello stesso HStack.
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
@@ -667,6 +707,31 @@ struct IntelligenceContextDashboard: View {
         case .loads: return "powerplug.fill"
         case .security: return "shield.lefthalf.filled"
         case .routine: return "sparkles"
+        }
+    }
+
+    /// Colore dell'intestazione di gruppo. A differenza di `color(for:domain:)`
+    /// non ha un dominio da cui partire — il gruppo raccoglie situazioni di
+    /// domini diversi — quindi per le severità basse usa l'accento del pannello.
+    private func groupColor(_ severity: HomeInsightSeverity) -> Color {
+        switch severity {
+        case .critical, .high: return .red
+        case .medium: return .orange
+        case .low: return .yellow
+        case .info: return accent
+        }
+    }
+
+    /// Ordinamento dei gruppi. Duplica volutamente il rank dell'overlay: sono
+    /// due struct separate e passare da un metodo statico condiviso, per cinque
+    /// casi, costerebbe più di quanto renda.
+    private func groupRank(_ severity: HomeInsightSeverity) -> Int {
+        switch severity {
+        case .critical: return 4
+        case .high: return 3
+        case .medium: return 2
+        case .low: return 1
+        case .info: return 0
         }
     }
 
