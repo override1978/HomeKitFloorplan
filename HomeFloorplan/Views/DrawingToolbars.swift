@@ -22,187 +22,279 @@ struct DrawingTopBar: View {
     var onDone: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Cancel
-            Button(action: onCancel) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .background(Color.primary.opacity(0.07), in: Circle())
-            }
-            .buttonStyle(.plain)
-
-            Button(action: onHelp) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .background(Color.primary.opacity(0.07), in: Circle())
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
-            // Undo
-            Button(action: onUndo) {
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(canUndo ? .primary : .secondary)
-                    .frame(width: 36, height: 36)
-                    .background(Color.primary.opacity(canUndo ? 0.07 : 0.035), in: Circle())
-            }
-            .disabled(!canUndo)
-            .buttonStyle(.plain)
-
-            // Redo
-            Button(action: onRedo) {
-                Image(systemName: "arrow.uturn.forward")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(canRedo ? .primary : .secondary)
-                    .frame(width: 36, height: 36)
-                    .background(Color.primary.opacity(canRedo ? 0.07 : 0.035), in: Circle())
-            }
-            .disabled(!canRedo)
-            .buttonStyle(.plain)
-
-            Menu {
-                ForEach(DrawingExportRotation.allCases) { rotation in
-                    Button {
-                        onExportRotationChange(rotation)
-                    } label: {
-                        Label {
-                            Text(rotation.localizedTitle)
-                        } icon: {
-                            Image(systemName: rotation == exportRotation ? "checkmark.circle.fill" : rotation.iconName)
-                        }
-                    }
+        // Ogni item ha la PROPRIA superficie, e la barra non ne ha nessuna.
+        //
+        // È la struttura che Apple usa per le toolbar, ed è obbligata qui: un
+        // `Menu` solleva dentro il proprio popover la superficie di vetro a cui
+        // è ancorato. Con una lastra unica spariva l'intera barra (bug reale,
+        // corretto in `78af2e2` tornando al materiale); con le superfici sui
+        // singoli item si solleva solo il bottone toccato, che è il
+        // comportamento voluto. Corollario: **due Menu non possono condividere
+        // una superficie**, altrimenti si ripresenta lo stesso bug in scala
+        // ridotta — spariscono insieme.
+        LiquidGlassContainer(spacing: 12) {
+            HStack(spacing: 12) {
+                // Cancel
+                Button(action: onCancel) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 36, height: 36)
+                        .modifier(ToolbarItemSurface(shape: Circle(),
+                                                     legacyFill: Color.primary.opacity(0.07)))
                 }
-            } label: {
-                Image(systemName: exportRotation.iconName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(exportRotation == .asDrawn ? .primary : BrandColor.primary)
-                    .frame(width: 36, height: 36)
-                    .background(
-                        exportRotation == .asDrawn ? Color.primary.opacity(0.07) : BrandColor.primary.opacity(0.12),
-                        in: Circle()
-                    )
-            }
-            .buttonStyle(.plain)
-            .disabled(isExporting)
+                .buttonStyle(.plain)
 
-            Menu {
-                ForEach(DrawingVisualExportStyle.toolbarVisibleStyles) { style in
-                    Button {
-                        onVisualExportStyleChange(style)
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading) {
-                                Text(style.localizedTitle)
-                                Text(style.localizedSubtitle)
-                            }
-                        } icon: {
-                            Image(systemName: style == visualExportStyle ? "checkmark.circle.fill" : "circle")
-                        }
-                    }
+                Button(action: onHelp) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 36, height: 36)
+                        .modifier(ToolbarItemSurface(shape: Circle(),
+                                                     legacyFill: Color.primary.opacity(0.07)))
                 }
-            } label: {
-                let isDark = visualExportStyle == .architecturalDark
-                let isNonStandard = visualExportStyle != .standard
-                HStack(spacing: 6) {
-                    Image(systemName: visualExportStyle.toolbarIconName)
-                        .font(.system(size: 14, weight: .semibold))
-                    Text(visualExportStyle.localizedTitle)
-                        .font(.caption.weight(.semibold))
-                }
-                .foregroundStyle(isDark ? Color.white : (isNonStandard ? BrandColor.primary : Color.primary))
-                .padding(.horizontal, 11)
-                .frame(height: 36)
-                .background(
-                    isDark
-                        ? Color(red: 0.10, green: 0.13, blue: 0.18)
-                        : (isNonStandard ? BrandColor.primary.opacity(0.14) : Color.primary.opacity(0.10)),
-                    in: Capsule()
-                )
-            }
-            .buttonStyle(.plain)
-            .disabled(isExporting)
+                .buttonStyle(.plain)
 
-            if visualExportStyle != .architecturalDark {
+                Spacer()
+
+                // Undo
+                Button(action: onUndo) {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(canUndo ? .primary : .secondary)
+                        .frame(width: 36, height: 36)
+                        .modifier(ToolbarItemSurface(shape: Circle(),
+                                                     legacyFill: Color.primary.opacity(canUndo ? 0.07 : 0.035)))
+                }
+                .disabled(!canUndo)
+                .buttonStyle(.plain)
+
+                // Redo
+                Button(action: onRedo) {
+                    Image(systemName: "arrow.uturn.forward")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(canRedo ? .primary : .secondary)
+                        .frame(width: 36, height: 36)
+                        .modifier(ToolbarItemSurface(shape: Circle(),
+                                                     legacyFill: Color.primary.opacity(canRedo ? 0.07 : 0.035)))
+                }
+                .disabled(!canRedo)
+                .buttonStyle(.plain)
+
+                // Ognuno di questi tre Menu tiene la propria superficie: è la
+                // condizione perché il sollevamento prenda solo lui.
                 Menu {
-                    Button {
-                        onExteriorFillChange(-1)
-                    } label: {
-                        Label {
-                            Text(String(localized: "exterior.fill.none", defaultValue: "None"))
-                        } icon: {
-                            Image(systemName: exteriorFillColorIndex < 0 ? "checkmark.circle.fill" : "circle")
-                        }
-                    }
-                    ForEach(ExteriorFillPalette.allCases, id: \.rawValue) { preset in
+                    ForEach(DrawingExportRotation.allCases) { rotation in
                         Button {
-                            onExteriorFillChange(preset.rawValue)
+                            onExportRotationChange(rotation)
                         } label: {
                             Label {
-                                Text(preset.localizedName)
+                                Text(rotation.localizedTitle)
                             } icon: {
-                                Image(systemName: exteriorFillColorIndex == preset.rawValue ? "checkmark.circle.fill" : "circle")
+                                Image(systemName: rotation == exportRotation ? "checkmark.circle.fill" : rotation.iconName)
                             }
                         }
                     }
                 } label: {
-                    Image(systemName: exteriorFillColorIndex >= 0 ? "building.2.fill" : "building.2")
+                    Image(systemName: exportRotation.iconName)
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(exteriorFillColorIndex >= 0 ? BrandColor.primary : .primary)
+                        .foregroundStyle(exportRotation == .asDrawn ? .primary : BrandColor.primary)
                         .frame(width: 36, height: 36)
-                        .background(
-                            exteriorFillColorIndex >= 0 ? BrandColor.primary.opacity(0.12) : Color.primary.opacity(0.07),
-                            in: Circle()
-                        )
+                        .modifier(ToolbarItemSurface(
+                            shape: Circle(),
+                            tint: exportRotation == .asDrawn ? nil : BrandColor.primary,
+                            legacyFill: exportRotation == .asDrawn
+                                ? Color.primary.opacity(0.07)
+                                : BrandColor.primary.opacity(0.12)
+                        ))
                 }
                 .buttonStyle(.plain)
                 .disabled(isExporting)
-            }
 
-            // Done
-            Button(action: onDone) {
-                HStack(spacing: 7) {
-                    if isExporting {
-                        ProgressView()
-                            .tint(.white)
-                            .controlSize(.small)
+                Menu {
+                    ForEach(DrawingVisualExportStyle.toolbarVisibleStyles) { style in
+                        Button {
+                            onVisualExportStyleChange(style)
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading) {
+                                    Text(style.localizedTitle)
+                                    Text(style.localizedSubtitle)
+                                }
+                            } icon: {
+                                Image(systemName: style == visualExportStyle ? "checkmark.circle.fill" : "circle")
+                            }
+                        }
                     }
-                    Text(String(localized: "drawing.topbar.done", defaultValue: "Done"))
-                        .font(.system(size: 16, weight: .semibold))
+                } label: {
+                    let isDark = visualExportStyle == .architecturalDark
+                    let isNonStandard = visualExportStyle != .standard
+                    HStack(spacing: 6) {
+                        Image(systemName: visualExportStyle.toolbarIconName)
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(visualExportStyle.localizedTitle)
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(isDark ? Color.white : (isNonStandard ? BrandColor.primary : Color.primary))
+                    .padding(.horizontal, 11)
+                    .frame(height: 36)
+                    // Lo stile "architectural dark" resta un riempimento pieno
+                    // anche col vetro: qui il colore non decora, mostra quale
+                    // fondo avrà l'export. Una tinta traslucida lo falserebbe.
+                    .modifier(ToolbarItemSurface(
+                        shape: Capsule(),
+                        tint: isDark ? nil : (isNonStandard ? BrandColor.primary : nil),
+                        opaqueFill: isDark ? Color(red: 0.10, green: 0.13, blue: 0.18) : nil,
+                        legacyFill: isDark
+                            ? Color(red: 0.10, green: 0.13, blue: 0.18)
+                            : (isNonStandard ? BrandColor.primary.opacity(0.14) : Color.primary.opacity(0.10))
+                    ))
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
-                .background(isExporting ? Color.secondary : BrandColor.primary, in: Capsule())
+                .buttonStyle(.plain)
+                .disabled(isExporting)
+
+                if visualExportStyle != .architecturalDark {
+                    Menu {
+                        Button {
+                            onExteriorFillChange(-1)
+                        } label: {
+                            Label {
+                                Text(String(localized: "exterior.fill.none", defaultValue: "None"))
+                            } icon: {
+                                Image(systemName: exteriorFillColorIndex < 0 ? "checkmark.circle.fill" : "circle")
+                            }
+                        }
+                        ForEach(ExteriorFillPalette.allCases, id: \.rawValue) { preset in
+                            Button {
+                                onExteriorFillChange(preset.rawValue)
+                            } label: {
+                                Label {
+                                    Text(preset.localizedName)
+                                } icon: {
+                                    Image(systemName: exteriorFillColorIndex == preset.rawValue ? "checkmark.circle.fill" : "circle")
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: exteriorFillColorIndex >= 0 ? "building.2.fill" : "building.2")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(exteriorFillColorIndex >= 0 ? BrandColor.primary : .primary)
+                            .frame(width: 36, height: 36)
+                            .modifier(ToolbarItemSurface(
+                                shape: Circle(),
+                                tint: exteriorFillColorIndex >= 0 ? BrandColor.primary : nil,
+                                legacyFill: exteriorFillColorIndex >= 0
+                                    ? BrandColor.primary.opacity(0.12)
+                                    : Color.primary.opacity(0.07)
+                            ))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isExporting)
+                }
+
+                // Done resta un riempimento pieno di brand, non vetro: è
+                // l'azione primaria della schermata e deve staccare dagli altri
+                // item. Farla di vetro come tutto il resto le toglierebbe la
+                // gerarchia che ha oggi.
+                Button(action: onDone) {
+                    HStack(spacing: 7) {
+                        if isExporting {
+                            ProgressView()
+                                .tint(.white)
+                                .controlSize(.small)
+                        }
+                        Text(String(localized: "drawing.topbar.done", defaultValue: "Done"))
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .background(isExporting ? Color.secondary : BrandColor.primary, in: Capsule())
+                }
+                .disabled(isExporting)
+                .buttonStyle(.plain)
             }
-            .disabled(isExporting)
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        // ⚠️ NIENTE vetro su questa barra, ed è una regola non un'omissione.
-        //
-        // La barra contiene tre `Menu`. Su iOS 26, aprire un menu ancorato a una
-        // superficie di vetro fa sollevare QUELLA SUPERFICIE dentro il popover in
-        // vetro del menu (`GlassPopoverContentViewRepresentable`). Se la
-        // superficie è l'intera barra, è l'intera barra a sparire finché il menu
-        // resta aperto. Provato e verificato sul campo: una lastra unica di vetro
-        // che contiene dei Menu non è una composizione supportata.
-        //
-        // Per riavere il vetro qui servirebbe la struttura di Apple — un
-        // GlassEffectContainer con il vetro sui SINGOLI elementi — così che il
-        // sollevamento prenda solo il bottone del menu.
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.28), lineWidth: 1)
+        .modifier(BarSheetOnlyWhenLegacy(
+            shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
+            border: Color.white.opacity(0.28),
+            shadow: GlassChromeShadow(color: .black.opacity(0.14), radius: 18, y: 8)
+        ))
+    }
+}
+
+// MARK: - Superfici delle barre di disegno
+
+/// Sfondo della barra, presente **solo** senza vetro.
+///
+/// Col vetro la barra non ha superficie propria: ce l'hanno i singoli item. È
+/// la condizione perché un `Menu` sollevi solo sé stesso invece dell'intera
+/// barra — vedi la nota in `ToolbarItemSurface`.
+private struct BarSheetOnlyWhenLegacy<S: InsettableShape>: ViewModifier {
+    let shape: S
+    var fill: AnyShapeStyle = AnyShapeStyle(.regularMaterial)
+    var border: Color?
+    var shadow: GlassChromeShadow?
+
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+            content
+        } else {
+            content
+                .background(fill, in: shape)
+                .overlay {
+                    if let border {
+                        shape.strokeBorder(border, lineWidth: 1)
+                    }
+                }
+                .shadow(color: shadow?.color ?? .clear,
+                        radius: shadow?.radius ?? 0,
+                        x: 0,
+                        y: shadow?.y ?? 0)
         }
-        .shadow(color: .black.opacity(0.14), radius: 18, x: 0, y: 8)
+    }
+}
+
+/// Superficie di un singolo item di barra.
+///
+/// **Ogni item ne ha una propria, e questo è un requisito funzionale, non una
+/// scelta estetica.** Un `Menu` solleva dentro il proprio popover la superficie
+/// di vetro a cui è ancorato: con una lastra condivisa spariscono tutti gli item
+/// che la condividono finché il menu resta aperto. Con una superficie per item
+/// si solleva solo il bottone toccato.
+///
+/// `opaqueFill` serve al caso in cui il colore non decora ma **informa** — la
+/// pastiglia dello stile "architectural dark" mostra il fondo che avrà l'export,
+/// e una tinta traslucida lo rappresenterebbe male.
+private struct ToolbarItemSurface<S: InsettableShape>: ViewModifier {
+    let shape: S
+    var tint: Color?
+    var opaqueFill: Color?
+    var legacyFill: Color
+
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+            if let opaqueFill {
+                content.background(opaqueFill, in: shape)
+            } else {
+                content.glassEffect(tint.map { .regular.tint($0.opacity(0.22)) } ?? .regular,
+                                    in: shape)
+            }
+        } else {
+            content.background(legacyFill, in: shape)
+        }
     }
 }
 
@@ -536,6 +628,24 @@ struct DrawingToolbar: View {
     var onDelete: () -> Void
 
     var body: some View {
+        // Stessa struttura della barra superiore: nessuna superficie sulla
+        // barra, una per item o per gruppo, tutto dentro un container che ne
+        // fonde le superfici vicine. Qui c'è un `Menu` (scelta del mobile) e
+        // vale la stessa regola: tiene la propria superficie, così il
+        // sollevamento nel popover prende solo lui.
+        LiquidGlassContainer(spacing: 16) {
+            toolbarItems
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .modifier(BarSheetOnlyWhenLegacy(
+            shape: Rectangle(),
+            fill: AnyShapeStyle(.ultraThinMaterial)
+        ))
+        .animation(.spring(response: 0.3), value: hasSelection)
+    }
+
+    private var toolbarItems: some View {
         HStack(spacing: 16) {
 
             // ── Left: mode toggle (Muro / Seleziona) ──────────────────────────
@@ -551,10 +661,13 @@ struct DrawingToolbar: View {
                     mode = .select
                 }
             }
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+            // Il gruppo segmentato tiene UNA superficie condivisa: non contiene
+            // Menu, quindi non c'è nulla da sollevare, e la lettura "segmenti di
+            // un unico controllo" è proprio ciò che deve dare.
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+                legacyFill: AnyShapeStyle(.ultraThinMaterial),
+                legacyBorder: Color.white.opacity(0.2)
             )
 
             // ── Wall kind toggle (visible only in draw mode) ────────────────
@@ -567,15 +680,14 @@ struct DrawingToolbar: View {
                     wallKindButton(kind: .balcony,  icon: "line.diagonal",
                                    label: String(localized: "drawing.toolbar.wall.balcony",  defaultValue: "Balcony"))
                 }
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                .glassChromeSurface(
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+                    legacyFill: AnyShapeStyle(.ultraThinMaterial),
+                    legacyBorder: Color.white.opacity(0.2)
                 )
-                // Sola opacità: questi elementi entrano ed escono DENTRO la
-                // barra, che ora è una superficie di vetro. Scalarli le cambia
-                // la geometria a ogni fotogramma e la costringe a rivalutarsi
-                // altrettante volte.
+                // Sola opacità, mai scala: scalare una superficie di vetro ne
+                // cambia la geometria a ogni fotogramma e la costringe a
+                // rivalutarsi altrettante volte.
                 .transition(.opacity)
             }
 
@@ -649,29 +761,15 @@ struct DrawingToolbar: View {
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.red)
                         .frame(width: 44, height: 44)
-                        .background(.ultraThinMaterial,
-                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .glassChromeSurface(
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+                            legacyFill: AnyShapeStyle(.ultraThinMaterial)
+                        )
                 }
-                // Sola opacità: questi elementi entrano ed escono DENTRO la
-                // barra, che ora è una superficie di vetro. Scalarli le cambia
-                // la geometria a ogni fotogramma e la costringe a rivalutarsi
-                // altrettante volte.
+                // Sola opacità, mai scala: vale per ogni superficie di vetro.
                 .transition(.opacity)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        // La barra è UNA superficie di vetro continua. I gruppi segmentati qui
-        // sopra (modalità, tipo di muro) restano a materiale e non diventano
-        // vetro a loro volta: sovrapporre vetro a vetro è esattamente ciò che
-        // Apple dice di evitare, e cancellerebbe la lettura "segmenti su una
-        // barra" che quei gruppi hanno il compito di dare.
-        // NIENTE vetro: come la barra superiore, questa contiene un `Menu`
-        // (scelta del mobile) e una lastra unica di vetro verrebbe sollevata
-        // per intero nel popover del menu, facendo sparire la barra finché
-        // resta aperto. Vedi la nota estesa in DrawingTopBar.
-        .background(.ultraThinMaterial)
-        .animation(.spring(response: 0.3), value: hasSelection)
     }
 
     // MARK: Private helpers

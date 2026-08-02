@@ -120,10 +120,13 @@ extension View {
     /// stesso significato. Aiuta anche dove il vetro non ha nulla da rifrangere
     /// — sopra una planimetria chiara e ferma degrada a lastra grigia, e la
     /// tinta gli restituisce carattere senza dipendere dallo sfondo.
+    /// `legacyFill` accetta qualunque stile, non solo un `Material`: gli item
+    /// delle barre di disegno usano riempimenti tenui a colore, e senza questo
+    /// servirebbe una seconda primitiva quasi identica accanto a questa.
     func glassChromeSurface<S: InsettableShape>(
         in shape: S,
         tint: Color? = nil,
-        legacyMaterial: Material = .regularMaterial,
+        legacyFill: AnyShapeStyle = AnyShapeStyle(.regularMaterial),
         legacyBorder: Color? = nil,
         legacyBorderWidth: CGFloat = 1,
         legacyShadow: GlassChromeShadow? = nil
@@ -131,7 +134,7 @@ extension View {
         modifier(GlassChromeSurface(
             shape: shape,
             tint: tint,
-            legacyMaterial: legacyMaterial,
+            legacyFill: legacyFill,
             legacyBorder: legacyBorder,
             legacyBorderWidth: legacyBorderWidth,
             legacyShadow: legacyShadow
@@ -142,7 +145,7 @@ extension View {
 private struct GlassChromeSurface<S: InsettableShape>: ViewModifier {
     let shape: S
     let tint: Color?
-    let legacyMaterial: Material
+    let legacyFill: AnyShapeStyle
     let legacyBorder: Color?
     let legacyBorderWidth: CGFloat
     let legacyShadow: GlassChromeShadow?
@@ -157,7 +160,7 @@ private struct GlassChromeSurface<S: InsettableShape>: ViewModifier {
             content.glassEffect(tint.map { .regular.tint($0) } ?? .regular, in: shape)
         } else {
             content
-                .background(legacyMaterial, in: shape)
+                .background(legacyFill, in: shape)
                 .overlay {
                     if let legacyBorder {
                         shape.strokeBorder(legacyBorder, lineWidth: legacyBorderWidth)
