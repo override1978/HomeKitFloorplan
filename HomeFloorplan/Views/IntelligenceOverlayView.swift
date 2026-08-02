@@ -15,7 +15,6 @@ struct IntelligenceOverlayView: View {
     let effectiveScale: CGFloat
     let effectiveOffset: CGSize
 
-    @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
     @Query(
         filter: #Predicate<PersistedHomeInsight> { $0.statusRaw == "active" },
         sort: \PersistedHomeInsight.updatedAt,
@@ -31,7 +30,6 @@ struct IntelligenceOverlayView: View {
         case situation(FloorplanRoomSituationSummary)
         case learning
         case needsSetup
-        case disabled
     }
 
     // MARK: Derived
@@ -224,7 +222,7 @@ struct IntelligenceOverlayView: View {
         }
 
         let summaries = calloutTourSummaries
-        guard !summaries.isEmpty, isAIEnabled else { return }
+        guard !summaries.isEmpty else { return }
 
         try? await Task.sleep(nanoseconds: 650_000_000)
         guard !Task.isCancelled, !overlayVM.isPanelVisible else { return }
@@ -258,8 +256,6 @@ struct IntelligenceOverlayView: View {
     // MARK: Helpers
 
     private func intelligenceState(for room: LinkedRoom) -> RoomIntelligenceState {
-        guard isAIEnabled else { return .disabled }
-
         if let summary = situationSummary(for: room) {
             return .situation(summary)
         }
@@ -329,7 +325,6 @@ struct IntelligenceOverlayView: View {
             return summary.color.opacity(summary.severity >= .high ? 0.30 : 0.22)
         case .learning: return Color(.systemIndigo).opacity(0.08)
         case .needsSetup: return Color.gray.opacity(0.05)
-        case .disabled: return Color.gray.opacity(0.03)
         }
     }
 
@@ -338,7 +333,6 @@ struct IntelligenceOverlayView: View {
         case .situation(let summary): return summary.color
         case .learning: return Color(.systemIndigo).opacity(0.26)
         case .needsSetup: return Color.gray.opacity(0.22)
-        case .disabled: return Color.gray.opacity(0.16)
         }
     }
 
@@ -347,7 +341,6 @@ struct IntelligenceOverlayView: View {
         case .situation(let summary): return summary.color.opacity(0.94)
         case .learning: return Color(.systemBackground).opacity(0.82)
         case .needsSetup: return Color(.systemBackground).opacity(0.72)
-        case .disabled: return Color(.systemBackground).opacity(0.64)
         }
     }
 
@@ -356,7 +349,6 @@ struct IntelligenceOverlayView: View {
         case .situation(let summary): return summary.iconName
         case .learning: return "brain.head.profile"
         case .needsSetup: return "plus.viewfinder"
-        case .disabled: return "sparkles.slash"
         }
     }
 
@@ -365,7 +357,6 @@ struct IntelligenceOverlayView: View {
         case .situation(let summary): return "\(summary.count)"
         case .learning: return room.name
         case .needsSetup: return "Completa"
-        case .disabled: return room.name
         }
     }
 
@@ -432,7 +423,6 @@ private struct FloorplanRoomSituationSummary {
 /// that room's recommendation rows are visually highlighted — content never changes.
 struct IntelligenceContextDashboard: View {
 
-    @AppStorage("ai.isEnabled") private var isAIEnabled: Bool = false
     @Query(
         filter: #Predicate<PersistedHomeInsight> { $0.statusRaw == "active" },
         sort: \PersistedHomeInsight.updatedAt,
@@ -486,11 +476,9 @@ struct IntelligenceContextDashboard: View {
     ///
     /// La card "Priorità della casa" mostra `visibleSituations.first`, e
     /// l'elenco partiva dallo stesso elemento: la prima riga ripeteva parola per
-    /// parola la card sopra, sempre — non per caso ma per costruzione. Con
-    /// l'intelligenza spenta nessuna situazione viene promossa (la card diventa
-    /// uno stato vuoto), quindi lì l'elenco resta intero.
+    /// parola la card sopra, sempre — non per caso ma per costruzione.
     private var listedSituations: [HomeSituation] {
-        isAIEnabled ? Array(visibleSituations.dropFirst()) : visibleSituations
+        Array(visibleSituations.dropFirst())
     }
 
     // MARK: Body
@@ -565,14 +553,7 @@ struct IntelligenceContextDashboard: View {
 
     @ViewBuilder
     private var nextUsefulCard: some View {
-        if !isAIEnabled {
-            FloorplanEmptyStateCard(
-                title: String(localized: "intelligence.disabled.title", defaultValue: "Intelligence disabled"),
-                message: String(localized: "intelligence.disabled.message", defaultValue: "Enable AI in Settings to analyze habits and automation opportunities."),
-                icon: "sparkles.slash",
-                color: .secondary
-            )
-        } else if let situation = highlightedRoomSituations.first, let roomName = highlightedRoomName {
+        if let situation = highlightedRoomSituations.first, let roomName = highlightedRoomName {
             situationSummaryCard(
                 title: String(format: String(localized: "intelligence.floorplan.priority.room",
                                              defaultValue: "Priority in %@"),
