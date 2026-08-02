@@ -640,19 +640,9 @@ private struct AccessoryLabelSurface: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
-            // Nient'altro che il vetro.
-            //
-            // Ci avevo lasciato sotto anche la capsula del gradiente, e sono
-            // uscite DUE capsule sovrapposte: il `glassEffect` si dimensiona da
-            // sé e non coincideva con il `background`, quindi in modifica —
-            // dove il marker oscilla — si vedevano due forme vibrare, e quella
-            // più grande di più, perché la rotazione amplifica col raggio.
-            //
-            // E il gradiente non andava comunque tenuto: non è una tinta di
-            // stato ma un riflesso bianco→trasparente dall'alto in basso, cioè
-            // esattamente la lucentezza che il vetro porta nativa. Disegnarla
-            // sopra è la definizione di superficie "quasi vetro".
-            content.glassEffect(.regular, in: Capsule())
+            content
+                .background(Capsule().fill(tint).opacity(tintOpacity))
+                .glassEffect(.regular, in: Capsule())
         } else {
             content
                 .background(.thinMaterial, in: Capsule())
