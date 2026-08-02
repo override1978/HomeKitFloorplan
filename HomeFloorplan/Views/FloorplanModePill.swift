@@ -14,11 +14,6 @@ struct FloorplanModePill: View {
     private var isLiquidGlassEnabled = false
     @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
 
-    /// Namespace condiviso dall'indicatore di selezione: dando lo STESSO id al
-    /// solo elemento attivo, il container fa morphare la capsula di vetro da un
-    /// tab all'altro invece di farla sparire e riapparire.
-    @Namespace private var selectionNamespace
-
     /// Frame di ogni voce nello spazio della barra: servono SOLO al drag, per
     /// sapere sopra quale modalità si trova il dito.
     ///
@@ -43,54 +38,44 @@ struct FloorplanModePill: View {
     /// e il movimento diventa meccanico. Smorzamento basso = più liquido.
     private static let selectionAnimation: Animation = .spring(response: 0.38,
                                                               dampingFraction: 0.7)
-    private static let selectionID = "floorplan.mode.selection"
 
     var body: some View {
         // Collapse when only one mode is available.
         if modes.count > 1 {
-            // Container PROPRIO, con lo spacing tarato sui BORDI delle capsule.
+            // ⛔️ NIENTE `GlassEffectContainer` attorno a questa barra, e stavolta
+            // è una conclusione, non un rinvio.
             //
-            // È la distanza entro cui due superfici di vetro si attraggono e si
-            // fondono, e la capsula di selezione deve poter raggiungere quella
-            // della voce accanto. Appoggiarsi al container della top chrome
-            // (spacing 12, tarato sui suoi bottoni) lasciava la fusione fuori
-            // portata, ed è il motivo per cui il morph non si era mai visto.
+            // Il container non si limita a disegnare: **riposiziona i propri
+            // figli** per far combaciare le forme che fonde. Attorno a questa
+            // barra vedeva la superficie e la capsula di selezione come due
+            // superfici da unire, tirava insieme le voci, il layout si
+            // riaffermava e lui ci riprovava — le due voci centrali si
+            // sovrapponevano e tornavano a posto in ciclo continuo. È la stessa
+            // proprietà che a luglio faceva sparire quattro badge su sei
+            // nell'overlay Ambiente.
             //
-            // ⚠️ Ma 120 era altrettanto sbagliato in eccesso: l'avevo tarato
-            // sulla distanza fra i CENTRI delle voci, mentre a fondersi sono i
-            // bordi, che distano pochi punti. Uno spacing enorme allarga la
-            // regione di vetro del contenitore ben oltre la pill, che finiva
-            // per sovrapporsi alle azioni in alto a destra coprendo l'ultima
-            // modalità. Regola: lo spacing è un raggio di fusione fra bordi
-            // vicini, non la larghezza del controllo.
-            //
-            // Il container era stato tolto perché ANNIDATO in quello della top
-            // chrome: due container con spacing in conflitto si rimbalzavano gli
-            // aggiornamenti nello stesso frame (`glassEffect() tried to update
-            // multiple times per frame`). Ora la pill è sorella del container
-            // della barra, non figlia: nessun annidamento, nessun rimbalzo.
-            LiquidGlassContainer(spacing: 24) {
-                HStack(spacing: 4) {
-                    ForEach(modes) { mode in
-                        modeButton(mode)
-                    }
+            // Era stato rimesso qui per ottenere il morph a goccia della
+            // selezione, e in una sola giornata ha prodotto tre difetti: il
+            // warning `glassEffect() tried to update multiple times per frame`
+            // (che ne aveva già causato la rimozione), il vetro dilatato sopra
+            // le azioni della toolbar, e questa oscillazione. Il morph è un
+            // dettaglio estetico che non si è mai visto funzionare: non vale il
+            // prezzo. La barra e la capsula tinta restano, e stanno bene.
+            HStack(spacing: 4) {
+                ForEach(modes) { mode in
+                    modeButton(mode)
                 }
-                .padding(4)
-                .modifier(ModeBarSurface(usesGlass: usesGlass))
-                // Spazio di coordinate e gesto restano sulla barra, DENTRO il
-                // container: `GlassEffectContainer` ridispone i propri figli, e
-                // ancorarci lo spazio di coordinate significherebbe misurare i
-                // frame delle voci contro una geometria che non è quella della
-                // barra — il drag colpirebbe la modalità sbagliata.
-                .coordinateSpace(name: Self.barSpace)
-                // Scorrere il dito lungo la barra trascina la selezione. La
-                // soglia lascia passare i tap ai bottoni: sotto gli 8 punti è
-                // un tocco, sopra è un trascinamento.
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.barSpace))
-                        .onChanged { value in select(at: value.location) }
-                )
             }
+            .padding(4)
+            .modifier(ModeBarSurface(usesGlass: usesGlass))
+            .coordinateSpace(name: Self.barSpace)
+            // Scorrere il dito lungo la barra trascina la selezione. La
+            // soglia lascia passare i tap ai bottoni: sotto gli 8 punti è
+            // un tocco, sopra è un trascinamento.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.barSpace))
+                    .onChanged { value in select(at: value.location) }
+            )
             .sensoryFeedback(.selection, trigger: overlayVM.activeMode)
             // Solo opacità, niente scala: scalare una superficie di vetro ne
             // cambia la geometria a ogni fotogramma della transizione, e il
@@ -138,9 +123,7 @@ struct FloorplanModePill: View {
         .modifier(ModeSelectionHighlight(
             isActive: isActive,
             usesGlass: usesGlass,
-            modeID: mode.id,
-            tint: mode.accentColor,
-            namespace: selectionNamespace
+            tint: mode.accentColor
         ))
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .named(Self.barSpace))
@@ -161,23 +144,20 @@ private final class ModeFrameStore {
 
 // MARK: - ModeSelectionHighlight
 
-/// Vetro solo sulla voce attiva, con un id **unico per modalità**.
+/// Vetro tinto sulla sola voce attiva.
 ///
-/// È la parte che avevo sbagliato: con un id costante SwiftUI vede sempre la
-/// stessa forma e non ha nulla da morphare. Dando a ogni voce il proprio id,
-/// al cambio di selezione una forma scompare e un'altra compare, e
-/// `glassEffectTransition(.matchedGeometry)` le fonde l'una nell'altra — è la
-/// deformazione a goccia. Perché avvenga le due devono rientrare nello
-/// `spacing` del container, che per questo è molto più largo della barra.
+/// Aveva anche `glassEffectID` + `glassEffectTransition(.matchedGeometry)` per
+/// far morphare la capsula da una voce all'altra. Sono spariti insieme al
+/// container: senza un `GlassEffectContainer` attorno non c'è nulla che possa
+/// fondere due forme, quindi restavano configurazione morta che suggeriva un
+/// comportamento inesistente.
 private struct ModeSelectionHighlight: ViewModifier {
     let isActive: Bool
     let usesGlass: Bool
-    let modeID: String
-    /// Colore della modalità. Su fondo scuro e piatto il vetro non ha nulla da
+    /// Colore della modalità. Su fondo piatto il vetro non ha nulla da
     /// rifrangere e degrada a una macchia grigia: la tinta gli restituisce
     /// identità senza dipendere dal contenuto sottostante.
     let tint: Color
-    let namespace: Namespace.ID
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -185,8 +165,6 @@ private struct ModeSelectionHighlight: ViewModifier {
             if isActive {
                 content
                     .glassEffect(.regular.tint(tint.opacity(0.22)).interactive(), in: Capsule())
-                    .glassEffectID(modeID, in: namespace)
-                    .glassEffectTransition(.matchedGeometry)
             } else {
                 content
             }
