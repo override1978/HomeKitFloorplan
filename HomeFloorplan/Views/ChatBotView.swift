@@ -1587,11 +1587,22 @@ private struct VoiceMicSurfaceModifier: ViewModifier {
     func body(content: Content) -> some View {
         if isLiquidGlassEnabled {
             if #available(iOS 26.0, *) {
+                // `.regular` anche a riposo, mai `.clear`: `.clear` non
+                // stabilisce alcun fondo, quindi l'icona del microfono in
+                // `Color.primary` può finire bianca su bianco. È la regola già
+                // stabilita per tutta la chrome dell'app.
+                //
+                // Niente `.interactive()`: qui il vetro vive DENTRO la label di
+                // un Button, e i due gestori del tocco competono facendo perdere
+                // i tap — regressione già vista sui chip filtro dell'overlay
+                // Ambiente. Dove serve la risposta al tocco la via è
+                // `.buttonStyle(.glass)`, non praticabile qui perché la label è
+                // uno ZStack con anelli e indicatori di avanzamento.
                 content
                     .glassEffect(
                         isRecording
-                            ? .regular.tint(.red).interactive()
-                            : .clear.interactive(),
+                            ? .regular.tint(.red)
+                            : .regular,
                         in: Circle()
                     )
             } else {

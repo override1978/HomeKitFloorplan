@@ -207,7 +207,9 @@ struct FloorplanListView: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.primary)
                         }
-                        .transition(.scale.combined(with: .opacity))
+                        // Sola opacità: scalare il vetro ne cambia la geometria
+                        // a ogni fotogramma della transizione.
+                        .transition(.opacity)
                     }
                     
                     GlassTitlePill {

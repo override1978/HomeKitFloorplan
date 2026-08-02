@@ -559,7 +559,11 @@ struct DrawingToolbar: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
                 )
-                .transition(.scale.combined(with: .opacity))
+                // Sola opacità: questi elementi entrano ed escono DENTRO la
+                // barra, che ora è una superficie di vetro. Scalarli le cambia
+                // la geometria a ogni fotogramma e la costringe a rivalutarsi
+                // altrettante volte.
+                .transition(.opacity)
             }
 
             // ── Snap toggle (draw + select modes) ────────────────────────────
@@ -579,7 +583,11 @@ struct DrawingToolbar: View {
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .transition(.scale.combined(with: .opacity))
+                // Sola opacità: questi elementi entrano ed escono DENTRO la
+                // barra, che ora è una superficie di vetro. Scalarli le cambia
+                // la geometria a ogni fotogramma e la costringe a rivalutarsi
+                // altrettante volte.
+                .transition(.opacity)
             }
 
             // ── Dimension labels toggle ───────────────────────────────────────
@@ -631,7 +639,11 @@ struct DrawingToolbar: View {
                         .background(.ultraThinMaterial,
                                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .transition(.scale.combined(with: .opacity))
+                // Sola opacità: questi elementi entrano ed escono DENTRO la
+                // barra, che ora è una superficie di vetro. Scalarli le cambia
+                // la geometria a ogni fotogramma e la costringe a rivalutarsi
+                // altrettante volte.
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 16)

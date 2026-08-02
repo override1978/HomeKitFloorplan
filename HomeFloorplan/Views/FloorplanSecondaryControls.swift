@@ -146,7 +146,9 @@ struct FloorplanSecondaryControls: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                         }
-                        .transition(.scale.combined(with: .opacity))
+                        // Sola opacità: scalare il vetro ne cambia la geometria
+                        // a ogni fotogramma della transizione.
+                        .transition(.opacity)
                     }
                 }
             }

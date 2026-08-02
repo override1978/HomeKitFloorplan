@@ -113,7 +113,10 @@ struct FloorplanTopBarView: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.primary)
                 }
-                .transition(.scale.combined(with: .opacity))
+                // Sola opacità: scalare una superficie di vetro ne cambia la
+                // geometria a ogni fotogramma, e il vetro deve rivalutarsi
+                // altrettante volte. Stessa scelta già fatta per la mode pill.
+                .transition(.opacity)
             }
         case .pushed:
             GlassIconButton(size: 40, action: onDismiss) {
