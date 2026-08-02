@@ -1291,7 +1291,13 @@ struct ChatBotView: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 12)
         .padding(.bottom, 20)
-        .background(.regularMaterial)
+        // Col vetro niente materiale: il pannello ne ha già uno sotto, e
+        // dipingerci sopra un `.regularMaterial` significa posare una superficie
+        // opaca sul vetro — la stessa correzione già fatta al footer della
+        // sidebar. La separazione dai messaggi la dà il divisore, che serve in
+        // entrambi i casi perché sopra c'è contenuto che scorre.
+        .background(alignment: .top) { Divider() }
+        .modifier(ComposeBarSurface())
         .contentShape(Rectangle())
         .animation(.easeInOut(duration: 0.2), value: speechService.errorMessage)
         .animation(.easeInOut(duration: 0.2), value: speechService.isRecording)
@@ -1668,6 +1674,29 @@ private extension AutomationProposalTimeRelation {
             return String(localized: "automation.schedule.before", defaultValue: "before")
         case .between:
             return String(localized: "automation.schedule.between", defaultValue: "between")
+        }
+    }
+}
+
+// MARK: - ComposeBarSurface
+
+/// Sfondo della barra di composizione: presente solo SENZA vetro.
+///
+/// Il pannello della chat ha già la propria superficie; col vetro attivo un
+/// materiale qui sopra sarebbe una superficie opaca posata sul vetro di sistema.
+/// Senza vetro invece serve, perché il pannello è a materiale e la barra deve
+/// staccarsi dai messaggi che le scorrono sotto.
+private struct ComposeBarSurface: ViewModifier {
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+    @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
+            content
+        } else {
+            content.background(.regularMaterial)
         }
     }
 }

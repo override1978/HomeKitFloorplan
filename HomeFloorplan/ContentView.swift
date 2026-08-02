@@ -367,6 +367,16 @@ private struct ChatFABButtonView: View {
     @Binding var showChat: Bool
     @State private var startDate = Date()
 
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+
+    /// Bianco sul nero del ramo legacy, `.primary` sul vetro — che stabilisce
+    /// una superficie chiara o scura secondo ciò che ha dietro, e col bianco
+    /// fisso sparirebbe.
+    private var labelForeground: Color {
+        isLiquidGlassEnabled ? .primary : .white
+    }
+
     private static let gradientColors: [Color] = [
         Color(hue: 0.76, saturation: 0.80, brightness: 0.90),
         Color(hue: 0.62, saturation: 0.85, brightness: 0.95),
@@ -394,12 +404,20 @@ private struct ChatFABButtonView: View {
                 }
 
                 // High-contrast label — readable on both dark and light floorplan backgrounds
+                // Il nero al 50% era il modo pre-vetro di garantirsi il
+                // contrasto sopra una planimetria di luminosità ignota. Il vetro
+                // `.regular` una superficie la stabilisce da sé, quindi il testo
+                // passa da bianco fisso a `.primary` e si adatta con lei — col
+                // bianco su vetro chiaro sarebbe illeggibile.
                 Text(String(localized: "agent.fab.label", defaultValue: "Home AI"))
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(labelForeground)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(.black.opacity(0.50), in: Capsule())
+                    .glassChromeSurface(
+                        in: Capsule(),
+                        legacyFill: AnyShapeStyle(Color.black.opacity(0.50))
+                    )
             }
         }
         .buttonStyle(.plain)
@@ -421,11 +439,18 @@ private struct ChatFABButtonView: View {
                 .stroke(gradient, lineWidth: 2.5)
                 .frame(width: 62, height: 62)
                 .blur(radius: 0.8)
-            Circle()
-                .fill(.regularMaterial)
-                .overlay(Circle().strokeBorder(.white.opacity(0.12), lineWidth: 1))
+            // L'anello gradiente resta fuori dal vetro: sta a raggio 31, il
+            // cerchio a 25, quindi non entra mai nel campo che il vetro
+            // campiona. Vale anche mentre ruota a 60 fps col pannello aperto —
+            // altrimenti sarebbe una superficie che ricampiona il backdrop a
+            // ogni fotogramma.
+            Color.clear
                 .frame(width: 50, height: 50)
-                .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
+                .glassChromeSurface(
+                    in: Circle(),
+                    legacyBorder: .white.opacity(0.12),
+                    legacyShadow: GlassChromeShadow(color: .black.opacity(0.22), radius: 8, y: 3)
+                )
             Image(systemName: "bubble.left.and.text.bubble.right.fill")
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(gradient)
