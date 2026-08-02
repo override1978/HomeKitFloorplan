@@ -191,10 +191,17 @@ private struct GlassChromeSurface<S: InsettableShape>: ViewModifier {
 /// dentro la label di un Button: i due gestori del tocco competono e i tap si
 /// perdono (regressione già vista sui chip filtro dell'overlay Ambiente).
 ///
-/// Il frame è applicato DOPO lo stile, non alla label: lo stile aggiunge un
-/// padding proprio, quindi vincolare la label darebbe un controllo più grande
-/// di `size`. Proponendo la misura al bottone intero, la superficie di vetro si
-/// disegna esattamente in `size`, come faceva GlassCircle.
+/// ⚠️ `size` è il lato dell'AREA CONTENUTO, non del controllo finito: lo stile
+/// vetro aggiunge il proprio padding attorno, quindi il bottone reso è più
+/// grande di `size` di una decina di punti.
+///
+/// Il frame va sulla LABEL, dentro il bottone. Prima stava dopo
+/// `.buttonStyle(.glass)`, con il ragionamento che così la superficie si
+/// disegnasse esattamente di `size` — sbagliato: `.frame(width:height:)`
+/// **propone** una misura, non la impone. Il bottone conservava la propria
+/// dimensione intrinseca e si centrava nello spazio riservato, quindi il numero
+/// non aveva alcun effetto sul controllo. Da qui bottoni che restavano piccoli
+/// anche dopo averli "ingranditi".
 struct GlassIconButton<Label: View>: View {
     private let size: CGFloat
     private let action: () -> Void
@@ -219,10 +226,11 @@ struct GlassIconButton<Label: View>: View {
     @ViewBuilder
     var body: some View {
         if isLiquidGlassEnabled, !isLiquidGlassSuppressed, #available(iOS 26.0, *) {
-            Button(action: action) { label }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .frame(width: size, height: size)
+            Button(action: action) {
+                label.frame(width: size, height: size)
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
         } else {
             Button(action: action) { legacyLabel }
                 .buttonStyle(.plain)

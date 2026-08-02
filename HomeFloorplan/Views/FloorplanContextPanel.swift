@@ -43,7 +43,10 @@ struct FloorplanContextPanel<Content: View>: View {
             // universale, e la scritta "Chiudi" costringeva a una capsula larga
             // in fondo al pannello. 52 punti è un bersaglio comodo — più grande
             // dei 40 della chrome, perché questo è l'unico modo per uscire.
-            GlassIconButton(size: 52, action: overlayVM.dismissPanel) {
+            // `size` è l'area contenuto: con il padding del vetro attorno, 44
+            // qui rende un controllo sui 56-60 punti — più generoso della
+            // chrome, perché è l'unico modo per chiudere il pannello.
+            GlassIconButton(size: 44, action: overlayVM.dismissPanel) {
                 Image(systemName: "xmark")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Color.red)
