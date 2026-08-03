@@ -14,6 +14,8 @@ struct FloorplanListView: View {
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+
     @AppStorage("primaryFloorplanID")  private var primaryFloorplanID:    String = ""
     @AppStorage("pinnedFloorplanIDs") private var pinnedFloorplanIDsRaw: String = "[]"
 
@@ -77,11 +79,37 @@ struct FloorplanListView: View {
         NavigationStack {
             ZStack {
                 contentView
-                    .safeAreaPadding(.top, 70)
-                
-                floatingPillsOverlay
+                    // Lo spazio serve solo dove la chrome flotta sopra: su
+                    // iPhone quella chrome non c'è, la barra la mette il
+                    // sistema e il contenuto parte già sotto.
+                    .safeAreaPadding(.top, isCompact ? 0 : 70)
+
+                if !isCompact {
+                    floatingPillsOverlay
+                }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            // Su iPhone la barra **deve** restare: questa vista arriva spinta
+            // dalla schermata iniziale, e nascondendola spariva anche l'unico
+            // modo di tornare indietro. Le tre azioni della pill flottante si
+            // spostano nella barra, dove su schermo stretto stanno meglio.
+            .toolbar(isCompact ? .automatic : .hidden, for: .navigationBar)
+            .navigationTitle(isCompact
+                             ? String(localized: "floorplans.title", defaultValue: "Floorplans")
+                             : "")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if isCompact {
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        layoutButton(.grid)
+                        layoutButton(.list)
+                        Button {
+                            showingNewSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                    }
+                }
+            }
             .sheet(isPresented: $showingNewSheet) {
                 NewFloorplanSheet()
             }
@@ -198,10 +226,7 @@ struct FloorplanListView: View {
         VStack {
             HStack {
                 HStack(spacing: 10) {
-                    // Su iPhone la radice è una tab bar: non c'è nessuna sidebar
-                    // da riaprire, e `columnVisibility` arriva come costante.
-                    // Il bottone si vedeva ma non faceva niente.
-                    if columnVisibility == .detailOnly, horizontalSizeClass != .compact {
+                    if columnVisibility == .detailOnly {
                         GlassIconButton(size: 28) {
                             withAnimation(.spring(response: 0.4)) {
                                 columnVisibility = .all

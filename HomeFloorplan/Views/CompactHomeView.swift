@@ -79,18 +79,17 @@ struct CompactHomeView: View {
                 }
 
                 Section {
-                    Button {
-                        showingNewFloorplan = true
-                    } label: {
-                        Label(String(localized: "sidebar.newFloorplan", defaultValue: "New Floorplan"),
-                              systemImage: "plus.rectangle.on.rectangle")
-                            .foregroundStyle(.tint)
-                    }
-                    .buttonStyle(.plain)
-
+                    // "Nuova planimetria" non sta qui: la crea il + nella barra,
+                    // e in un elenco di destinazioni una voce che apre un foglio
+                    // è l'unica che non porta da nessuna parte.
                     destinationRow(.allFloorplans,
                                    title: String(localized: "sidebar.allFloorplans", defaultValue: "All Floorplans"),
                                    icon: "rectangle.stack")
+
+                    // Le pinnate elencate sotto, come in sidebar su iPad.
+                    ForEach(pinnedFloorplans) { floorplan in
+                        pinnedRow(floorplan)
+                    }
                 } header: {
                     Text(String(localized: "sidebar.section.floorplans", defaultValue: "Floorplans"))
                 }
@@ -165,7 +164,43 @@ struct CompactHomeView: View {
         }
     }
 
+    /// Pinnate: principale sempre per prima, poi le altre nell'ordine salvato.
+    /// Stesso criterio della sidebar — la preferenza è una sola e vale per
+    /// entrambi i dispositivi.
+    private var pinnedFloorplans: [Floorplan] {
+        let ids = decodePinnedIDs()
+        guard !ids.isEmpty else { return [] }
+        let matched = ids.compactMap { idString -> Floorplan? in
+            guard let uuid = UUID(uuidString: idString) else { return nil }
+            return floorplans.first(where: { $0.id == uuid })
+        }
+        let primary = matched.first(where: { $0.id.uuidString == primaryFloorplanID })
+        let rest    = matched.filter    { $0.id.uuidString != primaryFloorplanID }
+        return (primary.map { [$0] } ?? []) + rest
+    }
+
     // MARK: - Righe di navigazione
+
+    private func pinnedRow(_ floorplan: Floorplan) -> some View {
+        let isPrimary = floorplan.id.uuidString == primaryFloorplanID
+        return NavigationLink {
+            destination(.floorplan(floorplan.id))
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isPrimary ? "star.square.fill" : "pin.circle.fill")
+                    .foregroundStyle(isPrimary ? AnyShapeStyle(Color.yellow)
+                                               : AnyShapeStyle(BrandColor.primary))
+                    .frame(width: 22)
+                Text(floorplan.name)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text("\(floorplan.accessories.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+        }
+    }
 
     /// Riga che porta a una destinazione.
     ///
