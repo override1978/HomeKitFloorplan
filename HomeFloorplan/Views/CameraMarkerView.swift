@@ -23,6 +23,7 @@ struct CameraMarkerView: View {
     let hasCustomLabel: Bool
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(HomeKitService.self) private var homeKit
 
     @AppStorage(MarkerLabelVisibility.appStorageKey)
@@ -63,6 +64,9 @@ struct CameraMarkerView: View {
     }
 
     private var shouldShowLabel: Bool {
+        // Come per gli altri marker: su iPhone niente etichette, si sovrappongono.
+        if horizontalSizeClass == .compact { return false }
+
         switch labelVisibility {
         case .always:
             return true

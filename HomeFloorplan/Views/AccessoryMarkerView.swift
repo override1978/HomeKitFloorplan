@@ -47,6 +47,7 @@ struct AccessoryMarkerView: View {
     private var markerLabelVisibilityRaw: String = MarkerLabelVisibility.smart.rawValue
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(IconOverrideStore.self) private var iconOverrides
     @Environment(HomeKitService.self) private var homeKit
     @Environment(MatterEnergyLiveStore.self) private var matterEnergy
@@ -73,8 +74,19 @@ struct AccessoryMarkerView: View {
         self.allowsCameraSnapshot = allowsCameraSnapshot
     }
     
+    /// Su iPhone i marker sono **sempre** `.compact` e **senza etichetta**, a
+    /// prescindere dalla preferenza — che resta quella dell'utente e continua a
+    /// valere sull'iPad, visto che è la stessa e viaggia su iCloud.
+    ///
+    /// Il motivo: le misure qui sono in punti e non seguono la planimetria. Su
+    /// iPad il disegno occupa ~900 punti di larghezza, su iPhone ~354 in
+    /// verticale e ~800 in orizzontale — stessi marker, molto meno spazio, e
+    /// quaranta dispositivi diventano un grumo.
+    private var isCompactScreen: Bool { horizontalSizeClass == .compact }
+
     private var size: MarkerSize {
-        MarkerSize(rawValue: markerSizeRaw) ?? .regular
+        if isCompactScreen { return .compact }
+        return MarkerSize(rawValue: markerSizeRaw) ?? .regular
     }
 
     private var labelVisibility: MarkerLabelVisibility {
@@ -129,6 +141,10 @@ struct AccessoryMarkerView: View {
     }
 
     private var shouldShowLabel: Bool {
+        // Le etichette sono ~112 punti l'una: su iPhone si sovrappongono fra
+        // loro prima ancora di dire qualcosa. Il nome si legge toccando.
+        if isCompactScreen { return false }
+
         switch labelVisibility {
         case .always:
             return true

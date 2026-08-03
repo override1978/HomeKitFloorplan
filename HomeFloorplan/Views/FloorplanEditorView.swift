@@ -32,6 +32,7 @@ struct FloorplanEditorView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(SmartLightingEngine.self) private var smartLightingEngine
     @Environment(CloudKitSyncService.self) private var cloudKitSync
     
@@ -224,6 +225,11 @@ struct FloorplanEditorView: View {
                 // Pulsante apri-pannello — sempre visibile (non soggetto ad auto-hide)
                 openPanelButton
                     .environment(\.colorScheme, chromeColorScheme)
+
+                if hidesMarkersInPortrait(container: proxy.size) {
+                    rotateForMarkersHint
+                        .environment(\.colorScheme, chromeColorScheme)
+                }
 
                 // Right-side scenes panel overlay
                 if ui.showScenesPanel {
@@ -506,6 +512,33 @@ struct FloorplanEditorView: View {
         return selectedMarkerToolbarStateBuilder.state(for: placed)
     }
 
+    // MARK: - Invito a girare il telefono
+
+    /// Sostituisce i marker su iPhone in verticale. Sta in basso e non al
+    /// centro: la planimetria resta visibile e riconoscibile, che è metà del
+    /// motivo per cui si è arrivati qui.
+    private var rotateForMarkersHint: some View {
+        VStack {
+            Spacer()
+            GlassTitlePill {
+                HStack(spacing: 10) {
+                    Image(systemName: "rotate.right")
+                        .font(.subheadline.weight(.semibold))
+                    Text(String(localized: "floorplan.rotateForMarkers",
+                                defaultValue: "Rotate iPhone to see the devices"))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 28)
+        }
+        .transition(.opacity)
+    }
+
     // MARK: - Pulsante apri pannello (sempre visibile, non soggetto ad auto-hide)
 
     /// Bottone bottom-right che apre il pannello contestuale.
@@ -645,9 +678,20 @@ struct FloorplanEditorView: View {
         FloorplanCanvasGeometry.imageRect(imageSize: imageSize, container: container)
     }
     
+    /// Su iPhone in verticale la planimetria si riduce a una fascia larga ~354
+    /// punti. I marker però sono dimensionati in punti e non rimpiccioliscono
+    /// con lei: si ammucchiano fino a coprire il disegno che dovrebbero
+    /// annotare. Meglio dire all'utente di girare il telefono che mostrargli un
+    /// grumo. La misura è quella del contenitore, non l'orientamento del
+    /// dispositivo: è la larghezza reale che conta.
+    private func hidesMarkersInPortrait(container: CGSize) -> Bool {
+        horizontalSizeClass == .compact && container.height > container.width
+    }
+
     private func imageWithMarkers(image: UIImage, container: CGSize) -> some View {
         let rect = imageRect(imageSize: image.size, container: container)
-        let showMarkers = ui.isEditing || (overlayVM?.activeMode == .controls)
+        let showMarkers = !hidesMarkersInPortrait(container: container)
+            && (ui.isEditing || (overlayVM?.activeMode == .controls))
         return FloorplanCanvasView(
             image: image,
             containerSize: container,
