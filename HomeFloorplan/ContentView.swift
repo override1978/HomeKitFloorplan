@@ -53,6 +53,17 @@ struct ContentView: View {
 
     @State private var selection: SidebarSelection?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    /// Su iPhone lo split view collassa in uno stack, e la barra di navigazione
+    /// diventa **l'unica via di ritorno** alla sidebar: nasconderla lì lascia
+    /// dentro l'editor senza uscita. Su iPad va invece nascosta, perché la
+    /// sidebar è una colonna sempre raggiungibile e la barra custom la
+    /// sostituisce.
+    private var chromeNavigationBarVisibility: Visibility {
+        horizontalSizeClass == .compact ? .automatic : .hidden
+    }
     /// ID of the most recently created floorplan — triggers auto-edit-mode on first display.
     @State private var newlyCreatedFloorplanID: UUID?
     @AppStorage("floorplan_active_overlay_mode") private var floorplanActiveModeRaw: String = FloorplanOverlayMode.controls.rawValue
@@ -256,7 +267,8 @@ struct ContentView: View {
                     presentationStyle: .splitView,
                     startInEditMode: isNew
                 )
-                .toolbar(.hidden, for: .navigationBar)
+                .toolbar(chromeNavigationBarVisibility, for: .navigationBar)
+                .navigationBarTitleDisplayMode(.inline)
                 .onAppear {
                     // Clear the flag after first display so returning to this
                     // floorplan later doesn't re-enter edit mode.
