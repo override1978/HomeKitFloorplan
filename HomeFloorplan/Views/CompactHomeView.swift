@@ -166,9 +166,20 @@ struct CompactHomeView: View {
             }
         }
         .sheet(isPresented: $showChat) {
-            ChatBotView()
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+            // Il gate è ripetuto anche qui, non solo sul bottone: è la vista che
+            // parla col modello, e deve rifiutarsi da sé se l'AI è spenta —
+            // non fidarsi di chi l'ha presentata.
+            if aiSettings.isAIEnabled {
+                ChatBotView()
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+        // Se l'AI viene spenta mentre la chat è aperta, la chat si chiude.
+        // Stesso guardiano che ContentView tiene sul pannello dell'iPad.
+        .onChange(of: aiSettings.isAIEnabled) { _, isEnabled in
+            guard !isEnabled else { return }
+            showChat = false
         }
     }
 
