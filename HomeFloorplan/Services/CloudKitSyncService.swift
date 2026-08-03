@@ -370,7 +370,19 @@ final class CloudKitSyncService {
 
         do {
             SyncDiagnosticsLogger.log("Manual fetch started reason=\(reason)")
-            try await syncEngine.fetchChanges()
+            // In un Task STACCATO, e non è pignoleria: `CKSyncEngine` va in
+            // `fatalError` se lo si attende dall'interno di una sua callback
+            // delegate, perché non può più garantire di chiamarle in serie
+            // ("BUG IN CLIENT OF CLOUDKIT", CKSyncEngine.swift:318). Questo
+            // servizio è `@MainActor` e `handleEvent` salta sul main actor, così
+            // una fetch manuale che parta mentre una callback è in volo finisce
+            // nello stesso albero di task e fa scattare l'asserzione.
+            //
+            // Staccando, la chiamata non discende mai da una callback,
+            // qualunque sia il percorso che ci ha portati qui — che è il motivo
+            // per cui il rimedio vale anche senza aver dimostrato quale sia.
+            let engine = syncEngine
+            try await Task.detached { try await engine?.fetchChanges() }.value
             lastError = nil
             SyncDiagnosticsLogger.log("Manual fetch completed reason=\(reason)")
             dprint("[CloudKitSync] ✅ Manual fetch completed (\(reason))")
