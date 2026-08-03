@@ -30,12 +30,11 @@ struct CompactHomeView: View {
     @AppStorage("habits.sectionVisible") private var areHabitsEnabled:      Bool   = false
 
     @State private var showingNewFloorplan = false
-    /// Percorso esplicito. Serve al carosello: un `NavigationLink(value:)` dentro
-    /// uno `ScrollView` annidato in una riga di `List` non trova la
-    /// `navigationDestination` dichiarata fuori — SwiftUI avvisa che «the link
-    /// cannot be activated». Appendere al percorso non dipende da dove si trova
-    /// il comando, quindi il carosello naviga con dei bottoni. Le righe normali
-    /// restano `NavigationLink`, che lì funziona ed è più idiomatico.
+    /// Percorso esplicito: qui **tutta** la navigazione passa da `path.append`,
+    /// carosello e righe. Con i `NavigationLink(value:)` le voci non si
+    /// aprivano e SwiftUI avvisava che «the link cannot be activated», cioè non
+    /// vedeva la `navigationDestination` dichiarata sulla stessa lista.
+    /// Appendere al percorso non dipende da dove si trova il comando.
     @State private var path: [SidebarSelection] = []
 
     // MARK: - Dati
@@ -95,74 +94,65 @@ struct CompactHomeView: View {
                     }
                     .buttonStyle(.plain)
 
-                    NavigationLink(value: SidebarSelection.allFloorplans) {
-                        Label(String(localized: "sidebar.allFloorplans", defaultValue: "All Floorplans"),
-                              systemImage: "rectangle.stack")
-                    }
+                    destinationRow(.allFloorplans,
+                                   title: String(localized: "sidebar.allFloorplans", defaultValue: "All Floorplans"),
+                                   icon: "rectangle.stack")
                 } header: {
                     Text(String(localized: "sidebar.section.floorplans", defaultValue: "Floorplans"))
                 }
 
                 Section {
-                    NavigationLink(value: SidebarSelection.environment) {
-                        Label(String(localized: "sidebar.environment", defaultValue: "Environment"),
-                              systemImage: "leaf.fill")
-                    }
-                    NavigationLink(value: SidebarSelection.security) {
-                        Label(String(localized: "sidebar.security", defaultValue: "Security"),
-                              systemImage: "shield.lefthalf.filled")
-                    }
-                    NavigationLink(value: SidebarSelection.homeIntelligence) {
-                        Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligence"),
-                              systemImage: "sparkles.rectangle.stack")
-                    }
+                    destinationRow(.environment,
+                                   title: String(localized: "sidebar.environment", defaultValue: "Environment"),
+                                   icon: "leaf.fill")
+                    destinationRow(.security,
+                                   title: String(localized: "sidebar.security", defaultValue: "Security"),
+                                   icon: "shield.lefthalf.filled")
+                    destinationRow(.homeIntelligence,
+                                   title: String(localized: "sidebar.intelligence", defaultValue: "Intelligence"),
+                                   icon: "sparkles.rectangle.stack")
                     if areHabitsEnabled {
-                        NavigationLink(value: SidebarSelection.habits) {
-                            Label(String(localized: "sidebar.habits", defaultValue: "Habits"),
-                                  systemImage: "brain.head.profile")
-                        }
+                        destinationRow(.habits,
+                                       title: String(localized: "sidebar.habits", defaultValue: "Habits"),
+                                       icon: "brain.head.profile")
                     }
                 } header: {
                     Text(String(localized: "sidebar.section.analysis", defaultValue: "Analysis"))
                 }
 
                 Section {
-                    NavigationLink(value: SidebarSelection.allAccessories) {
-                        Label(String(localized: "sidebar.accessories", defaultValue: "Accessories"),
-                              systemImage: "square.grid.2x2")
-                    }
-                    NavigationLink(value: SidebarSelection.scenes) {
-                        Label(String(localized: "sidebar.scenes", defaultValue: "Scenes"),
-                              systemImage: "wand.and.sparkles")
-                    }
-                    NavigationLink(value: SidebarSelection.automations) {
-                        Label(String(localized: "sidebar.automations", defaultValue: "Automations"),
-                              systemImage: "gearshape.2")
-                    }
+                    destinationRow(.allAccessories,
+                                   title: String(localized: "sidebar.accessories", defaultValue: "Accessories"),
+                                   icon: "square.grid.2x2")
+                    destinationRow(.scenes,
+                                   title: String(localized: "sidebar.scenes", defaultValue: "Scenes"),
+                                   icon: "wand.and.sparkles")
+                    destinationRow(.automations,
+                                   title: String(localized: "sidebar.automations", defaultValue: "Automations"),
+                                   icon: "gearshape.2")
                 } header: {
                     Text(String(localized: "sidebar.section.scenesAndAutomations",
                                 defaultValue: "Scenes & Automations"))
                 }
 
                 Section {
-                    NavigationLink(value: SidebarSelection.settings) {
-                        Label(String(localized: "sidebar.settings", defaultValue: "Settings"),
-                              systemImage: "gearshape")
-                    }
+                    destinationRow(.settings,
+                                   title: String(localized: "sidebar.settings", defaultValue: "Settings"),
+                                   icon: "gearshape")
 #if DEBUG
-                    NavigationLink(value: SidebarSelection.debugHomeKit) {
-                        Label(String(localized: "sidebar.debugHomeKit", defaultValue: "HomeKit Debug"),
-                              systemImage: "stethoscope")
-                    }
-                    NavigationLink(value: SidebarSelection.homeIntelligenceDebug) {
-                        Label("Intelligence Debug", systemImage: "point.3.connected.trianglepath.dotted")
-                    }
+                    destinationRow(.debugHomeKit,
+                                   title: String(localized: "sidebar.debugHomeKit", defaultValue: "HomeKit Debug"),
+                                   icon: "stethoscope")
+                    destinationRow(.homeIntelligenceDebug,
+                                   title: "Intelligence Debug",
+                                   icon: "point.3.connected.trianglepath.dotted")
 #endif
                 } header: {
                     Text(String(localized: "sidebar.section.settings", defaultValue: "Settings"))
                 }
             }
             .listStyle(.insetGrouped)
+            .tint(BrandColor.primary)
             .navigationTitle(homeKit.currentHome?.name ?? "Home Floorplan")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -180,6 +170,35 @@ struct CompactHomeView: View {
                 NewFloorplanSheet()
             }
         }
+    }
+
+    // MARK: - Righe di navigazione
+
+    /// Riga che apre una destinazione appendendola al percorso.
+    ///
+    /// Non è un `NavigationLink(value:)` — con quelli le voci non si aprivano,
+    /// e la `navigationDestination` dichiarata sulla lista non veniva trovata.
+    /// Non ho una spiegazione certa del perché, quindi invece di insistere su
+    /// una risoluzione che qui non funziona la navigazione passa dal percorso,
+    /// che non dipende da dove sta il comando nella gerarchia. Il chevron va
+    /// disegnato a mano: senza `NavigationLink` non lo mette più nessuno.
+    private func destinationRow(_ selection: SidebarSelection,
+                                title: String,
+                                icon: String) -> some View {
+        Button {
+            path.append(selection)
+        } label: {
+            HStack(spacing: 8) {
+                Label(title, systemImage: icon)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Carosello planimetrie
