@@ -12,6 +12,7 @@ struct FloorplanListView: View {
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var floorplans: [Floorplan]
     @Namespace private var namespace
     @Binding var columnVisibility: NavigationSplitViewVisibility
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @AppStorage("primaryFloorplanID")  private var primaryFloorplanID:    String = ""
     @AppStorage("pinnedFloorplanIDs") private var pinnedFloorplanIDsRaw: String = "[]"
@@ -197,7 +198,10 @@ struct FloorplanListView: View {
         VStack {
             HStack {
                 HStack(spacing: 10) {
-                    if columnVisibility == .detailOnly {
+                    // Su iPhone la radice è una tab bar: non c'è nessuna sidebar
+                    // da riaprire, e `columnVisibility` arriva come costante.
+                    // Il bottone si vedeva ma non faceva niente.
+                    if columnVisibility == .detailOnly, horizontalSizeClass != .compact {
                         GlassIconButton(size: 28) {
                             withAnimation(.spring(response: 0.4)) {
                                 columnVisibility = .all

@@ -17,6 +17,7 @@ struct SettingsView: View {
     @Environment(CloudKitSyncService.self)  private var cloudKitSync
     @Environment(DataLifecycleService.self) private var dataLifecycleService
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @Query(sort: \SyncableSettings.modifiedAt) var settingsArray: [SyncableSettings]
     private var syncableSettings: SyncableSettings? { settingsArray.first }
@@ -456,6 +457,8 @@ struct SettingsView: View {
         }
     }
 
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+
     private func settingsLinkRow(
         icon: String,
         title: String,
@@ -474,7 +477,7 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     Text(title)
                         .foregroundStyle(.primary)
-                    if let badge {
+                    if let badge, !isCompact {
                         statusPill(badge, color: .orange)
                     }
                 }
@@ -482,11 +485,25 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+
+                // Su iPhone i due pill scendono sotto. Accanto al titolo gli
+                // sottraevano larghezza per tutta l'altezza della riga, ed è
+                // così che "Illuminazione smart" si spezzava a metà parola.
+                if isCompact, badge != nil || status != nil {
+                    HStack(spacing: 6) {
+                        if let badge {
+                            statusPill(badge, color: .orange)
+                        }
+                        if let status {
+                            statusPill(status, color: statusColor)
+                        }
+                    }
+                    .padding(.top, 3)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 8)
-
-            if let status {
+            if !isCompact, let status {
                 statusPill(status, color: statusColor)
             }
         }

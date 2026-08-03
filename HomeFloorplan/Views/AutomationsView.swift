@@ -5,6 +5,7 @@ import HomeKit
 struct AutomationsView: View {
 
     @Environment(HomeKitAutomationsService.self) private var automationsService
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedType: TypeFilter = .all
     @State private var searchText: String = ""
     @State private var toggleError: String?
@@ -253,6 +254,17 @@ struct AutomationsView: View {
         .animation(.spring(response: 0.3), value: isSelected)
     }
 
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+
+    private func triggerTypeBadge(_ item: AutomationItem) -> some View {
+        Text(item.triggerType.localizedName)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(typeColor(item.triggerType))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(typeColor(item.triggerType).opacity(0.12), in: Capsule())
+    }
+
     private func automationCard(_ item: AutomationItem) -> some View {
         HStack(spacing: 12) {
             Button {
@@ -273,17 +285,22 @@ struct AutomationsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 8) {
+                        // Su iPhone il badge del tipo scende in fondo: accanto
+                        // al nome gli lasciava ~140 punti, e "Allarme: Disattiva
+                        // Antifurto" si troncava dopo la prima parola. Il nome
+                        // è l'unica cosa che distingue una riga dall'altra.
+                        if isCompact {
                             Text(item.name)
                                 .font(.subheadline.weight(.semibold))
-                                .lineLimit(1)
+                                .lineLimit(2)
+                        } else {
+                            HStack(spacing: 8) {
+                                Text(item.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(1)
 
-                            Text(item.triggerType.localizedName)
-                                .font(.caption2.weight(.medium))
-                                .foregroundStyle(typeColor(item.triggerType))
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(typeColor(item.triggerType).opacity(0.12), in: Capsule())
+                                triggerTypeBadge(item)
+                            }
                         }
 
                         Text(item.summary)
@@ -291,14 +308,20 @@ struct AutomationsView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
 
-                        if item.actionCount > 0 {
-                            Text("\(item.actionCount) \(item.actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "action") : String(localized: "count.action.plural", defaultValue: "actions"))")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        } else if item.actionSetNames.isEmpty {
-                            Label(String(localized: "automation.existing.openHome.short", defaultValue: "Apri in Apple Home"), systemImage: "arrow.up.forward.app")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(BrandColor.primary)
+                        HStack(spacing: 8) {
+                            if isCompact {
+                                triggerTypeBadge(item)
+                            }
+
+                            if item.actionCount > 0 {
+                                Text("\(item.actionCount) \(item.actionCount == 1 ? String(localized: "count.action.singular", defaultValue: "action") : String(localized: "count.action.plural", defaultValue: "actions"))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            } else if item.actionSetNames.isEmpty {
+                                Label(String(localized: "automation.existing.openHome.short", defaultValue: "Apri in Apple Home"), systemImage: "arrow.up.forward.app")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(BrandColor.primary)
+                            }
                         }
                     }
 

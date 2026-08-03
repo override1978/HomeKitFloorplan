@@ -1626,53 +1626,13 @@ private struct IntelligenceStatusHeroCard: View {
     let ctaTitle: String?
     let action: () -> Void
 
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            Circle()
-                .fill(color)
-                .frame(width: 14, height: 14)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(message)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-
-            Spacer(minLength: 10)
-
-            VStack(alignment: .trailing, spacing: 0) {
-                Text("\(actionCount)")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                Text(trendLabel)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-            }
-            .frame(minWidth: 58, alignment: .trailing)
-
-            if let ctaTitle {
-                Button(action: action) {
-                    HStack(spacing: 6) {
-                        Text(ctaTitle)
-                        Image(systemName: "arrow.up.right")
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(.secondary.opacity(0.28), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-            }
+        Group {
+            if isCompact { compactLayout } else { wideLayout }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1684,6 +1644,109 @@ private struct IntelligenceStatusHeroCard: View {
                         .strokeBorder(color.opacity(0.28), lineWidth: 1)
                 )
         )
+    }
+
+    /// Su iPad titolo, conteggio e CTA stanno comodi sulla stessa riga.
+    private var wideLayout: some View {
+        HStack(alignment: .center, spacing: 16) {
+            statusDot
+            titleBlock
+            Spacer(minLength: 10)
+            countBlock
+                .frame(minWidth: 58, alignment: .trailing)
+            ctaButton
+        }
+    }
+
+    /// Su iPhone no: conteggio e CTA occupavano ~180 punti su 354, e al titolo
+    /// ne restavano un centinaio — abbastanza per sillabarlo in una torre
+    /// ("Attenzio-ne — 3 situazio-ni richiedo-no…"). Un elemento a destra nello
+    /// stesso `HStack` del testo ne sottrae larghezza per TUTTA l'altezza della
+    /// riga, non solo per la prima. Quindi qui il titolo prende la riga intera e
+    /// i due comandi scendono sotto.
+    private var compactLayout: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                statusDot
+                    .padding(.top, 5)
+                titleBlock
+                Spacer(minLength: 0)
+            }
+
+            HStack(alignment: .center, spacing: 12) {
+                countBlock
+                Spacer(minLength: 8)
+                ctaButton
+            }
+        }
+    }
+
+    private var statusDot: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 14, height: 14)
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(message)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+    }
+
+    /// In riga su compatto ("3 in peggioramento"), incolonnato su largo: da solo
+    /// a destra il numero ha spazio, sotto al titolo lo spreca.
+    @ViewBuilder
+    private var countBlock: some View {
+        if isCompact {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(actionCount)")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                Text(trendLabel)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        } else {
+            VStack(alignment: .trailing, spacing: 0) {
+                Text("\(actionCount)")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                Text(trendLabel)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var ctaButton: some View {
+        if let ctaTitle {
+            Button(action: action) {
+                HStack(spacing: 6) {
+                    Text(ctaTitle)
+                        .lineLimit(1)
+                    Image(systemName: "arrow.up.right")
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.secondary.opacity(0.28), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 
