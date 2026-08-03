@@ -474,13 +474,16 @@ struct FloorplanListView: View {
                         Label(String(localized: "common.delete", defaultValue: "Delete"), systemImage: "trash")
                     }
                     Button {
-                        if floorplan.drawingDocumentJSON != nil {
+                        // Stessa regola del menu contestuale: niente editor 2D
+                        // su iPhone.
+                        if !isCompact, floorplan.drawingDocumentJSON != nil {
                             drawingEditFloorplan = floorplan
                         } else {
                             editingFloorplan = floorplan
                         }
                     } label: {
-                        Label(String(localized: "common.edit", defaultValue: "Edit"), systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "pencil")
+                        Label(String(localized: "common.edit", defaultValue: "Edit"),
+                              systemImage: (!isCompact && floorplan.drawingDocumentJSON != nil) ? "pencil.and.ruler" : "pencil")
                     }
                     .tint(.blue)
                 }
@@ -559,13 +562,18 @@ struct FloorplanListView: View {
             Label(String(localized: "common.rename", defaultValue: "Rename"), systemImage: "pencil")
         }
         Button {
-            if floorplan.drawingDocumentJSON != nil {
+            // Su iPhone "Modifica" porta sempre al foglio dei dati: l'editor 2D
+            // di disegno è escluso per decisione di prodotto e non è mai stato
+            // adattato alla larghezza compatta. Da qui ci si arrivava con una
+            // pressione lunga, ed era l'unica porta rimasta aperta.
+            if !isCompact, floorplan.drawingDocumentJSON != nil {
                 drawingEditFloorplan = floorplan
             } else {
                 editingFloorplan = floorplan
             }
         } label: {
-            Label(String(localized: "common.edit", defaultValue: "Edit"), systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "photo")
+            Label(String(localized: "common.edit", defaultValue: "Edit"),
+                  systemImage: (!isCompact && floorplan.drawingDocumentJSON != nil) ? "pencil.and.ruler" : "photo")
         }
         Button {
             duplicate(floorplan)
