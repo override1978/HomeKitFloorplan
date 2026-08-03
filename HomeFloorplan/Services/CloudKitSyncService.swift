@@ -1157,6 +1157,20 @@ private extension CloudKitSyncService {
     }
 
     func handleSentChanges(_ e: CKSyncEngine.Event.SentRecordZoneChanges) async {
+        // I record accettati dal server si registrano SEMPRE per primi, qualunque
+        // cosa sia fallito nello stesso lotto: un fallimento non annulla ciò che
+        // CloudKit ha già scritto.
+        //
+        // Prima questa funzione usciva in anticipo su ogni errore non
+        // riconosciuto, e con l'uscita saltavano `markSavedRecord`, l'avanzamento
+        // di `lastSyncedAt` e la riga di log. Un solo record rifiutato — per
+        // esempio un tipo mai deployato in Production — bastava a far
+        // ri-accodare planimetrie e impostazioni già salvate, a mostrare una
+        // sincronizzazione che non completa mai, e a non lasciare **nessuna
+        // traccia nel registro esportabile**: esattamente il motivo per cui a
+        // luglio l'incidente sullo schema è stato cercato nel posto sbagliato.
+        recordSuccessfulSaves(e)
+
         // Zone was deleted externally or never created — re-queue zone + failed records
         let zoneNotFoundIDs = e.failedRecordSaves.compactMap { f -> CKRecord.ID? in
             (f.error.code == .zoneNotFound) ? f.record.recordID : nil
@@ -1202,22 +1216,49 @@ private extension CloudKitSyncService {
         let otherFailures = e.failedRecordSaves.filter {
             $0.error.code != .zoneNotFound && $0.error.code != .serverRecordChanged
         }
-        if !otherFailures.isEmpty {
-            lastError = otherFailures.first?.error
-            for f in otherFailures {
-                dprint("[CloudKitSync] ❌ \(f.record.recordID.recordName): \(f.error)")
+        guard !otherFailures.isEmpty else { return }
+
+        lastError = otherFailures.first?.error
+
+        // Gli errori permanenti si tolgono dalla coda. Ritentarli all'infinito
+        // non li fa passare — lo schema non cambia da solo — e ogni tentativo
+        // trascina con sé il resto del lotto.
+        var permanentlyRejected: [CKSyncEngine.PendingRecordZoneChange] = []
+        for failure in otherFailures {
+            let recordID = failure.record.recordID
+            let isPermanent = Self.permanentSaveErrorCodes.contains(failure.error.code)
+            if isPermanent {
+                permanentlyRejected.append(.saveRecord(recordID))
             }
-            return
+            // Il tipo di record va nel messaggio: senza, un rifiuto di schema è
+            // indistinguibile da un problema di rete.
+            SyncDiagnosticsLogger.log(
+                "Sent zone changes FAILED type=\(failure.record.recordType) "
+                + "record=\(recordID.recordName) code=\(failure.error.code.rawValue) "
+                + "permanent=\(isPermanent) error=\(failure.error.localizedDescription)"
+            )
+            dprint("[CloudKitSync] ❌ \(recordID.recordName): \(failure.error)")
         }
-        // Mark successfully uploaded threshold records as synced so they're not re-queued next launch.
-        if !e.savedRecords.isEmpty {
-            for record in e.savedRecords {
-                descriptor(for: record.recordID)?.markSavedRecord(record)
-            }
-            let savedRecordNames = Set(e.savedRecords.map(\.recordID.recordName))
-            serverEtagPreflightRecordNames.subtract(savedRecordNames)
+
+        if !permanentlyRejected.isEmpty {
+            syncEngine.state.remove(pendingRecordZoneChanges: permanentlyRejected)
+            SyncDiagnosticsLogger.log(
+                "Dropped \(permanentlyRejected.count) permanently rejected record(s) from the queue"
+            )
         }
+    }
+
+    /// Registra ciò che il server ha accettato: marcatura dei salvati, pulizia
+    /// del preflight etag, avanzamento di `lastSyncedAt` e riga di log.
+    private func recordSuccessfulSaves(_ e: CKSyncEngine.Event.SentRecordZoneChanges) {
+        guard !e.savedRecords.isEmpty || !e.deletedRecordIDs.isEmpty else { return }
+
+        for record in e.savedRecords {
+            descriptor(for: record.recordID)?.markSavedRecord(record)
+        }
+        serverEtagPreflightRecordNames.subtract(Set(e.savedRecords.map(\.recordID.recordName)))
         markSyncCompleted()
+
         let savedTypes = Dictionary(grouping: e.savedRecords.map(\.recordType), by: { $0 })
             .mapValues(\.count)
             .map { "\($0.key):\($0.value)" }
@@ -1226,6 +1267,21 @@ private extension CloudKitSyncService {
         SyncDiagnosticsLogger.log("Sent zone changes saved=\(e.savedRecords.count) deleted=\(e.deletedRecordIDs.count) types=[\(savedTypes)]")
         dprint("[CloudKitSync] ✅ Sent \(e.savedRecords.count) record(s), deleted \(e.deletedRecordIDs.count)")
     }
+
+    /// Errori per cui ritentare è inutile: la richiesta non diventerà valida da
+    /// sé. `.invalidArguments` è quello che restituisce un campo o un tipo di
+    /// record assente dallo schema di Production — il caso di luglio.
+    /// Fuori di proposito `.quotaExceeded`: lì l'utente può liberare spazio e
+    /// il tentativo successivo ha senso.
+    private static let permanentSaveErrorCodes: Set<CKError.Code> = [
+        .invalidArguments,
+        .serverRejectedRequest,
+        .permissionFailure,
+        .constraintViolation,
+        .referenceViolation,
+        .badContainer,
+        .missingEntitlement
+    ]
 
     func markSyncCompleted() {
         lastSyncedAt = Date()
