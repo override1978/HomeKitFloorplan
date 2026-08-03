@@ -40,6 +40,24 @@ final class HomeKitIdentityProbe {
     /// la stessa scelta già fatta in `HomeKitDebugView`.
     private static let serialNumberCharacteristicType = "00000030-0000-1000-8000-0026BB765291"
 
+    /// Su cosa si regge l'identità di un accessorio quando l'UUID non serve —
+    /// e l'UUID non serve mai fra device diversi, misurato il 2026-08-03: due
+    /// device sulla stessa casa producono impronte UUID diverse.
+    enum IdentityTier: Int, Comparable, Sendable {
+        /// Numero di serie: identità hardware. Sopravvive al cambio di nome,
+        /// allo spostamento di stanza e anche al ri-accoppiamento.
+        case hardware = 0
+        /// Produttore + modello + stanza, e nessun altro accessorio uguale in
+        /// quella stanza. Regge finché non lo si sposta.
+        case stable = 1
+        /// Solo il nome lo distingue da un gemello nella stessa stanza:
+        /// due sensori identici in «Scala», due lampade identiche in «Soggiorno».
+        /// Una rinomina lo rende irriconoscibile.
+        case nameOnly = 2
+
+        static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
+
     struct Entry: Identifiable, Sendable {
         let id: UUID
         let name: String
@@ -48,8 +66,17 @@ final class HomeKitIdentityProbe {
         let manufacturer: String?
         let model: String?
         let isBridged: Bool
+        var identityTier: IdentityTier = .nameOnly
 
         var hasSerial: Bool { !(serialNumber ?? "").isEmpty }
+
+        /// Chiave del livello intermedio. Il modello da solo non basta: due
+        /// SML001 in stanze diverse sono distinguibili, due nella stessa no.
+        var stableKey: String {
+            [manufacturer, model, roomName]
+                .map { $0?.lowercased().trimmingCharacters(in: .whitespaces) ?? "" }
+                .joined(separator: "|")
+        }
     }
 
     struct Report: Sendable {
@@ -76,19 +103,28 @@ final class HomeKitIdentityProbe {
             return digest.map { String(format: "%02X", $0) }.prefix(12).joined()
         }
 
-        /// Impronta dei soli seriali, per lo stesso confronto su base hardware.
-        /// Se gli UUID divergono ma questa coincide, il seriale è la strada.
-        var serialFingerprint: String {
-            let serials = entries.compactMap(\.serialNumber).filter { !$0.isEmpty }.sorted()
-            guard !serials.isEmpty else { return "—" }
-            let digest = SHA256.hash(data: Data(serials.joined(separator: "\n").utf8))
-            return digest.map { String(format: "%02X", $0) }.prefix(12).joined()
+        func count(of tier: IdentityTier) -> Int {
+            entries.filter { $0.identityTier == tier }.count
         }
 
-        /// Accessori senza seriale: sono quelli per cui, se gli UUID non sono
-        /// stabili, non esisterebbe alcuna identità affidabile.
+        /// Quota di accessori identificabili **senza dipendere dal nome**, che è
+        /// l'unico dato che l'utente può cambiare in qualsiasi momento. È il
+        /// numero che dice se un ripristino fra device regge.
+        var reliableCoverage: Double {
+            guard total > 0 else { return 0 }
+            return Double(count(of: .hardware) + count(of: .stable)) / Double(total)
+        }
+
+        /// Accessori senza seriale, per capire chi sono: tipicamente tutto ciò
+        /// che sta dietro un bridge o su cloud.
         var withoutSerial: [Entry] {
             entries.filter { !$0.hasSerial }.sorted { $0.name < $1.name }
+        }
+
+        /// I casi che una rinomina renderebbe irriconoscibili: gemelli identici
+        /// nella stessa stanza, senza seriale.
+        var nameOnly: [Entry] {
+            entries.filter { $0.identityTier == .nameOnly }.sorted { $0.name < $1.name }
         }
     }
 
@@ -137,8 +173,30 @@ final class HomeKitIdentityProbe {
             capturedAt: Date(),
             deviceName: UIDevice.current.name,
             homeName: homeKit.currentHome?.name ?? "—",
-            entries: entries
+            entries: Self.assignIdentityTiers(to: entries)
         )
+    }
+
+    /// Assegna a ogni accessorio il livello su cui si regge la sua identità.
+    /// Va fatto sull'insieme e non sul singolo, perché «stabile» dipende dal
+    /// non avere gemelli: lo stesso modello nella stessa stanza declassa
+    /// entrambi a «solo il nome».
+    static func assignIdentityTiers(to entries: [Entry]) -> [Entry] {
+        var occurrences: [String: Int] = [:]
+        for entry in entries where !entry.hasSerial {
+            occurrences[entry.stableKey, default: 0] += 1
+        }
+        return entries.map { entry in
+            var copy = entry
+            if entry.hasSerial {
+                copy.identityTier = .hardware
+            } else if occurrences[entry.stableKey] == 1 {
+                copy.identityTier = .stable
+            } else {
+                copy.identityTier = .nameOnly
+            }
+            return copy
+        }
     }
 
     private func readSerialNumber(of accessory: HMAccessory) async -> String? {
@@ -178,19 +236,25 @@ extension HomeKitIdentityProbe.Report {
         lines.append("Casa: \(homeName)")
         lines.append("Data: \(capturedAt.formatted(date: .abbreviated, time: .standard))")
         lines.append("")
-        lines.append("IMPRONTA UUID:    \(uuidFingerprint)")
-        lines.append("IMPRONTA SERIALI: \(serialFingerprint)")
+        lines.append("IMPRONTA UUID: \(uuidFingerprint)")
         lines.append("")
-        lines.append("Accessori: \(total)")
-        lines.append("Con seriale: \(withSerial) (\(Int((serialCoverage * 100).rounded()))%)")
-        lines.append("Senza seriale: \(total - withSerial)")
-        lines.append("Bridged: \(bridged)")
+        lines.append("Accessori: \(total) · bridged: \(bridged)")
+        lines.append("Identità hardware (seriale):        \(count(of: .hardware))")
+        lines.append("Identità stabile (marca+modello+stanza): \(count(of: .stable))")
+        lines.append("Solo il nome:                       \(count(of: .nameOnly))")
+        lines.append("Affidabile senza il nome: \(Int((reliableCoverage * 100).rounded()))%")
         lines.append("")
-        lines.append("— Elenco (nome | stanza | uuid | seriale | produttore | modello) —")
+        lines.append("— Elenco (nome | stanza | livello | uuid | seriale | produttore | modello) —")
         for entry in entries.sorted(by: { $0.name < $1.name }) {
+            let tier = switch entry.identityTier {
+            case .hardware: "hardware"
+            case .stable:   "stabile"
+            case .nameOnly: "SOLO NOME"
+            }
             lines.append([
                 entry.name,
                 entry.roomName ?? "—",
+                tier,
                 entry.id.uuidString,
                 entry.serialNumber ?? "—",
                 entry.manufacturer ?? "—",
