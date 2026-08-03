@@ -775,6 +775,126 @@ final class HomeKitAutomationsService {
         refresh()
     }
 
+    // MARK: - Migrazione delle azioni dirette
+
+    /// Esito della migrazione, da mostrare all'utente.
+    struct InlineActionMigration: Sendable {
+        let sceneName: String
+        /// Azioni spostate nella nuova scena, ora modificabili.
+        let migratedActions: Int
+        /// Azioni che l'app non sa leggere — shortcut, comandi speciali — e che
+        /// sono state **lasciate dov'erano**, quindi continuano a funzionare ma
+        /// restano modificabili solo da app Casa.
+        let unmanagedActionsLeftBehind: Int
+        /// Vero se il contenitore originale è rimasto vuoto ed è stato eliminato.
+        let removedEmptyInlineActionSet: Bool
+    }
+
+    /// Sposta in una **scena utente** le azioni attaccate direttamente a un
+    /// trigger, e collega quella scena al trigger al posto loro.
+    ///
+    /// HomeKit non lascia a un'app di terze parti modificare le azioni di tipo
+    /// `HMActionSetTypeTriggerOwned`: si possono leggere, non riscrivere. Una
+    /// scena utente invece è manipolabile in pieno, quindi dopo la migrazione
+    /// l'automazione fa le stesse cose ma diventa modificabile — e, per la
+    /// sezione Mantenimento, anche ripristinabile.
+    ///
+    /// **Ordine deliberato:** prima si aggiunge la scena nuova al trigger, poi
+    /// si tolgono le azioni vecchie. Al contrario ci sarebbe una finestra in cui
+    /// l'automazione non fa niente; così invece la finestra è di duplicazione, e
+    /// riscrivere due volte la stessa caratteristica allo stesso valore non fa
+    /// danno.
+    ///
+    /// Vengono rimosse **solo le azioni migrate**: quelle illeggibili restano
+    /// nel contenitore originale, perché cancellarle significherebbe perderle.
+    @discardableResult
+    func migrateInlineActionsToScene(
+        of item: AutomationItem,
+        actionSet: HMActionSet,
+        sceneName: String,
+        using scenesService: HomeKitScenesService
+    ) async throws -> InlineActionMigration {
+        guard let home = homeKit.currentHome else {
+            throw NSError(domain: "HomeKitAutomationsService", code: 60,
+                          userInfo: [NSLocalizedDescriptionKey: "HomeKit home not available"])
+        }
+
+        let migratableActions = actionSet.actions.filter { $0.homeFloorplanCharacteristicWrite != nil }
+        let unmanagedCount = actionSet.actions.count - migratableActions.count
+
+        guard !migratableActions.isEmpty else {
+            throw NSError(
+                domain: "HomeKitAutomationsService", code: 61,
+                userInfo: [NSLocalizedDescriptionKey: String(
+                    localized: "automation.migrate.error.nothingToMigrate",
+                    defaultValue: "There is no action this app can move into a scene."
+                )]
+            )
+        }
+
+        // 1. La scena nuova nasce dal contenuto di quello vecchio: `actionDraftBundle`
+        //    sa già leggere un action set e trasformarlo in bozze modificabili.
+        let bundle = scenesService.actionDraftBundle(for: SceneItem(actionSet: actionSet))
+        let newScene = try await scenesService.saveUserScene(
+            name: sceneName,
+            actionBundle: bundle,
+            editing: nil
+        )
+
+        // 2. Collegata al trigger PRIMA di togliere le vecchie.
+        try await add(newScene.actionSet, to: item.trigger)
+
+        // 3. Ora si tolgono solo quelle migrate.
+        for action in migratableActions {
+            do {
+                try await removeAction(action, from: actionSet)
+            } catch {
+                dprint("[MigrateInline] rimozione azione fallita — \(error)")
+            }
+        }
+
+        // 4. Se il contenitore originale è rimasto vuoto non serve più. Se invece
+        //    conteneva azioni illeggibili resta al suo posto, collegato al trigger.
+        var removedEmpty = false
+        if actionSet.actions.isEmpty {
+            if let error = await removeFromTriggerReturningError(actionSet, trigger: item.trigger) {
+                dprint("[MigrateInline] scollegamento dal trigger fallito — \(error)")
+            }
+            if let error = await removeActionSetReturningError(actionSet, from: home) {
+                dprint("[MigrateInline] eliminazione contenitore fallita — \(error)")
+            } else {
+                removedEmpty = true
+            }
+        }
+
+        refresh()
+        return InlineActionMigration(
+            sceneName: newScene.name,
+            migratedActions: migratableActions.count,
+            unmanagedActionsLeftBehind: unmanagedCount,
+            removedEmptyInlineActionSet: removedEmpty
+        )
+    }
+
+    /// Nome proposto per la scena migrata: quello dell'automazione, con un
+    /// suffisso solo se è già preso — due scene omonime sono indistinguibili
+    /// nell'elenco di app Casa.
+    func suggestedMigratedSceneName(for item: AutomationItem) -> String {
+        let base = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate = base.isEmpty
+            ? String(localized: "automation.migrate.defaultSceneName", defaultValue: "Automation actions")
+            : base
+        let existing = Set((homeKit.currentHome?.actionSets ?? []).map {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        })
+        guard existing.contains(candidate.lowercased()) else { return candidate }
+        for suffix in 2...99 {
+            let attempt = "\(candidate) \(suffix)"
+            if !existing.contains(attempt.lowercased()) { return attempt }
+        }
+        return "\(candidate) \(UUID().uuidString.prefix(4))"
+    }
+
     /// Aggiorna in-place un'automazione HomeKit esistente senza creare un nuovo trigger.
     ///
     /// Evita il conflitto "oggetto già esistente" che si verifica quando il nuovo trigger
@@ -1081,8 +1201,10 @@ final class HomeKitAutomationsService {
         error.domain == HMErrorDomain && (error.code == 1 || error.code == 11)
     }
 
-    // Returns the error instead of throwing, so callers can log and ignore
-    private func removeFromTriggerReturningError(_ actionSet: HMActionSet, trigger: HMEventTrigger) async -> Error? {
+    // Returns the error instead of throwing, so callers can log and ignore.
+    // `HMTrigger` e non `HMEventTrigger`: `removeActionSet` è dichiarato sulla
+    // classe base, e restringerlo escludeva i trigger a orario senza motivo.
+    private func removeFromTriggerReturningError(_ actionSet: HMActionSet, trigger: HMTrigger) async -> Error? {
         await withCheckedContinuation { continuation in
             trigger.removeActionSet(actionSet) { error in
                 continuation.resume(returning: error)
