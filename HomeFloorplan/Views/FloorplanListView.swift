@@ -99,14 +99,11 @@ struct FloorplanListView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if isCompact {
+                    // Solo griglia/elenco: creare una planimetria è un'azione da
+                    // editor, e su iPhone l'editor non c'è.
                     ToolbarItemGroup(placement: .primaryAction) {
                         layoutButton(.grid)
                         layoutButton(.list)
-                        Button {
-                            showingNewSheet = true
-                        } label: {
-                            Image(systemName: "plus")
-                        }
                     }
                 }
             }
