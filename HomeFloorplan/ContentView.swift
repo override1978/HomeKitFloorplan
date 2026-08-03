@@ -148,9 +148,9 @@ struct ContentView: View {
     @ViewBuilder
     private var mainContent: some View {
         if horizontalSizeClass == .compact {
-            // iPhone: radice a tab bar. Vedi CompactRootView per il perché e per
-            // il debito dichiarato che porta con sé.
-            CompactRootView()
+            // iPhone: una sola schermata, planimetrie in cima e sotto le stesse
+            // destinazioni della sidebar. Vedi CompactHomeView per il perché.
+            CompactHomeView()
         } else {
             regularMainContent
         }
