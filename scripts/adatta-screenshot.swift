@@ -78,17 +78,24 @@ guard !files.isEmpty else {
     exit(1)
 }
 
-/// Colore del pixel in alto a sinistra, ridisegnando 1x1 pixel di quell'angolo.
-func cornerColor(of image: CGImage) -> CGColor? {
+/// Colore dello sfondo, campionato sul **bordo sinistro a metà altezza**.
+///
+/// NON sull'angolo: le catture di iOS riproducono gli angoli arrotondati dello
+/// schermo, quindi il pixel (0,0) è nero puro qualunque cosa mostri l'app. Su
+/// una planimetria scura quel nero somigliava allo sfondo e l'errore passava
+/// inosservato; su una chiara ha prodotto bande nere attorno a un'immagine
+/// color crema.
+func backgroundColor(of image: CGImage) -> CGColor? {
     var pixel = [UInt8](repeating: 0, count: 4)
     guard let ctx = CGContext(data: &pixel,
                               width: 1, height: 1,
                               bitsPerComponent: 8, bytesPerRow: 4,
                               space: CGColorSpaceCreateDeviceRGB(),
                               bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
-    // Si disegna l'immagine intera scalata a un pixel dell'angolo: l'origine
-    // negativa porta l'angolo in alto a sinistra dentro il contesto 1x1.
-    ctx.draw(image, in: CGRect(x: 0, y: -CGFloat(image.height) + 1,
+    // Si trasla l'immagine così che il pixel voluto cada nel contesto 1x1.
+    // L'asse y di CoreGraphics parte dal basso, da cui height - 1 - y.
+    let y = image.height / 2
+    ctx.draw(image, in: CGRect(x: 0, y: -CGFloat(image.height - 1 - y),
                                width: CGFloat(image.width), height: CGFloat(image.height)))
     return CGColor(red: CGFloat(pixel[0]) / 255,
                    green: CGFloat(pixel[1]) / 255,
@@ -139,10 +146,10 @@ for file in files {
         continue
     }
 
-    // Le bande prendono il colore dell'angolo in alto a sinistra dell'immagine:
-    // su uno sfondo scuro spariscono, e non serve indovinare un colore.
-    if padInsteadOfCrop, let corner = cornerColor(of: image) {
-        context.setFillColor(corner)
+    // Le bande prendono il colore di sfondo dell'immagine stessa, così si
+    // fondono col disegno invece di incorniciarlo.
+    if padInsteadOfCrop, let background = backgroundColor(of: image) {
+        context.setFillColor(background)
         context.fill(CGRect(x: 0, y: 0, width: tw, height: th))
     }
 
