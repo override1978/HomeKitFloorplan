@@ -310,6 +310,15 @@ struct SettingsView: View {
                 } label: {
                     Label("AI Pipeline Trace", systemImage: "waveform.and.magnifyingglass")
                 }
+                NavigationLink {
+                    HomeKitIdentityProbeView()
+                } label: {
+                    settingsLinkRow(
+                        icon: "waveform.badge.magnifyingglass",
+                        title: String(localized: "settings.diagnostics.identityProbe", defaultValue: "Accessory identity"),
+                        subtitle: String(localized: "settings.diagnostics.identityProbe.subtitle", defaultValue: "Check whether accessories can be identified across devices.")
+                    )
+                }
             } header: {
                 Text(String(localized: "settings.developer.header", defaultValue: "Developer"))
             }
