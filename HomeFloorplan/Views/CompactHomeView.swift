@@ -183,18 +183,20 @@ struct CompactHomeView: View {
         }
     }
 
-    /// Pinnate: principale sempre per prima, poi le altre nell'ordine salvato.
-    /// Stesso criterio della sidebar — la preferenza è una sola e vale per
-    /// entrambi i dispositivi.
+    /// Principale sempre per prima, poi le pinnate nell'ordine salvato.
+    ///
+    /// La principale entra **anche se non risulta pinnata**: `setPrimary` la
+    /// pinna, ma `ContentView` ne assegna una da sé al primo avvio quando
+    /// `primaryFloorplanID` è vuoto, e quella strada non passa dal pin. Il
+    /// risultato era una planimetria con la stella che non compariva
+    /// nell'elenco. Se è degna della stella, è degna dell'elenco.
     private var pinnedFloorplans: [Floorplan] {
-        let ids = decodePinnedIDs()
-        guard !ids.isEmpty else { return [] }
-        let matched = ids.compactMap { idString -> Floorplan? in
+        let primary = floorplans.first { $0.id.uuidString == primaryFloorplanID }
+        let pinned = decodePinnedIDs().compactMap { idString -> Floorplan? in
             guard let uuid = UUID(uuidString: idString) else { return nil }
             return floorplans.first(where: { $0.id == uuid })
         }
-        let primary = matched.first(where: { $0.id.uuidString == primaryFloorplanID })
-        let rest    = matched.filter    { $0.id.uuidString != primaryFloorplanID }
+        let rest = pinned.filter { $0.id.uuidString != primaryFloorplanID }
         return (primary.map { [$0] } ?? []) + rest
     }
 
