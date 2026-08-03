@@ -71,7 +71,16 @@ struct CompactHomeView: View {
     var body: some View {
         NavigationStack {
             List {
-                if !carouselFloorplans.isEmpty {
+                if carouselFloorplans.isEmpty {
+                    // Nessuna planimetria su iPhone è un vicolo cieco: non c'è
+                    // il carosello, non c'è il "+", e senza una spiegazione
+                    // sembra che l'app sia rotta invece che a metà del suo giro.
+                    Section {
+                        noFloorplansHint
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                    }
+                } else {
                     Section {
                         floorplanCarousel
                             .listRowInsets(EdgeInsets())
@@ -94,6 +103,15 @@ struct CompactHomeView: View {
                     }
                 } header: {
                     Text(String(localized: "sidebar.section.floorplans", defaultValue: "Floorplans"))
+                } footer: {
+                    // Senza questa riga l'assenza del "+" è muta: l'utente cerca
+                    // un modo di creare una planimetria e non trova né il
+                    // comando né una ragione.
+                    Label(String(localized: "compact.floorplans.iPadOnly",
+                                 defaultValue: "Floorplans are drawn on iPad. Here you can view them and control the accessories."),
+                          systemImage: "ipad.landscape")
+                        .font(.footnote)
+                        .padding(.top, 4)
                 }
 
                 Section {
@@ -240,6 +258,30 @@ struct CompactHomeView: View {
         } label: {
             Label(title, systemImage: icon)
         }
+    }
+
+    // MARK: - Nessuna planimetria
+
+    private var noFloorplansHint: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "ipad.and.iphone")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(BrandColor.primary)
+
+            Text(String(localized: "compact.noFloorplans.title",
+                        defaultValue: "No floorplans yet"))
+                .font(.headline)
+
+            Text(String(localized: "compact.noFloorplans.message",
+                        defaultValue: "Draw your first floorplan on iPad. It will show up here through iCloud, ready to view and control."))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 8)
     }
 
     // MARK: - Carosello planimetrie

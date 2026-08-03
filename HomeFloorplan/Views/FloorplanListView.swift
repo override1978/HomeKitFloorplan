@@ -294,21 +294,34 @@ struct FloorplanListView: View {
             }
         } actions: {
             VStack(spacing: 10) {
-                Button {
-                    showingNewSheet = true
-                } label: {
-                    Label(String(localized: "floorplan.create", defaultValue: "Create floorplan"), systemImage: "plus.circle.fill")
-                        .font(.body.weight(.semibold))
+                // Su iPhone non c'è niente da premere: la creazione è su iPad.
+                // Offrire un bottone che non esiste è peggio che non offrirne.
+                if isCompact {
+                    Label(String(localized: "compact.floorplans.iPadOnly",
+                                 defaultValue: "Floorplans are drawn on iPad. Here you can view them and control the accessories."),
+                          systemImage: "ipad.landscape")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 24)
+                } else {
+                    Button {
+                        showingNewSheet = true
+                    } label: {
+                        Label(String(localized: "floorplan.create", defaultValue: "Create floorplan"), systemImage: "plus.circle.fill")
+                            .font(.body.weight(.semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+
+                    Text(String(localized: "floorplan.empty.tip", defaultValue: "Tip: a photo of a printed floorplan, an architect drawing screenshot, or a simple schematic works well."))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .padding(.top, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                
-                Text(String(localized: "floorplan.empty.tip", defaultValue: "Tip: a photo of a printed floorplan, an architect drawing screenshot, or a simple schematic works well."))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-                    .padding(.top, 8)
             }
         }
     }
