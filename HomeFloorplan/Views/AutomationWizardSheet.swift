@@ -57,6 +57,13 @@ struct AutomationWizardSheet: View {
     @State private var errorMessage: String?
     @State private var externalEditNotice: String?
     @State private var unmanagedActionNotice: String?
+    /// Il contenitore di azioni attaccato direttamente al trigger, quando ne
+    /// contiene almeno una che l'app sa leggere. HomeKit non lascia riscrivere
+    /// queste azioni a un'app di terze parti, ma spostarle in una scena utente
+    /// le rende modificabili.
+    @State private var migratableInlineActionSet: HMActionSet?
+    @State private var isMigratingInlineActions = false
+    @State private var migrationOutcome: String?
     @State private var didLoadInitialContent = false
     private let editingItem: AutomationItem?
     private let proposal: AutomationProposal?
@@ -1260,16 +1267,44 @@ struct AutomationWizardSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if let url = URL(string: "x-apple-homekit://"), UIApplication.shared.canOpenURL(url) {
-                    Button {
-                        UIApplication.shared.open(url)
-                    } label: {
-                        Label(String(localized: "automation.existing.openHome.short", defaultValue: "Apri in Apple Home"), systemImage: "arrow.up.right.square")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.bordered)
-                    .padding(.top, 4)
+                if let outcome = migrationOutcome {
+                    Text(outcome)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
                 }
+
+                HStack(spacing: 8) {
+                    if migratableInlineActionSet != nil, editingItem != nil, migrationOutcome == nil {
+                        Button {
+                            Task { await migrateInlineActions() }
+                        } label: {
+                            if isMigratingInlineActions {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label(
+                                    String(localized: "automation.migrate.action",
+                                           defaultValue: "Move actions into a scene"),
+                                    systemImage: "wand.and.sparkles"
+                                )
+                                .font(.caption.weight(.semibold))
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isMigratingInlineActions)
+                    }
+
+                    if let url = URL(string: "x-apple-homekit://"), UIApplication.shared.canOpenURL(url) {
+                        Button {
+                            UIApplication.shared.open(url)
+                        } label: {
+                            Label(String(localized: "automation.existing.openHome.short", defaultValue: "Apri in Apple Home"), systemImage: "arrow.up.right.square")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(.top, 4)
             }
 
             Spacer()
@@ -1279,6 +1314,45 @@ struct AutomationWizardSheet: View {
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(BrandColor.primary.opacity(0.28), lineWidth: 1)
+        }
+    }
+
+    /// Sposta in una scena utente le azioni attaccate direttamente al trigger.
+    /// Dopo la migrazione l'editor si ricarica: l'automazione ora punta a una
+    /// scena, quindi diventa modificabile qui invece che solo in Apple Home.
+    private func migrateInlineActions() async {
+        guard let item = editingItem, let actionSet = migratableInlineActionSet else { return }
+        isMigratingInlineActions = true
+        defer { isMigratingInlineActions = false }
+
+        do {
+            let result = try await automationsService.migrateInlineActionsToScene(
+                of: item,
+                actionSet: actionSet,
+                sceneName: automationsService.suggestedMigratedSceneName(for: item),
+                using: scenesService
+            )
+            migratableInlineActionSet = nil
+            migrationOutcome = result.unmanagedActionsLeftBehind > 0
+                ? String(
+                    format: String(localized: "automation.migrate.done.partial",
+                                   defaultValue: "%1$d actions moved into “%2$@”. %3$d could not be read and stayed in Apple Home."),
+                    result.migratedActions, result.sceneName, result.unmanagedActionsLeftBehind
+                )
+                : String(
+                    format: String(localized: "automation.migrate.done",
+                                   defaultValue: "%1$d actions moved into “%2$@”. The automation is now editable here."),
+                    result.migratedActions, result.sceneName
+                )
+
+            // Si ricarica dal trigger aggiornato: se non è rimasto niente di
+            // illeggibile l'avviso sparisce e il compositore torna attivo.
+            if let refreshed = automationsService.automations.first(where: { $0.id == item.id }) {
+                unmanagedActionNotice = nil
+                loadEditingItem(refreshed, capabilities: capabilities, scenes: scenesService.scenes)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -4068,13 +4142,26 @@ struct AutomationWizardSheet: View {
         presenceConditionDrafts = draft.presenceConditions
         conditionJoinMode = draft.conditionJoinMode
         preservedConditionPredicate = draft.preservedConditionPredicate
-        if let actionSet = item.trigger.actionSets.first {
+        migratableInlineActionSet = nil
+        // Dopo una migrazione il trigger ha sia la scena nuova sia — se
+        // conteneva azioni illeggibili — il vecchio contenitore. Si preferisce
+        // la scena: l'ordine di `actionSets` non è garantito, e prendere il
+        // primo che capita rimetterebbe l'editor nello stato di prima.
+        let preferredActionSet = item.trigger.actionSets.first { candidate in
+            let matched = scenes.first { $0.actionSet.uniqueIdentifier == candidate.uniqueIdentifier }
+            return !isInlineActionSet(candidate, matchedScene: matched)
+        } ?? item.trigger.actionSets.first
+
+        if let actionSet = preferredActionSet {
             let matchedScene = scenes.first { $0.actionSet.uniqueIdentifier == actionSet.uniqueIdentifier }
             if isInlineActionSet(actionSet, matchedScene: matchedScene) {
                 selectedSceneID = nil
                 editingSceneFallback = nil
                 inlineActionBundle = scenesService.actionDraftBundle(for: SceneItem(actionSet: actionSet))
                 inlinePowerActions = inlinePowerActions(from: actionSet)
+                if actionSet.actions.contains(where: { $0.homeFloorplanCharacteristicWrite != nil }) {
+                    migratableInlineActionSet = actionSet
+                }
                 if hasUnmanagedActions(in: actionSet) {
                     unmanagedActionNotice = String(
                         localized: "automation.editor.openHome.unmanagedActions",
