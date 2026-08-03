@@ -112,6 +112,7 @@ struct HomeFloorplanRootView: View {
             actionExecutionService: services.actionExecutionService,
             securityNotifier: services.securityNotifier,
             cloudKitSync: services.cloudKitSync,
+            homeKit: services.homeKit,
             weatherKitService: services.weatherKitService,
             ambientalAIService: services.ambientalAIService,
             securityMonitoredUUIDsRaw: securityMonitoredUUIDsRaw
