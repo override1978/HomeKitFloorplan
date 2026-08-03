@@ -145,7 +145,18 @@ struct ContentView: View {
         return min(max(430, screenW * 0.42), min(640, screenW - horizontalPadding))
     }
 
+    @ViewBuilder
     private var mainContent: some View {
+        if horizontalSizeClass == .compact {
+            // iPhone: radice a tab bar. Vedi CompactRootView per il perché e per
+            // il debito dichiarato che porta con sé.
+            CompactRootView()
+        } else {
+            regularMainContent
+        }
+    }
+
+    private var regularMainContent: some View {
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 SidebarView(selection: $selection, onFloorplanCreated: { id in
                     newlyCreatedFloorplanID = id
