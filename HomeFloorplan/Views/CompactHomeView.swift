@@ -30,6 +30,13 @@ struct CompactHomeView: View {
     @AppStorage("habits.sectionVisible") private var areHabitsEnabled:      Bool   = false
 
     @State private var showingNewFloorplan = false
+    /// Percorso esplicito. Serve al carosello: un `NavigationLink(value:)` dentro
+    /// uno `ScrollView` annidato in una riga di `List` non trova la
+    /// `navigationDestination` dichiarata fuori — SwiftUI avvisa che «the link
+    /// cannot be activated». Appendere al percorso non dipende da dove si trova
+    /// il comando, quindi il carosello naviga con dei bottoni. Le righe normali
+    /// restano `NavigationLink`, che lì funziona ed è più idiomatico.
+    @State private var path: [SidebarSelection] = []
 
     // MARK: - Dati
 
@@ -67,7 +74,7 @@ struct CompactHomeView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if !carouselFloorplans.isEmpty {
                     Section {
@@ -181,7 +188,9 @@ struct CompactHomeView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
                 ForEach(carouselFloorplans) { floorplan in
-                    NavigationLink(value: SidebarSelection.floorplan(floorplan.id)) {
+                    Button {
+                        path.append(.floorplan(floorplan.id))
+                    } label: {
                         carouselCard(for: floorplan)
                     }
                     .buttonStyle(.plain)
