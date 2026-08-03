@@ -30,12 +30,6 @@ struct CompactHomeView: View {
     @AppStorage("habits.sectionVisible") private var areHabitsEnabled:      Bool   = false
 
     @State private var showingNewFloorplan = false
-    /// Percorso esplicito: qui **tutta** la navigazione passa da `path.append`,
-    /// carosello e righe. Con i `NavigationLink(value:)` le voci non si
-    /// aprivano e SwiftUI avvisava che «the link cannot be activated», cioè non
-    /// vedeva la `navigationDestination` dichiarata sulla stessa lista.
-    /// Appendere al percorso non dipende da dove si trova il comando.
-    @State private var path: [SidebarSelection] = []
 
     // MARK: - Dati
 
@@ -73,7 +67,7 @@ struct CompactHomeView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack {
             List {
                 if !carouselFloorplans.isEmpty {
                     Section {
@@ -165,7 +159,6 @@ struct CompactHomeView: View {
                                                defaultValue: "New Floorplan"))
                 }
             }
-            .navigationDestination(for: SidebarSelection.self) { destination($0) }
             .sheet(isPresented: $showingNewFloorplan) {
                 NewFloorplanSheet()
             }
@@ -174,31 +167,23 @@ struct CompactHomeView: View {
 
     // MARK: - Righe di navigazione
 
-    /// Riga che apre una destinazione appendendola al percorso.
+    /// Riga che porta a una destinazione.
     ///
-    /// Non è un `NavigationLink(value:)` — con quelli le voci non si aprivano,
-    /// e la `navigationDestination` dichiarata sulla lista non veniva trovata.
-    /// Non ho una spiegazione certa del perché, quindi invece di insistere su
-    /// una risoluzione che qui non funziona la navigazione passa dal percorso,
-    /// che non dipende da dove sta il comando nella gerarchia. Il chevron va
-    /// disegnato a mano: senza `NavigationLink` non lo mette più nessuno.
+    /// **Link basato sulla vista, non sul valore.** I `NavigationLink(value:)`
+    /// con `navigationDestination` non si attivavano, e pilotare a mano un
+    /// percorso tipizzato faceva peggio: le destinazioni portano dentro le
+    /// proprie `NavigationStack`, e con un `[SidebarSelection]` come percorso
+    /// dello stack esterno si finiva su
+    /// `AnyNavigationPath.Error.comparisonTypeMismatch`. Questa è la forma che
+    /// funzionava già con la radice a tab bar, quindi è quella che teniamo.
     private func destinationRow(_ selection: SidebarSelection,
                                 title: String,
                                 icon: String) -> some View {
-        Button {
-            path.append(selection)
+        NavigationLink {
+            destination(selection)
         } label: {
-            HStack(spacing: 8) {
-                Label(title, systemImage: icon)
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
+            Label(title, systemImage: icon)
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Carosello planimetrie
@@ -207,8 +192,8 @@ struct CompactHomeView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
                 ForEach(carouselFloorplans) { floorplan in
-                    Button {
-                        path.append(.floorplan(floorplan.id))
+                    NavigationLink {
+                        destination(.floorplan(floorplan.id))
                     } label: {
                         carouselCard(for: floorplan)
                     }
