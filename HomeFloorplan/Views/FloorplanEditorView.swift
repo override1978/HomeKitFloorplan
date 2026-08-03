@@ -243,15 +243,21 @@ struct FloorplanEditorView: View {
                         .transition(.opacity)
                 }
 
-                HStack(spacing: 0) {
-                    Spacer()
-                    ScenesSidePanel(isPresented: $ui.showScenesPanel)
-                        .frame(width: min(proxy.size.width * 0.72, 320))
-                        .offset(x: ui.showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
-                        .animation(.spring(response: 0.38, dampingFraction: 0.88), value: ui.showScenesPanel)
+                // Su iPhone il pannello non si costruisce affatto: non è
+                // apribile (il bottone Scene non c'è) e da chiuso restava
+                // comunque nella gerarchia, spinto fuori da un `offset` — e un
+                // bordo continuava a sporgere. Ciò che non esiste non sporge.
+                if !isCompactScreen {
+                    HStack(spacing: 0) {
+                        Spacer()
+                        ScenesSidePanel(isPresented: $ui.showScenesPanel)
+                            .frame(width: min(proxy.size.width * 0.72, 320))
+                            .offset(x: ui.showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
+                            .animation(.spring(response: 0.38, dampingFraction: 0.88), value: ui.showScenesPanel)
+                    }
+                    .ignoresSafeArea(edges: .vertical)
+                    .environment(\.colorScheme, chromeColorScheme)
                 }
-                .ignoresSafeArea(edges: .vertical)
-                .environment(\.colorScheme, chromeColorScheme)
 
                 // Z+4: overlay context panel
                 if let vm = overlayVM {
@@ -685,8 +691,10 @@ struct FloorplanEditorView: View {
     /// grumo. La misura è quella del contenitore, non l'orientamento del
     /// dispositivo: è la larghezza reale che conta.
     private func hidesMarkersInPortrait(container: CGSize) -> Bool {
-        horizontalSizeClass == .compact && container.height > container.width
+        isCompactScreen && container.height > container.width
     }
+
+    private var isCompactScreen: Bool { horizontalSizeClass == .compact }
 
     private func imageWithMarkers(image: UIImage, container: CGSize) -> some View {
         let rect = imageRect(imageSize: image.size, container: container)

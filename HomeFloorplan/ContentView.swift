@@ -386,7 +386,9 @@ struct ContentView: View {
 /// Floating action button that opens ChatBotView as a popover,
 /// styled to match the OverlayPanelMarkerButton in the floorplan overlay.
 /// The outer ring uses the same rotating rainbow gradient as the chat input field.
-private struct ChatFABButtonView: View {
+/// Non più `private`: lo usa anche `CompactHomeView`, dove l'assistente vive
+/// sulla schermata iniziale invece che sulla planimetria.
+struct ChatFABButtonView: View {
     @Binding var showChat: Bool
     @State private var startDate = Date()
 

@@ -22,12 +22,15 @@ import HomeKit
 struct CompactHomeView: View {
 
     @Environment(HomeKitService.self) private var homeKit
+    @Environment(AISettings.self) private var aiSettings
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var allFloorplans: [Floorplan]
 
     @AppStorage("primaryFloorplanID")    private var primaryFloorplanID:    String = ""
     @AppStorage("pinnedFloorplanIDs")    private var pinnedFloorplanIDsRaw: String = "[]"
     /// Sezione Abitudini (beta): nascosta di default, come in sidebar.
     @AppStorage("habits.sectionVisible") private var areHabitsEnabled:      Bool   = false
+
+    @State private var showChat = false
 
 
     // MARK: - Dati
@@ -149,6 +152,23 @@ struct CompactHomeView: View {
             // Niente creazione planimetrie su iPhone: è un'azione da editor, e
             // una planimetria creata qui resterebbe vuota — posizionare i
             // marker è modifica, e la modifica non c'è. Si creano su iPad.
+        }
+        // L'assistente sta QUI e non sulla planimetria. Su iPad è un riquadro
+        // flottante in alto a destra tarato su ~430 punti di larghezza: sopra
+        // la planimetria di un iPhone coprirebbe ciò di cui si sta parlando.
+        // Sulla schermata iniziale invece non compete con niente, e un foglio
+        // si chiude col gesto che tutti conoscono.
+        .overlay(alignment: .bottomTrailing) {
+            if aiSettings.isAIEnabled {
+                ChatFABButtonView(showChat: $showChat)
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 20)
+            }
+        }
+        .sheet(isPresented: $showChat) {
+            ChatBotView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
     }
 
