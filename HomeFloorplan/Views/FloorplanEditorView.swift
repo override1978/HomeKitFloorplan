@@ -32,6 +32,7 @@ struct FloorplanEditorView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(SmartLightingEngine.self) private var smartLightingEngine
     @Environment(CloudKitSyncService.self) private var cloudKitSync
     
@@ -225,6 +226,11 @@ struct FloorplanEditorView: View {
                 openPanelButton
                     .environment(\.colorScheme, chromeColorScheme)
 
+                if hidesMarkersInPortrait(container: proxy.size) {
+                    rotateForMarkersHint
+                        .environment(\.colorScheme, chromeColorScheme)
+                }
+
                 // Right-side scenes panel overlay
                 if ui.showScenesPanel {
                     Color.black.opacity(0.25)
@@ -237,15 +243,21 @@ struct FloorplanEditorView: View {
                         .transition(.opacity)
                 }
 
-                HStack(spacing: 0) {
-                    Spacer()
-                    ScenesSidePanel(isPresented: $ui.showScenesPanel)
-                        .frame(width: min(proxy.size.width * 0.72, 320))
-                        .offset(x: ui.showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
-                        .animation(.spring(response: 0.38, dampingFraction: 0.88), value: ui.showScenesPanel)
+                // Su iPhone il pannello non si costruisce affatto: non è
+                // apribile (il bottone Scene non c'è) e da chiuso restava
+                // comunque nella gerarchia, spinto fuori da un `offset` — e un
+                // bordo continuava a sporgere. Ciò che non esiste non sporge.
+                if !isCompactScreen {
+                    HStack(spacing: 0) {
+                        Spacer()
+                        ScenesSidePanel(isPresented: $ui.showScenesPanel)
+                            .frame(width: min(proxy.size.width * 0.72, 320))
+                            .offset(x: ui.showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
+                            .animation(.spring(response: 0.38, dampingFraction: 0.88), value: ui.showScenesPanel)
+                    }
+                    .ignoresSafeArea(edges: .vertical)
+                    .environment(\.colorScheme, chromeColorScheme)
                 }
-                .ignoresSafeArea(edges: .vertical)
-                .environment(\.colorScheme, chromeColorScheme)
 
                 // Z+4: overlay context panel
                 if let vm = overlayVM {
@@ -506,6 +518,33 @@ struct FloorplanEditorView: View {
         return selectedMarkerToolbarStateBuilder.state(for: placed)
     }
 
+    // MARK: - Invito a girare il telefono
+
+    /// Sostituisce i marker su iPhone in verticale. Sta in basso e non al
+    /// centro: la planimetria resta visibile e riconoscibile, che è metà del
+    /// motivo per cui si è arrivati qui.
+    private var rotateForMarkersHint: some View {
+        VStack {
+            Spacer()
+            GlassTitlePill {
+                HStack(spacing: 10) {
+                    Image(systemName: "rotate.right")
+                        .font(.subheadline.weight(.semibold))
+                    Text(String(localized: "floorplan.rotateForMarkers",
+                                defaultValue: "Rotate iPhone to see the devices"))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 28)
+        }
+        .transition(.opacity)
+    }
+
     // MARK: - Pulsante apri pannello (sempre visibile, non soggetto ad auto-hide)
 
     /// Bottone bottom-right che apre il pannello contestuale.
@@ -645,9 +684,22 @@ struct FloorplanEditorView: View {
         FloorplanCanvasGeometry.imageRect(imageSize: imageSize, container: container)
     }
     
+    /// Su iPhone in verticale la planimetria si riduce a una fascia larga ~354
+    /// punti. I marker però sono dimensionati in punti e non rimpiccioliscono
+    /// con lei: si ammucchiano fino a coprire il disegno che dovrebbero
+    /// annotare. Meglio dire all'utente di girare il telefono che mostrargli un
+    /// grumo. La misura è quella del contenitore, non l'orientamento del
+    /// dispositivo: è la larghezza reale che conta.
+    private func hidesMarkersInPortrait(container: CGSize) -> Bool {
+        isCompactScreen && container.height > container.width
+    }
+
+    private var isCompactScreen: Bool { horizontalSizeClass == .compact }
+
     private func imageWithMarkers(image: UIImage, container: CGSize) -> some View {
         let rect = imageRect(imageSize: image.size, container: container)
-        let showMarkers = ui.isEditing || (overlayVM?.activeMode == .controls)
+        let showMarkers = !hidesMarkersInPortrait(container: container)
+            && (ui.isEditing || (overlayVM?.activeMode == .controls))
         return FloorplanCanvasView(
             image: image,
             containerSize: container,

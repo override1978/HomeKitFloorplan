@@ -145,7 +145,18 @@ struct ContentView: View {
         return min(max(430, screenW * 0.42), min(640, screenW - horizontalPadding))
     }
 
+    @ViewBuilder
     private var mainContent: some View {
+        if horizontalSizeClass == .compact {
+            // iPhone: una sola schermata, planimetrie in cima e sotto le stesse
+            // destinazioni della sidebar. Vedi CompactHomeView per il perché.
+            CompactHomeView()
+        } else {
+            regularMainContent
+        }
+    }
+
+    private var regularMainContent: some View {
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 SidebarView(selection: $selection, onFloorplanCreated: { id in
                     newlyCreatedFloorplanID = id
@@ -375,7 +386,9 @@ struct ContentView: View {
 /// Floating action button that opens ChatBotView as a popover,
 /// styled to match the OverlayPanelMarkerButton in the floorplan overlay.
 /// The outer ring uses the same rotating rainbow gradient as the chat input field.
-private struct ChatFABButtonView: View {
+/// Non più `private`: lo usa anche `CompactHomeView`, dove l'assistente vive
+/// sulla schermata iniziale invece che sulla planimetria.
+struct ChatFABButtonView: View {
     @Binding var showChat: Bool
     @State private var startDate = Date()
 

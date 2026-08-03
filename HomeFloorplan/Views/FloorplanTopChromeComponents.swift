@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct FloorplanTopBarView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+
     let size: CGSize
     let floorplan: Floorplan
     let presentationStyle: FloorplanEditorView.PresentationStyle
@@ -55,7 +59,13 @@ struct FloorplanTopBarView: View {
             // `glassEffect() tried to update multiple times per frame` che
             // aveva motivato la rimozione.
             ZStack {
-                if !isEditing, let overlayVM {
+                // Su iPhone la planimetria è **solo controllo**: niente cambio
+                // modalità e niente modifica. La pill delle quattro modalità
+                // misura ~480 punti e su 390 finiva sopra al titolo; le
+                // dashboard Ambiente/Sicurezza/Intelligenza restano comunque
+                // raggiungibili dalla schermata iniziale, dove hanno lo spazio
+                // per essere lette.
+                if !isEditing, !isCompact, let overlayVM {
                     FloorplanModePill(overlayVM: overlayVM,
                                       context: overlayContext,
                                       availableWidth: size.width,
@@ -78,18 +88,20 @@ struct FloorplanTopBarView: View {
 
                         Spacer()
 
-                        FloorplanTopRightActions(
-                            isEditing: isEditing,
-                            isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
-                            collapsesActions: collapsesActions,
-                            isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
-                            onAddAccessory: onAddAccessory,
-                            onShowHelp: onShowHelp,
-                            onShowDiagnostics: onShowDiagnostics,
-                            onEditDrawing: onEditDrawing,
-                            onShowScenes: onShowScenes,
-                            onToggleEditing: onToggleEditing
-                        )
+                        if !isCompact {
+                            FloorplanTopRightActions(
+                                isEditing: isEditing,
+                                isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
+                                collapsesActions: collapsesActions,
+                                isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
+                                onAddAccessory: onAddAccessory,
+                                onShowHelp: onShowHelp,
+                                onShowDiagnostics: onShowDiagnostics,
+                                onEditDrawing: onEditDrawing,
+                                onShowScenes: onShowScenes,
+                                onToggleEditing: onToggleEditing
+                            )
+                        }
                     }
                 }
             }

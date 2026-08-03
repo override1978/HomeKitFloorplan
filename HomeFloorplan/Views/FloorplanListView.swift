@@ -12,6 +12,9 @@ struct FloorplanListView: View {
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var floorplans: [Floorplan]
     @Namespace private var namespace
     @Binding var columnVisibility: NavigationSplitViewVisibility
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var isCompact: Bool { horizontalSizeClass == .compact }
 
     @AppStorage("primaryFloorplanID")  private var primaryFloorplanID:    String = ""
     @AppStorage("pinnedFloorplanIDs") private var pinnedFloorplanIDsRaw: String = "[]"
@@ -76,11 +79,34 @@ struct FloorplanListView: View {
         NavigationStack {
             ZStack {
                 contentView
-                    .safeAreaPadding(.top, 70)
-                
-                floatingPillsOverlay
+                    // Lo spazio serve solo dove la chrome flotta sopra: su
+                    // iPhone quella chrome non c'è, la barra la mette il
+                    // sistema e il contenuto parte già sotto.
+                    .safeAreaPadding(.top, isCompact ? 0 : 70)
+
+                if !isCompact {
+                    floatingPillsOverlay
+                }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            // Su iPhone la barra **deve** restare: questa vista arriva spinta
+            // dalla schermata iniziale, e nascondendola spariva anche l'unico
+            // modo di tornare indietro. Le tre azioni della pill flottante si
+            // spostano nella barra, dove su schermo stretto stanno meglio.
+            .toolbar(isCompact ? .automatic : .hidden, for: .navigationBar)
+            .navigationTitle(isCompact
+                             ? String(localized: "floorplans.title", defaultValue: "Floorplans")
+                             : "")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if isCompact {
+                    // Solo griglia/elenco: creare una planimetria è un'azione da
+                    // editor, e su iPhone l'editor non c'è.
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        layoutButton(.grid)
+                        layoutButton(.list)
+                    }
+                }
+            }
             .sheet(isPresented: $showingNewSheet) {
                 NewFloorplanSheet()
             }
@@ -268,21 +294,34 @@ struct FloorplanListView: View {
             }
         } actions: {
             VStack(spacing: 10) {
-                Button {
-                    showingNewSheet = true
-                } label: {
-                    Label(String(localized: "floorplan.create", defaultValue: "Create floorplan"), systemImage: "plus.circle.fill")
-                        .font(.body.weight(.semibold))
+                // Su iPhone non c'è niente da premere: la creazione è su iPad.
+                // Offrire un bottone che non esiste è peggio che non offrirne.
+                if isCompact {
+                    Label(String(localized: "compact.floorplans.iPadOnly",
+                                 defaultValue: "Floorplans are drawn on iPad. Here you can view them and control the accessories."),
+                          systemImage: "ipad.landscape")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 24)
+                } else {
+                    Button {
+                        showingNewSheet = true
+                    } label: {
+                        Label(String(localized: "floorplan.create", defaultValue: "Create floorplan"), systemImage: "plus.circle.fill")
+                            .font(.body.weight(.semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+
+                    Text(String(localized: "floorplan.empty.tip", defaultValue: "Tip: a photo of a printed floorplan, an architect drawing screenshot, or a simple schematic works well."))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .padding(.top, 8)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                
-                Text(String(localized: "floorplan.empty.tip", defaultValue: "Tip: a photo of a printed floorplan, an architect drawing screenshot, or a simple schematic works well."))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-                    .padding(.top, 8)
             }
         }
     }
@@ -448,13 +487,16 @@ struct FloorplanListView: View {
                         Label(String(localized: "common.delete", defaultValue: "Delete"), systemImage: "trash")
                     }
                     Button {
-                        if floorplan.drawingDocumentJSON != nil {
+                        // Stessa regola del menu contestuale: niente editor 2D
+                        // su iPhone.
+                        if !isCompact, floorplan.drawingDocumentJSON != nil {
                             drawingEditFloorplan = floorplan
                         } else {
                             editingFloorplan = floorplan
                         }
                     } label: {
-                        Label(String(localized: "common.edit", defaultValue: "Edit"), systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "pencil")
+                        Label(String(localized: "common.edit", defaultValue: "Edit"),
+                              systemImage: (!isCompact && floorplan.drawingDocumentJSON != nil) ? "pencil.and.ruler" : "pencil")
                     }
                     .tint(.blue)
                 }
@@ -533,13 +575,18 @@ struct FloorplanListView: View {
             Label(String(localized: "common.rename", defaultValue: "Rename"), systemImage: "pencil")
         }
         Button {
-            if floorplan.drawingDocumentJSON != nil {
+            // Su iPhone "Modifica" porta sempre al foglio dei dati: l'editor 2D
+            // di disegno è escluso per decisione di prodotto e non è mai stato
+            // adattato alla larghezza compatta. Da qui ci si arrivava con una
+            // pressione lunga, ed era l'unica porta rimasta aperta.
+            if !isCompact, floorplan.drawingDocumentJSON != nil {
                 drawingEditFloorplan = floorplan
             } else {
                 editingFloorplan = floorplan
             }
         } label: {
-            Label(String(localized: "common.edit", defaultValue: "Edit"), systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "photo")
+            Label(String(localized: "common.edit", defaultValue: "Edit"),
+                  systemImage: (!isCompact && floorplan.drawingDocumentJSON != nil) ? "pencil.and.ruler" : "photo")
         }
         Button {
             duplicate(floorplan)
