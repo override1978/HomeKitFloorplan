@@ -20,7 +20,22 @@
 // 6,5"; poco prima era il 6,9". **Guarda i pixel che la pagina di caricamento
 // chiede** e passali come argomenti se non corrispondono al default.
 //
-// Uso:  swift scripts/adatta-screenshot.swift <cartella> [larghezza altezza]
+// DUE MODI, e la scelta conta:
+//
+//   riempi (default)  ingrandisce fino a coprire e ritaglia l'eccesso al centro.
+//                     Giusto quando la proporzione di partenza è quasi quella
+//                     d'arrivo — iPhone: 0,4600 contro 0,4620, si perde nulla.
+//
+//   --adatta          rimpicciolisce fino a farci stare tutto e riempie il
+//                     resto con bande del colore dell'angolo dell'immagine.
+//                     Necessario quando le proporzioni divergono — iPad: da
+//                     1,44 (2360x1640) a 1,33 servirebbero ~107 pixel per lato,
+//                     e lì ci vivono i comandi della barra superiore.
+//
+// Il colore delle bande è campionato dall'angolo in alto a sinistra, così su
+// uno sfondo scuro non si vedono affatto.
+//
+// Uso:  swift scripts/adatta-screenshot.swift <cartella> [larghezza altezza] [--adatta]
 //       Default 1242 2688 (6,5" verticale; in orizzontale si scambiano).
 //       Scrive in <cartella>/appstore/ — gli originali non si toccano.
 
@@ -29,15 +44,25 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 
-let args = CommandLine.arguments
+var args = CommandLine.arguments
+let padInsteadOfCrop = args.contains("--adatta")
+args.removeAll { $0 == "--adatta" }
+
 guard args.count >= 2 else {
-    print("Uso: swift adatta-screenshot.swift <cartella> [larghezza altezza]")
+    print("Uso: swift adatta-screenshot.swift <cartella> [larghezza altezza] [--adatta]")
     exit(1)
 }
 
 let sourceDir = URL(fileURLWithPath: args[1])
-let targetW = args.count >= 4 ? Int(args[2]) ?? 1242 : 1242
-let targetH = args.count >= 4 ? Int(args[3]) ?? 2688 : 2688
+let givenW = args.count >= 4 ? Int(args[2]) ?? 1242 : 1242
+let givenH = args.count >= 4 ? Int(args[3]) ?? 2688 : 2688
+
+// Le due misure vengono normalizzate a verticale, e sarà l'orientamento di
+// ciascuna immagine a scambiarle. Senza questo, passando "2732 2048" per delle
+// catture orizzontali si ottiene silenziosamente il verticale: lo scambio
+// avviene due volte. Ora l'ordine in cui le scrivi non conta.
+let targetW = min(givenW, givenH)
+let targetH = max(givenW, givenH)
 
 let outDir = sourceDir.appendingPathComponent("appstore")
 try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
@@ -51,6 +76,24 @@ let files = ((try? FileManager.default.contentsOfDirectory(at: sourceDir,
 guard !files.isEmpty else {
     print("Nessuna immagine in \(sourceDir.path)")
     exit(1)
+}
+
+/// Colore del pixel in alto a sinistra, ridisegnando 1x1 pixel di quell'angolo.
+func cornerColor(of image: CGImage) -> CGColor? {
+    var pixel = [UInt8](repeating: 0, count: 4)
+    guard let ctx = CGContext(data: &pixel,
+                              width: 1, height: 1,
+                              bitsPerComponent: 8, bytesPerRow: 4,
+                              space: CGColorSpaceCreateDeviceRGB(),
+                              bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+    // Si disegna l'immagine intera scalata a un pixel dell'angolo: l'origine
+    // negativa porta l'angolo in alto a sinistra dentro il contesto 1x1.
+    ctx.draw(image, in: CGRect(x: 0, y: -CGFloat(image.height) + 1,
+                               width: CGFloat(image.width), height: CGFloat(image.height)))
+    return CGColor(red: CGFloat(pixel[0]) / 255,
+                   green: CGFloat(pixel[1]) / 255,
+                   blue: CGFloat(pixel[2]) / 255,
+                   alpha: 1)
 }
 
 var failures = 0
@@ -68,10 +111,15 @@ for file in files {
     // In orizzontale il bersaglio è lo stesso con i due numeri scambiati.
     let (tw, th) = srcW < srcH ? (targetW, targetH) : (targetH, targetW)
 
-    // Si ingrandisce sul lato che richiede il fattore maggiore, così l'altro
-    // resta in eccesso e non si scoprono bordi vuoti; l'eccesso viene poi
-    // tagliato al centro. Nessuna deformazione: la proporzione resta quella.
-    let scale = max(CGFloat(tw) / CGFloat(srcW), CGFloat(th) / CGFloat(srcH))
+    // Riempi: si ingrandisce sul lato che richiede il fattore maggiore, l'altro
+    // resta in eccesso e viene tagliato al centro.
+    // Adatta: si sceglie il fattore minore, così l'immagine ci sta tutta e
+    // avanza spazio ai lati o sopra e sotto.
+    // In entrambi i casi il fattore è uno solo per le due dimensioni: la
+    // proporzione non viene mai forzata.
+    let scale = padInsteadOfCrop
+        ? min(CGFloat(tw) / CGFloat(srcW), CGFloat(th) / CGFloat(srcH))
+        : max(CGFloat(tw) / CGFloat(srcW), CGFloat(th) / CGFloat(srcH))
     let drawW = CGFloat(srcW) * scale
     let drawH = CGFloat(srcH) * scale
     let originX = (CGFloat(tw) - drawW) / 2
@@ -89,6 +137,13 @@ for file in files {
         print("\(file.lastPathComponent): contesto non creato")
         failures += 1
         continue
+    }
+
+    // Le bande prendono il colore dell'angolo in alto a sinistra dell'immagine:
+    // su uno sfondo scuro spariscono, e non serve indovinare un colore.
+    if padInsteadOfCrop, let corner = cornerColor(of: image) {
+        context.setFillColor(corner)
+        context.fill(CGRect(x: 0, y: 0, width: tw, height: th))
     }
 
     context.interpolationQuality = .high
