@@ -29,7 +29,6 @@ struct CompactHomeView: View {
     /// Sezione Abitudini (beta): nascosta di default, come in sidebar.
     @AppStorage("habits.sectionVisible") private var areHabitsEnabled:      Bool   = false
 
-    @State private var showingNewFloorplan = false
 
     // MARK: - Dati
 
@@ -147,20 +146,9 @@ struct CompactHomeView: View {
             .listStyle(.insetGrouped)
             .tint(BrandColor.primary)
             .navigationTitle(homeKit.currentHome?.name ?? "Home Floorplan")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingNewFloorplan = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel(String(localized: "sidebar.newFloorplan",
-                                               defaultValue: "New Floorplan"))
-                }
-            }
-            .sheet(isPresented: $showingNewFloorplan) {
-                NewFloorplanSheet()
-            }
+            // Niente creazione planimetrie su iPhone: è un'azione da editor, e
+            // una planimetria creata qui resterebbe vuota — posizionare i
+            // marker è modifica, e la modifica non c'è. Si creano su iPad.
         }
     }
 
