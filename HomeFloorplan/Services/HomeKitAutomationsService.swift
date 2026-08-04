@@ -775,6 +775,65 @@ final class HomeKitAutomationsService {
         refresh()
     }
 
+    // MARK: - Diagnostica: com'è fatta la parte "azioni" delle automazioni
+
+    /// Conta su cosa puntano davvero le automazioni della casa. Serve a sapere
+    /// se la migrazione ha un caso d'uso qui, invece di dedurlo.
+    struct ActionDiagnostics: Sendable {
+        let total: Int
+        /// Puntano a una scena vera: già modificabili e già ripristinabili.
+        let namedScenes: Int
+        /// Azioni attaccate direttamente al trigger (`HMActionSetTypeTriggerOwned`
+        /// o contenitori creati dall'app). HomeKit non le lascia riscrivere.
+        let triggerOwned: Int
+        /// Fra queste, quelle con almeno un'azione che l'app non sa leggere.
+        let withUnreadableActions: Int
+        /// Quelle su cui la migrazione può fare qualcosa.
+        let migratable: Int
+        /// Senza nessuna azione collegata.
+        let withoutActions: Int
+    }
+
+    func actionDiagnostics() -> ActionDiagnostics {
+        let triggers = homeKit.currentHome?.triggers ?? []
+        var namedScenes = 0, triggerOwned = 0, unreadable = 0, migratable = 0, empty = 0
+
+        for trigger in triggers {
+            let sets = trigger.actionSets
+            guard !sets.isEmpty else { empty += 1; continue }
+
+            let inlineSets = sets.filter(Self.isTriggerOwned)
+            if inlineSets.isEmpty {
+                namedScenes += 1
+                continue
+            }
+            triggerOwned += 1
+            let allActions = inlineSets.flatMap { Array($0.actions) }
+            if allActions.contains(where: { $0.homeFloorplanCharacteristicWrite == nil }) {
+                unreadable += 1
+            }
+            if allActions.contains(where: { $0.homeFloorplanCharacteristicWrite != nil }) {
+                migratable += 1
+            }
+        }
+
+        return ActionDiagnostics(
+            total: triggers.count,
+            namedScenes: namedScenes,
+            triggerOwned: triggerOwned,
+            withUnreadableActions: unreadable,
+            migratable: migratable,
+            withoutActions: empty
+        )
+    }
+
+    /// Il segnale autorevole è `HMActionSetTypeTriggerOwned`; il prefisso è la
+    /// convenzione con cui l'app nomina i contenitori che crea lei.
+    static func isTriggerOwned(_ actionSet: HMActionSet) -> Bool {
+        actionSet.actionSetType == HMActionSetTypeTriggerOwned
+            || actionSet.name.hasPrefix("HF Actions - ")
+    }
+
     // MARK: - Migrazione delle azioni dirette
 
     /// Esito della migrazione, da mostrare all'utente.

@@ -11,11 +11,14 @@ import SwiftUI
 struct HomeKitIdentityProbeView: View {
 
     @Environment(HomeKitService.self) private var homeKit
+    @Environment(HomeKitAutomationsService.self) private var automationsService
     @State private var probe = HomeKitIdentityProbe()
     @State private var didCopy = false
 
     var body: some View {
         List {
+            automations
+
             Section {
                 if probe.isRunning {
                     VStack(alignment: .leading, spacing: 8) {
@@ -107,6 +110,39 @@ struct HomeKitIdentityProbeView: View {
         .navigationTitle(String(localized: "identityProbe.title", defaultValue: "Accessory identity"))
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: probe.report?.capturedAt) { _, _ in didCopy = false }
+    }
+
+    // MARK: - Automazioni: su cosa puntano davvero
+
+    /// Dice se la migrazione delle azioni dirette ha un caso d'uso in questa
+    /// casa. Se «attaccate al trigger» è zero, il pulsante non compare da
+    /// nessuna parte — ed è corretto così, non un difetto.
+    private var automations: some View {
+        let d = automationsService.actionDiagnostics()
+        return Section {
+            LabeledContent(String(localized: "automationDiag.total", defaultValue: "Automations"),
+                           value: "\(d.total)")
+            LabeledContent(String(localized: "automationDiag.namedScenes", defaultValue: "Point at a scene"),
+                           value: "\(d.namedScenes)")
+            LabeledContent(String(localized: "automationDiag.triggerOwned", defaultValue: "Actions attached to the trigger"),
+                           value: "\(d.triggerOwned)")
+            LabeledContent(String(localized: "automationDiag.unreadable", defaultValue: "…of which unreadable by the app"),
+                           value: "\(d.withUnreadableActions)")
+            LabeledContent(String(localized: "automationDiag.migratable", defaultValue: "Migration can act on"),
+                           value: "\(d.migratable)")
+            if d.withoutActions > 0 {
+                LabeledContent(String(localized: "automationDiag.noActions", defaultValue: "Without any action"),
+                               value: "\(d.withoutActions)")
+            }
+        } header: {
+            Text(String(localized: "automationDiag.header", defaultValue: "Automation actions"))
+        } footer: {
+            Text(d.triggerOwned == 0
+                 ? String(localized: "automationDiag.footer.none",
+                          defaultValue: "Every automation points at a real scene, so it is already editable and restorable. The migration has nothing to do here.")
+                 : String(localized: "automationDiag.footer.some",
+                          defaultValue: "Actions attached to a trigger cannot be rewritten by a third-party app, nor restored from a backup. Moving them into a scene fixes both."))
+        }
     }
 
     // MARK: - Le due impronte: sono la risposta

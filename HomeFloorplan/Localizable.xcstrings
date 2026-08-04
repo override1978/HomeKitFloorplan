@@ -93,6 +93,159 @@
         }
       }
     },
+    "automationDiag.footer.none" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every automation points at a real scene, so it is already editable and restorable. The migration has nothing to do here."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ogni automazione punta a una scena vera, quindi è già modificabile e ripristinabile. Qui la migrazione non ha nulla da fare."
+          }
+        }
+      }
+    },
+    "automationDiag.footer.some" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actions attached to a trigger cannot be rewritten by a third-party app, nor restored from a backup. Moving them into a scene fixes both."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le azioni attaccate a un trigger non sono riscrivibili da un'app di terze parti, né ripristinabili da un backup. Spostarle in una scena risolve entrambe le cose."
+          }
+        }
+      }
+    },
+    "automationDiag.header" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automation actions"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Azioni delle automazioni"
+          }
+        }
+      }
+    },
+    "automationDiag.migratable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Migration can act on"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Su cui la migrazione può agire"
+          }
+        }
+      }
+    },
+    "automationDiag.namedScenes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Point at a scene"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puntano a una scena"
+          }
+        }
+      }
+    },
+    "automationDiag.noActions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Without any action"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Senza nessuna azione"
+          }
+        }
+      }
+    },
+    "automationDiag.total" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automations"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automazioni"
+          }
+        }
+      }
+    },
+    "automationDiag.triggerOwned" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actions attached to the trigger"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Azioni attaccate al trigger"
+          }
+        }
+      }
+    },
+    "automationDiag.unreadable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "…of which unreadable by the app"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "…di cui illeggibili dall'app"
+          }
+        }
+      }
+    },
     "compact.floorplans.iPadOnly" : {
       "extractionState" : "manual",
       "localizations" : {
