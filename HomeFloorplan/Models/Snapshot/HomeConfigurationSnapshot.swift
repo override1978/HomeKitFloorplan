@@ -506,6 +506,11 @@ enum SnapshotCharacteristicNames {
 /// deliberatamente **le stesse**, così le due dicono almeno le stesse parole
 /// finché non verranno unificate — che è la cosa giusta da fare e non è questa.
 ///
+/// Sono poche perché una scena scrive quasi sempre booleani e numeri: gli
+/// enumerati sono la minoranza, e con questi sono coperti. Le tredici del
+/// catalogo automazioni riguardano un'altra superficie — gli **stati correnti**
+/// su cui scatta un trigger — e non vanno confuse con queste.
+///
 /// Coperte solo le caratteristiche che una scena scrive davvero, e nella loro
 /// variante `Target`: la `Current` dell'antifurto ha un valore in più
 /// («allarme in corso») che una scena non può impostare, e trattarle come
@@ -559,6 +564,27 @@ enum SnapshotCharacteristicValues {
         case HMCharacteristicTypeActive:
             [0: String(localized: "state.inactive", defaultValue: "Off"),
              1: String(localized: "state.active", defaultValue: "On")]
+
+        case HMCharacteristicTypeTargetMediaState:
+            [0: String(localized: "media.play", defaultValue: "Play"),
+             1: String(localized: "media.pause", defaultValue: "Pause"),
+             2: String(localized: "media.stop", defaultValue: "Stop")]
+
+        case HMCharacteristicTypeTargetVisibilityState:
+            [0: String(localized: "visibility.shown", defaultValue: "Shown"),
+             1: String(localized: "visibility.hidden", defaultValue: "Hidden")]
+
+        case HMCharacteristicTypeRotationDirection:
+            [0: String(localized: "rotation.clockwise", defaultValue: "Clockwise"),
+             1: String(localized: "rotation.counterClockwise", defaultValue: "Counter-clockwise")]
+
+        case HMCharacteristicTypeSwingMode:
+            [0: String(localized: "swing.disabled", defaultValue: "Off"),
+             1: String(localized: "swing.enabled", defaultValue: "On")]
+
+        case HMCharacteristicTypeLockPhysicalControls:
+            [0: String(localized: "childLock.disabled", defaultValue: "Unlocked"),
+             1: String(localized: "childLock.enabled", defaultValue: "Locked")]
 
         default:
             nil
