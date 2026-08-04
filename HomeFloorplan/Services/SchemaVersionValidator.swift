@@ -12,7 +12,10 @@ import SwiftData
 //   • If a migration is non-lightweight (e.g. custom mapping), create a
 //     VersionedSchema + SchemaMigrationPlan before shipping.
 //
-// Current schema — v24 (16 @Model types):
+// Current schema — v25 (18 @Model types):
+//   v25: KnownAccessory + AccessoryIdentityDecision added — the accessory
+//        census and the user's answers about which accessories are the same
+//        device (entity addition, lightweight migration)
 //   v24: Rule removed — an empty legacy table with no reader and no writer
 //        (entity removal, lightweight migration)
 //   v23: HabitPattern removed — nothing produced it once the behavioral
@@ -36,6 +39,8 @@ import SwiftData
 //   14. PersistedHomeInsight (primary unified insight store)
 //   15. ProactiveNotification
 //   16. SyncableSettings
+//   17. KnownAccessory (accessory census — when each accessory was first seen)
+//   18. AccessoryIdentityDecision (user answers on accessory identity)
 //
 // NOTE: Automated migration tests require a dedicated test target.
 // The project currently has no test target. When one is added, create a
@@ -49,7 +54,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 24
+    static let currentVersion: Int = 25
 
     // MARK: - Persistence
 

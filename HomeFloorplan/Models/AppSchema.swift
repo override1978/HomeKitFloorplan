@@ -25,5 +25,7 @@ enum AppSchema {
         PersistedHomeInsight.self,
         ProactiveNotification.self,
         SyncableSettings.self,
+        KnownAccessory.self,
+        AccessoryIdentityDecision.self,
     ]) }
 }
