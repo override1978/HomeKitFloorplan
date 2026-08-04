@@ -77,33 +77,99 @@ final class HomeSnapshotCapture {
 
     // MARK: - Numeri di serie
 
-    /// In sequenza e non in parallelo: un impianto reale ha decine di dispositivi
-    /// su radio lente (Thread, Zigbee dietro bridge) e interrogarli tutti insieme
-    /// produce timeout invece che risposte.
-    private func readSerialNumbers(of accessories: [HMAccessory]) async -> [UUID: String] {
-        var result: [UUID: String] = [:]
-        for (index, accessory) in accessories.enumerated() {
-            if let serial = await readSerialNumber(of: accessory) {
-                result[accessory.uniqueIdentifier] = serial
-            }
-            progress = Double(index + 1) / Double(max(1, accessories.count))
+    /// Cache persistente dei seriali, per UUID locale dell'accessorio.
+    ///
+    /// Un numero di serie è inciso nell'hardware: **non cambia mai**. Senza
+    /// questa cache ogni cattura ripagava 128 letture di rete — misurato su
+    /// una casa vera: **25,3 secondi**, che per un'azione da ripetere è troppo.
+    /// Con la cache, dalla seconda cattura in poi il costo è zero.
+    ///
+    /// Se un accessorio viene ri-accoppiato cambia UUID e quindi non trova la
+    /// voce: rileggerlo è esattamente ciò che serve.
+    private static let serialCacheKey = "snapshot.serialNumbers.v1"
+
+    private var serialCache: [String: String] {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: Self.serialCacheKey),
+                  let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+            else { return [:] }
+            return decoded
         }
+        set {
+            guard let data = try? JSONEncoder().encode(newValue) else { return }
+            UserDefaults.standard.set(data, forKey: Self.serialCacheKey)
+        }
+    }
+
+    private func readSerialNumbers(of accessories: [HMAccessory]) async -> [UUID: String] {
+        var cache = serialCache
+        var result: [UUID: String] = [:]
+
+        // Chi non espone affatto la caratteristica non costa niente: è una
+        // proprietà della struttura, non una lettura.
+        var pending: [(uuid: UUID, characteristic: HMCharacteristic)] = []
+        for accessory in accessories {
+            let uuid = accessory.uniqueIdentifier
+            if let cached = cache[uuid.uuidString] {
+                result[uuid] = cached
+                continue
+            }
+            guard let info = accessory.services.first(where: { $0.serviceType == HMServiceTypeAccessoryInformation }),
+                  let characteristic = info.characteristics.first(where: {
+                      $0.characteristicType == Self.serialNumberCharacteristicType
+                  })
+            else { continue }
+
+            if let live = characteristic.value.map({ "\($0)" }),
+               !live.trimmingCharacters(in: .whitespaces).isEmpty {
+                result[uuid] = live
+                cache[uuid.uuidString] = live
+                continue
+            }
+            pending.append((uuid, characteristic))
+        }
+
+        if pending.isEmpty {
+            progress = 1
+            serialCache = cache
+            return result
+        }
+
+        // A gruppi, non tutte insieme e non una alla volta. Tutte insieme
+        // significa inondare radio lente — Thread, Zigbee dietro bridge — e
+        // raccogliere timeout invece di risposte; una alla volta sono i 25
+        // secondi misurati. Otto è un compromesso che regge su un impianto reale.
+        let batchSize = 8
+        var completed = 0
+        for start in stride(from: 0, to: pending.count, by: batchSize) {
+            let batch = Array(pending[start..<min(start + batchSize, pending.count)])
+            let read = await withTaskGroup(of: (UUID, String?).self) { group in
+                for entry in batch {
+                    group.addTask { @MainActor in
+                        (entry.uuid, await Self.readValue(of: entry.characteristic))
+                    }
+                }
+                var collected: [(UUID, String?)] = []
+                for await outcome in group { collected.append(outcome) }
+                return collected
+            }
+            for (uuid, serial) in read {
+                guard let serial else { continue }
+                result[uuid] = serial
+                cache[uuid.uuidString] = serial
+            }
+            completed += batch.count
+            progress = Double(completed) / Double(pending.count)
+        }
+
+        serialCache = cache
         return result
     }
 
-    private func readSerialNumber(of accessory: HMAccessory) async -> String? {
-        guard let info = accessory.services.first(where: { $0.serviceType == HMServiceTypeAccessoryInformation }),
-              let characteristic = info.characteristics.first(where: {
-                  $0.characteristicType == Self.serialNumberCharacteristicType
-              })
-        else { return nil }
-
-        // La cache va benissimo: un numero di serie non cambia, e rileggerlo
-        // costerebbe un giro di rete per nulla.
-        if let cached = characteristic.value.map({ "\($0)" }),
-           !cached.trimmingCharacters(in: .whitespaces).isEmpty {
-            return cached
-        }
+    /// Una lettura fallita **non** viene messa in cache: sull'iPhone tre
+    /// accessori non avevano risposto pur avendo un seriale, e memorizzare
+    /// quel fallimento come «non ce l'ha» lo renderebbe definitivo.
+    private static func readValue(of characteristic: HMCharacteristic) async -> String? {
         let didRead = await withCheckedContinuation { continuation in
             characteristic.readValue { error in continuation.resume(returning: error == nil) }
         }
