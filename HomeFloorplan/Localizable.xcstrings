@@ -331,6 +331,74 @@
         }
       }
     },
+    "deadAutomation.disabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In pausa"
+          }
+        }
+      }
+    },
+    "deadAutomation.enabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active — it fires and does nothing"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attiva — scatta e non fa niente"
+          }
+        }
+      }
+    },
+    "deadAutomation.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These lost their actions and only the shell is left. Deleting them from Apple Home costs nothing and stops pointless firing."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hanno perso le proprie azioni ed è rimasto il guscio. Eliminarle da Apple Home non costa nulla e ferma gli scatti a vuoto."
+          }
+        }
+      }
+    },
+    "deadAutomation.header" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automations with no effect"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automazioni senza effetto"
+          }
+        }
+      }
+    },
     "floorplan.rotateForMarkers" : {
       "extractionState" : "manual",
       "localizations" : {

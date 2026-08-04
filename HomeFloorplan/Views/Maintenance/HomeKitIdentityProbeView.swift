@@ -17,6 +17,7 @@ struct HomeKitIdentityProbeView: View {
 
     var body: some View {
         List {
+            deadAutomations
             automations
 
             Section {
@@ -110,6 +111,43 @@ struct HomeKitIdentityProbeView: View {
         .navigationTitle(String(localized: "identityProbe.title", defaultValue: "Accessory identity"))
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: probe.report?.capturedAt) { _, _ in didCopy = false }
+    }
+
+    // MARK: - Automazioni morte
+
+    /// Automazioni che scattano e non fanno niente: hanno perso il proprio
+    /// contenuto e ne è rimasto il guscio. Se sono ancora **attive** scattano a
+    /// vuoto, ed è il caso che vale la pena mostrare per primo — è l'unico di
+    /// tutta questa schermata su cui l'utente può agire subito.
+    @ViewBuilder
+    private var deadAutomations: some View {
+        let dead = automationsService.actionDiagnostics().dead
+        if !dead.isEmpty {
+            Section {
+                ForEach(dead) { item in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: item.isEnabled ? "exclamationmark.triangle.fill" : "moon.zzz")
+                            .foregroundStyle(item.isEnabled ? .orange : .secondary)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.name)
+                            Text(item.isEnabled
+                                 ? String(localized: "deadAutomation.enabled",
+                                          defaultValue: "Active — it fires and does nothing")
+                                 : String(localized: "deadAutomation.disabled",
+                                          defaultValue: "Paused"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text(String(localized: "deadAutomation.header", defaultValue: "Automations with no effect"))
+            } footer: {
+                Text(String(localized: "deadAutomation.footer",
+                            defaultValue: "These lost their actions and only the shell is left. Deleting them from Apple Home costs nothing and stops pointless firing."))
+            }
+        }
     }
 
     // MARK: - Automazioni: su cosa puntano davvero

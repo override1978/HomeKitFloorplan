@@ -800,6 +800,25 @@ final class HomeKitAutomationsService {
         /// dice se la migrazione ha senso o se quelle automazioni sono
         /// irrimediabilmente fuori portata.
         let unreadableActionClasses: [String: Int]
+        /// Automazioni che **non fanno niente**: nessun action set, oppure un
+        /// contenitore rimasto vuoto. Se sono ancora attive scattano a vuoto.
+        let dead: [DeadAutomation]
+    }
+
+    /// Un'automazione che scatta e non produce alcun effetto. Sull'impianto di
+    /// riferimento ce n'erano 8 su 78 — residui di automazioni rimaste orfane
+    /// del proprio contenuto.
+    struct DeadAutomation: Identifiable, Sendable {
+        enum Reason: Sendable {
+            /// Il trigger non ha alcun action set collegato.
+            case noActionSet
+            /// Ha un contenitore attaccato al trigger, ma è vuoto.
+            case emptyContainer
+        }
+        let id: UUID
+        let name: String
+        let isEnabled: Bool
+        let reason: Reason
     }
 
     func actionDiagnostics() -> ActionDiagnostics {
@@ -807,10 +826,18 @@ final class HomeKitAutomationsService {
         var namedScenes = 0, triggerOwned = 0, unreadable = 0, migratable = 0, empty = 0
         var emptySets = 0
         var classes: [String: Int] = [:]
+        var dead: [DeadAutomation] = []
 
         for trigger in triggers {
             let sets = trigger.actionSets
-            guard !sets.isEmpty else { empty += 1; continue }
+            guard !sets.isEmpty else {
+                empty += 1
+                dead.append(DeadAutomation(id: trigger.uniqueIdentifier,
+                                           name: trigger.name,
+                                           isEnabled: trigger.isEnabled,
+                                           reason: .noActionSet))
+                continue
+            }
 
             let inlineSets = sets.filter(Self.isTriggerOwned)
             if inlineSets.isEmpty {
@@ -819,7 +846,13 @@ final class HomeKitAutomationsService {
             }
             triggerOwned += 1
             let allActions = inlineSets.flatMap { Array($0.actions) }
-            if allActions.isEmpty { emptySets += 1 }
+            if allActions.isEmpty {
+                emptySets += 1
+                dead.append(DeadAutomation(id: trigger.uniqueIdentifier,
+                                           name: trigger.name,
+                                           isEnabled: trigger.isEnabled,
+                                           reason: .emptyContainer))
+            }
 
             let unreadableActions = allActions.filter { $0.homeFloorplanCharacteristicWrite == nil }
             if !unreadableActions.isEmpty { unreadable += 1 }
@@ -839,7 +872,8 @@ final class HomeKitAutomationsService {
             migratable: migratable,
             withoutActions: empty,
             emptyTriggerOwnedSets: emptySets,
-            unreadableActionClasses: classes
+            unreadableActionClasses: classes,
+            dead: dead.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         )
     }
 
