@@ -142,21 +142,53 @@ struct SnapshotSceneDetailView: View {
 
     var body: some View {
         List {
-            Section {
-                if scene.actions.isEmpty {
+            if scene.actions.isEmpty {
+                Section {
                     Text(String(localized: "snapshot.scene.noReadableActions",
                                 defaultValue: "No action this app can read."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                ForEach(Self.byAccessory(scene.actions), id: \.name) { group in
-                    SceneAccessoryRow(group: group)
+            }
+
+            // Una sezione per accessorio: il nome resta fuori dalla scheda e i
+            // valori dentro, incolonnati. Sono poche coppie corte, e messe in
+            // colonna si confrontano a colpo d'occhio — in fila su una riga no.
+            ForEach(Self.byAccessory(scene.actions), id: \.name) { group in
+                Section {
+                    ForEach(group.services) { service in
+                        if let label = service.label {
+                            Text(label)
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                        ForEach(Array(service.entries.enumerated()), id: \.offset) { _, entry in
+                            LabeledContent(entry.characteristic, value: entry.value)
+                        }
+                    }
+                } header: {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(group.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .textCase(nil)
+                        if let room = group.roomName {
+                            Text(room)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textCase(nil)
+                        }
+                    }
                 }
-            } footer: {
-                if scene.foreignActionCount > 0 {
+            }
+
+            if scene.foreignActionCount > 0 {
+                Section {
                     Text(String(format: String(localized: "snapshot.scene.foreign",
                                                defaultValue: "%d further actions this app cannot read."),
                                 scene.foreignActionCount))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -168,6 +200,7 @@ struct SnapshotSceneDetailView: View {
 
     struct AccessoryGroup {
         let name: String
+        let roomName: String?
         /// Un blocco per servizio. Restano separati solo quando servono: su una
         /// lampada c'è un servizio solo e mostrarlo sarebbe rumore, su una
         /// multipresa sono le singole prese e senza non si capisce quale.
@@ -198,38 +231,19 @@ struct SnapshotSceneDetailView: View {
                             label: showsService ? (first.name ?? "#\(first.ordinal + 1)") : nil,
                             entries: actions
                                 .sorted { $0.target.characteristicType < $1.target.characteristicType }
-                                .map { (SnapshotCharacteristicNames.readable($0.target.characteristicType),
-                                        $0.value.displayText) }
+                                .map { action in
+                                    (action.target.characteristicName
+                                        ?? SnapshotCharacteristicNames.readable(action.target.characteristicType),
+                                     action.value.displayText(unit: action.format?.units))
+                                }
                         )
                     }
                     .sorted { ($0.label ?? "") < ($1.label ?? "") }
-                return AccessoryGroup(name: name, services: services)
+                return AccessoryGroup(name: name,
+                                      roomName: actions[0].target.accessory.roomName,
+                                      services: services)
             }
             .sorted { $0.name < $1.name }
-    }
-}
-
-private struct SceneAccessoryRow: View {
-    let group: SnapshotSceneDetailView.AccessoryGroup
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(group.name)
-            ForEach(group.services) { service in
-                VStack(alignment: .leading, spacing: 2) {
-                    if let label = service.label {
-                        Text(label)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    Text(service.entries.map { "\($0.characteristic) \($0.value)" }
-                        .joined(separator: "  ·  "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .padding(.vertical, 2)
     }
 }
 

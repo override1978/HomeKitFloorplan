@@ -454,7 +454,8 @@ final class HomeSnapshotCapture {
                     isPrimary: service.isPrimaryService,
                     localUUID: service.uniqueIdentifier.uuidString
                 ),
-                characteristicType: characteristic.characteristicType
+                characteristicType: characteristic.characteristicType,
+                characteristicName: characteristic.localizedDescription
             ),
             value: SnapshotValue(value),
             format: formatHint(characteristic.metadata)

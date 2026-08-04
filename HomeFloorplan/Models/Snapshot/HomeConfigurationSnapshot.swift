@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import HomeKit
 
 // MARK: - Indirizzamento
 
@@ -46,6 +47,11 @@ struct CharacteristicAddress: Codable, Hashable, Sendable {
     let accessory: AccessoryAddress
     let service: ServiceAddress
     let characteristicType: String
+    /// Come la chiama il sistema — «Luminosità», «Stato antifurto» — già
+    /// tradotta. Meglio di una mappa di UUID scritta a mano: quella copre
+    /// dodici casi e sbaglia sui restanti, questa arriva da HomeKit ed è giusta
+    /// per definizione. Solo presentazione: l'identità resta il tipo.
+    let characteristicName: String?
 }
 
 // MARK: - Valori
@@ -421,6 +427,29 @@ extension SnapshotValue {
 // snapshot, che è puro e non importa SwiftUI.
 
 extension SnapshotValue {
+    /// Col simbolo dell'unità quando HomeKit lo dichiara: «55 %» dice qualcosa
+    /// che «55» non dice.
+    func displayText(unit: String?) -> String {
+        guard let symbol = Self.unitSymbol(unit) else { return displayText }
+        // L'unità vale sui numeri. Un interruttore non è «acceso %».
+        switch self {
+        case .int, .double: return "\(displayText) \(symbol)"
+        default:            return displayText
+        }
+    }
+
+    private static func unitSymbol(_ unit: String?) -> String? {
+        switch unit {
+        case HMCharacteristicMetadataUnitsPercentage: "%"
+        case HMCharacteristicMetadataUnitsCelsius:    "°C"
+        case HMCharacteristicMetadataUnitsFahrenheit: "°F"
+        case HMCharacteristicMetadataUnitsArcDegree:  "°"
+        case HMCharacteristicMetadataUnitsSeconds:    "s"
+        case HMCharacteristicMetadataUnitsLux:        "lux"
+        default: nil
+        }
+    }
+
     var displayText: String {
         switch self {
         case .bool(let value):
@@ -453,6 +482,7 @@ enum SnapshotCharacteristicNames {
         "00000029": "Velocità"
     ]
 
+    /// Ripiego quando il nome di sistema non c'è.
     static func readable(_ characteristicType: String) -> String {
         let prefix = String(characteristicType.prefix(8)).uppercased()
         if let name = names[prefix] { return name }
