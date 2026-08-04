@@ -84,10 +84,20 @@ struct ZoneSnapshot: Codable, Sendable {
     let localUUID: String?
 }
 
+/// Quale servizio sta dentro un gruppo, non solo quanti.
+struct ServiceGroupMemberSnapshot: Codable, Sendable {
+    let accessoryName: String
+    let accessorySerialNumber: String?
+    let serviceType: String
+    let ordinal: Int
+    let serviceName: String?
+}
+
 struct ServiceGroupSnapshot: Codable, Sendable {
     let name: String
     let serviceCount: Int
     let localUUID: String?
+    let members: [ServiceGroupMemberSnapshot]
 }
 
 struct CharacteristicSnapshot: Codable, Sendable {
@@ -99,10 +109,19 @@ struct CharacteristicSnapshot: Codable, Sendable {
 struct ServiceSnapshot: Codable, Sendable {
     let address: ServiceAddress
     let characteristics: [CharacteristicSnapshot]
+    /// È ciò che fa mostrare una presa come luce: senza, un accessorio
+    /// ripristinato si presenta diverso da com'era.
+    let associatedServiceType: String?
+    let isUserInteractive: Bool
 }
 
 struct AccessorySnapshot: Codable, Sendable {
     let address: AccessoryAddress
+    /// Da quale bridge è esposto. Serve al caso che rende un ri-accoppiamento
+    /// incomprensibile: trenta accessori spariti tutti insieme, e senza questo
+    /// non c'è modo di sapere che erano dello stesso.
+    let bridgeName: String?
+    let bridgeSerialNumber: String?
     /// Sola lettura, ma è **il** dato di manutenzione: sapere che il firmware di
     /// un accessorio è cambiato il 3 agosto vale più del numero in sé.
     let firmwareVersion: String?
@@ -122,6 +141,7 @@ struct SceneSnapshot: Codable, Sendable {
     /// Contenitore creato da un trigger — `HF Actions - …` — non una scena che
     /// qualcuno ha fatto. Porta un suffisso casuale nel nome, quindi non va né
     /// mostrato né confrontato: risulterebbe diverso a ogni ricreazione.
+    ///
     let isTriggerOwned: Bool
     let localUUID: String?
     let actions: [SceneActionSnapshot]

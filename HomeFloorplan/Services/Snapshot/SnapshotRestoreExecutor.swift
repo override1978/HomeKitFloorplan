@@ -65,6 +65,10 @@ final class SnapshotRestoreExecutor {
             || selected.contains("zone.changed.\(zone.name)") {
             await restoreZone(zone, in: home, into: &outcome)
         }
+        for group in snapshot.serviceGroups where selected.contains("group.missing.\(group.name)")
+            || selected.contains("group.changed.\(group.name)") {
+            await restoreServiceGroup(group, in: home, into: &outcome)
+        }
         for scene in snapshot.scenes where selected.contains("scene.missing.\(scene.name)")
             || selected.contains("scene.changed.\(scene.name)") {
             await restoreScene(scene, in: home, into: &outcome)
@@ -182,6 +186,56 @@ final class SnapshotRestoreExecutor {
         } catch {
             outcome.skipped.append((zone.name, error.localizedDescription))
         }
+    }
+
+    // MARK: - Gruppi di servizi
+
+    private func restoreServiceGroup(_ group: ServiceGroupSnapshot,
+                                     in home: HMHome,
+                                     into outcome: inout Outcome) async {
+        guard !group.members.isEmpty else { return }
+        do {
+            let target: HMServiceGroup
+            if let existing = home.serviceGroups.first(where: { $0.name == group.name }) {
+                target = existing
+            } else {
+                target = try await home.addServiceGroup(named: group.name)
+            }
+            var added = 0
+            var missing: [String] = []
+            for member in group.members {
+                guard let service = resolve(member, in: home) else {
+                    missing.append(member.accessoryName)
+                    continue
+                }
+                guard !target.services.contains(where: {
+                    $0.uniqueIdentifier == service.uniqueIdentifier
+                }) else { continue }
+                try await target.addService(service)
+                added += 1
+            }
+            outcome.restored.append(String(format: String(localized: "restore.done.group",
+                                                          defaultValue: "Group “%1$@” · %2$d services"),
+                                           group.name, added))
+            if !missing.isEmpty {
+                outcome.skipped.append((group.name, missing.joined(separator: ", ")))
+            }
+        } catch {
+            outcome.skipped.append((group.name, error.localizedDescription))
+        }
+    }
+
+    private func resolve(_ member: ServiceGroupMemberSnapshot, in home: HMHome) -> HMService? {
+        let candidates = home.accessories.filter { accessory in
+            if let serial = member.accessorySerialNumber, !serial.isEmpty {
+                return accessory.name == member.accessoryName
+            }
+            return accessory.name == member.accessoryName
+        }
+        guard candidates.count == 1 else { return nil }
+        let sameType = candidates[0].services.filter { $0.serviceType == member.serviceType }
+        guard member.ordinal < sameType.count else { return nil }
+        return sameType[member.ordinal]
     }
 
     // MARK: - Scene
@@ -420,6 +474,16 @@ private extension HMHome {
         }
     }
 
+    func addServiceGroup(named name: String) async throws -> HMServiceGroup {
+        try await withCheckedThrowingContinuation { continuation in
+            addServiceGroup(withName: name) { group, error in
+                if let error { continuation.resume(throwing: error) }
+                else if let group { continuation.resume(returning: group) }
+                else { continuation.resume(throwing: SnapshotRestoreError.noResult) }
+            }
+        }
+    }
+
     func addActionSet(named name: String) async throws -> HMActionSet {
         try await withCheckedThrowingContinuation { continuation in
             addActionSet(withName: name) { actionSet, error in
@@ -433,6 +497,16 @@ private extension HMHome {
     func assignAccessory(_ accessory: HMAccessory, to room: HMRoom) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             assignAccessory(accessory, to: room) { error in
+                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+            }
+        }
+    }
+}
+
+private extension HMServiceGroup {
+    func addService(_ service: HMService) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            addService(service) { error in
                 if let error { continuation.resume(throwing: error) } else { continuation.resume() }
             }
         }

@@ -56,16 +56,12 @@ struct HomeSnapshotDiff: Sendable {
         /// **automazioni** nemmeno: misurato sull'impianto di riferimento, 39 su
         /// 78 eseguono `HMShortcutAction`, che non esiste nell'SDK pubblico.
         ///
-        /// I **gruppi di servizi** nemmeno, ma per colpa nostra: la cattura ne
-        /// salva solo il conteggio, non quali servizi contenevano. Ricrearli
-        /// vuoti sarebbe peggio che non ricrearli.
-        ///
         /// Le **automazioni** dipendono dalla singola voce: si ricreano quelle
-        /// che portano con sé una forma ricostruibile, e sono una minoranza.
+        /// che portano con sé una forma ricostruibile.
         var isRestorable: Bool {
             switch self {
-            case .scenes, .rooms, .zones, .automations:  true
-            case .accessories, .serviceGroups:           false
+            case .scenes, .rooms, .zones, .automations, .serviceGroups: true
+            case .accessories:                                          false
             }
         }
     }
@@ -195,16 +191,48 @@ struct HomeSnapshotDiff: Sendable {
 
     private static func serviceGroupItems(_ snapshot: HomeConfigurationSnapshot,
                                           _ current: HomeConfigurationSnapshot) -> [Item] {
-        let currentNames = Set(current.serviceGroups.map(\.name))
+        let currentByName = Dictionary(current.serviceGroups.map { ($0.name, $0) },
+                                       uniquingKeysWith: { a, _ in a })
         let snapshotNames = Set(snapshot.serviceGroups.map(\.name))
-        return snapshot.serviceGroups
-            .filter { !currentNames.contains($0.name) }
-            .map { Item(id: "group.missing.\($0.name)", category: .serviceGroups,
-                        change: .missingNow, title: $0.name, details: []) }
-        + current.serviceGroups
-            .filter { !snapshotNames.contains($0.name) }
-            .map { Item(id: "group.new.\($0.name)", category: .serviceGroups,
-                        change: .newSinceThen, title: $0.name, details: []) }
+        var items: [Item] = []
+
+        for group in snapshot.serviceGroups {
+            // Un gruppo di cui non conosciamo i membri non è ripristinabile:
+            // ricrearlo vuoto sarebbe peggio che non ricrearlo.
+            let known = !group.members.isEmpty
+            guard let now = currentByName[group.name] else {
+                items.append(Item(id: "group.missing.\(group.name)", category: .serviceGroups,
+                                  change: .missingNow, title: group.name,
+                                  details: known ? group.members.map(describe)
+                                                 : [emptyMembersNote(group)],
+                                  isRestorable: known))
+                continue
+            }
+            let missing = group.members.filter { member in
+                !now.members.contains { $0.accessoryName == member.accessoryName
+                                        && $0.serviceType == member.serviceType
+                                        && $0.ordinal == member.ordinal }
+            }
+            guard !missing.isEmpty else { continue }
+            items.append(Item(id: "group.changed.\(group.name)", category: .serviceGroups,
+                              change: .changed, title: group.name,
+                              details: missing.map(describe), isRestorable: true))
+        }
+        for group in current.serviceGroups where !snapshotNames.contains(group.name) {
+            items.append(Item(id: "group.new.\(group.name)", category: .serviceGroups,
+                              change: .newSinceThen, title: group.name, details: []))
+        }
+        return items
+    }
+
+    private static func describe(_ member: ServiceGroupMemberSnapshot) -> String {
+        [member.accessoryName, member.serviceName].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private static func emptyMembersNote(_ group: ServiceGroupSnapshot) -> String {
+        String(format: String(localized: "diff.group.unknownMembers",
+                              defaultValue: "%d services, but this snapshot did not record which ones"),
+               group.serviceCount)
     }
 
     private static func roomListDifference(was: [String], now: [String]) -> [String] {
@@ -322,9 +350,15 @@ struct HomeSnapshotDiff: Sendable {
 
         for accessory in snapshot.accessories {
             guard let index = matchIndex(of: accessory, in: unmatched) else {
+                var details = [accessory.address.roomName].compactMap { $0 }
+                if let bridge = accessory.bridgeName {
+                    // Con questo, trenta sparizioni simultanee si leggono per
+                    // quello che sono: un bridge riaccoppiato.
+                    details.append(String(format: String(localized: "diff.accessory.viaBridge",
+                                                         defaultValue: "was behind “%@”"), bridge))
+                }
                 items.append(Item(id: "acc.missing.\(accessory.address.name)", category: .accessories,
-                                  change: .missingNow, title: accessory.address.name,
-                                  details: [accessory.address.roomName].compactMap { $0 }))
+                                  change: .missingNow, title: accessory.address.name, details: details))
                 continue
             }
             let now = unmatched.remove(at: index)

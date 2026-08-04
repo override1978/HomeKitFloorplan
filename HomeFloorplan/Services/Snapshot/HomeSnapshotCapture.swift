@@ -82,8 +82,14 @@ final class HomeSnapshotCapture {
             homeUUID: home.uniqueIdentifier.uuidString,
             rooms: home.rooms.map(roomSnapshot),
             zones: home.zones.map(zoneSnapshot),
-            serviceGroups: home.serviceGroups.map(serviceGroupSnapshot),
-            accessories: home.accessories.map { accessorySnapshot($0, serial: serials[$0.uniqueIdentifier]) },
+            serviceGroups: home.serviceGroups.map { serviceGroupSnapshot($0, serials: serials) },
+            accessories: {
+                let bridges = bridgeMap(of: home.accessories)
+                return home.accessories.map {
+                    accessorySnapshot($0, serial: serials[$0.uniqueIdentifier],
+                                      bridges: bridges, serials: serials)
+                }
+            }(),
             scenes: home.actionSets.map { sceneSnapshot($0, serials: serials) },
             automations: {
                 // Il catalogo si costruisce una volta sola: serve a decodificare
@@ -303,10 +309,27 @@ final class HomeSnapshotCapture {
                      localUUID: zone.uniqueIdentifier.uuidString)
     }
 
-    private func serviceGroupSnapshot(_ group: HMServiceGroup) -> ServiceGroupSnapshot {
-        ServiceGroupSnapshot(name: group.name,
-                             serviceCount: group.services.count,
-                             localUUID: group.uniqueIdentifier.uuidString)
+    private func serviceGroupSnapshot(_ group: HMServiceGroup,
+                                      serials: [UUID: String]) -> ServiceGroupSnapshot {
+        let members = group.services.compactMap { service -> ServiceGroupMemberSnapshot? in
+            guard let accessory = service.accessory else { return nil }
+            var ordinal = 0
+            for candidate in accessory.services where candidate.serviceType == service.serviceType {
+                if candidate.uniqueIdentifier == service.uniqueIdentifier { break }
+                ordinal += 1
+            }
+            return ServiceGroupMemberSnapshot(
+                accessoryName: accessory.name,
+                accessorySerialNumber: serials[accessory.uniqueIdentifier],
+                serviceType: service.serviceType,
+                ordinal: ordinal,
+                serviceName: service.name
+            )
+        }
+        return ServiceGroupSnapshot(name: group.name,
+                                    serviceCount: group.services.count,
+                                    localUUID: group.uniqueIdentifier.uuidString,
+                                    members: members)
     }
 
     private func address(of accessory: HMAccessory, serial: String?) -> AccessoryAddress {
@@ -322,12 +345,30 @@ final class HomeSnapshotCapture {
         )
     }
 
-    private func accessorySnapshot(_ accessory: HMAccessory, serial: String?) -> AccessorySnapshot {
-        AccessorySnapshot(
+    private func accessorySnapshot(_ accessory: HMAccessory,
+                                   serial: String?,
+                                   bridges: [UUID: HMAccessory],
+                                   serials: [UUID: String]) -> AccessorySnapshot {
+        let bridge = bridges[accessory.uniqueIdentifier]
+        return AccessorySnapshot(
             address: address(of: accessory, serial: serial),
+            bridgeName: bridge?.name,
+            bridgeSerialNumber: bridge.flatMap { serials[$0.uniqueIdentifier] },
             firmwareVersion: accessory.firmwareVersion,
             services: serviceSnapshots(of: accessory)
         )
+    }
+
+    /// `figlio → bridge`. Il legame si legge solo dal lato del bridge, che
+    /// elenca i suoi, quindi va rovesciato una volta sola.
+    private func bridgeMap(of accessories: [HMAccessory]) -> [UUID: HMAccessory] {
+        var map: [UUID: HMAccessory] = [:]
+        for bridge in accessories {
+            for child in bridge.uniqueIdentifiersForBridgedAccessories ?? [] {
+                map[child] = bridge
+            }
+        }
+        return map
     }
 
     /// L'ordinale si calcola sull'ordine in cui HomeKit espone i servizi, che è
@@ -352,7 +393,9 @@ final class HomeSnapshotCapture {
                         properties: characteristic.properties,
                         format: formatHint(characteristic.metadata)
                     )
-                }
+                },
+                associatedServiceType: service.associatedServiceType,
+                isUserInteractive: service.isUserInteractive
             )
         }
     }

@@ -58239,6 +58239,57 @@
           }
         }
       }
+    },
+    "restore.done.group" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Group “%1$@” · %2$d services"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gruppo «%1$@» · %2$d servizi"
+          }
+        }
+      }
+    },
+    "diff.group.unknownMembers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d services, but this snapshot did not record which ones"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d servizi, ma questo snapshot non ha registrato quali"
+          }
+        }
+      }
+    },
+    "diff.accessory.viaBridge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "was behind “%@”"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "era dietro «%@»"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

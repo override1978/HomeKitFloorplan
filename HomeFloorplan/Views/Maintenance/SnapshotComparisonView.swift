@@ -230,9 +230,6 @@ struct SnapshotComparisonView: View {
         case .accessories:
             String(localized: "diff.footer.accessories",
                    defaultValue: "Accessories cannot be restored: no app can pair a device back into HomeKit. They are listed so you know what is missing.")
-        case .serviceGroups:
-            String(localized: "diff.footer.serviceGroups",
-                   defaultValue: "Service groups are shown but not restored: the snapshot recorded how many services each one held, not which ones.")
         default:
             ""
         }
