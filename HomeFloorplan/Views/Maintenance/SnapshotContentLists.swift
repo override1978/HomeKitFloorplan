@@ -199,3 +199,107 @@ struct SnapshotAutomationListView: View {
         }
     }
 }
+
+// MARK: - Stanze
+
+/// Le stanze con chi ci stava dentro. È l'elenco che serve dopo aver spostato
+/// accessori per sbaglio: dice dov'erano, per nome.
+struct SnapshotRoomListView: View {
+    let snapshot: HomeConfigurationSnapshot
+
+    private var rooms: [RoomSnapshot] {
+        snapshot.rooms.sorted { $0.address.name < $1.address.name }
+    }
+
+    var body: some View {
+        List {
+            ForEach(Array(rooms.enumerated()), id: \.offset) { _, room in
+                Section {
+                    if room.accessoryNames.isEmpty {
+                        Text(String(localized: "snapshot.room.empty", defaultValue: "No accessory"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(room.accessoryNames.sorted(), id: \.self) { name in
+                        Text(name)
+                    }
+                } header: {
+                    HStack {
+                        Text(room.address.name)
+                        Spacer()
+                        Text("\(room.accessoryNames.count)")
+                            .monospacedDigit()
+                    }
+                }
+            }
+        }
+        .navigationTitle(String(localized: "snapshot.rooms", defaultValue: "Rooms"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Zone
+
+struct SnapshotZoneListView: View {
+    let snapshot: HomeConfigurationSnapshot
+
+    private var zones: [ZoneSnapshot] {
+        snapshot.zones.sorted { $0.name < $1.name }
+    }
+
+    var body: some View {
+        List {
+            ForEach(Array(zones.enumerated()), id: \.offset) { _, zone in
+                Section(zone.name) {
+                    ForEach(zone.roomNames.sorted(), id: \.self) { name in
+                        Label(name, systemImage: "door.left.hand.closed")
+                    }
+                }
+            }
+        }
+        .navigationTitle(String(localized: "snapshot.zones", defaultValue: "Zones"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Gruppi di servizi
+
+/// I gruppi con **quali** servizi contengono, non quanti: è la differenza fra
+/// poterli ripristinare e poterli solo constatare.
+struct SnapshotServiceGroupListView: View {
+    let snapshot: HomeConfigurationSnapshot
+
+    private var groups: [ServiceGroupSnapshot] {
+        snapshot.serviceGroups.sorted { $0.name < $1.name }
+    }
+
+    var body: some View {
+        List {
+            ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                Section {
+                    if group.members.isEmpty {
+                        Text(String(format: String(localized: "snapshot.group.unknownMembers",
+                                                   defaultValue: "%d services, not recorded individually"),
+                                    group.serviceCount))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(Array(group.members.enumerated()), id: \.offset) { _, member in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(member.accessoryName)
+                            if let name = member.serviceName, name != member.accessoryName {
+                                Text(name)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text(group.name)
+                }
+            }
+        }
+        .navigationTitle(String(localized: "snapshot.serviceGroups", defaultValue: "Service groups"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

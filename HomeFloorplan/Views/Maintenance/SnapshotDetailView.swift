@@ -250,14 +250,28 @@ struct SnapshotDetailView: View {
                 countRow("gearshape.2", String(localized: "snapshot.automations", defaultValue: "Automations"),
                          snapshot.automations.count)
             }
-            countRow("door.left.hand.closed", String(localized: "snapshot.rooms", defaultValue: "Rooms"),
-                     snapshot.rooms.count)
-            countRow("square.grid.3x3", String(localized: "snapshot.zones", defaultValue: "Zones"),
-                     snapshot.zones.count)
+            NavigationLink {
+                SnapshotRoomListView(snapshot: snapshot)
+            } label: {
+                countRow("door.left.hand.closed", String(localized: "snapshot.rooms", defaultValue: "Rooms"),
+                         snapshot.rooms.count)
+            }
+            if !snapshot.zones.isEmpty {
+                NavigationLink {
+                    SnapshotZoneListView(snapshot: snapshot)
+                } label: {
+                    countRow("square.grid.3x3", String(localized: "snapshot.zones", defaultValue: "Zones"),
+                             snapshot.zones.count)
+                }
+            }
             if !snapshot.serviceGroups.isEmpty {
-                countRow("rectangle.3.group",
-                         String(localized: "snapshot.serviceGroups", defaultValue: "Service groups"),
-                         snapshot.serviceGroups.count)
+                NavigationLink {
+                    SnapshotServiceGroupListView(snapshot: snapshot)
+                } label: {
+                    countRow("rectangle.3.group",
+                             String(localized: "snapshot.serviceGroups", defaultValue: "Service groups"),
+                             snapshot.serviceGroups.count)
+                }
             }
         } header: {
             Text(String(localized: "snapshot.content.header", defaultValue: "Content"))
