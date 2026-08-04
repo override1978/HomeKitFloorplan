@@ -95,6 +95,7 @@ struct HomeFloorplanRootView: View {
             locationPresenceService: services.locationPresenceService,
             familyPresenceService: services.familyPresenceService,
             maintenancePredictionService: services.maintenancePredictionService,
+            snapshotStore: services.snapshotStore,
             weatherKitService: services.weatherKitService,
             smartLightingEngine: services.smartLightingEngine,
             aiSettings: services.aiSettings,
@@ -219,6 +220,7 @@ private struct AppEnvironmentModifier: ViewModifier {
     let locationPresenceService: LocationPresenceService
     let familyPresenceService: FamilyPresenceService
     let maintenancePredictionService: MaintenancePredictionService
+    let snapshotStore: HomeSnapshotStore
     let weatherKitService: WeatherKitService
     let smartLightingEngine: SmartLightingEngine
     let aiSettings: AISettings
@@ -242,6 +244,7 @@ private struct AppEnvironmentModifier: ViewModifier {
             .environment(locationPresenceService)
             .environment(familyPresenceService)
             .environment(maintenancePredictionService)
+            .environment(snapshotStore)
             .environment(weatherKitService)
             .environment(smartLightingEngine)
             .environment(aiSettings)

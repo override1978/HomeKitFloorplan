@@ -28,6 +28,8 @@ final class AppServices {
     let locationPresenceService: LocationPresenceService
     let familyPresenceService: FamilyPresenceService
     let maintenancePredictionService: MaintenancePredictionService
+    /// Snapshot della configurazione HomeKit: file su disco, indice a parte.
+    let snapshotStore = HomeSnapshotStore()
     let weatherKitService: WeatherKitService
     let smartLightingEngine: SmartLightingEngine
     let aiSettings: AISettings

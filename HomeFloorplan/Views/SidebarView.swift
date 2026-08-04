@@ -168,6 +168,10 @@ struct SidebarView: View {
             // MARK: Impostazioni
             Section {
                 DisclosureGroup(isExpanded: $settingsExpanded) {
+                    NavigationLink(value: SidebarSelection.maintenance) {
+                        Label(String(localized: "sidebar.maintenance", defaultValue: "Maintenance"),
+                              systemImage: "clock.arrow.circlepath")
+                    }
                     NavigationLink(value: SidebarSelection.settings) {
                         Label(String(localized: "sidebar.settings", defaultValue: "Settings"), systemImage: "gearshape")
                     }
@@ -383,5 +387,6 @@ enum SidebarSelection: Hashable {
     case homeIntelligence
     case debugHomeKit
     case homeIntelligenceDebug
+    case maintenance
     case settings
 }

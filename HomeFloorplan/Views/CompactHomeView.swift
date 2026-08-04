@@ -149,6 +149,9 @@ struct CompactHomeView: View {
                 }
 
                 Section {
+                    destinationRow(.maintenance,
+                                   title: String(localized: "sidebar.maintenance", defaultValue: "Maintenance"),
+                                   icon: "clock.arrow.circlepath")
                     destinationRow(.settings,
                                    title: String(localized: "sidebar.settings", defaultValue: "Settings"),
                                    icon: "gearshape")
@@ -433,6 +436,8 @@ struct CompactHomeView: View {
             HabitsView()
         case .homeIntelligence:
             HomeIntelligenceDashboardView()
+        case .maintenance:
+            MaintenanceView()
         case .settings:
             SettingsView()
         case .debugHomeKit:
