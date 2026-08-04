@@ -1,15 +1,15 @@
 import SwiftUI
 
-// MARK: - AccessoryReconciliationView
+// MARK: - UnknownAccessoriesView
 
-/// «Cosa è successo a questi accessori?»
+/// Gli accessori che l'app non sa più dove collocare, e le risposte possibili.
 ///
-/// Una scheda per accessorio sparito, raggruppate per stanza, e sotto ognuna le
-/// risposte possibili. Ogni proposta dice **perché** è stata fatta: «stesso
-/// numero di serie» e «stesso modello nella stessa stanza» portano a decisioni
-/// diverse, e senza il motivo scritto due pulsanti identici sembrano
-/// equivalenti quando non lo sono.
-struct AccessoryReconciliationView: View {
+/// Qui c'è **solo ciò che è aperto**: quando non c'è niente da risolvere la
+/// schermata lo dice e finisce lì. Ogni proposta porta scritto **perché** è
+/// stata fatta — «stesso numero di serie» e «stesso modello nella stessa
+/// stanza» portano a decisioni diverse, e senza il motivo due pulsanti identici
+/// sembrano equivalenti quando non lo sono.
+struct UnknownAccessoriesView: View {
 
     @Environment(AccessoryReconciliationService.self) private var reconciliation
 
@@ -23,39 +23,19 @@ struct AccessoryReconciliationView: View {
     }
 
     var body: some View {
-        List {
+        Group {
             if reconciliation.reviews.isEmpty {
                 ContentUnavailableView(
-                    String(localized: "reconcile.empty.title", defaultValue: "Nothing to sort out"),
+                    String(localized: "reconcile.empty.title", defaultValue: "Everything is where it should be"),
                     systemImage: "checkmark.circle",
                     description: Text(String(localized: "reconcile.empty.message",
-                                             defaultValue: "Every accessory is where the app last saw it."))
+                                             defaultValue: "Every accessory the app knows is still in HomeKit. Nothing to sort out."))
                 )
             } else {
-                Section {
-                    Text(String(localized: "reconcile.intro",
-                                defaultValue: "These accessories are no longer in HomeKit. Saying what happened to them is what resolves their identity — and moves their markers to the right place."))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-
-                ForEach(grouped, id: \.room) { group in
-                    Section(group.room.uppercased()) {
-                        ForEach(group.reviews) { review in
-                            ReviewCard(
-                                review: review,
-                                onReplace: { candidate in
-                                    reconciliation.replace(review, with: candidate.id, reason: candidate.reason)
-                                },
-                                onManualPick: { manualPickFor = review },
-                                onDiscard: { confirmingDiscard = review }
-                            )
-                        }
-                    }
-                }
+                list
             }
         }
-        .navigationTitle(String(localized: "reconcile.title", defaultValue: "What happened?"))
+        .navigationTitle(String(localized: "sidebar.unknownAccessories", defaultValue: "Unknown Accessories"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { reconciliation.refresh() }
         .sheet(item: $manualPickFor) { review in
@@ -82,6 +62,32 @@ struct AccessoryReconciliationView: View {
                 Text(String(format: String(localized: "reconcile.discard.message",
                                            defaultValue: "%d markers will be removed from your floorplans."),
                             review.markerCount))
+            }
+        }
+    }
+
+    private var list: some View {
+        List {
+            Section {
+                Text(String(localized: "reconcile.intro",
+                            defaultValue: "These accessories are no longer in HomeKit. Saying what happened to them is what resolves their identity — and moves their markers to the right place."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(grouped, id: \.room) { group in
+                Section(group.room.uppercased()) {
+                    ForEach(group.reviews) { review in
+                        ReviewCard(
+                            review: review,
+                            onReplace: { candidate in
+                                reconciliation.replace(review, with: candidate.id, reason: candidate.reason)
+                            },
+                            onManualPick: { manualPickFor = review },
+                            onDiscard: { confirmingDiscard = review }
+                        )
+                    }
+                }
             }
         }
     }

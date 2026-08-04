@@ -149,9 +149,13 @@ struct CompactHomeView: View {
                 }
 
                 Section {
-                    destinationRow(.maintenance,
-                                   title: String(localized: "sidebar.maintenance", defaultValue: "Maintenance"),
+                    destinationRow(.snapshots,
+                                   title: String(localized: "sidebar.snapshots", defaultValue: "Backup & Restore"),
                                    icon: "clock.arrow.circlepath")
+                    destinationRow(.unknownAccessories,
+                                   title: String(localized: "sidebar.unknownAccessories",
+                                                 defaultValue: "Unknown Accessories"),
+                                   icon: "questionmark.square.dashed")
                     destinationRow(.settings,
                                    title: String(localized: "sidebar.settings", defaultValue: "Settings"),
                                    icon: "gearshape")
@@ -436,8 +440,10 @@ struct CompactHomeView: View {
             HabitsView()
         case .homeIntelligence:
             HomeIntelligenceDashboardView()
-        case .maintenance:
-            MaintenanceView()
+        case .snapshots:
+            SnapshotsView()
+        case .unknownAccessories:
+            UnknownAccessoriesView()
         case .settings:
             SettingsView()
         case .debugHomeKit:

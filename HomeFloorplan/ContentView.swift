@@ -314,9 +314,13 @@ struct ContentView: View {
             HabitsView()
         case .homeIntelligence:
             HomeIntelligenceDashboardView()
-        case .maintenance:
+        case .snapshots:
             NavigationStack {
-                MaintenanceView()
+                SnapshotsView()
+            }
+        case .unknownAccessories:
+            NavigationStack {
+                UnknownAccessoriesView()
             }
         case .debugHomeKit:
 #if DEBUG

@@ -1,19 +1,16 @@
 import SwiftUI
 
-// MARK: - MaintenanceView
+// MARK: - SnapshotsView
 
-/// Radice della sezione Mantenimento.
+/// Backup e ripristino della configurazione HomeKit.
 ///
-/// La forma segue il flusso deciso: **un pulsante** che cattura, e sotto
-/// l'elenco di ciò che è stato catturato. Niente schedulazione: gli snapshot si
-/// fanno quando si sta per toccare qualcosa, ed è quello il momento in cui ha
-/// senso dargli un nome.
-struct MaintenanceView: View {
+/// **Un pulsante** che cattura, e sotto l'elenco di ciò che è stato catturato.
+/// Niente schedulazione: gli snapshot si fanno quando si sta per toccare
+/// qualcosa, ed è quello il momento in cui ha senso dargli un nome.
+struct SnapshotsView: View {
 
     @Environment(HomeSnapshotStore.self) private var store
     @Environment(HomeSnapshotCapture.self) private var capture
-    @Environment(AccessoryCensusService.self) private var census
-    @Environment(AccessoryReconciliationService.self) private var reconciliation
 
     @State private var isCapturing = false
     @State private var progress: Double = 0
@@ -25,11 +22,9 @@ struct MaintenanceView: View {
     var body: some View {
         List {
             statusSection
-            censusSection
             snapshotsSection
         }
-        .navigationTitle(String(localized: "maintenance.title", defaultValue: "Maintenance"))
-        .onAppear { reconciliation.refresh() }
+        .navigationTitle(String(localized: "sidebar.snapshots", defaultValue: "Backup & Restore"))
         .alert(String(localized: "maintenance.newSnapshot.title", defaultValue: "New snapshot"),
                isPresented: $isAskingTitle) {
             TextField(String(localized: "maintenance.newSnapshot.placeholder",
@@ -118,64 +113,6 @@ struct MaintenanceView: View {
                   systemImage: "equal.circle")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - Censimento
-
-    /// Sola lettura, e per ora serve soprattutto a verificare la passata su una
-    /// casa vera: quanti accessori sono censiti, quanti hanno un'identità
-    /// hardware e quanti sono spariti senza che nessuno l'abbia ancora deciso.
-    private var censusSection: some View {
-        Section {
-            let rows = census.currentRows
-            let live = rows.filter { !$0.isRetired }
-            let retired = rows.filter(\.isRetired)
-            let withSerial = live.filter { !($0.serialNumber ?? "").isEmpty }
-
-            LabeledContent(String(localized: "census.tracked", defaultValue: "Tracked accessories"),
-                           value: "\(live.count)")
-            LabeledContent(String(localized: "census.withSerial", defaultValue: "With a serial number"),
-                           value: "\(withSerial.count)")
-            if !retired.isEmpty {
-                LabeledContent(String(localized: "census.retired", defaultValue: "Gone from HomeKit"),
-                               value: "\(retired.count)")
-                .foregroundStyle(.orange)
-            }
-            if let sweptAt = census.lastSweepAt {
-                LabeledContent(String(localized: "census.lastSweep", defaultValue: "Last check"),
-                               value: sweptAt.formatted(date: .omitted, time: .standard))
-            }
-
-            // In cima alle azioni perché è l'unica che chiede qualcosa: il
-            // resto della sezione si guarda, questa si risponde.
-            if !reconciliation.reviews.isEmpty {
-                NavigationLink {
-                    AccessoryReconciliationView()
-                } label: {
-                    HStack {
-                        Label(String(localized: "reconcile.open", defaultValue: "Accessories to sort out"),
-                              systemImage: "questionmark.circle.fill")
-                            .foregroundStyle(.orange)
-                        Spacer()
-                        Text("\(reconciliation.reviews.count)")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-            }
-
-            NavigationLink {
-                AccessoryCensusView()
-            } label: {
-                Label(String(localized: "census.open", defaultValue: "See all accessories"),
-                      systemImage: "list.bullet.rectangle")
-            }
-        } header: {
-            Text(String(localized: "census.header", defaultValue: "Accessory census"))
-        } footer: {
-            Text(String(localized: "census.footer",
-                        defaultValue: "HomeKit cannot say when an accessory was added. This table remembers, which is what makes a re-paired device recognisable."))
         }
     }
 

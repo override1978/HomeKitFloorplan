@@ -26,6 +26,7 @@ struct SidebarView: View {
     @AppStorage("sidebar.section.floorplans.expanded") private var floorplansExpanded: Bool = true
     @AppStorage("sidebar.section.analysis.expanded")   private var analysisExpanded:   Bool = true
     @AppStorage("sidebar.section.scenes.expanded")     private var scenesExpanded:     Bool = true
+    @AppStorage("sidebar.section.maintenance.expanded") private var maintenanceExpanded: Bool = true
     @AppStorage("sidebar.section.settings.expanded")   private var settingsExpanded:   Bool = true
     /// Sezione Abitudini (beta): nascosta di default nella build App Store,
     /// riattivabile da Impostazioni → Home Intelligence per il testing.
@@ -165,13 +166,27 @@ struct SidebarView: View {
                 }
             }
 
+            // MARK: Manutenzione
+            Section {
+                DisclosureGroup(isExpanded: $maintenanceExpanded) {
+                    NavigationLink(value: SidebarSelection.snapshots) {
+                        Label(String(localized: "sidebar.snapshots", defaultValue: "Backup & Restore"),
+                              systemImage: "clock.arrow.circlepath")
+                    }
+                    NavigationLink(value: SidebarSelection.unknownAccessories) {
+                        Label(String(localized: "sidebar.unknownAccessories", defaultValue: "Unknown Accessories"),
+                              systemImage: "questionmark.square.dashed")
+                    }
+                } label: {
+                    Text(String(localized: "sidebar.section.maintenance", defaultValue: "Maintenance"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             // MARK: Impostazioni
             Section {
                 DisclosureGroup(isExpanded: $settingsExpanded) {
-                    NavigationLink(value: SidebarSelection.maintenance) {
-                        Label(String(localized: "sidebar.maintenance", defaultValue: "Maintenance"),
-                              systemImage: "clock.arrow.circlepath")
-                    }
                     NavigationLink(value: SidebarSelection.settings) {
                         Label(String(localized: "sidebar.settings", defaultValue: "Settings"), systemImage: "gearshape")
                     }
@@ -387,6 +402,7 @@ enum SidebarSelection: Hashable {
     case homeIntelligence
     case debugHomeKit
     case homeIntelligenceDebug
-    case maintenance
+    case snapshots
+    case unknownAccessories
     case settings
 }

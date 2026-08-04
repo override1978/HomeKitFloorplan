@@ -56223,13 +56223,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nothing to sort out"
+            "value" : "Everything is where it should be"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Niente da chiarire"
+            "value" : "È tutto al suo posto"
           }
         }
       }
@@ -56240,13 +56240,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Every accessory is where the app last saw it."
+            "value" : "Every accessory the app knows is still in HomeKit. Nothing to sort out."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ogni accessorio è dove l'app lo ha visto l'ultima volta."
+            "value" : "Ogni accessorio che l'app conosce è ancora in HomeKit. Non c'è niente da chiarire."
           }
         }
       }
@@ -56587,6 +56587,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%d marker verranno tolti dalle planimetrie."
+          }
+        }
+      }
+    },
+    "sidebar.section.maintenance" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maintenance"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manutenzione"
+          }
+        }
+      }
+    },
+    "sidebar.snapshots" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup & Restore"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup e Ripristino"
+          }
+        }
+      }
+    },
+    "sidebar.unknownAccessories" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown Accessories"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessori sconosciuti"
           }
         }
       }
