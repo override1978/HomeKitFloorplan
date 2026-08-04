@@ -55,10 +55,14 @@ struct HomeSnapshotDiff: Sendable {
         /// quindi si mostrano per sapere cosa manca, non per rimetterlo. Le
         /// **automazioni** nemmeno: misurato sull'impianto di riferimento, 39 su
         /// 78 eseguono `HMShortcutAction`, che non esiste nell'SDK pubblico.
+        ///
+        /// I **gruppi di servizi** nemmeno, ma per colpa nostra: la cattura ne
+        /// salva solo il conteggio, non quali servizi contenevano. Ricrearli
+        /// vuoti sarebbe peggio che non ricrearli.
         var isRestorable: Bool {
             switch self {
-            case .scenes, .rooms, .zones, .serviceGroups: true
-            case .accessories, .automations:              false
+            case .scenes, .rooms, .zones:                     true
+            case .accessories, .automations, .serviceGroups:  false
             }
         }
     }

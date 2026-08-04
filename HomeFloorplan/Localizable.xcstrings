@@ -56937,7 +56937,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Writing back to HomeKit is not available yet. This screen shows exactly what a restore would change."
+            "value" : ""
           }
         },
         "it" : {
@@ -57148,6 +57148,312 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "era in pausa, ora è attiva"
+          }
+        }
+      }
+    },
+    "diff.restore.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore %d selected"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristina %d selezionati"
+          }
+        }
+      }
+    },
+    "diff.restore.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only what is ticked is written. A restore never deletes: for a scene that already exists, only the values it also contained are rewritten."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si scrive solo ciò che è spuntato. Un ripristino non cancella mai: di una scena che esiste già si riscrivono solo i valori che conteneva anche lo snapshot."
+          }
+        }
+      }
+    },
+    "diff.footer.serviceGroups" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Service groups are shown but not restored: the snapshot recorded how many services each one held, not which ones."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "I gruppi di servizi si vedono ma non si ripristinano: lo snapshot ha salvato quanti servizi contenevano, non quali."
+          }
+        }
+      }
+    },
+    "restore.running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restoring…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristino in corso…"
+          }
+        }
+      }
+    },
+    "restore.confirm.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore %d items into HomeKit?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristinare %d voci in HomeKit?"
+          }
+        }
+      }
+    },
+    "restore.confirm.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristina"
+          }
+        }
+      }
+    },
+    "restore.confirm.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing gets deleted: anything added since this snapshot stays where it is."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non viene cancellato niente: ciò che hai aggiunto dopo questo snapshot resta dov'è."
+          }
+        }
+      }
+    },
+    "restore.outcome.header" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Result"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esito"
+          }
+        }
+      }
+    },
+    "restore.done.room" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Room “%@”"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanza «%@»"
+          }
+        }
+      }
+    },
+    "restore.done.roomWithAccessories" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Room “%1$@” · %2$d accessories moved back"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stanza «%1$@» · %2$d accessori rimessi dentro"
+          }
+        }
+      }
+    },
+    "restore.done.zone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zone “%1$@” · %2$d rooms"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zona «%1$@» · %2$d stanze"
+          }
+        }
+      }
+    },
+    "restore.done.scene" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scene “%1$@” · %2$d actions"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scena «%1$@» · %2$d azioni"
+          }
+        }
+      }
+    },
+    "restore.done.sceneMissing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d could not be placed"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d non collocabili"
+          }
+        }
+      }
+    },
+    "restore.skip.builtIn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Built-in scenes cannot be changed."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le scene di sistema non si possono modificare."
+          }
+        }
+      }
+    },
+    "restore.skip.nothingResolved" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None of its accessories are in this home anymore."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuno dei suoi accessori è più in questa casa."
+          }
+        }
+      }
+    },
+    "restore.skip.noHome" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ripristino"
+          }
+        }
+      }
+    },
+    "restore.skip.noHome.reason" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No HomeKit home available."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessuna casa HomeKit disponibile."
+          }
+        }
+      }
+    },
+    "restore.error.noResult" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeKit accepted the request but returned nothing."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeKit ha accettato la richiesta ma non ha restituito niente."
           }
         }
       }
