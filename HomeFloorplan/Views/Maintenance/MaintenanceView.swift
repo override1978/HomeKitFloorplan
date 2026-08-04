@@ -144,6 +144,13 @@ struct MaintenanceView: View {
                 LabeledContent(String(localized: "census.lastSweep", defaultValue: "Last check"),
                                value: sweptAt.formatted(date: .omitted, time: .standard))
             }
+
+            NavigationLink {
+                AccessoryCensusView()
+            } label: {
+                Label(String(localized: "census.open", defaultValue: "See all accessories"),
+                      systemImage: "list.bullet.rectangle")
+            }
         } header: {
             Text(String(localized: "census.header", defaultValue: "Accessory census"))
         } footer: {
