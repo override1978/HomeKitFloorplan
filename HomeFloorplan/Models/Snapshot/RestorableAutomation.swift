@@ -126,7 +126,7 @@ extension RestorableAutomation {
             return describe(schedule)
         case .presence(let kind, _):
             return String(format: String(localized: "restorableAutomation.presence",
-                                         defaultValue: "on presence (%@)"), kind)
+                                         defaultValue: "on presence (%@)"), presenceLabel(kind))
         }
     }
 
@@ -150,6 +150,29 @@ extension RestorableAutomation {
         }
     }
 
+    /// Gli identificatori interni non vanno mai a schermo: «becomesActive» e
+    /// «everyEntry» sono chiavi nostre, non italiano né inglese.
+    private static func operatorLabel(_ key: String) -> String {
+        switch key {
+        case "becomesActive":   String(localized: "operator.becomesActive", defaultValue: "turns on")
+        case "becomesInactive": String(localized: "operator.becomesInactive", defaultValue: "turns off")
+        case "equals":          String(localized: "operator.equals", defaultValue: "is")
+        case "greaterThan":     String(localized: "operator.greaterThan", defaultValue: "above")
+        case "lessThan":        String(localized: "operator.lessThan", defaultValue: "below")
+        default:                key
+        }
+    }
+
+    private static func presenceLabel(_ key: String) -> String {
+        switch key {
+        case "everyEntry": String(localized: "presence.everyEntry", defaultValue: "anyone arrives")
+        case "everyExit":  String(localized: "presence.everyExit", defaultValue: "anyone leaves")
+        case "firstEntry": String(localized: "presence.firstEntry", defaultValue: "the first person arrives")
+        case "lastExit":   String(localized: "presence.lastExit", defaultValue: "the last person leaves")
+        default:           key
+        }
+    }
+
     private static func describe(_ condition: TimeCondition) -> String {
         let start = condition.kind == "fixedTime"
             ? String(format: "%02d:%02d", condition.hour, condition.minute)
@@ -165,11 +188,13 @@ extension RestorableAutomation {
         let characteristic = SnapshotCharacteristicNames.readable(ref.characteristicType)
         let value: String
         switch ref.targetValue {
-        case .bool(let flag):   value = flag ? "on" : "off"
+        case .bool(let flag):   value = flag
+            ? String(localized: "snapshot.value.on", defaultValue: "on")
+            : String(localized: "snapshot.value.off", defaultValue: "off")
         case .number(let n):    value = n == n.rounded() ? "\(Int(n))" : String(format: "%.1f", n)
         case .state(let s):     value = "\(s)"
         case .any:              value = String(localized: "restorableAutomation.anyValue", defaultValue: "any change")
         }
-        return "\(ref.accessory.name) · \(characteristic) \(ref.comparisonOperator) \(value)"
+        return "\(ref.accessory.name) · \(characteristic) \(operatorLabel(ref.comparisonOperator)) \(value)"
     }
 }

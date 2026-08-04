@@ -473,20 +473,22 @@ extension SnapshotValue {
 /// completa: quelle che compaiono davvero nelle scene sono una manciata, e per
 /// tutte le altre l'UUID grezzo è comunque meglio di niente.
 enum SnapshotCharacteristicNames {
-    private static let names: [String: String] = [
-        "00000025": "Acceso",
-        "00000008": "Luminosità",
-        "00000013": "Tonalità",
-        "0000002F": "Saturazione",
-        "000000CE": "Temperatura colore",
-        "0000007C": "Posizione",
-        "00000033": "Modalità",
-        "00000035": "Temperatura",
-        "0000001D": "Serratura",
-        "00000032": "Stato allarme",
-        "000000B0": "Attivo",
-        "00000029": "Velocità"
-    ]
+    private static var names: [String: String] {
+        [
+            "00000025": String(localized: "characteristic.on", defaultValue: "On"),
+            "00000008": String(localized: "characteristic.brightness", defaultValue: "Brightness"),
+            "00000013": String(localized: "characteristic.hue", defaultValue: "Hue"),
+            "0000002F": String(localized: "characteristic.saturation", defaultValue: "Saturation"),
+            "000000CE": String(localized: "characteristic.colorTemperature", defaultValue: "Color temperature"),
+            "0000007C": String(localized: "characteristic.position", defaultValue: "Position"),
+            "00000033": String(localized: "characteristic.mode", defaultValue: "Mode"),
+            "00000035": String(localized: "characteristic.temperature", defaultValue: "Temperature"),
+            "0000001D": String(localized: "characteristic.lock", defaultValue: "Lock"),
+            "00000032": String(localized: "characteristic.alarmState", defaultValue: "Alarm state"),
+            "000000B0": String(localized: "characteristic.active", defaultValue: "Active"),
+            "00000029": String(localized: "characteristic.speed", defaultValue: "Speed")
+        ]
+    }
 
     /// Ripiego quando il nome di sistema non c'è.
     static func readable(_ characteristicType: String) -> String {

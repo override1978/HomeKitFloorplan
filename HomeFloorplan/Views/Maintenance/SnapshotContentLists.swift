@@ -40,12 +40,15 @@ struct SnapshotAccessoryListView: View {
                                     .foregroundStyle(.secondary)
                                 HStack(spacing: 8) {
                                     if let firmware = accessory.firmwareVersion {
-                                        Text("fw \(firmware)")
+                                        Text(String(format: String(localized: "snapshot.firmware",
+                                                                   defaultValue: "fw %@"), firmware))
                                     }
                                     if let bridge = accessory.bridgeName {
                                         Label(bridge, systemImage: "point.3.connected.trianglepath.dotted")
                                     }
-                                    Text("\(accessory.services.count) serv.")
+                                    Text(String(format: String(localized: "snapshot.serviceCount",
+                                                               defaultValue: "%d services"),
+                                                accessory.services.count))
                                 }
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
