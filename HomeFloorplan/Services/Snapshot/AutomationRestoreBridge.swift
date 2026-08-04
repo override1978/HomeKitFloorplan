@@ -16,23 +16,35 @@ enum AutomationRestoreBridge {
 
     // MARK: - Cattura
 
-    /// La forma salvabile, oppure `nil` se questa automazione non è ricreabile.
+    /// La forma salvabile, **oppure il motivo per cui non c'è**.
+    ///
+    /// Il motivo va registrato, non dedotto dopo: le ragioni per cui si rinuncia
+    /// sono diverse — non esegue una scena, ha condizioni che non so esprimere,
+    /// è un geofence — e indovinarne una guardando il tipo di contenuto produce
+    /// spiegazioni false, che è peggio di nessuna spiegazione.
     static func restorable(from trigger: HMTrigger,
                            capabilities: [AutomationCharacteristicCapability],
-                           serials: [UUID: String]) -> RestorableAutomation? {
+                           serials: [UUID: String]) -> (plan: RestorableAutomation?, reason: String?) {
         let item = AutomationItem(trigger: trigger)
         guard let draft = AutomationWizardEditDraft(item: item, capabilities: capabilities) else {
-            return nil
+            return (nil, String(localized: "automationCapture.skip.undecodable",
+                                defaultValue: "this app cannot read its trigger in full — it cannot be opened for editing either"))
         }
         // Senza scena si ricreerebbe un trigger che non esegue niente.
-        guard let sceneName = trigger.actionSets.first?.name, !sceneName.isEmpty else { return nil }
+        guard let sceneName = trigger.actionSets.first?.name, !sceneName.isEmpty else {
+            return (nil, String(localized: "automationCapture.skip.noScene",
+                                defaultValue: "it does not run a scene: its actions are attached to the trigger, which HomeKit does not let other apps recreate"))
+        }
 
         var startEvents: [RestorableAutomation.StartEvent] = []
         for event in draft.startEvents {
             switch event.kind {
             case .accessory:
                 guard let selection = event.selection,
-                      let ref = capabilityRef(from: selection, serials: serials) else { return nil }
+                      let ref = capabilityRef(from: selection, serials: serials) else {
+                    return (nil, String(localized: "automationCapture.skip.event",
+                                        defaultValue: "one of its start events could not be described"))
+                }
                 startEvents.append(.accessory(ref))
             case .time:
                 startEvents.append(.schedule(schedule(from: event.schedule)))
@@ -42,30 +54,42 @@ enum AutomationRestoreBridge {
             case .location:
                 // Un geofence ricreato in silenzio da coordinate salvate è il
                 // tipo di cosa che si scopre sbagliata quando non scatta.
-                return nil
+                return (nil, String(localized: "automationCapture.skip.location",
+                                    defaultValue: "it uses a location, and recreating a geofence silently is not safe"))
             }
         }
-        guard !startEvents.isEmpty else { return nil }
+        guard !startEvents.isEmpty else {
+            return (nil, String(localized: "automationCapture.skip.noEvents",
+                                defaultValue: "no start event could be read"))
+        }
 
         // Se una condizione non si riesce a esprimere, l'automazione **non** è
         // ripristinabile: ricrearla senza è ricreare qualcosa di diverso col suo
         // nome sopra.
         var conditions: [RestorableAutomation.CapabilityRef] = []
         for selection in draft.conditionSelections {
-            guard let ref = capabilityRef(from: selection, serials: serials) else { return nil }
+            guard let ref = capabilityRef(from: selection, serials: serials) else {
+                return (nil, String(localized: "automationCapture.skip.condition",
+                                    defaultValue: "one of its conditions could not be described, and recreating it without would change what it does"))
+            }
             conditions.append(ref)
         }
-        guard draft.timeConditions.isEmpty,
-              draft.presenceConditions.isEmpty,
-              draft.preservedConditionPredicate == nil else { return nil }
+        guard draft.timeConditions.isEmpty, draft.presenceConditions.isEmpty else {
+            return (nil, String(localized: "automationCapture.skip.extraConditions",
+                                defaultValue: "it has time or presence conditions that this restore cannot express yet"))
+        }
+        guard draft.preservedConditionPredicate == nil else {
+            return (nil, String(localized: "automationCapture.skip.predicate",
+                                defaultValue: "it carries a condition built outside this app, which would be lost"))
+        }
 
-        return RestorableAutomation(
+        return (RestorableAutomation(
             startEvents: startEvents,
             conditions: conditions,
             conditionJoinMode: draft.conditionJoinMode.rawValue,
             sceneName: sceneName,
             isEnabled: trigger.isEnabled
-        )
+        ), nil)
     }
 
     private static func schedule(from trigger: AutomationScheduleTrigger) -> RestorableAutomation.Schedule {

@@ -363,9 +363,9 @@ struct HomeSnapshotDiff: Sendable {
         return matches.count == 1 ? matches[0] : nil
     }
 
-    /// Perché questa automazione non tornerà indietro. La ragione più
-    /// frequente è fuori dalla nostra portata — esegue un comando rapido — e
-    /// dirlo evita di farlo sembrare un difetto dell'app.
+    /// Ripiego per gli snapshot catturati prima che il motivo venisse
+    /// registrato. Resta una deduzione, e come tale va usata solo quando il
+    /// motivo vero non c'è.
     private static func unrestorableNote(_ automation: AutomationSnapshot) -> String {
         switch automation.content {
         case .shortcut:
@@ -412,7 +412,9 @@ struct HomeSnapshotDiff: Sendable {
                 items.append(Item(id: "auto.missing.\(automation.name)", category: .automations,
                                   change: .missingNow, title: automation.name,
                                   details: plan?.confirmationLines
-                                    ?? [automation.humanSummary, unrestorableNote(automation)],
+                                    ?? [automation.humanSummary,
+                                        automation.notRestorableReason
+                                            ?? unrestorableNote(automation)],
                                   isRestorable: plan != nil))
                 continue
             }
@@ -438,12 +440,16 @@ struct HomeSnapshotDiff: Sendable {
                                                      defaultValue: "what it executes changed (%1$@ → %2$@)"),
                                       contentLabel(automation.content), contentLabel(now.content)))
             }
-            // Quando scatta e a quali condizioni: la cattura le tiene già in
-            // lingua, quindi il confronto è sul testo che l'utente leggerebbe.
-            if now.humanSummary != automation.humanSummary {
+            // ⚠️ Mai su `humanSummary`: per un trigger a orario è la **prossima
+            // data di scatto**, che si sposta da sola. Confrontarla faceva
+            // risultare «cambiata» ogni automazione a tempo, a ogni apertura.
+            // La regola sta nella forma strutturata.
+            if let was = automation.restorable, let isNow = now.restorable,
+               HomeConfigurationSnapshot.canonicalText(was) != HomeConfigurationSnapshot.canonicalText(isNow) {
                 details.append(String(format: String(localized: "diff.automation.trigger",
                                                      defaultValue: "fired %1$@, now fires %2$@"),
-                                      automation.humanSummary, now.humanSummary))
+                                      was.confirmationLines.first ?? "—",
+                                      isNow.confirmationLines.first ?? "—"))
             }
             if Set(now.conditionSummaries) != Set(automation.conditionSummaries) {
                 details.append(String(format: String(localized: "diff.automation.conditions",

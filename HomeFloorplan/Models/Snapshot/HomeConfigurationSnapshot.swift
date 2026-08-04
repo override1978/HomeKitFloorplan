@@ -162,6 +162,9 @@ struct AutomationSnapshot: Codable, Sendable {
     /// Presente **solo** per le automazioni che l'app sa davvero ricreare.
     /// Il resto di questa struttura è documentazione; questo è materiale.
     let restorable: RestorableAutomation?
+    /// Perché non è ricreabile, registrato al momento della cattura. Dedurlo
+    /// dopo, guardando il tipo di contenuto, produce spiegazioni false.
+    let notRestorableReason: String?
 }
 
 // MARK: - Lo snapshot
@@ -288,10 +291,16 @@ extension HomeConfigurationSnapshot {
         }
 
         for automation in automations.sorted(by: { $0.name < $1.name }) {
+            // ⚠️ `humanSummary` **non** entra qui. Per un trigger a orario
+            // contiene la prossima data di scatto, che si sposta da sola: con
+            // dentro quella, due catture della stessa casa immutata non
+            // sarebbero mai risultate uguali e la deduplica non avrebbe mai
+            // potuto scattare. Al suo posto la forma strutturata, che descrive
+            // la regola invece del prossimo evento.
             lines.append([
                 "auto", automation.name, automation.triggerKind,
                 automation.content.rawValue, String(automation.isEnabled),
-                automation.humanSummary,
+                automation.restorable.map(Self.canonicalText) ?? "",
                 automation.conditionSummaries.sorted().joined(separator: ";"),
                 automation.actionSetNames.sorted().joined(separator: ";")
             ].joined(separator: "|"))
@@ -299,6 +308,27 @@ extension HomeConfigurationSnapshot {
 
         let digest = SHA256.hash(data: Data(lines.joined(separator: "\n").utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Proiezione stabile di un'automazione ricreabile: descrive **la regola**,
+    /// senza date che si spostano.
+    static func canonicalText(_ plan: RestorableAutomation) -> String {
+        var parts = [plan.sceneName, plan.conditionJoinMode, String(plan.isEnabled)]
+        for event in plan.startEvents {
+            switch event {
+            case .schedule(let s):
+                parts.append("t:\(s.kind):\(s.hour):\(s.minute):\(s.offsetMinutes):"
+                             + s.weekdays.sorted().map(String.init).joined(separator: ","))
+            case .accessory(let ref):
+                parts.append("a:\(ref.accessory.name):\(ref.characteristicType):\(ref.comparisonOperator)")
+            case .presence(let kind, let scope):
+                parts.append("p:\(kind):\(scope)")
+            }
+        }
+        for condition in plan.conditions.sorted(by: { $0.accessory.name < $1.accessory.name }) {
+            parts.append("c:\(condition.accessory.name):\(condition.characteristicType):\(condition.comparisonOperator)")
+        }
+        return parts.joined(separator: "/")
     }
 }
 

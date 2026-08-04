@@ -58052,6 +58052,142 @@
           }
         }
       }
+    },
+    "automationCapture.skip.undecodable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "this app cannot read its trigger in full — it cannot be opened for editing either"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "l'app non riesce a leggerne il trigger per intero — non riesce nemmeno ad aprirla in modifica"
+          }
+        }
+      }
+    },
+    "automationCapture.skip.noScene" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it does not run a scene: its actions are attached to the trigger, which HomeKit does not let other apps recreate"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non esegue una scena: le sue azioni sono attaccate al trigger, e HomeKit non lascia ricrearle ad altre app"
+          }
+        }
+      }
+    },
+    "automationCapture.skip.event" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "one of its start events could not be described"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "uno dei suoi eventi di avvio non è descrivibile"
+          }
+        }
+      }
+    },
+    "automationCapture.skip.location" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it uses a location, and recreating a geofence silently is not safe"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "usa una posizione, e ricreare un'area geografica in silenzio non è sicuro"
+          }
+        }
+      }
+    },
+    "automationCapture.skip.noEvents" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no start event could be read"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nessun evento di avvio leggibile"
+          }
+        }
+      }
+    },
+    "automationCapture.skip.condition" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "one of its conditions could not be described, and recreating it without would change what it does"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "una delle sue condizioni non è descrivibile, e ricrearla senza cambierebbe cosa fa"
+          }
+        }
+      }
+    },
+    "automationCapture.skip.extraConditions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it has time or presence conditions that this restore cannot express yet"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ha condizioni di orario o presenza che questo ripristino non sa ancora esprimere"
+          }
+        }
+      }
+    },
+    "automationCapture.skip.predicate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it carries a condition built outside this app, which would be lost"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "porta una condizione creata fuori da questa app, che andrebbe persa"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
