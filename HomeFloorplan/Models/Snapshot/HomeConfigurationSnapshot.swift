@@ -321,3 +321,47 @@ extension SnapshotValue {
         }
     }
 }
+
+// MARK: - Presentazione dei valori
+//
+// Vivono col modello e non con la vista: le usa anche il confronto fra due
+// snapshot, che è puro e non importa SwiftUI.
+
+extension SnapshotValue {
+    var displayText: String {
+        switch self {
+        case .bool(let value):
+            value ? String(localized: "snapshot.value.on", defaultValue: "on")
+                  : String(localized: "snapshot.value.off", defaultValue: "off")
+        case .int(let value):   "\(value)"
+        case .double(let value): value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value)
+        case .string(let value): value
+        case .unsupported:       "—"
+        }
+    }
+}
+
+/// Nomi leggibili per le caratteristiche HAP più comuni. Non serve la lista
+/// completa: quelle che compaiono davvero nelle scene sono una manciata, e per
+/// tutte le altre l'UUID grezzo è comunque meglio di niente.
+enum SnapshotCharacteristicNames {
+    private static let names: [String: String] = [
+        "00000025": "Acceso",
+        "00000008": "Luminosità",
+        "00000013": "Tonalità",
+        "0000002F": "Saturazione",
+        "000000CE": "Temperatura colore",
+        "0000007C": "Posizione",
+        "00000033": "Modalità",
+        "00000035": "Temperatura",
+        "0000001D": "Serratura",
+        "00000032": "Stato allarme",
+        "000000B0": "Attivo",
+        "00000029": "Velocità"
+    ]
+
+    static func readable(_ characteristicType: String) -> String {
+        let prefix = String(characteristicType.prefix(8)).uppercased()
+        return names[prefix] ?? characteristicType
+    }
+}

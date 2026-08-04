@@ -67,6 +67,15 @@ struct SnapshotsView: View {
                 }
             }
 
+            if !store.entries.isEmpty {
+                NavigationLink {
+                    RestorePickerView()
+                } label: {
+                    Label(String(localized: "restore.open", defaultValue: "Restore…"),
+                          systemImage: "arrow.counterclockwise")
+                }
+            }
+
             if let latest = store.entries.first {
                 NavigationLink {
                     SnapshotDetailView(entry: latest)

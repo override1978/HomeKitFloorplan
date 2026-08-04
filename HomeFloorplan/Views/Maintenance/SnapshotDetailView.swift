@@ -2,11 +2,11 @@ import SwiftUI
 
 // MARK: - SnapshotDetailView
 
-/// Cosa c'è dentro uno snapshot, diviso per tipologia, e se combacia ancora con
-/// la casa di adesso.
+/// Cosa c'è dentro uno snapshot, e se combacia ancora con la casa di adesso.
 ///
-/// Il badge in cima è l'informazione che costa meno e vale di più: dice se dopo
-/// quello scatto è cambiato qualcosa, senza doverlo confrontare a mano.
+/// L'hero porta l'informazione che costa meno e vale di più: dopo quello scatto
+/// è cambiato qualcosa oppure no, senza doverlo confrontare a mano. Sotto, il
+/// contenuto diviso per tipologia.
 struct SnapshotDetailView: View {
 
     let entry: HomeSnapshotStore.Entry
@@ -18,9 +18,11 @@ struct SnapshotDetailView: View {
     @State private var snapshot: HomeConfigurationSnapshot?
     @State private var currentFingerprint: String?
     @State private var loadError: String?
-    @State private var editedTitle = ""
+    @State private var isRenaming = false
+    @State private var draftTitle = ""
     @State private var isConfirmingDelete = false
 
+    /// `nil` finché il confronto con la casa viva non è pronto.
     private var isUpToDate: Bool? {
         guard let currentFingerprint else { return nil }
         return currentFingerprint == entry.fingerprint
@@ -28,25 +30,53 @@ struct SnapshotDetailView: View {
 
     var body: some View {
         List {
-            headerSection
+            Section {
+                hero
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
 
             if let snapshot {
                 contentSection(snapshot)
-                identitySection(snapshot)
             } else if let loadError {
                 Label(loadError, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             } else {
-                ProgressView()
+                HStack { Spacer(); ProgressView(); Spacer() }
             }
-
-            actionsSection
         }
         .navigationTitle(entry.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            editedTitle = entry.title
-            await load()
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        draftTitle = entry.title
+                        isRenaming = true
+                    } label: {
+                        Label(String(localized: "snapshot.rename", defaultValue: "Rename"),
+                              systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        isConfirmingDelete = true
+                    } label: {
+                        Label(String(localized: "common.delete", defaultValue: "Delete"),
+                              systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
+        .task { await load() }
+        .alert(String(localized: "snapshot.rename", defaultValue: "Rename"), isPresented: $isRenaming) {
+            TextField(String(localized: "snapshot.title.placeholder", defaultValue: "Title"),
+                      text: $draftTitle)
+            Button(String(localized: "common.cancel", defaultValue: "Cancel"), role: .cancel) {}
+            Button(String(localized: "common.save", defaultValue: "Save")) {
+                store.rename(entry.id, to: draftTitle)
+            }
         }
         .confirmationDialog(
             String(localized: "snapshot.delete.title", defaultValue: "Delete this snapshot?"),
@@ -61,47 +91,141 @@ struct SnapshotDetailView: View {
         }
     }
 
-    // MARK: - Intestazione
+    // MARK: - Hero
 
-    private var headerSection: some View {
-        Section {
-            TextField(String(localized: "snapshot.title.placeholder", defaultValue: "Title"),
-                      text: $editedTitle)
-                .onSubmit { store.rename(entry.id, to: editedTitle) }
-
-            LabeledContent(String(localized: "snapshot.capturedAt", defaultValue: "Captured"),
-                           value: entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
-            LabeledContent(String(localized: "snapshot.device", defaultValue: "Device"),
-                           value: entry.deviceName)
-            LabeledContent(String(localized: "snapshot.size", defaultValue: "Size"),
-                           value: "\(entry.byteCount / 1024) KB")
-
-            if entry.lastConfirmedAt > entry.capturedAt {
-                LabeledContent(String(localized: "snapshot.lastConfirmed", defaultValue: "Still matching as of"),
-                               value: entry.lastConfirmedAt.formatted(date: .abbreviated, time: .shortened))
-            }
-        } header: {
-            statusBadge
+    private var statusColor: Color {
+        switch isUpToDate {
+        case .some(true):  .green
+        case .some(false): .blue
+        case .none:        .secondary
         }
     }
 
-    @ViewBuilder
-    private var statusBadge: some View {
+    private var statusLabel: String {
         switch isUpToDate {
         case .some(true):
-            Label(String(localized: "snapshot.badge.upToDate", defaultValue: "Matches your home"),
-                  systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .textCase(nil)
+            String(localized: "snapshot.badge.upToDate", defaultValue: "Matches your home")
         case .some(false):
-            Label(String(localized: "snapshot.badge.outOfDate", defaultValue: "Your home has changed since"),
-                  systemImage: "arrow.triangle.2.circlepath")
-                .foregroundStyle(.blue)
-                .textCase(nil)
+            String(localized: "snapshot.badge.outOfDate", defaultValue: "Your home has changed since")
         case .none:
-            Text(String(localized: "snapshot.badge.checking", defaultValue: "Comparing…"))
-                .textCase(nil)
+            String(localized: "snapshot.badge.checking", defaultValue: "Comparing…")
         }
+    }
+
+    private var statusSymbol: String {
+        switch isUpToDate {
+        case .some(true):  "checkmark.seal.fill"
+        case .some(false): "arrow.triangle.2.circlepath"
+        case .none:        "clock"
+        }
+    }
+
+    private var hero: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 0) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: statusSymbol)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(statusColor)
+                        Text(statusLabel)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .tracking(0.6)
+                    }
+
+                    Text(entry.displayTitle)
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 12)
+
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [statusColor.opacity(0.15), statusColor.opacity(0.05)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 72, height: 72)
+                    Image(systemName: "camera.viewfinder")
+                        .font(.system(size: 30, weight: .medium))
+                        .foregroundStyle(statusColor)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 18)
+            .padding(.bottom, 14)
+
+            Divider()
+
+            HStack(spacing: 0) {
+                statCell(icon: "calendar",
+                         title: String(localized: "snapshot.savedAt", defaultValue: "Saved on"),
+                         value: entry.capturedAt.formatted(date: .abbreviated, time: .shortened))
+                Divider().frame(height: 36)
+                statCell(icon: "ipad.and.iphone",
+                         title: String(localized: "snapshot.device", defaultValue: "Device"),
+                         value: entry.deviceName)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+
+            Divider()
+
+            HStack(spacing: 0) {
+                statCell(icon: "internaldrive",
+                         title: String(localized: "snapshot.size", defaultValue: "Size"),
+                         value: "\(entry.byteCount / 1024) KB")
+                Divider().frame(height: 36)
+                // Quota di accessori riconoscibili anche su un device diverso da
+                // quello che ha catturato: là gli identificatori di HomeKit non
+                // coincidono e contano solo seriale, marca, modello e stanza.
+                statCell(icon: "checkmark.shield",
+                         title: String(localized: "snapshot.coverage", defaultValue: "Sure identity"),
+                         value: "\(Int((entry.identityCoverage * 100).rounded()))%")
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(statusColor.opacity(0.18), lineWidth: 1)
+                )
+        )
+        .shadow(color: statusColor.opacity(0.08), radius: 12, x: 0, y: 4)
+        .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
+    }
+
+    private func statCell(icon: String, title: String, value: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(statusColor.opacity(0.75))
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+                Text(value)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Contenuto
@@ -131,7 +255,8 @@ struct SnapshotDetailView: View {
             countRow("square.grid.3x3", String(localized: "snapshot.zones", defaultValue: "Zones"),
                      snapshot.zones.count)
             if !snapshot.serviceGroups.isEmpty {
-                countRow("rectangle.3.group", String(localized: "snapshot.serviceGroups", defaultValue: "Service groups"),
+                countRow("rectangle.3.group",
+                         String(localized: "snapshot.serviceGroups", defaultValue: "Service groups"),
                          snapshot.serviceGroups.count)
             }
         } header: {
@@ -146,42 +271,6 @@ struct SnapshotDetailView: View {
             Text("\(count)")
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
-        }
-    }
-
-    // MARK: - Identità
-
-    private func identitySection(_ snapshot: HomeConfigurationSnapshot) -> some View {
-        Section {
-            LabeledContent(String(localized: "snapshot.identity", defaultValue: "Identifiable without names"),
-                           value: "\(Int((snapshot.reliableIdentityCoverage * 100).rounded()))%")
-        } footer: {
-            // Serve a sapere, prima di provarci, quanto di questo snapshot
-            // sarebbe ripristinabile su un device diverso da quello che l'ha
-            // catturato: là gli identificatori di HomeKit non coincidono e
-            // contano solo numero di serie, marca, modello e stanza.
-            Text(String(localized: "snapshot.identity.footer",
-                        defaultValue: "How much of this snapshot could be recognised on another device, where HomeKit's own identifiers do not match."))
-        }
-    }
-
-    // MARK: - Azioni
-
-    private var actionsSection: some View {
-        Section {
-            Button {
-                store.setPinned(!entry.isPinned, for: entry.id)
-            } label: {
-                Label(entry.isPinned
-                      ? String(localized: "snapshot.unpin", defaultValue: "Allow pruning")
-                      : String(localized: "snapshot.pin", defaultValue: "Keep forever"),
-                      systemImage: entry.isPinned ? "pin.slash" : "pin")
-            }
-            Button(role: .destructive) {
-                isConfirmingDelete = true
-            } label: {
-                Label(String(localized: "common.delete", defaultValue: "Delete"), systemImage: "trash")
-            }
         }
     }
 
