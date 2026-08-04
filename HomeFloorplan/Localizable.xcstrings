@@ -388,13 +388,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "These lost their actions and only the shell is left. Deleting them from Apple Home costs nothing and stops pointless firing."
+            "value" : "They lost their actions; the trigger survived. On a programmable button that trigger is the part worth keeping — which button, which gesture, under which conditions — so give it a scene rather than delete it. Delete only if you no longer want that gesture."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hanno perso le proprie azioni ed è rimasto il guscio. Eliminarle da Apple Home non costa nulla e ferma gli scatti a vuoto."
+            "value" : "Hanno perso le azioni; il trigger è sopravvissuto. Su un pulsante programmabile è proprio il trigger la parte che conviene tenere — quale pulsante, quale gesto, con quali condizioni — quindi dagli una scena invece di eliminarlo. Elimina solo se quel gesto non ti serve più."
           }
         }
       }

@@ -150,7 +150,7 @@ struct HomeKitIdentityProbeView: View {
                 Text(String(localized: "deadAutomation.header", defaultValue: "Automations with no effect"))
             } footer: {
                 Text(String(localized: "deadAutomation.footer",
-                            defaultValue: "These lost their actions and only the shell is left. Deleting them from Apple Home costs nothing and stops pointless firing."))
+                            defaultValue: "They lost their actions; the trigger survived. On a programmable button that trigger is the part worth keeping — which button, which gesture, under which conditions — so give it a scene rather than delete it. Delete only if you no longer want that gesture."))
             }
         }
     }
