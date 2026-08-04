@@ -819,6 +819,10 @@ final class HomeKitAutomationsService {
         let name: String
         let isEnabled: Bool
         let reason: Reason
+        /// Quanti action set ha comunque il trigger. Mostrarlo rende il verdetto
+        /// verificabile invece che da prendere per buono — ed è ciò che
+        /// distingue un guscio vero da un difetto della rilevazione.
+        let actionSetCount: Int
     }
 
     func actionDiagnostics() -> ActionDiagnostics {
@@ -835,7 +839,8 @@ final class HomeKitAutomationsService {
                 dead.append(DeadAutomation(id: trigger.uniqueIdentifier,
                                            name: trigger.name,
                                            isEnabled: trigger.isEnabled,
-                                           reason: .noActionSet))
+                                           reason: .noActionSet,
+                                           actionSetCount: 0))
                 continue
             }
 
@@ -846,12 +851,21 @@ final class HomeKitAutomationsService {
             }
             triggerOwned += 1
             let allActions = inlineSets.flatMap { Array($0.actions) }
-            if allActions.isEmpty {
-                emptySets += 1
+
+            // «Morta» significa che il trigger non produce NESSUN effetto, quindi
+            // si contano le azioni di **tutti** i suoi action set, non solo di
+            // quelli attaccati al trigger. Un'automazione con un contenitore
+            // vuoto accanto a una scena vera funziona benissimo: guardando i soli
+            // contenitori inline la si segnalerebbe come morta, e qui la
+            // conseguenza sarebbe suggerire di cancellare qualcosa che funziona.
+            if allActions.isEmpty { emptySets += 1 }
+            let everyAction = sets.flatMap { Array($0.actions) }
+            if everyAction.isEmpty {
                 dead.append(DeadAutomation(id: trigger.uniqueIdentifier,
                                            name: trigger.name,
                                            isEnabled: trigger.isEnabled,
-                                           reason: .emptyContainer))
+                                           reason: .emptyContainer,
+                                           actionSetCount: sets.count))
             }
 
             let unreadableActions = allActions.filter { $0.homeFloorplanCharacteristicWrite == nil }

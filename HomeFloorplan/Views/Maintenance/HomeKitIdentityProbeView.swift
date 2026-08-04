@@ -138,6 +138,11 @@ struct HomeKitIdentityProbeView: View {
                                           defaultValue: "Paused"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            Text(String(format: String(localized: "deadAutomation.detail",
+                                                       defaultValue: "0 actions across %d action set(s)"),
+                                        item.actionSetCount))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
                     }
                 }

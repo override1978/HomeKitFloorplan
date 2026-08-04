@@ -331,6 +331,23 @@
         }
       }
     },
+    "deadAutomation.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0 actions across %d action set(s)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0 azioni in %d contenitori"
+          }
+        }
+      }
+    },
     "deadAutomation.disabled" : {
       "extractionState" : "manual",
       "localizations" : {
