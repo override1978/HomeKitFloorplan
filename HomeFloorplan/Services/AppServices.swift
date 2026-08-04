@@ -36,6 +36,8 @@ final class AppServices {
     /// Censimento degli accessori: chi c'è, da quando, e con quale UUID su
     /// questo device.
     let accessoryCensus: AccessoryCensusService
+    /// Le domande aperte sull'identità, e cosa succede quando si risponde.
+    let accessoryReconciliation: AccessoryReconciliationService
     let weatherKitService: WeatherKitService
     let smartLightingEngine: SmartLightingEngine
     let aiSettings: AISettings
@@ -76,9 +78,14 @@ final class AppServices {
                                           scenesService: scenes,
                                           automationsService: automations)
         self.snapshotCapture = capture
-        self.accessoryCensus = AccessoryCensusService(homeKit: kit,
-                                                      serialSource: capture,
-                                                      modelContainer: container)
+        let censusService = AccessoryCensusService(homeKit: kit,
+                                                   serialSource: capture,
+                                                   modelContainer: container)
+        self.accessoryCensus = censusService
+        self.accessoryReconciliation = AccessoryReconciliationService(census: censusService,
+                                                                      homeKit: kit,
+                                                                      iconOverrides: iconStore,
+                                                                      modelContainer: container)
         let notifier = SecurityNotificationService(homeKit: kit)
         self.securityNotifier = notifier
         let eventStore = AccessoryEventStore(modelContainer: container)

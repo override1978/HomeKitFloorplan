@@ -100,23 +100,53 @@ extension AccessoryIdentityDecision {
 struct IdentityMergeReceipt: Codable, Sendable, Equatable {
     var fromUUID: UUID
     var toUUID: UUID
-    /// `PlacedAccessory.id` dei marker spostati.
-    var markerIDs: [UUID]
-    var accessoryEventCount: Int
-    var usageSummaryCount: Int
-    var effectivenessEventCount: Int
-    var wasSecurityMonitored: Bool
-    var movedIconOverride: Bool
+    var references: AccessoryReferences
+}
 
-    static let empty = IdentityMergeReceipt(
-        fromUUID: UUID(), toUUID: UUID(), markerIDs: [],
-        accessoryEventCount: 0, usageSummaryCount: 0, effectivenessEventCount: 0,
-        wasSecurityMonitored: false, movedIconOverride: false
-    )
+// MARK: - Cosa dipende da un accessorio
 
-    /// Vero se la fusione non tocca niente: si può fare senza avvisi.
+/// Quanto di questa app punta a un accessorio.
+///
+/// Serve due volte: **prima**, per dire cosa c'è in gioco — è l'unica difesa
+/// contro un abbinamento sbagliato, che altrimenti è del tutto invisibile — e
+/// **dopo**, dentro la ricevuta, per poterlo disfare.
+///
+/// Ed è anche il filtro che decide se una domanda va posta: un accessorio
+/// sparito che non referenziamo non ha niente da riparare, e chiederlo sarebbe
+/// solo rumore.
+struct AccessoryReferences: Codable, Sendable, Equatable {
+    /// `PlacedAccessory.id` dei marker sulle planimetrie.
+    var markerIDs: [UUID] = []
+    var accessoryEventCount = 0
+    var usageSummaryCount = 0
+    var effectivenessEventCount = 0
+    var isSecurityMonitored = false
+    var hasIconOverride = false
+
     var isEmpty: Bool {
         markerIDs.isEmpty && accessoryEventCount == 0 && usageSummaryCount == 0
-            && effectivenessEventCount == 0 && !wasSecurityMonitored && !movedIconOverride
+            && effectivenessEventCount == 0 && !isSecurityMonitored && !hasIconOverride
+    }
+
+    /// Righe leggibili di cosa si sposta. Storico e statistiche vanno insieme:
+    /// all'utente interessa «lo storico», non da quante tabelle è composto.
+    var summaryLines: [String] {
+        var lines: [String] = []
+        if !markerIDs.isEmpty {
+            lines.append(String(format: String(localized: "references.markers",
+                                               defaultValue: "%d markers on floorplans"), markerIDs.count))
+        }
+        let history = accessoryEventCount + usageSummaryCount + effectivenessEventCount
+        if history > 0 {
+            lines.append(String(format: String(localized: "references.history",
+                                               defaultValue: "%d recorded entries"), history))
+        }
+        if isSecurityMonitored {
+            lines.append(String(localized: "references.security", defaultValue: "security monitoring"))
+        }
+        if hasIconOverride {
+            lines.append(String(localized: "references.icon", defaultValue: "custom icon"))
+        }
+        return lines
     }
 }

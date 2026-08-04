@@ -99,8 +99,14 @@ enum AccessoryCategory: String, CaseIterable, Identifiable {
     }
     
     private static func categoryFromHomeKit(_ accessory: HMAccessory) -> AccessoryCategory {
+        category(forCategoryType: accessory.category.categoryType)
+    }
+
+    /// Categoria a partire dal solo `categoryType`. Serve agli accessori che
+    /// HomeKit non ha più: di loro resta la riga del censimento, non l'oggetto.
+    static func category(forCategoryType categoryType: String) -> AccessoryCategory {
         // UUID HAP standard per le category type (più stabile delle costanti Swift)
-        switch accessory.category.categoryType {
+        switch categoryType {
         case HMAccessoryCategoryTypeBridge:           return .hubs
         case HMAccessoryCategoryTypeOutlet:           return .outlets
         case HMAccessoryCategoryTypeSwitch:           return .switches

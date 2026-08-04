@@ -60,7 +60,10 @@ struct HomeFloorplanRootView: View {
                 }
                 // Fuori dal `measureMain`: la passata legge i numeri di serie,
                 // che la prima volta costano secondi di rete.
-                Task { await services.accessoryCensus.sweep() }
+                Task {
+                    await services.accessoryCensus.sweep()
+                    services.accessoryReconciliation.refresh()
+                }
             }
             .onChange(of: services.locationPresenceService.presenceState) { _, newState in
                 services.ambientalAIService.presenceOverride = newState
@@ -101,6 +104,7 @@ struct HomeFloorplanRootView: View {
             snapshotStore: services.snapshotStore,
             snapshotCapture: services.snapshotCapture,
             accessoryCensus: services.accessoryCensus,
+            accessoryReconciliation: services.accessoryReconciliation,
             weatherKitService: services.weatherKitService,
             smartLightingEngine: services.smartLightingEngine,
             aiSettings: services.aiSettings,
@@ -228,6 +232,7 @@ private struct AppEnvironmentModifier: ViewModifier {
     let snapshotStore: HomeSnapshotStore
     let snapshotCapture: HomeSnapshotCapture
     let accessoryCensus: AccessoryCensusService
+    let accessoryReconciliation: AccessoryReconciliationService
     let weatherKitService: WeatherKitService
     let smartLightingEngine: SmartLightingEngine
     let aiSettings: AISettings
@@ -254,6 +259,7 @@ private struct AppEnvironmentModifier: ViewModifier {
             .environment(snapshotStore)
             .environment(snapshotCapture)
             .environment(accessoryCensus)
+            .environment(accessoryReconciliation)
             .environment(weatherKitService)
             .environment(smartLightingEngine)
             .environment(aiSettings)

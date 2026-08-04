@@ -13,6 +13,7 @@ struct MaintenanceView: View {
     @Environment(HomeSnapshotStore.self) private var store
     @Environment(HomeSnapshotCapture.self) private var capture
     @Environment(AccessoryCensusService.self) private var census
+    @Environment(AccessoryReconciliationService.self) private var reconciliation
 
     @State private var isCapturing = false
     @State private var progress: Double = 0
@@ -28,6 +29,7 @@ struct MaintenanceView: View {
             snapshotsSection
         }
         .navigationTitle(String(localized: "maintenance.title", defaultValue: "Maintenance"))
+        .onAppear { reconciliation.refresh() }
         .alert(String(localized: "maintenance.newSnapshot.title", defaultValue: "New snapshot"),
                isPresented: $isAskingTitle) {
             TextField(String(localized: "maintenance.newSnapshot.placeholder",
@@ -143,6 +145,24 @@ struct MaintenanceView: View {
             if let sweptAt = census.lastSweepAt {
                 LabeledContent(String(localized: "census.lastSweep", defaultValue: "Last check"),
                                value: sweptAt.formatted(date: .omitted, time: .standard))
+            }
+
+            // In cima alle azioni perché è l'unica che chiede qualcosa: il
+            // resto della sezione si guarda, questa si risponde.
+            if !reconciliation.reviews.isEmpty {
+                NavigationLink {
+                    AccessoryReconciliationView()
+                } label: {
+                    HStack {
+                        Label(String(localized: "reconcile.open", defaultValue: "Accessories to sort out"),
+                              systemImage: "questionmark.circle.fill")
+                            .foregroundStyle(.orange)
+                        Spacer()
+                        Text("\(reconciliation.reviews.count)")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
             }
 
             NavigationLink {
