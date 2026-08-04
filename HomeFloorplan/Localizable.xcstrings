@@ -93,6 +93,40 @@
         }
       }
     },
+    "automation.migrate.why" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These actions belong to the trigger: they work, but they cannot be included in a backup."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queste azioni appartengono al trigger: funzionano, ma non possono entrare in un backup."
+          }
+        }
+      }
+    },
+    "automationDiag.emptySets" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empty containers"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contenitori vuoti"
+          }
+        }
+      }
+    },
     "automationDiag.footer.none" : {
       "extractionState" : "manual",
       "localizations" : {

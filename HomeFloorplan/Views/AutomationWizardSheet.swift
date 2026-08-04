@@ -1227,6 +1227,8 @@ struct AutomationWizardSheet: View {
                 )
             }
 
+            migrateInlineActionsRow
+
             HStack(spacing: 10) {
                 composerInlineActionButton(
                     title: selectedScene == nil
@@ -1267,44 +1269,16 @@ struct AutomationWizardSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if let outcome = migrationOutcome {
-                    Text(outcome)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 4)
-                }
-
-                HStack(spacing: 8) {
-                    if migratableInlineActionSet != nil, editingItem != nil, migrationOutcome == nil {
-                        Button {
-                            Task { await migrateInlineActions() }
-                        } label: {
-                            if isMigratingInlineActions {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Label(
-                                    String(localized: "automation.migrate.action",
-                                           defaultValue: "Move actions into a scene"),
-                                    systemImage: "wand.and.sparkles"
-                                )
-                                .font(.caption.weight(.semibold))
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isMigratingInlineActions)
+                if let url = URL(string: "x-apple-homekit://"), UIApplication.shared.canOpenURL(url) {
+                    Button {
+                        UIApplication.shared.open(url)
+                    } label: {
+                        Label(String(localized: "automation.existing.openHome.short", defaultValue: "Apri in Apple Home"), systemImage: "arrow.up.right.square")
+                            .font(.caption.weight(.semibold))
                     }
-
-                    if let url = URL(string: "x-apple-homekit://"), UIApplication.shared.canOpenURL(url) {
-                        Button {
-                            UIApplication.shared.open(url)
-                        } label: {
-                            Label(String(localized: "automation.existing.openHome.short", defaultValue: "Apri in Apple Home"), systemImage: "arrow.up.right.square")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .buttonStyle(.bordered)
-                    }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 4)
                 }
-                .padding(.top, 4)
             }
 
             Spacer()
@@ -1314,6 +1288,50 @@ struct AutomationWizardSheet: View {
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(BrandColor.primary.opacity(0.28), lineWidth: 1)
+        }
+    }
+
+    /// L'offerta di migrazione, ovunque ci siano azioni attaccate al trigger che
+    /// l'app sa leggere — non solo nel caso con azioni illeggibili.
+    ///
+    /// Misurato su una casa vera: di 52 automazioni con azioni attaccate al
+    /// trigger, quelle con almeno un'azione leggibile sono 7, e non coincidono
+    /// con quelle che mostrano l'avviso. Legando il pulsante all'avviso non
+    /// compariva da nessuna parte. E il valore sta proprio qui: quelle 7 sono
+    /// già modificabili, ma **non ripristinabili** finché restano attaccate al
+    /// trigger.
+    @ViewBuilder
+    private var migrateInlineActionsRow: some View {
+        if let outcome = migrationOutcome {
+            Label(outcome, systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if migratableInlineActionSet != nil, editingItem != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(localized: "automation.migrate.why",
+                            defaultValue: "These actions belong to the trigger: they work, but they cannot be included in a backup."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    Task { await migrateInlineActions() }
+                } label: {
+                    if isMigratingInlineActions {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(
+                            String(localized: "automation.migrate.action",
+                                   defaultValue: "Move actions into a scene"),
+                            systemImage: "wand.and.sparkles"
+                        )
+                        .font(.caption.weight(.semibold))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isMigratingInlineActions)
+            }
         }
     }
 

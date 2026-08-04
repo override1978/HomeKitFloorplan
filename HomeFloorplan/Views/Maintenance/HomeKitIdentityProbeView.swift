@@ -134,6 +134,14 @@ struct HomeKitIdentityProbeView: View {
                 LabeledContent(String(localized: "automationDiag.noActions", defaultValue: "Without any action"),
                                value: "\(d.withoutActions)")
             }
+            if d.emptyTriggerOwnedSets > 0 {
+                LabeledContent(String(localized: "automationDiag.emptySets", defaultValue: "Empty containers"),
+                               value: "\(d.emptyTriggerOwnedSets)")
+            }
+            ForEach(d.unreadableActionClasses.sorted(by: { $0.value > $1.value }), id: \.key) { entry in
+                LabeledContent(entry.key, value: "\(entry.value)")
+                    .font(.footnote.monospaced())
+            }
         } header: {
             Text(String(localized: "automationDiag.header", defaultValue: "Automation actions"))
         } footer: {

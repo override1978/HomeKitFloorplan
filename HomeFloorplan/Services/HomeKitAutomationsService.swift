@@ -792,11 +792,21 @@ final class HomeKitAutomationsService {
         let migratable: Int
         /// Senza nessuna azione collegata.
         let withoutActions: Int
+        /// Contenitori attaccati al trigger ma **vuoti**: nessuna azione dentro.
+        let emptyTriggerOwnedSets: Int
+        /// Che classe hanno davvero le azioni che l'app non sa leggere.
+        /// `HMCharacteristicWriteAction` è l'unica sottoclasse pubblica di
+        /// `HMAction`: tutto il resto è privato di Apple, e sapere *cosa* è
+        /// dice se la migrazione ha senso o se quelle automazioni sono
+        /// irrimediabilmente fuori portata.
+        let unreadableActionClasses: [String: Int]
     }
 
     func actionDiagnostics() -> ActionDiagnostics {
         let triggers = homeKit.currentHome?.triggers ?? []
         var namedScenes = 0, triggerOwned = 0, unreadable = 0, migratable = 0, empty = 0
+        var emptySets = 0
+        var classes: [String: Int] = [:]
 
         for trigger in triggers {
             let sets = trigger.actionSets
@@ -809,8 +819,12 @@ final class HomeKitAutomationsService {
             }
             triggerOwned += 1
             let allActions = inlineSets.flatMap { Array($0.actions) }
-            if allActions.contains(where: { $0.homeFloorplanCharacteristicWrite == nil }) {
-                unreadable += 1
+            if allActions.isEmpty { emptySets += 1 }
+
+            let unreadableActions = allActions.filter { $0.homeFloorplanCharacteristicWrite == nil }
+            if !unreadableActions.isEmpty { unreadable += 1 }
+            for action in unreadableActions {
+                classes[String(describing: type(of: action)), default: 0] += 1
             }
             if allActions.contains(where: { $0.homeFloorplanCharacteristicWrite != nil }) {
                 migratable += 1
@@ -823,7 +837,9 @@ final class HomeKitAutomationsService {
             triggerOwned: triggerOwned,
             withUnreadableActions: unreadable,
             migratable: migratable,
-            withoutActions: empty
+            withoutActions: empty,
+            emptyTriggerOwnedSets: emptySets,
+            unreadableActionClasses: classes
         )
     }
 
