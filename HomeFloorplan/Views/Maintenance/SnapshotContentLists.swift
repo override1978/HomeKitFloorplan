@@ -85,8 +85,9 @@ struct SnapshotAccessoryListView: View {
 
 // MARK: - Scene
 
-/// Le scene con **i valori** che impostano: è il contenuto che l'app Casa non
-/// mostra da nessuna parte, e il motivo principale per cui uno snapshot serve.
+/// L'elenco delle scene: solo i nomi e quanto contengono. Il contenuto sta un
+/// livello sotto — una scena su dieci accessori riempiva da sola una schermata,
+/// e con quaranta scene l'elenco smetteva di essere un elenco.
 struct SnapshotSceneListView: View {
     let snapshot: HomeConfigurationSnapshot
     @State private var search = ""
@@ -100,36 +101,66 @@ struct SnapshotSceneListView: View {
     var body: some View {
         List {
             ForEach(Array(scenes.enumerated()), id: \.offset) { _, scene in
-                Section {
-                    if scene.actions.isEmpty {
-                        Text(String(localized: "snapshot.scene.noReadableActions",
-                                    defaultValue: "No action this app can read."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(Self.byAccessory(scene.actions), id: \.name) { group in
-                        SceneAccessoryRow(group: group)
-                    }
-                } header: {
+                NavigationLink {
+                    SnapshotSceneDetailView(scene: scene)
+                } label: {
                     HStack {
-                        Text(scene.name)
-                        if scene.isBuiltIn {
-                            Text(String(localized: "snapshot.scene.builtIn", defaultValue: "built-in"))
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(scene.name)
+                            if scene.isBuiltIn {
+                                Text(String(localized: "snapshot.scene.builtIn", defaultValue: "built-in"))
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
-                    }
-                } footer: {
-                    if scene.foreignActionCount > 0 {
-                        Text(String(format: String(localized: "snapshot.scene.foreign",
-                                                   defaultValue: "%d further actions this app cannot read."),
-                                    scene.foreignActionCount))
+                        Spacer()
+                        // Gli accessori toccati, non le azioni: è il numero che
+                        // dice quanto è grande una scena a chi la sta cercando.
+                        Text("\(SnapshotSceneDetailView.accessoryCount(scene))")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
                     }
                 }
             }
         }
         .searchable(text: $search)
         .navigationTitle(String(localized: "snapshot.scenes", defaultValue: "Scenes"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Dettaglio di una scena
+
+/// Cosa imposta una scena, **per accessorio**: è il contenuto che l'app Casa non
+/// mostra da nessuna parte, e il motivo principale per cui uno snapshot serve.
+struct SnapshotSceneDetailView: View {
+    let scene: SceneSnapshot
+
+    static func accessoryCount(_ scene: SceneSnapshot) -> Int {
+        Set(scene.actions.map { $0.target.accessory.name }).count
+    }
+
+    var body: some View {
+        List {
+            Section {
+                if scene.actions.isEmpty {
+                    Text(String(localized: "snapshot.scene.noReadableActions",
+                                defaultValue: "No action this app can read."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(Self.byAccessory(scene.actions), id: \.name) { group in
+                    SceneAccessoryRow(group: group)
+                }
+            } footer: {
+                if scene.foreignActionCount > 0 {
+                    Text(String(format: String(localized: "snapshot.scene.foreign",
+                                               defaultValue: "%d further actions this app cannot read."),
+                                scene.foreignActionCount))
+                }
+            }
+        }
+        .navigationTitle(scene.name)
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -150,8 +181,8 @@ struct SnapshotSceneListView: View {
     }
 
     /// Una scena è fatta di scritture su caratteristiche, ma si pensa per
-    /// accessori: «in questa scena il Salotto è al 40%», non «tre righe che
-    /// ripetono Lampada Salotto». Qui le azioni si raggruppano come le si pensa.
+    /// accessori: «in questa scena il Salotto è al 40%», non tre righe che
+    /// ripetono «Lampada Salotto».
     static func byAccessory(_ actions: [SceneActionSnapshot]) -> [AccessoryGroup] {
         Dictionary(grouping: actions) { $0.target.accessory.name }
             .map { name, actions -> AccessoryGroup in
@@ -179,7 +210,7 @@ struct SnapshotSceneListView: View {
 }
 
 private struct SceneAccessoryRow: View {
-    let group: SnapshotSceneListView.AccessoryGroup
+    let group: SnapshotSceneDetailView.AccessoryGroup
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -191,8 +222,6 @@ private struct SceneAccessoryRow: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
-                    // Su una riga sola: sono poche coppie corte, e impilarle
-                    // riporterebbe la lista lunga che si voleva togliere.
                     Text(service.entries.map { "\($0.characteristic) \($0.value)" }
                         .joined(separator: "  ·  "))
                         .font(.caption)
@@ -273,34 +302,21 @@ struct SnapshotAutomationListView: View {
 
 // MARK: - Stanze
 
-/// Le stanze con chi ci stava dentro. È l'elenco che serve dopo aver spostato
-/// accessori per sbaglio: dice dov'erano, per nome.
+/// Solo i nomi e quanto contenevano. Esploderle in elenchi di accessori
+/// duplicava l'elenco accessori, che è già raggruppato per stanza.
 struct SnapshotRoomListView: View {
     let snapshot: HomeConfigurationSnapshot
 
-    private var rooms: [RoomSnapshot] {
-        snapshot.rooms.sorted { $0.address.name < $1.address.name }
-    }
-
     var body: some View {
         List {
-            ForEach(Array(rooms.enumerated()), id: \.offset) { _, room in
-                Section {
-                    if room.accessoryNames.isEmpty {
-                        Text(String(localized: "snapshot.room.empty", defaultValue: "No accessory"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(room.accessoryNames.sorted(), id: \.self) { name in
-                        Text(name)
-                    }
-                } header: {
-                    HStack {
-                        Text(room.address.name)
-                        Spacer()
-                        Text("\(room.accessoryNames.count)")
-                            .monospacedDigit()
-                    }
+            ForEach(snapshot.rooms.sorted { $0.address.name < $1.address.name },
+                    id: \.address.name) { room in
+                HStack {
+                    Text(room.address.name)
+                    Spacer()
+                    Text("\(room.accessoryNames.count)")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                 }
             }
         }
@@ -314,17 +330,15 @@ struct SnapshotRoomListView: View {
 struct SnapshotZoneListView: View {
     let snapshot: HomeConfigurationSnapshot
 
-    private var zones: [ZoneSnapshot] {
-        snapshot.zones.sorted { $0.name < $1.name }
-    }
-
     var body: some View {
         List {
-            ForEach(Array(zones.enumerated()), id: \.offset) { _, zone in
-                Section(zone.name) {
-                    ForEach(zone.roomNames.sorted(), id: \.self) { name in
-                        Label(name, systemImage: "door.left.hand.closed")
-                    }
+            ForEach(snapshot.zones.sorted { $0.name < $1.name }, id: \.name) { zone in
+                HStack {
+                    Text(zone.name)
+                    Spacer()
+                    Text("\(zone.roomNames.count)")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                 }
             }
         }
