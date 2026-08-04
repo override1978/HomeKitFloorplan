@@ -12,11 +12,28 @@ struct HomeKitIdentityProbeView: View {
 
     @Environment(HomeKitService.self) private var homeKit
     @Environment(HomeKitAutomationsService.self) private var automationsService
+    @Environment(HomeKitScenesService.self) private var scenesService
     @State private var probe = HomeKitIdentityProbe()
     @State private var didCopy = false
 
+    @State private var captureSummary: CaptureSummary?
+    @State private var isCapturing = false
+
+    /// Quello che il piano chiede di misurare per primo: **tempo e peso**. Se il
+    /// tempo fosse nell'ordine dei minuti significherebbe che la cattura sta
+    /// leggendo i valori delle caratteristiche invece della sola identità — il
+    /// difetto da intercettare subito.
+    struct CaptureSummary {
+        let elapsed: TimeInterval
+        let rawBytes: Int
+        let compressedBytes: Int
+        let counts: HomeConfigurationSnapshot.Counts
+        let coverage: Double
+    }
+
     var body: some View {
         List {
+            captureProbe
             deadAutomations
             automations
 
@@ -111,6 +128,69 @@ struct HomeKitIdentityProbeView: View {
         .navigationTitle(String(localized: "identityProbe.title", defaultValue: "Accessory identity"))
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: probe.report?.capturedAt) { _, _ in didCopy = false }
+    }
+
+    // MARK: - Cattura di prova
+
+    @ViewBuilder
+    private var captureProbe: some View {
+        Section {
+            Button {
+                Task { await runCaptureProbe() }
+            } label: {
+                if isCapturing {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text(String(localized: "captureProbe.running", defaultValue: "Capturing…"))
+                    }
+                } else {
+                    Label(String(localized: "captureProbe.run", defaultValue: "Test a snapshot"),
+                          systemImage: "camera.viewfinder")
+                }
+            }
+            .disabled(isCapturing)
+
+            if let s = captureSummary {
+                LabeledContent(String(localized: "captureProbe.elapsed", defaultValue: "Time"),
+                               value: String(format: "%.1f s", s.elapsed))
+                LabeledContent(String(localized: "captureProbe.size", defaultValue: "Size"),
+                               value: "\(s.compressedBytes / 1024) KB · \(s.rawBytes / 1024) KB raw")
+                LabeledContent(String(localized: "captureProbe.contents", defaultValue: "Contents"),
+                               value: "\(s.counts.accessories) · \(s.counts.scenes) · \(s.counts.automations) · \(s.counts.rooms)")
+                LabeledContent(String(localized: "captureProbe.coverage", defaultValue: "Reliable identity"),
+                               value: "\(Int((s.coverage * 100).rounded()))%")
+            }
+        } header: {
+            Text(String(localized: "captureProbe.header", defaultValue: "Snapshot"))
+        } footer: {
+            Text(String(localized: "captureProbe.footer",
+                        defaultValue: "Accessories · scenes · automations · rooms. A few seconds is expected — the serial numbers cost one read each. Minutes would mean characteristic values are being read, which they must not be."))
+        }
+    }
+
+    private func runCaptureProbe() async {
+        isCapturing = true
+        defer { isCapturing = false }
+        let capture = HomeSnapshotCapture(homeKit: homeKit,
+                                          scenesService: scenesService,
+                                          automationsService: automationsService)
+        let started = Date()
+        do {
+            let snapshot = try await capture.capture()
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let raw = try encoder.encode(snapshot)
+            let compressed = (try? (raw as NSData).compressed(using: .zlib)) ?? NSData()
+            captureSummary = CaptureSummary(
+                elapsed: Date().timeIntervalSince(started),
+                rawBytes: raw.count,
+                compressedBytes: compressed.length,
+                counts: snapshot.counts,
+                coverage: snapshot.reliableIdentityCoverage
+            )
+        } catch {
+            captureSummary = nil
+        }
     }
 
     // MARK: - Automazioni morte
