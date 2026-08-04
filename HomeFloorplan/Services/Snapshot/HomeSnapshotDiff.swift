@@ -313,8 +313,7 @@ struct HomeSnapshotDiff: Sendable {
                 lines.append(String(format: String(localized: "diff.scene.actionValue",
                                                    defaultValue: "%1$@: %2$@ instead of %3$@"),
                                     actionLabel(action),
-                                    action.value.displayText(unit: action.format?.units),
-                                    current.value.displayText(unit: current.format?.units)))
+                                    action.readableValue, current.readableValue))
             }
         }
         let wasKeys = Set(was.map(\.sortKey))
@@ -333,13 +332,11 @@ struct HomeSnapshotDiff: Sendable {
     }
 
     private static func actionLabel(_ action: SceneActionSnapshot) -> String {
-        "\(action.target.accessory.name) · "
-            + (action.target.characteristicName
-               ?? SnapshotCharacteristicNames.readable(action.target.characteristicType))
+        "\(action.target.accessory.name) · \(action.readableName)"
     }
 
     private static func actionDescription(_ action: SceneActionSnapshot) -> String {
-        "\(actionLabel(action)) → \(action.value.displayText(unit: action.format?.units))"
+        "\(actionLabel(action)) → \(action.readableValue)"
     }
 
     // MARK: Accessori

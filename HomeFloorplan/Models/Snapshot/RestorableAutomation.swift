@@ -99,10 +99,7 @@ extension RestorableAutomation {
                                                defaultValue: "runs %d direct actions"),
                                 inlineActions.count))
             lines += inlineActions.prefix(4).map {
-                "· \($0.target.accessory.name) · "
-                    + ($0.target.characteristicName
-                       ?? SnapshotCharacteristicNames.readable($0.target.characteristicType))
-                    + " → " + $0.value.displayText(unit: $0.format?.units)
+                "· \($0.target.accessory.name) · \($0.readableName) → \($0.readableValue)"
             }
         }
         let conditionCount = conditions.count + timeConditions.count + presenceConditions.count

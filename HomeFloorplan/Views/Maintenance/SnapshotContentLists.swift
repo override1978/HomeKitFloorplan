@@ -231,11 +231,7 @@ struct SnapshotSceneDetailView: View {
                             label: showsService ? (first.name ?? "#\(first.ordinal + 1)") : nil,
                             entries: actions
                                 .sorted { $0.target.characteristicType < $1.target.characteristicType }
-                                .map { action in
-                                    (action.target.characteristicName
-                                        ?? SnapshotCharacteristicNames.readable(action.target.characteristicType),
-                                     action.value.displayText(unit: action.format?.units))
-                                }
+                                .map { ($0.readableName, $0.readableValue) }
                         )
                     }
                     .sorted { ($0.label ?? "") < ($1.label ?? "") }

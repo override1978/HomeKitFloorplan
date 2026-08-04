@@ -492,3 +492,89 @@ enum SnapshotCharacteristicNames {
         return "0x" + prefix.drop(while: { $0 == "0" })
     }
 }
+
+// MARK: - Valori enumerati
+
+/// I valori enumerati detti in parole: «Inserito (fuori casa)» invece di `1`.
+///
+/// ⚠️ **Nessun servizio lo fa per noi.** `HMCharacteristicMetadata.validValues`
+/// dichiara quali numeri sono ammessi, non cosa significano: il significato sta
+/// nella specifica HAP, non nel framework. Quindi una tabella è inevitabile.
+///
+/// ⚠️ **E questa è la seconda in casa.** `AutomationCapabilityCatalog` ne ha già
+/// una equivalente per il builder automazioni. Le chiavi di traduzione qui sono
+/// deliberatamente **le stesse**, così le due dicono almeno le stesse parole
+/// finché non verranno unificate — che è la cosa giusta da fare e non è questa.
+///
+/// Coperte solo le caratteristiche che una scena scrive davvero, e nella loro
+/// variante `Target`: la `Current` dell'antifurto ha un valore in più
+/// («allarme in corso») che una scena non può impostare, e trattarle come
+/// uguali darebbe un'etichetta sbagliata proprio lì.
+enum SnapshotCharacteristicValues {
+
+    private static let targetSecuritySystemState = "00000067-0000-1000-8000-0026BB765291"
+
+    static func readable(_ value: SnapshotValue, characteristicType: String) -> String? {
+        guard case .int(let raw) = value else { return nil }
+        return table(for: characteristicType)?[raw]
+    }
+
+    private static func table(for characteristicType: String) -> [Int: String]? {
+        switch characteristicType {
+        case HMCharacteristicTypeTargetLockMechanismState:
+            [0: String(localized: "accessory.lock.unsecured", defaultValue: "Unlocked"),
+             1: String(localized: "accessory.lock.secured", defaultValue: "Locked")]
+
+        case HMCharacteristicTypeTargetDoorState:
+            [0: String(localized: "accessory.garage.open", defaultValue: "Open"),
+             1: String(localized: "accessory.garage.closed", defaultValue: "Closed")]
+
+        case targetSecuritySystemState:
+            [0: String(localized: "security.state.stayArm", defaultValue: "Stay arm"),
+             1: String(localized: "security.state.awayArm", defaultValue: "Away arm"),
+             2: String(localized: "security.state.nightArm", defaultValue: "Night arm"),
+             3: String(localized: "security.state.disarmed", defaultValue: "Disarmed")]
+
+        case HMCharacteristicTypeTargetHeatingCooling:
+            [0: String(localized: "thermostat.mode.off", defaultValue: "Off"),
+             1: String(localized: "thermostat.mode.heat", defaultValue: "Heat"),
+             2: String(localized: "thermostat.mode.cool", defaultValue: "Cool"),
+             3: String(localized: "thermostat.mode.auto", defaultValue: "Auto")]
+
+        case HMCharacteristicTypeTargetHeaterCoolerState:
+            [0: String(localized: "thermostat.mode.auto", defaultValue: "Auto"),
+             1: String(localized: "thermostat.mode.heat", defaultValue: "Heat"),
+             2: String(localized: "thermostat.mode.cool", defaultValue: "Cool")]
+
+        case HMCharacteristicTypeTargetFanState,
+             HMCharacteristicTypeTargetAirPurifierState:
+            [0: String(localized: "mode.manual", defaultValue: "Manual"),
+             1: String(localized: "thermostat.mode.auto", defaultValue: "Auto")]
+
+        case HMCharacteristicTypeTargetHumidifierDehumidifierState:
+            [0: String(localized: "thermostat.mode.auto", defaultValue: "Auto"),
+             1: String(localized: "humidity.mode.humidify", defaultValue: "Humidify"),
+             2: String(localized: "humidity.mode.dehumidify", defaultValue: "Dehumidify")]
+
+        case HMCharacteristicTypeActive:
+            [0: String(localized: "state.inactive", defaultValue: "Off"),
+             1: String(localized: "state.active", defaultValue: "On")]
+
+        default:
+            nil
+        }
+    }
+}
+
+extension SceneActionSnapshot {
+    /// Nome e valore come li leggerebbe una persona.
+    var readableName: String {
+        target.characteristicName
+            ?? SnapshotCharacteristicNames.readable(target.characteristicType)
+    }
+
+    var readableValue: String {
+        SnapshotCharacteristicValues.readable(value, characteristicType: target.characteristicType)
+            ?? value.displayText(unit: format?.units)
+    }
+}
