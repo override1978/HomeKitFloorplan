@@ -437,6 +437,10 @@ enum SnapshotCharacteristicNames {
 
     static func readable(_ characteristicType: String) -> String {
         let prefix = String(characteristicType.prefix(8)).uppercased()
-        return names[prefix] ?? characteristicType
+        if let name = names[prefix] { return name }
+        // Fuori dall'elenco resta un identificatore, ma accorciato: dentro una
+        // riga che ne unisce diversi, un UUID intero la rende illeggibile e
+        // nasconde quelli che invece un nome ce l'hanno.
+        return "0x" + prefix.drop(while: { $0 == "0" })
     }
 }

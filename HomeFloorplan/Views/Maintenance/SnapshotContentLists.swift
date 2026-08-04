@@ -94,20 +94,8 @@ struct SnapshotSceneListView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(Array(scene.actions.sorted(by: { $0.sortKey < $1.sortKey }).enumerated()),
-                            id: \.offset) { _, action in
-                        HStack(alignment: .firstTextBaseline) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(action.target.accessory.name)
-                                Text(SnapshotCharacteristicNames.readable(action.target.characteristicType))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 8)
-                            Text(action.value.displayText)
-                                .font(.callout.monospaced())
-                                .foregroundStyle(.secondary)
-                        }
+                    ForEach(Self.byAccessory(scene.actions), id: \.name) { group in
+                        SceneAccessoryRow(group: group)
                     }
                 } header: {
                     HStack {
@@ -130,6 +118,76 @@ struct SnapshotSceneListView: View {
         .searchable(text: $search)
         .navigationTitle(String(localized: "snapshot.scenes", defaultValue: "Scenes"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Raggruppamento
+
+    struct AccessoryGroup {
+        let name: String
+        /// Un blocco per servizio. Restano separati solo quando servono: su una
+        /// lampada c'è un servizio solo e mostrarlo sarebbe rumore, su una
+        /// multipresa sono le singole prese e senza non si capisce quale.
+        let services: [ServiceGroup]
+    }
+
+    struct ServiceGroup: Identifiable {
+        let id: String
+        let label: String?
+        let entries: [(characteristic: String, value: String)]
+    }
+
+    /// Una scena è fatta di scritture su caratteristiche, ma si pensa per
+    /// accessori: «in questa scena il Salotto è al 40%», non «tre righe che
+    /// ripetono Lampada Salotto». Qui le azioni si raggruppano come le si pensa.
+    static func byAccessory(_ actions: [SceneActionSnapshot]) -> [AccessoryGroup] {
+        Dictionary(grouping: actions) { $0.target.accessory.name }
+            .map { name, actions -> AccessoryGroup in
+                let byService = Dictionary(grouping: actions) {
+                    "\($0.target.service.serviceType)#\($0.target.service.ordinal)"
+                }
+                let showsService = byService.count > 1
+                let services = byService
+                    .map { key, actions -> ServiceGroup in
+                        let first = actions[0].target.service
+                        return ServiceGroup(
+                            id: key,
+                            label: showsService ? (first.name ?? "#\(first.ordinal + 1)") : nil,
+                            entries: actions
+                                .sorted { $0.target.characteristicType < $1.target.characteristicType }
+                                .map { (SnapshotCharacteristicNames.readable($0.target.characteristicType),
+                                        $0.value.displayText) }
+                        )
+                    }
+                    .sorted { ($0.label ?? "") < ($1.label ?? "") }
+                return AccessoryGroup(name: name, services: services)
+            }
+            .sorted { $0.name < $1.name }
+    }
+}
+
+private struct SceneAccessoryRow: View {
+    let group: SnapshotSceneListView.AccessoryGroup
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(group.name)
+            ForEach(group.services) { service in
+                VStack(alignment: .leading, spacing: 2) {
+                    if let label = service.label {
+                        Text(label)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    // Su una riga sola: sono poche coppie corte, e impilarle
+                    // riporterebbe la lista lunga che si voleva togliere.
+                    Text(service.entries.map { "\($0.characteristic) \($0.value)" }
+                        .joined(separator: "  ·  "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 
