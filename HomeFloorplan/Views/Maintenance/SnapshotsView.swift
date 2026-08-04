@@ -141,6 +141,18 @@ struct SnapshotsView: View {
                     } label: {
                         SnapshotRow(entry: entry)
                     }
+                    // Senza scorrimento completo: eliminare un backup resta
+                    // irreversibile, e due gesti volute costano meno di una
+                    // finestra di conferma che rallenterebbe proprio il caso
+                    // per cui questo esiste — farne fuori diversi di fila.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            store.delete(entry.id)
+                        } label: {
+                            Label(String(localized: "common.delete", defaultValue: "Delete"),
+                                  systemImage: "trash")
+                        }
+                    }
                 }
             }
         } header: {
