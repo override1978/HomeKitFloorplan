@@ -51,9 +51,15 @@ struct RestorableAutomation: Codable, Sendable {
     var conditions: [CapabilityRef]
     /// `AutomationConditionJoinMode`: all · any.
     var conditionJoinMode: String
-    /// La scena eseguita, per nome. Un'automazione senza scena non entra qui:
-    /// ricrearne il trigger senza ciò che esegue produrrebbe un guscio.
-    var sceneName: String
+    /// La scena eseguita, per nome — quando ne esegue una.
+    var sceneName: String?
+    /// Le azioni attaccate direttamente al trigger.
+    ///
+    /// Un'automazione senza scena **non** è persa: il builder di questa app ne
+    /// crea una propria al volo (`HF Actions - …`) e le ci attacca dentro, ed è
+    /// esattamente ciò che serve per rimetterla. Quello che non si può fare è
+    /// riscrivere un contenitore già esistente di quel tipo, non ricrearne uno.
+    var inlineActions: [SceneActionSnapshot]
     var isEnabled: Bool
 }
 
@@ -65,8 +71,19 @@ extension RestorableAutomation {
     /// deve poter dire «no, non era così» **prima** che venga scritto qualcosa.
     var confirmationLines: [String] {
         var lines = startEvents.map(Self.describe)
-        lines.append(String(format: String(localized: "restorableAutomation.runs",
-                                           defaultValue: "runs the scene “%@”"), sceneName))
+        if let sceneName {
+            lines.append(String(format: String(localized: "restorableAutomation.runs",
+                                               defaultValue: "runs the scene “%@”"), sceneName))
+        } else {
+            lines.append(String(format: String(localized: "restorableAutomation.runsInline",
+                                               defaultValue: "runs %d direct actions"),
+                                inlineActions.count))
+            lines += inlineActions.prefix(4).map {
+                "· \($0.target.accessory.name) · "
+                    + SnapshotCharacteristicNames.readable($0.target.characteristicType)
+                    + " → " + $0.value.displayText
+            }
+        }
         if !conditions.isEmpty {
             let joiner = conditionJoinMode == "any"
                 ? String(localized: "restorableAutomation.joinAny", defaultValue: "if any of:")

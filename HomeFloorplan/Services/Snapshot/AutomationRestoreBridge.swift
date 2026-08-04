@@ -24,16 +24,22 @@ enum AutomationRestoreBridge {
     /// spiegazioni false, che è peggio di nessuna spiegazione.
     static func restorable(from trigger: HMTrigger,
                            capabilities: [AutomationCharacteristicCapability],
-                           serials: [UUID: String]) -> (plan: RestorableAutomation?, reason: String?) {
+                           serials: [UUID: String],
+                           readableActions: [SceneActionSnapshot]) -> (plan: RestorableAutomation?, reason: String?) {
         let item = AutomationItem(trigger: trigger)
         guard let draft = AutomationWizardEditDraft(item: item, capabilities: capabilities) else {
             return (nil, String(localized: "automationCapture.skip.undecodable",
                                 defaultValue: "this app cannot read its trigger in full — it cannot be opened for editing either"))
         }
-        // Senza scena si ricreerebbe un trigger che non esegue niente.
-        guard let sceneName = trigger.actionSets.first?.name, !sceneName.isEmpty else {
-            return (nil, String(localized: "automationCapture.skip.noScene",
-                                defaultValue: "it does not run a scene: its actions are attached to the trigger, which HomeKit does not let other apps recreate"))
+        // Una scena vera, oppure le azioni dirette. Il builder sa creare
+        // entrambe le forme, quindi non avere una scena non è un motivo di
+        // scarto: lo è non avere **niente** da eseguire.
+        let ownScene = trigger.actionSets.first { !HomeKitAutomationsService.isTriggerOwned($0) }
+        let sceneName = ownScene?.name
+        let inlineActions = sceneName == nil ? readableActions : []
+        guard sceneName != nil || !inlineActions.isEmpty else {
+            return (nil, String(localized: "automationCapture.skip.nothingToRun",
+                                defaultValue: "there is nothing readable for it to run: no scene, and no action this app can read"))
         }
 
         var startEvents: [RestorableAutomation.StartEvent] = []
@@ -88,6 +94,7 @@ enum AutomationRestoreBridge {
             conditions: conditions,
             conditionJoinMode: draft.conditionJoinMode.rawValue,
             sceneName: sceneName,
+            inlineActions: inlineActions,
             isEnabled: trigger.isEnabled
         ), nil)
     }
@@ -194,9 +201,17 @@ enum AutomationRestoreBridge {
     static func recreate(_ plan: RestorableAutomation,
                          in home: HMHome,
                          scenes: [SceneItem],
+                         inlineActions: [HMAction],
+                         name: String,
                          automationsService: HomeKitAutomationsService) async throws {
-        guard let scene = scenes.first(where: { $0.name == plan.sceneName }) else {
-            throw RestoreFailure.sceneMissing(plan.sceneName)
+        var scene: SceneItem?
+        if let sceneName = plan.sceneName {
+            guard let match = scenes.first(where: { $0.name == sceneName }) else {
+                throw RestoreFailure.sceneMissing(sceneName)
+            }
+            scene = match
+        } else if inlineActions.isEmpty {
+            throw RestoreFailure.unsupported
         }
         let capabilities = AutomationCapabilityCatalog.capabilities(in: home)
 
@@ -221,11 +236,12 @@ enum AutomationRestoreBridge {
         }
 
         try await automationsService.createSceneAutomation(
-            name: plan.sceneName,
+            name: name,
             startEvents: startEvents,
             conditions: conditions,
             conditionJoinMode: AutomationConditionJoinMode(rawValue: plan.conditionJoinMode) ?? .all,
             scene: scene,
+            inlineActions: inlineActions,
             enabled: plan.isEnabled
         )
     }

@@ -92,9 +92,32 @@ final class SnapshotRestoreExecutor {
                                            defaultValue: "this trigger cannot be recreated")))
             return
         }
+        // Le azioni dirette si risolvono **prima**, con le stesse regole delle
+        // scene: se una non trova il suo accessorio si esce senza aver creato
+        // niente, invece di lasciare in casa un'automazione monca col nome
+        // giusto.
+        var inlineActions: [HMAction] = []
+        var failures: [String] = []
+        for action in plan.inlineActions {
+            switch resolveTarget(action, in: home) {
+            case .resolved(let characteristic, let value):
+                guard let target = value as? NSCopying else { continue }
+                inlineActions.append(HMCharacteristicWriteAction(characteristic: characteristic,
+                                                                 targetValue: target))
+            case .failed(let reason):
+                failures.append(reason)
+            }
+        }
+        guard failures.isEmpty else {
+            outcome.skipped.append((automation.name, failures.joined(separator: " · ")))
+            return
+        }
+
         do {
             try await AutomationRestoreBridge.recreate(plan, in: home,
                                                        scenes: scenesService.scenes,
+                                                       inlineActions: inlineActions,
+                                                       name: automation.name,
                                                        automationsService: automationsService)
             outcome.restored.append(String(format: String(localized: "restore.done.automation",
                                                           defaultValue: "Automation “%@”"),

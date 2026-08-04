@@ -313,7 +313,12 @@ extension HomeConfigurationSnapshot {
     /// Proiezione stabile di un'automazione ricreabile: descrive **la regola**,
     /// senza date che si spostano.
     static func canonicalText(_ plan: RestorableAutomation) -> String {
-        var parts = [plan.sceneName, plan.conditionJoinMode, String(plan.isEnabled)]
+        var parts: [String] = [plan.sceneName ?? "", plan.conditionJoinMode, String(plan.isEnabled)]
+        // Le azioni dirette contano quanto una scena: sono ciò che l'automazione
+        // esegue, e cambiarle è un cambiamento di configurazione.
+        for action in plan.inlineActions.sorted(by: { $0.sortKey < $1.sortKey }) {
+            parts.append("i:\(action.sortKey):\(action.value.canonicalText)")
+        }
         for event in plan.startEvents {
             switch event {
             case .schedule(let s):

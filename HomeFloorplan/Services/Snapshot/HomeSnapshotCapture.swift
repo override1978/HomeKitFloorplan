@@ -450,7 +450,8 @@ final class HomeSnapshotCapture {
 
         let restorability = AutomationRestoreBridge.restorable(from: trigger,
                                                                capabilities: capabilities,
-                                                               serials: serials)
+                                                               serials: serials,
+                                                               readableActions: actions)
         return AutomationSnapshot(
             name: item.name,
             localUUID: trigger.uniqueIdentifier.uuidString,

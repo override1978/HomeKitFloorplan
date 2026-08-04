@@ -58188,6 +58188,40 @@
           }
         }
       }
+    },
+    "restorableAutomation.runsInline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "runs %d direct actions"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "esegue %d azioni dirette"
+          }
+        }
+      }
+    },
+    "automationCapture.skip.nothingToRun" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "there is nothing readable for it to run: no scene, and no action this app can read"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "non ha niente di leggibile da eseguire: nessuna scena, e nessuna azione che l'app sappia leggere"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
