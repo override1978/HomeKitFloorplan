@@ -41,13 +41,14 @@ struct UnknownAccessoriesView: View {
         .sheet(item: $manualPickFor) { review in
             ManualPickSheet(review: review)
         }
-        .confirmationDialog(
+        // Stesso motivo del dettaglio snapshot: su iPad il foglio d'azione si
+        // ancora alla lista invece che alla scheda da cui è partito.
+        .alert(
             String(format: String(localized: "reconcile.discard.title",
                                   defaultValue: "Remove “%@”?"),
                    confirmingDiscard?.name ?? ""),
             isPresented: Binding(get: { confirmingDiscard != nil },
-                                 set: { if !$0 { confirmingDiscard = nil } }),
-            titleVisibility: .visible
+                                 set: { if !$0 { confirmingDiscard = nil } })
         ) {
             Button(String(localized: "reconcile.discard.confirm", defaultValue: "Remove"),
                    role: .destructive) {

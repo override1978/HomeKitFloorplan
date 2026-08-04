@@ -87,16 +87,20 @@ struct SnapshotDetailView: View {
                 store.rename(entry.id, to: draftTitle)
             }
         }
-        .confirmationDialog(
-            String(localized: "snapshot.delete.title", defaultValue: "Delete this snapshot?"),
-            isPresented: $isConfirmingDelete,
-            titleVisibility: .visible
-        ) {
+        // Avviso e non foglio d'azione: su iPad un `confirmationDialog` diventa
+        // un popover che si ancora alla vista a cui è attaccato, e attaccato
+        // alla lista spunta da un punto che non c'entra col comando premuto.
+        // Per una conferma nata da un menu, l'avviso centrato è anche la forma
+        // giusta.
+        .alert(String(localized: "snapshot.delete.title", defaultValue: "Delete this snapshot?"),
+               isPresented: $isConfirmingDelete) {
             Button(String(localized: "common.delete", defaultValue: "Delete"), role: .destructive) {
                 store.delete(entry.id)
                 dismiss()
             }
             Button(String(localized: "common.cancel", defaultValue: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(entry.displayTitle)
         }
     }
 

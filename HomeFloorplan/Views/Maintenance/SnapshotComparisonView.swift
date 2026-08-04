@@ -51,12 +51,9 @@ struct SnapshotComparisonView: View {
         .navigationTitle(String(localized: "diff.title", defaultValue: "Restore"))
         .navigationBarTitleDisplayMode(.inline)
         .task { await compare() }
-        .confirmationDialog(
-            String(format: String(localized: "restore.confirm.title",
-                                  defaultValue: "Restore %d items into HomeKit?"), selection.count),
-            isPresented: $isConfirming,
-            titleVisibility: .visible
-        ) {
+        .alert(String(format: String(localized: "restore.confirm.title",
+                                     defaultValue: "Restore %d items into HomeKit?"), selection.count),
+               isPresented: $isConfirming) {
             Button(String(localized: "restore.confirm.action", defaultValue: "Restore"), role: .destructive) {
                 Task { await performRestore() }
             }
