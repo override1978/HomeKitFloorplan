@@ -5,11 +5,10 @@ import SwiftUI
 /// «Cosa è successo a questi accessori?»
 ///
 /// Una scheda per accessorio sparito, raggruppate per stanza, e sotto ognuna le
-/// risposte possibili. Due cose la distinguono da una lista di problemi: ogni
-/// proposta dice **perché** è stata fatta — «stesso numero di serie» e «stesso
-/// modello nella stessa stanza» portano a decisioni diverse — e ogni scheda dice
-/// **cosa c'è in gioco**, perché un rimappaggio sbagliato è invisibile e senza
-/// quel numero non c'è modo di accorgersene.
+/// risposte possibili. Ogni proposta dice **perché** è stata fatta: «stesso
+/// numero di serie» e «stesso modello nella stessa stanza» portano a decisioni
+/// diverse, e senza il motivo scritto due pulsanti identici sembrano
+/// equivalenti quando non lo sono.
 struct AccessoryReconciliationView: View {
 
     @Environment(AccessoryReconciliationService.self) private var reconciliation
@@ -30,12 +29,12 @@ struct AccessoryReconciliationView: View {
                     String(localized: "reconcile.empty.title", defaultValue: "Nothing to sort out"),
                     systemImage: "checkmark.circle",
                     description: Text(String(localized: "reconcile.empty.message",
-                                             defaultValue: "Every accessory this app relies on is still where it was."))
+                                             defaultValue: "Every accessory is where the app last saw it."))
                 )
             } else {
                 Section {
                     Text(String(localized: "reconcile.intro",
-                                defaultValue: "These accessories are gone from HomeKit, but this app still relies on them. Saying what happened is what keeps their markers and their history from being lost by accident."))
+                                defaultValue: "These accessories are no longer in HomeKit. Saying what happened to them is what resolves their identity — and moves their markers to the right place."))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -64,7 +63,7 @@ struct AccessoryReconciliationView: View {
         }
         .confirmationDialog(
             String(format: String(localized: "reconcile.discard.title",
-                                  defaultValue: "Remove “%@” and everything tied to it?"),
+                                  defaultValue: "Remove “%@”?"),
                    confirmingDiscard?.name ?? ""),
             isPresented: Binding(get: { confirmingDiscard != nil },
                                  set: { if !$0 { confirmingDiscard = nil } }),
@@ -79,8 +78,10 @@ struct AccessoryReconciliationView: View {
                 confirmingDiscard = nil
             }
         } message: {
-            if let review = confirmingDiscard, !review.references.isEmpty {
-                Text(review.references.summaryLines.joined(separator: " · "))
+            if let review = confirmingDiscard, review.markerCount > 0 {
+                Text(String(format: String(localized: "reconcile.discard.message",
+                                           defaultValue: "%d markers will be removed from your floorplans."),
+                            review.markerCount))
             }
         }
     }
@@ -118,15 +119,14 @@ private struct ReviewCard: View {
                 }
             }
 
-            // Cosa si perde se si sbaglia. È l'unica difesa contro un
-            // abbinamento errato, che di suo non lascia traccia visibile.
-            if !review.references.isEmpty {
-                Text(review.references.summaryLines.joined(separator: " · "))
+            // Cosa si sposta risolvendo. Un rimappaggio è invisibile, e senza
+            // questo numero non c'è modo di accorgersi di uno sbagliato.
+            if review.markerCount > 0 {
+                Label(String(format: String(localized: "references.markers",
+                                            defaultValue: "%d markers on floorplans"), review.markerCount),
+                      systemImage: "mappin.and.ellipse")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8).padding(.vertical, 5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
             }
 
             VStack(spacing: 8) {

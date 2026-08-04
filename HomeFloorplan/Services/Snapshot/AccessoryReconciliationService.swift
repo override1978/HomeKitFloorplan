@@ -4,13 +4,15 @@ import Observation
 
 // MARK: - AccessoryReconciliationService
 
-/// Le domande aperte sull'identità degli accessori, e cosa succede quando si
-/// risponde.
+/// Risolve gli accessori quando la casa cambia.
 ///
-/// Una domanda nasce a una sola condizione: **è sparito qualcosa che questa app
-/// referenzia**. Un accessorio che se ne va senza lasciare marker né storico non
-/// ha niente da riparare, e chiederlo produrrebbe una lista che non si svuota
-/// mai — che è il modo più sicuro di far smettere di aprirla.
+/// Il censimento dice chi c'era. Quando qualcosa sparisce, questo servizio lo
+/// mette davanti all'utente con i possibili sostituti, e la risposta diventa una
+/// riga di mappatura: da lì in poi l'identità è risolta.
+///
+/// L'unica scrittura che comporta è il **marker sulla planimetria**, che è il
+/// solo posto dove l'UUID di HomeKit è inciso a mano da qualcuno. Tutto il resto
+/// dell'app non ha bisogno di essere toccato.
 @MainActor
 @Observable
 final class AccessoryReconciliationService {
@@ -40,28 +42,23 @@ final class AccessoryReconciliationService {
         let model: String?
         let categoryType: String
         let retiredAt: Date?
-        let references: AccessoryReferences
+        /// Quanti marker puntano ancora a questo accessorio. Zero è normale e
+        /// non toglie la domanda: dice solo che risolverla non sposta niente.
+        let markerCount: Int
         let candidates: [Candidate]
     }
 
     private(set) var reviews: [Review] = []
 
     private let census: AccessoryCensusService
-    private let homeKit: HomeKitService
-    private let iconOverrides: IconOverrideStore
     private let context: ModelContext
 
-    init(census: AccessoryCensusService,
-         homeKit: HomeKitService,
-         iconOverrides: IconOverrideStore,
-         modelContainer: ModelContainer) {
+    init(census: AccessoryCensusService, modelContainer: ModelContainer) {
         self.census = census
-        self.homeKit = homeKit
-        self.iconOverrides = iconOverrides
         self.context = ModelContext(modelContainer)
     }
 
-    // MARK: - Domande aperte
+    // MARK: - Cosa c'è da risolvere
 
     func refresh() {
         let rows = census.currentRows
@@ -70,10 +67,8 @@ final class AccessoryReconciliationService {
 
         reviews = rows
             .filter { $0.isRetired && !decided.resolved.contains($0.id) }
-            .compactMap { retired -> Review? in
-                let references = references(of: retired)
-                guard !references.isEmpty else { return nil }
-                return Review(
+            .map { retired in
+                Review(
                     id: retired.id,
                     name: retired.name,
                     roomName: retired.roomName,
@@ -81,7 +76,7 @@ final class AccessoryReconciliationService {
                     model: retired.model,
                     categoryType: retired.category,
                     retiredAt: retired.retiredAt,
-                    references: references,
+                    markerCount: markers(of: retired).count,
                     candidates: candidates(for: retired, among: live, rejected: decided.rejected)
                 )
             }
@@ -91,7 +86,7 @@ final class AccessoryReconciliationService {
     /// Le proposte, dalla più forte alla più debole, al massimo tre.
     ///
     /// Poche e motivate: offrire un candidato per ogni accessorio della casa
-    /// sposta la fatica sull'utente e non aggiunge informazione. Chi non trova
+    /// sposta la fatica sull'utente senza aggiungere informazione. Chi non trova
     /// il suo qui usa la scelta manuale.
     private func candidates(for retired: KnownAccessory,
                             among live: [KnownAccessory],
@@ -147,9 +142,7 @@ final class AccessoryReconciliationService {
     /// Tutti gli accessori vivi scegliibili a mano, **tolti quelli già presi**.
     ///
     /// Un accessorio vivo appartiene al massimo a un'identità: senza questo
-    /// filtro due righe finirebbero per rivendicare lo stesso dispositivo e lo
-    /// storico si cucirebbe insieme a sproposito — un errore che poi non si
-    /// vede.
+    /// filtro due righe finirebbero per rivendicare lo stesso dispositivo.
     func manualTargets() -> [Candidate] {
         let claimed = Set(fetch(FetchDescriptor<AccessoryIdentityDecision>())
             .filter { $0.kind == .same }
@@ -163,32 +156,25 @@ final class AccessoryReconciliationService {
 
     // MARK: - Risposte
 
-    /// «È lo stesso»: i riferimenti locali passano al vivo.
-    @discardableResult
-    func replace(_ review: Review, with candidateID: UUID, reason: String?) -> IdentityMergeReceipt? {
+    /// «È lo stesso»: i marker passano al vivo e la coppia è risolta.
+    func replace(_ review: Review, with candidateID: UUID, reason: String?) {
         let rows = census.currentRows
         guard let retired = rows.first(where: { $0.id == review.id }),
               let live = rows.first(where: { $0.id == candidateID }),
-              let from = retired.localUUID,
               let to = live.localUUID
-        else { return nil }
+        else { return }
 
-        let moved = rewriteReferences(from: from, to: to, newName: live.name)
-        let receipt = IdentityMergeReceipt(fromUUID: from, toUUID: to, references: moved)
+        for marker in markers(of: retired) { marker.homeKitAccessoryUUID = to }
 
         context.insert(AccessoryIdentityDecision(
             kind: .same,
             retiredIdentityID: retired.id,
             liveIdentityID: live.id,
             reason: reason,
-            deviceName: AppDeviceIdentity.displayName,
-            receipt: receipt
+            deviceName: AppDeviceIdentity.displayName
         ))
-        // La riga ritirata resta come lapide: filtrata dalle domande grazie
-        // alla decisione, e disponibile se un giorno la si vuole disfare.
         try? context.save()
         refresh()
-        return receipt
     }
 
     /// «Non è lo stesso»: la coppia non si ripropone più.
@@ -204,129 +190,39 @@ final class AccessoryReconciliationService {
         refresh()
     }
 
-    /// «Non c'è più e non è stato sostituito»: via i riferimenti e via la riga.
-    /// Non resta niente da riproporre, quindi non c'è niente da ricordare.
+    /// «Non c'è più e non è stato sostituito»: via i marker e via la riga.
     func discard(_ review: Review) {
         let rows = census.currentRows
         guard let retired = rows.first(where: { $0.id == review.id }) else { return }
-        if let uuid = retired.localUUID { deleteReferences(to: uuid) }
+        for marker in markers(of: retired) { context.delete(marker) }
         context.delete(retired)
         try? context.save()
         refresh()
     }
 
-    // MARK: - Riferimenti locali
-
-    /// ⚠️ Nessuna di queste scritture tocca HomeKit. Sono tutte tabelle
-    /// dell'app: è ciò che rende questa funzione poco rischiosa.
-    func references(of row: KnownAccessory) -> AccessoryReferences {
-        guard let uuid = row.localUUID else { return AccessoryReferences() }
-        let key = uuid.uuidString
-        var found = AccessoryReferences()
-
-        found.markerIDs = fetch(FetchDescriptor<PlacedAccessory>(
-            predicate: #Predicate { $0.homeKitAccessoryUUID == uuid })).map(\.id)
-        found.accessoryEventCount = fetch(FetchDescriptor<AccessoryEvent>(
-            predicate: #Predicate { $0.accessoryID == uuid })).count
-        found.usageSummaryCount = fetch(FetchDescriptor<AccessoryUsageSummary>(
-            predicate: #Predicate { $0.accessoryID == uuid })).count
-        found.effectivenessEventCount = fetch(FetchDescriptor<ActionEffectivenessEvent>(
-            predicate: #Predicate { $0.accessoryID == key })).count
-        found.isSecurityMonitored = Self.securityMonitoredUUIDs().contains(key)
-        found.hasIconOverride = iconOverrides.icon(for: uuid) != nil
-        return found
-    }
-
-    private func rewriteReferences(from: UUID, to: UUID, newName: String) -> AccessoryReferences {
-        let fromKey = from.uuidString
-        var moved = AccessoryReferences()
-
-        let markers = fetch(FetchDescriptor<PlacedAccessory>(
-            predicate: #Predicate { $0.homeKitAccessoryUUID == from }))
-        for marker in markers { marker.homeKitAccessoryUUID = to }
-        moved.markerIDs = markers.map(\.id)
-
-        let events = fetch(FetchDescriptor<AccessoryEvent>(predicate: #Predicate { $0.accessoryID == from }))
-        for event in events {
-            event.accessoryID = to
-            event.accessoryName = newName
-        }
-        moved.accessoryEventCount = events.count
-
-        let summaries = fetch(FetchDescriptor<AccessoryUsageSummary>(
-            predicate: #Predicate { $0.accessoryID == from }))
-        for summary in summaries {
-            summary.accessoryID = to
-            summary.accessoryName = newName
-        }
-        moved.usageSummaryCount = summaries.count
-
-        let effectiveness = fetch(FetchDescriptor<ActionEffectivenessEvent>(
-            predicate: #Predicate { $0.accessoryID == fromKey }))
-        for event in effectiveness { event.accessoryID = to.uuidString }
-        moved.effectivenessEventCount = effectiveness.count
-
-        var monitored = Self.securityMonitoredUUIDs()
-        if monitored.contains(fromKey) {
-            monitored.remove(fromKey)
-            monitored.insert(to.uuidString)
-            Self.setSecurityMonitoredUUIDs(monitored)
-            moved.isSecurityMonitored = true
-        }
-
-        if let icon = iconOverrides.icon(for: from) {
-            iconOverrides.setIcon(icon, for: to)
-            iconOverrides.removeIcon(for: from)
-            moved.hasIconOverride = true
-        }
-
-        try? context.save()
-        return moved
-    }
-
-    private func deleteReferences(to uuid: UUID) {
-        let key = uuid.uuidString
-        for marker in fetch(FetchDescriptor<PlacedAccessory>(
-            predicate: #Predicate { $0.homeKitAccessoryUUID == uuid })) { context.delete(marker) }
-        for event in fetch(FetchDescriptor<AccessoryEvent>(
-            predicate: #Predicate { $0.accessoryID == uuid })) { context.delete(event) }
-        for summary in fetch(FetchDescriptor<AccessoryUsageSummary>(
-            predicate: #Predicate { $0.accessoryID == uuid })) { context.delete(summary) }
-        for event in fetch(FetchDescriptor<ActionEffectivenessEvent>(
-            predicate: #Predicate { $0.accessoryID == key })) { context.delete(event) }
-
-        var monitored = Self.securityMonitoredUUIDs()
-        if monitored.remove(key) != nil { Self.setSecurityMonitoredUUIDs(monitored) }
-        iconOverrides.removeIcon(for: uuid)
-    }
-
     // MARK: - Interni
+
+    /// I marker sono l'unico posto dell'app dove l'UUID di HomeKit è scritto a
+    /// mano da qualcuno, quindi l'unico che una risoluzione deve aggiornare.
+    private func markers(of row: KnownAccessory) -> [PlacedAccessory] {
+        guard let uuid = row.localUUID else { return [] }
+        return fetch(FetchDescriptor<PlacedAccessory>(
+            predicate: #Predicate { $0.homeKitAccessoryUUID == uuid }))
+    }
 
     private func fetch<T>(_ descriptor: FetchDescriptor<T>) -> [T] {
         (try? context.fetch(descriptor)) ?? []
     }
 
     private func decidedPairs() -> (resolved: Set<UUID>, rejected: Set<String>) {
-        let decisions = fetch(FetchDescriptor<AccessoryIdentityDecision>())
         var resolved: Set<UUID> = []
         var rejected: Set<String> = []
-        for decision in decisions {
+        for decision in fetch(FetchDescriptor<AccessoryIdentityDecision>()) {
             switch decision.kind {
             case .same:     resolved.insert(decision.retiredIdentityID)
             case .distinct: rejected.insert(decision.pairKey)
             }
         }
         return (resolved, rejected)
-    }
-
-    private static let securityKey = "securityMonitoredUUIDs"
-
-    private static func securityMonitoredUUIDs() -> Set<String> {
-        let raw = UserDefaults.standard.string(forKey: securityKey) ?? ""
-        return Set(raw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
-    }
-
-    private static func setSecurityMonitoredUUIDs(_ value: Set<String>) {
-        UserDefaults.standard.set(value.sorted().joined(separator: ","), forKey: securityKey)
     }
 }

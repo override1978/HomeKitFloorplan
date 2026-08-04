@@ -83,8 +83,6 @@ final class AppServices {
                                                    modelContainer: container)
         self.accessoryCensus = censusService
         self.accessoryReconciliation = AccessoryReconciliationService(census: censusService,
-                                                                      homeKit: kit,
-                                                                      iconOverrides: iconStore,
                                                                       modelContainer: container)
         let notifier = SecurityNotificationService(homeKit: kit)
         self.securityNotifier = notifier

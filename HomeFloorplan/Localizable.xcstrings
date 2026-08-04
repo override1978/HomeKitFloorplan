@@ -56206,13 +56206,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "These accessories are gone from HomeKit, but this app still relies on them. Saying what happened is what keeps their markers and their history from being lost by accident."
+            "value" : "These accessories are no longer in HomeKit. Saying what happened to them is what resolves their identity — and moves their markers to the right place."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Questi accessori non sono più in HomeKit, ma questa app li usa ancora. Dire cosa è successo è ciò che evita di perdere per sbaglio i loro marker e il loro storico."
+            "value" : "Questi accessori non sono più in HomeKit. Dire cosa è successo è ciò che ne risolve l'identità — e sposta i loro marker al posto giusto."
           }
         }
       }
@@ -56240,13 +56240,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Every accessory this app relies on is still where it was."
+            "value" : "Every accessory is where the app last saw it."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ogni accessorio che questa app usa è ancora al suo posto."
+            "value" : "Ogni accessorio è dove l'app lo ha visto l'ultima volta."
           }
         }
       }
@@ -56444,13 +56444,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remove “%@” and everything tied to it?"
+            "value" : "Remove “%@”?"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rimuovere «%@» e tutto ciò che ne dipende?"
+            "value" : "Rimuovere «%@»?"
           }
         }
       }
@@ -56570,6 +56570,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "icona personalizzata"
+          }
+        }
+      }
+    },
+    "reconcile.discard.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d markers will be removed from your floorplans."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d marker verranno tolti dalle planimetrie."
           }
         }
       }
