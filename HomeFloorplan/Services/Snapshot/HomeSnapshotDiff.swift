@@ -360,6 +360,22 @@ struct HomeSnapshotDiff: Sendable {
         return matches.count == 1 ? matches[0] : nil
     }
 
+    private static func describe(_ values: [String]) -> String {
+        values.isEmpty
+            ? String(localized: "diff.automation.nothing", defaultValue: "nothing")
+            : values.sorted().joined(separator: ", ")
+    }
+
+    private static func contentLabel(_ content: AutomationSnapshot.Content) -> String {
+        switch content {
+        case .scene:                 String(localized: "diff.automation.content.scene", defaultValue: "a scene")
+        case .readableInlineActions: String(localized: "diff.automation.content.inline", defaultValue: "direct actions")
+        case .shortcut:              String(localized: "diff.automation.content.shortcut", defaultValue: "a shortcut")
+        case .empty:                 String(localized: "diff.automation.content.empty", defaultValue: "nothing")
+        case .other:                 String(localized: "diff.automation.content.other", defaultValue: "something unknown")
+        }
+    }
+
     // MARK: Automazioni
 
     private static func automationItems(_ snapshot: HomeConfigurationSnapshot,
@@ -375,14 +391,44 @@ struct HomeSnapshotDiff: Sendable {
                                   details: [automation.humanSummary]))
                 continue
             }
+            var details: [String] = []
+
             if now.isEnabled != automation.isEnabled {
+                details.append(automation.isEnabled
+                               ? String(localized: "diff.automation.wasOn",
+                                        defaultValue: "was on, is now paused")
+                               : String(localized: "diff.automation.wasOff",
+                                        defaultValue: "was paused, is now on"))
+            }
+            // Cosa esegue. È la modifica che si fa davvero — «ora lancia
+            // un'altra scena» — e confrontare solo nome e stato attivo la
+            // lasciava passare del tutto inosservata.
+            if Set(now.actionSetNames) != Set(automation.actionSetNames) {
+                details.append(String(format: String(localized: "diff.automation.runs",
+                                                     defaultValue: "ran %1$@, now runs %2$@"),
+                                      describe(automation.actionSetNames), describe(now.actionSetNames)))
+            }
+            if now.content != automation.content {
+                details.append(String(format: String(localized: "diff.automation.content",
+                                                     defaultValue: "what it executes changed (%1$@ → %2$@)"),
+                                      contentLabel(automation.content), contentLabel(now.content)))
+            }
+            // Quando scatta e a quali condizioni: la cattura le tiene già in
+            // lingua, quindi il confronto è sul testo che l'utente leggerebbe.
+            if now.humanSummary != automation.humanSummary {
+                details.append(String(format: String(localized: "diff.automation.trigger",
+                                                     defaultValue: "fired %1$@, now fires %2$@"),
+                                      automation.humanSummary, now.humanSummary))
+            }
+            if Set(now.conditionSummaries) != Set(automation.conditionSummaries) {
+                details.append(String(format: String(localized: "diff.automation.conditions",
+                                                     defaultValue: "conditions: %1$@ → %2$@"),
+                                      describe(automation.conditionSummaries), describe(now.conditionSummaries)))
+            }
+
+            if !details.isEmpty {
                 items.append(Item(id: "auto.changed.\(automation.name)", category: .automations,
-                                  change: .changed, title: automation.name,
-                                  details: [automation.isEnabled
-                                            ? String(localized: "diff.automation.wasOn",
-                                                     defaultValue: "was on, is now paused")
-                                            : String(localized: "diff.automation.wasOff",
-                                                     defaultValue: "was paused, is now on")]))
+                                  change: .changed, title: automation.name, details: details))
             }
         }
         for automation in current.automations where !snapshotNames.contains(automation.name) {
