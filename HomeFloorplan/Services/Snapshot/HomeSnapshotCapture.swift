@@ -85,7 +85,15 @@ final class HomeSnapshotCapture {
             serviceGroups: home.serviceGroups.map(serviceGroupSnapshot),
             accessories: home.accessories.map { accessorySnapshot($0, serial: serials[$0.uniqueIdentifier]) },
             scenes: home.actionSets.map { sceneSnapshot($0, serials: serials) },
-            automations: home.triggers.map { automationSnapshot($0, serials: serials) }
+            automations: {
+                // Il catalogo si costruisce una volta sola: serve a decodificare
+                // i trigger, e ricalcolarlo per automazione costerebbe 78 giri
+                // sull'intera casa.
+                let capabilities = AutomationCapabilityCatalog.capabilities(in: home)
+                return home.triggers.map {
+                    automationSnapshot($0, serials: serials, capabilities: capabilities)
+                }
+            }()
         )
     }
 
@@ -411,7 +419,9 @@ final class HomeSnapshotCapture {
 
     // MARK: - Automazioni
 
-    private func automationSnapshot(_ trigger: HMTrigger, serials: [UUID: String]) -> AutomationSnapshot {
+    private func automationSnapshot(_ trigger: HMTrigger,
+                                    serials: [UUID: String],
+                                    capabilities: [AutomationCharacteristicCapability]) -> AutomationSnapshot {
         let item = AutomationItem(trigger: trigger)
         let sets = trigger.actionSets
         let inlineSets = sets.filter(HomeKitAutomationsService.isTriggerOwned)
@@ -447,7 +457,10 @@ final class HomeSnapshotCapture {
             humanSummary: item.summary,
             conditionSummaries: item.conditionSummaries,
             actionSetNames: item.actionSetNames,
-            actions: actions
+            actions: actions,
+            restorable: AutomationRestoreBridge.restorable(from: trigger,
+                                                           capabilities: capabilities,
+                                                           serials: serials)
         )
     }
 }

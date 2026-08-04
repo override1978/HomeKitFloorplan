@@ -30,10 +30,14 @@ final class SnapshotRestoreExecutor {
 
     private let homeKit: HomeKitService
     private let scenesService: HomeKitScenesService
+    private let automationsService: HomeKitAutomationsService
 
-    init(homeKit: HomeKitService, scenesService: HomeKitScenesService) {
+    init(homeKit: HomeKitService,
+         scenesService: HomeKitScenesService,
+         automationsService: HomeKitAutomationsService) {
         self.homeKit = homeKit
         self.scenesService = scenesService
+        self.automationsService = automationsService
     }
 
     // MARK: - Esecuzione
@@ -66,8 +70,38 @@ final class SnapshotRestoreExecutor {
             await restoreScene(scene, in: home, into: &outcome)
         }
 
+        // Le automazioni per ultime: la scena che eseguono deve esistere, e
+        // potrebbe essere stata appena ricreata qui sopra.
         scenesService.refresh()
+        for automation in snapshot.automations
+        where selected.contains("auto.missing.\(automation.name)") {
+            await restoreAutomation(automation, in: home, into: &outcome)
+        }
+
         return outcome
+    }
+
+    // MARK: - Automazioni
+
+    private func restoreAutomation(_ automation: AutomationSnapshot,
+                                   in home: HMHome,
+                                   into outcome: inout Outcome) async {
+        guard let plan = automation.restorable else {
+            outcome.skipped.append((automation.name,
+                                    String(localized: "restorableAutomation.fail.unsupported",
+                                           defaultValue: "this trigger cannot be recreated")))
+            return
+        }
+        do {
+            try await AutomationRestoreBridge.recreate(plan, in: home,
+                                                       scenes: scenesService.scenes,
+                                                       automationsService: automationsService)
+            outcome.restored.append(String(format: String(localized: "restore.done.automation",
+                                                          defaultValue: "Automation “%@”"),
+                                           automation.name))
+        } catch {
+            outcome.skipped.append((automation.name, error.localizedDescription))
+        }
     }
 
     // MARK: - Stanze

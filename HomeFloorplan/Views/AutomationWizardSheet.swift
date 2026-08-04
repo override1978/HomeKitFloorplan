@@ -4409,7 +4409,7 @@ private enum AutomationWizardStep: Int, CaseIterable, Identifiable {
     }
 }
 
-private enum AutomationTriggerSourceKind: String, CaseIterable, Identifiable {
+enum AutomationTriggerSourceKind: String, CaseIterable, Identifiable {
     case accessory
     case time
     case people
@@ -4457,7 +4457,7 @@ private enum AutomationTriggerSourceKind: String, CaseIterable, Identifiable {
     }
 }
 
-private struct AutomationWizardEditDraft {
+struct AutomationWizardEditDraft {
     var startEvents: [AutomationStartEventDraft]
     var conditionSelections: [AutomationCapabilitySelection]
     var timeConditions: [AutomationTimeCondition]
@@ -5736,7 +5736,7 @@ private enum AutomationCapabilityCategory: String, CaseIterable, Identifiable {
     }
 }
 
-private struct AutomationStartEventDraft: Identifiable {
+struct AutomationStartEventDraft: Identifiable {
     let id: UUID
     var kind: AutomationTriggerSourceKind
     var selection: AutomationCapabilitySelection?

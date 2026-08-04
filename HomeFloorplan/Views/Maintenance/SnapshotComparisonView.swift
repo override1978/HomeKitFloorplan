@@ -15,6 +15,7 @@ struct SnapshotComparisonView: View {
     @Environment(HomeSnapshotCapture.self) private var capture
     @Environment(HomeKitService.self) private var homeKit
     @Environment(HomeKitScenesService.self) private var scenesService
+    @Environment(HomeKitAutomationsService.self) private var automationsService
 
     @State private var diff: HomeSnapshotDiff?
     @State private var archived: HomeConfigurationSnapshot?
@@ -218,9 +219,6 @@ struct SnapshotComparisonView: View {
         case .serviceGroups:
             String(localized: "diff.footer.serviceGroups",
                    defaultValue: "Service groups are shown but not restored: the snapshot recorded how many services each one held, not which ones.")
-        case .automations:
-            String(localized: "diff.footer.automations",
-                   defaultValue: "Automations are kept as documentation. Most of them run Shortcuts, which no third-party app can read or recreate.")
         default:
             ""
         }
@@ -248,7 +246,9 @@ struct SnapshotComparisonView: View {
         isRestoring = true
         defer { isRestoring = false }
 
-        let executor = SnapshotRestoreExecutor(homeKit: homeKit, scenesService: scenesService)
+        let executor = SnapshotRestoreExecutor(homeKit: homeKit,
+                                              scenesService: scenesService,
+                                              automationsService: automationsService)
         let selected = diff.items.filter { selection.contains($0.id) }
         outcome = await executor.restore(selected, from: archived)
 

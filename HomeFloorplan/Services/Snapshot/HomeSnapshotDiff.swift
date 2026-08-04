@@ -59,10 +59,13 @@ struct HomeSnapshotDiff: Sendable {
         /// I **gruppi di servizi** nemmeno, ma per colpa nostra: la cattura ne
         /// salva solo il conteggio, non quali servizi contenevano. Ricrearli
         /// vuoti sarebbe peggio che non ricrearli.
+        ///
+        /// Le **automazioni** dipendono dalla singola voce: si ricreano quelle
+        /// che portano con sé una forma ricostruibile, e sono una minoranza.
         var isRestorable: Bool {
             switch self {
-            case .scenes, .rooms, .zones:                     true
-            case .accessories, .automations, .serviceGroups:  false
+            case .scenes, .rooms, .zones, .automations:  true
+            case .accessories, .serviceGroups:           false
             }
         }
     }
@@ -360,6 +363,23 @@ struct HomeSnapshotDiff: Sendable {
         return matches.count == 1 ? matches[0] : nil
     }
 
+    /// Perché questa automazione non tornerà indietro. La ragione più
+    /// frequente è fuori dalla nostra portata — esegue un comando rapido — e
+    /// dirlo evita di farlo sembrare un difetto dell'app.
+    private static func unrestorableNote(_ automation: AutomationSnapshot) -> String {
+        switch automation.content {
+        case .shortcut:
+            String(localized: "diff.automation.cannot.shortcut",
+                   defaultValue: "cannot be recreated: it runs a Shortcut, which no third-party app can read")
+        case .empty:
+            String(localized: "diff.automation.cannot.empty",
+                   defaultValue: "cannot be recreated: it had no action left to run")
+        default:
+            String(localized: "diff.automation.cannot.other",
+                   defaultValue: "cannot be recreated: this app could not read its trigger in full")
+        }
+    }
+
     private static func describe(_ values: [String]) -> String {
         values.isEmpty
             ? String(localized: "diff.automation.nothing", defaultValue: "nothing")
@@ -386,9 +406,14 @@ struct HomeSnapshotDiff: Sendable {
 
         for automation in snapshot.automations {
             guard let now = currentByName[automation.name] else {
+                // Solo qui la voce può essere ripristinabile, e solo se la
+                // cattura ne ha salvato la forma ricostruibile.
+                let plan = automation.restorable
                 items.append(Item(id: "auto.missing.\(automation.name)", category: .automations,
                                   change: .missingNow, title: automation.name,
-                                  details: [automation.humanSummary]))
+                                  details: plan?.confirmationLines
+                                    ?? [automation.humanSummary, unrestorableNote(automation)],
+                                  isRestorable: plan != nil))
                 continue
             }
             var details: [String] = []
@@ -427,8 +452,11 @@ struct HomeSnapshotDiff: Sendable {
             }
 
             if !details.isEmpty {
+                // Modificata, non sparita: ricrearla produrrebbe un doppione.
+                // Si mostra la differenza e ci si ferma lì.
                 items.append(Item(id: "auto.changed.\(automation.name)", category: .automations,
-                                  change: .changed, title: automation.name, details: details))
+                                  change: .changed, title: automation.name,
+                                  details: details, isRestorable: false))
             }
         }
         for automation in current.automations where !snapshotNames.contains(automation.name) {

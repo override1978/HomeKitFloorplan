@@ -159,6 +159,9 @@ struct AutomationSnapshot: Codable, Sendable {
     let conditionSummaries: [String]
     let actionSetNames: [String]
     let actions: [SceneActionSnapshot]
+    /// Presente **solo** per le automazioni che l'app sa davvero ricreare.
+    /// Il resto di questa struttura è documentazione; questo è materiale.
+    let restorable: RestorableAutomation?
 }
 
 // MARK: - Lo snapshot
