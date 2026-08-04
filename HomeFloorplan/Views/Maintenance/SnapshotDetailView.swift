@@ -11,10 +11,8 @@ struct SnapshotDetailView: View {
 
     let entry: HomeSnapshotStore.Entry
 
-    @Environment(HomeKitService.self) private var homeKit
-    @Environment(HomeKitScenesService.self) private var scenesService
-    @Environment(HomeKitAutomationsService.self) private var automationsService
     @Environment(HomeSnapshotStore.self) private var store
+    @Environment(HomeSnapshotCapture.self) private var capture
     @Environment(\.dismiss) private var dismiss
 
     @State private var snapshot: HomeConfigurationSnapshot?
@@ -198,9 +196,6 @@ struct SnapshotDetailView: View {
         }
         // Il confronto con l'adesso richiede una cattura, che a regime è
         // istantanea: i numeri di serie sono già in cache.
-        let capture = HomeSnapshotCapture(homeKit: homeKit,
-                                          scenesService: scenesService,
-                                          automationsService: automationsService)
         currentFingerprint = try? await capture.capture().configurationFingerprint
     }
 }

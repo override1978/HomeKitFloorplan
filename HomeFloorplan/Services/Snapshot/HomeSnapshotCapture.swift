@@ -70,7 +70,7 @@ final class HomeSnapshotCapture {
         progress = 0
         defer { isCapturing = false }
 
-        let serials = await readSerialNumbers(of: home.accessories)
+        let serials = await serialNumbers(of: home.accessories)
 
         return HomeConfigurationSnapshot(
             formatVersion: HomeConfigurationSnapshot.currentFormatVersion,
@@ -140,7 +140,12 @@ final class HomeSnapshotCapture {
         UserDefaults.standard.removeObject(forKey: Self.serialFailuresKey)
     }
 
-    private func readSerialNumbers(of accessories: [HMAccessory]) async -> [UUID: String] {
+    /// I numeri di serie, dalla cache dove c'è e letti dove manca.
+    ///
+    /// Non è privato perché serve anche al censimento: se ognuno tenesse la
+    /// propria cache si pagherebbero due volte le stesse letture, e la seconda
+    /// tornerebbe a costare i 25 secondi misurati.
+    func serialNumbers(of accessories: [HMAccessory]) async -> [UUID: String] {
         var cache = serialCache
         var failures = serialFailures
         var stats = SerialStats()

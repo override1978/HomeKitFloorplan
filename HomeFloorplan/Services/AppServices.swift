@@ -30,6 +30,12 @@ final class AppServices {
     let maintenancePredictionService: MaintenancePredictionService
     /// Snapshot della configurazione HomeKit: file su disco, indice a parte.
     let snapshotStore = HomeSnapshotStore()
+    /// Unica istanza: la cache dei numeri di serie è condivisa, e con due
+    /// istanze si ripagherebbero le stesse letture.
+    let snapshotCapture: HomeSnapshotCapture
+    /// Censimento degli accessori: chi c'è, da quando, e con quale UUID su
+    /// questo device.
+    let accessoryCensus: AccessoryCensusService
     let weatherKitService: WeatherKitService
     let smartLightingEngine: SmartLightingEngine
     let aiSettings: AISettings
@@ -64,7 +70,15 @@ final class AppServices {
         kit.activityLogger = logger
         scenes.activityLogger = logger
         self.activityLogger = logger
-        self.automationsService = HomeKitAutomationsService(homeKit: kit)
+        let automations = HomeKitAutomationsService(homeKit: kit)
+        self.automationsService = automations
+        let capture = HomeSnapshotCapture(homeKit: kit,
+                                          scenesService: scenes,
+                                          automationsService: automations)
+        self.snapshotCapture = capture
+        self.accessoryCensus = AccessoryCensusService(homeKit: kit,
+                                                      serialSource: capture,
+                                                      modelContainer: container)
         let notifier = SecurityNotificationService(homeKit: kit)
         self.securityNotifier = notifier
         let eventStore = AccessoryEventStore(modelContainer: container)

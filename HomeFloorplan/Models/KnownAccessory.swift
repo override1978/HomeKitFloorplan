@@ -22,6 +22,12 @@ final class KnownAccessory {
 
     @Attribute(.unique) var id: UUID
 
+    /// La casa a cui appartiene. L'app ha un selettore di case, e senza questo
+    /// campo passare da una casa all'altra farebbe risultare sparito l'intero
+    /// censimento dell'altra. È il **nome** e non l'UUID perché anche
+    /// `HMHome.uniqueIdentifier` è generato per device.
+    var homeName: String
+
     // MARK: Identità osservata
 
     /// HAP `00000030`. L'unica identità hardware: sopravvive a rinomina,
@@ -55,7 +61,8 @@ final class KnownAccessory {
     /// `[deviceID: uuidString]` — l'`uniqueIdentifier` che **quel** device usa.
     var deviceUUIDsJSON: Data?
 
-    init(name: String,
+    init(homeName: String,
+         name: String,
          serialNumber: String? = nil,
          manufacturer: String? = nil,
          model: String? = nil,
@@ -66,6 +73,7 @@ final class KnownAccessory {
          isSeeded: Bool,
          now: Date = Date()) {
         self.id = UUID()
+        self.homeName = homeName
         self.name = name
         self.serialNumber = serialNumber
         self.manufacturer = manufacturer

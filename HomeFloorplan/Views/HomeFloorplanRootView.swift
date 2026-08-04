@@ -58,6 +58,9 @@ struct HomeFloorplanRootView: View {
                 measureMain("isReady.remapAccessories") {
                     services.cloudKitSync.remapPlacedAccessoriesToLocalHomeKitIDs()
                 }
+                // Fuori dal `measureMain`: la passata legge i numeri di serie,
+                // che la prima volta costano secondi di rete.
+                Task { await services.accessoryCensus.sweep() }
             }
             .onChange(of: services.locationPresenceService.presenceState) { _, newState in
                 services.ambientalAIService.presenceOverride = newState
@@ -96,6 +99,8 @@ struct HomeFloorplanRootView: View {
             familyPresenceService: services.familyPresenceService,
             maintenancePredictionService: services.maintenancePredictionService,
             snapshotStore: services.snapshotStore,
+            snapshotCapture: services.snapshotCapture,
+            accessoryCensus: services.accessoryCensus,
             weatherKitService: services.weatherKitService,
             smartLightingEngine: services.smartLightingEngine,
             aiSettings: services.aiSettings,
@@ -221,6 +226,8 @@ private struct AppEnvironmentModifier: ViewModifier {
     let familyPresenceService: FamilyPresenceService
     let maintenancePredictionService: MaintenancePredictionService
     let snapshotStore: HomeSnapshotStore
+    let snapshotCapture: HomeSnapshotCapture
+    let accessoryCensus: AccessoryCensusService
     let weatherKitService: WeatherKitService
     let smartLightingEngine: SmartLightingEngine
     let aiSettings: AISettings
@@ -245,6 +252,8 @@ private struct AppEnvironmentModifier: ViewModifier {
             .environment(familyPresenceService)
             .environment(maintenancePredictionService)
             .environment(snapshotStore)
+            .environment(snapshotCapture)
+            .environment(accessoryCensus)
             .environment(weatherKitService)
             .environment(smartLightingEngine)
             .environment(aiSettings)

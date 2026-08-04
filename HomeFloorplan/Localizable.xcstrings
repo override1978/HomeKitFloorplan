@@ -55842,6 +55842,108 @@
           }
         }
       }
+    },
+    "census.header" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessory census"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Censimento accessori"
+          }
+        }
+      }
+    },
+    "census.tracked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tracked accessories"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessori censiti"
+          }
+        }
+      }
+    },
+    "census.withSerial" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With a serial number"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con numero di serie"
+          }
+        }
+      }
+    },
+    "census.retired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gone from HomeKit"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spariti da HomeKit"
+          }
+        }
+      }
+    },
+    "census.lastSweep" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last check"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultimo controllo"
+          }
+        }
+      }
+    },
+    "census.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeKit cannot say when an accessory was added. This table remembers, which is what makes a re-paired device recognisable."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HomeKit non sa dire quando un accessorio è stato aggiunto. Questa tabella se lo ricorda, ed è ciò che rende riconoscibile un dispositivo ri-accoppiato."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

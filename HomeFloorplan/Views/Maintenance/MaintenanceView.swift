@@ -10,10 +10,9 @@ import SwiftUI
 /// senso dargli un nome.
 struct MaintenanceView: View {
 
-    @Environment(HomeKitService.self) private var homeKit
-    @Environment(HomeKitScenesService.self) private var scenesService
-    @Environment(HomeKitAutomationsService.self) private var automationsService
     @Environment(HomeSnapshotStore.self) private var store
+    @Environment(HomeSnapshotCapture.self) private var capture
+    @Environment(AccessoryCensusService.self) private var census
 
     @State private var isCapturing = false
     @State private var progress: Double = 0
@@ -25,6 +24,7 @@ struct MaintenanceView: View {
     var body: some View {
         List {
             statusSection
+            censusSection
             snapshotsSection
         }
         .navigationTitle(String(localized: "maintenance.title", defaultValue: "Maintenance"))
@@ -37,7 +37,7 @@ struct MaintenanceView: View {
                 pendingTitle = ""
             }
             Button(String(localized: "maintenance.newSnapshot.confirm", defaultValue: "Capture")) {
-                Task { await capture(title: pendingTitle) }
+                Task { await performCapture(title: pendingTitle) }
             }
         } message: {
             // Il titolo non è un vezzo: chi tiene backup da anni li chiama col
@@ -119,6 +119,39 @@ struct MaintenanceView: View {
         }
     }
 
+    // MARK: - Censimento
+
+    /// Sola lettura, e per ora serve soprattutto a verificare la passata su una
+    /// casa vera: quanti accessori sono censiti, quanti hanno un'identità
+    /// hardware e quanti sono spariti senza che nessuno l'abbia ancora deciso.
+    private var censusSection: some View {
+        Section {
+            let rows = census.currentRows
+            let live = rows.filter { !$0.isRetired }
+            let retired = rows.filter(\.isRetired)
+            let withSerial = live.filter { !($0.serialNumber ?? "").isEmpty }
+
+            LabeledContent(String(localized: "census.tracked", defaultValue: "Tracked accessories"),
+                           value: "\(live.count)")
+            LabeledContent(String(localized: "census.withSerial", defaultValue: "With a serial number"),
+                           value: "\(withSerial.count)")
+            if !retired.isEmpty {
+                LabeledContent(String(localized: "census.retired", defaultValue: "Gone from HomeKit"),
+                               value: "\(retired.count)")
+                .foregroundStyle(.orange)
+            }
+            if let sweptAt = census.lastSweepAt {
+                LabeledContent(String(localized: "census.lastSweep", defaultValue: "Last check"),
+                               value: sweptAt.formatted(date: .omitted, time: .standard))
+            }
+        } header: {
+            Text(String(localized: "census.header", defaultValue: "Accessory census"))
+        } footer: {
+            Text(String(localized: "census.footer",
+                        defaultValue: "HomeKit cannot say when an accessory was added. This table remembers, which is what makes a re-paired device recognisable."))
+        }
+    }
+
     // MARK: - Elenco
 
     private var snapshotsSection: some View {
@@ -152,14 +185,11 @@ struct MaintenanceView: View {
 
     // MARK: - Cattura
 
-    private func capture(title: String) async {
+    private func performCapture(title: String) async {
         isCapturing = true
         errorMessage = nil
         defer { isCapturing = false }
 
-        let capture = HomeSnapshotCapture(homeKit: homeKit,
-                                          scenesService: scenesService,
-                                          automationsService: automationsService)
         do {
             let snapshot = try await capture.capture()
             lastOutcome = try store.save(snapshot, title: title)
