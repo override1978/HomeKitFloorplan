@@ -227,12 +227,48 @@ final class HomeSnapshotCapture {
         return result
     }
 
-    /// Una lettura fallita **non** viene messa in cache: sull'iPhone tre
-    /// accessori non avevano risposto pur avendo un seriale, e memorizzare
-    /// quel fallimento come «non ce l'ha» lo renderebbe definitivo.
+    /// Quanto si aspetta una risposta prima di passare oltre.
+    ///
+    /// Misurato: **25 accessori su 128 non rispondono mai** — tipicamente quelli
+    /// dietro un bridge — e aspettare il timeout di HomeKit per ognuno costava
+    /// 21 secondi. Un dispositivo che a una richiesta banale non risponde entro
+    /// due secondi non risponderà: meglio rinunciare e riprovare alla prossima
+    /// cattura, tanto la lettura parte comunque e se arriva tardi il valore
+    /// resta nella cache di HomeKit, pronto per il giro dopo.
+    private static let readTimeout: TimeInterval = 2
+
+    /// Chi dei due arriva primo — la risposta o lo scadere del tempo — decide.
+    /// La scatola serve perché entrambe le chiusure devono poter dire «ho già
+    /// concluso io»: riprendere due volte una `CheckedContinuation` fa crashare.
+    private final class ResumeGuard {
+        private var hasResumed = false
+        func claim() -> Bool {
+            guard !hasResumed else { return false }
+            hasResumed = true
+            return true
+        }
+    }
+
+    /// Una lettura fallita **non** viene messa in cache come «non ce l'ha»:
+    /// sull'iPhone tre accessori che il seriale ce l'hanno non avevano risposto,
+    /// e trasformare quel silenzio in un verdetto lo renderebbe definitivo. A
+    /// contarli ci pensa il tetto ai tentativi.
+    @MainActor
     private static func readValue(of characteristic: HMCharacteristic) async -> String? {
-        let didRead = await withCheckedContinuation { continuation in
-            characteristic.readValue { error in continuation.resume(returning: error == nil) }
+        let didRead: Bool = await withCheckedContinuation { continuation in
+            let guardBox = ResumeGuard()
+
+            characteristic.readValue { error in
+                Task { @MainActor in
+                    guard guardBox.claim() else { return }
+                    continuation.resume(returning: error == nil)
+                }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(readTimeout))
+                guard guardBox.claim() else { return }
+                continuation.resume(returning: false)
+            }
         }
         guard didRead, let raw = characteristic.value else { return nil }
         let value = "\(raw)".trimmingCharacters(in: .whitespacesAndNewlines)
