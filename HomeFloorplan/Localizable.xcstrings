@@ -57457,6 +57457,108 @@
           }
         }
       }
+    },
+    "restore.skip.noStoredActions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This snapshot holds no readable action for it: its %d actions were of a kind this app cannot read."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo snapshot non ne contiene nessuna azione leggibile: le sue %d azioni erano di un tipo che l'app non sa leggere."
+          }
+        }
+      }
+    },
+    "diff.scene.unreadable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The snapshot holds no readable action for it: its %d actions were of a kind this app cannot read."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo snapshot non ne contiene nessuna azione leggibile: le sue %d azioni erano di un tipo che l'app non sa leggere."
+          }
+        }
+      }
+    },
+    "restore.fail.accessory" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” not found in this home"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%@» non si trova in questa casa"
+          }
+        }
+      }
+    },
+    "restore.fail.service" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” no longer exposes that service"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%@» non espone più quel servizio"
+          }
+        }
+      }
+    },
+    "restore.fail.characteristic" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%1$@” no longer has %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%1$@» non ha più %2$@"
+          }
+        }
+      }
+    },
+    "restore.fail.value" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%1$@”: HomeKit does not accept the stored value for %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«%1$@»: HomeKit non accetta il valore salvato per %2$@"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

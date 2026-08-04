@@ -75,8 +75,21 @@ struct HomeSnapshotDiff: Sendable {
         /// In lingua, non in conteggi: «Lampada Studio · Luminosità → 40» dice
         /// cosa si sta per rimettere; «14 azioni su 15» non dice niente.
         let details: [String]
+        /// Di norma discende dalla categoria, ma la singola voce può negarlo:
+        /// una scena di cui lo snapshot non ha letto nessuna azione risulta
+        /// diversa e **non** è ripristinabile, perché non c'è niente da
+        /// rimettere. Offrirla sarebbe una spunta che non fa niente.
+        let isRestorable: Bool
 
-        var isRestorable: Bool { category.isRestorable && change != .newSinceThen }
+        init(id: String, category: Category, change: Change,
+             title: String, details: [String], isRestorable: Bool? = nil) {
+            self.id = id
+            self.category = category
+            self.change = change
+            self.title = title
+            self.details = details
+            self.isRestorable = isRestorable ?? (category.isRestorable && change != .newSinceThen)
+        }
     }
 
     let items: [Item]
@@ -215,12 +228,25 @@ struct HomeSnapshotDiff: Sendable {
         var items: [Item] = []
 
         for scene in snapshot.scenes where !scene.isBuiltIn {
+            // Se la cattura non ha letto nessuna azione, di questa scena
+            // sappiamo solo che esisteva. Va detto, e non va offerta al
+            // ripristino: non c'è niente da rimettere.
+            let isReadable = !scene.actions.isEmpty
+
             guard let now = currentByName[scene.name] else {
                 items.append(Item(id: "scene.missing.\(scene.name)", category: .scenes,
                                   change: .missingNow, title: scene.name,
-                                  details: scene.actions
-                                    .sorted { $0.sortKey < $1.sortKey }
-                                    .map(actionDescription)))
+                                  details: isReadable
+                                    ? scene.actions.sorted { $0.sortKey < $1.sortKey }.map(actionDescription)
+                                    : [unreadableNote(scene)],
+                                  isRestorable: isReadable))
+                continue
+            }
+            guard isReadable else {
+                guard !now.actions.isEmpty || now.foreignActionCount != scene.foreignActionCount else { continue }
+                items.append(Item(id: "scene.opaque.\(scene.name)", category: .scenes,
+                                  change: .changed, title: scene.name,
+                                  details: [unreadableNote(scene)], isRestorable: false))
                 continue
             }
             let details = actionDifferences(was: scene.actions, now: now.actions)
@@ -266,6 +292,12 @@ struct HomeSnapshotDiff: Sendable {
                                 actionDescription(action)))
         }
         return lines
+    }
+
+    private static func unreadableNote(_ scene: SceneSnapshot) -> String {
+        String(format: String(localized: "diff.scene.unreadable",
+                              defaultValue: "The snapshot holds no readable action for it: its %d actions were of a kind this app cannot read."),
+               scene.foreignActionCount)
     }
 
     private static func actionLabel(_ action: SceneActionSnapshot) -> String {

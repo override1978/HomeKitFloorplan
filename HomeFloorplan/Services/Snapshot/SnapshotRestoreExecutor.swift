@@ -136,26 +136,35 @@ final class SnapshotRestoreExecutor {
             return
         }
 
+        // Una scena di cui lo snapshot non ha letto nessuna azione non è
+        // «irrisolvibile»: è **vuota per noi**, e dirlo così è l'unica risposta
+        // onesta. Le azioni erano di un tipo che l'app non sa leggere.
+        guard !scene.actions.isEmpty else {
+            outcome.skipped.append((scene.name,
+                String(format: String(localized: "restore.skip.noStoredActions",
+                                      defaultValue: "This snapshot holds no readable action for it: its %d actions were of a kind this app cannot read."),
+                       scene.foreignActionCount)))
+            return
+        }
+
         // Prima si risolve tutto, poi si scrive. Se metà delle azioni non trova
         // il suo accessorio è meglio saperlo prima di aver già toccato la scena.
         var resolved: [(characteristic: HMCharacteristic, value: Any)] = []
-        var unresolved: [String] = []
+        var failures: [String] = []
 
         for action in scene.actions {
-            guard let characteristic = resolve(action.target, in: home) else {
-                unresolved.append(action.target.accessory.name)
-                continue
+            switch resolveTarget(action, in: home) {
+            case .resolved(let characteristic, let value):
+                resolved.append((characteristic, value))
+            case .failed(let reason):
+                failures.append(reason)
             }
-            guard let value = Self.targetValue(action.value, for: characteristic) else {
-                unresolved.append(action.target.accessory.name)
-                continue
-            }
-            resolved.append((characteristic, value))
         }
 
         guard !resolved.isEmpty else {
-            outcome.skipped.append((scene.name, String(localized: "restore.skip.nothingResolved",
-                                                       defaultValue: "None of its accessories are in this home anymore.")))
+            // Il motivo, non un verdetto: «non trovo la presa Studio» si può
+            // verificare, «nessuno dei suoi accessori esiste» no.
+            outcome.skipped.append((scene.name, failures.joined(separator: " · ")))
             return
         }
 
@@ -182,21 +191,62 @@ final class SnapshotRestoreExecutor {
                 try await actionSet.addAction(action)
             }
 
-            var line = String(format: String(localized: "restore.done.scene",
-                                             defaultValue: "Scene “%1$@” · %2$d actions"),
-                              scene.name, resolved.count)
-            if !unresolved.isEmpty {
-                line += " · " + String(format: String(localized: "restore.done.sceneMissing",
-                                                      defaultValue: "%d could not be placed"),
-                                       unresolved.count)
+            outcome.restored.append(String(format: String(localized: "restore.done.scene",
+                                                          defaultValue: "Scene “%1$@” · %2$d actions"),
+                                           scene.name, resolved.count))
+            // Un successo parziale va detto come tale, con le voci mancate per
+            // nome: altrimenti sembra riuscito tutto.
+            if !failures.isEmpty {
+                outcome.skipped.append((scene.name, failures.joined(separator: " · ")))
             }
-            outcome.restored.append(line)
         } catch {
             outcome.skipped.append((scene.name, error.localizedDescription))
         }
     }
 
     // MARK: - Risoluzione
+
+    /// Risolve una singola azione, **dicendo dove si è fermata**.
+    ///
+    /// I quattro passi possono fallire per ragioni diverse e con rimedi diversi:
+    /// un accessorio non trovato è un problema di identità, un servizio non
+    /// trovato è un accessorio cambiato sotto, un valore non scrivibile è un
+    /// tipo che HomeKit non accetta. Un unico messaggio per tutti e quattro non
+    /// permette di capire quale.
+    private enum TargetResolution {
+        case resolved(characteristic: HMCharacteristic, value: Any)
+        case failed(String)
+    }
+
+    private func resolveTarget(_ action: SceneActionSnapshot, in home: HMHome) -> TargetResolution {
+        let target = action.target
+        guard let accessory = resolveAccessory(target.accessory, in: home) else {
+            return .failed(String(format: String(localized: "restore.fail.accessory",
+                                                  defaultValue: "“%@” not found in this home"),
+                                   target.accessory.name))
+        }
+        let sameType = accessory.services.filter { $0.serviceType == target.service.serviceType }
+        guard target.service.ordinal < sameType.count else {
+            return .failed(String(format: String(localized: "restore.fail.service",
+                                                  defaultValue: "“%@” no longer exposes that service"),
+                                   accessory.name))
+        }
+        guard let characteristic = sameType[target.service.ordinal].characteristics.first(where: {
+            $0.characteristicType == target.characteristicType
+        }) else {
+            return .failed(String(format: String(localized: "restore.fail.characteristic",
+                                                  defaultValue: "“%1$@” no longer has %2$@"),
+                                   accessory.name,
+                                   SnapshotCharacteristicNames.readable(target.characteristicType)))
+        }
+        guard let value = Self.targetValue(action.value, for: characteristic) else {
+            return .failed(String(format: String(localized: "restore.fail.value",
+                                                  defaultValue: "“%1$@”: HomeKit does not accept the stored value for %2$@"),
+                                   accessory.name,
+                                   SnapshotCharacteristicNames.readable(target.characteristicType)))
+        }
+        return .resolved(characteristic: characteristic, value: value)
+    }
 
     /// Dall'indirizzo salvato alla caratteristica viva.
     ///
