@@ -79,7 +79,7 @@ struct SnapshotSceneListView: View {
     @State private var search = ""
 
     private var scenes: [SceneSnapshot] {
-        snapshot.scenes
+        snapshot.userScenes
             .filter { search.isEmpty || $0.name.lowercased().contains(search.lowercased()) }
             .sorted { $0.name < $1.name }
     }

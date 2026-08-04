@@ -119,6 +119,10 @@ struct SceneSnapshot: Codable, Sendable {
     let name: String
     let actionSetType: String
     let isBuiltIn: Bool
+    /// Contenitore creato da un trigger — `HF Actions - …` — non una scena che
+    /// qualcuno ha fatto. Porta un suffisso casuale nel nome, quindi non va né
+    /// mostrato né confrontato: risulterebbe diverso a ogni ricreazione.
+    let isTriggerOwned: Bool
     let localUUID: String?
     let actions: [SceneActionSnapshot]
     /// Azioni che non sono scritture di caratteristica: si contano, non si
@@ -189,13 +193,18 @@ struct HomeConfigurationSnapshot: Codable, Sendable {
     let scenes: [SceneSnapshot]
     let automations: [AutomationSnapshot]
 
+    /// Le scene **che qualcuno ha creato**. Fuori i contenitori generati dai
+    /// trigger per tenere le azioni dirette: non sono scene, non compaiono
+    /// nemmeno in app Casa, e contarle gonfierebbe il numero con roba interna.
+    var userScenes: [SceneSnapshot] { scenes.filter { !$0.isTriggerOwned } }
+
     var counts: Counts {
         Counts(
             rooms: rooms.count,
             zones: zones.count,
             serviceGroups: serviceGroups.count,
             accessories: accessories.count,
-            scenes: scenes.count,
+            scenes: userScenes.count,
             automations: automations.count
         )
     }

@@ -242,7 +242,7 @@ struct SnapshotDetailView: View {
                 SnapshotSceneListView(snapshot: snapshot)
             } label: {
                 countRow("wand.and.sparkles", String(localized: "snapshot.scenes", defaultValue: "Scenes"),
-                         snapshot.scenes.count)
+                         snapshot.userScenes.count)
             }
             NavigationLink {
                 SnapshotAutomationListView(snapshot: snapshot)

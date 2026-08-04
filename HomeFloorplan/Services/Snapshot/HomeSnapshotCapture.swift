@@ -382,6 +382,7 @@ final class HomeSnapshotCapture {
             name: item.name,
             actionSetType: actionSet.actionSetType,
             isBuiltIn: item.isBuiltIn,
+            isTriggerOwned: HomeKitAutomationsService.isTriggerOwned(actionSet),
             localUUID: actionSet.uniqueIdentifier.uuidString,
             actions: writes,
             foreignActionCount: actionSet.actions.count - writes.count

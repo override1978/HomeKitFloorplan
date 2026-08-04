@@ -230,7 +230,7 @@ struct HomeSnapshotDiff: Sendable {
         let snapshotNames = Set(snapshot.scenes.map(\.name))
         var items: [Item] = []
 
-        for scene in snapshot.scenes where !scene.isBuiltIn {
+        for scene in snapshot.scenes where !scene.isBuiltIn && !scene.isTriggerOwned {
             // Se la cattura non ha letto nessuna azione, di questa scena
             // sappiamo solo che esisteva. Va detto, e non va offerta al
             // ripristino: non c'è niente da rimettere.
@@ -257,7 +257,8 @@ struct HomeSnapshotDiff: Sendable {
             items.append(Item(id: "scene.changed.\(scene.name)", category: .scenes,
                               change: .changed, title: scene.name, details: details))
         }
-        for scene in current.scenes where !scene.isBuiltIn && !snapshotNames.contains(scene.name) {
+        for scene in current.scenes
+        where !scene.isBuiltIn && !scene.isTriggerOwned && !snapshotNames.contains(scene.name) {
             items.append(Item(id: "scene.new.\(scene.name)", category: .scenes,
                               change: .newSinceThen, title: scene.name, details: []))
         }
@@ -380,6 +381,11 @@ struct HomeSnapshotDiff: Sendable {
         }
     }
 
+    /// Solo le scene con un nome che significa qualcosa.
+    private static func realScenes(_ automation: AutomationSnapshot) -> [String] {
+        automation.actionSetNames.filter { !$0.hasPrefix("HF Actions - ") }
+    }
+
     private static func describe(_ values: [String]) -> String {
         values.isEmpty
             ? String(localized: "diff.automation.nothing", defaultValue: "nothing")
@@ -427,13 +433,13 @@ struct HomeSnapshotDiff: Sendable {
                                : String(localized: "diff.automation.wasOff",
                                         defaultValue: "was paused, is now on"))
             }
-            // Cosa esegue. È la modifica che si fa davvero — «ora lancia
-            // un'altra scena» — e confrontare solo nome e stato attivo la
-            // lasciava passare del tutto inosservata.
-            if Set(now.actionSetNames) != Set(automation.actionSetNames) {
+            // Cosa esegue — ma solo le **scene vere**. I contenitori creati dai
+            // trigger portano un suffisso casuale nel nome e risulterebbero
+            // diversi a ogni ricreazione: un «cambiato» che non finisce più.
+            if Set(realScenes(automation)) != Set(realScenes(now)) {
                 details.append(String(format: String(localized: "diff.automation.runs",
                                                      defaultValue: "ran %1$@, now runs %2$@"),
-                                      describe(automation.actionSetNames), describe(now.actionSetNames)))
+                                      describe(realScenes(automation)), describe(realScenes(now))))
             }
             if now.content != automation.content {
                 details.append(String(format: String(localized: "diff.automation.content",
@@ -451,11 +457,10 @@ struct HomeSnapshotDiff: Sendable {
                                       was.confirmationLines.first ?? "—",
                                       isNow.confirmationLines.first ?? "—"))
             }
-            if Set(now.conditionSummaries) != Set(automation.conditionSummaries) {
-                details.append(String(format: String(localized: "diff.automation.conditions",
-                                                     defaultValue: "conditions: %1$@ → %2$@"),
-                                      describe(automation.conditionSummaries), describe(now.conditionSummaries)))
-            }
+            // ⚠️ Mai `conditionSummaries`: HomeKit le restituisce come
+            // descrizione grezza del predicato — `NSDateComponents: 0x113c…` —
+            // ed è illeggibile. Le condizioni che sappiamo davvero descrivere
+            // stanno già nella forma strutturata, confrontata qui sopra.
 
             if !details.isEmpty {
                 // Modificata, non sparita: ricrearla produrrebbe un doppione.

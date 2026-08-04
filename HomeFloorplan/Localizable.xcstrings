@@ -58222,6 +58222,23 @@
           }
         }
       }
+    },
+    "restore.outcome.done" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d items restored"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d voci ripristinate"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

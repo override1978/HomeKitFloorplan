@@ -69,6 +69,10 @@ struct SnapshotComparisonView: View {
 
     private func list(_ diff: HomeSnapshotDiff) -> some View {
         List {
+            // L'esito va **sopra**: dopo aver premuto Ripristina è l'unica cosa
+            // che si sta cercando, e sotto un elenco di differenze non si trova.
+            if let outcome { outcomeSection(outcome) }
+
             Section {
                 Text(String(format: String(localized: "diff.intro",
                                            defaultValue: "Differences between “%@” and your home right now."),
@@ -90,8 +94,6 @@ struct SnapshotComparisonView: View {
                     }
                 }
             }
-
-            if let outcome { outcomeSection(outcome) }
 
             Section {
                 Button {
@@ -118,10 +120,24 @@ struct SnapshotComparisonView: View {
 
     private func outcomeSection(_ outcome: SnapshotRestoreExecutor.Outcome) -> some View {
         Section {
-            ForEach(Array(outcome.restored.enumerated()), id: \.offset) { _, line in
-                Label(line, systemImage: "checkmark.circle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.green)
+            if !outcome.restored.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.green)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(String(format: String(localized: "restore.outcome.done",
+                                                   defaultValue: "%d items restored"),
+                                    outcome.restored.count))
+                            .font(.headline)
+                        // I nomi e basta: dopo un ripristino riuscito non
+                        // interessa più com'era fatto, interessa cosa è tornato.
+                        Text(outcome.restored.joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
             }
             // Un ripristino che tace su ciò che non è riuscito è peggio di uno
             // che fallisce: qui ogni scarto porta il suo motivo.
@@ -135,8 +151,6 @@ struct SnapshotComparisonView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-        } header: {
-            Text(String(localized: "restore.outcome.header", defaultValue: "Result"))
         }
     }
 
@@ -163,14 +177,14 @@ struct SnapshotComparisonView: View {
                     Text(item.title)
                     changeBadge(item.change)
                 }
-                ForEach(Array(item.details.prefix(6).enumerated()), id: \.offset) { _, detail in
+                ForEach(Array(item.details.prefix(3).enumerated()), id: \.offset) { _, detail in
                     Text(detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if item.details.count > 6 {
+                if item.details.count > 3 {
                     Text(String(format: String(localized: "diff.more",
-                                               defaultValue: "and %d more"), item.details.count - 6))
+                                               defaultValue: "and %d more"), item.details.count - 3))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
