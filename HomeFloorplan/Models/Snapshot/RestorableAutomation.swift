@@ -47,8 +47,28 @@ struct RestorableAutomation: Codable, Sendable {
         case presence(kind: String, userScope: String)
     }
 
+    /// Una condizione di orario: «dopo il tramonto», «fra le 22 e le 6».
+    struct TimeCondition: Codable, Sendable {
+        var kind: String
+        var relation: String
+        var hour: Int
+        var minute: Int
+        var offsetMinutes: Int
+        var endKind: String
+        var endHour: Int
+        var endMinute: Int
+        var endOffsetMinutes: Int
+    }
+
+    struct PresenceCondition: Codable, Sendable {
+        var kind: String
+        var userScope: String
+    }
+
     var startEvents: [StartEvent]
     var conditions: [CapabilityRef]
+    var timeConditions: [TimeCondition]
+    var presenceConditions: [PresenceCondition]
     /// `AutomationConditionJoinMode`: all · any.
     var conditionJoinMode: String
     /// La scena eseguita, per nome — quando ne esegue una.
@@ -84,11 +104,15 @@ extension RestorableAutomation {
                     + " → " + $0.value.displayText
             }
         }
-        if !conditions.isEmpty {
+        let conditionCount = conditions.count + timeConditions.count + presenceConditions.count
+        if conditionCount > 0 {
             let joiner = conditionJoinMode == "any"
                 ? String(localized: "restorableAutomation.joinAny", defaultValue: "if any of:")
                 : String(localized: "restorableAutomation.joinAll", defaultValue: "only if:")
-            lines.append(joiner + " " + conditions.map(Self.describe).joined(separator: ", "))
+            let described = conditions.map(Self.describe)
+                + timeConditions.map(Self.describe)
+                + presenceConditions.map { $0.kind }
+            lines.append(joiner + " " + described.joined(separator: ", "))
         }
         if !isEnabled {
             lines.append(String(localized: "restorableAutomation.paused", defaultValue: "recreated paused"))
@@ -126,6 +150,17 @@ extension RestorableAutomation {
         default:
             return String(format: "%02d:%02d · %@", schedule.hour, schedule.minute, days)
         }
+    }
+
+    private static func describe(_ condition: TimeCondition) -> String {
+        let start = condition.kind == "fixedTime"
+            ? String(format: "%02d:%02d", condition.hour, condition.minute)
+            : condition.kind
+        guard condition.relation == "between" else { return "\(condition.relation) \(start)" }
+        let end = condition.endKind == "fixedTime"
+            ? String(format: "%02d:%02d", condition.endHour, condition.endMinute)
+            : condition.endKind
+        return "\(start) → \(end)"
     }
 
     private static func describe(_ ref: CapabilityRef) -> String {

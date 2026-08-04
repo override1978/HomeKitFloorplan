@@ -80,9 +80,13 @@ enum AutomationRestoreBridge {
             }
             conditions.append(ref)
         }
-        guard draft.timeConditions.isEmpty, draft.presenceConditions.isEmpty else {
-            return (nil, String(localized: "automationCapture.skip.extraConditions",
-                                defaultValue: "it has time or presence conditions that this restore cannot express yet"))
+        // Orario e presenza sono valori semplici e il servizio li accetta già
+        // in creazione: salvarli costa niente ed evita di scartare automazioni
+        // che l'app sa perfettamente rifare.
+        let timeConditions = draft.timeConditions.map(timeCondition(from:))
+        let presenceConditions = draft.presenceConditions.map {
+            RestorableAutomation.PresenceCondition(kind: $0.kind.rawValue,
+                                                   userScope: $0.userScope.rawValue)
         }
         guard draft.preservedConditionPredicate == nil else {
             return (nil, String(localized: "automationCapture.skip.predicate",
@@ -92,11 +96,47 @@ enum AutomationRestoreBridge {
         return (RestorableAutomation(
             startEvents: startEvents,
             conditions: conditions,
+            timeConditions: timeConditions,
+            presenceConditions: presenceConditions,
             conditionJoinMode: draft.conditionJoinMode.rawValue,
             sceneName: sceneName,
             inlineActions: inlineActions,
             isEnabled: trigger.isEnabled
         ), nil)
+    }
+
+    private static func timeCondition(from condition: AutomationTimeCondition) -> RestorableAutomation.TimeCondition {
+        let calendar = Calendar.current
+        let start = calendar.dateComponents([.hour, .minute], from: condition.time)
+        let end = calendar.dateComponents([.hour, .minute], from: condition.endTime)
+        return RestorableAutomation.TimeCondition(
+            kind: condition.kind.rawValue,
+            relation: condition.relation.rawValue,
+            hour: start.hour ?? 0,
+            minute: start.minute ?? 0,
+            offsetMinutes: condition.offsetMinutes,
+            endKind: condition.endKind.rawValue,
+            endHour: end.hour ?? 0,
+            endMinute: end.minute ?? 0,
+            endOffsetMinutes: condition.endOffsetMinutes
+        )
+    }
+
+    private static func decodeTimeCondition(_ stored: RestorableAutomation.TimeCondition) -> AutomationTimeCondition? {
+        guard let kind = AutomationTimeConditionKind(rawValue: stored.kind),
+              let relation = AutomationTimeConditionRelation(rawValue: stored.relation),
+              let endKind = AutomationTimeConditionKind(rawValue: stored.endKind) else { return nil }
+        var condition = AutomationTimeCondition()
+        condition.kind = kind
+        condition.relation = relation
+        condition.time = Calendar.current.date(bySettingHour: stored.hour, minute: stored.minute,
+                                               second: 0, of: Date()) ?? Date()
+        condition.offsetMinutes = stored.offsetMinutes
+        condition.endKind = endKind
+        condition.endTime = Calendar.current.date(bySettingHour: stored.endHour, minute: stored.endMinute,
+                                                  second: 0, of: Date()) ?? Date()
+        condition.endOffsetMinutes = stored.endOffsetMinutes
+        return condition
     }
 
     private static func schedule(from trigger: AutomationScheduleTrigger) -> RestorableAutomation.Schedule {
@@ -235,10 +275,24 @@ enum AutomationRestoreBridge {
             try selection(for: $0, capabilities: capabilities, in: home)
         }
 
+        let timeConditions = plan.timeConditions.compactMap(decodeTimeCondition)
+        guard timeConditions.count == plan.timeConditions.count else { throw RestoreFailure.unsupported }
+        let presenceConditions = plan.presenceConditions.compactMap { stored -> AutomationPresenceCondition? in
+            guard let kind = AutomationPresenceConditionKind(rawValue: stored.kind),
+                  let scope = AutomationPresenceUserScope(rawValue: stored.userScope) else { return nil }
+            var condition = AutomationPresenceCondition()
+            condition.kind = kind
+            condition.userScope = scope
+            return condition
+        }
+        guard presenceConditions.count == plan.presenceConditions.count else { throw RestoreFailure.unsupported }
+
         try await automationsService.createSceneAutomation(
             name: name,
             startEvents: startEvents,
             conditions: conditions,
+            timeConditions: timeConditions,
+            presenceConditions: presenceConditions,
             conditionJoinMode: AutomationConditionJoinMode(rawValue: plan.conditionJoinMode) ?? .all,
             scene: scene,
             inlineActions: inlineActions,

@@ -333,6 +333,14 @@ extension HomeConfigurationSnapshot {
         for condition in plan.conditions.sorted(by: { $0.accessory.name < $1.accessory.name }) {
             parts.append("c:\(condition.accessory.name):\(condition.characteristicType):\(condition.comparisonOperator)")
         }
+        for condition in plan.timeConditions {
+            parts.append("ct:\(condition.kind):\(condition.relation):\(condition.hour):\(condition.minute)"
+                         + ":\(condition.offsetMinutes):\(condition.endKind):\(condition.endHour)"
+                         + ":\(condition.endMinute):\(condition.endOffsetMinutes)")
+        }
+        for condition in plan.presenceConditions {
+            parts.append("cp:\(condition.kind):\(condition.userScope)")
+        }
         return parts.joined(separator: "/")
     }
 }
