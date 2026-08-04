@@ -201,7 +201,13 @@ struct AutomationSnapshot: Codable, Sendable {
 
 struct HomeConfigurationSnapshot: Codable, Sendable {
 
-    static let currentFormatVersion = 1
+    /// 2 — nomi delle caratteristiche dal sistema, membri dei gruppi di
+    /// servizi, bridge di ogni accessorio, forma ricreabile delle automazioni.
+    ///
+    /// Uno snapshot più vecchio si apre lo stesso, ma di quei campi non ha
+    /// niente: al posto dei nomi mostra identificatori grezzi, e senza saperlo
+    /// sembra un difetto invece che una cattura fatta prima.
+    static let currentFormatVersion = 2
 
     let formatVersion: Int
     let id: UUID

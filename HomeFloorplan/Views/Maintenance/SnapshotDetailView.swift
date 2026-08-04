@@ -38,6 +38,15 @@ struct SnapshotDetailView: View {
             }
 
             if let snapshot {
+                if snapshot.formatVersion < HomeConfigurationSnapshot.currentFormatVersion {
+                    Section {
+                        Label(String(localized: "snapshot.olderFormat",
+                                     defaultValue: "Taken by an earlier version: some details were not recorded yet, and show as raw identifiers. A new snapshot will have them."),
+                              systemImage: "clock.badge.exclamationmark")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 contentSection(snapshot)
             } else if let loadError {
                 Label(loadError, systemImage: "exclamationmark.triangle")

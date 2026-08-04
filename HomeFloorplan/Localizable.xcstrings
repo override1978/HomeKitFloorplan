@@ -58630,6 +58630,23 @@
           }
         }
       }
+    },
+    "snapshot.olderFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taken by an earlier version: some details were not recorded yet, and show as raw identifiers. A new snapshot will have them."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Catturato da una versione precedente: alcuni dettagli non venivano ancora registrati e compaiono come identificatori grezzi. Uno snapshot nuovo li avrà."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
