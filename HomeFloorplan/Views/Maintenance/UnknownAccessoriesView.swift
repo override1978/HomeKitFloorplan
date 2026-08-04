@@ -35,6 +35,7 @@ struct UnknownAccessoriesView: View {
                 list
             }
         }
+        .maintenanceBottomClearance()
         .navigationTitle(String(localized: "sidebar.unknownAccessories", defaultValue: "Unknown Accessories"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { reconciliation.refresh() }

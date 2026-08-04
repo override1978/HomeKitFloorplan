@@ -57,6 +57,7 @@ struct SnapshotAccessoryListView: View {
                 }
             }
         }
+        .maintenanceBottomClearance()
         .searchable(text: $search)
         .navigationTitle(String(localized: "snapshot.accessories", defaultValue: "Accessories"))
         .navigationBarTitleDisplayMode(.inline)
@@ -123,6 +124,7 @@ struct SnapshotSceneListView: View {
                 }
             }
         }
+        .maintenanceBottomClearance()
         .searchable(text: $search)
         .navigationTitle(String(localized: "snapshot.scenes", defaultValue: "Scenes"))
         .navigationBarTitleDisplayMode(.inline)
@@ -192,6 +194,7 @@ struct SnapshotSceneDetailView: View {
                 }
             }
         }
+        .maintenanceBottomClearance()
         .navigationTitle(scene.name)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -286,6 +289,7 @@ struct SnapshotAutomationListView: View {
                 }
             }
         }
+        .maintenanceBottomClearance()
         .searchable(text: $search)
         .navigationTitle(String(localized: "snapshot.automations", defaultValue: "Automations"))
         .navigationBarTitleDisplayMode(.inline)
@@ -330,6 +334,7 @@ struct SnapshotRoomListView: View {
                 }
             }
         }
+        .maintenanceBottomClearance()
         .navigationTitle(String(localized: "snapshot.rooms", defaultValue: "Rooms"))
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -352,6 +357,7 @@ struct SnapshotZoneListView: View {
                 }
             }
         }
+        .maintenanceBottomClearance()
         .navigationTitle(String(localized: "snapshot.zones", defaultValue: "Zones"))
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -394,6 +400,7 @@ struct SnapshotServiceGroupListView: View {
                 }
             }
         }
+        .maintenanceBottomClearance()
         .navigationTitle(String(localized: "snapshot.serviceGroups", defaultValue: "Service groups"))
         .navigationBarTitleDisplayMode(.inline)
     }
