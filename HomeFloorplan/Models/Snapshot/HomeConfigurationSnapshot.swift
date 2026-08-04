@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 // MARK: - Indirizzamento
 
@@ -225,5 +226,98 @@ extension AccessoryAddress {
         [manufacturer, model, roomName]
             .map { $0?.lowercased().trimmingCharacters(in: .whitespaces) ?? "" }
             .joined(separator: "|")
+    }
+}
+
+// MARK: - Impronta della configurazione
+
+extension HomeConfigurationSnapshot {
+
+    /// Impronta di **ciò che è configurazione**, e di nient'altro.
+    ///
+    /// Serve a non creare uno snapshot nuovo quando in casa non è cambiato
+    /// niente. Non si può calcolare sul JSON dello snapshot: quello contiene
+    /// `id` e `capturedAt`, che cambiano sempre, ed è risultato variare anche
+    /// per conto suo — catture della stessa casa immutata hanno prodotto 68, 70
+    /// e 93 KB compressi. Bastava quello a impedire per sempre alla deduplica
+    /// di scattare.
+    ///
+    /// Qui invece si costruisce una proiezione testuale **canonica**: solo i
+    /// campi che descrivono la configurazione, ogni raccolta ordinata, niente
+    /// UUID locali (cambiano da device a device) e niente metadati delle
+    /// caratteristiche, che HomeKit popola man mano che legge e che quindi
+    /// dipendono da cosa è successo prima.
+    var configurationFingerprint: String {
+        var lines: [String] = []
+
+        lines.append("home|\(homeName)")
+
+        for room in rooms.sorted(by: { $0.address.name < $1.address.name }) {
+            lines.append("room|\(room.address.name)|\(room.accessoryNames.sorted().joined(separator: ","))")
+        }
+        for zone in zones.sorted(by: { $0.name < $1.name }) {
+            lines.append("zone|\(zone.name)|\(zone.roomNames.sorted().joined(separator: ","))")
+        }
+        for group in serviceGroups.sorted(by: { $0.name < $1.name }) {
+            lines.append("group|\(group.name)|\(group.serviceCount)")
+        }
+
+        for accessory in accessories.sorted(by: { $0.address.name < $1.address.name }) {
+            let a = accessory.address
+            lines.append([
+                "acc", a.name, a.roomName ?? "", a.serialNumber ?? "",
+                a.manufacturer ?? "", a.model ?? "", a.category,
+                accessory.firmwareVersion ?? ""
+            ].joined(separator: "|"))
+            // Dei servizi conta la forma, non i metadati: tipo, ordinale e quali
+            // caratteristiche espone.
+            for service in accessory.services.sorted(by: { ($0.address.serviceType, $0.address.ordinal) < ($1.address.serviceType, $1.address.ordinal) }) {
+                lines.append("svc|\(a.name)|\(service.address.serviceType)|\(service.address.ordinal)|"
+                             + service.characteristics.map(\.characteristicType).sorted().joined(separator: ","))
+            }
+        }
+
+        for scene in scenes.sorted(by: { $0.name < $1.name }) {
+            lines.append("scene|\(scene.name)|\(scene.actionSetType)|\(scene.foreignActionCount)")
+            for action in scene.actions.sorted(by: { $0.sortKey < $1.sortKey }) {
+                lines.append("act|\(scene.name)|\(action.sortKey)|\(action.value.canonicalText)")
+            }
+        }
+
+        for automation in automations.sorted(by: { $0.name < $1.name }) {
+            lines.append([
+                "auto", automation.name, automation.triggerKind,
+                automation.content.rawValue, String(automation.isEnabled),
+                automation.humanSummary,
+                automation.conditionSummaries.sorted().joined(separator: ";"),
+                automation.actionSetNames.sorted().joined(separator: ";")
+            ].joined(separator: "|"))
+        }
+
+        let digest = SHA256.hash(data: Data(lines.joined(separator: "\n").utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+extension SceneActionSnapshot {
+    /// Ordinamento e identità dell'azione senza UUID locali.
+    var sortKey: String {
+        [target.accessory.name, target.service.serviceType,
+         String(target.service.ordinal), target.characteristicType].joined(separator: "/")
+    }
+}
+
+extension SnapshotValue {
+    var canonicalText: String {
+        switch self {
+        case .bool(let value):   "b:\(value)"
+        case .int(let value):    "i:\(value)"
+        // Arrotondato: HomeKit restituisce a volte 45.0 e a volte 45.000001 per
+        // lo stesso valore, e una differenza invisibile non deve far risultare
+        // cambiata una scena.
+        case .double(let value): "d:\(String(format: "%.4f", value))"
+        case .string(let value): "s:\(value)"
+        case .unsupported(let description): "u:\(description)"
+        }
     }
 }

@@ -331,6 +331,23 @@
         }
       }
     },
+    "captureProbe.fingerprint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuration fingerprint"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impronta configurazione"
+          }
+        }
+      }
+    },
     "captureProbe.footer" : {
       "extractionState" : "manual",
       "localizations" : {

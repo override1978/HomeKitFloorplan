@@ -30,6 +30,7 @@ struct HomeKitIdentityProbeView: View {
         let counts: HomeConfigurationSnapshot.Counts
         let coverage: Double
         let serials: HomeSnapshotCapture.SerialStats
+        let fingerprint: String
     }
 
     var body: some View {
@@ -163,6 +164,9 @@ struct HomeKitIdentityProbeView: View {
                 LabeledContent(String(localized: "captureProbe.serials", defaultValue: "Serial numbers"),
                                value: "\(s.serials.fromCache) cache · \(s.serials.read) letti · \(s.serials.readFailed) falliti · \(s.serials.skippedKnownAbsent) saltati · \(s.serials.structurallyAbsent) assenti")
                     .font(.footnote)
+                LabeledContent(String(localized: "captureProbe.fingerprint", defaultValue: "Configuration fingerprint"),
+                               value: String(s.fingerprint.prefix(12)))
+                    .font(.footnote.monospaced())
             }
         } header: {
             Text(String(localized: "captureProbe.header", defaultValue: "Snapshot"))
@@ -191,7 +195,8 @@ struct HomeKitIdentityProbeView: View {
                 compressedBytes: compressed.length,
                 counts: snapshot.counts,
                 coverage: snapshot.reliableIdentityCoverage,
-                serials: capture.lastSerialStats
+                serials: capture.lastSerialStats,
+                fingerprint: snapshot.configurationFingerprint
             )
         } catch {
             captureSummary = nil
