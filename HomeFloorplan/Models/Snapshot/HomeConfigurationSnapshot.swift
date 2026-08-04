@@ -243,15 +243,33 @@ struct HomeConfigurationSnapshot: Codable, Sendable {
     /// device diverso da quello che l'ha catturato.
     var reliableIdentityCoverage: Double {
         guard !accessories.isEmpty else { return 0 }
-        var stableKeyCounts: [String: Int] = [:]
-        for accessory in accessories where (accessory.address.serialNumber ?? "").isEmpty {
-            stableKeyCounts[accessory.address.stableKey, default: 0] += 1
-        }
-        let reliable = accessories.filter { accessory in
-            if !(accessory.address.serialNumber ?? "").isEmpty { return true }
-            return stableKeyCounts[accessory.address.stableKey] == 1
-        }
+        let ambiguous = ambiguousStableKeys
+        let reliable = accessories.filter { $0.isReliablyIdentifiable(ambiguousStableKeys: ambiguous) }
         return Double(reliable.count) / Double(accessories.count)
+    }
+
+    /// Le combinazioni produttore+modello+stanza che in questa casa toccano a
+    /// più di un accessorio: là il livello «stabile» non identifica niente.
+    ///
+    /// Si calcola una volta e si passa in giro, così il segno sulla singola riga
+    /// e la percentuale complessiva non possono raccontare cose diverse.
+    var ambiguousStableKeys: Set<String> {
+        var counts: [String: Int] = [:]
+        for accessory in accessories where (accessory.address.serialNumber ?? "").isEmpty {
+            counts[accessory.address.stableKey, default: 0] += 1
+        }
+        return Set(counts.filter { $0.value > 1 }.keys)
+    }
+}
+
+extension AccessorySnapshot {
+    /// Riconoscibile **senza dipendere dal nome**, che l'utente può cambiare in
+    /// qualsiasi momento. Non conta *come* ci si riesce: numero di serie o
+    /// combinazione produttore+modello+stanza sono due strade allo stesso
+    /// risultato, e all'utente interessa il risultato.
+    func isReliablyIdentifiable(ambiguousStableKeys: Set<String>) -> Bool {
+        if !(address.serialNumber ?? "").isEmpty { return true }
+        return !ambiguousStableKeys.contains(address.stableKey)
     }
 }
 

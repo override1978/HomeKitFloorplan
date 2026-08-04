@@ -7,6 +7,8 @@ struct SnapshotAccessoryListView: View {
     let snapshot: HomeConfigurationSnapshot
     @State private var search = ""
 
+    private var ambiguousStableKeys: Set<String> { snapshot.ambiguousStableKeys }
+
     private var grouped: [(room: String, accessories: [AccessorySnapshot])] {
         let filtered = snapshot.accessories.filter { matches($0) }
         return Dictionary(grouping: filtered) { $0.address.roomName ?? "—" }
@@ -29,21 +31,27 @@ struct SnapshotAccessoryListView: View {
                     // Indice e non nome: due accessori omonimi nella stessa
                     // stanza esistono, e un `id` duplicato fa sparire una riga.
                     ForEach(Array(group.accessories.enumerated()), id: \.offset) { _, accessory in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(accessory.address.name)
-                            Text([accessory.address.manufacturer, accessory.address.model]
-                                .compactMap { $0 }.joined(separator: " · "))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            HStack(spacing: 8) {
-                                identityBadge(accessory)
-                                if let firmware = accessory.firmwareVersion {
-                                    Text("fw \(firmware)")
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(accessory.address.name)
+                                Text([accessory.address.manufacturer, accessory.address.model]
+                                    .compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                HStack(spacing: 8) {
+                                    if let firmware = accessory.firmwareVersion {
+                                        Text("fw \(firmware)")
+                                    }
+                                    if let bridge = accessory.bridgeName {
+                                        Label(bridge, systemImage: "point.3.connected.trianglepath.dotted")
+                                    }
+                                    Text("\(accessory.services.count) serv.")
                                 }
-                                Text("\(accessory.services.count) serv.")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                             }
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            Spacer(minLength: 0)
+                            identityMark(accessory)
                         }
                     }
                 }
@@ -54,18 +62,23 @@ struct SnapshotAccessoryListView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    /// Su cosa si regge l'identità di questo accessorio, che è quanto dire se
-    /// sopravviverebbe a un ripristino su un altro device.
+    /// Se questo accessorio sarebbe riconoscibile anche altrove.
+    ///
+    /// Un segno, non un'etichetta: **come** ci si riesce — numero di serie
+    /// oppure produttore+modello+stanza — è affare nostro, e scriverlo sposta
+    /// l'attenzione sul meccanismo invece che sull'esito.
     @ViewBuilder
-    private func identityBadge(_ accessory: AccessorySnapshot) -> some View {
-        if !(accessory.address.serialNumber ?? "").isEmpty {
-            Label(String(localized: "snapshot.identity.serial", defaultValue: "serial"),
-                  systemImage: "checkmark.seal.fill")
+    private func identityMark(_ accessory: AccessorySnapshot) -> some View {
+        if accessory.isReliablyIdentifiable(ambiguousStableKeys: ambiguousStableKeys) {
+            Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
+                .accessibilityLabel(String(localized: "snapshot.identity.sure",
+                                           defaultValue: "surely identifiable"))
         } else {
-            Label(String(localized: "snapshot.identity.byName", defaultValue: "no serial"),
-                  systemImage: "questionmark.circle")
-                .foregroundStyle(.orange)
+            Image(systemName: "questionmark.circle")
+                .foregroundStyle(.tertiary)
+                .accessibilityLabel(String(localized: "snapshot.identity.unsure",
+                                           defaultValue: "identified by name only"))
         }
     }
 }

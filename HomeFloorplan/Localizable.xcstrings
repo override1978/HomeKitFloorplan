@@ -58324,6 +58324,40 @@
           }
         }
       }
+    },
+    "snapshot.identity.sure" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "surely identifiable"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "identificabile con certezza"
+          }
+        }
+      }
+    },
+    "snapshot.identity.unsure" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "identified by name only"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "identificabile solo per nome"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
