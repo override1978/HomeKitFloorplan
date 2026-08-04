@@ -31,6 +31,20 @@ final class HomeSnapshotCapture {
     private(set) var isCapturing = false
     private(set) var progress: Double = 0
 
+    /// Da dove sono arrivati i numeri di serie nell'ultima cattura. Serve a
+    /// distinguere «la cache non funziona» da «ci sono accessori che non
+    /// rispondono e ogni volta si aspetta il loro timeout» — due cause dello
+    /// stesso sintomo, con rimedi opposti.
+    struct SerialStats: Sendable {
+        var fromCache = 0
+        var fromLiveValue = 0
+        var read = 0
+        var readFailed = 0
+        var structurallyAbsent = 0
+        var skippedKnownAbsent = 0
+    }
+    private(set) var lastSerialStats = SerialStats()
+
     private let homeKit: HomeKitService
     private let scenesService: HomeKitScenesService
     private let automationsService: HomeKitAutomationsService
@@ -87,22 +101,49 @@ final class HomeSnapshotCapture {
     /// Se un accessorio viene ri-accoppiato cambia UUID e quindi non trova la
     /// voce: rileggerlo è esattamente ciò che serve.
     private static let serialCacheKey = "snapshot.serialNumbers.v1"
+    private static let serialFailuresKey = "snapshot.serialFailures.v1"
+
+    /// Dopo quanti tentativi a vuoto si smette di chiedere. Due bastano a
+    /// distinguere un accessorio che non ha il seriale da uno che quella volta
+    /// non ha risposto — e senza un tetto si aspetta il loro timeout **a ogni**
+    /// cattura, per sempre.
+    private static let maxSerialReadAttempts = 2
 
     private var serialCache: [String: String] {
-        get {
-            guard let data = UserDefaults.standard.data(forKey: Self.serialCacheKey),
-                  let decoded = try? JSONDecoder().decode([String: String].self, from: data)
-            else { return [:] }
-            return decoded
-        }
-        set {
-            guard let data = try? JSONEncoder().encode(newValue) else { return }
-            UserDefaults.standard.set(data, forKey: Self.serialCacheKey)
-        }
+        get { Self.decodeDefaults(Self.serialCacheKey) }
+        set { Self.encodeDefaults(newValue, Self.serialCacheKey) }
+    }
+
+    /// Quante volte di fila un accessorio non ha risposto. Una lettura riuscita
+    /// azzera il contatore.
+    private var serialFailures: [String: Int] {
+        get { Self.decodeDefaults(Self.serialFailuresKey) }
+        set { Self.encodeDefaults(newValue, Self.serialFailuresKey) }
+    }
+
+    private static func decodeDefaults<T: Decodable>(_ key: String) -> [String: T] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([String: T].self, from: data)
+        else { return [:] }
+        return decoded
+    }
+
+    private static func encodeDefaults<T: Encodable>(_ value: [String: T], _ key: String) {
+        guard let data = try? JSONEncoder().encode(value) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    /// Svuota cache e contatori: rimette in gioco anche gli accessori dati per
+    /// senza seriale. Da offrire come «riprova tutto», non da fare da sé.
+    func forgetSerialNumbers() {
+        UserDefaults.standard.removeObject(forKey: Self.serialCacheKey)
+        UserDefaults.standard.removeObject(forKey: Self.serialFailuresKey)
     }
 
     private func readSerialNumbers(of accessories: [HMAccessory]) async -> [UUID: String] {
         var cache = serialCache
+        var failures = serialFailures
+        var stats = SerialStats()
         var result: [UUID: String] = [:]
 
         // Chi non espone affatto la caratteristica non costa niente: è una
@@ -112,18 +153,28 @@ final class HomeSnapshotCapture {
             let uuid = accessory.uniqueIdentifier
             if let cached = cache[uuid.uuidString] {
                 result[uuid] = cached
+                stats.fromCache += 1
                 continue
             }
             guard let info = accessory.services.first(where: { $0.serviceType == HMServiceTypeAccessoryInformation }),
                   let characteristic = info.characteristics.first(where: {
                       $0.characteristicType == Self.serialNumberCharacteristicType
                   })
-            else { continue }
+            else {
+                stats.structurallyAbsent += 1
+                continue
+            }
 
             if let live = characteristic.value.map({ "\($0)" }),
                !live.trimmingCharacters(in: .whitespaces).isEmpty {
                 result[uuid] = live
                 cache[uuid.uuidString] = live
+                failures[uuid.uuidString] = nil
+                stats.fromLiveValue += 1
+                continue
+            }
+            guard (failures[uuid.uuidString] ?? 0) < Self.maxSerialReadAttempts else {
+                stats.skippedKnownAbsent += 1
                 continue
             }
             pending.append((uuid, characteristic))
@@ -132,6 +183,8 @@ final class HomeSnapshotCapture {
         if pending.isEmpty {
             progress = 1
             serialCache = cache
+            serialFailures = failures
+            lastSerialStats = stats
             return result
         }
 
@@ -154,15 +207,23 @@ final class HomeSnapshotCapture {
                 return collected
             }
             for (uuid, serial) in read {
-                guard let serial else { continue }
+                guard let serial else {
+                    failures[uuid.uuidString] = (failures[uuid.uuidString] ?? 0) + 1
+                    stats.readFailed += 1
+                    continue
+                }
                 result[uuid] = serial
                 cache[uuid.uuidString] = serial
+                failures[uuid.uuidString] = nil
+                stats.read += 1
             }
             completed += batch.count
             progress = Double(completed) / Double(pending.count)
         }
 
         serialCache = cache
+        serialFailures = failures
+        lastSerialStats = stats
         return result
     }
 

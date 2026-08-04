@@ -29,6 +29,7 @@ struct HomeKitIdentityProbeView: View {
         let compressedBytes: Int
         let counts: HomeConfigurationSnapshot.Counts
         let coverage: Double
+        let serials: HomeSnapshotCapture.SerialStats
     }
 
     var body: some View {
@@ -159,6 +160,9 @@ struct HomeKitIdentityProbeView: View {
                                value: "\(s.counts.accessories) · \(s.counts.scenes) · \(s.counts.automations) · \(s.counts.rooms)")
                 LabeledContent(String(localized: "captureProbe.coverage", defaultValue: "Reliable identity"),
                                value: "\(Int((s.coverage * 100).rounded()))%")
+                LabeledContent(String(localized: "captureProbe.serials", defaultValue: "Serial numbers"),
+                               value: "\(s.serials.fromCache) cache · \(s.serials.read) letti · \(s.serials.readFailed) falliti · \(s.serials.skippedKnownAbsent) saltati · \(s.serials.structurallyAbsent) assenti")
+                    .font(.footnote)
             }
         } header: {
             Text(String(localized: "captureProbe.header", defaultValue: "Snapshot"))
@@ -186,7 +190,8 @@ struct HomeKitIdentityProbeView: View {
                 rawBytes: raw.count,
                 compressedBytes: compressed.length,
                 counts: snapshot.counts,
-                coverage: snapshot.reliableIdentityCoverage
+                coverage: snapshot.reliableIdentityCoverage,
+                serials: capture.lastSerialStats
             )
         } catch {
             captureSummary = nil

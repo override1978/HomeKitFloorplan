@@ -399,6 +399,23 @@
         }
       }
     },
+    "captureProbe.serials" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serial numbers"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numeri di serie"
+          }
+        }
+      }
+    },
     "captureProbe.size" : {
       "extractionState" : "manual",
       "localizations" : {
