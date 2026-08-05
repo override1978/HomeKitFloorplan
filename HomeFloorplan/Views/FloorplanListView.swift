@@ -1,4 +1,5 @@
 import SwiftUI
+import HomeKit
 import SwiftData
 
 /// Vista di gestione planimetrie: galleria con miniature.
@@ -97,7 +98,10 @@ struct FloorplanListView: View {
             // A tutto schermo, non in un foglio: su iPad una card lascerebbe
             // metà spazio ai bordi proprio dove serve il soggetto.
             .fullScreenCover(item: $preview3D) { request in
-                FloorplanPreview3DView(document: request.document, title: request.title)
+                FloorplanPreview3DView(document: request.document,
+                                       title: request.title,
+                                       markers: request.markers,
+                                       linkedRooms: request.linkedRooms)
             }
             .navigationTitle(isCompact
                              ? String(localized: "floorplans.title", defaultValue: "Floorplans")
@@ -550,7 +554,14 @@ struct FloorplanListView: View {
         // foto ricalcata non si ricava niente.
         if let document = floorplan.drawingDocument, !document.walls.isEmpty {
             Button {
-                preview3D = Preview3DRequest(document: document, title: floorplan.name)
+                preview3D = Preview3DRequest(
+                    document: document,
+                    title: floorplan.name,
+                    markers: floorplan.accessories.map {
+                        (CGPoint(x: $0.positionX, y: $0.positionY),
+                         $0.customLabel ?? homeKit.accessory(for: $0.homeKitAccessoryUUID)?.name ?? "")
+                    },
+                    linkedRooms: floorplan.linkedRooms)
             } label: {
                 Label(String(localized: "floorplan.preview3D", defaultValue: "3D preview"),
                       systemImage: "cube")

@@ -15,6 +15,13 @@ struct FloorplanPreview3DView: View {
 
     let document: DrawingDocument
     let title: String
+    /// Marker della planimetria, in coordinate normalizzate sull'immagine.
+    let markers: [(position: CGPoint, name: String)]
+    /// Servono a **ricavare** la trasformazione: una stanza esiste in entrambi
+    /// gli spazi — normalizzata qui, in coordinate canvas nel disegno — e due
+    /// rappresentazioni della stessa cosa sono tutto ciò che serve per passare
+    /// dall'una all'altra.
+    let linkedRooms: [LinkedRoom]
 
     @Environment(\.dismiss) private var dismiss
 
@@ -35,6 +42,34 @@ struct FloorplanPreview3DView: View {
 
     private var selectedRoomName: String? {
         faces.first { $0.roomID == selectedRoomID }?.roomName
+    }
+
+    /// Da coordinate normalizzate sull'immagine a metri nel modello.
+    ///
+    /// L'immagine è inquadrata al momento dell'export, quindi il fattore non è
+    /// deducibile: si ricava confrontando le stanze collegate — stesso
+    /// `hmRoomUUID`, un rettangolo normalizzato di qua e uno in canvas di là.
+    /// Si media su tutte quelle disponibili, perché una sola porta con sé tutto
+    /// il proprio errore di arrotondamento.
+    private var imageToMetres: (scale: Double, dx: Double, dy: Double)? {
+        var samples: [(scale: Double, dx: Double, dy: Double)] = []
+        for room in linkedRooms {
+            guard let area = document.roomAreas.first(where: { $0.hmRoomUUID == room.hmRoomUUID }),
+                  room.normalizedRect.width > 0.001, room.normalizedRect.height > 0.001
+            else { continue }
+            let metres = 1.0 / Double(DrawingDocument.ptsPerMeter)
+            let scale = Double(area.rect.width) * metres / Double(room.normalizedRect.width)
+            let midX = room.normalizedRect.x + room.normalizedRect.width / 2
+            let midY = room.normalizedRect.y + room.normalizedRect.height / 2
+            samples.append((scale,
+                            Double(area.rect.midX) * metres - midX * scale,
+                            Double(area.rect.midY) * metres - midY * scale))
+        }
+        guard !samples.isEmpty else { return nil }
+        let count = Double(samples.count)
+        return (samples.reduce(0) { $0 + $1.scale } / count,
+                samples.reduce(0) { $0 + $1.dx } / count,
+                samples.reduce(0) { $0 + $1.dy } / count)
     }
 
     var body: some View {
@@ -215,6 +250,37 @@ struct FloorplanPreview3DView: View {
             // muri che ora si compenetrano non separano più niente.
             context.fill(path, with: .color(color(for: entry.face)))
         }
+
+        drawMarkers(in: context, size: size)
+    }
+
+    /// I marker sopra tutto, non in coda alla profondità.
+    ///
+    /// Un accessorio dietro un muro resterebbe nascosto proprio quando lo si
+    /// cerca: qui non sono oggetti della scena, sono etichette su di essa — e
+    /// un'etichetta che si nasconde non serve a niente.
+    private func drawMarkers(in context: GraphicsContext, size: CGSize) {
+        guard let transform = imageToMetres else { return }
+        let stem = 1.5
+
+        for marker in markers {
+            let x = Double(marker.position.x) * transform.scale + transform.dx
+            let y = Double(marker.position.y) * transform.scale + transform.dy
+            let foot = screen(project(SIMD3(x, y, 0)), in: size)
+            let head = screen(project(SIMD3(x, y, stem)), in: size)
+
+            var stalk = Path()
+            stalk.move(to: foot)
+            stalk.addLine(to: head)
+            context.stroke(stalk, with: .color(.white.opacity(0.55)), lineWidth: 1.5)
+
+            // Il punto a terra dice **dove**, la sfera in alto dice **cosa**:
+            // senza il primo un marker sospeso è ambiguo di mezzo metro.
+            context.fill(Path(ellipseIn: CGRect(x: foot.x - 2.5, y: foot.y - 2.5, width: 5, height: 5)),
+                         with: .color(.white.opacity(0.5)))
+            context.fill(Path(ellipseIn: CGRect(x: head.x - 7, y: head.y - 7, width: 14, height: 14)),
+                         with: .color(Color(red: 1.0, green: 0.72, blue: 0.25)))
+        }
     }
 
     /// La stanza sotto il dito.
@@ -327,4 +393,11 @@ struct Preview3DRequest: Identifiable {
     let id = UUID()
     let document: DrawingDocument
     let title: String
+    /// Marker della planimetria, in coordinate normalizzate sull'immagine.
+    let markers: [(position: CGPoint, name: String)]
+    /// Servono a **ricavare** la trasformazione: una stanza esiste in entrambi
+    /// gli spazi — normalizzata qui, in coordinate canvas nel disegno — e due
+    /// rappresentazioni della stessa cosa sono tutto ciò che serve per passare
+    /// dall'una all'altra.
+    let linkedRooms: [LinkedRoom]
 }
