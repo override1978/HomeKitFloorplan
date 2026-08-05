@@ -49,9 +49,9 @@ enum FloorplanExtruder {
             /// Il telaio che contorna un'apertura. Senza, un vano è un buco
             /// come un altro: è la cornice a dire che lì c'è una porta.
             case frame
-            /// Il battente di una porta. Traslucido: chiuso davvero taglierebbe
-            /// le linee di vista dentro le stanze, che è tutto il senso di
-            /// guardare una casa dall'alto.
+            /// Il battente di una porta, pieno. Il vetro può permettersi di
+            /// essere trasparente perché dà sull'esterno; una porta dà sulla
+            /// stanza accanto, e trasparente ne prenderebbe il colore.
             case doorLeaf
             /// Parapetto di un balcone: basso **e** diverso, altrimenti resta
             /// un muro tagliato a metà.
