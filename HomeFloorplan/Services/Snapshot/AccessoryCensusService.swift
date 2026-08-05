@@ -177,6 +177,36 @@ final class AccessoryCensusService {
 
     func rows(homeName: String) -> [KnownAccessory] { fetchRows(homeName: homeName) }
 
+    /// Registra un accessorio che **non c'è**, ma di cui abbiamo prova che ci
+    /// fosse: un marker ripristinato da una copia archiviata lo nomina.
+    ///
+    /// Senza questa riga la riconciliazione non lo vedrebbe mai — le righe
+    /// nascono osservando accessori presenti, e uno archiviato su un altro
+    /// device qui non è mai passato. Nasce già ritirata perché è esattamente
+    /// ciò che è: qualcosa che l'app conosce e HomeKit no.
+    @discardableResult
+    func recordAbsent(name: String, roomName: String?, localUUID: UUID) -> KnownAccessory? {
+        guard let home = homeKit.currentHome else { return nil }
+        let existing = fetchRows(homeName: home.name)
+        // Se la conosciamo già — viva o ritirata — non se ne crea una seconda:
+        // due righe per lo stesso accessorio sono due domande per lo stesso
+        // problema.
+        if let match = existing.first(where: { $0.localUUID == localUUID }) { return match }
+        if let match = existing.first(where: { $0.normalizedName == name.lowercased() && $0.isRetired }) {
+            return match
+        }
+
+        let row = KnownAccessory(homeName: home.name,
+                                 name: name,
+                                 roomName: roomName,
+                                 localUUID: localUUID,
+                                 isSeeded: true)
+        row.retiredAt = Date()
+        context.insert(row)
+        try? context.save()
+        return row
+    }
+
     /// Le righe della casa attiva. Si rilegge quando `lastSweep` cambia, che è
     /// l'unico momento in cui possono essere cambiate.
     var currentRows: [KnownAccessory] {

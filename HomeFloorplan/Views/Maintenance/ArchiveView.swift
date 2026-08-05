@@ -247,10 +247,15 @@ struct ArchivedItemDetailView: View {
                 result.restored = [String(format: String(localized: "archive.floorplan.restored",
                                                          defaultValue: "New floorplan “%1$@” · %2$d markers"),
                                           report.name, report.markersPlaced)]
-                if !report.markersDropped.isEmpty {
-                    result.skipped = [(String(localized: "archive.floorplan.droppedTitle",
-                                              defaultValue: "Markers left out"),
-                                       report.markersDropped.joined(separator: ", "))]
+                if !report.markersUnresolved.isEmpty {
+                    // Non è un fallimento: i marker ci sono, manca chi risponde.
+                    // La domanda ha già una schermata sua, e si dice dov'è.
+                    result.skipped = [(String(format: String(localized: "archive.floorplan.unresolvedTitle",
+                                                             defaultValue: "%d markers without an accessory"),
+                                              report.markersUnresolved.count),
+                                       report.markersUnresolved.joined(separator: ", ")
+                                        + " — " + String(localized: "archive.floorplan.unresolvedHint",
+                                                         defaultValue: "you can match them under Unknown Accessories"))]
                 }
                 outcome = result
             } catch {

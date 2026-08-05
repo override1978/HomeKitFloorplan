@@ -22,9 +22,15 @@ final class FloorplanArchiveService {
     private let homeKit: HomeKitService
     private let context: ModelContext
 
-    init(archive: ArchiveStore, homeKit: HomeKitService, modelContainer: ModelContainer) {
+    private let census: AccessoryCensusService
+
+    init(archive: ArchiveStore,
+         homeKit: HomeKitService,
+         census: AccessoryCensusService,
+         modelContainer: ModelContainer) {
         self.archive = archive
         self.homeKit = homeKit
+        self.census = census
         self.context = ModelContext(modelContainer)
     }
 
@@ -85,9 +91,10 @@ final class FloorplanArchiveService {
     struct RestoreReport: Sendable {
         var name: String
         var markersPlaced: Int
-        /// Marker il cui accessorio non si è trovato: la planimetria nasce
-        /// senza, e va detto invece di lasciarli scoprire vuoti.
-        var markersDropped: [String]
+        /// Marker messi giù ma senza un accessorio che risponda. Non sono
+        /// perduti: finiscono fra gli accessori sconosciuti, dove si possono
+        /// riabbinare o togliere.
+        var markersUnresolved: [String]
     }
 
     @discardableResult
@@ -105,24 +112,36 @@ final class FloorplanArchiveService {
         context.insert(copy)
 
         var placed = 0
-        var dropped: [String] = []
+        var unresolved: [String] = []
         for marker in payload.markers {
-            guard let uuid = resolve(marker) else {
-                dropped.append(marker.accessoryName ?? "—")
-                continue
-            }
+            let resolved = resolve(marker)
+            // Il marker si mette **comunque**, anche se l'accessorio non si
+            // trova. Lasciarlo fuori significherebbe consegnare una planimetria
+            // che sembra completa e non lo è; messo, diventa una domanda a cui
+            // «Accessori sconosciuti» sa già rispondere, con i candidati.
             let restored = PlacedAccessory(
-                homeKitAccessoryUUID: uuid,
+                homeKitAccessoryUUID: resolved ?? marker.homeKitAccessoryUUID,
                 position: NormalizedPoint(x: marker.positionX, y: marker.positionY),
                 customLabel: marker.customLabel,
                 linkedRoomUUID: marker.linkedRoomUUID
             )
             restored.floorplan = copy
             context.insert(restored)
-            placed += 1
+
+            if resolved != nil {
+                placed += 1
+            } else {
+                let name = marker.accessoryName ?? marker.customLabel ?? "—"
+                unresolved.append(name)
+                // Serve la riga di censimento, altrimenti la riconciliazione non
+                // ha niente su cui costruire la domanda.
+                census.recordAbsent(name: name,
+                                    roomName: marker.roomName,
+                                    localUUID: marker.homeKitAccessoryUUID)
+            }
         }
         try context.save()
-        return RestoreReport(name: copy.name, markersPlaced: placed, markersDropped: dropped)
+        return RestoreReport(name: copy.name, markersPlaced: placed, markersUnresolved: unresolved)
     }
 
     /// UUID salvato se quell'accessorio esiste ancora, altrimenti per nome e

@@ -90,6 +90,7 @@ final class AppServices {
                                                                       modelContainer: container)
         self.floorplanArchive = FloorplanArchiveService(archive: archiveStore,
                                                         homeKit: kit,
+                                                        census: censusService,
                                                         modelContainer: container)
         let notifier = SecurityNotificationService(homeKit: kit)
         self.securityNotifier = notifier
