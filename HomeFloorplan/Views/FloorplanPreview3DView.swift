@@ -39,7 +39,12 @@ struct FloorplanPreview3DView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Color(white: 0.08).ignoresSafeArea()
+            // Non nero: un'ombra su fondo nero non esiste. Un grigio caldo con
+            // un accenno di gradiente dà alla casa un piano su cui posarsi.
+            LinearGradient(colors: [Color(red: 0.33, green: 0.34, blue: 0.36),
+                                    Color(red: 0.20, green: 0.21, blue: 0.23)],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
 
             GeometryReader { geometry in
                 Canvas { context, size in
@@ -138,6 +143,25 @@ struct FloorplanPreview3DView: View {
         let depth: Double
     }
 
+    /// Scala e centratura, condivise da facce e ombre.
+    private func frame(in size: CGSize) -> (scale: CGFloat, dx: CGFloat, dy: CGFloat)? {
+        let all = faces.flatMap { $0.points.map(project) }
+        guard let minX = all.map(\.x).min(), let maxX = all.map(\.x).max(),
+              let minY = all.map(\.y).min(), let maxY = all.map(\.y).max(),
+              maxX > minX, maxY > minY else { return nil }
+        let inset: CGFloat = 56
+        let scale = min((size.width - inset * 2) / (maxX - minX),
+                        (size.height - inset * 2) / (maxY - minY))
+        return (scale,
+                (size.width - (maxX - minX) * scale) / 2 - minX * scale,
+                (size.height - (maxY - minY) * scale) / 2 - minY * scale)
+    }
+
+    private func screen(_ point: CGPoint, in size: CGSize) -> CGPoint {
+        guard let frame = frame(in: size) else { return point }
+        return CGPoint(x: point.x * frame.scale + frame.dx, y: point.y * frame.scale + frame.dy)
+    }
+
     /// Proiezione e inquadratura in un punto solo: disegno e tocco devono vedere
     /// le stesse coordinate, e ricalcolarle in due posti è il modo sicuro per
     /// farle divergere.
@@ -162,7 +186,27 @@ struct FloorplanPreview3DView: View {
     }
 
     private func draw(in context: GraphicsContext, size: CGSize) {
-        for entry in layout(in: size) {
+        let entries = layout(in: size)
+
+        // Ombre per prime, tutte insieme e sotto tutto: sono la proiezione a
+        // terra delle facce superiori, spostate lungo la luce. Non è un calcolo
+        // di illuminazione — è la stessa faccia disegnata due volte, ed è
+        // sufficiente perché l'occhio cerca il contatto col pavimento, non la
+        // correttezza fisica.
+        for entry in entries where entry.face.kind == .wallTop
+            || entry.face.kind == .parapetTop || entry.face.kind == .furnitureTop {
+            var path = Path()
+            let dropped = entry.face.points.map { point -> CGPoint in
+                let ground = SIMD3(point.x + point.z * 0.45, point.y + point.z * 0.32, 0)
+                return screen(project(ground), in: size)
+            }
+            path.move(to: dropped[0])
+            for point in dropped.dropFirst() { path.addLine(to: point) }
+            path.closeSubpath()
+            context.fill(path, with: .color(.black.opacity(0.16)))
+        }
+
+        for entry in entries {
             var path = Path()
             path.move(to: entry.screen[0])
             for point in entry.screen.dropFirst() { path.addLine(to: point) }
@@ -265,6 +309,14 @@ struct FloorplanPreview3DView: View {
             return Color(red: 0.72, green: 0.78, blue: 0.83)
         case .parapetSide:
             return Color(red: 0.50, green: 0.57, blue: 0.63)
+        case .furnitureTop:
+            // La tinta scelta in pianta vale anche qui: un mobile riconoscibile
+            // di sopra deve restarlo di sotto.
+            guard let tint = face.tint else { return Color(white: 0.55) }
+            return Color(cgColor: tint)
+        case .furnitureSide:
+            guard let tint = face.tint else { return Color(white: 0.40) }
+            return Color(cgColor: tint).opacity(0.72)
         }
     }
 }

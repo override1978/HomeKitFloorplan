@@ -57,6 +57,9 @@ enum FloorplanExtruder {
             /// un muro tagliato a metà.
             case parapetSide
             case parapetTop
+            /// Un arredo. Porta la propria tinta, quando ne ha una.
+            case furnitureSide
+            case furnitureTop
         }
         var points: [SIMD3<Double>]
         var kind: Kind
@@ -65,6 +68,8 @@ enum FloorplanExtruder {
         /// Identità della stanza, per poterla selezionare toccando il pavimento.
         var roomID: UUID?
         var roomName: String?
+        /// Tinta scelta dall'utente per questo arredo, se ne ha una.
+        var tint: CGColor?
 
         var centroid: SIMD3<Double> {
             points.reduce(.zero, +) / Double(points.count)
@@ -81,6 +86,11 @@ enum FloorplanExtruder {
         let joints = sharedEndpoints(of: document.walls)
         for wall in document.walls {
             result.append(contentsOf: wallFaces(wall, in: document, heights: heights, joints: joints))
+        }
+        // Nell'ordine di disegno del documento, così i tappeti restano sotto
+        // come già fanno in pianta.
+        for item in document.furnitureDrawOrder {
+            result.append(contentsOf: furnitureFaces(item))
         }
         return result
     }
@@ -101,7 +111,120 @@ enum FloorplanExtruder {
                      kind: .floor,
                      roomColorIndex: area.colorIndex,
                      roomID: area.id,
-                     roomName: area.name)]
+                     roomName: area.name,
+                     tint: nil)]
+    }
+
+    // MARK: - Arredi
+
+    /// Un arredo diventa **una o due scatole**.
+    ///
+    /// Il modello ha ingombri, non forme: estrudere il rettangolo dà una cassa,
+    /// e una casa piena di casse non si legge. Due volumi sovrapposti bastano a
+    /// far riconoscere un divano da un tavolo — seduta più schienale, materasso
+    /// più testiera — e sono la differenza fra «un mobile» e «quel mobile».
+    /// Modellarli davvero è un altro mestiere e non serve a questa vista.
+    private static func furnitureFaces(_ item: FurnitureItem) -> [Face] {
+        let kind = item.kind
+        let tint = item.tintIndex.flatMap { index -> CGColor? in
+            let tints = FurnitureTint.allCases
+            guard index >= 0, index < tints.count else { return nil }
+            return tints[index].darkCGColor
+        }
+
+        // Un tappeto è a terra: un volume, per quanto basso, farebbe ombra e
+        // spigoli dove nella realtà non si inciampa.
+        if kind == .rug {
+            return [Face(points: corners(of: item, at: 0.002), kind: .furnitureTop,
+                         roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint)]
+        }
+
+        var faces = boxFaces(item, from: 0, to: height(of: kind), tint: tint)
+        if let back = backrest(of: kind) {
+            faces += boxFaces(item, from: back.from, to: back.to,
+                              tint: tint, fraction: back.depth, atFar: back.atFar)
+        }
+        return faces
+    }
+
+    /// Altezze plausibili, non misurate: servono a distinguere un tavolo da un
+    /// armadio a colpo d'occhio, non a fare un computo metrico.
+    private static func height(of kind: FurnitureKind) -> Double {
+        switch kind {
+        case .sofa, .armchair:      0.42
+        case .chair:                0.45
+        case .diningTable:          0.75
+        case .bed:                  0.50
+        case .wardrobe:             2.10
+        case .toilet:               0.40
+        case .sink, .kitchenSink:   0.85
+        case .inductionCooktop:     0.90
+        case .washingMachine:       0.85
+        case .bathtub:              0.55
+        case .shower:               0.10
+        case .kitchenCounter:       0.90
+        case .tvUnit:               0.45
+        case .plant:                0.70
+        case .stairs:               0.60
+        case .spiralStairs:         2.20
+        case .tree:                 2.20
+        case .hedge:                0.90
+        case .rug:                  0.00
+        case .generic:              0.75
+        }
+    }
+
+    /// Il secondo volume: schienale, testiera, cassetta, chioma. `fraction` è
+    /// quanta parte della profondità occupa, `atFar` da quale lato sta.
+    private static func backrest(of kind: FurnitureKind) -> (from: Double, to: Double, depth: Double, atFar: Bool)? {
+        switch kind {
+        case .sofa, .armchair: (0.42, 0.82, 0.30, true)
+        case .chair:           (0.45, 0.92, 0.22, true)
+        case .bed:             (0.50, 1.00, 0.10, true)
+        case .toilet:          (0.40, 0.78, 0.30, true)
+        case .plant:           (0.70, 1.30, 0.60, false)
+        case .tree:            (2.20, 3.60, 0.95, false)
+        case .shower:          (0.10, 2.00, 1.00, false)
+        default:               nil
+        }
+    }
+
+    /// I quattro angoli del rettangolo, ruotati come nel disegno.
+    private static func corners(of item: FurnitureItem, at z: Double,
+                                fraction: Double = 1, atFar: Bool = false) -> [SIMD3<Double>] {
+        let rect = item.rect
+        let centre = SIMD2(metres(rect.midX), metres(rect.midY))
+        let half = SIMD2(metres(rect.width) / 2, metres(rect.height) / 2)
+
+        // Il volume secondario occupa una fetta lungo la profondità, non tutto
+        // il rettangolo: uno schienale largo quanto il divano è un muro.
+        let depth = half.y * 2 * fraction
+        let y0 = atFar ? half.y - depth : -half.y
+        let y1 = atFar ? half.y : -half.y + depth
+
+        let local = [SIMD2(-half.x, y0), SIMD2(half.x, y0), SIMD2(half.x, y1), SIMD2(-half.x, y1)]
+        let angle = item.rotationDegrees * .pi / 180
+        return local.map { point in
+            let x = point.x * cos(angle) - point.y * sin(angle)
+            let y = point.x * sin(angle) + point.y * cos(angle)
+            return SIMD3(centre.x + x, centre.y + y, z)
+        }
+    }
+
+    private static func boxFaces(_ item: FurnitureItem, from bottom: Double, to top: Double,
+                                 tint: CGColor?, fraction: Double = 1, atFar: Bool = false) -> [Face] {
+        guard top > bottom else { return [] }
+        let low = corners(of: item, at: bottom, fraction: fraction, atFar: atFar)
+        let high = corners(of: item, at: top, fraction: fraction, atFar: atFar)
+        var faces = [Face(points: high, kind: .furnitureTop,
+                          roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint)]
+        for index in 0..<4 {
+            let next = (index + 1) % 4
+            faces.append(Face(points: [low[index], low[next], high[next], high[index]],
+                              kind: .furnitureSide,
+                              roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint))
+        }
+        return faces
     }
 
     // MARK: - Muri
@@ -223,7 +346,7 @@ enum FloorplanExtruder {
             let a = start + axis * from, b = start + axis * to
             return Face(points: [SIMD3(a.x, a.y, span.bottom), SIMD3(b.x, b.y, span.bottom),
                                  SIMD3(b.x, b.y, top), SIMD3(a.x, a.y, top)],
-                        kind: kind, roomColorIndex: nil, roomID: nil, roomName: nil)
+                        kind: kind, roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil)
         }
         faces += panes.compactMap { panel(($0.from, $0.to, $0.bottom + jamb, $0.top), .glass) }
         faces += leaves.compactMap { panel($0, .doorLeaf) }
@@ -247,11 +370,11 @@ enum FloorplanExtruder {
                 let z = index < 2 ? low : high
                 return SIMD3(corners[corner].x, corners[corner].y, z)
             }
-            return Face(points: points, kind: kind, roomColorIndex: nil, roomID: nil, roomName: nil)
+            return Face(points: points, kind: kind, roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil)
         }
         return [
             Face(points: corners.map { SIMD3($0.x, $0.y, top) }, kind: topKind,
-                 roomColorIndex: nil, roomID: nil, roomName: nil),
+                 roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil),
             face([0, 1, 1, 0], kind: sideKind, low: bottom, high: top),
             face([2, 3, 3, 2], kind: sideKind, low: bottom, high: top),
             face([1, 2, 2, 1], kind: sideKind, low: bottom, high: top),
