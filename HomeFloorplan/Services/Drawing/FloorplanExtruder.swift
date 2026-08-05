@@ -94,23 +94,25 @@ enum FloorplanExtruder {
                                   in document: DrawingDocument,
                                   heights: Heights,
                                   joints: Set<GridKey>) -> [Face] {
-        var start = SIMD2(metres(wall.start.x), metres(wall.start.y))
-        var end   = SIMD2(metres(wall.end.x), metres(wall.end.y))
-        guard simd_distance(start, end) > 0.01 else { return [] }
+        let start = SIMD2(metres(wall.start.x), metres(wall.start.y))
+        let end   = SIMD2(metres(wall.end.x), metres(wall.end.y))
+        let length = simd_distance(start, end)
+        guard length > 0.01 else { return [] }
 
         let thickness = metres(DrawingDocument.wallWidth(for: wall.kind))
-
-        // Angoli **lisci**: un muro che ne incontra un altro si allunga di
-        // mezzo spessore, così le due scatole si compenetrano e la tacca fra
-        // loro sparisce. Senza, ai vertici restano i tappi in vista — che è
-        // esattamente ciò che fa sembrare il modello incollato.
-        //
-        // Si allunga solo dove c'è davvero una giunzione: un muro libero che
-        // crescesse di dieci centimetri sarebbe un errore di misura.
         let axis = simd_normalize(end - start)
-        if joints.contains(GridKey(start)) { start -= axis * (thickness / 2) }
-        if joints.contains(GridKey(end))   { end   += axis * (thickness / 2) }
-        let length = simd_distance(start, end)
+
+        // Angoli **lisci**: un muro che ne incontra un altro sborda di mezzo
+        // spessore, così le due scatole si compenetrano e la tacca fra loro
+        // sparisce. Senza, ai vertici restano i tappi in vista.
+        //
+        // ⚠️ Lo sbordo è una **coda**, non un allungamento del muro: le
+        // aperture hanno `t` normalizzato sulla lunghezza vera, quindi
+        // allungare il muro prima di collocarle le farebbe scivolare tutte
+        // verso i bordi. Si calcolano sulla misura originale e si sborda solo
+        // il primo e l'ultimo tratto pieno.
+        let headOverhang = joints.contains(GridKey(start)) ? thickness / 2 : 0
+        let tailOverhang = joints.contains(GridKey(end)) ? thickness / 2 : 0
         let openings = document.openings
             .filter { $0.wallID == wall.id }
             .sorted { $0.t < $1.t }
@@ -141,13 +143,15 @@ enum FloorplanExtruder {
             spans.append((cursor, length, 0, heights.ceiling))
         }
 
-        let direction = simd_normalize(end - start)
-        let normal = SIMD2(-direction.y, direction.x) * (thickness / 2)
+        let normal = SIMD2(-axis.y, axis.x) * (thickness / 2)
 
         return spans.flatMap { span -> [Face] in
             guard span.to > span.from, span.top > span.bottom else { return [] }
-            let a = start + direction * span.from
-            let b = start + direction * span.to
+            // Lo sbordo tocca solo chi arriva davvero all'estremità del muro.
+            let from = span.from <= 0.0001 ? -headOverhang : span.from
+            let to   = span.to >= length - 0.0001 ? length + tailOverhang : span.to
+            let a = start + axis * from
+            let b = start + axis * to
             return box(from: a, to: b, normal: normal, bottom: span.bottom, top: span.top)
         }
     }

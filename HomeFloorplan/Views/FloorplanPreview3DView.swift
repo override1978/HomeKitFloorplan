@@ -10,7 +10,7 @@ import SwiftUI
 /// strada regge anche se un giorno ci si mette un motore 3D vero sotto:
 /// cambierebbe solo chi disegna le facce, non chi le calcola.
 ///
-/// Proiezione isometrica calcolata a mano su `Canvas`: nessun framework nuovo.
+/// Proiezione ortografica calcolata a mano su `Canvas`: nessun framework nuovo.
 struct FloorplanPreview3DView: View {
 
     let document: DrawingDocument
@@ -19,10 +19,14 @@ struct FloorplanPreview3DView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var ceilingHeight: Double = 2.4
-    /// Rotazioni di 90°. Un'isometrica non ruota liberamente, ma quattro angoli
-    /// bastano a girare intorno alla casa — ed è l'unica cosa che serve per
-    /// capire se una stanza è dietro o davanti.
-    @State private var quarterTurns = 0
+    /// Azimut e altezza della telecamera, in radianti. Continui, non a scatti:
+    /// una proiezione ortografica generale costa le stesse quattro moltiplicazioni
+    /// di un'isometrica fissa, quindi bloccarla a 90° non risparmiava niente e
+    /// toglieva l'unica cosa che fa sembrare un volume un volume — poterci
+    /// girare intorno.
+    @State private var azimuth: Double = .pi / 4
+    @State private var elevation: Double = .pi / 6
+    @State private var gestureStart: (azimuth: Double, elevation: Double)?
     @State private var selectedRoomID: UUID?
 
     private var faces: [FloorplanExtruder.Face] {
@@ -42,6 +46,7 @@ struct FloorplanPreview3DView: View {
                     draw(in: context, size: size)
                 }
                 .contentShape(Rectangle())
+                .gesture(orbit)
                 .onTapGesture { location in
                     withAnimation(.easeOut(duration: 0.15)) {
                         selectedRoomID = room(at: location, in: geometry.size)
@@ -53,8 +58,25 @@ struct FloorplanPreview3DView: View {
             controls
         }
         .overlay(alignment: .topLeading) { closeButton }
-        .overlay(alignment: .topTrailing) { rotateButton }
         .statusBarHidden()
+    }
+
+    /// Trascinare gira la casa: orizzontale l'azimut, verticale l'inclinazione.
+    ///
+    /// L'inclinazione si ferma prima dello zero e prima della verticale: a filo
+    /// di pavimento le stanze diventano una riga, dall'alto perfetto sparisce
+    /// ogni rilievo. Entrambi gli estremi sono viste inutili, e lasciarci
+    /// arrivare è solo un modo per far perdere l'orientamento.
+    private var orbit: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                let origin = gestureStart ?? (azimuth, elevation)
+                if gestureStart == nil { gestureStart = origin }
+                azimuth = origin.azimuth - value.translation.width * 0.006
+                elevation = min(max(origin.elevation + value.translation.height * 0.005,
+                                    .pi / 18), .pi / 2.2)
+            }
+            .onEnded { _ in gestureStart = nil }
     }
 
     // MARK: - Comandi
@@ -64,15 +86,6 @@ struct FloorplanPreview3DView: View {
     /// un nome che si sa già.
     private var closeButton: some View {
         Button { dismiss() } label: { chrome("xmark") }
-            .padding()
-    }
-
-    private var rotateButton: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                quarterTurns = (quarterTurns + 1) % 4
-            }
-        } label: { chrome("rotate.3d") }
             .padding()
     }
 
@@ -158,11 +171,21 @@ struct FloorplanPreview3DView: View {
         }
     }
 
-    /// La stanza sotto il dito, cercando **dal più vicino**: su un pavimento
-    /// nascosto da un muro deve rispondere il muro, cioè niente.
+    /// La stanza sotto il dito.
+    ///
+    /// Prima si prova il colpo esatto, poi si **ignora ciò che sta davanti**: da
+    /// questa inquadratura i muri coprono buona parte del pavimento, e chiedere
+    /// di centrare il lembo scoperto trasforma una selezione in una prova di
+    /// mira. Toccare il muro di una stanza vuol dire quella stanza.
     private func room(at location: CGPoint, in size: CGSize) -> UUID? {
-        for entry in layout(in: size).reversed() where contains(entry.screen, location) {
-            return entry.face.kind == .floor ? entry.face.roomID : nil
+        let entries = layout(in: size)
+        for entry in entries.reversed() where contains(entry.screen, location) {
+            if entry.face.kind == .floor { return entry.face.roomID }
+            break
+        }
+        for entry in entries.reversed()
+        where entry.face.kind == .floor && contains(entry.screen, location) {
+            return entry.face.roomID
         }
         return nil
     }
@@ -183,22 +206,18 @@ struct FloorplanPreview3DView: View {
 
     // MARK: - Proiezione
 
-    /// Isometrica classica: due assi a 30°, la quota che sale verticale.
+    /// Proiezione ortografica da una telecamera ad azimut e altezza qualsiasi.
+    /// Nessuna prospettiva: le linee parallele restano parallele, che su una
+    /// pianta è quello che si vuole — le stanze mantengono le proporzioni.
     private func project(_ point: SIMD3<Double>) -> CGPoint {
-        let (x, y) = rotated(point)
-        return CGPoint(x: (x - y) * cos(Double.pi / 6),
-                       y: (x + y) * sin(Double.pi / 6) - point.z)
+        let forward = point.x * cos(azimuth) + point.y * sin(azimuth)
+        return CGPoint(x: -point.x * sin(azimuth) + point.y * cos(azimuth),
+                       y: forward * sin(elevation) - point.z * cos(elevation))
     }
 
     private func depth(of point: SIMD3<Double>) -> Double {
-        let (x, y) = rotated(point)
-        return -(x + y) - point.z
-    }
-
-    private func rotated(_ point: SIMD3<Double>) -> (Double, Double) {
-        let angle = Double(quarterTurns) * Double.pi / 2
-        return (point.x * cos(angle) - point.y * sin(angle),
-                point.x * sin(angle) + point.y * cos(angle))
+        let forward = point.x * cos(azimuth) + point.y * sin(azimuth)
+        return -(forward * cos(elevation) + point.z * sin(elevation))
     }
 
     /// Facce superiori più chiare, fiancate più scure: è tutto ciò che serve a
