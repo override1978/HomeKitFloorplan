@@ -177,6 +177,10 @@ struct SidebarView: View {
                         Label(String(localized: "sidebar.archive", defaultValue: "Archive"),
                               systemImage: "archivebox")
                     }
+                    NavigationLink(value: SidebarSelection.localData) {
+                        Label(String(localized: "sidebar.localData", defaultValue: "Local data"),
+                              systemImage: "internaldrive")
+                    }
                     NavigationLink(value: SidebarSelection.unknownAccessories) {
                         Label(String(localized: "sidebar.unknownAccessories", defaultValue: "Unknown Accessories"),
                               systemImage: "questionmark.square.dashed")
@@ -408,6 +412,7 @@ enum SidebarSelection: Hashable {
     case homeIntelligenceDebug
     case snapshots
     case archive
+    case localData
     case unknownAccessories
     case settings
 }

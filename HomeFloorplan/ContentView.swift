@@ -322,6 +322,10 @@ struct ContentView: View {
             NavigationStack {
                 ArchiveView()
             }
+        case .localData:
+            NavigationStack {
+                LocalDataView()
+            }
         case .unknownAccessories:
             NavigationStack {
                 UnknownAccessoriesView()

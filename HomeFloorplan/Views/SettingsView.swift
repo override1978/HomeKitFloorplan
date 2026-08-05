@@ -8,14 +8,12 @@ struct SettingsView: View {
     @AppStorage("habits.sectionVisible") private var habitsSectionVisible = false
     /// Rete di sicurezza rimasta accesa dopo una migrazione: finché è true
     /// nessuna potatura tocca letture ed eventi grezzi.
-    @AppStorage(LocalDataProtection.preserveSwiftDataKey) private var preservesRawData = true
     @Environment(HomeKitService.self)       private var homeKit
     @Environment(OnboardingService.self)    private var onboarding
     @Environment(WeatherKitService.self)    private var weatherKit
     @Environment(SmartLightingEngine.self)  private var smartLightingEngine
     @Environment(AISettings.self)           private var aiSettings
     @Environment(CloudKitSyncService.self)  private var cloudKitSync
-    @Environment(DataLifecycleService.self) private var dataLifecycleService
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -43,7 +41,6 @@ struct SettingsView: View {
     private var securityNotificationsEnabled: Bool = false
 
     // MARK: - Home Location state
-    @State private var dataCounts: (readings: Int, summaries: Int, oldest: Date?)?
     @State private var showsLocationPicker = false
     @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
     @AppStorage("homeLocation.cityName") private var homeLocationCityName: String = ""
@@ -163,72 +160,6 @@ struct SettingsView: View {
                 Text(String(localized: "settings.notifications.center.header", defaultValue: "Notifications"))
             }
 
-            // MARK: - Dati
-
-            Section {
-                HStack {
-                    Label(String(localized: "settings.data.lastCycle", defaultValue: "Last maintenance"),
-                          systemImage: "arrow.triangle.2.circlepath")
-                    Spacer()
-                    Text(dataLifecycleService.lastCycleDate.map {
-                        $0.formatted(.relative(presentation: .named))
-                    } ?? String(localized: "settings.data.never", defaultValue: "Never"))
-                        .foregroundStyle(.secondary)
-                }
-
-                if let dataCounts {
-                    HStack {
-                        Label(String(localized: "settings.data.stored", defaultValue: "Stored"),
-                              systemImage: "internaldrive")
-                        Spacer()
-                        Text(String(format: String(localized: "settings.data.counts",
-                                                   defaultValue: "%d readings · %d summaries"),
-                                    dataCounts.readings, dataCounts.summaries))
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-
-                    HStack {
-                        Label(String(localized: "settings.data.oldest", defaultValue: "Oldest reading"),
-                              systemImage: "calendar")
-                        Spacer()
-                        Text(dataCounts.oldest.map {
-                            $0.formatted(date: .abbreviated, time: .omitted)
-                        } ?? "—")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Button {
-                    Task {
-                        await dataLifecycleService.runFullCycle()
-                        refreshDataCounts()
-                    }
-                } label: {
-                    Label(String(localized: "settings.data.runNow", defaultValue: "Run maintenance now"),
-                          systemImage: "play.circle")
-                }
-                .disabled(dataLifecycleService.isRunning)
-
-                Toggle(isOn: $preservesRawData) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(String(localized: "settings.data.preserveRaw",
-                                        defaultValue: "Keep raw data"))
-                            Text(String(localized: "settings.data.preserveRaw.subtitle",
-                                        defaultValue: "Readings and events older than 30 days are removed once summarised. Their information survives in the permanent daily summaries."))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "externaldrive")
-                    }
-                }
-            } header: {
-                Text(String(localized: "settings.section.data", defaultValue: "Data"))
-            } footer: {
-                Text(String(localized: "settings.data.footer", defaultValue: "Readings are summarised into permanent daily aggregates, which feed the environmental baselines. Maintenance normally runs by itself once a day."))
-            }
 
             // MARK: - iCloud
 
@@ -329,7 +260,6 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.large)
         .onAppear {
             refreshNotificationAuthorizationStatus()
-            refreshDataCounts()
         }
         .sheet(isPresented: $showsLocationPicker) {
             let lat = UserDefaults.standard.double(forKey: LocationPresenceService.homeLatKey)
@@ -445,19 +375,6 @@ struct SettingsView: View {
 
     /// Conteggi dello store, letti una volta alla comparsa: un fetchCount nel
     /// body verrebbe rieseguito a ogni render.
-    private func refreshDataCounts() {
-        let ctx = ModelContext(modelContext.container)
-        var oldest = FetchDescriptor<SensorReading>(
-            sortBy: [SortDescriptor(\SensorReading.timestamp, order: .forward)]
-        )
-        oldest.fetchLimit = 1
-        dataCounts = (
-            readings: (try? ctx.fetchCount(FetchDescriptor<SensorReading>())) ?? 0,
-            summaries: (try? ctx.fetchCount(FetchDescriptor<DailySensorSummary>())) ?? 0,
-            oldest: (try? ctx.fetch(oldest))?.first?.timestamp
-        )
-    }
-
     private func refreshNotificationAuthorizationStatus() {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             Task { @MainActor in
