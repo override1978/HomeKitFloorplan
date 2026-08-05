@@ -9,6 +9,7 @@ struct FloorplanListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(HomeKitService.self) private var homeKit
     @Environment(CloudKitSyncService.self) private var cloudKitSync
+    @Environment(FloorplanArchiveService.self) private var floorplanArchive
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var floorplans: [Floorplan]
     @Namespace private var namespace
     @Binding var columnVisibility: NavigationSplitViewVisibility
@@ -51,6 +52,9 @@ struct FloorplanListView: View {
     }
 
     @State private var layout: GalleryLayout = .grid
+    /// Una copia messa da parte non cambia niente a schermo: senza un segnale
+    /// il gesto sembra non aver fatto nulla.
+    @State private var justArchived = false
     @State private var pendingDelete: Floorplan?
     @State private var showingNewSheet = false
     @State private var editingFloorplan: Floorplan?
@@ -93,6 +97,7 @@ struct FloorplanListView: View {
             // modo di tornare indietro. Le tre azioni della pill flottante si
             // spostano nella barra, dove su schermo stretto stanno meglio.
             .toolbar(isCompact ? .automatic : .hidden, for: .navigationBar)
+            .sensoryFeedback(.success, trigger: justArchived)
             .navigationTitle(isCompact
                              ? String(localized: "floorplans.title", defaultValue: "Floorplans")
                              : "")
@@ -539,6 +544,15 @@ struct FloorplanListView: View {
     private func managementMenuItems(for floorplan: Floorplan) -> some View {
         let isPrimary = primaryFloorplanID == floorplan.id.uuidString
         let pinned    = isPinned(floorplan)
+
+        // — Copia da parte —
+        Button {
+            floorplanArchive.archive(floorplan)
+            justArchived.toggle()
+        } label: {
+            Label(String(localized: "archive.action", defaultValue: "Set aside for later"),
+                  systemImage: "archivebox")
+        }
 
         // — Pin / principale —
         if !pinned {

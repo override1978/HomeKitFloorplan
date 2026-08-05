@@ -59293,6 +59293,125 @@
           }
         }
       }
+    },
+    "archive.floorplan.summary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$d markers · %2$d KB"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$d marker · %2$d KB"
+          }
+        }
+      }
+    },
+    "archive.floorplan.markers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markers"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marker"
+          }
+        }
+      }
+    },
+    "archive.floorplan.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It comes back as a new floorplan beside the current one, so nothing is overwritten here or on your other devices."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Torna come planimetria nuova accanto a quella attuale, quindi non si sovrascrive niente né qui né sugli altri dispositivi."
+          }
+        }
+      }
+    },
+    "archive.floorplan.restored" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New floorplan “%1$@” · %2$d markers"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuova planimetria «%1$@» · %2$d marker"
+          }
+        }
+      }
+    },
+    "archive.floorplan.droppedTitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markers left out"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marker non collocati"
+          }
+        }
+      }
+    },
+    "archive.floorplan.notAFloorplan" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This copy is not a floorplan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questa copia non è una planimetria."
+          }
+        }
+      }
+    },
+    "archive.floorplan.wrongPath" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A floorplan is restored from the floorplan list, not through HomeKit."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una planimetria si ripristina dall'elenco planimetrie, non tramite HomeKit."
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

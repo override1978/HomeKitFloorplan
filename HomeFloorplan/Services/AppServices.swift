@@ -40,6 +40,8 @@ final class AppServices {
     let accessoryReconciliation: AccessoryReconciliationService
     /// Copie singole di scene e automazioni, fuori dai backup interi.
     let archiveStore = ArchiveStore()
+    /// Planimetrie messe da parte: rimesse **come nuove**, mai sovrascritte.
+    let floorplanArchive: FloorplanArchiveService
     let weatherKitService: WeatherKitService
     let smartLightingEngine: SmartLightingEngine
     let aiSettings: AISettings
@@ -86,6 +88,9 @@ final class AppServices {
         self.accessoryCensus = censusService
         self.accessoryReconciliation = AccessoryReconciliationService(census: censusService,
                                                                       modelContainer: container)
+        self.floorplanArchive = FloorplanArchiveService(archive: archiveStore,
+                                                        homeKit: kit,
+                                                        modelContainer: container)
         let notifier = SecurityNotificationService(homeKit: kit)
         self.securityNotifier = notifier
         let eventStore = AccessoryEventStore(modelContainer: container)

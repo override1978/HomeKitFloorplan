@@ -16,6 +16,8 @@ struct ArchivedItem: Codable, Identifiable, Sendable {
         /// Solo automazioni che l'app sa ricreare: archiviarne una che non
         /// tornerà indietro sarebbe una promessa che non possiamo mantenere.
         case automation(RestorableAutomation)
+        /// Una planimetria coi suoi marker. L'immagine sta in un file a parte.
+        case floorplan(FloorplanArchive)
     }
 
     let id: UUID
@@ -53,7 +55,18 @@ extension ArchivedItem {
         return false
     }
 
-    var symbolName: String { isScene ? "wand.and.sparkles" : "gearshape.2" }
+    var isFloorplan: Bool {
+        if case .floorplan = content { return true }
+        return false
+    }
+
+    var symbolName: String {
+        switch content {
+        case .scene:      "wand.and.sparkles"
+        case .automation: "gearshape.2"
+        case .floorplan:  "rectangle.stack"
+        }
+    }
 
     /// Cosa contiene, in una riga: è quello che si legge scorrendo l'elenco per
     /// ritrovare la copia giusta.
@@ -66,6 +79,10 @@ extension ArchivedItem {
                           accessories, scene.actions.count)
         case .automation(let plan):
             return plan.confirmationLines.first ?? ""
+        case .floorplan(let floorplan):
+            return String(format: String(localized: "archive.floorplan.summary",
+                                         defaultValue: "%1$d markers · %2$d KB"),
+                          floorplan.markers.count, floorplan.imageByteCount / 1024)
         }
     }
 }

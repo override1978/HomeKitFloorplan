@@ -19,10 +19,35 @@ final class ArchiveStore {
     private(set) var items: [ArchivedItem] = []
 
     private let store: VersionedStore<[ArchivedItem]>
+    private let imageDirectory: URL
 
     init() {
         store = VersionedStore<[ArchivedItem]>(key: Self.key, version: Self.version)
         items = (store.load() ?? []).sorted { $0.archivedAt > $1.archivedAt }
+        let base = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ArchiveImages", isDirectory: true)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        imageDirectory = base
+    }
+
+    // MARK: - Immagini
+
+    /// Lo sfondo di una planimetria archiviata sta in un file suo.
+    ///
+    /// Dentro l'indice sarebbe letto a ogni avvio dell'app da chiunque, anche da
+    /// chi l'archivio non lo apre mai: qualche megabyte per copia lo rende un
+    /// costo di lancio invece che un costo di consultazione.
+    func imageData(for id: UUID) -> Data? {
+        try? Data(contentsOf: imageURL(for: id))
+    }
+
+    func storeImage(_ data: Data, for id: UUID) {
+        try? data.write(to: imageURL(for: id), options: .atomic)
+    }
+
+    private func imageURL(for id: UUID) -> URL {
+        imageDirectory.appendingPathComponent("\(id.uuidString).img")
     }
 
     func items(homeName: String) -> [ArchivedItem] {
@@ -47,6 +72,7 @@ final class ArchiveStore {
 
     func delete(_ id: UUID) {
         items.removeAll { $0.id == id }
+        try? FileManager.default.removeItem(at: imageURL(for: id))
         persist()
     }
 

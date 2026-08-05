@@ -83,6 +83,7 @@ struct ArchivedItemDetailView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(HomeKitScenesService.self) private var scenesService
     @Environment(HomeKitAutomationsService.self) private var automationsService
+    @Environment(FloorplanArchiveService.self) private var floorplanArchive
     @Environment(\.dismiss) private var dismiss
 
     @State private var isConfirming = false
@@ -200,6 +201,16 @@ struct ArchivedItemDetailView: View {
             } header: {
                 Text(String(localized: "archive.automation.header", defaultValue: "What it does"))
             }
+        case .floorplan(let floorplan):
+            Section {
+                LabeledContent(String(localized: "archive.floorplan.markers", defaultValue: "Markers"),
+                               value: "\(floorplan.markers.count)")
+                LabeledContent(String(localized: "snapshot.size", defaultValue: "Size"),
+                               value: "\(floorplan.imageByteCount / 1024) KB")
+            } footer: {
+                Text(String(localized: "archive.floorplan.footer",
+                            defaultValue: "It comes back as a new floorplan beside the current one, so nothing is overwritten here or on your other devices."))
+            }
         }
     }
 
@@ -226,6 +237,29 @@ struct ArchivedItemDetailView: View {
     private func apply() async {
         isApplying = true
         defer { isApplying = false }
+
+        // Una planimetria non passa da HomeKit: scrive su SwiftData e torna
+        // come copia nuova.
+        if item.isFloorplan {
+            do {
+                let report = try floorplanArchive.restoreAsNew(item)
+                var result = SnapshotRestoreExecutor.Outcome()
+                result.restored = [String(format: String(localized: "archive.floorplan.restored",
+                                                         defaultValue: "New floorplan “%1$@” · %2$d markers"),
+                                          report.name, report.markersPlaced)]
+                if !report.markersDropped.isEmpty {
+                    result.skipped = [(String(localized: "archive.floorplan.droppedTitle",
+                                              defaultValue: "Markers left out"),
+                                       report.markersDropped.joined(separator: ", "))]
+                }
+                outcome = result
+            } catch {
+                outcome = SnapshotRestoreExecutor.Outcome(
+                    skipped: [(item.name, error.localizedDescription)])
+            }
+            return
+        }
+
         let executor = SnapshotRestoreExecutor(homeKit: homeKit,
                                                scenesService: scenesService,
                                                automationsService: automationsService)

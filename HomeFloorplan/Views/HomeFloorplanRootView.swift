@@ -106,6 +106,7 @@ struct HomeFloorplanRootView: View {
             accessoryCensus: services.accessoryCensus,
             accessoryReconciliation: services.accessoryReconciliation,
             archiveStore: services.archiveStore,
+            floorplanArchive: services.floorplanArchive,
             weatherKitService: services.weatherKitService,
             smartLightingEngine: services.smartLightingEngine,
             aiSettings: services.aiSettings,
@@ -235,6 +236,7 @@ private struct AppEnvironmentModifier: ViewModifier {
     let accessoryCensus: AccessoryCensusService
     let accessoryReconciliation: AccessoryReconciliationService
     let archiveStore: ArchiveStore
+    let floorplanArchive: FloorplanArchiveService
     let weatherKitService: WeatherKitService
     let smartLightingEngine: SmartLightingEngine
     let aiSettings: AISettings
@@ -263,6 +265,7 @@ private struct AppEnvironmentModifier: ViewModifier {
             .environment(accessoryCensus)
             .environment(accessoryReconciliation)
             .environment(archiveStore)
+            .environment(floorplanArchive)
             .environment(weatherKitService)
             .environment(smartLightingEngine)
             .environment(aiSettings)

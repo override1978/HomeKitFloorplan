@@ -211,6 +211,13 @@ final class SnapshotRestoreExecutor {
             await restoreScene(scene, in: home, into: &outcome)
         case .automation(let plan):
             await restoreAutomation(named: item.name, plan: plan, in: home, into: &outcome)
+        case .floorplan:
+            // Una planimetria non si scrive su HomeKit: la rimette
+            // `FloorplanArchiveService`, che lavora su SwiftData. Qui non deve
+            // arrivarci, e se ci arriva è meglio dirlo che fingere di aver fatto.
+            outcome.skipped.append((item.name,
+                                    String(localized: "archive.floorplan.wrongPath",
+                                           defaultValue: "A floorplan is restored from the floorplan list, not through HomeKit.")))
         }
         scenesService.refresh()
         return outcome
