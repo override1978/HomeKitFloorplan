@@ -35,7 +35,7 @@ struct UnknownAccessoriesView: View {
                 list
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(String(localized: "sidebar.unknownAccessories", defaultValue: "Unknown Accessories"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { reconciliation.refresh() }
@@ -150,7 +150,7 @@ private struct ReviewCard: View {
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    .tint(candidate.strength == .hardware ? .green : .accentColor)
+                    .tint(candidate.strength == .hardware ? .green : BrandColor.primary)
                 }
 
                 Button(String(localized: "reconcile.action.other",

@@ -55,7 +55,7 @@ struct SnapshotDetailView: View {
                 HStack { Spacer(); ProgressView(); Spacer() }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(entry.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

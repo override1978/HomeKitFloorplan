@@ -49,7 +49,7 @@ struct SnapshotComparisonView: View {
                 ProgressView(String(localized: "diff.comparing", defaultValue: "Comparing with your home…"))
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(String(localized: "diff.title", defaultValue: "Restore"))
         .navigationBarTitleDisplayMode(.inline)
         .task { await compare() }
@@ -296,7 +296,7 @@ struct RestorePickerView: View {
                 }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(String(localized: "restore.picker.title", defaultValue: "Restore from"))
         .navigationBarTitleDisplayMode(.inline)
     }

@@ -61,7 +61,7 @@ struct ArchiveView: View {
                 }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(String(localized: "sidebar.archive", defaultValue: "Archive"))
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -149,7 +149,7 @@ struct ArchivedItemDetailView: View {
                             defaultValue: "Nothing is deleted: for a scene that still exists, only the values this copy held are rewritten."))
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(item.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

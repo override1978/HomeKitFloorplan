@@ -24,7 +24,7 @@ struct SnapshotsView: View {
             statusSection
             snapshotsSection
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(String(localized: "sidebar.snapshots", defaultValue: "Backup & Restore"))
         .alert(String(localized: "maintenance.newSnapshot.title", defaultValue: "New snapshot"),
                isPresented: $isAskingTitle) {

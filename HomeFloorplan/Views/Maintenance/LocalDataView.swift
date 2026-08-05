@@ -81,7 +81,7 @@ struct LocalDataView: View {
                 }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(String(localized: "sidebar.localData", defaultValue: "Local data"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { refresh() }

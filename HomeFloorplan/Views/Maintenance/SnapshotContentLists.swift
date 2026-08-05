@@ -60,7 +60,7 @@ struct SnapshotAccessoryListView: View {
                 }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .searchable(text: $search)
         .navigationTitle(String(localized: "snapshot.accessories", defaultValue: "Accessories"))
         .navigationBarTitleDisplayMode(.inline)
@@ -127,7 +127,7 @@ struct SnapshotSceneListView: View {
                 }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .searchable(text: $search)
         .navigationTitle(String(localized: "snapshot.scenes", defaultValue: "Scenes"))
         .navigationBarTitleDisplayMode(.inline)
@@ -197,7 +197,7 @@ struct SnapshotSceneDetailView: View {
                 }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(scene.name)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -292,7 +292,7 @@ struct SnapshotAutomationListView: View {
                 }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .searchable(text: $search)
         .navigationTitle(String(localized: "snapshot.automations", defaultValue: "Automations"))
         .navigationBarTitleDisplayMode(.inline)
@@ -337,7 +337,7 @@ struct SnapshotRoomListView: View {
                 }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(String(localized: "snapshot.rooms", defaultValue: "Rooms"))
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -360,7 +360,7 @@ struct SnapshotZoneListView: View {
                 }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(String(localized: "snapshot.zones", defaultValue: "Zones"))
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -403,7 +403,7 @@ struct SnapshotServiceGroupListView: View {
                 }
             }
         }
-        .maintenanceBottomClearance()
+        .maintenanceScreen()
         .navigationTitle(String(localized: "snapshot.serviceGroups", defaultValue: "Service groups"))
         .navigationBarTitleDisplayMode(.inline)
     }
