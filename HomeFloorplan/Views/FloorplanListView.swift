@@ -51,6 +51,7 @@ struct FloorplanListView: View {
     }
 
     @State private var layout: GalleryLayout = .grid
+    @State private var preview3D: Preview3DRequest?
     @State private var pendingDelete: Floorplan?
     @State private var showingNewSheet = false
     @State private var editingFloorplan: Floorplan?
@@ -93,6 +94,11 @@ struct FloorplanListView: View {
             // modo di tornare indietro. Le tre azioni della pill flottante si
             // spostano nella barra, dove su schermo stretto stanno meglio.
             .toolbar(isCompact ? .automatic : .hidden, for: .navigationBar)
+            .sheet(item: $preview3D) { request in
+                NavigationStack {
+                    FloorplanPreview3DView(document: request.document, title: request.title)
+                }
+            }
             .navigationTitle(isCompact
                              ? String(localized: "floorplans.title", defaultValue: "Floorplans")
                              : "")
@@ -539,6 +545,17 @@ struct FloorplanListView: View {
     private func managementMenuItems(for floorplan: Floorplan) -> some View {
         let isPrimary = primaryFloorplanID == floorplan.id.uuidString
         let pinned    = isPinned(floorplan)
+
+        // — Anteprima in volume — solo se c'è un disegno da estrudere: da una
+        // foto ricalcata non si ricava niente.
+        if let document = floorplan.drawingDocument, !document.walls.isEmpty {
+            Button {
+                preview3D = Preview3DRequest(document: document, title: floorplan.name)
+            } label: {
+                Label(String(localized: "floorplan.preview3D", defaultValue: "3D preview"),
+                      systemImage: "cube")
+            }
+        }
 
         // — Pin / principale —
         if !pinned {

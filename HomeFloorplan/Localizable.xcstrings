@@ -54125,6 +54125,23 @@
           }
         }
       }
+    },
+    "floorplan.preview3D" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3D preview"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anteprima 3D"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
