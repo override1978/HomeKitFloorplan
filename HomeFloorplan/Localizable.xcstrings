@@ -59062,13 +59062,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Set aside as it is now"
+            "value" : "Set aside for later"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Metti da parte com'è adesso"
+            "value" : "Metti da parte per dopo"
           }
         }
       }
@@ -59096,13 +59096,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hold a scene or an automation and choose “Set aside as it is now” to keep a copy before you change it."
+            "value" : "Hold a scene or an automation and choose “Set aside for later” to keep a copy you can put back another day."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tieni premuto su una scena o un'automazione e scegli «Metti da parte com'è adesso» per conservarne una copia prima di modificarla."
+            "value" : "Tieni premuto su una scena o un'automazione e scegli «Metti da parte per dopo» per conservarne una copia da rimettere un altro giorno."
           }
         }
       }
