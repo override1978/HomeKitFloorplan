@@ -59260,40 +59260,6 @@
         }
       }
     },
-    "restore.source.snapshots" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "From a backup"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Da un backup"
-          }
-        }
-      }
-    },
-    "restore.source.archive" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "From a copy you set aside"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Da una copia messa da parte"
-          }
-        }
-      }
-    },
     "archive.floorplan.summary" : {
       "extractionState" : "manual",
       "localizations" : {
