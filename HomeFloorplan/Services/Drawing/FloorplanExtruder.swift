@@ -46,6 +46,13 @@ enum FloorplanExtruder {
             /// Il vetro di una finestra. Senza, una finestra e una porta sono
             /// lo stesso buco e non si distinguono.
             case glass
+            /// Il telaio che contorna un'apertura. Senza, un vano è un buco
+            /// come un altro: è la cornice a dire che lì c'è una porta.
+            case frame
+            /// Parapetto di un balcone: basso **e** diverso, altrimenti resta
+            /// un muro tagliato a metà.
+            case parapetSide
+            case parapetTop
         }
         var points: [SIMD3<Double>]
         var kind: Kind
@@ -110,7 +117,10 @@ enum FloorplanExtruder {
         let length = simd_distance(start, end)
         guard length > 0.01 else { return [] }
 
-        let thickness = metres(DrawingDocument.wallWidth(for: wall.kind))
+        let isParapet = wall.kind == .balcony
+        // Un parapetto è più sottile di un muro portante: tenerlo allo stesso
+        // spessore lo faceva sembrare un muro segato a mezz'altezza.
+        let thickness = metres(DrawingDocument.wallWidth(for: wall.kind)) * (isParapet ? 0.5 : 1)
         let wallTop = heights.top(for: wall.kind)
         let axis = simd_normalize(end - start)
 
@@ -133,6 +143,8 @@ enum FloorplanExtruder {
         var spans: [(from: Double, to: Double, bottom: Double, top: Double)] = []
         /// I vetri: stessi intervalli, ma una lastra sola invece di un solido.
         var panes: [(from: Double, to: Double, bottom: Double, top: Double)] = []
+        /// I vani da contornare, col loro rettangolo nel piano del muro.
+        var voids: [(from: Double, to: Double, bottom: Double, top: Double, sill: Bool)] = []
         var cursor = 0.0
         for opening in openings {
             let width = metres(opening.width)
@@ -149,8 +161,12 @@ enum FloorplanExtruder {
                 spans.append((from, to, 0, min(heights.windowBottom, wallTop)))
                 spans.append((from, to, heights.windowTop, wallTop))
                 panes.append((from, to, heights.windowBottom, min(heights.windowTop, wallTop)))
+                voids.append((from, to, heights.windowBottom, min(heights.windowTop, wallTop), true))
             case .door, .slidingDoor, .frenchDoor:
                 spans.append((from, to, heights.doorTop, wallTop))
+                // Una porta poggia a terra: niente traversa in basso, o
+                // diventa un ostacolo che nella realtà non c'è.
+                voids.append((from, to, 0, min(heights.doorTop, wallTop), false))
             }
             cursor = to
         }
@@ -167,7 +183,26 @@ enum FloorplanExtruder {
             let to   = span.to >= length - 0.0001 ? length + tailOverhang : span.to
             let a = start + axis * from
             let b = start + axis * to
-            return box(from: a, to: b, normal: normal, bottom: span.bottom, top: span.top)
+            return box(from: a, to: b, normal: normal,
+                       bottom: span.bottom, top: span.top, isParapet: isParapet)
+        }
+
+        // Telai: quattro listelli sottili nel piano del muro, a metà spessore
+        // così si vedono da entrambi i lati del vano.
+        let jamb = 0.06
+        for hole in voids where hole.top > hole.bottom + jamb && hole.to > hole.from + jamb * 2 {
+            func quad(_ x0: Double, _ x1: Double, _ z0: Double, _ z1: Double) -> Face {
+                let a = start + axis * x0, b = start + axis * x1
+                return Face(points: [SIMD3(a.x, a.y, z0), SIMD3(b.x, b.y, z0),
+                                     SIMD3(b.x, b.y, z1), SIMD3(a.x, a.y, z1)],
+                            kind: .frame, roomColorIndex: nil, roomID: nil, roomName: nil)
+            }
+            faces.append(quad(hole.from, hole.from + jamb, hole.bottom, hole.top))
+            faces.append(quad(hole.to - jamb, hole.to, hole.bottom, hole.top))
+            faces.append(quad(hole.from, hole.to, hole.top - jamb, hole.top))
+            if hole.sill {
+                faces.append(quad(hole.from, hole.to, hole.bottom, hole.bottom + jamb))
+            }
         }
 
         // Una lastra a metà spessore: non è un solido, quindi non ha fiancate
@@ -191,7 +226,10 @@ enum FloorplanExtruder {
                             to b: SIMD2<Double>,
                             normal: SIMD2<Double>,
                             bottom: Double,
-                            top: Double) -> [Face] {
+                            top: Double,
+                            isParapet: Bool = false) -> [Face] {
+        let sideKind: Face.Kind = isParapet ? .parapetSide : .wallSide
+        let topKind: Face.Kind = isParapet ? .parapetTop : .wallTop
         let corners = [a + normal, b + normal, b - normal, a - normal]
         func face(_ indices: [Int], kind: Face.Kind, low: Double, high: Double) -> Face {
             let points = indices.enumerated().map { index, corner -> SIMD3<Double> in
@@ -201,11 +239,12 @@ enum FloorplanExtruder {
             return Face(points: points, kind: kind, roomColorIndex: nil, roomID: nil, roomName: nil)
         }
         return [
-            Face(points: corners.map { SIMD3($0.x, $0.y, top) }, kind: .wallTop, roomColorIndex: nil, roomID: nil, roomName: nil),
-            face([0, 1, 1, 0], kind: .wallSide, low: bottom, high: top),
-            face([2, 3, 3, 2], kind: .wallSide, low: bottom, high: top),
-            face([1, 2, 2, 1], kind: .wallSide, low: bottom, high: top),
-            face([3, 0, 0, 3], kind: .wallSide, low: bottom, high: top)
+            Face(points: corners.map { SIMD3($0.x, $0.y, top) }, kind: topKind,
+                 roomColorIndex: nil, roomID: nil, roomName: nil),
+            face([0, 1, 1, 0], kind: sideKind, low: bottom, high: top),
+            face([2, 3, 3, 2], kind: sideKind, low: bottom, high: top),
+            face([1, 2, 2, 1], kind: sideKind, low: bottom, high: top),
+            face([3, 0, 0, 3], kind: sideKind, low: bottom, high: top)
         ]
     }
 

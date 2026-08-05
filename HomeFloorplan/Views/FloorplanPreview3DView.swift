@@ -249,6 +249,14 @@ struct FloorplanPreview3DView: View {
             // Trasparente sul serio: si deve vedere la stanza dietro, altrimenti
             // è un pannello azzurro e tanto valeva lasciare il buco.
             return Color(red: 0.55, green: 0.78, blue: 0.92).opacity(0.35)
+        case .frame:
+            return Color(white: 0.33)
+        case .parapetTop:
+            // Toni freddi contro i grigi caldi dei muri: si legge «fuori» prima
+            // ancora di accorgersi che è più basso.
+            return Color(red: 0.72, green: 0.78, blue: 0.83)
+        case .parapetSide:
+            return Color(red: 0.50, green: 0.57, blue: 0.63)
         }
     }
 }
