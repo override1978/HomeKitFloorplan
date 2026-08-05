@@ -24,6 +24,14 @@ enum FloorplanExtruder {
         /// Finestre: davanzale e architrave.
         var windowBottom: Double = 0.9
         var windowTop: Double = 2.2
+        /// Il perimetro di un balcone è un **parapetto**, non un muro: si
+        /// affaccia, non chiude. Estruderlo fino al soffitto trasformava una
+        /// stanza aperta in uno stanzino cieco.
+        var parapet: Double = 1.05
+
+        func top(for kind: WallKind) -> Double {
+            kind == .balcony ? parapet : ceiling
+        }
     }
 
     /// Un quadrilatero in metri. Le facce sono piane per costruzione, quindi
@@ -35,6 +43,9 @@ enum FloorplanExtruder {
             case wallSide
             /// Faccia superiore: prende più luce, ed è ciò che dà il volume.
             case wallTop
+            /// Il vetro di una finestra. Senza, una finestra e una porta sono
+            /// lo stesso buco e non si distinguono.
+            case glass
         }
         var points: [SIMD3<Double>]
         var kind: Kind
@@ -100,6 +111,7 @@ enum FloorplanExtruder {
         guard length > 0.01 else { return [] }
 
         let thickness = metres(DrawingDocument.wallWidth(for: wall.kind))
+        let wallTop = heights.top(for: wall.kind)
         let axis = simd_normalize(end - start)
 
         // Angoli **lisci**: un muro che ne incontra un altro sborda di mezzo
@@ -119,6 +131,8 @@ enum FloorplanExtruder {
 
         // Tratti pieni: (da, a) lungo il muro, con la loro fascia verticale.
         var spans: [(from: Double, to: Double, bottom: Double, top: Double)] = []
+        /// I vetri: stessi intervalli, ma una lastra sola invece di un solido.
+        var panes: [(from: Double, to: Double, bottom: Double, top: Double)] = []
         var cursor = 0.0
         for opening in openings {
             let width = metres(opening.width)
@@ -128,24 +142,25 @@ enum FloorplanExtruder {
             guard to > from else { continue }
 
             if from > cursor {
-                spans.append((cursor, from, 0, heights.ceiling))
+                spans.append((cursor, from, 0, wallTop))
             }
             switch opening.kind {
             case .window:
-                spans.append((from, to, 0, heights.windowBottom))
-                spans.append((from, to, heights.windowTop, heights.ceiling))
+                spans.append((from, to, 0, min(heights.windowBottom, wallTop)))
+                spans.append((from, to, heights.windowTop, wallTop))
+                panes.append((from, to, heights.windowBottom, min(heights.windowTop, wallTop)))
             case .door, .slidingDoor, .frenchDoor:
-                spans.append((from, to, heights.doorTop, heights.ceiling))
+                spans.append((from, to, heights.doorTop, wallTop))
             }
             cursor = to
         }
         if cursor < length {
-            spans.append((cursor, length, 0, heights.ceiling))
+            spans.append((cursor, length, 0, wallTop))
         }
 
         let normal = SIMD2(-axis.y, axis.x) * (thickness / 2)
 
-        return spans.flatMap { span -> [Face] in
+        var faces = spans.flatMap { span -> [Face] in
             guard span.to > span.from, span.top > span.bottom else { return [] }
             // Lo sbordo tocca solo chi arriva davvero all'estremità del muro.
             let from = span.from <= 0.0001 ? -headOverhang : span.from
@@ -154,6 +169,19 @@ enum FloorplanExtruder {
             let b = start + axis * to
             return box(from: a, to: b, normal: normal, bottom: span.bottom, top: span.top)
         }
+
+        // Una lastra a metà spessore: non è un solido, quindi non ha fiancate
+        // né sommità e non entra nel gioco delle ombre.
+        for pane in panes where pane.top > pane.bottom {
+            let a = start + axis * pane.from
+            let b = start + axis * pane.to
+            faces.append(Face(points: [SIMD3(a.x, a.y, pane.bottom),
+                                       SIMD3(b.x, b.y, pane.bottom),
+                                       SIMD3(b.x, b.y, pane.top),
+                                       SIMD3(a.x, a.y, pane.top)],
+                              kind: .glass, roomColorIndex: nil, roomID: nil, roomName: nil))
+        }
+        return faces
     }
 
     /// Le facce di un tratto di muro. Solo quelle **visibili** da un punto di
