@@ -49,6 +49,10 @@ enum FloorplanExtruder {
             /// Il telaio che contorna un'apertura. Senza, un vano è un buco
             /// come un altro: è la cornice a dire che lì c'è una porta.
             case frame
+            /// Il battente di una porta. Traslucido: chiuso davvero taglierebbe
+            /// le linee di vista dentro le stanze, che è tutto il senso di
+            /// guardare una casa dall'alto.
+            case doorLeaf
             /// Parapetto di un balcone: basso **e** diverso, altrimenti resta
             /// un muro tagliato a metà.
             case parapetSide
@@ -145,6 +149,8 @@ enum FloorplanExtruder {
         var panes: [(from: Double, to: Double, bottom: Double, top: Double)] = []
         /// I vani da contornare, col loro rettangolo nel piano del muro.
         var voids: [(from: Double, to: Double, bottom: Double, top: Double, sill: Bool)] = []
+        /// I battenti delle porte.
+        var leaves: [(from: Double, to: Double, bottom: Double, top: Double)] = []
         var cursor = 0.0
         for opening in openings {
             let width = metres(opening.width)
@@ -167,6 +173,7 @@ enum FloorplanExtruder {
                 // Una porta poggia a terra: niente traversa in basso, o
                 // diventa un ostacolo che nella realtà non c'è.
                 voids.append((from, to, 0, min(heights.doorTop, wallTop), false))
+                leaves.append((from, to, 0, min(heights.doorTop, wallTop)))
             }
             cursor = to
         }
@@ -205,17 +212,21 @@ enum FloorplanExtruder {
             }
         }
 
-        // Una lastra a metà spessore: non è un solido, quindi non ha fiancate
-        // né sommità e non entra nel gioco delle ombre.
-        for pane in panes where pane.top > pane.bottom {
-            let a = start + axis * pane.from
-            let b = start + axis * pane.to
-            faces.append(Face(points: [SIMD3(a.x, a.y, pane.bottom),
-                                       SIMD3(b.x, b.y, pane.bottom),
-                                       SIMD3(b.x, b.y, pane.top),
-                                       SIMD3(a.x, a.y, pane.top)],
-                              kind: .glass, roomColorIndex: nil, roomID: nil, roomName: nil))
+        // Lastre a metà spessore: non sono solidi, quindi niente fiancate né
+        // sommità. Battenti e vetri stanno **dentro** il telaio, non a filo,
+        // così la cornice resta visibile tutto intorno.
+        func panel(_ span: (from: Double, to: Double, bottom: Double, top: Double),
+                   _ kind: Face.Kind) -> Face? {
+            let from = span.from + jamb, to = span.to - jamb
+            let top = span.top - jamb
+            guard to > from, top > span.bottom else { return nil }
+            let a = start + axis * from, b = start + axis * to
+            return Face(points: [SIMD3(a.x, a.y, span.bottom), SIMD3(b.x, b.y, span.bottom),
+                                 SIMD3(b.x, b.y, top), SIMD3(a.x, a.y, top)],
+                        kind: kind, roomColorIndex: nil, roomID: nil, roomName: nil)
         }
+        faces += panes.compactMap { panel(($0.from, $0.to, $0.bottom + jamb, $0.top), .glass) }
+        faces += leaves.compactMap { panel($0, .doorLeaf) }
         return faces
     }
 

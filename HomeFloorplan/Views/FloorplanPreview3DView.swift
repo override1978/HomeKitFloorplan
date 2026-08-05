@@ -251,6 +251,10 @@ struct FloorplanPreview3DView: View {
             return Color(red: 0.55, green: 0.78, blue: 0.92).opacity(0.35)
         case .frame:
             return Color(white: 0.33)
+        case .doorLeaf:
+            // Più caldo del vetro e più opaco, ma non abbastanza da chiudere:
+            // si legge come battente, non come parete.
+            return Color(red: 0.72, green: 0.55, blue: 0.40).opacity(0.45)
         case .parapetTop:
             // Toni freddi contro i grigi caldi dei muri: si legge «fuori» prima
             // ancora di accorgersi che è più basso.
