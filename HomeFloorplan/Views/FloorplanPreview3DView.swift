@@ -72,7 +72,9 @@ struct FloorplanPreview3DView: View {
             .onChanged { value in
                 let origin = gestureStart ?? (azimuth, elevation)
                 if gestureStart == nil { gestureStart = origin }
-                azimuth = origin.azimuth - value.translation.width * 0.006
+                // Il modello segue il dito: trascinando a destra il fronte gira a
+                // destra. Con l'asse `x` in questo verso è l'azimut che cresce.
+                azimuth = origin.azimuth + value.translation.width * 0.006
                 elevation = min(max(origin.elevation + value.translation.height * 0.005,
                                     .pi / 18), .pi / 2.2)
             }
@@ -209,9 +211,15 @@ struct FloorplanPreview3DView: View {
     /// Proiezione ortografica da una telecamera ad azimut e altezza qualsiasi.
     /// Nessuna prospettiva: le linee parallele restano parallele, che su una
     /// pianta è quello che si vuole — le stanze mantengono le proporzioni.
+    ///
+    /// ⚠️ Il verso di `x` non è arbitrario. Nel disegno la `y` cresce **verso il
+    /// basso**, come sul canvas: una terna scritta con le convenzioni della
+    /// matematica produce l'immagine **riflessa**, e uno specchio è difficile da
+    /// notare su una casa quasi simmetrica. A 45° questa formula dà `x − y`,
+    /// cioè esattamente l'isometrica da cui siamo partiti.
     private func project(_ point: SIMD3<Double>) -> CGPoint {
         let forward = point.x * cos(azimuth) + point.y * sin(azimuth)
-        return CGPoint(x: -point.x * sin(azimuth) + point.y * cos(azimuth),
+        return CGPoint(x: point.x * sin(azimuth) - point.y * cos(azimuth),
                        y: forward * sin(elevation) - point.z * cos(elevation))
     }
 
