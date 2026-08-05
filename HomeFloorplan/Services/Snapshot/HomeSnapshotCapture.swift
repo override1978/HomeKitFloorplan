@@ -411,6 +411,37 @@ final class HomeSnapshotCapture {
         )
     }
 
+    // MARK: - Cattura di un singolo elemento
+
+    /// Una scena sola, per l'archivio.
+    ///
+    /// Passa dalla stessa funzione della cattura completa invece di ricopiarla:
+    /// una copia che diverge produrrebbe archivi che si ripristinano diversamente
+    /// dagli snapshot, ed è il tipo di differenza che nessuno cerca.
+    func snapshot(of actionSet: HMActionSet) async -> SceneSnapshot {
+        let accessories = homeKit.currentHome?.accessories ?? []
+        return sceneSnapshot(actionSet, serials: await serialNumbers(of: accessories))
+    }
+
+    /// Un'automazione sola, nella forma da cui si può ricrearla — oppure il
+    /// motivo per cui non si può.
+    func restorablePlan(of trigger: HMTrigger) async -> (plan: RestorableAutomation?, reason: String?) {
+        guard let home = homeKit.currentHome else { return (nil, nil) }
+        let serials = await serialNumbers(of: home.accessories)
+        let capabilities = AutomationCapabilityCatalog.capabilities(in: home)
+        let readable = trigger.actionSets
+            .flatMap { Array($0.actions) }
+            .compactMap { action -> SceneActionSnapshot? in
+                guard let write = action.homeFloorplanCharacteristicWrite else { return nil }
+                return actionSnapshot(characteristic: write.characteristic,
+                                      value: write.targetValue, serials: serials)
+            }
+        return AutomationRestoreBridge.restorable(from: trigger,
+                                                  capabilities: capabilities,
+                                                  serials: serials,
+                                                  readableActions: readable)
+    }
+
     // MARK: - Scene
 
     private func sceneSnapshot(_ actionSet: HMActionSet, serials: [UUID: String]) -> SceneSnapshot {

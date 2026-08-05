@@ -96,6 +96,13 @@ final class SnapshotRestoreExecutor {
                                            defaultValue: "this trigger cannot be recreated")))
             return
         }
+        await restoreAutomation(named: automation.name, plan: plan, in: home, into: &outcome)
+    }
+
+    private func restoreAutomation(named name: String,
+                                   plan: RestorableAutomation,
+                                   in home: HMHome,
+                                   into outcome: inout Outcome) async {
         // Le azioni dirette si risolvono **prima**, con le stesse regole delle
         // scene: se una non trova il suo accessorio si esce senza aver creato
         // niente, invece di lasciare in casa un'automazione monca col nome
@@ -113,7 +120,7 @@ final class SnapshotRestoreExecutor {
             }
         }
         guard failures.isEmpty else {
-            outcome.skipped.append((automation.name, failures.joined(separator: " · ")))
+            outcome.skipped.append((name, failures.joined(separator: " · ")))
             return
         }
 
@@ -121,13 +128,12 @@ final class SnapshotRestoreExecutor {
             try await AutomationRestoreBridge.recreate(plan, in: home,
                                                        scenes: scenesService.scenes,
                                                        inlineActions: inlineActions,
-                                                       name: automation.name,
+                                                       name: name,
                                                        automationsService: automationsService)
             outcome.restored.append(String(format: String(localized: "restore.done.automation",
-                                                          defaultValue: "Automation “%@”"),
-                                           automation.name))
+                                                          defaultValue: "Automation “%@”"), name))
         } catch {
-            outcome.skipped.append((automation.name, error.localizedDescription))
+            outcome.skipped.append((name, error.localizedDescription))
         }
     }
 
@@ -186,6 +192,28 @@ final class SnapshotRestoreExecutor {
         } catch {
             outcome.skipped.append((zone.name, error.localizedDescription))
         }
+    }
+
+    // MARK: - Archivio
+
+    /// Riapplica una copia singola. Stesse regole del ripristino da snapshot —
+    /// non cancella niente, riscrive solo le caratteristiche che la copia
+    /// conteneva — perché è letteralmente lo stesso codice.
+    func apply(_ item: ArchivedItem) async -> Outcome {
+        guard let home = homeKit.currentHome else {
+            return Outcome(skipped: [(item.name,
+                                      String(localized: "restore.skip.noHome.reason",
+                                             defaultValue: "No HomeKit home available."))])
+        }
+        var outcome = Outcome()
+        switch item.content {
+        case .scene(let scene):
+            await restoreScene(scene, in: home, into: &outcome)
+        case .automation(let plan):
+            await restoreAutomation(named: item.name, plan: plan, in: home, into: &outcome)
+        }
+        scenesService.refresh()
+        return outcome
     }
 
     // MARK: - Gruppi di servizi

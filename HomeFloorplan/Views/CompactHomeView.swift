@@ -152,6 +152,9 @@ struct CompactHomeView: View {
                     destinationRow(.snapshots,
                                    title: String(localized: "sidebar.snapshots", defaultValue: "Backup & Restore"),
                                    icon: "clock.arrow.circlepath")
+                    destinationRow(.archive,
+                                   title: String(localized: "sidebar.archive", defaultValue: "Archive"),
+                                   icon: "archivebox")
                     destinationRow(.unknownAccessories,
                                    title: String(localized: "sidebar.unknownAccessories",
                                                  defaultValue: "Unknown Accessories"),
@@ -442,6 +445,8 @@ struct CompactHomeView: View {
             HomeIntelligenceDashboardView()
         case .snapshots:
             SnapshotsView()
+        case .archive:
+            ArchiveView()
         case .unknownAccessories:
             UnknownAccessoriesView()
         case .settings:

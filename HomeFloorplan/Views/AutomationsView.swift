@@ -184,6 +184,7 @@ struct AutomationsView: View {
                         LazyVStack(spacing: 10) {
                             ForEach(filtered) { item in
                                 automationCard(item)
+                                    .archivable(automation: item)
                             }
                         }
                     }

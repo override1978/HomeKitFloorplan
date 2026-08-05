@@ -318,6 +318,10 @@ struct ContentView: View {
             NavigationStack {
                 SnapshotsView()
             }
+        case .archive:
+            NavigationStack {
+                ArchiveView()
+            }
         case .unknownAccessories:
             NavigationStack {
                 UnknownAccessoriesView()

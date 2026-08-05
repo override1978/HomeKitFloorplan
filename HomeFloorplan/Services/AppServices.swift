@@ -38,6 +38,8 @@ final class AppServices {
     let accessoryCensus: AccessoryCensusService
     /// Le domande aperte sull'identità, e cosa succede quando si risponde.
     let accessoryReconciliation: AccessoryReconciliationService
+    /// Copie singole di scene e automazioni, fuori dai backup interi.
+    let archiveStore = ArchiveStore()
     let weatherKitService: WeatherKitService
     let smartLightingEngine: SmartLightingEngine
     let aiSettings: AISettings

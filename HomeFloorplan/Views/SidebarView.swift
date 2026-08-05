@@ -173,6 +173,10 @@ struct SidebarView: View {
                         Label(String(localized: "sidebar.snapshots", defaultValue: "Backup & Restore"),
                               systemImage: "clock.arrow.circlepath")
                     }
+                    NavigationLink(value: SidebarSelection.archive) {
+                        Label(String(localized: "sidebar.archive", defaultValue: "Archive"),
+                              systemImage: "archivebox")
+                    }
                     NavigationLink(value: SidebarSelection.unknownAccessories) {
                         Label(String(localized: "sidebar.unknownAccessories", defaultValue: "Unknown Accessories"),
                               systemImage: "questionmark.square.dashed")
@@ -403,6 +407,7 @@ enum SidebarSelection: Hashable {
     case debugHomeKit
     case homeIntelligenceDebug
     case snapshots
+    case archive
     case unknownAccessories
     case settings
 }

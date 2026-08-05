@@ -707,6 +707,7 @@ private struct SceneFeaturedSection: View {
                         onRun: { onRun(scene) },
                         onDetail: { onDetail(scene) }
                     )
+                    .archivable(scene: scene)
                 }
             }
         }
@@ -868,6 +869,7 @@ private struct SceneAllSection: View {
                         onRun: { onRun(scene) },
                         onDetail: { onDetail(scene) }
                     )
+                    .archivable(scene: scene)
                 }
             }
             .background(
