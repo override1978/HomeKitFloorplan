@@ -1,4 +1,5 @@
 import SwiftUI
+import HomeKit
 
 // MARK: - SnapshotsView
 
@@ -11,6 +12,8 @@ struct SnapshotsView: View {
 
     @Environment(HomeSnapshotStore.self) private var store
     @Environment(HomeSnapshotCapture.self) private var capture
+    @Environment(ArchiveStore.self) private var archive
+    @Environment(HomeKitService.self) private var homeKit
 
     @State private var isCapturing = false
     @State private var progress: Double = 0
@@ -18,6 +21,11 @@ struct SnapshotsView: View {
     @State private var lastOutcome: HomeSnapshotStore.SaveOutcome?
     @State private var pendingTitle = ""
     @State private var isAskingTitle = false
+
+    private var archivedCount: Int {
+        guard let home = homeKit.currentHome else { return 0 }
+        return archive.items(homeName: home.name).count
+    }
 
     var body: some View {
         List {
@@ -74,6 +82,24 @@ struct SnapshotsView: View {
                 } label: {
                     Label(String(localized: "restore.open", defaultValue: "Restore…"),
                           systemImage: "arrow.counterclockwise")
+                }
+            }
+
+            // L'archivio è raggiungibile anche dalla sidebar, ma chi è entrato
+            // qui sta già cercando come rimettere qualcosa: nascondergli le
+            // copie singole lo costringerebbe a ricordarsi dell'altra voce.
+            if archivedCount > 0 {
+                NavigationLink {
+                    ArchiveView()
+                } label: {
+                    HStack {
+                        Label(String(localized: "sidebar.archive", defaultValue: "Archive"),
+                              systemImage: "archivebox")
+                        Spacer()
+                        Text("\(archivedCount)")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                 }
             }
 

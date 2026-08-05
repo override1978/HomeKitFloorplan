@@ -1,4 +1,5 @@
 import SwiftUI
+import HomeKit
 
 // MARK: - SnapshotComparisonView
 
@@ -275,23 +276,59 @@ struct SnapshotComparisonView: View {
 struct RestorePickerView: View {
 
     @Environment(HomeSnapshotStore.self) private var store
+    @Environment(ArchiveStore.self) private var archive
+    @Environment(HomeKitService.self) private var homeKit
+
+    private var archived: [ArchivedItem] {
+        guard let home = homeKit.currentHome else { return [] }
+        return archive.items(homeName: home.name)
+    }
 
     var body: some View {
         List {
-            if store.entries.isEmpty {
+            if store.entries.isEmpty && archived.isEmpty {
                 ContentUnavailableView(
                     String(localized: "restore.empty.title", defaultValue: "No snapshot yet"),
                     systemImage: "camera.viewfinder",
                     description: Text(String(localized: "restore.empty.message",
                                              defaultValue: "Create one first: there is nothing to go back to."))
                 )
-            } else {
-                ForEach(store.entries) { entry in
-                    NavigationLink {
-                        SnapshotComparisonView(entry: entry)
-                    } label: {
-                        SnapshotRow(entry: entry)
+            }
+
+            if !store.entries.isEmpty {
+                Section {
+                    ForEach(store.entries) { entry in
+                        NavigationLink {
+                            SnapshotComparisonView(entry: entry)
+                        } label: {
+                            SnapshotRow(entry: entry)
+                        }
                     }
+                } header: {
+                    Text(String(localized: "restore.source.snapshots", defaultValue: "From a backup"))
+                }
+            }
+
+            // Una copia messa da parte è una sorgente di ripristino come le
+            // altre: chi arriva qui vuole rimettere qualcosa a posto, e non
+            // dovrebbe dover ricordare in quale delle due voci l'ha lasciata.
+            if !archived.isEmpty {
+                Section {
+                    ForEach(archived) { item in
+                        NavigationLink {
+                            ArchivedItemDetailView(item: item)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label(item.name, systemImage: item.symbolName)
+                                Text(item.archivedAt.formatted(date: .abbreviated, time: .shortened)
+                                     + " · " + item.summary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text(String(localized: "restore.source.archive", defaultValue: "From a copy you set aside"))
                 }
             }
         }
