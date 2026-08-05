@@ -29,18 +29,32 @@ struct ArchiveView: View {
                 )
             } else {
                 List {
-                    ForEach(items) { item in
-                        NavigationLink {
-                            ArchivedItemDetailView(item: item)
-                        } label: {
-                            row(item)
-                        }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                archive.delete(item.id)
-                            } label: {
-                                Label(String(localized: "common.delete", defaultValue: "Delete"),
-                                      systemImage: "trash")
+                    // Per tipologia, non in ordine di data: si torna qui sapendo
+                    // *cosa* si cerca — «la planimetria di prima» — molto più
+                    // spesso che sapendo quando la si era messa da parte.
+                    ForEach(grouped, id: \.kind) { group in
+                        Section {
+                            ForEach(group.items) { item in
+                                NavigationLink {
+                                    ArchivedItemDetailView(item: item)
+                                } label: {
+                                    row(item)
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        archive.delete(item.id)
+                                    } label: {
+                                        Label(String(localized: "common.delete", defaultValue: "Delete"),
+                                              systemImage: "trash")
+                                    }
+                                }
+                            }
+                        } header: {
+                            HStack {
+                                Label(group.kind.title, systemImage: group.kind.symbolName)
+                                Spacer()
+                                Text("\(group.items.count)")
+                                    .monospacedDigit()
                             }
                         }
                     }
@@ -52,11 +66,17 @@ struct ArchiveView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    /// Le tipologie presenti, ognuna con le sue copie dalla più recente.
+    private var grouped: [(kind: ArchivedItem.Kind, items: [ArchivedItem])] {
+        Dictionary(grouping: items, by: \.kind)
+            .map { (kind: $0.key, items: $0.value.sorted { $0.archivedAt > $1.archivedAt }) }
+            .sorted { $0.kind < $1.kind }
+    }
+
     private func row(_ item: ArchivedItem) -> some View {
+        // Niente icona sulla riga: la porta già l'intestazione della sezione, e
+        // ripeterla su ogni riga della stessa tipologia è rumore.
         HStack(spacing: 12) {
-            Image(systemName: item.symbolName)
-                .foregroundStyle(BrandColor.primary)
-                .frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
                 if !item.note.isEmpty {

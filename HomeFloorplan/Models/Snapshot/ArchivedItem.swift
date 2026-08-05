@@ -50,6 +50,38 @@ struct ArchivedItem: Codable, Identifiable, Sendable {
 
 extension ArchivedItem {
 
+    /// La tipologia, come categoria ordinabile: serve a raggruppare l'elenco
+    /// senza far scrivere alla vista uno `switch` sul contenuto.
+    enum Kind: Int, CaseIterable, Comparable, Sendable {
+        case floorplan, scene, automation
+
+        static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
+
+        var title: String {
+            switch self {
+            case .floorplan:  String(localized: "archive.kind.floorplans", defaultValue: "Floorplans")
+            case .scene:      String(localized: "archive.kind.scenes", defaultValue: "Scenes")
+            case .automation: String(localized: "archive.kind.automations", defaultValue: "Automations")
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .floorplan:  "rectangle.stack"
+            case .scene:      "wand.and.sparkles"
+            case .automation: "gearshape.2"
+            }
+        }
+    }
+
+    var kind: Kind {
+        switch content {
+        case .scene:      .scene
+        case .automation: .automation
+        case .floorplan:  .floorplan
+        }
+    }
+
     var isScene: Bool {
         if case .scene = content { return true }
         return false
@@ -60,13 +92,7 @@ extension ArchivedItem {
         return false
     }
 
-    var symbolName: String {
-        switch content {
-        case .scene:      "wand.and.sparkles"
-        case .automation: "gearshape.2"
-        case .floorplan:  "rectangle.stack"
-        }
-    }
+    var symbolName: String { kind.symbolName }
 
     /// Cosa contiene, in una riga: è quello che si legge scorrendo l'elenco per
     /// ritrovare la copia giusta.
