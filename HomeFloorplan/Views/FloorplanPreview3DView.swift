@@ -178,50 +178,60 @@ struct FloorplanPreview3DView: View {
         let depth: Double
     }
 
-    /// Scala e centratura, condivise da facce e ombre.
-    private func frame(in size: CGSize) -> (scale: CGFloat, dx: CGFloat, dy: CGFloat)? {
-        let all = faces.flatMap { $0.points.map(project) }
+    private struct Projected {
+        let entries: [Entry]
+        let scale: CGFloat
+        let dx: CGFloat
+        let dy: CGFloat
+
+        func screen(_ point: CGPoint) -> CGPoint {
+            CGPoint(x: point.x * scale + dx, y: point.y * scale + dy)
+        }
+    }
+
+    /// Estrusione, proiezione e inquadratura in **una sola passata**.
+    ///
+    /// ⚠️ Prima erano tre funzioni che si richiamavano: `screen` chiedeva
+    /// l'inquadratura per ogni punto, e l'inquadratura riproiettava tutte le
+    /// facce per ricavarla. Quadratico a ogni fotogramma — e invisibile
+    /// leggendo le funzioni una per una, perché ciascuna sembrava ragionevole
+    /// da sola.
+    private func projected(in size: CGSize) -> Projected? {
+        let pairs = faces.map { face in
+            (face, face.points.map(project), depth(of: face.centroid))
+        }
+        let all = pairs.flatMap(\.1)
         guard let minX = all.map(\.x).min(), let maxX = all.map(\.x).max(),
               let minY = all.map(\.y).min(), let maxY = all.map(\.y).max(),
               maxX > minX, maxY > minY else { return nil }
+
         let inset: CGFloat = 56
-        let scale = min((size.width - inset * 2) / (maxX - minX),
-                        (size.height - inset * 2) / (maxY - minY))
-        return (scale,
-                (size.width - (maxX - minX) * scale) / 2 - minX * scale,
-                (size.height - (maxY - minY) * scale) / 2 - minY * scale)
-    }
-
-    private func screen(_ point: CGPoint, in size: CGSize) -> CGPoint {
-        guard let frame = frame(in: size) else { return point }
-        return CGPoint(x: point.x * frame.scale + frame.dx, y: point.y * frame.scale + frame.dy)
-    }
-
-    /// Proiezione e inquadratura in un punto solo: disegno e tocco devono vedere
-    /// le stesse coordinate, e ricalcolarle in due posti è il modo sicuro per
-    /// farle divergere.
-    private func layout(in size: CGSize) -> [Entry] {
-        let projected = faces.map { ($0, $0.points.map(project), depth(of: $0.centroid)) }
-        let all = projected.flatMap(\.1)
-        guard let minX = all.map(\.x).min(), let maxX = all.map(\.x).max(),
-              let minY = all.map(\.y).min(), let maxY = all.map(\.y).max(),
-              maxX > minX, maxY > minY else { return [] }
-
-        let inset: CGFloat = 48
         let scale = min((size.width - inset * 2) / (maxX - minX),
                         (size.height - inset * 2) / (maxY - minY))
         let dx = (size.width - (maxX - minX) * scale) / 2 - minX * scale
         let dy = (size.height - (maxY - minY) * scale) / 2 - minY * scale
 
-        return projected
-            .map { Entry(face: $0.0,
-                         screen: $0.1.map { CGPoint(x: $0.x * scale + dx, y: $0.y * scale + dy) },
-                         depth: $0.2) }
-            .sorted { $0.depth > $1.depth }
+        let entries = pairs.map { pair -> Entry in
+            Entry(face: pair.0,
+                  screen: pair.1.map { CGPoint(x: $0.x * scale + dx, y: $0.y * scale + dy) },
+                  depth: pair.2)
+        }
+
+        // I pavimenti **sempre per primi**, non secondo profondità.
+        //
+        // Un pavimento è grande e il suo baricentro sta in mezzo alla stanza,
+        // quindi risulta più vicino di un mobile addossato alla parete di
+        // fondo: ordinandoli insieme, il pavimento finiva dipinto sopra il
+        // mobile e i mobili sembravano sprofondati. Sotto il pavimento non c'è
+        // niente, quindi qui l'ordine giusto non è da calcolare, è noto.
+        let floors = entries.filter { $0.face.kind == .floor }.sorted { $0.depth > $1.depth }
+        let solids = entries.filter { $0.face.kind != .floor }.sorted { $0.depth > $1.depth }
+        return Projected(entries: floors + solids, scale: scale, dx: dx, dy: dy)
     }
 
     private func draw(in context: GraphicsContext, size: CGSize) {
-        let entries = layout(in: size)
+        guard let scene = projected(in: size) else { return }
+        let entries = scene.entries
 
         // Ombre per prime, tutte insieme e sotto tutto: sono la proiezione a
         // terra delle facce superiori, spostate lungo la luce. Non è un calcolo
@@ -232,8 +242,8 @@ struct FloorplanPreview3DView: View {
             || entry.face.kind == .parapetTop || entry.face.kind == .furnitureTop {
             var path = Path()
             let dropped = entry.face.points.map { point -> CGPoint in
-                let ground = SIMD3(point.x + point.z * 0.45, point.y + point.z * 0.32, 0)
-                return screen(project(ground), in: size)
+                scene.screen(project(SIMD3(point.x + point.z * 0.45,
+                                           point.y + point.z * 0.32, 0)))
             }
             path.move(to: dropped[0])
             for point in dropped.dropFirst() { path.addLine(to: point) }
@@ -251,7 +261,7 @@ struct FloorplanPreview3DView: View {
             context.fill(path, with: .color(color(for: entry.face)))
         }
 
-        drawMarkers(in: context, size: size)
+        drawMarkers(in: context, scene: scene)
     }
 
     /// I marker sopra tutto, non in coda alla profondità.
@@ -259,15 +269,15 @@ struct FloorplanPreview3DView: View {
     /// Un accessorio dietro un muro resterebbe nascosto proprio quando lo si
     /// cerca: qui non sono oggetti della scena, sono etichette su di essa — e
     /// un'etichetta che si nasconde non serve a niente.
-    private func drawMarkers(in context: GraphicsContext, size: CGSize) {
+    private func drawMarkers(in context: GraphicsContext, scene: Projected) {
         guard let transform = imageToMetres else { return }
         let stem = 1.5
 
         for marker in markers {
             let x = Double(marker.position.x) * transform.scale + transform.dx
             let y = Double(marker.position.y) * transform.scale + transform.dy
-            let foot = screen(project(SIMD3(x, y, 0)), in: size)
-            let head = screen(project(SIMD3(x, y, stem)), in: size)
+            let foot = scene.screen(project(SIMD3(x, y, 0)))
+            let head = scene.screen(project(SIMD3(x, y, stem)))
 
             var stalk = Path()
             stalk.move(to: foot)
@@ -290,7 +300,7 @@ struct FloorplanPreview3DView: View {
     /// di centrare il lembo scoperto trasforma una selezione in una prova di
     /// mira. Toccare il muro di una stanza vuol dire quella stanza.
     private func room(at location: CGPoint, in size: CGSize) -> UUID? {
-        let entries = layout(in: size)
+        guard let entries = projected(in: size)?.entries else { return nil }
         for entry in entries.reversed() where contains(entry.screen, location) {
             if entry.face.kind == .floor { return entry.face.roomID }
             break
