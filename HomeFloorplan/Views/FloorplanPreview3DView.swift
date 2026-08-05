@@ -97,7 +97,7 @@ struct FloorplanPreview3DView: View {
 
             controls
         }
-        .overlay(alignment: .topLeading) { closeButton }
+        .overlay(alignment: .top) { topChrome }
         .statusBarHidden()
     }
 
@@ -126,9 +126,31 @@ struct FloorplanPreview3DView: View {
     /// Comandi sospesi invece che una barra: a schermo intero il soggetto è il
     /// modello, e una barra di navigazione gli toglierebbe spazio per ripetere
     /// un nome che si sa già.
-    private var closeButton: some View {
-        Button { dismiss() } label: { chrome("xmark") }
-            .padding()
+    private var topChrome: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: { chrome("xmark") }
+
+            Text(title)
+                .font(.headline)
+                .lineLimit(1)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(.black.opacity(0.34), in: Capsule())
+                .frame(maxWidth: .infinity)
+
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    azimuth = .pi / 4
+                    elevation = .pi / 6
+                    selectedRoomID = nil
+                }
+            } label: {
+                chrome("arrow.counterclockwise")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 
     private func chrome(_ symbol: String) -> some View {
@@ -225,8 +247,13 @@ struct FloorplanPreview3DView: View {
         // mobile e i mobili sembravano sprofondati. Sotto il pavimento non c'è
         // niente, quindi qui l'ordine giusto non è da calcolare, è noto.
         let floors = entries.filter { $0.face.kind == .floor }.sorted { $0.depth > $1.depth }
-        let solids = entries.filter { $0.face.kind != .floor }.sorted { $0.depth > $1.depth }
-        return Projected(entries: floors + solids, scale: scale, dx: dx, dy: dy)
+        // Gli arredi stanno dentro la casa, non sopra la casa. Disegnarli prima
+        // dell'involucro evita che un box vicino al perimetro sembri uscire dai
+        // muri quando il painter's algorithm ha ambiguità di profondità.
+        let furniture = entries.filter { isFurniture($0.face.kind) }.sorted { $0.depth > $1.depth }
+        let shell = entries.filter { $0.face.kind != .floor && !isFurniture($0.face.kind) }
+            .sorted { $0.depth > $1.depth }
+        return Projected(entries: floors + furniture + shell, scale: scale, dx: dx, dy: dy)
     }
 
     private func draw(in context: GraphicsContext, size: CGSize) {
@@ -238,17 +265,16 @@ struct FloorplanPreview3DView: View {
         // di illuminazione — è la stessa faccia disegnata due volte, ed è
         // sufficiente perché l'occhio cerca il contatto col pavimento, non la
         // correttezza fisica.
-        for entry in entries where entry.face.kind == .wallTop
-            || entry.face.kind == .parapetTop || entry.face.kind == .furnitureTop {
+        for entry in entries where entry.face.kind == .wallTop || entry.face.kind == .parapetTop {
             var path = Path()
             let dropped = entry.face.points.map { point -> CGPoint in
-                scene.screen(project(SIMD3(point.x + point.z * 0.45,
-                                           point.y + point.z * 0.32, 0)))
+                scene.screen(project(SIMD3(point.x + point.z * 0.25,
+                                           point.y + point.z * 0.18, 0)))
             }
             path.move(to: dropped[0])
             for point in dropped.dropFirst() { path.addLine(to: point) }
             path.closeSubpath()
-            context.fill(path, with: .color(.black.opacity(0.16)))
+            context.fill(path, with: .color(.black.opacity(0.08)))
         }
 
         for entry in entries {
@@ -259,6 +285,9 @@ struct FloorplanPreview3DView: View {
             // Nessun contorno: erano i bordi a far vedere le giunzioni, e con i
             // muri che ora si compenetrano non separano più niente.
             context.fill(path, with: .color(color(for: entry.face)))
+            if let stroke = strokeColor(for: entry.face.kind) {
+                context.stroke(path, with: .color(stroke), lineWidth: strokeWidth(for: entry.face.kind))
+            }
         }
 
         drawMarkers(in: context, scene: scene)
@@ -290,7 +319,30 @@ struct FloorplanPreview3DView: View {
                          with: .color(.white.opacity(0.5)))
             context.fill(Path(ellipseIn: CGRect(x: head.x - 7, y: head.y - 7, width: 14, height: 14)),
                          with: .color(Color(red: 1.0, green: 0.72, blue: 0.25)))
+
+            drawMarkerLabel(marker.name, at: CGPoint(x: head.x, y: head.y - 13), in: context)
         }
+    }
+
+    private func drawMarkerLabel(_ name: String, at point: CGPoint, in context: GraphicsContext) {
+        let label = compactMarkerLabel(name)
+        guard !label.isEmpty else { return }
+
+        let width = min(max(CGFloat(label.count) * 6.4 + 18, 44), 138)
+        let rect = CGRect(x: point.x - width / 2, y: point.y - 25, width: width, height: 21)
+        context.fill(Path(roundedRect: rect, cornerRadius: 10),
+                     with: .color(.black.opacity(0.58)))
+        context.draw(Text(label)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.white),
+                     at: CGPoint(x: rect.midX, y: rect.midY),
+                     anchor: .center)
+    }
+
+    private func compactMarkerLabel(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 18 else { return trimmed }
+        return String(trimmed.prefix(17)) + "..."
     }
 
     /// La stanza sotto il dito.
@@ -348,6 +400,10 @@ struct FloorplanPreview3DView: View {
         return -(forward * cos(elevation) + point.z * sin(elevation))
     }
 
+    private func isFurniture(_ kind: FloorplanExtruder.Face.Kind) -> Bool {
+        kind == .furnitureTop || kind == .furnitureSide
+    }
+
     /// Facce superiori più chiare, fiancate più scure: è tutto ciò che serve a
     /// leggere un volume, senza calcolare nessuna illuminazione.
     private func color(for face: FloorplanExtruder.Face) -> Color {
@@ -360,17 +416,17 @@ struct FloorplanPreview3DView: View {
             // La selezione alza l'opacità invece di cambiare tinta: la stanza
             // resta riconoscibile dal suo colore, si vede solo che è accesa —
             // e le altre si spengono, così il confronto è immediato.
-            return base.opacity(isSelected ? 0.95 : (selectedRoomID == nil ? 0.55 : 0.24))
+            return base.opacity(isSelected ? 0.72 : (selectedRoomID == nil ? 0.34 : 0.16))
         case .wallTop:
-            return Color(white: 0.86)
+            return Color(white: 0.96)
         case .wallSide:
-            return Color(white: 0.62)
+            return Color(white: 0.80)
         case .glass:
             // Trasparente sul serio: si deve vedere la stanza dietro, altrimenti
             // è un pannello azzurro e tanto valeva lasciare il buco.
             return Color(red: 0.55, green: 0.78, blue: 0.92).opacity(0.35)
         case .frame:
-            return Color(white: 0.33)
+            return Color(white: 0.62)
         case .doorLeaf:
             // **Opaco.** Traslucido prendeva il colore di ciò che ha dietro: una
             // finestra dà sullo sfondo scuro e resta azzurra, una porta dà sul
@@ -378,21 +434,47 @@ struct FloorplanPreview3DView: View {
             //
             // Non toglie niente: da una telecamera alta si entra nelle stanze
             // scavalcando i muri, non guardando attraverso le porte.
-            return Color(red: 0.62, green: 0.45, blue: 0.32)
+            return Color(red: 0.72, green: 0.62, blue: 0.52)
         case .parapetTop:
             // Toni freddi contro i grigi caldi dei muri: si legge «fuori» prima
             // ancora di accorgersi che è più basso.
-            return Color(red: 0.72, green: 0.78, blue: 0.83)
+            return Color(red: 0.88, green: 0.94, blue: 0.98).opacity(0.86)
         case .parapetSide:
-            return Color(red: 0.50, green: 0.57, blue: 0.63)
+            return Color(red: 0.64, green: 0.78, blue: 0.88).opacity(0.62)
         case .furnitureTop:
             // La tinta scelta in pianta vale anche qui: un mobile riconoscibile
             // di sopra deve restarlo di sotto.
-            guard let tint = face.tint else { return Color(white: 0.55) }
-            return Color(cgColor: tint)
+            guard let tint = face.tint else { return Color(white: 0.64).opacity(0.88) }
+            return Color(cgColor: tint).opacity(0.62)
         case .furnitureSide:
-            guard let tint = face.tint else { return Color(white: 0.40) }
-            return Color(cgColor: tint).opacity(0.72)
+            guard let tint = face.tint else { return Color(white: 0.46).opacity(0.70) }
+            return Color(cgColor: tint).opacity(0.42)
+        }
+    }
+
+    private func strokeColor(for kind: FloorplanExtruder.Face.Kind) -> Color? {
+        switch kind {
+        case .parapetTop, .parapetSide:
+            return Color(red: 0.95, green: 1.0, blue: 1.0).opacity(0.45)
+        case .glass:
+            return Color(red: 0.80, green: 0.94, blue: 1.0).opacity(0.55)
+        case .frame, .doorLeaf:
+            return Color.white.opacity(0.22)
+        case .furnitureTop:
+            return Color.white.opacity(0.18)
+        default:
+            return nil
+        }
+    }
+
+    private func strokeWidth(for kind: FloorplanExtruder.Face.Kind) -> CGFloat {
+        switch kind {
+        case .parapetTop, .parapetSide:
+            return 1.1
+        case .glass, .frame, .doorLeaf, .furnitureTop:
+            return 0.8
+        default:
+            return 0
         }
     }
 }
