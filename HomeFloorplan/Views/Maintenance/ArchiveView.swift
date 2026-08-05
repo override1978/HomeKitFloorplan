@@ -25,7 +25,7 @@ struct ArchiveView: View {
                     String(localized: "archive.empty.title", defaultValue: "Nothing set aside"),
                     systemImage: "archivebox",
                     description: Text(String(localized: "archive.empty.message",
-                                             defaultValue: "Hold a scene or an automation and choose “Set aside” to keep a copy of it as it is now."))
+                                             defaultValue: "Hold a scene or an automation and choose “Set aside as it is now” to keep a copy before you change it."))
                 )
             } else {
                 List {
@@ -118,7 +118,7 @@ struct ArchivedItemDetailView: View {
                             Text(String(localized: "restore.running", defaultValue: "Restoring…"))
                         }
                     } else {
-                        Label(String(localized: "archive.apply", defaultValue: "Put it back"),
+                        Label(String(localized: "archive.apply", defaultValue: "Restore"),
                               systemImage: "arrow.counterclockwise")
                     }
                 }
@@ -161,7 +161,7 @@ struct ArchivedItemDetailView: View {
             }
         }
         .alert(String(format: String(localized: "archive.confirm.title",
-                                     defaultValue: "Put “%@” back into HomeKit?"), item.name),
+                                     defaultValue: "Restore “%@” into HomeKit?"), item.name),
                isPresented: $isConfirming) {
             Button(String(localized: "restore.confirm.action", defaultValue: "Restore"),
                    role: .destructive) {

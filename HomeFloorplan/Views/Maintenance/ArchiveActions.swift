@@ -24,7 +24,7 @@ private struct ArchiveSceneModifier: ViewModifier {
                 Button {
                     Task { await archiveScene() }
                 } label: {
-                    Label(String(localized: "archive.action", defaultValue: "Set aside a copy"),
+                    Label(String(localized: "archive.action", defaultValue: "Set aside as it is now"),
                           systemImage: "archivebox")
                 }
             }
@@ -60,7 +60,7 @@ private struct ArchiveAutomationModifier: ViewModifier {
                 Button {
                     Task { await archiveAutomation() }
                 } label: {
-                    Label(String(localized: "archive.action", defaultValue: "Set aside a copy"),
+                    Label(String(localized: "archive.action", defaultValue: "Set aside as it is now"),
                           systemImage: "archivebox")
                 }
             }

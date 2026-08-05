@@ -59062,13 +59062,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Set aside a copy"
+            "value" : "Set aside as it is now"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Metti da parte una copia"
+            "value" : "Metti da parte com'è adesso"
           }
         }
       }
@@ -59096,13 +59096,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hold a scene or an automation and choose “Set aside” to keep a copy of it as it is now."
+            "value" : "Hold a scene or an automation and choose “Set aside as it is now” to keep a copy before you change it."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tieni premuto su una scena o un'automazione e scegli «Metti da parte» per conservarne una copia com'è adesso."
+            "value" : "Tieni premuto su una scena o un'automazione e scegli «Metti da parte com'è adesso» per conservarne una copia prima di modificarla."
           }
         }
       }
@@ -59164,13 +59164,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Put it back"
+            "value" : "Restore"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rimettila"
+            "value" : "Ripristina"
           }
         }
       }
@@ -59198,13 +59198,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Put “%@” back into HomeKit?"
+            "value" : "Restore “%@” into HomeKit?"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rimettere «%@» in HomeKit?"
+            "value" : "Ripristinare «%@» in HomeKit?"
           }
         }
       }
