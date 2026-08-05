@@ -25,7 +25,7 @@ struct ArchiveView: View {
                     String(localized: "archive.empty.title", defaultValue: "Nothing set aside"),
                     systemImage: "archivebox",
                     description: Text(String(localized: "archive.empty.message",
-                                             defaultValue: "Hold a scene or an automation and choose “Set aside as it is now” to keep a copy before you change it."))
+                                             defaultValue: "Hold a scene or an automation and choose “Set aside for later” to keep a copy you can put back another day."))
                 )
             } else {
                 List {
