@@ -94,10 +94,10 @@ struct FloorplanListView: View {
             // modo di tornare indietro. Le tre azioni della pill flottante si
             // spostano nella barra, dove su schermo stretto stanno meglio.
             .toolbar(isCompact ? .automatic : .hidden, for: .navigationBar)
-            .sheet(item: $preview3D) { request in
-                NavigationStack {
-                    FloorplanPreview3DView(document: request.document, title: request.title)
-                }
+            // A tutto schermo, non in un foglio: su iPad una card lascerebbe
+            // metà spazio ai bordi proprio dove serve il soggetto.
+            .fullScreenCover(item: $preview3D) { request in
+                FloorplanPreview3DView(document: request.document, title: request.title)
             }
             .navigationTitle(isCompact
                              ? String(localized: "floorplans.title", defaultValue: "Floorplans")

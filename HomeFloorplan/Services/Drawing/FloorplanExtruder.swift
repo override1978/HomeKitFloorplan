@@ -40,6 +40,9 @@ enum FloorplanExtruder {
         var kind: Kind
         /// Indice nella palette delle stanze, solo per i pavimenti.
         var roomColorIndex: Int?
+        /// Identità della stanza, per poterla selezionare toccando il pavimento.
+        var roomID: UUID?
+        var roomName: String?
 
         var centroid: SIMD3<Double> {
             points.reduce(.zero, +) / Double(points.count)
@@ -53,8 +56,9 @@ enum FloorplanExtruder {
         for area in document.roomAreas {
             result.append(contentsOf: floorFaces(area))
         }
+        let joints = sharedEndpoints(of: document.walls)
         for wall in document.walls {
-            result.append(contentsOf: wallFaces(wall, in: document, heights: heights))
+            result.append(contentsOf: wallFaces(wall, in: document, heights: heights, joints: joints))
         }
         return result
     }
@@ -73,7 +77,9 @@ enum FloorplanExtruder {
         // come cammino chiuso, senza bisogno di triangolarlo.
         return [Face(points: outline.map { SIMD3(metres($0.x), metres($0.y), 0) },
                      kind: .floor,
-                     roomColorIndex: area.colorIndex)]
+                     roomColorIndex: area.colorIndex,
+                     roomID: area.id,
+                     roomName: area.name)]
     }
 
     // MARK: - Muri
@@ -86,13 +92,25 @@ enum FloorplanExtruder {
     /// muro c'è, quindi quei pezzi tornano come tratti a quota diversa.
     private static func wallFaces(_ wall: WallSegment,
                                   in document: DrawingDocument,
-                                  heights: Heights) -> [Face] {
-        let start = SIMD2(metres(wall.start.x), metres(wall.start.y))
-        let end   = SIMD2(metres(wall.end.x), metres(wall.end.y))
-        let length = simd_distance(start, end)
-        guard length > 0.01 else { return [] }
+                                  heights: Heights,
+                                  joints: Set<GridKey>) -> [Face] {
+        var start = SIMD2(metres(wall.start.x), metres(wall.start.y))
+        var end   = SIMD2(metres(wall.end.x), metres(wall.end.y))
+        guard simd_distance(start, end) > 0.01 else { return [] }
 
         let thickness = metres(DrawingDocument.wallWidth(for: wall.kind))
+
+        // Angoli **lisci**: un muro che ne incontra un altro si allunga di
+        // mezzo spessore, così le due scatole si compenetrano e la tacca fra
+        // loro sparisce. Senza, ai vertici restano i tappi in vista — che è
+        // esattamente ciò che fa sembrare il modello incollato.
+        //
+        // Si allunga solo dove c'è davvero una giunzione: un muro libero che
+        // crescesse di dieci centimetri sarebbe un errore di misura.
+        let axis = simd_normalize(end - start)
+        if joints.contains(GridKey(start)) { start -= axis * (thickness / 2) }
+        if joints.contains(GridKey(end))   { end   += axis * (thickness / 2) }
+        let length = simd_distance(start, end)
         let openings = document.openings
             .filter { $0.wallID == wall.id }
             .sorted { $0.t < $1.t }
@@ -148,15 +166,36 @@ enum FloorplanExtruder {
                 let z = index < 2 ? low : high
                 return SIMD3(corners[corner].x, corners[corner].y, z)
             }
-            return Face(points: points, kind: kind, roomColorIndex: nil)
+            return Face(points: points, kind: kind, roomColorIndex: nil, roomID: nil, roomName: nil)
         }
         return [
-            Face(points: corners.map { SIMD3($0.x, $0.y, top) }, kind: .wallTop, roomColorIndex: nil),
+            Face(points: corners.map { SIMD3($0.x, $0.y, top) }, kind: .wallTop, roomColorIndex: nil, roomID: nil, roomName: nil),
             face([0, 1, 1, 0], kind: .wallSide, low: bottom, high: top),
             face([2, 3, 3, 2], kind: .wallSide, low: bottom, high: top),
             face([1, 2, 2, 1], kind: .wallSide, low: bottom, high: top),
             face([3, 0, 0, 3], kind: .wallSide, low: bottom, high: top)
         ]
+    }
+
+    /// Coordinata arrotondata al millimetro: due estremi «uguali» in un disegno
+    /// non lo sono mai al bit, e confrontarli per identità non troverebbe
+    /// nessuna giunzione.
+    struct GridKey: Hashable {
+        let x: Int, y: Int
+        init(_ point: SIMD2<Double>) {
+            x = Int((point.x * 1000).rounded())
+            y = Int((point.y * 1000).rounded())
+        }
+    }
+
+    private static func sharedEndpoints(of walls: [WallSegment]) -> Set<GridKey> {
+        var counts: [GridKey: Int] = [:]
+        for wall in walls {
+            for point in [wall.start, wall.end] {
+                counts[GridKey(SIMD2(metres(point.x), metres(point.y))), default: 0] += 1
+            }
+        }
+        return Set(counts.filter { $0.value > 1 }.keys)
     }
 
     private static func metres(_ points: CGFloat) -> Double {

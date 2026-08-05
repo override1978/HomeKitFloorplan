@@ -23,109 +23,182 @@ struct FloorplanPreview3DView: View {
     /// bastano a girare intorno alla casa — ed è l'unica cosa che serve per
     /// capire se una stanza è dietro o davanti.
     @State private var quarterTurns = 0
+    @State private var selectedRoomID: UUID?
 
     private var faces: [FloorplanExtruder.Face] {
-        FloorplanExtruder.faces(from: document,
-                               heights: .init(ceiling: ceilingHeight))
+        FloorplanExtruder.faces(from: document, heights: .init(ceiling: ceilingHeight))
+    }
+
+    private var selectedRoomName: String? {
+        faces.first { $0.roomID == selectedRoomID }?.roomName
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
+            Color(white: 0.08).ignoresSafeArea()
+
             GeometryReader { geometry in
                 Canvas { context, size in
-                    draw(faces, in: context, size: size)
+                    draw(in: context, size: size)
                 }
-                .frame(width: geometry.size.width, height: geometry.size.height)
+                .contentShape(Rectangle())
+                .onTapGesture { location in
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        selectedRoomID = room(at: location, in: geometry.size)
+                    }
+                }
             }
+            .ignoresSafeArea()
 
             controls
         }
-        .background(Color(white: 0.08))
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        quarterTurns = (quarterTurns + 1) % 4
-                    }
-                } label: {
-                    Image(systemName: "rotate.3d")
-                }
+        .overlay(alignment: .topLeading) { closeButton }
+        .overlay(alignment: .topTrailing) { rotateButton }
+        .statusBarHidden()
+    }
+
+    // MARK: - Comandi
+
+    /// Comandi sospesi invece che una barra: a schermo intero il soggetto è il
+    /// modello, e una barra di navigazione gli toglierebbe spazio per ripetere
+    /// un nome che si sa già.
+    private var closeButton: some View {
+        Button { dismiss() } label: { chrome("xmark") }
+            .padding()
+    }
+
+    private var rotateButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                quarterTurns = (quarterTurns + 1) % 4
             }
-        }
+        } label: { chrome("rotate.3d") }
+            .padding()
+    }
+
+    private func chrome(_ symbol: String) -> some View {
+        Image(systemName: symbol)
+            .font(.headline)
+            .foregroundStyle(.white)
+            .frame(width: 44, height: 44)
+            .background(.black.opacity(0.35), in: Circle())
     }
 
     private var controls: some View {
-        HStack(spacing: 16) {
-            Image(systemName: "arrow.up.and.down")
-                .foregroundStyle(.secondary)
-            // L'unico dato che una pianta non può contenere: quanto è alto il
-            // soffitto. Tutto il resto viene dal disegno.
-            Slider(value: $ceilingHeight, in: 2.0...4.0, step: 0.1)
-            Text(ceilingHeight.formatted(.number.precision(.fractionLength(1))) + " m")
-                .monospacedDigit()
-                .frame(width: 60, alignment: .trailing)
+        VStack(spacing: 10) {
+            if let selectedRoomName {
+                Text(selectedRoomName)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(.black.opacity(0.45), in: Capsule())
+                    .transition(.scale.combined(with: .opacity))
+            }
+
+            HStack(spacing: 14) {
+                Image(systemName: "arrow.up.and.down")
+                // L'unico dato che una pianta non può contenere: quanto è alto
+                // il soffitto. Tutto il resto viene dal disegno.
+                Slider(value: $ceilingHeight, in: 2.0...4.0, step: 0.1)
+                Text(ceilingHeight.formatted(.number.precision(.fractionLength(1))) + " m")
+                    .monospacedDigit()
+                    .frame(width: 54, alignment: .trailing)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(.black.opacity(0.35), in: Capsule())
+            .frame(maxWidth: 420)
         }
-        .padding()
-        .background(.bar)
+        .padding(.bottom, 28)
+        .padding(.horizontal)
     }
 
-    // MARK: - Disegno
+    // MARK: - Impaginazione
 
-    private func draw(_ faces: [FloorplanExtruder.Face],
-                      in context: GraphicsContext,
-                      size: CGSize) {
-        guard !faces.isEmpty else { return }
+    private struct Entry {
+        let face: FloorplanExtruder.Face
+        let screen: [CGPoint]
+        let depth: Double
+    }
 
-        let projected = faces.map { face -> (face: FloorplanExtruder.Face, points: [CGPoint], depth: Double) in
-            (face, face.points.map(project), depth(of: face.centroid))
-        }
+    /// Proiezione e inquadratura in un punto solo: disegno e tocco devono vedere
+    /// le stesse coordinate, e ricalcolarle in due posti è il modo sicuro per
+    /// farle divergere.
+    private func layout(in size: CGSize) -> [Entry] {
+        let projected = faces.map { ($0, $0.points.map(project), depth(of: $0.centroid)) }
+        let all = projected.flatMap(\.1)
+        guard let minX = all.map(\.x).min(), let maxX = all.map(\.x).max(),
+              let minY = all.map(\.y).min(), let maxY = all.map(\.y).max(),
+              maxX > minX, maxY > minY else { return [] }
 
-        let allPoints = projected.flatMap(\.points)
-        guard let minX = allPoints.map(\.x).min(), let maxX = allPoints.map(\.x).max(),
-              let minY = allPoints.map(\.y).min(), let maxY = allPoints.map(\.y).max(),
-              maxX > minX, maxY > minY else { return }
-
-        let inset: CGFloat = 32
+        let inset: CGFloat = 48
         let scale = min((size.width - inset * 2) / (maxX - minX),
                         (size.height - inset * 2) / (maxY - minY))
-        let offset = CGPoint(x: (size.width - (maxX - minX) * scale) / 2 - minX * scale,
-                             y: (size.height - (maxY - minY) * scale) / 2 - minY * scale)
+        let dx = (size.width - (maxX - minX) * scale) / 2 - minX * scale
+        let dy = (size.height - (maxY - minY) * scale) / 2 - minY * scale
 
-        // Algoritmo del pittore: dal più lontano al più vicino. Con volumi
-        // convessi e separati basta, e costa un ordinamento invece di uno
-        // z-buffer.
-        for entry in projected.sorted(by: { $0.depth > $1.depth }) {
+        return projected
+            .map { Entry(face: $0.0,
+                         screen: $0.1.map { CGPoint(x: $0.x * scale + dx, y: $0.y * scale + dy) },
+                         depth: $0.2) }
+            .sorted { $0.depth > $1.depth }
+    }
+
+    private func draw(in context: GraphicsContext, size: CGSize) {
+        for entry in layout(in: size) {
             var path = Path()
-            let screen = entry.points.map {
-                CGPoint(x: $0.x * scale + offset.x, y: $0.y * scale + offset.y)
-            }
-            path.move(to: screen[0])
-            for point in screen.dropFirst() { path.addLine(to: point) }
+            path.move(to: entry.screen[0])
+            for point in entry.screen.dropFirst() { path.addLine(to: point) }
             path.closeSubpath()
-
+            // Nessun contorno: erano i bordi a far vedere le giunzioni, e con i
+            // muri che ora si compenetrano non separano più niente.
             context.fill(path, with: .color(color(for: entry.face)))
-            context.stroke(path, with: .color(.black.opacity(0.25)), lineWidth: 0.5)
         }
     }
+
+    /// La stanza sotto il dito, cercando **dal più vicino**: su un pavimento
+    /// nascosto da un muro deve rispondere il muro, cioè niente.
+    private func room(at location: CGPoint, in size: CGSize) -> UUID? {
+        for entry in layout(in: size).reversed() where contains(entry.screen, location) {
+            return entry.face.kind == .floor ? entry.face.roomID : nil
+        }
+        return nil
+    }
+
+    private func contains(_ polygon: [CGPoint], _ point: CGPoint) -> Bool {
+        var inside = false
+        var j = polygon.count - 1
+        for i in polygon.indices {
+            let a = polygon[i], b = polygon[j]
+            if (a.y > point.y) != (b.y > point.y),
+               point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x {
+                inside.toggle()
+            }
+            j = i
+        }
+        return inside
+    }
+
+    // MARK: - Proiezione
 
     /// Isometrica classica: due assi a 30°, la quota che sale verticale.
     private func project(_ point: SIMD3<Double>) -> CGPoint {
-        let angle = Double(quarterTurns) * Double.pi / 2
-        let x = point.x * cos(angle) - point.y * sin(angle)
-        let y = point.x * sin(angle) + point.y * cos(angle)
-        let cosine = cos(Double.pi / 6)
-        let sine = sin(Double.pi / 6)
-        return CGPoint(x: (x - y) * cosine,
-                       y: (x + y) * sine - point.z)
+        let (x, y) = rotated(point)
+        return CGPoint(x: (x - y) * cos(Double.pi / 6),
+                       y: (x + y) * sin(Double.pi / 6) - point.z)
     }
 
     private func depth(of point: SIMD3<Double>) -> Double {
-        let angle = Double(quarterTurns) * Double.pi / 2
-        let x = point.x * cos(angle) - point.y * sin(angle)
-        let y = point.x * sin(angle) + point.y * cos(angle)
+        let (x, y) = rotated(point)
         return -(x + y) - point.z
+    }
+
+    private func rotated(_ point: SIMD3<Double>) -> (Double, Double) {
+        let angle = Double(quarterTurns) * Double.pi / 2
+        return (point.x * cos(angle) - point.y * sin(angle),
+                point.x * sin(angle) + point.y * cos(angle))
     }
 
     /// Facce superiori più chiare, fiancate più scure: è tutto ciò che serve a
@@ -135,7 +208,12 @@ struct FloorplanPreview3DView: View {
         case .floor:
             guard let index = face.roomColorIndex else { return Color(white: 0.22) }
             let palette = RoomLabelPalette.colors
-            return Color(cgColor: palette[index % palette.count]).opacity(0.55)
+            let base = Color(cgColor: palette[index % palette.count])
+            let isSelected = face.roomID != nil && face.roomID == selectedRoomID
+            // La selezione alza l'opacità invece di cambiare tinta: la stanza
+            // resta riconoscibile dal suo colore, si vede solo che è accesa —
+            // e le altre si spengono, così il confronto è immediato.
+            return base.opacity(isSelected ? 0.95 : (selectedRoomID == nil ? 0.55 : 0.24))
         case .wallTop:
             return Color(white: 0.86)
         case .wallSide:
