@@ -572,11 +572,19 @@ private struct RealityFloorplanView: UIViewRepresentable {
             orientFlags()
         }
 
-        /// Le etichette girano **solo attorno alla verticale**: seguono la
-        /// telecamera ma restano dritte, o il testo si inclinerebbe con lei.
+        /// Le etichette guardano la telecamera **davvero**, non solo di lato.
+        ///
+        /// Con il solo raddrizzamento sull'asse verticale restavano in piedi:
+        /// viste da una telecamera alta finivano di scorcio e schiacciate, e più
+        /// si inclinava la casa meno si leggevano. Aggiungendo l'inclinazione si
+        /// mettono in faccia a chi guarda da qualunque angolazione.
+        ///
+        /// Il rollio resta a zero — la rotazione si compone in questo ordine
+        /// apposta — così il testo è orizzontale sullo schermo comunque.
         private func orientFlags() {
-            let yaw = simd_quatf(angle: Float(azimuth), axis: SIMD3(0, 1, 0))
-            for label in flagLabels { label.orientation = yaw }
+            let orientation = simd_quatf(angle: Float(azimuth), axis: SIMD3(0, 1, 0))
+                * simd_quatf(angle: -Float(elevation), axis: SIMD3(1, 0, 0))
+            for label in flagLabels { label.orientation = orientation }
         }
 
         func updateSun(_ newSun: FloorplanSunLight) {
