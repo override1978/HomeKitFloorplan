@@ -12,7 +12,7 @@ enum FloorplanMaterialCatalog {
         case .floor:
             return floorMaterial(for: floorKind, isSelected: isSelected)
         case .wall:
-            return opaque(UIColor(red: 0.90, green: 0.92, blue: 0.95, alpha: 1), roughness: 0.94)
+            return wallMaterial(accent: nil)
         case .wallTop:
             return opaque(UIColor(red: 0.94, green: 0.95, blue: 0.97, alpha: 1), roughness: 0.94)
         case .glass:
@@ -256,20 +256,33 @@ enum FloorplanMaterialCatalog {
         return material
     }
 
-    /// La velatura di stato: un piano traslucido **sopra** il pavimento.
+    /// Il muro interno di una stanza che chiede attenzione.
     ///
-    /// Tingere il materiale non funzionava, e il motivo e' che il tint
-    /// **moltiplica**: un rosso pieno anneriva, e schiarito verso il bianco
-    /// diventava rosa; un verde moltiplicato sul parquet lo faceva virare a
-    /// stagno. Il colore va **posato sopra**, non mescolato dentro — che e' poi
-    /// quello che fa la 2D riempiendo il poligono della stanza sopra il disegno.
+    /// L'accento va **sui muri, non sul pavimento**. I muri sono bianchi,
+    /// quindi accettano una tinta senza sporcare nessun materiale — il parquet
+    /// resta parquet — e in una vista dall'alto occupano piu' area del
+    /// pavimento, che gli arredi coprono. Si vedono da qualsiasi angolazione,
+    /// perche' sono verticali.
     ///
-    /// Unlit: e' una velatura, non una superficie, e non deve scurirsi con
-    /// l'ombra della stanza.
-    static func roomWashMaterial(_ colour: UIColor) -> any RealityKit.Material {
-        var material = UnlitMaterial(color: colour)
-        material.blending = .transparent(opacity: .init(floatLiteral: 0.26))
-        return material
+    /// Qui il tint moltiplicativo va bene proprio perche' la base e' quasi
+    /// bianca: moltiplicare per un rosso ammorbidito da' una parete arrossata,
+    /// che e' l'effetto voluto, non un materiale sporcato.
+    static func wallMaterial(accent: UIColor?) -> any RealityKit.Material {
+        let base = UIColor(red: 0.90, green: 0.92, blue: 0.95, alpha: 1)
+        guard let accent else { return opaque(base, roughness: 0.94) }
+        return opaque(blend(accent, with: base, accentAmount: 0.55), roughness: 0.94)
+    }
+
+    private static func blend(_ colour: UIColor, with base: UIColor, accentAmount: CGFloat) -> UIColor {
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        guard colour.getRed(&r1, green: &g1, blue: &b1, alpha: &a1),
+              base.getRed(&r2, green: &g2, blue: &b2, alpha: &a2) else { return base }
+        let t = accentAmount
+        return UIColor(red: r1 * t + r2 * (1 - t),
+                       green: g1 * t + g2 * (1 - t),
+                       blue: b1 * t + b2 * (1 - t),
+                       alpha: 1)
     }
 
     private static func baseFloorMaterial(for floorKind: FloorKind?) -> PhysicallyBasedMaterial {

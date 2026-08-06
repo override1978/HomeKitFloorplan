@@ -476,9 +476,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// non con la geometria, e vanno rigirate verso la telecamera a ogni
         /// spostamento.
         private let flagRoot = Entity()
-        /// Le velature di stato: sopra i pavimenti, fuori dal contenuto, così
-        /// cambiano coi sensori senza toccare la geometria.
-        private let washRoot = Entity()
         private var flagLabels: [Entity] = []
         private var flags: [RoomFlag] = []
         private var flagsSignature = ""
@@ -488,6 +485,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private var roomEntities: [UUID: ModelEntity] = [:]
         private var roomNames: [UUID: String] = [:]
         private var roomFloorKinds: [UUID: FloorKind] = [:]
+        private var roomWallEntities: [UUID: ModelEntity] = [:]
         private var selectedRoomID: UUID?
         var onRoomSelected: (String?) -> Void
 
@@ -515,16 +513,22 @@ private struct RealityFloorplanView: UIViewRepresentable {
             flagsSignature = signature
             flags = newFlags
             rebuildFlags()
-            rebuildRoomWashes()
+            applyRoomAccents()
         }
 
-        /// Il pavimento della stanza prende la tinta del suo stato, come il
-        /// riempimento nella 2D. Il colore risponde a «dov'è il problema» senza
-        /// leggere niente; la bandierina dice «quanto».
-        private func rebuildRoomWashes() {
-            washRoot.children.removeAll()
-            for entity in RealityFloorplanRenderer.roomWashEntities(for: flags, scene: scene) {
-                washRoot.addChild(entity)
+        /// I muri interni della stanza prendono il colore del suo stato.
+        ///
+        /// Solo quelle che chiedono attenzione: accendere anche le stanze a
+        /// posto vuol dire non accendere niente, perche' l'occhio non sa piu'
+        /// dove andare.
+        private func applyRoomAccents() {
+            let accents = Dictionary(
+                uniqueKeysWithValues: flags.filter(\.needsAttention).map { ($0.roomID, $0.accent) }
+            )
+            for (roomID, entity) in roomWallEntities {
+                entity.model?.materials = [
+                    FloorplanMaterialCatalog.wallMaterial(accent: accents[roomID])
+                ]
             }
         }
 
@@ -569,7 +573,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(rimLight)
             anchor.addChild(sunPatchRoot)
             anchor.addChild(flagRoot)
-            anchor.addChild(washRoot)
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
@@ -630,13 +633,14 @@ private struct RealityFloorplanView: UIViewRepresentable {
             selectedRoomID = nil
             let rendered = RealityFloorplanRenderer.entity(for: newScene)
             roomEntities = rendered.roomEntities
+            roomWallEntities = rendered.roomWallEntities
             roomNames = rendered.roomNames
             roomFloorKinds = rendered.roomFloorKinds
             contentRoot.addChild(rendered.root)
             configureLights()
             rebuildSunPatches()
             rebuildFlags()
-            rebuildRoomWashes()
+            applyRoomAccents()
             onRoomSelected(nil)
         }
 
@@ -763,6 +767,9 @@ private enum RealityFloorplanRenderer {
     struct RenderedFloorplan {
         var root: Entity
         var roomEntities: [UUID: ModelEntity]
+        /// I muri **interni** di ogni stanza, tenuti separati per poterli
+        /// accendere del colore del suo stato.
+        var roomWallEntities: [UUID: ModelEntity] = [:]
         var roomNames: [UUID: String]
         var roomFloorKinds: [UUID: FloorKind]
     }
@@ -772,6 +779,7 @@ private enum RealityFloorplanRenderer {
         let center = scene.bounds.center
         let grouped = Dictionary(grouping: scene.faces, by: \.role)
         var roomEntities: [UUID: ModelEntity] = [:]
+        var roomWallEntities: [UUID: ModelEntity] = [:]
         var roomNames: [UUID: String] = [:]
         var roomFloorKinds: [UUID: FloorKind] = [:]
 
@@ -821,6 +829,19 @@ private enum RealityFloorplanRenderer {
                 continue
             }
 
+            if role == .wall {
+                // Una mesh per stanza invece di una sola per tutti i muri: e'
+                // l'unico modo di accenderne una senza accenderle tutte.
+                for (roomID, group) in Dictionary(grouping: faces, by: \.roomID) {
+                    guard let mesh = mesh(for: group, role: role, center: center) else { continue }
+                    let model = ModelEntity(mesh: mesh,
+                                            materials: [FloorplanMaterialCatalog.wallMaterial(accent: nil)])
+                    root.addChild(model)
+                    if let roomID { roomWallEntities[roomID] = model }
+                }
+                continue
+            }
+
             guard let mesh = mesh(for: faces, role: role, center: center) else { continue }
 
             let model = ModelEntity(mesh: mesh, materials: [FloorplanMaterialCatalog.material(for: role)])
@@ -829,6 +850,7 @@ private enum RealityFloorplanRenderer {
 
         return RenderedFloorplan(root: root,
                                  roomEntities: roomEntities,
+                                 roomWallEntities: roomWallEntities,
                                  roomNames: roomNames,
                                  roomFloorKinds: roomFloorKinds)
     }
@@ -875,48 +897,6 @@ private enum RealityFloorplanRenderer {
             root.addChild(label)
 
             return Flag(root: root, label: label)
-        }
-    }
-
-    /// Un piano traslucido sopra il pavimento delle stanze **che stanno male**.
-    ///
-    /// Si riusa il poligono del pavimento così com'è, sollevato di poco: sopra
-    /// le fughe delle piastrelle, che stanno a 9 mm, così non ci litiga.
-    static func roomWashEntities(for flags: [RoomFlag], scene: FloorplanScene) -> [Entity] {
-        guard !flags.isEmpty else { return [] }
-        let centre = scene.bounds.center
-        let lift: Float = 0.014
-
-        return flags.compactMap { flag -> Entity? in
-            guard flag.needsAttention else { return nil }
-            let faces = scene.faces.filter { $0.role == .floor && $0.roomID == flag.roomID }
-            guard !faces.isEmpty else { return nil }
-
-            var positions: [SIMD3<Float>] = []
-            var normals: [SIMD3<Float>] = []
-            var indices: [UInt32] = []
-
-            for face in faces where face.points.count >= 3 {
-                let points = orderedPoints(for: face, role: .floor)
-                let start = UInt32(positions.count)
-                positions.append(contentsOf: points.map {
-                    SIMD3($0.x, $0.y + lift, $0.z) - centre
-                })
-                normals.append(contentsOf: Array(repeating: SIMD3<Float>(0, 1, 0), count: points.count))
-                for index in 1..<(points.count - 1) {
-                    indices.append(contentsOf: [start, start + UInt32(index), start + UInt32(index + 1)])
-                }
-            }
-
-            guard !positions.isEmpty else { return nil }
-            var descriptor = MeshDescriptor(name: "room-wash")
-            descriptor.positions = MeshBuffers.Positions(positions)
-            descriptor.normals = MeshBuffers.Normals(normals)
-            descriptor.primitives = .triangles(indices)
-            guard let mesh = try? MeshResource.generate(from: [descriptor]) else { return nil }
-
-            return ModelEntity(mesh: mesh,
-                               materials: [FloorplanMaterialCatalog.roomWashMaterial(flag.accent)])
         }
     }
 

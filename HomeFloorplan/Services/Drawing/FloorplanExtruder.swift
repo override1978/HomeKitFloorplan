@@ -358,6 +358,31 @@ enum FloorplanExtruder {
         let unitNormal = SIMD2(-axis.y, axis.x)
         let normal = unitNormal * (thickness / 2)
 
+        // A quale stanza **guarda** ogni facciata di muro.
+        //
+        // L'estrusore costruisce i muri senza sapere niente delle stanze, ma
+        // qui l'informazione c'è tutta: si sa da che parte dell'asse sta la
+        // faccia, e basta sporgersi di trenta centimetri in quella direzione
+        // per vedere in che stanza si finisce. Senza questo non si può dare a
+        // una stanza il colore del proprio stato: i muri sarebbero tutti uno.
+        let roomPolygons = document.roomAreas.map { area in
+            (id: area.id, points: area.effectivePoints.map {
+                SIMD2(metres($0.x), metres($0.y))
+            })
+        }
+        func facingRoom(of face: Face) -> UUID? {
+            guard face.kind == .wallSide else { return nil }
+            let centre = face.centroid
+            let flat = SIMD2(centre.x, centre.y)
+            let offset = simd_dot(flat - start, unitNormal)
+            // I tappi di testa stanno sull'asse: sporgersi lungo la normale non
+            // vuol dire niente, e indovinerebbero una stanza a caso.
+            guard abs(offset) > thickness * 0.3 else { return nil }
+
+            let probe = flat + unitNormal * (offset > 0 ? 0.30 : -0.30)
+            return roomPolygons.first { contains(probe, $0.points) }?.id
+        }
+
         var faces = spans.flatMap { span -> [Face] in
             guard span.to > span.from, span.top > span.bottom else { return [] }
             // Lo sbordo tocca solo chi arriva davvero all'estremità del muro.
@@ -372,6 +397,10 @@ enum FloorplanExtruder {
         // Gli infissi non sono più adesivi sulla mezzeria: li costruisce un
         // builder dedicato come solidi dentro lo spessore del muro. Un parapetto
         // di balcone non ne ha, quindi non lo si disturba.
+        for index in faces.indices {
+            faces[index].roomID = facingRoom(of: faces[index])
+        }
+
         if !isParapet {
             let context = FloorplanOpeningBuilder.Wall(start: start,
                                                        axis: axis,
@@ -421,6 +450,21 @@ enum FloorplanExtruder {
                               roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil))
         }
         return faces
+    }
+
+    private static func contains(_ point: SIMD2<Double>, _ polygon: [SIMD2<Double>]) -> Bool {
+        guard polygon.count >= 3 else { return false }
+        var inside = false
+        var previous = polygon.count - 1
+        for current in polygon.indices {
+            let a = polygon[current], b = polygon[previous]
+            if (a.y > point.y) != (b.y > point.y),
+               point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x {
+                inside.toggle()
+            }
+            previous = current
+        }
+        return inside
     }
 
     /// Coordinata arrotondata al millimetro: due estremi «uguali» in un disegno
