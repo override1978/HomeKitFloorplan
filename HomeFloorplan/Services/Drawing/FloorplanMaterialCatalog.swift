@@ -30,6 +30,10 @@ enum FloorplanMaterialCatalog {
             return doorGlassMaterial()
         case .doorHandle:
             return doorHandleMaterial()
+        case .wallGlow:
+            // Il colore arriva a runtime dallo stato della stanza; senza, la
+            // velatura non si vede.
+            return UnlitMaterial(color: .clear)
         case .furniture:
             // Tinta unica per la prova: prima si guarda se sotto luce vera i
             // volumi semplici reggono, poi eventualmente si differenzia.
@@ -306,17 +310,48 @@ enum FloorplanMaterialCatalog {
         return .init(descriptor)
     }()
 
+    /// La velatura sulla parete: piena in basso, spenta salendo.
+    ///
+    /// Prima erano tre fasce a intensità decrescente, e i gradini si vedevano —
+    /// il colore tornava a leggersi come vernice a strisce. Una texture sfumata
+    /// su una superficie traslucida fa quello che fa la macchia sul pavimento:
+    /// non ha bordi, quindi non ha una forma da riconoscere.
+    static func wallGlowMaterial(_ colour: UIColor) -> (any RealityKit.Material)? {
+        guard let texture = verticalFalloffTexture else { return nil }
+        var material = UnlitMaterial()
+        material.color = .init(tint: colour, texture: .init(texture, sampler: clampSampler))
+        material.blending = .transparent(opacity: .init(floatLiteral: 0.42))
+        return material
+    }
+
+    /// Opaca alla base, trasparente in cima. Una sola per tutte le stanze: il
+    /// colore lo mette il tint.
+    private static let verticalFalloffTexture: TextureResource? = {
+        let size = CGSize(width: 8, height: 256)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let colours = [UIColor(white: 1, alpha: 0).cgColor,
+                           UIColor(white: 1, alpha: 0.35).cgColor,
+                           UIColor(white: 1, alpha: 1).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                            colors: colours,
+                                            locations: [0, 0.45, 1]) else { return }
+            // Nell'immagine la y cresce verso il basso: l'estremo pieno è in
+            // fondo, ed è quello che finisce a terra sul muro.
+            context.cgContext.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: 0, y: 0),
+                end: CGPoint(x: 0, y: size.height),
+                options: []
+            )
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
+    }()
+
     /// Il muro interno di una stanza che chiede attenzione.
-    ///
-    /// L'accento va **sui muri, non sul pavimento**. I muri sono bianchi,
-    /// quindi accettano una tinta senza sporcare nessun materiale — il parquet
-    /// resta parquet — e in una vista dall'alto occupano piu' area del
-    /// pavimento, che gli arredi coprono. Si vedono da qualsiasi angolazione,
-    /// perche' sono verticali.
-    ///
-    /// Qui il tint moltiplicativo va bene proprio perche' la base e' quasi
-    /// bianca: moltiplicare per un rosso ammorbidito da' una parete arrossata,
-    /// che e' l'effetto voluto, non un materiale sporcato.
     static func wallMaterial(accent: UIColor?, strength: CGFloat = 0.55) -> any RealityKit.Material {
         let base = UIColor(red: 0.90, green: 0.92, blue: 0.95, alpha: 1)
         guard let accent, strength > 0.001 else { return opaque(base, roughness: 0.94) }

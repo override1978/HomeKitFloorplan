@@ -57,7 +57,14 @@ enum FloorplanExtruder {
             /// un muro tagliato a metà.
             case parapetSide
             case parapetTop
-            /// Specchiatura in rilievo sull'anta di una porta.
+            /// Velatura di stato appoggiata alla facciata interna di un muro.
+        ///
+        /// È geometria a sé e non una tinta sul muro: un colore moltiplicato sul
+        /// materiale non può sfumare, una superficie traslucida sì. E la
+        /// costruisce l'estrusore perché è l'unico che sa **da che parte** guarda
+        /// una facciata — nel renderer il verso della normale non è affidabile.
+        case wallGlow
+        /// Specchiatura in rilievo sull'anta di una porta.
         case doorPanel
         /// Rosetta e leva. È l'unico dettaglio del modello alla scala della mano,
         /// e per questo è il primo che si riconosce.
@@ -397,9 +404,22 @@ enum FloorplanExtruder {
         // Gli infissi non sono più adesivi sulla mezzeria: li costruisce un
         // builder dedicato come solidi dentro lo spessore del muro. Un parapetto
         // di balcone non ne ha, quindi non lo si disturba.
+        var glows: [Face] = []
         for index in faces.indices {
             faces[index].roomID = facingRoom(of: faces[index])
+            guard faces[index].roomID != nil else { continue }
+
+            // Sei millimetri dentro la stanza: abbastanza da non litigare col
+            // muro, troppo poco perché si veda lo stacco.
+            let centre = faces[index].centroid
+            let offset = simd_dot(SIMD2(centre.x, centre.y) - start, unitNormal)
+            let push = unitNormal * (offset > 0 ? 0.006 : -0.006)
+            var glow = faces[index]
+            glow.kind = .wallGlow
+            glow.points = faces[index].points.map { SIMD3($0.x + push.x, $0.y + push.y, $0.z) }
+            glows.append(glow)
         }
+        faces += glows
 
         if !isParapet {
             let context = FloorplanOpeningBuilder.Wall(start: start,

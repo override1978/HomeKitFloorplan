@@ -71,6 +71,8 @@ enum FloorplanSceneBuilder {
             return .frame
         case .doorLeaf:
             return .door
+        case .wallGlow:
+            return .wallGlow
         case .doorPanel:
             return .doorTrim
         case .handle:

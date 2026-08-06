@@ -466,7 +466,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private var roomEntities: [UUID: ModelEntity] = [:]
         private var roomNames: [UUID: String] = [:]
         private var roomFloorKinds: [UUID: FloorKind] = [:]
-        private var roomWallEntities: [UUID: [RealityFloorplanRenderer.WallBand]] = [:]
+        private var roomWallEntities: [UUID: ModelEntity] = [:]
         private var selectedRoomID: UUID?
         var onRoomSelected: (String?) -> Void
 
@@ -514,13 +514,15 @@ private struct RealityFloorplanView: UIViewRepresentable {
             let accents = Dictionary(
                 uniqueKeysWithValues: flags.filter(\.needsAttention).map { ($0.roomID, $0.accent) }
             )
-            for (roomID, bands) in roomWallEntities {
-                for band in bands {
-                    band.entity.model?.materials = [
-                        FloorplanMaterialCatalog.wallMaterial(accent: accents[roomID],
-                                                             strength: band.strength)
-                    ]
+            for (roomID, entity) in roomWallEntities {
+                guard let accent = accents[roomID],
+                      let material = FloorplanMaterialCatalog.wallGlowMaterial(accent)
+                else {
+                    entity.isEnabled = false
+                    continue
                 }
+                entity.model?.materials = [material]
+                entity.isEnabled = true
             }
         }
 
@@ -763,7 +765,7 @@ private enum RealityFloorplanRenderer {
         var roomEntities: [UUID: ModelEntity]
         /// I muri **interni** di ogni stanza, spezzati in fasce di altezza per
         /// poterli accendere con un colore che sfuma invece che piatto.
-        var roomWallEntities: [UUID: [WallBand]] = [:]
+        var roomWallEntities: [UUID: ModelEntity] = [:]
         var roomNames: [UUID: String]
         var roomFloorKinds: [UUID: FloorKind]
     }
@@ -773,7 +775,7 @@ private enum RealityFloorplanRenderer {
         let center = scene.bounds.center
         let grouped = Dictionary(grouping: scene.faces, by: \.role)
         var roomEntities: [UUID: ModelEntity] = [:]
-        var roomWallEntities: [UUID: [WallBand]] = [:]
+        var roomWallEntities: [UUID: ModelEntity] = [:]
         var roomNames: [UUID: String] = [:]
         var roomFloorKinds: [UUID: FloorKind] = [:]
 
@@ -823,31 +825,19 @@ private enum RealityFloorplanRenderer {
                 continue
             }
 
-            if role == .wall {
-                // Una mesh per stanza invece di una sola per tutti i muri: e'
-                // l'unico modo di accenderne una senza accenderle tutte. E
-                // dentro ogni stanza, una mesh per fascia di altezza.
+            if role == .wallGlow {
+                // Una velatura per stanza: e' l'unico modo di accenderne una
+                // senza accenderle tutte.
                 for (roomID, group) in Dictionary(grouping: faces, by: \.roomID) {
-                    guard let roomID else {
-                        if let mesh = mesh(for: group, role: role, center: center) {
-                            root.addChild(ModelEntity(mesh: mesh,
-                                                      materials: [FloorplanMaterialCatalog.wallMaterial(accent: nil)]))
-                        }
-                        continue
-                    }
-                    var bands: [WallBand] = []
-                    for band in wallBandRanges {
-                        let sliced = group.compactMap { slice($0, from: band.from, to: band.to,
-                                                             floorY: scene.bounds.min.y) }
-                        guard let mesh = mesh(for: sliced, role: role, center: center) else { continue }
-                        let model = ModelEntity(
-                            mesh: mesh,
-                            materials: [FloorplanMaterialCatalog.wallMaterial(accent: nil)]
-                        )
-                        root.addChild(model)
-                        bands.append(WallBand(entity: model, strength: band.strength))
-                    }
-                    roomWallEntities[roomID] = bands
+                    guard let roomID,
+                          let mesh = mesh(for: group, role: role, center: center,
+                                          floorY: scene.bounds.min.y)
+                    else { continue }
+                    let model = ModelEntity(mesh: mesh,
+                                            materials: [FloorplanMaterialCatalog.material(for: role)])
+                    model.isEnabled = false
+                    root.addChild(model)
+                    roomWallEntities[roomID] = model
                 }
                 continue
             }
@@ -1063,48 +1053,6 @@ private enum RealityFloorplanRenderer {
         }
     }
 
-    /// Una fascia di muro con la sua intensità di colore.
-    struct WallBand {
-        var entity: ModelEntity
-        var strength: CGFloat
-    }
-
-    /// **Non tutta la parete, e appena accennata.** Il muro deve fare quello che
-    /// fa la macchia sul pavimento: suggerire, non dichiarare. Con tre gradini
-    /// forti si vedevano i salti fra una fascia e l'altra, e il colore
-    /// sembrava vernice; con cinque passaggi leggeri la transizione sparisce e
-    /// resta l'impressione di una luce che sale da terra.
-    private static let wallBandRanges: [(from: Float, to: Float, strength: CGFloat)] = [
-        (0.00, 0.55, 0.34),
-        (0.55, 1.05, 0.24),
-        (1.05, 1.50, 0.15),
-        (1.50, 1.95, 0.08),
-        (1.95, 2.45, 0.03)
-    ]
-
-    /// Ritaglia da una facciata di muro la porzione fra due quote.
-    ///
-    /// I quadrilateri dei muri arrivano sempre con i due punti bassi per primi
-    /// e i due alti dopo, quindi i lati verticali sono `0→3` e `1→2`.
-    private static func slice(_ face: FloorplanScene.MeshFace,
-                              from: Float, to: Float, floorY: Float) -> FloorplanScene.MeshFace? {
-        guard face.points.count == 4 else { return nil }
-        let low = face.points[0].y, high = face.points[3].y
-        guard high > low + 0.001 else { return nil }
-
-        let t0 = max(0, min(1, (floorY + from - low) / (high - low)))
-        let t1 = max(0, min(1, (floorY + to - low) / (high - low)))
-        guard t1 > t0 + 0.001 else { return nil }
-
-        func lerp(_ a: SIMD3<Float>, _ b: SIMD3<Float>, _ t: Float) -> SIMD3<Float> { a + (b - a) * t }
-        var sliced = face
-        sliced.points = [lerp(face.points[0], face.points[3], t0),
-                         lerp(face.points[1], face.points[2], t0),
-                         lerp(face.points[1], face.points[2], t1),
-                         lerp(face.points[0], face.points[3], t1)]
-        return sliced
-    }
-
     private static func doorEntities(for face: FloorplanScene.MeshFace,
                                      center: SIMD3<Float>) -> [Entity] {
         guard face.points.count == 4 else { return [] }
@@ -1222,7 +1170,8 @@ private enum RealityFloorplanRenderer {
 
     private static func mesh(for faces: [FloorplanScene.MeshFace],
                              role: FloorplanScene.MeshFace.MaterialRole,
-                             center: SIMD3<Float>) -> MeshResource? {
+                             center: SIMD3<Float>,
+                             floorY: Float = 0) -> MeshResource? {
         var positions: [SIMD3<Float>] = []
         var normals: [SIMD3<Float>] = []
         var uvs: [SIMD2<Float>] = []
@@ -1239,7 +1188,7 @@ private enum RealityFloorplanRenderer {
             let start = UInt32(positions.count)
             positions.append(contentsOf: points.map { $0 - center })
             normals.append(contentsOf: Array(repeating: normal, count: points.count))
-            uvs.append(contentsOf: textureCoordinates(for: points, role: role))
+            uvs.append(contentsOf: textureCoordinates(for: points, role: role, floorY: floorY))
             for index in 1..<(points.count - 1) {
                 indices.append(start)
                 indices.append(start + UInt32(index))
@@ -1462,12 +1411,22 @@ private enum RealityFloorplanRenderer {
     /// doghe in una camera da 6 m e in un bagno da 2 m, larghe il triplo. Ora la
     /// scala di ripetizione la decide il materiale, ed è la stessa ovunque.
     private static func textureCoordinates(for points: [SIMD3<Float>],
-                                           role: FloorplanScene.MeshFace.MaterialRole) -> [SIMD2<Float>] {
-        guard role == .floor else {
+                                           role: FloorplanScene.MeshFace.MaterialRole,
+                                           floorY: Float = 0) -> [SIMD2<Float>] {
+        switch role {
+        case .floor:
+            return points.map { SIMD2($0.x, $0.z) }
+        case .wallGlow:
+            // La sfumatura si misura da terra, non dalla quota del muro: così
+            // l'architrave sopra una porta non riparte da capo.
+            return points.map { SIMD2($0.x, 1 - ($0.y - floorY) / wallGlowHeight) }
+        default:
             return points.map { SIMD2($0.x, $0.y) }
         }
-        return points.map { SIMD2($0.x, $0.z) }
     }
+
+    /// Sopra questa quota la velatura è spenta del tutto.
+    private static let wallGlowHeight: Float = 2.30
 
     private static func orderedPoints(for face: FloorplanScene.MeshFace,
                                       role: FloorplanScene.MeshFace.MaterialRole) -> [SIMD3<Float>] {
@@ -1586,6 +1545,7 @@ private extension FloorplanScene.MeshFace.MaterialRole {
         .frame,
         .balcony,
         .wall,
+        .wallGlow,
         .balconyTop,
         .wallTop,
         .glass

@@ -24,6 +24,7 @@ struct FloorplanScene {
             case balcony
             case balconyTop
             case furniture
+            case wallGlow
         }
 
         var points: [SIMD3<Float>]
