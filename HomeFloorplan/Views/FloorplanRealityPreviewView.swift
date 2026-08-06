@@ -143,9 +143,9 @@ struct FloorplanRealityPreviewView: View {
             controls
         }
         .overlay(alignment: .top) {
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 topChrome
-                environmentControls
+                if isLayerTrayOpen, mode == .environment { filterRow }
             }
         }
         .statusBarHidden()
@@ -275,26 +275,39 @@ struct FloorplanRealityPreviewView: View {
         )
     }
 
+    /// Titolo a sinistra, selettore al centro, ripristino a destra.
+    ///
+    /// Il titolo non è interattivo: tenerlo su una riga tutta sua sprecava lo
+    /// spazio migliore dello schermo. Spostandolo accanto alla chiusura — che è
+    /// poi l'azione che lo riguarda — la riga centrale si libera per il
+    /// selettore, e si guadagna una riga intera.
+    ///
+    /// Il selettore sta in un livello sopra, non nella stessa `HStack`: così è
+    /// centrato sullo **schermo** e non su ciò che avanza fra titolo e
+    /// pulsante, che con un nome lungo lo sposterebbe.
     private var topChrome: some View {
-        HStack(spacing: 12) {
-            Button { dismiss() } label: { chrome("xmark") }
+        ZStack {
+            HStack(spacing: 10) {
+                Button { dismiss() } label: { chrome("xmark") }
 
-            Text(title)
-                .font(.headline)
-                .lineLimit(1)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(.black.opacity(0.34), in: Capsule())
-                .frame(maxWidth: .infinity)
+                Text(title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(.black.opacity(0.34), in: Capsule())
 
-            Button {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    cameraResetID = UUID()
+                Spacer(minLength: 12)
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { cameraResetID = UUID() }
+                } label: {
+                    chrome("arrow.counterclockwise")
                 }
-            } label: {
-                chrome("arrow.counterclockwise")
             }
+
+            modeRow
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -414,79 +427,75 @@ struct FloorplanRealityPreviewView: View {
     /// cioè i tipi per cui esistono dati veri, gli stessi che la 2D mostra nella
     /// sua barra. Un secondo elenco scritto a mano sarebbe rimasto indietro al
     /// primo sensore nuovo.
-    private var environmentControls: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 6) {
-                Button {
-                    if !isLayerTrayOpen { loadEnvironmentIfNeeded() }
-                    withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: mode.symbol).font(.system(size: 12))
-                        // Da aperto il valore lo dice già il chip selezionato:
-                        // qui sarebbe scritto due volte nella stessa riga.
-                        if !isLayerTrayOpen {
-                            Text(activeLayerLabel).font(.caption.weight(.semibold))
-                        }
+    private var modeRow: some View {
+        HStack(spacing: 6) {
+            Button {
+                if !isLayerTrayOpen { loadEnvironmentIfNeeded() }
+                withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: mode.symbol).font(.system(size: 12))
+                    // Da aperto il valore lo dice già il chip selezionato: qui
+                    // sarebbe scritto due volte nella stessa riga.
+                    if !isLayerTrayOpen {
+                        Text(activeLayerLabel).font(.caption.weight(.semibold))
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, isLayerTrayOpen ? 9 : 12)
-                    .frame(minHeight: 30)
-                    .background(.black.opacity(0.34), in: Capsule())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(String(localized: "floorplan.layers",
-                                                defaultValue: "Overlay")))
-                .accessibilityValue(Text(activeLayerLabel))
-                .accessibilityHint(Text(isLayerTrayOpen
-                                        ? String(localized: "floorplan.layers.close",
-                                                 defaultValue: "Closes the list")
-                                        : String(localized: "floorplan.layers.open",
-                                                 defaultValue: "Opens the list")))
-
-                if isLayerTrayOpen {
-                    HStack(spacing: 4) {
-                        ForEach(PreviewMode.allCases) { value in
-                            chip(label: value.label, icon: value.symbol, isSelected: mode == value) {
-                                mode = value
-                                if value != .environment { sensorFilter = nil }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 5)
-                    .background(.black.opacity(0.34), in: Capsule())
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, isLayerTrayOpen ? 9 : 12)
+                .frame(minHeight: 30)
+                .background(.black.opacity(0.34), in: Capsule())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(String(localized: "floorplan.layers", defaultValue: "Overlay")))
+            .accessibilityValue(Text(activeLayerLabel))
+            .accessibilityHint(Text(isLayerTrayOpen
+                                    ? String(localized: "floorplan.layers.close",
+                                             defaultValue: "Closes the list")
+                                    : String(localized: "floorplan.layers.open",
+                                             defaultValue: "Opens the list")))
 
-            // I tipi sono un livello **sotto** la modalità, e devono sembrarlo:
-            // gruppo separato, più smorzato e centrato sotto il suo genitore,
-            // come nella 2D dove i filtri stanno in una barra loro. Dentro lo
-            // stesso blocco parevano due menu appiccicati.
-            if isLayerTrayOpen, mode == .environment {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        chip(label: String(localized: "filter.all", defaultValue: "Tutto"),
-                             icon: "leaf.fill",
-                             isSelected: sensorFilter == nil) { sensorFilter = nil }
-                        ForEach(envVM.availableSensorTypes) { type in
-                            chip(label: type.displayName, icon: type.sfSymbol,
-                                 isSelected: sensorFilter == type) { sensorFilter = type }
+            if isLayerTrayOpen {
+                HStack(spacing: 4) {
+                    ForEach(PreviewMode.allCases) { value in
+                        chip(label: value.label, icon: value.symbol, isSelected: mode == value) {
+                            mode = value
+                            if value != .environment { sensorFilter = nil }
                         }
                     }
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 4)
                 }
-                // ⚠️ Niente `fixedSize`: faceva prendere alla riga la larghezza
-                // di tutto il contenuto mentre la capsula restava a 500, e i
-                // chip finivano fuori dal proprio sfondo. Il limite serve a
-                // farla scorrere **dentro** la capsula, non a tagliarla.
-                .frame(maxWidth: 560)
-                .background(.black.opacity(0.22), in: Capsule())
-                .transition(.opacity)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 5)
+                .background(.black.opacity(0.34), in: Capsule())
+                .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
+    }
+
+    /// I tipi sono un livello **sotto** la modalità, e devono sembrarlo: gruppo
+    /// separato, più smorzato, sotto la barra alta — come nella 2D, dove i
+    /// filtri stanno in una barra loro sotto le modalità.
+    private var filterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                chip(label: String(localized: "filter.all", defaultValue: "Tutto"),
+                     icon: "leaf.fill",
+                     isSelected: sensorFilter == nil) { sensorFilter = nil }
+                ForEach(envVM.availableSensorTypes) { type in
+                    chip(label: type.displayName, icon: type.sfSymbol,
+                         isSelected: sensorFilter == type) { sensorFilter = type }
+                }
+            }
+            .padding(.horizontal, 5)
+            .padding(.vertical, 4)
+        }
+        // ⚠️ Niente `fixedSize`: faceva prendere alla riga la larghezza di tutto
+        // il contenuto mentre la capsula restava al limite, e i chip finivano
+        // fuori dal proprio sfondo. Il limite serve a farla scorrere **dentro**
+        // la capsula, non a tagliarla.
+        .frame(maxWidth: 560)
+        .background(.black.opacity(0.22), in: Capsule())
+        .transition(.opacity)
     }
 
     /// Lo strato attivo in due parole, per l'etichetta chiusa.
