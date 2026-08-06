@@ -156,7 +156,7 @@ enum FloorplanExtruder {
         var faces = boxFaces(item, from: 0, to: height(of: kind), tint: tint)
         if let back = backrest(of: kind) {
             faces += boxFaces(item, from: back.from, to: back.to,
-                              tint: tint, fraction: back.depth, atFar: back.atFar)
+                              tint: tint, fraction: back.depth, placement: back.placement)
         }
         return faces
     }
@@ -188,24 +188,40 @@ enum FloorplanExtruder {
         }
     }
 
+    /// Da che parte della profondità sta il volume secondario.
+    ///
+    /// ⚠️ Il 2D disegna **sempre** schienali, testiere e cassette contro `minY`,
+    /// cioè in alto sul rettangolo — sulla tela la y cresce verso il basso. Il
+    /// 3D li costruiva dal lato opposto, quindi ogni divano, poltrona, sedia,
+    /// letto e water usciva ruotato di mezzo giro. In pianta non si nota, perché
+    /// la sagoma è quasi simmetrica; in volume si vede subito, perché ci si
+    /// siede rivolti al muro.
+    enum Placement {
+        /// Contro il lato testa, dove il 2D disegna lo schienale.
+        case head
+        /// Centrato: chiome e volumi che un davanti non ce l'hanno.
+        case centred
+    }
+
     /// Il secondo volume: schienale, testiera, cassetta, chioma. `fraction` è
-    /// quanta parte della profondità occupa, `atFar` da quale lato sta.
-    private static func backrest(of kind: FurnitureKind) -> (from: Double, to: Double, depth: Double, atFar: Bool)? {
+    /// quanta parte della profondità occupa.
+    private static func backrest(of kind: FurnitureKind) -> (from: Double, to: Double, depth: Double, placement: Placement)? {
         switch kind {
-        case .sofa, .armchair: (0.42, 0.82, 0.30, true)
-        case .chair:           (0.45, 0.92, 0.22, true)
-        case .bed:             (0.50, 1.00, 0.10, true)
-        case .toilet:          (0.40, 0.78, 0.30, true)
-        case .plant:           (0.70, 1.30, 0.60, false)
-        case .tree:            (2.20, 3.60, 0.95, false)
-        case .shower:          (0.10, 2.00, 1.00, false)
+        case .sofa, .armchair: (0.42, 0.82, 0.30, .head)
+        case .chair:           (0.45, 0.92, 0.22, .head)
+        case .bed:             (0.50, 1.00, 0.10, .head)
+        case .toilet:          (0.40, 0.78, 0.30, .head)
+        case .plant:           (0.70, 1.30, 0.60, .centred)
+        case .tree:            (2.20, 3.60, 0.95, .centred)
+        case .shower:          (0.10, 2.00, 1.00, .centred)
         default:               nil
         }
     }
 
     /// I quattro angoli del rettangolo, ruotati come nel disegno.
     private static func corners(of item: FurnitureItem, at z: Double,
-                                fraction: Double = 1, atFar: Bool = false) -> [SIMD3<Double>] {
+                                fraction: Double = 1,
+                                placement: Placement = .centred) -> [SIMD3<Double>] {
         let rect = item.rect
         let centre = SIMD2(metres(rect.midX), metres(rect.midY))
         let half = SIMD2(metres(rect.width) / 2, metres(rect.height) / 2)
@@ -213,8 +229,10 @@ enum FloorplanExtruder {
         // Il volume secondario occupa una fetta lungo la profondità, non tutto
         // il rettangolo: uno schienale largo quanto il divano è un muro.
         let depth = half.y * 2 * fraction
-        let y0 = atFar ? half.y - depth : -half.y
-        let y1 = atFar ? half.y : -half.y + depth
+        let (y0, y1): (Double, Double) = switch placement {
+        case .head:    (-half.y, -half.y + depth)
+        case .centred: (-depth / 2, depth / 2)
+        }
 
         let local = [SIMD2(-half.x, y0), SIMD2(half.x, y0), SIMD2(half.x, y1), SIMD2(-half.x, y1)]
         let angle = item.rotationDegrees * .pi / 180
@@ -226,10 +244,11 @@ enum FloorplanExtruder {
     }
 
     private static func boxFaces(_ item: FurnitureItem, from bottom: Double, to top: Double,
-                                 tint: CGColor?, fraction: Double = 1, atFar: Bool = false) -> [Face] {
+                                 tint: CGColor?, fraction: Double = 1,
+                                 placement: Placement = .centred) -> [Face] {
         guard top > bottom else { return [] }
-        let low = corners(of: item, at: bottom, fraction: fraction, atFar: atFar)
-        let high = corners(of: item, at: top, fraction: fraction, atFar: atFar)
+        let low = corners(of: item, at: bottom, fraction: fraction, placement: placement)
+        let high = corners(of: item, at: top, fraction: fraction, placement: placement)
         var faces = [Face(points: high, kind: .furnitureTop,
                           roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint)]
         for index in 0..<4 {
