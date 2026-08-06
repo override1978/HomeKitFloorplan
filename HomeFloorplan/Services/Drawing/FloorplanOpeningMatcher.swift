@@ -168,21 +168,38 @@ enum FloorplanOpeningMatcher {
     /// Perché non si è aperto niente. Ogni anello di questa catena può fallire
     /// in silenzio, e da fuori sembrano tutti lo stesso sintomo.
     struct Diagnostics {
+        /// Un sensore di contatto, con quello che dice e dove cade.
+        ///
+        /// La distanza si misura su **tutti** i contatti, non solo su quelli
+        /// aperti: è l'unico modo di verificare la calibrazione quando la casa è
+        /// chiusa — e la casa è chiusa quasi sempre, che è esattamente il
+        /// momento in cui non si riusciva a capire se funzionasse.
+        struct Contact {
+            var name: String
+            var raw: String
+            var distance: Double?
+        }
+
         var markers = 0
-        var withContact = 0
-        var open = 0
         var openings = 0
         var rotation: DrawingExportRotation?
-        var nearestDistance: Double?
+        var contacts: [Contact] = []
         var matched = 0
 
+        var open: Int { contacts.filter { $0.raw != "0" && $0.raw != "-" }.count }
+
         var summary: String {
-            var parts = ["marker \(markers)", "contatti \(withContact)",
+            var parts = ["marker \(markers)", "contatti \(contacts.count)",
                          "aperti \(open)", "vani \(openings)"]
             parts.append(rotation.map { "rot \($0.quarterTurns)" } ?? "NO CALIBRAZIONE")
-            if let nearestDistance { parts.append(String(format: "vicino %.2fm", nearestDistance)) }
             parts.append("associati \(matched)")
-            return parts.joined(separator: " · ")
+
+            let detail = contacts.map { contact in
+                let distance = contact.distance.map { String(format: "%.2fm", $0) } ?? "?"
+                return "\(contact.name)=\(contact.raw)@\(distance)"
+            }.joined(separator: "  ")
+
+            return parts.joined(separator: " · ") + (detail.isEmpty ? "" : "\n" + detail)
         }
     }
 
@@ -194,32 +211,33 @@ enum FloorplanOpeningMatcher {
         report.markers = markers.count
         let openings = centres(in: document)
         report.openings = openings.count
+        let transform = transform(document: document, exportRotation: exportRotation)
+        report.rotation = transform == nil ? nil : exportRotation
 
-        var openPositions: [CGPoint] = []
         for marker in markers {
             guard let accessory = homeKit.accessory(for: marker.uuid) else { continue }
-            let hasContact = accessory.services.contains { service in
-                service.characteristics.contains { $0.characteristicType == HMCharacteristicTypeContactState }
-            }
-            guard hasContact else { continue }
-            report.withContact += 1
-            if isContactOpen(accessory, using: homeKit) {
-                report.open += 1
-                openPositions.append(marker.position)
-            }
-        }
-
-        guard let transform = transform(document: document, exportRotation: exportRotation) else { return report }
-        report.rotation = exportRotation
-
-        for position in openPositions {
-            let point = transform.metres(from: position)
-            for opening in openings {
-                let distance = simd_distance(point, opening.centre)
-                if distance < (report.nearestDistance ?? .greatestFiniteMagnitude) {
-                    report.nearestDistance = distance
+            var raw: String?
+            for service in accessory.services {
+                for characteristic in service.characteristics
+                where characteristic.characteristicType == HMCharacteristicTypeContactState {
+                    let value = homeKit.value(for: characteristic) ?? characteristic.value
+                    raw = value.map { "\($0)" } ?? "-"
                 }
             }
+            guard let raw else { continue }
+
+            var nearest: Double?
+            if let transform {
+                let point = transform.metres(from: marker.position)
+                for opening in openings {
+                    let distance = simd_distance(point, opening.centre)
+                    if distance < (nearest ?? .greatestFiniteMagnitude) { nearest = distance }
+                }
+            }
+
+            report.contacts.append(.init(name: String(accessory.name.prefix(12)),
+                                         raw: raw,
+                                         distance: nearest))
         }
 
         report.matched = openOpenings(in: document, exportRotation: exportRotation,

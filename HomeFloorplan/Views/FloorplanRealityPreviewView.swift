@@ -187,9 +187,10 @@ struct FloorplanRealityPreviewView: View {
                 markers: markers.map { (uuid: $0.uuid, position: $0.position) },
                 homeKit: homeKit
             ).summary)
-                .font(.caption2.monospaced())
+                .font(.system(size: 9).monospaced())
                 .foregroundStyle(.white.opacity(0.75))
                 .multilineTextAlignment(.center)
+                .lineLimit(4)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(.black.opacity(0.4), in: Capsule())
