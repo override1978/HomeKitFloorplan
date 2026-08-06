@@ -6,13 +6,12 @@ import Metal
 
 enum FloorplanMaterialCatalog {
     static func material(for role: FloorplanScene.MeshFace.MaterialRole,
-                         isSelected: Bool = false,
                          floorKind: FloorKind? = nil) -> any RealityKit.Material {
         switch role {
         case .floor:
-            return floorMaterial(for: floorKind, isSelected: isSelected)
+            return baseFloorMaterial(for: floorKind)
         case .wall:
-            return wallMaterial(accent: nil)
+            return opaque(UIColor(red: 0.90, green: 0.92, blue: 0.95, alpha: 1), roughness: 0.94)
         case .wallTop:
             return opaque(UIColor(red: 0.94, green: 0.95, blue: 0.97, alpha: 1), roughness: 0.94)
         case .glass:
@@ -88,6 +87,19 @@ enum FloorplanMaterialCatalog {
 
     static func doorHandleMaterial() -> any RealityKit.Material {
         opaque(UIColor(red: 0.72, green: 0.60, blue: 0.32, alpha: 1), roughness: 0.22, metallic: 0.85)
+    }
+
+    /// Il contorno della stanza selezionata.
+    ///
+    /// La selezione **non tinge più il pavimento**. Con uno strato ambientale
+    /// attivo l'ambra della selezione si sommava alla velatura di stato e usciva
+    /// un arancione che poteva voler dire due cose diverse: «l'hai toccata tu»
+    /// oppure «qui l'aria è pessima». Un contorno vive su un canale suo e non si
+    /// somma a niente.
+    static func selectionOutlineMaterial() -> any RealityKit.Material {
+        var material = UnlitMaterial(color: UIColor(red: 1.0, green: 0.84, blue: 0.42, alpha: 1))
+        material.blending = .transparent(opacity: .init(floatLiteral: 0.92))
+        return material
     }
 
     /// Lo stelo della bandierina di stanza.
@@ -246,20 +258,6 @@ enum FloorplanMaterialCatalog {
         return .init(descriptor)
     }()
 
-    /// La selezione **tinge**, non sostituisce.
-    ///
-    /// Sostituire il materiale spegneva parquet e marmo proprio nella stanza che
-    /// si sta guardando: si toccava il salotto e il legno spariva. Un tint si
-    /// moltiplica sopra la texture, quindi la venatura resta e la stanza si
-    /// accende lo stesso.
-    private static func floorMaterial(for floorKind: FloorKind?,
-                                      isSelected: Bool = false) -> any RealityKit.Material {
-        var material = baseFloorMaterial(for: floorKind)
-        guard isSelected else { return material }
-        material.baseColor.tint = UIColor(red: 1.0, green: 0.86, blue: 0.50, alpha: 1)
-        return material
-    }
-
     /// La macchia di calore sul pavimento.
     ///
     /// **Senza bordi.** Un poligono pieno che finisce netto contro le pareti si
@@ -350,25 +348,6 @@ enum FloorplanMaterialCatalog {
         guard let cgImage = image.cgImage else { return nil }
         return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
     }()
-
-    /// Il muro interno di una stanza che chiede attenzione.
-    static func wallMaterial(accent: UIColor?, strength: CGFloat = 0.55) -> any RealityKit.Material {
-        let base = UIColor(red: 0.90, green: 0.92, blue: 0.95, alpha: 1)
-        guard let accent, strength > 0.001 else { return opaque(base, roughness: 0.94) }
-        return opaque(blend(accent, with: base, accentAmount: strength), roughness: 0.94)
-    }
-
-    private static func blend(_ colour: UIColor, with base: UIColor, accentAmount: CGFloat) -> UIColor {
-        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
-        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
-        guard colour.getRed(&r1, green: &g1, blue: &b1, alpha: &a1),
-              base.getRed(&r2, green: &g2, blue: &b2, alpha: &a2) else { return base }
-        let t = accentAmount
-        return UIColor(red: r1 * t + r2 * (1 - t),
-                       green: g1 * t + g2 * (1 - t),
-                       blue: b1 * t + b2 * (1 - t),
-                       alpha: 1)
-    }
 
     private static func baseFloorMaterial(for floorKind: FloorKind?) -> PhysicallyBasedMaterial {
         switch floorKind {

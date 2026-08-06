@@ -469,15 +469,16 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// Le macchie di calore sui pavimenti: fuori dal contenuto, così
         /// cambiano coi sensori senza toccare la geometria.
         private let heatRoot = Entity()
+        /// Il contorno della stanza selezionata: un canale suo, che non si
+        /// somma alle velature di stato.
+        private let selectionRoot = Entity()
         private var flagLabels: [Entity] = []
         private var flags: [RoomFlag] = []
         private var flagsSignature = ""
         private var installedSignature: String?
         private var handledResetID: UUID
         private var gestureStart: (azimuth: Double, elevation: Double)?
-        private var roomEntities: [UUID: ModelEntity] = [:]
         private var roomNames: [UUID: String] = [:]
-        private var roomFloorKinds: [UUID: FloorKind] = [:]
         private var roomWallEntities: [UUID: ModelEntity] = [:]
         private var selectedRoomID: UUID?
         var onRoomSelected: (String?) -> Void
@@ -580,6 +581,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(sunPatchRoot)
             anchor.addChild(flagRoot)
             anchor.addChild(heatRoot)
+            anchor.addChild(selectionRoot)
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
@@ -638,11 +640,10 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
             contentRoot.children.removeAll()
             selectedRoomID = nil
+            selectionRoot.children.removeAll()
             let rendered = RealityFloorplanRenderer.entity(for: newScene)
-            roomEntities = rendered.roomEntities
             roomWallEntities = rendered.roomWallEntities
             roomNames = rendered.roomNames
-            roomFloorKinds = rendered.roomFloorKinds
             contentRoot.addChild(rendered.root)
             configureLights()
             rebuildSunPatches()
@@ -740,32 +741,17 @@ private struct RealityFloorplanView: UIViewRepresentable {
         }
 
         private func selectRoom(_ roomID: UUID?) {
-            if let selectedRoomID, let entity = roomEntities[selectedRoomID] {
-                entity.model?.materials = [
-                    FloorplanMaterialCatalog.material(
-                        for: .floor,
-                        isSelected: false,
-                        floorKind: roomFloorKinds[selectedRoomID]
-                    )
-                ]
-            }
-
             selectedRoomID = roomID
+            selectionRoot.children.removeAll()
 
-            if let roomID, let entity = roomEntities[roomID] {
-                // Il `floorKind` va passato anche da selezionata, o evidenziare
-                // una stanza le spegne il parquet e la lascia a tinta piatta.
-                entity.model?.materials = [
-                    FloorplanMaterialCatalog.material(
-                        for: .floor,
-                        isSelected: true,
-                        floorKind: roomFloorKinds[roomID]
-                    )
-                ]
-                onRoomSelected(roomNames[roomID])
-            } else {
+            guard let roomID else {
                 onRoomSelected(nil)
+                return
             }
+            if let outline = RealityFloorplanRenderer.selectionOutlineEntity(for: roomID, scene: scene) {
+                selectionRoot.addChild(outline)
+            }
+            onRoomSelected(roomNames[roomID])
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
@@ -916,6 +902,65 @@ private enum RealityFloorplanRenderer {
 
             return Flag(root: root, label: label)
         }
+    }
+
+    /// Una fascia lungo il perimetro del pavimento della stanza.
+    ///
+    /// Il verso «dentro» si trova provandolo: per ogni lato si sposta il punto
+    /// medio da una parte e si guarda se cade dentro il poligono. Dedurlo dal
+    /// verso di avvolgimento sarebbe più elegante e meno affidabile — le stanze
+    /// arrivano disegnate a mano, in entrambi i sensi.
+    static func selectionOutlineEntity(for roomID: UUID, scene: FloorplanScene) -> Entity? {
+        let faces = scene.faces.filter { $0.role == .floor && $0.roomID == roomID }
+        guard !faces.isEmpty else { return nil }
+
+        let centre = scene.bounds.center
+        let lift: Float = 0.022
+        let width: Float = 0.07
+
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        var indices: [UInt32] = []
+
+        for face in faces where face.points.count >= 3 {
+            let polygon = orderedPoints(for: face, role: .floor)
+            for index in polygon.indices {
+                let a = polygon[index]
+                let b = polygon[(index + 1) % polygon.count]
+                let along = SIMD2(b.x - a.x, b.z - a.z)
+                let length = simd_length(along)
+                guard length > 0.001 else { continue }
+
+                var inward = SIMD2(-along.y, along.x) / length
+                let middle = SIMD2((a.x + b.x) / 2, (a.z + b.z) / 2)
+                if !contains(point: middle + inward * 0.05, in: polygon) { inward = -inward }
+
+                let y = a.y + lift
+                let quad = [
+                    SIMD3(a.x, y, a.z),
+                    SIMD3(b.x, y, b.z),
+                    SIMD3(b.x + inward.x * width, y, b.z + inward.y * width),
+                    SIMD3(a.x + inward.x * width, y, a.z + inward.y * width)
+                ]
+                let start = UInt32(positions.count)
+                positions.append(contentsOf: quad.map { $0 - centre })
+                normals.append(contentsOf: Array(repeating: SIMD3<Float>(0, 1, 0), count: 4))
+                indices.append(contentsOf: [start, start + 1, start + 2,
+                                            start, start + 2, start + 3,
+                                            start, start + 2, start + 1,
+                                            start, start + 3, start + 2])
+            }
+        }
+
+        guard !positions.isEmpty else { return nil }
+        var descriptor = MeshDescriptor(name: "room-outline")
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.primitives = .triangles(indices)
+        guard let mesh = try? MeshResource.generate(from: [descriptor]) else { return nil }
+
+        return ModelEntity(mesh: mesh,
+                           materials: [FloorplanMaterialCatalog.selectionOutlineMaterial()])
     }
 
     // MARK: - Il sole che entra
