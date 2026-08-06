@@ -30,6 +30,11 @@ struct RoomFlag {
     var title: String
     var value: String
     var accent: UIColor
+    /// Solo le stanze che chiedono attenzione prendono la velatura sul
+    /// pavimento. Una velatura verde su una stanza che sta bene non dice
+    /// niente: sporca il materiale e basta, e toglie forza all'unica tinta
+    /// che invece va vista.
+    var needsAttention: Bool
 }
 
 // MARK: - FloorplanSunLight
@@ -133,13 +138,17 @@ struct FloorplanRealityPreviewView: View {
                 return RoomFlag(roomID: anchor.roomID, anchor: anchor.point,
                                 title: anchor.roomName,
                                 value: sensor.formattedValue,
-                                accent: UIColor(urgencyColour(sensor.urgency)))
+                                accent: UIColor(urgencyColour(sensor.urgency)),
+                                needsAttention: sensor.urgency != .normal)
             }
 
             return RoomFlag(roomID: anchor.roomID, anchor: anchor.point,
                             title: anchor.roomName,
                             value: "\(Int(data.qualityScore * 100))% \(data.qualityLabel)",
-                            accent: UIColor(data.qualityColor))
+                            accent: UIColor(data.qualityColor),
+                            // Stessa soglia con cui `qualityLabel` smette di
+                            // dire «Ottima»: una sola definizione di «sta bene».
+                            needsAttention: data.qualityScore < 0.85)
         }
     }
 
@@ -869,7 +878,7 @@ private enum RealityFloorplanRenderer {
         }
     }
 
-    /// Un piano traslucido sopra il pavimento di ogni stanza che ha uno stato.
+    /// Un piano traslucido sopra il pavimento delle stanze **che stanno male**.
     ///
     /// Si riusa il poligono del pavimento così com'è, sollevato di poco: sopra
     /// le fughe delle piastrelle, che stanno a 9 mm, così non ci litiga.
@@ -879,6 +888,7 @@ private enum RealityFloorplanRenderer {
         let lift: Float = 0.014
 
         return flags.compactMap { flag -> Entity? in
+            guard flag.needsAttention else { return nil }
             let faces = scene.faces.filter { $0.role == .floor && $0.roomID == flag.roomID }
             guard !faces.isEmpty else { return nil }
 

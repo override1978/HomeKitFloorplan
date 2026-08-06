@@ -268,7 +268,7 @@ enum FloorplanMaterialCatalog {
     /// l'ombra della stanza.
     static func roomWashMaterial(_ colour: UIColor) -> any RealityKit.Material {
         var material = UnlitMaterial(color: colour)
-        material.blending = .transparent(opacity: .init(floatLiteral: 0.30))
+        material.blending = .transparent(opacity: .init(floatLiteral: 0.26))
         return material
     }
 
