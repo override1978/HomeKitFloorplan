@@ -13,11 +13,8 @@ struct Preview3DRequest: Identifiable {
     /// La scrittura su SwiftData resta in `FloorplanListView`: l'anteprima
     /// riceve una chiusura e non conosce né il modello né il contesto.
     let applyNorthBearing: (Double) -> Void
-    /// Aperture con il contatto aperto, risolte al momento dell'apertura della
-    /// vista: è una fotografia, non un flusso.
-    let openOpeningIDs: Set<UUID>
     /// Marker della planimetria, in coordinate normalizzate sull'immagine.
-    let markers: [(position: CGPoint, name: String)]
+    let markers: [(uuid: UUID, position: CGPoint, name: String)]
     /// Servono a **ricavare** la trasformazione: una stanza esiste in entrambi
     /// gli spazi — normalizzata qui, in coordinate canvas nel disegno — e due
     /// rappresentazioni della stessa cosa sono tutto ciò che serve per passare
@@ -48,13 +45,12 @@ struct FloorplanRealityPreviewView: View {
     /// Chiamata quando l'utente sceglie l'esposizione: la persistenza sta fuori
     /// di qui, così questa vista non conosce SwiftData.
     let onNorthBearingChange: (Double) -> Void
-    /// Le aperture il cui contatto risulta aperto: vengono disegnate **aperte**.
-    ///
-    /// Non è un'icona sopra la casa, è la casa. «Ho chiuso tutto?» si risponde
-    /// guardandola, senza legenda e senza niente che galleggi.
-    let openOpeningIDs: Set<UUID>
+    /// Marker degli accessori, per risolvere qui quali infissi sono aperti.
+    let markers: [(uuid: UUID, position: CGPoint, name: String)]
+    let linkedRooms: [LinkedRoom]
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(HomeKitService.self) private var homeKit
     @State private var ceilingHeight: Double = 2.4
     @State private var floorplanScene: FloorplanScene?
     @State private var cameraResetID = UUID()
@@ -86,8 +82,26 @@ struct FloorplanRealityPreviewView: View {
         .statusBarHidden()
         .onAppear {
             exposure = Exposure.nearest(to: northBearingDegrees)
+            // Senza questo i sensori non sono mai stati letti e risultano tutti
+            // chiusi: `startObserving` fa il readValue iniziale e arma le
+            // notifiche. La vista si apre dalla lista, che non osserva niente.
+            homeKit.startObserving(accessoryUUIDs: Set(markers.map(\.uuid)))
             rebuildScene()
         }
+        // Lo stato non è più una fotografia: se apri una finestra mentre stai
+        // guardando, l'anta si muove. `characteristicValues` è osservabile, e
+        // ricalcolare l'insieme costa una manciata di confronti.
+        .onChange(of: openOpeningIDs) { _, _ in rebuildScene() }
+    }
+
+    /// Gli infissi da disegnare aperti, contro lo stato corrente di HomeKit.
+    private var openOpeningIDs: Set<UUID> {
+        FloorplanOpeningMatcher.openOpenings(
+            in: document,
+            linkedRooms: linkedRooms,
+            markers: markers.map { (uuid: $0.uuid, position: $0.position) },
+            homeKit: homeKit
+        )
     }
 
     // MARK: - Sole

@@ -28,26 +28,6 @@ struct FloorplanListView: View {
         pinnedFloorplanIDsRaw = (try? String(data: JSONEncoder().encode(ids), encoding: .utf8)) ?? "[]"
     }
 
-    /// Quali aperture disegnare aperte.
-    ///
-    /// Si parte dai marker dei sensori di contatto che risultano aperti e si
-    /// cerca il vano più vicino. È una corrispondenza per vicinanza — nel
-    /// modello non esiste un legame dichiarato fra un'apertura e il suo sensore
-    /// — quindi un contatto montato sullo stipite invece che sull'anta, o due
-    /// sensori sulle due ante, qui si sbagliano. Vedi `FloorplanOpeningMatcher`.
-    private func openOpeningIDs(of floorplan: Floorplan, in document: DrawingDocument) -> Set<UUID> {
-        let openMarkers = floorplan.accessories.compactMap { placed -> CGPoint? in
-            guard let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID),
-                  FloorplanOpeningMatcher.isContactOpen(accessory)
-            else { return nil }
-            return CGPoint(x: placed.positionX, y: placed.positionY)
-        }
-
-        return FloorplanOpeningMatcher.openOpenings(in: document,
-                                                    linkedRooms: floorplan.linkedRooms,
-                                                    openMarkerPositions: openMarkers)
-    }
-
     private func isPinned(_ floorplan: Floorplan) -> Bool {
         decodePinnedIDs().contains(floorplan.id.uuidString)
     }
@@ -122,7 +102,8 @@ struct FloorplanListView: View {
                                             title: request.title,
                                             northBearingDegrees: request.northBearingDegrees,
                                             onNorthBearingChange: request.applyNorthBearing,
-                                            openOpeningIDs: request.openOpeningIDs)
+                                            markers: request.markers,
+                                            linkedRooms: request.linkedRooms)
             }
             .navigationTitle(isCompact
                              ? String(localized: "floorplans.title", defaultValue: "Floorplans")
@@ -584,10 +565,10 @@ struct FloorplanListView: View {
                         floorplan.northBearingDegrees = bearing
                         try? modelContext.save()
                     },
-                    openOpeningIDs: openOpeningIDs(of: floorplan, in: document),
                     markers: floorplan.accessories.map {
-                        (CGPoint(x: $0.positionX, y: $0.positionY),
-                         $0.customLabel ?? homeKit.accessory(for: $0.homeKitAccessoryUUID)?.name ?? "")
+                        (uuid: $0.homeKitAccessoryUUID,
+                         position: CGPoint(x: $0.positionX, y: $0.positionY),
+                         name: $0.customLabel ?? homeKit.accessory(for: $0.homeKitAccessoryUUID)?.name ?? "")
                     },
                     linkedRooms: floorplan.linkedRooms)
             } label: {

@@ -115,18 +115,41 @@ enum FloorplanOpeningMatcher {
 
     /// `true` se l'accessorio espone un contatto e il contatto è aperto.
     ///
-    /// Si legge il valore in cache: HomeKit lo tiene aggiornato con le notifiche
-    /// quando l'app è in primo piano, e per una vista che si apre a richiesta
-    /// basta. Se dovesse risultare in ritardo, la correzione è una `readValue`
-    /// esplicita all'apertura della vista, non un cambio di approccio.
-    static func isContactOpen(_ accessory: HMAccessory) -> Bool {
+    /// ⚠️ Si legge `HomeKitService.characteristicValues`, **non**
+    /// `HMCharacteristic.value`. Quest'ultimo resta `nil` finché nessuno ha
+    /// fatto `readValue`, e HomeKit non lo popola da solo: leggerlo direttamente
+    /// dava «chiuso» per qualunque sensore mai osservato in quella sessione,
+    /// cioè sempre, se la vista si apre dalla lista invece che dall'editor.
+    ///
+    /// L'altro motivo per passare di lì è che quel dizionario è `@Observable`:
+    /// una vista che lo legge si ridisegna quando un contatto cambia, senza
+    /// doverlo chiedere.
+    static func isContactOpen(_ accessory: HMAccessory, using homeKit: HomeKitService) -> Bool {
         for service in accessory.services {
             for characteristic in service.characteristics
             where characteristic.characteristicType == HMCharacteristicTypeContactState {
-                if let value = characteristic.value as? Int, value != 0 { return true }
-                if let value = characteristic.value as? Bool, value { return true }
+                let value = homeKit.value(for: characteristic) ?? characteristic.value
+                if let number = value as? Int, number != 0 { return true }
+                if let flag = value as? Bool, flag { return true }
+                if let number = value as? NSNumber, number.intValue != 0 { return true }
             }
         }
         return false
+    }
+
+    /// Le aperture aperte, risolte contro lo stato corrente di HomeKit.
+    static func openOpenings(in document: DrawingDocument,
+                             linkedRooms: [LinkedRoom],
+                             markers: [(uuid: UUID, position: CGPoint)],
+                             homeKit: HomeKitService) -> Set<UUID> {
+        let openMarkers = markers.compactMap { marker -> CGPoint? in
+            guard let accessory = homeKit.accessory(for: marker.uuid),
+                  isContactOpen(accessory, using: homeKit)
+            else { return nil }
+            return marker.position
+        }
+        return openOpenings(in: document,
+                            linkedRooms: linkedRooms,
+                            openMarkerPositions: openMarkers)
     }
 }
