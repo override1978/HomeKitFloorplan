@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import RealityKit
+import HomeKit
 import UIKit
 
 /// Una planimetria pronta da mostrare in volume.
@@ -159,6 +160,7 @@ struct FloorplanRealityPreviewView: View {
             VStack(spacing: 8) {
                 topChrome
                 if isLayerTrayOpen, mode == .environment { filterRow }
+                if mode == .security { securityStatusPill }
             }
         }
         .statusBarHidden()
@@ -167,7 +169,12 @@ struct FloorplanRealityPreviewView: View {
             // Senza questo i sensori non sono mai stati letti e risultano tutti
             // chiusi: `startObserving` fa il readValue iniziale e arma le
             // notifiche. La vista si apre dalla lista, che non osserva niente.
-            homeKit.startObserving(accessoryUUIDs: Set(markers.map(\.uuid)))
+            // ⚠️ Anche la centralina, non solo i marker: `homeKit.value(for:)`
+            // resta nil finché nessuno ha fatto `readValue`, ed è lo stesso
+            // inciampo che ha tenuto chiuse le porte per mezza giornata.
+            var observed = Set(markers.map(\.uuid))
+            if let system = securitySystem { observed.insert(system.accessory.uniqueIdentifier) }
+            homeKit.startObserving(accessoryUUIDs: observed)
             rebuildScene()
         }
         // Lo stato non è più una fotografia: se apri una finestra mentre stai
@@ -543,6 +550,56 @@ struct FloorplanRealityPreviewView: View {
         .frame(maxWidth: 640)
         .background(.black.opacity(0.22), in: Capsule())
         .transition(.opacity)
+    }
+
+    /// La centralina della casa, se ce n'è una.
+    ///
+    /// L'adapter si costruisce al volo: legge da `homeKit.characteristicValues`,
+    /// che è osservabile, quindi la vista si aggiorna quando l'antifurto cambia
+    /// stato senza doverlo tenere da parte.
+    private var securitySystem: SecuritySystemAdapter? {
+        homeKit.allAccessories
+            .lazy
+            .compactMap { SecuritySystemAdapter(accessory: $0, homeKit: homeKit) }
+            .first
+    }
+
+    /// Lo stato dell'antifurto è **l'unica cosa globale** della vista: non
+    /// appartiene a una stanza, quindi non entra in una bandierina.
+    ///
+    /// È di sola lettura, per scelta: la 3D è la vista d'insieme, i comandi
+    /// stanno in 2D. Qui si vede com'è la casa, non la si governa.
+    @ViewBuilder
+    private var securityStatusPill: some View {
+        if let system = securitySystem {
+            let triggered = system.currentState == .triggered
+            let mode = system.currentMode
+            let tint = triggered ? Color.red : mode.tintColor
+            HStack(spacing: 7) {
+                Image(systemName: triggered ? "exclamationmark.shield.fill" : mode.symbolName)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(triggered
+                     ? String(localized: "security.state.triggered", defaultValue: "Alarm")
+                     : mode.displayName)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .background(.black.opacity(0.34), in: Capsule())
+            .overlay(Capsule().strokeBorder(tint.opacity(0.45), lineWidth: 1.5))
+            .transition(.opacity)
+        } else {
+            // Nessuna centralina: dirlo è meglio che lasciare uno spazio vuoto
+            // che sembra un guasto.
+            Text(String(localized: "security.noSystem", defaultValue: "No alarm system"))
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.6))
+                .padding(.horizontal, 14)
+                .frame(minHeight: 36)
+                .background(.black.opacity(0.22), in: Capsule())
+                .transition(.opacity)
+        }
     }
 
     /// Lo strato attivo in due parole, per l'etichetta chiusa.
