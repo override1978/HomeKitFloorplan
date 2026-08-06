@@ -130,7 +130,11 @@ struct FloorplanRealityPreviewView: View {
                                      sun: sun,
                                      flags: roomFlags,
                                      cameraResetID: cameraResetID,
-                                     onRoomSelected: { selectedRoomName = $0 })
+                                     onRoomSelected: { selectedRoomName = $0 },
+                                     onSceneTouched: {
+                                         guard isLayerTrayOpen else { return }
+                                         withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen = false }
+                                     })
                     .ignoresSafeArea()
             } else {
                 Color.black.ignoresSafeArea()
@@ -523,6 +527,9 @@ private struct RealityFloorplanView: UIViewRepresentable {
     let flags: [RoomFlag]
     let cameraResetID: UUID
     let onRoomSelected: (String?) -> Void
+    /// Toccare o ruotare il modello vuol dire «ho finito di scegliere»: il
+    /// cassetto si richiude da solo e restituisce lo spazio.
+    let onSceneTouched: () -> Void
 
     func makeUIView(context: Context) -> ARView {
         let view = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
@@ -551,6 +558,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
     func updateUIView(_ view: ARView, context: Context) {
         context.coordinator.onRoomSelected = onRoomSelected
+        context.coordinator.onSceneTouched = onSceneTouched
         if context.coordinator.background != background {
             context.coordinator.background = background
             view.environment.background = .color(background)
@@ -562,7 +570,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(scene: scene, sun: sun, cameraResetID: cameraResetID, onRoomSelected: onRoomSelected)
+        Coordinator(scene: scene, sun: sun, cameraResetID: cameraResetID,
+                    onRoomSelected: onRoomSelected, onSceneTouched: onSceneTouched)
             .prepared(with: flags)
     }
 
@@ -611,15 +620,18 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private var roomWallEntities: [UUID: ModelEntity] = [:]
         private var selectedRoomID: UUID?
         var onRoomSelected: (String?) -> Void
+        var onSceneTouched: () -> Void
 
         init(scene: FloorplanScene,
              sun: FloorplanSunLight,
              cameraResetID: UUID,
-             onRoomSelected: @escaping (String?) -> Void) {
+             onRoomSelected: @escaping (String?) -> Void,
+             onSceneTouched: @escaping () -> Void) {
             self.scene = scene
             self.sun = sun
             self.handledResetID = cameraResetID
             self.onRoomSelected = onRoomSelected
+            self.onSceneTouched = onSceneTouched
         }
 
         func prepared(with flags: [RoomFlag]) -> Coordinator {
@@ -841,6 +853,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         @objc func panned(_ recognizer: UIPanGestureRecognizer) {
             switch recognizer.state {
             case .began:
+                onSceneTouched()
                 gestureStart = (azimuth, elevation)
             case .changed:
                 let origin = gestureStart ?? (azimuth, elevation)
@@ -865,6 +878,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
         @objc func tapped(_ recognizer: UITapGestureRecognizer) {
             guard let view = recognizer.view as? ARView else { return }
+            onSceneTouched()
             let location = recognizer.location(in: view)
             guard let entity = view.entity(at: location),
                   let roomID = roomID(from: entity)
