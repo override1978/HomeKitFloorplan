@@ -267,10 +267,10 @@ enum FloorplanMaterialCatalog {
     /// Qui il tint moltiplicativo va bene proprio perche' la base e' quasi
     /// bianca: moltiplicare per un rosso ammorbidito da' una parete arrossata,
     /// che e' l'effetto voluto, non un materiale sporcato.
-    static func wallMaterial(accent: UIColor?) -> any RealityKit.Material {
+    static func wallMaterial(accent: UIColor?, strength: CGFloat = 0.55) -> any RealityKit.Material {
         let base = UIColor(red: 0.90, green: 0.92, blue: 0.95, alpha: 1)
-        guard let accent else { return opaque(base, roughness: 0.94) }
-        return opaque(blend(accent, with: base, accentAmount: 0.55), roughness: 0.94)
+        guard let accent, strength > 0.001 else { return opaque(base, roughness: 0.94) }
+        return opaque(blend(accent, with: base, accentAmount: strength), roughness: 0.94)
     }
 
     private static func blend(_ colour: UIColor, with base: UIColor, accentAmount: CGFloat) -> UIColor {

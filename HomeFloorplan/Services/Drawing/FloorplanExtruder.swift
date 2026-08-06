@@ -434,14 +434,35 @@ enum FloorplanExtruder {
             }
             return Face(points: points, kind: kind, roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil)
         }
+        // Le due facciate lunghe si spezzano in tratti.
+        //
+        // ⚠️ Un muro non appartiene a **una** stanza: quello esterno in alto
+        // corre lungo la cucina e poi lungo il soggiorno. Assegnandolo per
+        // baricentro finiva tutto alla stanza in cui cadeva il centro, e
+        // accendere la cucina accendeva anche mezzo soggiorno. Spezzato ogni
+        // 35 cm, ogni tratto trova la propria stanza da solo.
+        func longSide(from p0: SIMD2<Double>, to p1: SIMD2<Double>) -> [Face] {
+            let count = max(1, Int((simd_distance(p0, p1) / 0.35).rounded()))
+            return (0..<count).map { index in
+                let t0 = Double(index) / Double(count)
+                let t1 = Double(index + 1) / Double(count)
+                let a = p0 + (p1 - p0) * t0
+                let b = p0 + (p1 - p0) * t1
+                return Face(points: [SIMD3(a.x, a.y, bottom), SIMD3(b.x, b.y, bottom),
+                                     SIMD3(b.x, b.y, top), SIMD3(a.x, a.y, top)],
+                            kind: sideKind,
+                            roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil)
+            }
+        }
+
         var faces = [
             Face(points: corners.map { SIMD3($0.x, $0.y, top) }, kind: topKind,
                  roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil),
-            face([0, 1, 1, 0], kind: sideKind, low: bottom, high: top),
-            face([2, 3, 3, 2], kind: sideKind, low: bottom, high: top),
             face([1, 2, 2, 1], kind: sideKind, low: bottom, high: top),
             face([3, 0, 0, 3], kind: sideKind, low: bottom, high: top)
         ]
+        faces += longSide(from: corners[0], to: corners[1])
+        faces += longSide(from: corners[2], to: corners[3])
         // Il sotto di un muro che poggia a terra non si vede mai. Quello di un
         // architrave sopra una porta sì: è l'intradosso del vano, e senza si
         // guarda dentro un solido vuoto.
