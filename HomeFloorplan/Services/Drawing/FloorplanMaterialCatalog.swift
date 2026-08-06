@@ -86,6 +86,68 @@ enum FloorplanMaterialCatalog {
         opaque(UIColor(red: 0.72, green: 0.60, blue: 0.32, alpha: 1), roughness: 0.22, metallic: 0.85)
     }
 
+    /// Lo stelo della bandierina di stanza.
+    static func flagStemMaterial() -> any RealityKit.Material {
+        opaque(UIColor(red: 0.96, green: 0.96, blue: 0.97, alpha: 1), roughness: 0.35, metallic: 0.2)
+    }
+
+    /// L'etichetta in cima allo stelo, disegnata come immagine e appiccicata a
+    /// un rettangolo. **Unlit**: è un'etichetta, non una superficie, e non deve
+    /// scurirsi quando la stanza è in ombra — è proprio quando serve leggerla.
+    static func flagLabelMaterial(text: String) -> (any RealityKit.Material)? {
+        guard let image = flagLabelImage(text: text),
+              let texture = try? TextureResource(image: image,
+                                                 withName: nil,
+                                                 options: .init(semantic: .color))
+        else { return nil }
+
+        var material = UnlitMaterial(texture: texture)
+        material.blending = .transparent(opacity: .init(floatLiteral: 1))
+        return material
+    }
+
+    /// Tutte le capsule della **stessa misura**, testo centrato.
+    ///
+    /// Adattarle al contenuto sembrava più elegante, ma bandierine di larghezza
+    /// diversa si confrontano peggio: quando la domanda è «quale stanza è più
+    /// calda», l'occhio deve saltare fra i numeri, non fra le forme.
+    private static func flagLabelImage(text: String) -> CGImage? {
+        let size = CGSize(width: 256, height: 108)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2
+        format.opaque = false
+
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            let pill = CGRect(origin: .zero, size: size).insetBy(dx: 3, dy: 3)
+            UIColor(white: 0.06, alpha: 0.86).setFill()
+            UIBezierPath(roundedRect: pill, cornerRadius: pill.height / 2).fill()
+
+            UIColor(white: 1, alpha: 0.32).setStroke()
+            let border = UIBezierPath(roundedRect: pill.insetBy(dx: 1, dy: 1),
+                                      cornerRadius: pill.height / 2)
+            border.lineWidth = 2
+            border.stroke()
+
+            // Il corpo si restringe se il testo è lungo — «1450ppm» sta nella
+            // stessa capsula di «21°C» senza sbordare.
+            var fontSize: CGFloat = 46
+            var attributes: [NSAttributedString.Key: Any] = [:]
+            var textSize = CGSize.zero
+            let string = text as NSString
+            repeat {
+                attributes = [.font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
+                              .foregroundColor: UIColor.white]
+                textSize = string.size(withAttributes: attributes)
+                fontSize -= 2
+            } while textSize.width > pill.width - 34 && fontSize > 18
+
+            string.draw(at: CGPoint(x: (size.width - textSize.width) / 2,
+                                    y: (size.height - textSize.height) / 2),
+                        withAttributes: attributes)
+        }
+        return image.cgImage
+    }
+
     /// Il piano su cui la casa appoggia e su cui cade la sua ombra.
     ///
     /// Della stessa tinta dello sfondo, appena più scuro: non deve leggersi come

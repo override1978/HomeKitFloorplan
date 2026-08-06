@@ -64,12 +64,14 @@ struct FloorplanRealityPreviewView: View {
     /// l'esposizione che hai scelto è quella giusta. È anche il modo in cui la
     /// domanda «di mattina il sole entra in cucina?» trova risposta.
     @State private var hourOfDay: Double = SolarClock.currentHourOfDay()
+    @State private var environmentLayer: EnvironmentLayer = .none
 
     var body: some View {
         ZStack(alignment: .bottom) {
             if let floorplanScene {
                 RealityFloorplanView(scene: floorplanScene,
                                      sun: sun,
+                                     readings: roomReadings,
                                      cameraResetID: cameraResetID,
                                      onRoomSelected: { selectedRoomName = $0 })
                     .ignoresSafeArea()
@@ -93,6 +95,20 @@ struct FloorplanRealityPreviewView: View {
         // guardando, l'anta si muove. `characteristicValues` è osservabile, e
         // ricalcolare l'insieme costa una manciata di confronti.
         .onChange(of: openOpeningIDs) { _, _ in rebuildScene() }
+    }
+
+    /// Una lettura per stanza, per lo strato selezionato. Vuoto se lo strato è
+    /// spento: le stanze senza sensore restano **senza bandierina**, che è
+    /// l'unico modo onesto di dire «qui non lo so».
+    private var roomReadings: [FloorplanRoomEnvironment.Reading] {
+        guard let kind = environmentLayer.sensorKind else { return [] }
+        return FloorplanRoomEnvironment.readings(
+            in: document,
+            exportRotation: exportRotation,
+            markers: markers.map { (uuid: $0.uuid, position: $0.position) },
+            kind: kind,
+            homeKit: homeKit
+        )
     }
 
     /// Gli infissi da disegnare aperti, contro lo stato corrente di HomeKit.
@@ -196,6 +212,8 @@ struct FloorplanRealityPreviewView: View {
                 .background(.black.opacity(0.4), in: Capsule())
             #endif
 
+            environmentControls
+
             sunControls
 
             HStack(spacing: 18) {
@@ -276,6 +294,30 @@ struct FloorplanRealityPreviewView: View {
         .background(.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
+    /// Uno strato per volta. Due grandezze insieme sono due sistemi di lettura
+    /// sovrapposti, ed è il modo più rapido di rendere illeggibile un cruscotto.
+    private var environmentControls: some View {
+        HStack(spacing: 4) {
+            ForEach(EnvironmentLayer.allCases) { layer in
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { environmentLayer = layer }
+                } label: {
+                    Text(layer.shortLabel)
+                        .font(.caption.weight(environmentLayer == layer ? .bold : .regular))
+                        .foregroundStyle(.white.opacity(environmentLayer == layer ? 1 : 0.6))
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 30)
+                        .background(environmentLayer == layer ? Color.white.opacity(0.22) : .clear,
+                                    in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.black.opacity(0.34), in: Capsule())
+    }
+
     private func rebuildScene() {
         floorplanScene = FloorplanSceneBuilder.scene(from: document,
                                                      ceilingHeight: ceilingHeight,
@@ -289,6 +331,7 @@ struct FloorplanRealityPreviewView: View {
 private struct RealityFloorplanView: UIViewRepresentable {
     let scene: FloorplanScene
     let sun: FloorplanSunLight
+    let readings: [FloorplanRoomEnvironment.Reading]
     let cameraResetID: UUID
     let onRoomSelected: (String?) -> Void
 
@@ -320,11 +363,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.onRoomSelected = onRoomSelected
         context.coordinator.updateSceneIfNeeded(scene)
         context.coordinator.updateSun(sun)
+        context.coordinator.updateReadings(readings)
         context.coordinator.resetCameraIfNeeded(cameraResetID)
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(scene: scene, sun: sun, cameraResetID: cameraResetID, onRoomSelected: onRoomSelected)
+            .prepared(with: readings)
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
@@ -348,6 +393,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// Le macchie di sole vivono fuori dal contenuto: dipendono dall'ora, non
         /// dalla geometria, e si rifanno senza ricostruire la casa.
         private let sunPatchRoot = Entity()
+        /// Le bandierine vivono fuori dal contenuto: cambiano con i sensori,
+        /// non con la geometria, e vanno rigirate verso la telecamera a ogni
+        /// spostamento.
+        private let flagRoot = Entity()
+        private var flagLabels: [Entity] = []
+        private var readings: [FloorplanRoomEnvironment.Reading] = []
+        private var readingsSignature = ""
         private var installedSignature: String?
         private var handledResetID: UUID
         private var gestureStart: (azimuth: Double, elevation: Double)?
@@ -365,6 +417,40 @@ private struct RealityFloorplanView: UIViewRepresentable {
             self.sun = sun
             self.handledResetID = cameraResetID
             self.onRoomSelected = onRoomSelected
+        }
+
+        func prepared(with readings: [FloorplanRoomEnvironment.Reading]) -> Coordinator {
+            self.readings = readings
+            return self
+        }
+
+        func updateReadings(_ newReadings: [FloorplanRoomEnvironment.Reading]) {
+            let signature = newReadings
+                .map { "\($0.roomID)=\($0.text)" }
+                .sorted()
+                .joined(separator: "|")
+            guard signature != readingsSignature else { return }
+            readingsSignature = signature
+            readings = newReadings
+            rebuildFlags()
+        }
+
+        private func rebuildFlags() {
+            flagRoot.children.removeAll()
+            flagLabels = []
+            let built = RealityFloorplanRenderer.flagEntities(for: readings, scene: scene)
+            for flag in built {
+                flagRoot.addChild(flag.root)
+                flagLabels.append(flag.label)
+            }
+            orientFlags()
+        }
+
+        /// Le etichette girano **solo attorno alla verticale**: seguono la
+        /// telecamera ma restano dritte, o il testo si inclinerebbe con lei.
+        private func orientFlags() {
+            let yaw = simd_quatf(angle: Float(azimuth), axis: SIMD3(0, 1, 0))
+            for label in flagLabels { label.orientation = yaw }
         }
 
         func updateSun(_ newSun: FloorplanSunLight) {
@@ -389,6 +475,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(fillLight)
             anchor.addChild(rimLight)
             anchor.addChild(sunPatchRoot)
+            anchor.addChild(flagRoot)
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
@@ -454,11 +541,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
             contentRoot.addChild(rendered.root)
             configureLights()
             rebuildSunPatches()
+            rebuildFlags()
             onRoomSelected(nil)
         }
 
         func updateCamera() {
             camera.look(at: .zero, from: cameraPosition, relativeTo: nil)
+            orientFlags()
         }
 
         func resetCameraIfNeeded(_ resetID: UUID) {
@@ -647,6 +736,51 @@ private enum RealityFloorplanRenderer {
                                  roomEntities: roomEntities,
                                  roomNames: roomNames,
                                  roomFloorKinds: roomFloorKinds)
+    }
+
+    // MARK: - Bandierine di stanza
+
+    struct Flag {
+        var root: Entity
+        /// Solo l'etichetta si gira verso la telecamera: lo stelo è verticale e
+        /// non ha un davanti.
+        var label: Entity
+    }
+
+    /// Uno stelo piantato nel punto più interno della stanza, con il valore in
+    /// cima. Sopra la linea dei muri, così nessuna bandierina finisce nascosta
+    /// da una parete e tutte stanno alla stessa quota — che è ciò che permette
+    /// di confrontarle a colpo d'occhio invece di cercarle.
+    static func flagEntities(for readings: [FloorplanRoomEnvironment.Reading],
+                             scene: FloorplanScene) -> [Flag] {
+        guard !readings.isEmpty else { return [] }
+        let centre = scene.bounds.center
+        let floorY = scene.bounds.min.y
+        let topY = scene.bounds.max.y + 0.45
+
+        return readings.compactMap { reading -> Flag? in
+            guard let material = FloorplanMaterialCatalog.flagLabelMaterial(text: reading.text)
+            else { return nil }
+
+            // Il disegno ha x/y in pianta, RealityKit ha y in alto: la y del
+            // disegno diventa z, come per tutto il resto della scena.
+            let x = Float(reading.anchor.x) - centre.x
+            let z = Float(reading.anchor.y) - centre.z
+
+            let root = Entity()
+            let height = topY - floorY
+            let stem = ModelEntity(mesh: .generateBox(size: SIMD3(0.022, height, 0.022)),
+                                   materials: [FloorplanMaterialCatalog.flagStemMaterial()])
+            stem.position = SIMD3(x, floorY - centre.y + height / 2, z)
+            root.addChild(stem)
+
+            let label = ModelEntity(mesh: .generatePlane(width: 0.62, height: 0.27),
+                                    materials: [material])
+            label.position = SIMD3(x, topY - centre.y + 0.16, z)
+            root.addChild(label)
+
+            return Flag(root: root, label: label)
+        }
     }
 
     // MARK: - Il sole che entra
