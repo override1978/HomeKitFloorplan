@@ -7,11 +7,10 @@ import Metal
 enum FloorplanMaterialCatalog {
     static func material(for role: FloorplanScene.MeshFace.MaterialRole,
                          isSelected: Bool = false,
-                         floorKind: FloorKind? = nil,
-                         tint: UIColor? = nil) -> any RealityKit.Material {
+                         floorKind: FloorKind? = nil) -> any RealityKit.Material {
         switch role {
         case .floor:
-            return floorMaterial(for: floorKind, isSelected: isSelected, tint: tint)
+            return floorMaterial(for: floorKind, isSelected: isSelected)
         case .wall:
             return opaque(UIColor(red: 0.90, green: 0.92, blue: 0.95, alpha: 1), roughness: 0.94)
         case .wallTop:
@@ -250,27 +249,27 @@ enum FloorplanMaterialCatalog {
     /// moltiplica sopra la texture, quindi la venatura resta e la stanza si
     /// accende lo stesso.
     private static func floorMaterial(for floorKind: FloorKind?,
-                                      isSelected: Bool = false,
-                                      tint: UIColor? = nil) -> any RealityKit.Material {
+                                      isSelected: Bool = false) -> any RealityKit.Material {
         var material = baseFloorMaterial(for: floorKind)
-        if isSelected {
-            material.baseColor.tint = UIColor(red: 1.0, green: 0.86, blue: 0.50, alpha: 1)
-        } else if let tint {
-            // Il tint **moltiplica**: un rosso pieno annerirebbe il pavimento
-            // invece di colorarlo. Schiarito verso il bianco resta una velatura,
-            // che è quello che serve — lo stato si legge, il materiale pure.
-            material.baseColor.tint = softened(tint, towardsWhite: 0.62)
-        }
+        guard isSelected else { return material }
+        material.baseColor.tint = UIColor(red: 1.0, green: 0.86, blue: 0.50, alpha: 1)
         return material
     }
 
-    private static func softened(_ color: UIColor, towardsWhite amount: CGFloat) -> UIColor {
-        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
-        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return color }
-        return UIColor(red: red + (1 - red) * amount,
-                       green: green + (1 - green) * amount,
-                       blue: blue + (1 - blue) * amount,
-                       alpha: 1)
+    /// La velatura di stato: un piano traslucido **sopra** il pavimento.
+    ///
+    /// Tingere il materiale non funzionava, e il motivo e' che il tint
+    /// **moltiplica**: un rosso pieno anneriva, e schiarito verso il bianco
+    /// diventava rosa; un verde moltiplicato sul parquet lo faceva virare a
+    /// stagno. Il colore va **posato sopra**, non mescolato dentro — che e' poi
+    /// quello che fa la 2D riempiendo il poligono della stanza sopra il disegno.
+    ///
+    /// Unlit: e' una velatura, non una superficie, e non deve scurirsi con
+    /// l'ombra della stanza.
+    static func roomWashMaterial(_ colour: UIColor) -> any RealityKit.Material {
+        var material = UnlitMaterial(color: colour)
+        material.blending = .transparent(opacity: .init(floatLiteral: 0.30))
+        return material
     }
 
     private static func baseFloorMaterial(for floorKind: FloorKind?) -> PhysicallyBasedMaterial {

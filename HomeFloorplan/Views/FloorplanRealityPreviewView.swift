@@ -467,6 +467,9 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// non con la geometria, e vanno rigirate verso la telecamera a ogni
         /// spostamento.
         private let flagRoot = Entity()
+        /// Le velature di stato: sopra i pavimenti, fuori dal contenuto, così
+        /// cambiano coi sensori senza toccare la geometria.
+        private let washRoot = Entity()
         private var flagLabels: [Entity] = []
         private var flags: [RoomFlag] = []
         private var flagsSignature = ""
@@ -503,21 +506,16 @@ private struct RealityFloorplanView: UIViewRepresentable {
             flagsSignature = signature
             flags = newFlags
             rebuildFlags()
-            applyRoomTints()
+            rebuildRoomWashes()
         }
 
         /// Il pavimento della stanza prende la tinta del suo stato, come il
         /// riempimento nella 2D. Il colore risponde a «dov'è il problema» senza
         /// leggere niente; la bandierina dice «quanto».
-        private func applyRoomTints() {
-            let accents = Dictionary(uniqueKeysWithValues: flags.map { ($0.roomID, $0.accent) })
-            for (roomID, entity) in roomEntities where roomID != selectedRoomID {
-                entity.model?.materials = [
-                    FloorplanMaterialCatalog.material(for: .floor,
-                                                      isSelected: false,
-                                                      floorKind: roomFloorKinds[roomID],
-                                                      tint: accents[roomID])
-                ]
+        private func rebuildRoomWashes() {
+            washRoot.children.removeAll()
+            for entity in RealityFloorplanRenderer.roomWashEntities(for: flags, scene: scene) {
+                washRoot.addChild(entity)
             }
         }
 
@@ -562,6 +560,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(rimLight)
             anchor.addChild(sunPatchRoot)
             anchor.addChild(flagRoot)
+            anchor.addChild(washRoot)
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
@@ -628,6 +627,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             configureLights()
             rebuildSunPatches()
             rebuildFlags()
+            rebuildRoomWashes()
             onRoomSelected(nil)
         }
 
@@ -718,8 +718,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                     FloorplanMaterialCatalog.material(
                         for: .floor,
                         isSelected: false,
-                        floorKind: roomFloorKinds[selectedRoomID],
-                        tint: flags.first { $0.roomID == selectedRoomID }?.accent
+                        floorKind: roomFloorKinds[selectedRoomID]
                     )
                 ]
             }
@@ -867,6 +866,47 @@ private enum RealityFloorplanRenderer {
             root.addChild(label)
 
             return Flag(root: root, label: label)
+        }
+    }
+
+    /// Un piano traslucido sopra il pavimento di ogni stanza che ha uno stato.
+    ///
+    /// Si riusa il poligono del pavimento così com'è, sollevato di poco: sopra
+    /// le fughe delle piastrelle, che stanno a 9 mm, così non ci litiga.
+    static func roomWashEntities(for flags: [RoomFlag], scene: FloorplanScene) -> [Entity] {
+        guard !flags.isEmpty else { return [] }
+        let centre = scene.bounds.center
+        let lift: Float = 0.014
+
+        return flags.compactMap { flag -> Entity? in
+            let faces = scene.faces.filter { $0.role == .floor && $0.roomID == flag.roomID }
+            guard !faces.isEmpty else { return nil }
+
+            var positions: [SIMD3<Float>] = []
+            var normals: [SIMD3<Float>] = []
+            var indices: [UInt32] = []
+
+            for face in faces where face.points.count >= 3 {
+                let points = orderedPoints(for: face, role: .floor)
+                let start = UInt32(positions.count)
+                positions.append(contentsOf: points.map {
+                    SIMD3($0.x, $0.y + lift, $0.z) - centre
+                })
+                normals.append(contentsOf: Array(repeating: SIMD3<Float>(0, 1, 0), count: points.count))
+                for index in 1..<(points.count - 1) {
+                    indices.append(contentsOf: [start, start + UInt32(index), start + UInt32(index + 1)])
+                }
+            }
+
+            guard !positions.isEmpty else { return nil }
+            var descriptor = MeshDescriptor(name: "room-wash")
+            descriptor.positions = MeshBuffers.Positions(positions)
+            descriptor.normals = MeshBuffers.Normals(normals)
+            descriptor.primitives = .triangles(indices)
+            guard let mesh = try? MeshResource.generate(from: [descriptor]) else { return nil }
+
+            return ModelEntity(mesh: mesh,
+                               materials: [FloorplanMaterialCatalog.roomWashMaterial(flag.accent)])
         }
     }
 
