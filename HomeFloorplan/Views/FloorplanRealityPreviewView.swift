@@ -290,13 +290,22 @@ struct FloorplanRealityPreviewView: View {
             HStack(spacing: 10) {
                 Button { dismiss() } label: { chrome("xmark") }
 
+                // Stessa altezza dei chip e un solo gradino di scala sopra —
+                // `subheadline` invece di `headline`. Da 17 a 12 nella stessa
+                // riga non si leggeva come gerarchia ma come due componenti
+                // scritti in momenti diversi.
+                //
+                // Il fondo resta, perché lo sfondo della vista può essere
+                // bianco, ma più leggero di quello dei controlli: la capsula è
+                // uguale e senza quella differenza il titolo sembrerebbe
+                // toccabile pur non essendolo.
                 Text(title)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(.black.opacity(0.34), in: Capsule())
+                    .padding(.horizontal, 13)
+                    .frame(minHeight: 30)
+                    .background(.black.opacity(0.22), in: Capsule())
 
                 Spacer(minLength: 12)
 
