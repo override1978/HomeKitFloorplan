@@ -478,8 +478,11 @@ struct FloorplanRealityPreviewView: View {
                     .padding(.horizontal, 5)
                     .padding(.vertical, 4)
                 }
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(maxWidth: 500)
+                // ⚠️ Niente `fixedSize`: faceva prendere alla riga la larghezza
+                // di tutto il contenuto mentre la capsula restava a 500, e i
+                // chip finivano fuori dal proprio sfondo. Il limite serve a
+                // farla scorrere **dentro** la capsula, non a tagliarla.
+                .frame(maxWidth: 560)
                 .background(.black.opacity(0.22), in: Capsule())
                 .transition(.opacity)
             }
