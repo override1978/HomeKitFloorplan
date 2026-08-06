@@ -15,11 +15,10 @@ struct Preview3DRequest: Identifiable {
     let applyNorthBearing: (Double) -> Void
     /// Marker della planimetria, in coordinate normalizzate sull'immagine.
     let markers: [(uuid: UUID, position: CGPoint, name: String)]
-    /// Servono a **ricavare** la trasformazione: una stanza esiste in entrambi
-    /// gli spazi — normalizzata qui, in coordinate canvas nel disegno — e due
-    /// rappresentazioni della stessa cosa sono tutto ciò che serve per passare
-    /// dall'una all'altra.
     let linkedRooms: [LinkedRoom]
+    /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
+    /// marker in coordinate del disegno.
+    let exportRotation: DrawingExportRotation
 }
 
 // MARK: - FloorplanSunLight
@@ -47,7 +46,9 @@ struct FloorplanRealityPreviewView: View {
     let onNorthBearingChange: (Double) -> Void
     /// Marker degli accessori, per risolvere qui quali infissi sono aperti.
     let markers: [(uuid: UUID, position: CGPoint, name: String)]
-    let linkedRooms: [LinkedRoom]
+    /// Serve a invertire l'inquadratura dell'export: i marker sono normalizzati
+    /// sull'immagine, che può essere ruotata rispetto alla tela.
+    let exportRotation: DrawingExportRotation
 
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
@@ -98,7 +99,7 @@ struct FloorplanRealityPreviewView: View {
     private var openOpeningIDs: Set<UUID> {
         FloorplanOpeningMatcher.openOpenings(
             in: document,
-            linkedRooms: linkedRooms,
+            exportRotation: exportRotation,
             markers: markers.map { (uuid: $0.uuid, position: $0.position) },
             homeKit: homeKit
         )
@@ -182,7 +183,7 @@ struct FloorplanRealityPreviewView: View {
             // infissi. Da togliere quando la funzione è assestata.
             Text(FloorplanOpeningMatcher.diagnostics(
                 in: document,
-                linkedRooms: linkedRooms,
+                exportRotation: exportRotation,
                 markers: markers.map { (uuid: $0.uuid, position: $0.position) },
                 homeKit: homeKit
             ).summary)

@@ -103,7 +103,7 @@ struct FloorplanListView: View {
                                             northBearingDegrees: request.northBearingDegrees,
                                             onNorthBearingChange: request.applyNorthBearing,
                                             markers: request.markers,
-                                            linkedRooms: request.linkedRooms)
+                                            exportRotation: request.exportRotation)
             }
             .navigationTitle(isCompact
                              ? String(localized: "floorplans.title", defaultValue: "Floorplans")
@@ -570,7 +570,8 @@ struct FloorplanListView: View {
                          position: CGPoint(x: $0.positionX, y: $0.positionY),
                          name: $0.customLabel ?? homeKit.accessory(for: $0.homeKitAccessoryUUID)?.name ?? "")
                     },
-                    linkedRooms: floorplan.linkedRooms)
+                    linkedRooms: floorplan.linkedRooms,
+                    exportRotation: floorplan.drawingExportRotation)
             } label: {
                 Label(String(localized: "floorplan.preview3D", defaultValue: "3D preview"),
                       systemImage: "cube")
