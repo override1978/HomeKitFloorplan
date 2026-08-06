@@ -40,6 +40,33 @@ struct RoomFlag {
     var needsAttention: Bool
 }
 
+/// Di cosa parla la vista in questo momento.
+///
+/// Sono **le stesse modalità della 2D**, non un vocabolario nuovo: se la casa
+/// si racconta in due lingue diverse a seconda di dove la guardi, l'utente deve
+/// imparare due volte.
+enum PreviewMode: String, CaseIterable, Identifiable {
+    case off, environment, security
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .off:         "eye.slash"
+        case .environment: "leaf.fill"
+        case .security:    "lock.shield.fill"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .off:         String(localized: "overlay.off", defaultValue: "Off")
+        case .environment: String(localized: "overlay.environment", defaultValue: "Environment")
+        case .security:    String(localized: "overlay.security", defaultValue: "Security")
+        }
+    }
+}
+
 // MARK: - FloorplanSunLight
 
 /// Il sole, già tradotto nello spazio del modello.
@@ -89,9 +116,10 @@ struct FloorplanRealityPreviewView: View {
     /// soglie e tipi disponibili vengono da qui. Riscriverli darebbe una casa
     /// che dice due cose diverse a seconda di dove la guardi.
     @State private var envVM = EnvironmentViewModel()
-    @State private var isEnvironmentOn = false
+    @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @State private var isLayerTrayOpen = false
+    @AppStorage("securityMonitoredUUIDs") private var monitoredUUIDsRaw: String = ""
     @State private var sensorFilter: SensorServiceType?
 
     var body: some View {
@@ -145,8 +173,20 @@ struct FloorplanRealityPreviewView: View {
     /// Le stanze si accoppiano per **nome**, come fa la 2D — non per UUID, che
     /// fra device non è stabile.
     private var roomFlags: [RoomFlag] {
-        guard isEnvironmentOn else { return [] }
-        return FloorplanRoomEnvironment.anchors(in: document).compactMap { anchor in
+        switch mode {
+        case .off:         []
+        case .environment: environmentFlags
+        case .security:    securityFlags
+        }
+    }
+
+    /// Una bandierina per stanza. Le stanze senza dati restano **senza**: un
+    /// valore neutro su una stanza che non misura niente sembra una misura.
+    ///
+    /// Le stanze si accoppiano per **nome**, come fa la 2D — non per UUID, che
+    /// fra device non è stabile.
+    private var environmentFlags: [RoomFlag] {
+        FloorplanRoomEnvironment.anchors(in: document).compactMap { anchor in
             guard let data = envVM.rooms.first(where: { $0.roomName == anchor.roomName })
             else { return nil }
 
@@ -167,6 +207,24 @@ struct FloorplanRealityPreviewView: View {
                             // Stessa soglia con cui `qualityLabel` smette di
                             // dire «Ottima»: una sola definizione di «sta bene».
                             needsAttention: data.qualityScore < 0.85)
+        }
+    }
+
+    /// Lo stato di sicurezza per stanza, dallo **stesso** valutatore della 2D.
+    private var securityFlags: [RoomFlag] {
+        let monitored = RoomSecurityEvaluator.monitoredIDs(from: monitoredUUIDsRaw)
+        return FloorplanRoomEnvironment.anchors(in: document).compactMap { anchor in
+            let accessories = RoomSecurityEvaluator.accessories(inRoomNamed: anchor.roomName,
+                                                                homeKit: homeKit)
+            let status = RoomSecurityEvaluator.status(of: accessories,
+                                                      monitoredIDs: monitored,
+                                                      homeKit: homeKit)
+            guard status.deservesFlag else { return nil }
+            return RoomFlag(roomID: anchor.roomID, anchor: anchor.point,
+                            title: anchor.roomName,
+                            value: status.shortLabel,
+                            accent: status.accentColor,
+                            needsAttention: status.needsAttention)
         }
     }
 
@@ -353,13 +411,13 @@ struct FloorplanRealityPreviewView: View {
     /// sua barra. Un secondo elenco scritto a mano sarebbe rimasto indietro al
     /// primo sensore nuovo.
     private var environmentControls: some View {
-        HStack(spacing: 4) {
+        HStack(alignment: .top, spacing: 4) {
             Button {
                 if !isLayerTrayOpen { loadEnvironmentIfNeeded() }
                 withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen.toggle() }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "leaf.fill").font(.system(size: 12))
+                    Image(systemName: mode.symbol).font(.system(size: 12))
                     // Da aperto il valore lo dice già il chip selezionato: qui
                     // sarebbe scritto due volte nella stessa riga.
                     if !isLayerTrayOpen {
@@ -373,52 +431,51 @@ struct FloorplanRealityPreviewView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(String(localized: "floorplan.layers",
-                                            defaultValue: "Environment layer")))
+                                            defaultValue: "Overlay")))
             .accessibilityValue(Text(activeLayerLabel))
             .accessibilityHint(Text(isLayerTrayOpen
                                     ? String(localized: "floorplan.layers.close", defaultValue: "Closes the list")
                                     : String(localized: "floorplan.layers.open", defaultValue: "Opens the list")))
 
             if isLayerTrayOpen {
-                ScrollView(.horizontal, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
-                        chip(label: String(localized: "environment.layer.none", defaultValue: "Off"),
-                             icon: "eye.slash",
-                             isSelected: !isEnvironmentOn) {
-                            isEnvironmentOn = false
-                            sensorFilter = nil
-                        }
-                        chip(label: String(localized: "filter.all", defaultValue: "Tutto"),
-                             icon: "leaf.fill",
-                             isSelected: isEnvironmentOn && sensorFilter == nil) {
-                            isEnvironmentOn = true
-                            sensorFilter = nil
-                        }
-                        ForEach(envVM.availableSensorTypes) { type in
-                            chip(label: type.displayName,
-                                 icon: type.sfSymbol,
-                                 isSelected: isEnvironmentOn && sensorFilter == type) {
-                                isEnvironmentOn = true
-                                sensorFilter = type
+                        ForEach(PreviewMode.allCases) { value in
+                            chip(label: value.label, icon: value.symbol, isSelected: mode == value) {
+                                mode = value
+                                if value != .environment { sensorFilter = nil }
                             }
                         }
                     }
+                    // I tipi stanno **sotto** la modalità, come nella 2D: prima
+                    // scegli di cosa parli, poi di quale grandezza.
+                    if mode == .environment {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 4) {
+                                chip(label: String(localized: "filter.all", defaultValue: "Tutto"),
+                                     icon: "leaf.fill",
+                                     isSelected: sensorFilter == nil) { sensorFilter = nil }
+                                ForEach(envVM.availableSensorTypes) { type in
+                                    chip(label: type.displayName, icon: type.sfSymbol,
+                                         isSelected: sensorFilter == type) { sensorFilter = type }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: 520)
+                    }
                 }
-                .frame(maxWidth: 560)
                 .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 5)
-        .background(.black.opacity(0.34), in: Capsule())
+        .background(.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     /// Lo strato attivo in due parole, per l'etichetta chiusa.
     private var activeLayerLabel: String {
-        guard isEnvironmentOn else {
-            return String(localized: "environment.layer.none", defaultValue: "Off")
-        }
-        return sensorFilter?.displayName ?? String(localized: "filter.all", defaultValue: "Tutto")
+        guard mode == .environment else { return mode.label }
+        return sensorFilter?.displayName ?? mode.label
     }
 
     private func chip(label: String, icon: String, isSelected: Bool,
