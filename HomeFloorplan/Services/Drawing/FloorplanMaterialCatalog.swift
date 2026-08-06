@@ -11,9 +11,13 @@ enum FloorplanMaterialCatalog {
         case .floor:
             return baseFloorMaterial(for: floorKind)
         case .wall:
-            return opaque(UIColor(red: 0.90, green: 0.92, blue: 0.95, alpha: 1), roughness: 0.94)
+            // A 0.90/0.92/0.95 il bianco era a un soffio dalla saturazione:
+            // appena la luce saliva non restava margine perché l'ombreggiatura
+            // si vedesse. Scesi di sei punti, l'intonaco resta chiaro ma le
+            // facce tornano a distinguersi fra loro.
+            return opaque(UIColor(red: 0.84, green: 0.86, blue: 0.90, alpha: 1), roughness: 0.94)
         case .wallTop:
-            return opaque(UIColor(red: 0.94, green: 0.95, blue: 0.97, alpha: 1), roughness: 0.94)
+            return opaque(UIColor(red: 0.89, green: 0.90, blue: 0.93, alpha: 1), roughness: 0.94)
         case .glass:
             return transparent(UIColor(red: 0.72, green: 0.84, blue: 0.88, alpha: 1),
                                opacity: 0.34, roughness: 0.06)

@@ -820,13 +820,20 @@ private struct RealityFloorplanView: UIViewRepresentable {
             // illuminarli. Se il modello risulta piatto si alza solo la key.
             let radius = max(scene.bounds.radius, 1)
 
+            // ⚠️ **Il rapporto fra key e riempimento decide tutto.** Prima
+            // fill e rim sommavano il 47% della key, con l'ambiente al massimo
+            // sopra: la faccia in ombra riceveva quasi quanto quella
+            // illuminata, quindi muri piatti e luminescenti e ombre deboli.
+            // Ora stanno al 13%, che è la fascia in cui lavora
+            // l'illuminazione architettonica.
+            //
             // Di notte non basta cambiare colore alla key: se riempimento e
             // ambiente restano quelli del giorno, la casa resta luminosa come a
             // mezzogiorno e la notte non si legge. E le ombre **non si spengono**
             // — anche la luna le fa, e senza il volume si appiattisce.
             let isDay = sun.isAboveHorizon
 
-            keyLight.light.intensity = isDay ? 2_600 : 700
+            keyLight.light.intensity = isDay ? 3_000 : 760
             keyLight.light.color = isDay
                 ? sunColour(atElevation: sun.elevationDegrees)
                 : UIColor(red: 0.66, green: 0.76, blue: 1.0, alpha: 1)
@@ -839,14 +846,14 @@ private struct RealityFloorplanView: UIViewRepresentable {
             // sole, il che è falso ma dà un'ombra plausibile e coerente.
             keyLight.look(at: .zero, from: sun.direction * radius * 3, relativeTo: nil)
 
-            fillLight.light.intensity = isDay ? 800 : 190
+            fillLight.light.intensity = isDay ? 300 : 110
             fillLight.light.color = UIColor(red: 0.84, green: 0.90, blue: 1.0, alpha: 1)
             fillLight.shadow = nil
             fillLight.look(at: .zero,
                            from: SIMD3(radius * 2.6, radius * 1.4, -radius * 2.2),
                            relativeTo: nil)
 
-            rimLight.light.intensity = isDay ? 420 : 110
+            rimLight.light.intensity = isDay ? 160 : 60
             rimLight.light.color = UIColor(white: 1, alpha: 1)
             rimLight.shadow = nil
             rimLight.look(at: .zero,
@@ -856,7 +863,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             // L'ambiente di default di RealityKit non passa da queste tre luci:
             // senza abbassarlo, di notte i muri restano bianchi qualunque cosa
             // si faccia alle direzionali.
-            view?.environment.lighting.intensityExponent = isDay ? 1.0 : 0.35
+            view?.environment.lighting.intensityExponent = isDay ? 0.60 : 0.30
         }
 
         func updateSceneIfNeeded(_ newScene: FloorplanScene) {
