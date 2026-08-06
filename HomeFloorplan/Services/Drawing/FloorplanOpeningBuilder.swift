@@ -63,9 +63,13 @@ enum FloorplanOpeningBuilder {
     /// Quanto si apre un'anta. Non 90 gradi: una porta spalancata attraversa
     /// mezza stanza e copre quello che c'è dietro proprio mentre la si sta
     /// guardando. Serve che si legga «aperta», non che sia misurata.
-    /// Regoli dell'anta: sottili su una finestra, robusti su una porta-finestra.
-    private static let windowRail = 0.045
-    private static let doorRail = 0.095
+    /// Regoli dell'anta vetrata.
+    ///
+    /// **Uno solo.** Una porta-finestra è la stessa serramentistica di una
+    /// finestra — stesso profilo, stesso colore — e l'unica differenza vera è
+    /// che arriva a terra. Averle differenziate anche nei regoli e nel materiale
+    /// le faceva sembrare due oggetti di famiglie diverse nella stessa parete.
+    private static let sashRail = 0.045
     private static let doorSwing = 38.0 * .pi / 180
     private static let sashSwing = 24.0 * .pi / 180
 
@@ -197,16 +201,16 @@ enum FloorplanOpeningBuilder {
         guard u.upperBound > u.lowerBound, v.upperBound > v.lowerBound else { return [] }
 
         guard opening.to - opening.from > mullionThreshold else {
-            return [Leaf(faces: sashFaces(opening, wall, u: u, v: v, rail: windowRail),
+            return [Leaf(faces: sashFaces(opening, wall, u: u, v: v, rail: sashRail),
                          hinge: opening.flipSide ? u.upperBound : u.lowerBound,
                          hingeAtStart: !opening.flipSide)]
         }
 
         let centre = (u.lowerBound + u.upperBound) / 2
         return [
-            Leaf(faces: sashFaces(opening, wall, u: u.lowerBound...centre, v: v, rail: windowRail),
+            Leaf(faces: sashFaces(opening, wall, u: u.lowerBound...centre, v: v, rail: sashRail),
                  hinge: u.lowerBound, hingeAtStart: true),
-            Leaf(faces: sashFaces(opening, wall, u: centre...u.upperBound, v: v, rail: windowRail),
+            Leaf(faces: sashFaces(opening, wall, u: centre...u.upperBound, v: v, rail: sashRail),
                  hinge: u.upperBound, hingeAtStart: false)
         ]
     }
@@ -216,15 +220,14 @@ enum FloorplanOpeningBuilder {
                                   _ wall: Wall,
                                   u: ClosedRange<Double>,
                                   v: ClosedRange<Double>,
-                                  rail: Double,
-                                  frameKind: FloorplanExtruder.Face.Kind = .frame) -> [Face] {
+                                  rail: Double) -> [Face] {
         let half = leafHalfThickness
         var faces: [Face] = []
 
-        faces += box(wall, opening, u: u.lowerBound...(u.lowerBound + rail), v: v, w: -half...half, kind: frameKind)
-        faces += box(wall, opening, u: (u.upperBound - rail)...u.upperBound, v: v, w: -half...half, kind: frameKind)
-        faces += box(wall, opening, u: u, v: v.lowerBound...(v.lowerBound + rail), w: -half...half, kind: frameKind)
-        faces += box(wall, opening, u: u, v: (v.upperBound - rail)...v.upperBound, w: -half...half, kind: frameKind)
+        faces += box(wall, opening, u: u.lowerBound...(u.lowerBound + rail), v: v, w: -half...half, kind: .frame)
+        faces += box(wall, opening, u: (u.upperBound - rail)...u.upperBound, v: v, w: -half...half, kind: .frame)
+        faces += box(wall, opening, u: u, v: v.lowerBound...(v.lowerBound + rail), w: -half...half, kind: .frame)
+        faces += box(wall, opening, u: u, v: (v.upperBound - rail)...v.upperBound, w: -half...half, kind: .frame)
 
         let glassU = (u.lowerBound + rail)...(u.upperBound - rail)
         let glassV = (v.lowerBound + rail)...(v.upperBound - rail)
@@ -281,8 +284,9 @@ enum FloorplanOpeningBuilder {
 
     // MARK: - Porta vetrata
 
-    /// Una porta-finestra larga è a due ante come una finestra: stessa logica,
-    /// regoli più robusti e la maniglia sull'anta che la porta.
+    /// Una porta-finestra è una finestra che arriva a terra: stessa logica,
+    /// stessi regoli, stesso materiale. Cambia solo la quota di partenza — e la
+    /// maniglia, che sta sull'anta che la porta invece che su entrambe.
     private static func glazedDoorLeaves(_ opening: Opening,
                                          _ wall: Wall,
                                          frameWidth: Double) -> [Leaf] {
@@ -293,7 +297,7 @@ enum FloorplanOpeningBuilder {
         let handle = handleFaces(opening, wall, frameWidth: frameWidth, leafHalf: leafHalfThickness)
 
         guard opening.to - opening.from > mullionThreshold else {
-            return [Leaf(faces: sashFaces(opening, wall, u: u, v: v, rail: doorRail, frameKind: .doorLeaf) + handle,
+            return [Leaf(faces: sashFaces(opening, wall, u: u, v: v, rail: sashRail) + handle,
                          hinge: opening.flipSide ? opening.to : opening.from,
                          hingeAtStart: !opening.flipSide)]
         }
@@ -301,10 +305,10 @@ enum FloorplanOpeningBuilder {
         let centre = (u.lowerBound + u.upperBound) / 2
         let handleOnStartLeaf = opening.flipSide
         return [
-            Leaf(faces: sashFaces(opening, wall, u: u.lowerBound...centre, v: v, rail: doorRail, frameKind: .doorLeaf)
+            Leaf(faces: sashFaces(opening, wall, u: u.lowerBound...centre, v: v, rail: sashRail)
                  + (handleOnStartLeaf ? handle : []),
                  hinge: opening.from, hingeAtStart: true),
-            Leaf(faces: sashFaces(opening, wall, u: centre...u.upperBound, v: v, rail: doorRail, frameKind: .doorLeaf)
+            Leaf(faces: sashFaces(opening, wall, u: centre...u.upperBound, v: v, rail: sashRail)
                  + (handleOnStartLeaf ? [] : handle),
                  hinge: opening.to, hingeAtStart: false)
         ]
