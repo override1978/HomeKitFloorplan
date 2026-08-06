@@ -87,6 +87,7 @@ struct FloorplanRealityPreviewView: View {
     /// che dice due cose diverse a seconda di dove la guardi.
     @State private var envVM = EnvironmentViewModel()
     @State private var isEnvironmentOn = false
+    @State private var didLoadEnvironment = false
     @State private var sensorFilter: SensorServiceType?
 
     var body: some View {
@@ -112,8 +113,6 @@ struct FloorplanRealityPreviewView: View {
             // chiusi: `startObserving` fa il readValue iniziale e arma le
             // notifiche. La vista si apre dalla lista, che non osserva niente.
             homeKit.startObserving(accessoryUUIDs: Set(markers.map(\.uuid)))
-            envVM.configure(modelContainer: modelContext.container)
-            envVM.loadFromCoreData()
             rebuildScene()
         }
         // Lo stato non è più una fotografia: se apri una finestra mentre stai
@@ -339,6 +338,7 @@ struct FloorplanRealityPreviewView: View {
                 chip(label: String(localized: "filter.all", defaultValue: "Tutto"),
                      icon: "leaf.fill",
                      isSelected: isEnvironmentOn && sensorFilter == nil) {
+                    loadEnvironmentIfNeeded()
                     isEnvironmentOn = true
                     sensorFilter = nil
                 }
@@ -346,6 +346,7 @@ struct FloorplanRealityPreviewView: View {
                     chip(label: type.displayName,
                          icon: type.sfSymbol,
                          isSelected: isEnvironmentOn && sensorFilter == type) {
+                        loadEnvironmentIfNeeded()
                         isEnvironmentOn = true
                         sensorFilter = sensorFilter == type ? nil : type
                     }
@@ -373,6 +374,17 @@ struct FloorplanRealityPreviewView: View {
             .background(isSelected ? Color.white.opacity(0.22) : .clear, in: Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Il modello ambientale costa **oltre un secondo sul main actor**, e la
+    /// vista si apre con lo strato spento: caricarlo all'apparire voleva dire
+    /// pagarlo sempre, anche per chi guarda solo la casa. Si carica alla prima
+    /// accensione di uno strato.
+    private func loadEnvironmentIfNeeded() {
+        guard !didLoadEnvironment else { return }
+        didLoadEnvironment = true
+        envVM.configure(modelContainer: modelContext.container)
+        envVM.loadFromCoreData()
     }
 
     private func rebuildScene() {
@@ -637,7 +649,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
             rebuildFlags()
             applyRoomAccents()
             rebuildHeat()
-            onRoomSelected(nil)
+            // ⚠️ Fuori dal giro di aggiornamento. `updateSceneIfNeeded` viene
+            // chiamata da `updateUIView`, cioè **durante** l'update della vista:
+            // scrivere lì uno `@State` è il «Modifying state during view update»
+            // che compariva in console, e SwiftUI lo dichiara comportamento
+            // indefinito.
+            let notify = onRoomSelected
+            DispatchQueue.main.async { notify(nil) }
         }
 
         func updateCamera() {
