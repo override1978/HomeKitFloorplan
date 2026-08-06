@@ -476,6 +476,9 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// non con la geometria, e vanno rigirate verso la telecamera a ogni
         /// spostamento.
         private let flagRoot = Entity()
+        /// Le macchie di calore sui pavimenti: fuori dal contenuto, così
+        /// cambiano coi sensori senza toccare la geometria.
+        private let heatRoot = Entity()
         private var flagLabels: [Entity] = []
         private var flags: [RoomFlag] = []
         private var flagsSignature = ""
@@ -514,6 +517,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             flags = newFlags
             rebuildFlags()
             applyRoomAccents()
+            rebuildHeat()
         }
 
         /// I muri interni della stanza prendono il colore del suo stato.
@@ -521,6 +525,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// Solo quelle che chiedono attenzione: accendere anche le stanze a
         /// posto vuol dire non accendere niente, perche' l'occhio non sa piu'
         /// dove andare.
+        private func rebuildHeat() {
+            heatRoot.children.removeAll()
+            for entity in RealityFloorplanRenderer.roomHeatEntities(for: flags, scene: scene) {
+                heatRoot.addChild(entity)
+            }
+        }
+
         private func applyRoomAccents() {
             let accents = Dictionary(
                 uniqueKeysWithValues: flags.filter(\.needsAttention).map { ($0.roomID, $0.accent) }
@@ -576,6 +587,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(rimLight)
             anchor.addChild(sunPatchRoot)
             anchor.addChild(flagRoot)
+            anchor.addChild(heatRoot)
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
@@ -644,6 +656,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             rebuildSunPatches()
             rebuildFlags()
             applyRoomAccents()
+            rebuildHeat()
             onRoomSelected(nil)
         }
 
@@ -1011,6 +1024,65 @@ private enum RealityFloorplanRenderer {
     private static func quadArea(_ points: [SIMD3<Float>]) -> Float {
         guard points.count == 4 else { return 0 }
         return simd_length(simd_cross(points[2] - points[0], points[3] - points[1])) / 2
+    }
+
+    /// Una macchia morbida sul pavimento di ogni stanza che chiede attenzione.
+    ///
+    /// Il poligono del pavimento fa da ritaglio — la macchia non esce dalla
+    /// stanza — ma la sfumatura la spegne **prima** di arrivare ai muri, quindi
+    /// il bordo del poligono non si vede mai. È il contrario del riempimento
+    /// pieno che avevamo prima: lì era il bordo a definire la forma, qui è la
+    /// sfumatura, e il bordo non esiste.
+    static func roomHeatEntities(for flags: [RoomFlag], scene: FloorplanScene) -> [Entity] {
+        let centre = scene.bounds.center
+        let lift: Float = 0.014
+
+        return flags.compactMap { flag -> Entity? in
+            guard flag.needsAttention,
+                  let material = FloorplanMaterialCatalog.roomHeatMaterial(flag.accent)
+            else { return nil }
+
+            let faces = scene.faces.filter { $0.role == .floor && $0.roomID == flag.roomID }
+            guard !faces.isEmpty else { return nil }
+
+            let points = faces.flatMap(\.points)
+            let anchorX = Float(flag.anchor.x)
+            let anchorZ = Float(flag.anchor.y)
+            // Il raggio copre la stanza con un margine: la sfumatura arriva a
+            // zero appena oltre il punto più lontano, non prima.
+            let radius = max(0.6, points.map {
+                max(abs($0.x - anchorX), abs($0.z - anchorZ))
+            }.max() ?? 1) * 1.05
+
+            var positions: [SIMD3<Float>] = []
+            var normals: [SIMD3<Float>] = []
+            var uvs: [SIMD2<Float>] = []
+            var indices: [UInt32] = []
+
+            for face in faces where face.points.count >= 3 {
+                let ordered = orderedPoints(for: face, role: .floor)
+                let start = UInt32(positions.count)
+                positions.append(contentsOf: ordered.map { SIMD3($0.x, $0.y + lift, $0.z) - centre })
+                normals.append(contentsOf: Array(repeating: SIMD3<Float>(0, 1, 0), count: ordered.count))
+                uvs.append(contentsOf: ordered.map {
+                    SIMD2(0.5 + ($0.x - anchorX) / (2 * radius),
+                          0.5 + ($0.z - anchorZ) / (2 * radius))
+                })
+                for index in 1..<(ordered.count - 1) {
+                    indices.append(contentsOf: [start, start + UInt32(index), start + UInt32(index + 1)])
+                }
+            }
+
+            guard !positions.isEmpty else { return nil }
+            var descriptor = MeshDescriptor(name: "room-heat")
+            descriptor.positions = MeshBuffers.Positions(positions)
+            descriptor.normals = MeshBuffers.Normals(normals)
+            descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(uvs)
+            descriptor.primitives = .triangles(indices)
+            guard let mesh = try? MeshResource.generate(from: [descriptor]) else { return nil }
+
+            return ModelEntity(mesh: mesh, materials: [material])
+        }
     }
 
     /// Una fascia di muro con la sua intensità di colore.

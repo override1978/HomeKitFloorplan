@@ -256,6 +256,56 @@ enum FloorplanMaterialCatalog {
         return material
     }
 
+    /// La macchia di calore sul pavimento.
+    ///
+    /// **Senza bordi.** Un poligono pieno che finisce netto contro le pareti si
+    /// legge come vernice; una macchia che sfuma prima di arrivarci si legge
+    /// come una misura. È tutta la differenza fra una stanza colorata e una
+    /// stanza che sta dicendo qualcosa.
+    static func roomHeatMaterial(_ colour: UIColor) -> (any RealityKit.Material)? {
+        guard let texture = radialFalloffTexture else { return nil }
+        var material = UnlitMaterial()
+        material.color = .init(tint: colour, texture: .init(texture, sampler: clampSampler))
+        material.blending = .transparent(opacity: .init(floatLiteral: 0.55))
+        return material
+    }
+
+    /// Bianco pieno al centro, trasparente al bordo. Una sola texture per tutte
+    /// le stanze: il colore lo mette il tint.
+    private static let radialFalloffTexture: TextureResource? = {
+        let side = 192
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side),
+                                            format: format).image { context in
+            let centre = CGPoint(x: CGFloat(side) / 2, y: CGFloat(side) / 2)
+            let colours = [UIColor(white: 1, alpha: 1).cgColor,
+                           UIColor(white: 1, alpha: 0.82).cgColor,
+                           UIColor(white: 1, alpha: 0).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                            colors: colours,
+                                            locations: [0, 0.42, 1]) else { return }
+            context.cgContext.drawRadialGradient(
+                gradient,
+                startCenter: centre, startRadius: 0,
+                endCenter: centre, endRadius: CGFloat(side) / 2,
+                options: []
+            )
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
+    }()
+
+    private static let clampSampler: MaterialParameters.Texture.Sampler = {
+        let descriptor = MTLSamplerDescriptor()
+        descriptor.sAddressMode = .clampToZero
+        descriptor.tAddressMode = .clampToZero
+        descriptor.minFilter = .linear
+        descriptor.magFilter = .linear
+        return .init(descriptor)
+    }()
+
     /// Il muro interno di una stanza che chiede attenzione.
     ///
     /// L'accento va **sui muri, non sul pavimento**. I muri sono bianchi,
