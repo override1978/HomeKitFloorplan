@@ -491,6 +491,9 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// Il contorno della stanza selezionata: un canale suo, che non si
         /// somma alle velature di stato.
         private let selectionRoot = Entity()
+        /// Serve per regolare la luce d'ambiente, che di notte va abbassata:
+        /// quella non appartiene a nessuna delle tre direzionali.
+        private weak var view: ARView?
         private var flagLabels: [Entity] = []
         private var flags: [RoomFlag] = []
         private var flagsSignature = ""
@@ -590,6 +593,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         }
 
         func install(in view: ARView) {
+            self.view = view
             camera.camera.fieldOfViewInDegrees = 38
 
             anchor.addChild(contentRoot)
@@ -620,36 +624,43 @@ private struct RealityFloorplanView: UIViewRepresentable {
             // illuminarli. Se il modello risulta piatto si alza solo la key.
             let radius = max(scene.bounds.radius, 1)
 
-            if sun.isAboveHorizon {
-                keyLight.light.intensity = 2_600
-                keyLight.light.color = sunColour(atElevation: sun.elevationDegrees)
-                keyLight.shadow = DirectionalLightComponent.Shadow(
-                    maximumDistance: radius * 6,
-                    depthBias: 1.8
-                )
-            } else {
-                // Sole tramontato: luce fredda e **nessuna ombra**. Di notte le
-                // ombre le fanno le lampade, e quelle arriveranno quando la vista
-                // saprà quali luci di casa sono accese in questo momento.
-                keyLight.light.intensity = 900
-                keyLight.light.color = UIColor(red: 0.70, green: 0.79, blue: 1.0, alpha: 1)
-                keyLight.shadow = nil
-            }
+            // Di notte non basta cambiare colore alla key: se riempimento e
+            // ambiente restano quelli del giorno, la casa resta luminosa come a
+            // mezzogiorno e la notte non si legge. E le ombre **non si spengono**
+            // — anche la luna le fa, e senza il volume si appiattisce.
+            let isDay = sun.isAboveHorizon
+
+            keyLight.light.intensity = isDay ? 2_600 : 700
+            keyLight.light.color = isDay
+                ? sunColour(atElevation: sun.elevationDegrees)
+                : UIColor(red: 0.66, green: 0.76, blue: 1.0, alpha: 1)
+            keyLight.shadow = DirectionalLightComponent.Shadow(
+                maximumDistance: radius * 6,
+                depthBias: 1.8
+            )
+            // Sotto l'orizzonte `sun.direction` punta comunque nella direzione
+            // giusta, tenuta a dieci gradi dal clamp: la luna sta dove sta il
+            // sole, il che è falso ma dà un'ombra plausibile e coerente.
             keyLight.look(at: .zero, from: sun.direction * radius * 3, relativeTo: nil)
 
-            fillLight.light.intensity = 800
+            fillLight.light.intensity = isDay ? 800 : 190
             fillLight.light.color = UIColor(red: 0.84, green: 0.90, blue: 1.0, alpha: 1)
             fillLight.shadow = nil
             fillLight.look(at: .zero,
                            from: SIMD3(radius * 2.6, radius * 1.4, -radius * 2.2),
                            relativeTo: nil)
 
-            rimLight.light.intensity = 420
+            rimLight.light.intensity = isDay ? 420 : 110
             rimLight.light.color = UIColor(white: 1, alpha: 1)
             rimLight.shadow = nil
             rimLight.look(at: .zero,
                           from: SIMD3(radius * 0.4, radius * 0.5, radius * 3.0),
                           relativeTo: nil)
+
+            // L'ambiente di default di RealityKit non passa da queste tre luci:
+            // senza abbassarlo, di notte i muri restano bianchi qualunque cosa
+            // si faccia alle direzionali.
+            view?.environment.lighting.intensityExponent = isDay ? 1.0 : 0.35
         }
 
         func updateSceneIfNeeded(_ newScene: FloorplanScene) {
