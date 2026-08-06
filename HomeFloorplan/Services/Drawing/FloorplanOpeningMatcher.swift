@@ -96,11 +96,21 @@ enum FloorplanOpeningMatcher {
 
     // MARK: - Aperture
 
-    /// Il centro di ogni apertura, in metri.
+    /// Il centro di ogni apertura **che può davvero aprirsi**, in metri.
+    ///
+    /// ⚠️ I muri di tipo balcone sono parapetti, e l'estrusore non ci costruisce
+    /// infissi. Contarli qui fra i candidati faceva due danni insieme: il
+    /// sensore risultava agganciato a un vano senza geometria, quindi non si
+    /// apriva niente, **e** veniva consumato — così non arrivava piu' alla
+    /// porta-finestra vera lì accanto, che restava chiusa senza motivo
+    /// apparente. Cio' che si puo' associare deve coincidere con cio' che si
+    /// puo' disegnare.
     static func centres(in document: DrawingDocument) -> [(id: UUID, centre: SIMD2<Double>)] {
         let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
         return document.openings.compactMap { opening in
-            guard let wall = document.walls.first(where: { $0.id == opening.wallID }) else { return nil }
+            guard let wall = document.walls.first(where: { $0.id == opening.wallID }),
+                  wall.kind != .balcony
+            else { return nil }
             let start = SIMD2(Double(wall.start.x) * metresPerPoint, Double(wall.start.y) * metresPerPoint)
             let end = SIMD2(Double(wall.end.x) * metresPerPoint, Double(wall.end.y) * metresPerPoint)
             return (opening.id, start + (end - start) * Double(opening.t))
