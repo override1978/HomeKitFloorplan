@@ -3,21 +3,21 @@ import SwiftData
 import RealityKit
 import UIKit
 
-/// Richiesta di anteprima: il documento viaggia per valore, così il foglio non
-/// tiene vivo il modello SwiftData mentre è aperto.
-struct Preview3DRequest: Identifiable {
-    let id = UUID()
+/// Una planimetria pronta da mostrare in volume.
+///
+/// Il documento viaggia per valore, così il foglio non tiene vivo il modello
+/// SwiftData mentre è aperto.
+struct Preview3DFloorplan: Identifiable {
+    let id: UUID
+    let name: String
     let document: DrawingDocument
-    let title: String
     /// Verso dove guarda il lato alto della pianta, in gradi da nord.
     let northBearingDegrees: Double
     /// La scrittura su SwiftData resta in `FloorplanListView`: l'anteprima
     /// riceve una chiusura e non conosce né il modello né il contesto.
     let applyNorthBearing: (Double) -> Void
-    /// I sensori della planimetria con l'apertura che sorvegliano, già decisa
-    /// al momento della posa.
+    /// I sensori con l'apertura che sorvegliano, già decisa al momento della posa.
     let markers: [(uuid: UUID, openingID: UUID?)]
-    let linkedRooms: [LinkedRoom]
     /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
     /// marker in coordinate del disegno.
     let exportRotation: DrawingExportRotation
@@ -25,18 +25,29 @@ struct Preview3DRequest: Identifiable {
     let background: UIColor
 }
 
+/// Richiesta di anteprima: **tutte** le planimetrie disegnate, più quale
+/// mostrare per prima.
+///
+/// Portarle tutte permette di cambiare piano senza uscire dalla vista, come
+/// nell'editor 2D — e senza che il foglio si chiuda e riapra, cosa che
+/// succederebbe se cambiasse l'identità della richiesta.
+struct Preview3DRequest: Identifiable {
+    let id = UUID()
+    let floorplans: [Preview3DFloorplan]
+    let initialID: UUID
+}
+
 /// Cosa mostra la bandierina di una stanza. Il contenuto arriva dal modello
-/// ambientale condiviso con la 2D; qui resta solo come disegnarlo.
+/// condiviso con la 2D; qui resta solo come disegnarlo.
 struct RoomFlag {
     var roomID: UUID
     var anchor: SIMD2<Double>
     var title: String
     var value: String
     var accent: UIColor
-    /// Solo le stanze che chiedono attenzione prendono la velatura sul
-    /// pavimento. Una velatura verde su una stanza che sta bene non dice
-    /// niente: sporca il materiale e basta, e toglie forza all'unica tinta
-    /// che invece va vista.
+    /// Solo le stanze che chiedono attenzione prendono la velatura. Una tinta
+    /// su una stanza che sta bene non dice niente: sporca il materiale e toglie
+    /// forza all'unica che invece va vista.
     var needsAttention: Bool
 }
 
@@ -83,21 +94,25 @@ struct FloorplanSunLight: Equatable {
 // MARK: - FloorplanRealityPreviewView
 
 struct FloorplanRealityPreviewView: View {
-    let document: DrawingDocument
-    let title: String
-    /// Verso dove guarda il lato alto della pianta, in gradi da nord.
-    let northBearingDegrees: Double
-    /// Chiamata quando l'utente sceglie l'esposizione: la persistenza sta fuori
-    /// di qui, così questa vista non conosce SwiftData.
-    let onNorthBearingChange: (Double) -> Void
-    /// I sensori della planimetria con l'apertura che sorvegliano.
-    let markers: [(uuid: UUID, openingID: UUID?)]
-    /// Serve a invertire l'inquadratura dell'export: i marker sono normalizzati
-    /// sull'immagine, che può essere ruotata rispetto alla tela.
-    let exportRotation: DrawingExportRotation
-    /// Lo sfondo scelto nell'editor 2D. La stessa casa non può avere due fondali
-    /// a seconda di come la guardi.
-    let background: UIColor
+    let floorplans: [Preview3DFloorplan]
+    @State private var currentID: UUID
+
+    init(floorplans: [Preview3DFloorplan], initialID: UUID) {
+        self.floorplans = floorplans
+        _currentID = State(initialValue: initialID)
+    }
+
+    private var current: Preview3DFloorplan {
+        floorplans.first { $0.id == currentID } ?? floorplans[0]
+    }
+
+    private var document: DrawingDocument { current.document }
+    private var title: String { current.name }
+    private var northBearingDegrees: Double { current.northBearingDegrees }
+    private var markers: [(uuid: UUID, openingID: UUID?)] { current.markers }
+    private var exportRotation: DrawingExportRotation { current.exportRotation }
+    private var background: UIColor { current.background }
+    private func onNorthBearingChange(_ bearing: Double) { current.applyNorthBearing(bearing) }
 
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
@@ -106,21 +121,19 @@ struct FloorplanRealityPreviewView: View {
     @State private var floorplanScene: FloorplanScene?
     @State private var cameraResetID = UUID()
     @State private var selectedRoomName: String?
-    @State private var exposure: Exposure = .north
-    /// L'istante con cui si calcola il sole: **adesso**, aggiornato ogni pochi
-    /// minuti. Il cursore dell'ora serviva a verificare che l'esposizione fosse
-    /// giusta; adesso che lo è, una casa illuminata come non è in questo momento
-    /// è solo un'informazione falsa.
-    @State private var now = Date()
-    /// Il modello ambientale è **lo stesso della 2D**: punteggi, giudizi,
-    /// soglie e tipi disponibili vengono da qui. Riscriverli darebbe una casa
-    /// che dice due cose diverse a seconda di dove la guardi.
-    @State private var envVM = EnvironmentViewModel()
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @State private var isLayerTrayOpen = false
     @AppStorage("securityMonitoredUUIDs") private var monitoredUUIDsRaw: String = ""
     @State private var sensorFilter: SensorServiceType?
+    /// Il modello ambientale è **lo stesso della 2D**: punteggi, giudizi,
+    /// soglie e tipi disponibili vengono da qui. Riscriverli darebbe una casa
+    /// che dice due cose diverse a seconda di dove la guardi.
+    @State private var envVM = EnvironmentViewModel()
+    /// L'istante con cui si calcola il sole: **adesso**, aggiornato ogni pochi
+    /// minuti.
+    @State private var now = Date()
+    @State private var exposure: Exposure = .north
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -299,13 +312,38 @@ struct FloorplanRealityPreviewView: View {
                 // bianco, ma più leggero di quello dei controlli: la capsula è
                 // uguale e senza quella differenza il titolo sembrerebbe
                 // toccabile pur non essendolo.
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
+                // Non un'etichetta: è il selettore di planimetria, come in 2D.
+                // Per questo porta la capsula **e** il chevron — senza, un menu
+                // travestito da titolo non lo apre nessuno.
+                Menu {
+                    ForEach(floorplans) { plan in
+                        Button {
+                            guard plan.id != currentID else { return }
+                            currentID = plan.id
+                            // L'esposizione è di quella planimetria, non della
+                            // vista: senza questo il menu resterebbe a dire il
+                            // punto cardinale del piano precedente.
+                            exposure = Exposure.nearest(to: plan.northBearingDegrees)
+                            selectedRoomName = nil
+                            rebuildScene()
+                        } label: {
+                            if plan.id == currentID {
+                                Label(plan.name, systemImage: "checkmark")
+                            } else {
+                                Text(plan.name)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                    }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 13)
                     .frame(minHeight: 30)
-                    .background(.black.opacity(0.22), in: Capsule())
+                    .background(.black.opacity(0.34), in: Capsule())
+                }
 
                 Spacer(minLength: 12)
 

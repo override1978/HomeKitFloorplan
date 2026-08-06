@@ -28,6 +28,32 @@ struct FloorplanListView: View {
         pinnedFloorplanIDsRaw = (try? String(data: JSONEncoder().encode(ids), encoding: .utf8)) ?? "[]"
     }
 
+    /// Tutte le planimetrie che hanno un disegno, pronte per il volume.
+    ///
+    /// Si passano **tutte** e non solo quella toccata, così il menu del titolo
+    /// può cambiare piano senza uscire dalla vista — come fa la barra della 2D.
+    private var previewableFloorplans: [Preview3DFloorplan] {
+        floorplans.compactMap { plan in
+            guard let document = plan.drawingDocument, !document.walls.isEmpty else { return nil }
+            return Preview3DFloorplan(
+                id: plan.id,
+                name: plan.name,
+                document: document,
+                northBearingDegrees: plan.northBearingDegrees,
+                applyNorthBearing: { [weak plan] bearing in
+                    guard let plan else { return }
+                    plan.northBearingDegrees = bearing
+                    try? modelContext.save()
+                },
+                markers: plan.accessories.map {
+                    (uuid: $0.homeKitAccessoryUUID, openingID: $0.linkedOpeningID)
+                },
+                exportRotation: plan.drawingExportRotation,
+                background: previewBackground(for: plan)
+            )
+        }
+    }
+
     /// Lo sfondo della 3D è quello scelto nell'editor 2D, con la stessa regola
     /// dell'export: lo stile scuro vince, poi la tinta esterna, poi il bianco.
     /// La stessa casa non può avere due fondali a seconda di come la guardi.
@@ -112,13 +138,8 @@ struct FloorplanListView: View {
             // A tutto schermo, non in un foglio: su iPad una card lascerebbe
             // metà spazio ai bordi proprio dove serve il soggetto.
             .fullScreenCover(item: $preview3D) { request in
-                FloorplanRealityPreviewView(document: request.document,
-                                            title: request.title,
-                                            northBearingDegrees: request.northBearingDegrees,
-                                            onNorthBearingChange: request.applyNorthBearing,
-                                            markers: request.markers,
-                                            exportRotation: request.exportRotation,
-                                            background: request.background)
+                FloorplanRealityPreviewView(floorplans: request.floorplans,
+                                            initialID: request.initialID)
             }
             .navigationTitle(isCompact
                              ? String(localized: "floorplans.title", defaultValue: "Floorplans")
@@ -572,20 +593,9 @@ struct FloorplanListView: View {
         if let document = floorplan.drawingDocument, !document.walls.isEmpty {
             Button {
                 preview3D = Preview3DRequest(
-                    document: document,
-                    title: floorplan.name,
-                    northBearingDegrees: floorplan.northBearingDegrees,
-                    applyNorthBearing: { [weak floorplan] bearing in
-                        guard let floorplan else { return }
-                        floorplan.northBearingDegrees = bearing
-                        try? modelContext.save()
-                    },
-                    markers: floorplan.accessories.map {
-                        (uuid: $0.homeKitAccessoryUUID, openingID: $0.linkedOpeningID)
-                    },
-                    linkedRooms: floorplan.linkedRooms,
-                    exportRotation: floorplan.drawingExportRotation,
-                    background: previewBackground(for: floorplan))
+                    floorplans: previewableFloorplans,
+                    initialID: floorplan.id
+                )
             } label: {
                 Label(String(localized: "floorplan.preview3D", defaultValue: "3D preview"),
                       systemImage: "cube")
