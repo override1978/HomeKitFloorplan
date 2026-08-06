@@ -1419,7 +1419,16 @@ private enum RealityFloorplanRenderer {
         case .wallGlow:
             // La sfumatura si misura da terra, non dalla quota del muro: così
             // l'architrave sopra una porta non riparte da capo.
-            return points.map { SIMD2($0.x, 1 - ($0.y - floorY) / wallGlowHeight) }
+            //
+            // ⚠️ La u sta **fissa a metà texture**, non in metri: il
+            // campionamento è `clampToZero`, che fuori dall'intervallo 0–1
+            // restituisce trasparente. Lasciandoci la coordinata del mondo la
+            // velatura c'era ed era invisibile ovunque. E la v va limitata, o un
+            // soffitto più alto della sfumatura taglia di netto invece di
+            // spegnersi.
+            return points.map {
+                SIMD2(0.5, max(0, min(1, 1 - ($0.y - floorY) / wallGlowHeight)))
+            }
         default:
             return points.map { SIMD2($0.x, $0.y) }
         }
