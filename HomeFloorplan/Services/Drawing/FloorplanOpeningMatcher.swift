@@ -20,13 +20,26 @@ import simd
 enum FloorplanOpeningMatcher {
 
     /// Da coordinate normalizzate sull'immagine a metri nel modello.
+    ///
+    /// **Due scale, non una.** La x normalizzata è una frazione della larghezza
+    /// dell'immagine e la y della sua altezza: se l'immagine non è quadrata i due
+    /// fattori sono diversi, e usarne uno solo sbaglia progressivamente man mano
+    /// che ci si allontana dal centro.
     struct Transform {
-        var scale: Double
+        var quarterTurns: Int
+        var scaleX: Double
+        var scaleY: Double
         var dx: Double
         var dy: Double
+        /// Errore medio della calibrazione sulle stanze note, in metri. Serve a
+        /// **rifiutare** una calibrazione sbagliata invece di usarla.
+        var residual: Double
 
         func metres(from normalized: CGPoint) -> SIMD2<Double> {
-            SIMD2(Double(normalized.x) * scale + dx, Double(normalized.y) * scale + dy)
+            let turned = FloorplanMarkerRemapper.rotatedLocalPoint(
+                x: Double(normalized.x), y: Double(normalized.y), quarterTurns: quarterTurns
+            )
+            return SIMD2(turned.x * scaleX + dx, turned.y * scaleY + dy)
         }
     }
 
@@ -34,38 +47,77 @@ enum FloorplanOpeningMatcher {
     /// confrontando le stanze collegate, che esistono in entrambi gli spazi —
     /// un rettangolo normalizzato di qua, uno in coordinate canvas di là.
     ///
-    /// La scala si media su **entrambi gli assi** di tutte le stanze; gli
-    /// scostamenti si calcolano dopo, con la scala già mediata, perché
-    /// mediarli ognuno con la propria lascerebbe un errore sistematico.
+    /// ⚠️ E l'immagine può essere **ruotata** rispetto alla tela: marker e
+    /// `LinkedRoom` vivono nello spazio dell'export, `RoomArea` in quello del
+    /// disegno. Invece di leggere `drawingExportRotation` e sperare di
+    /// azzeccarne il verso, si provano tutti e quattro i quarti di giro e si
+    /// tiene quello che spiega meglio le stanze note. Con due o più stanze il
+    /// confronto è sovradeterminato, quindi la risposta giusta si distingue
+    /// nettamente — e il residuo dice quanto fidarsi.
     static func transform(document: DrawingDocument, linkedRooms: [LinkedRoom]) -> Transform? {
         let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
-        var scales: [Double] = []
-        var pairs: [(normalized: CGPoint, canvas: CGPoint)] = []
 
+        var samples: [(normalized: CGPoint, canvas: SIMD2<Double>, normalizedSize: CGSize, canvasSize: SIMD2<Double>)] = []
         for room in linkedRooms {
-            guard let area = document.roomAreas.first(where: { $0.hmRoomUUID == room.hmRoomUUID })
+            guard let area = document.roomAreas.first(where: { $0.hmRoomUUID == room.hmRoomUUID }),
+                  room.normalizedRect.width > 0.001, room.normalizedRect.height > 0.001
             else { continue }
             let bounds = area.boundingRect
-
-            if room.normalizedRect.width > 0.001 {
-                scales.append(Double(bounds.width) * metresPerPoint / Double(room.normalizedRect.width))
-            }
-            if room.normalizedRect.height > 0.001 {
-                scales.append(Double(bounds.height) * metresPerPoint / Double(room.normalizedRect.height))
-            }
-            pairs.append((CGPoint(x: room.normalizedRect.x + room.normalizedRect.width / 2,
-                                  y: room.normalizedRect.y + room.normalizedRect.height / 2),
-                          CGPoint(x: bounds.midX, y: bounds.midY)))
+            samples.append((
+                CGPoint(x: room.normalizedRect.x + room.normalizedRect.width / 2,
+                        y: room.normalizedRect.y + room.normalizedRect.height / 2),
+                SIMD2(Double(bounds.midX) * metresPerPoint, Double(bounds.midY) * metresPerPoint),
+                CGSize(width: room.normalizedRect.width, height: room.normalizedRect.height),
+                SIMD2(Double(bounds.width) * metresPerPoint, Double(bounds.height) * metresPerPoint)
+            ))
         }
+        guard !samples.isEmpty else { return nil }
 
-        guard !scales.isEmpty, !pairs.isEmpty else { return nil }
-        let scale = scales.reduce(0, +) / Double(scales.count)
+        var best: Transform?
+        for quarterTurns in 0..<4 {
+            let turned = samples.map { sample -> (point: SIMD2<Double>, canvas: SIMD2<Double>) in
+                let p = FloorplanMarkerRemapper.rotatedLocalPoint(
+                    x: Double(sample.normalized.x), y: Double(sample.normalized.y), quarterTurns: quarterTurns
+                )
+                return (SIMD2(p.x, p.y), sample.canvas)
+            }
 
-        let dx = pairs.reduce(0.0) { $0 + Double($1.canvas.x) * metresPerPoint - Double($1.normalized.x) * scale }
-        let dy = pairs.reduce(0.0) { $0 + Double($1.canvas.y) * metresPerPoint - Double($1.normalized.y) * scale }
-        let count = Double(pairs.count)
+            // Con una stanza sola non c'è niente da adattare: la scala viene dal
+            // suo rettangolo, e i quarti di giro sono indistinguibili.
+            let swapped = quarterTurns % 2 == 1
+            let fallbackX = samples.map { $0.canvasSize.x / Double(swapped ? $0.normalizedSize.height : $0.normalizedSize.width) }
+            let fallbackY = samples.map { $0.canvasSize.y / Double(swapped ? $0.normalizedSize.width : $0.normalizedSize.height) }
 
-        return Transform(scale: scale, dx: dx / count, dy: dy / count)
+            let scaleX = slope(of: turned.map { ($0.point.x, $0.canvas.x) })
+                ?? fallbackX.reduce(0, +) / Double(fallbackX.count)
+            let scaleY = slope(of: turned.map { ($0.point.y, $0.canvas.y) })
+                ?? fallbackY.reduce(0, +) / Double(fallbackY.count)
+
+            let dx = turned.reduce(0.0) { $0 + $1.canvas.x - $1.point.x * scaleX } / Double(turned.count)
+            let dy = turned.reduce(0.0) { $0 + $1.canvas.y - $1.point.y * scaleY } / Double(turned.count)
+
+            let residual = turned.reduce(0.0) { total, sample in
+                total + simd_distance(SIMD2(sample.point.x * scaleX + dx, sample.point.y * scaleY + dy),
+                                      sample.canvas)
+            } / Double(turned.count)
+
+            let candidate = Transform(quarterTurns: quarterTurns, scaleX: scaleX, scaleY: scaleY,
+                                      dx: dx, dy: dy, residual: residual)
+            if residual < (best?.residual ?? .greatestFiniteMagnitude) { best = candidate }
+        }
+        return best
+    }
+
+    /// Pendenza ai minimi quadrati. `nil` quando i punti non hanno spread: con
+    /// una stanza sola, o tutte allineate, non c'è niente da adattare.
+    private static func slope(of pairs: [(Double, Double)]) -> Double? {
+        guard pairs.count >= 2 else { return nil }
+        let meanX = pairs.reduce(0) { $0 + $1.0 } / Double(pairs.count)
+        let meanY = pairs.reduce(0) { $0 + $1.1 } / Double(pairs.count)
+        let variance = pairs.reduce(0.0) { $0 + ($1.0 - meanX) * ($1.0 - meanX) }
+        guard variance > 0.0001 else { return nil }
+        let covariance = pairs.reduce(0.0) { $0 + ($1.0 - meanX) * ($1.1 - meanY) }
+        return covariance / variance
     }
 
     /// Il centro di ogni apertura, in metri.
@@ -88,7 +140,11 @@ enum FloorplanOpeningMatcher {
                              openMarkerPositions: [CGPoint],
                              maxDistance: Double = 0.80) -> Set<UUID> {
         guard !openMarkerPositions.isEmpty,
-              let transform = transform(document: document, linkedRooms: linkedRooms)
+              let transform = transform(document: document, linkedRooms: linkedRooms),
+              // Una calibrazione che sbaglia di mezzo metro sulle stanze che
+              // *conosce* non va usata per associare infissi: meglio non aprire
+              // niente che aprire la finestra sbagliata.
+              transform.residual < 0.5
         else { return [] }
 
         let openings = centres(in: document)
@@ -135,6 +191,80 @@ enum FloorplanOpeningMatcher {
             }
         }
         return false
+    }
+
+    /// Perché non si è aperto niente.
+    ///
+    /// Ogni passaggio di questa catena può fallire in silenzio, e da fuori
+    /// sembrano tutti lo stesso sintomo: la casa resta chiusa. Questi numeri li
+    /// distinguono in un colpo d'occhio, senza dover ricompilare per capire a
+    /// che punto si è rotta.
+    struct Diagnostics {
+        var markers = 0
+        var withContact = 0
+        var open = 0
+        var calibrationRooms = 0
+        var quarterTurns: Int?
+        var residual: Double?
+        var nearestDistance: Double?
+        var matched = 0
+
+        var summary: String {
+            var parts = ["marker \(markers)", "contatti \(withContact)", "aperti \(open)"]
+            if let quarterTurns, let residual {
+                parts.append("rot \(quarterTurns)·90°")
+                parts.append(String(format: "residuo %.2fm", residual))
+            } else {
+                parts.append("calibrazione ASSENTE (\(calibrationRooms) stanze)")
+            }
+            if let nearestDistance { parts.append(String(format: "vicino %.2fm", nearestDistance)) }
+            parts.append("associati \(matched)")
+            return parts.joined(separator: " · ")
+        }
+    }
+
+    static func diagnostics(in document: DrawingDocument,
+                            linkedRooms: [LinkedRoom],
+                            markers: [(uuid: UUID, position: CGPoint)],
+                            homeKit: HomeKitService) -> Diagnostics {
+        var report = Diagnostics()
+        report.markers = markers.count
+        report.calibrationRooms = linkedRooms.filter { room in
+            document.roomAreas.contains { $0.hmRoomUUID == room.hmRoomUUID }
+        }.count
+
+        var openPositions: [CGPoint] = []
+        for marker in markers {
+            guard let accessory = homeKit.accessory(for: marker.uuid) else { continue }
+            let hasContact = accessory.services.contains { service in
+                service.characteristics.contains { $0.characteristicType == HMCharacteristicTypeContactState }
+            }
+            guard hasContact else { continue }
+            report.withContact += 1
+            if isContactOpen(accessory, using: homeKit) {
+                report.open += 1
+                openPositions.append(marker.position)
+            }
+        }
+
+        guard let transform = transform(document: document, linkedRooms: linkedRooms) else { return report }
+        report.quarterTurns = transform.quarterTurns
+        report.residual = transform.residual
+
+        let openings = centres(in: document)
+        for position in openPositions {
+            let point = transform.metres(from: position)
+            for opening in openings {
+                let distance = simd_distance(point, opening.centre)
+                if distance < (report.nearestDistance ?? .greatestFiniteMagnitude) {
+                    report.nearestDistance = distance
+                }
+            }
+        }
+
+        report.matched = openOpenings(in: document, linkedRooms: linkedRooms,
+                                      markers: markers, homeKit: homeKit).count
+        return report
     }
 
     /// Le aperture aperte, risolte contro lo stato corrente di HomeKit.

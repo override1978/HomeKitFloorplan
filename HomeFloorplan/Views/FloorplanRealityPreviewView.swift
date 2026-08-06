@@ -177,6 +177,23 @@ struct FloorplanRealityPreviewView: View {
                     .transition(.scale.combined(with: .opacity))
             }
 
+            #if DEBUG
+            // Temporanea: dice a che punto della catena si perde lo stato degli
+            // infissi. Da togliere quando la funzione è assestata.
+            Text(FloorplanOpeningMatcher.diagnostics(
+                in: document,
+                linkedRooms: linkedRooms,
+                markers: markers.map { (uuid: $0.uuid, position: $0.position) },
+                homeKit: homeKit
+            ).summary)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.white.opacity(0.75))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.black.opacity(0.4), in: Capsule())
+            #endif
+
             sunControls
 
             HStack(spacing: 18) {
