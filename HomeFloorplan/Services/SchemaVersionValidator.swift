@@ -12,7 +12,9 @@ import SwiftData
 //   • If a migration is non-lightweight (e.g. custom mapping), create a
 //     VersionedSchema + SchemaMigrationPlan before shipping.
 //
-// Current schema — v25 (16 @Model types):
+// Current schema — v26 (16 @Model types):
+//   v26: PlacedAccessory += linkedOpeningID: UUID? — quale apertura sorveglia
+//        un sensore di contatto (additive, lightweight migration)
 //   v25: Floorplan += northBearingDegrees: Double (default 0) — orientamento del
 //        disegno per il sole nella preview 3D (additive, lightweight migration)
 //   v24: Rule removed — an empty legacy table with no reader and no writer
@@ -51,7 +53,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 25
+    static let currentVersion: Int = 26
 
     // MARK: - Persistence
 

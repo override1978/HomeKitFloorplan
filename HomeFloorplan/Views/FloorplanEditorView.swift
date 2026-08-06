@@ -1103,5 +1103,8 @@ struct FloorplanEditorView: View {
 
     private func backfillMarkerRoomLinksIfNeeded() {
         markerEditingCoordinator.backfillMarkerRoomLinksIfNeeded()
+        // Stesso momento, stessa logica: chi ha marker posati da prima si
+        // ritrova il legame con l'apertura senza dover rifare niente.
+        markerEditingCoordinator.backfillMarkerOpeningLinksIfNeeded()
     }
 }

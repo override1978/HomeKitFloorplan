@@ -12,9 +12,12 @@ import simd
 /// evidenza disponibile è che un sensore di contatto sta fisicamente *sulla*
 /// porta che sorveglia, quindi il suo marker cade a pochi centimetri dal vano.
 ///
-/// Funziona, e si vede subito quando non funziona — ma resta un'euristica. Se
-/// la funzione convince, il passo giusto è un campo esplicito sull'`Opening`
-/// scelto dall'utente nell'editor 2D.
+/// La corrispondenza si calcola **quando il marker si posa**, non a ogni
+/// apertura della vista 3D, e il risultato si salva in
+/// `PlacedAccessory.linkedOpeningID`. La differenza non è di efficienza: un
+/// valore salvato è visibile e correggibile, un valore ricalcolato ogni volta
+/// non lo è — ed è per questo che quando sbagliava non si riusciva a capire
+/// perché.
 enum FloorplanOpeningMatcher {
 
     // MARK: - Calibrazione
@@ -117,34 +120,43 @@ enum FloorplanOpeningMatcher {
         }
     }
 
-    /// Le aperture sorvegliate da un contatto che risulta **aperto**.
+    /// L'apertura su cui questo marker è appoggiato, se ce n'è una abbastanza
+    /// vicina.
     ///
     /// - Parameter maxDistance: oltre questa distanza il marker non sta su
     ///   quell'infisso, e associarlo sarebbe inventare.
-    static func openOpenings(in document: DrawingDocument,
-                             exportRotation: DrawingExportRotation,
-                             markers: [(uuid: UUID, position: CGPoint)],
-                             homeKit: HomeKitService,
-                             maxDistance: Double = 0.80) -> Set<UUID> {
-        guard let transform = transform(document: document, exportRotation: exportRotation) else { return [] }
-        let openings = centres(in: document)
-        guard !openings.isEmpty else { return [] }
+    static func nearestOpening(to normalizedPosition: CGPoint,
+                               in document: DrawingDocument,
+                               exportRotation: DrawingExportRotation,
+                               maxDistance: Double = 0.80) -> UUID? {
+        guard let transform = transform(document: document, exportRotation: exportRotation)
+        else { return nil }
 
+        let point = transform.metres(from: normalizedPosition)
+        var best: (id: UUID, distance: Double)?
+        for opening in centres(in: document) {
+            let distance = simd_distance(point, opening.centre)
+            if distance < (best?.distance ?? .greatestFiniteMagnitude) {
+                best = (opening.id, distance)
+            }
+        }
+        guard let best, best.distance <= maxDistance else { return nil }
+        return best.id
+    }
+
+    /// Le aperture il cui sensore risulta **aperto**.
+    ///
+    /// Nessuna geometria qui: il legame è già stato deciso e salvato. Questa
+    /// funzione legge soltanto lo stato.
+    static func openOpenings(markers: [(uuid: UUID, openingID: UUID?)],
+                             homeKit: HomeKitService) -> Set<UUID> {
         var result: Set<UUID> = []
         for marker in markers {
-            guard let accessory = homeKit.accessory(for: marker.uuid),
+            guard let openingID = marker.openingID,
+                  let accessory = homeKit.accessory(for: marker.uuid),
                   isContactOpen(accessory, using: homeKit)
             else { continue }
-
-            let point = transform.metres(from: marker.position)
-            var best: (id: UUID, distance: Double)?
-            for opening in openings {
-                let distance = simd_distance(point, opening.centre)
-                if distance < (best?.distance ?? .greatestFiniteMagnitude) {
-                    best = (opening.id, distance)
-                }
-            }
-            if let best, best.distance <= maxDistance { result.insert(best.id) }
+            result.insert(openingID)
         }
         return result
     }
@@ -173,85 +185,4 @@ enum FloorplanOpeningMatcher {
         return false
     }
 
-    // MARK: - Diagnostica
-
-    /// Perché non si è aperto niente. Ogni anello di questa catena può fallire
-    /// in silenzio, e da fuori sembrano tutti lo stesso sintomo.
-    struct Diagnostics {
-        /// Un sensore di contatto, con quello che dice e dove cade.
-        ///
-        /// La distanza si misura su **tutti** i contatti, non solo su quelli
-        /// aperti: è l'unico modo di verificare la calibrazione quando la casa è
-        /// chiusa — e la casa è chiusa quasi sempre, che è esattamente il
-        /// momento in cui non si riusciva a capire se funzionasse.
-        struct Contact {
-            var name: String
-            var raw: String
-            var distance: Double?
-        }
-
-        var markers = 0
-        var openings = 0
-        var rotation: DrawingExportRotation?
-        var contacts: [Contact] = []
-        var matched = 0
-
-        var open: Int { contacts.filter { $0.raw != "0" && $0.raw != "-" }.count }
-
-        var summary: String {
-            var parts = ["marker \(markers)", "contatti \(contacts.count)",
-                         "aperti \(open)", "vani \(openings)"]
-            parts.append(rotation.map { "rot \($0.quarterTurns)" } ?? "NO CALIBRAZIONE")
-            parts.append("associati \(matched)")
-
-            let detail = contacts.map { contact in
-                let distance = contact.distance.map { String(format: "%.2fm", $0) } ?? "?"
-                return "\(contact.name)=\(contact.raw)@\(distance)"
-            }.joined(separator: "  ")
-
-            return parts.joined(separator: " · ") + (detail.isEmpty ? "" : "\n" + detail)
-        }
-    }
-
-    static func diagnostics(in document: DrawingDocument,
-                            exportRotation: DrawingExportRotation,
-                            markers: [(uuid: UUID, position: CGPoint)],
-                            homeKit: HomeKitService) -> Diagnostics {
-        var report = Diagnostics()
-        report.markers = markers.count
-        let openings = centres(in: document)
-        report.openings = openings.count
-        let transform = transform(document: document, exportRotation: exportRotation)
-        report.rotation = transform == nil ? nil : exportRotation
-
-        for marker in markers {
-            guard let accessory = homeKit.accessory(for: marker.uuid) else { continue }
-            var raw: String?
-            for service in accessory.services {
-                for characteristic in service.characteristics
-                where characteristic.characteristicType == HMCharacteristicTypeContactState {
-                    let value = homeKit.value(for: characteristic) ?? characteristic.value
-                    raw = value.map { "\($0)" } ?? "-"
-                }
-            }
-            guard let raw else { continue }
-
-            var nearest: Double?
-            if let transform {
-                let point = transform.metres(from: marker.position)
-                for opening in openings {
-                    let distance = simd_distance(point, opening.centre)
-                    if distance < (nearest ?? .greatestFiniteMagnitude) { nearest = distance }
-                }
-            }
-
-            report.contacts.append(.init(name: String(accessory.name.prefix(12)),
-                                         raw: raw,
-                                         distance: nearest))
-        }
-
-        report.matched = openOpenings(in: document, exportRotation: exportRotation,
-                                      markers: markers, homeKit: homeKit).count
-        return report
-    }
 }

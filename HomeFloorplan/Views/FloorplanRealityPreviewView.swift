@@ -14,8 +14,9 @@ struct Preview3DRequest: Identifiable {
     /// La scrittura su SwiftData resta in `FloorplanListView`: l'anteprima
     /// riceve una chiusura e non conosce né il modello né il contesto.
     let applyNorthBearing: (Double) -> Void
-    /// Marker della planimetria, in coordinate normalizzate sull'immagine.
-    let markers: [(uuid: UUID, position: CGPoint, name: String)]
+    /// I sensori della planimetria con l'apertura che sorvegliano, già decisa
+    /// al momento della posa.
+    let markers: [(uuid: UUID, openingID: UUID?)]
     let linkedRooms: [LinkedRoom]
     /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
     /// marker in coordinate del disegno.
@@ -60,8 +61,8 @@ struct FloorplanRealityPreviewView: View {
     /// Chiamata quando l'utente sceglie l'esposizione: la persistenza sta fuori
     /// di qui, così questa vista non conosce SwiftData.
     let onNorthBearingChange: (Double) -> Void
-    /// Marker degli accessori, per risolvere qui quali infissi sono aperti.
-    let markers: [(uuid: UUID, position: CGPoint, name: String)]
+    /// I sensori della planimetria con l'apertura che sorvegliano.
+    let markers: [(uuid: UUID, openingID: UUID?)]
     /// Serve a invertire l'inquadratura dell'export: i marker sono normalizzati
     /// sull'immagine, che può essere ruotata rispetto alla tela.
     let exportRotation: DrawingExportRotation
@@ -164,12 +165,7 @@ struct FloorplanRealityPreviewView: View {
 
     /// Gli infissi da disegnare aperti, contro lo stato corrente di HomeKit.
     private var openOpeningIDs: Set<UUID> {
-        FloorplanOpeningMatcher.openOpenings(
-            in: document,
-            exportRotation: exportRotation,
-            markers: markers.map { (uuid: $0.uuid, position: $0.position) },
-            homeKit: homeKit
-        )
+        FloorplanOpeningMatcher.openOpenings(markers: markers, homeKit: homeKit)
     }
 
     // MARK: - Sole
@@ -244,24 +240,6 @@ struct FloorplanRealityPreviewView: View {
                     .background(.black.opacity(0.45), in: Capsule())
                     .transition(.scale.combined(with: .opacity))
             }
-
-            #if DEBUG
-            // Temporanea: dice a che punto della catena si perde lo stato degli
-            // infissi. Da togliere quando la funzione è assestata.
-            Text(FloorplanOpeningMatcher.diagnostics(
-                in: document,
-                exportRotation: exportRotation,
-                markers: markers.map { (uuid: $0.uuid, position: $0.position) },
-                homeKit: homeKit
-            ).summary)
-                .font(.system(size: 9).monospaced())
-                .foregroundStyle(.white.opacity(0.75))
-                .multilineTextAlignment(.center)
-                .lineLimit(4)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.black.opacity(0.4), in: Capsule())
-            #endif
 
             environmentControls
 

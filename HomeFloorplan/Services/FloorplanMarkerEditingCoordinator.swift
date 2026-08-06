@@ -35,6 +35,9 @@ struct FloorplanMarkerEditingCoordinator {
                 in: floorplan.linkedRooms
             )
         )
+        if Self.watchesOpenings(accessory) {
+            placed.linkedOpeningID = openingID(under: markerPosition)
+        }
         placed.floorplan = floorplan
         modelContext.insert(placed)
         floorplan.accessories.append(placed)
@@ -65,6 +68,10 @@ struct FloorplanMarkerEditingCoordinator {
             containing: position,
             in: floorplan.linkedRooms
         )
+        if let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID),
+           Self.watchesOpenings(accessory) {
+            placed.linkedOpeningID = openingID(under: position)
+        }
         saveAndMarkForSync()
     }
 
@@ -73,6 +80,43 @@ struct FloorplanMarkerEditingCoordinator {
         let trimmed = newLabel.trimmingCharacters(in: .whitespaces)
         placed.customLabel = trimmed.isEmpty ? nil : trimmed
         saveAndMarkForSync()
+    }
+
+    /// L'apertura sotto un marker, se ce n'è una.
+    ///
+    /// Solo per i sensori di contatto: un termometro appoggiato vicino a una
+    /// porta non la sorveglia, e agganciarlo la farebbe aprire quando si alza
+    /// la temperatura.
+    static func watchesOpenings(_ accessory: HMAccessory) -> Bool {
+        accessory.services.contains { service in
+            service.characteristics.contains { $0.characteristicType == HMCharacteristicTypeContactState }
+        }
+    }
+
+    private func openingID(under position: NormalizedPoint) -> UUID? {
+        guard let document = floorplan.drawingDocument else { return nil }
+        return FloorplanOpeningMatcher.nearestOpening(
+            to: CGPoint(x: position.x, y: position.y),
+            in: document,
+            exportRotation: floorplan.drawingExportRotation
+        )
+    }
+
+    /// Riempie i legami mancanti sui marker già posati, così chi ha una
+    /// planimetria da prima non deve rifare niente.
+    func backfillMarkerOpeningLinksIfNeeded() {
+        guard floorplan.drawingDocument != nil else { return }
+
+        var didUpdate = false
+        for marker in floorplan.accessories where marker.linkedOpeningID == nil {
+            guard let accessory = homeKit.accessory(for: marker.homeKitAccessoryUUID),
+                  Self.watchesOpenings(accessory),
+                  let openingID = openingID(under: marker.position)
+            else { continue }
+            marker.linkedOpeningID = openingID
+            didUpdate = true
+        }
+        if didUpdate { saveAndMarkForSync() }
     }
 
     func alignMarkerRoomLink(id markerID: UUID) {

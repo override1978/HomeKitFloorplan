@@ -566,9 +566,7 @@ struct FloorplanListView: View {
                         try? modelContext.save()
                     },
                     markers: floorplan.accessories.map {
-                        (uuid: $0.homeKitAccessoryUUID,
-                         position: CGPoint(x: $0.positionX, y: $0.positionY),
-                         name: $0.customLabel ?? homeKit.accessory(for: $0.homeKitAccessoryUUID)?.name ?? "")
+                        (uuid: $0.homeKitAccessoryUUID, openingID: $0.linkedOpeningID)
                     },
                     linkedRooms: floorplan.linkedRooms,
                     exportRotation: floorplan.drawingExportRotation)
