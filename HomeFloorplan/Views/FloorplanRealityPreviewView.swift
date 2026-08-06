@@ -1426,8 +1426,14 @@ private enum RealityFloorplanRenderer {
             // velatura c'era ed era invisibile ovunque. E la v va limitata, o un
             // soffitto più alto della sfumatura taglia di netto invece di
             // spegnersi.
+            //
+            // ⚠️ **`v = 0` pesca il fondo dell'immagine, non la cima.** L'asse
+            // verticale delle UV è ribaltato rispetto allo spazio immagine di
+            // UIKit, dove `y = 0` è in alto. Con la mappatura opposta la
+            // sfumatura usciva perfetta e capovolta: piena al soffitto e spenta
+            // a terra.
             return points.map {
-                SIMD2(0.5, max(0, min(1, 1 - ($0.y - floorY) / wallGlowHeight)))
+                SIMD2(0.5, max(0, min(1, ($0.y - floorY) / wallGlowHeight)))
             }
         default:
             return points.map { SIMD2($0.x, $0.y) }
