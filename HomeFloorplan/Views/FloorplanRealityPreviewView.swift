@@ -360,10 +360,14 @@ struct FloorplanRealityPreviewView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "leaf.fill").font(.system(size: 12))
-                    Text(activeLayerLabel).font(.caption.weight(.semibold))
+                    // Da aperto il valore lo dice già il chip selezionato: qui
+                    // sarebbe scritto due volte nella stessa riga.
+                    if !isLayerTrayOpen {
+                        Text(activeLayerLabel).font(.caption.weight(.semibold))
+                    }
                 }
                 .foregroundStyle(.white)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, isLayerTrayOpen ? 9 : 12)
                 .frame(minHeight: 30)
                 .background(Color.white.opacity(isLayerTrayOpen ? 0.22 : 0.12), in: Capsule())
             }
