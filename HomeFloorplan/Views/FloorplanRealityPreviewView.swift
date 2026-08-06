@@ -336,12 +336,12 @@ struct FloorplanRealityPreviewView: View {
                     }
                 } label: {
                     HStack(spacing: 5) {
-                        Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
-                        Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                        Text(title).font(.headline).lineLimit(1)
+                        Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
                     }
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 13)
-                    .frame(minHeight: 30)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 38)
                     .background(.black.opacity(0.34), in: Capsule())
                 }
 
@@ -481,16 +481,16 @@ struct FloorplanRealityPreviewView: View {
                 withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen.toggle() }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: mode.symbol).font(.system(size: 12))
+                    Image(systemName: mode.symbol).font(.system(size: 14))
                     // Da aperto il valore lo dice già il chip selezionato: qui
                     // sarebbe scritto due volte nella stessa riga.
                     if !isLayerTrayOpen {
-                        Text(activeLayerLabel).font(.caption.weight(.semibold))
+                        Text(activeLayerLabel).font(.subheadline.weight(.semibold))
                     }
                 }
                 .foregroundStyle(.white)
-                .padding(.horizontal, isLayerTrayOpen ? 9 : 12)
-                .frame(minHeight: 30)
+                .padding(.horizontal, isLayerTrayOpen ? 12 : 16)
+                .frame(minHeight: 38)
                 .background(.black.opacity(0.34), in: Capsule())
             }
             .buttonStyle(.plain)
@@ -511,8 +511,8 @@ struct FloorplanRealityPreviewView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 5)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 6)
                 .background(.black.opacity(0.34), in: Capsule())
                 .transition(.move(edge: .leading).combined(with: .opacity))
             }
@@ -533,14 +533,14 @@ struct FloorplanRealityPreviewView: View {
                          isSelected: sensorFilter == type) { sensorFilter = type }
                 }
             }
-            .padding(.horizontal, 5)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
         }
         // ⚠️ Niente `fixedSize`: faceva prendere alla riga la larghezza di tutto
         // il contenuto mentre la capsula restava al limite, e i chip finivano
         // fuori dal proprio sfondo. Il limite serve a farla scorrere **dentro**
         // la capsula, non a tagliarla.
-        .frame(maxWidth: 560)
+        .frame(maxWidth: 640)
         .background(.black.opacity(0.22), in: Capsule())
         .transition(.opacity)
     }
@@ -556,13 +556,13 @@ struct FloorplanRealityPreviewView: View {
         Button {
             withAnimation(.easeOut(duration: 0.2), action)
         } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon).font(.system(size: 11))
-                Text(label).font(.caption.weight(isSelected ? .bold : .regular))
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 13))
+                Text(label).font(.subheadline.weight(isSelected ? .semibold : .regular))
             }
-            .foregroundStyle(.white.opacity(isSelected ? 1 : 0.6))
-            .padding(.horizontal, 11)
-            .frame(minHeight: 30)
+            .foregroundStyle(.white.opacity(isSelected ? 1 : 0.62))
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
             .background(isSelected ? Color.white.opacity(0.22) : .clear, in: Capsule())
         }
         .buttonStyle(.plain)
