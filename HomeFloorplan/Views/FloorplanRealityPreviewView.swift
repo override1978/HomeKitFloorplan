@@ -1091,14 +1091,17 @@ private enum RealityFloorplanRenderer {
         var strength: CGFloat
     }
 
-    /// **Non tutta la parete.** Una tinta piatta su tutto il muro sembra una
-    /// stanza ridipinta, e a bassa saturazione diventa un rosa scolastico. Una
-    /// fascia che parte da terra e si spegne verso l'alto si legge invece come
-    /// una luce che sale: più satura dove serve, assente dove non serve.
+    /// **Non tutta la parete, e appena accennata.** Il muro deve fare quello che
+    /// fa la macchia sul pavimento: suggerire, non dichiarare. Con tre gradini
+    /// forti si vedevano i salti fra una fascia e l'altra, e il colore
+    /// sembrava vernice; con cinque passaggi leggeri la transizione sparisce e
+    /// resta l'impressione di una luce che sale da terra.
     private static let wallBandRanges: [(from: Float, to: Float, strength: CGFloat)] = [
-        (0.00, 0.85, 0.82),
-        (0.85, 1.45, 0.46),
-        (1.45, 2.10, 0.20)
+        (0.00, 0.55, 0.34),
+        (0.55, 1.05, 0.24),
+        (1.05, 1.50, 0.15),
+        (1.50, 1.95, 0.08),
+        (1.95, 2.45, 0.03)
     ]
 
     /// Ritaglia da una facciata di muro la porzione fra due quote.
