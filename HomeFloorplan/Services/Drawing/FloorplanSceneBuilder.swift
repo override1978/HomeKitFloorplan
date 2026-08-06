@@ -42,7 +42,8 @@ enum FloorplanSceneBuilder {
 
         return FloorplanScene(
             faces: faces,
-            bounds: .init(min: minPoint, max: maxPoint)
+            bounds: .init(min: minPoint, max: maxPoint),
+            stateSignature: openOpeningIDs.map(\.uuidString).sorted().joined(separator: ",")
         )
     }
 

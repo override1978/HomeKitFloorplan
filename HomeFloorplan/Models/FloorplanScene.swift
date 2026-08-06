@@ -38,9 +38,17 @@ struct FloorplanScene {
 
     var faces: [MeshFace]
     var bounds: Bounds
+    /// Ciò che cambia la **forma** senza cambiare il conteggio delle facce.
+    ///
+    /// Un'anta che si apre ha esattamente le stesse facce di prima, solo
+    /// ruotate, e il bounding box lo decide la casa: contarle non basta a
+    /// distinguere aperto da chiuso. Senza questo, il gate anti-ricostruzione
+    /// scartava l'aggiornamento e la porta restava dipinta chiusa.
+    var stateSignature: String = ""
 
     var renderSignature: String {
         [
+            stateSignature,
             "\(faces.count)",
             "\(bounds.min.x)",
             "\(bounds.min.y)",
