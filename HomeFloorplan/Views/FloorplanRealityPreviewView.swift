@@ -431,7 +431,7 @@ struct FloorplanRealityPreviewView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, isLayerTrayOpen ? 9 : 12)
                 .frame(minHeight: 30)
-                .background(Color.white.opacity(isLayerTrayOpen ? 0.22 : 0.12), in: Capsule())
+                .background(.black.opacity(0.34), in: Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(String(localized: "floorplan.layers",
@@ -442,7 +442,7 @@ struct FloorplanRealityPreviewView: View {
                                     : String(localized: "floorplan.layers.open", defaultValue: "Opens the list")))
 
             if isLayerTrayOpen {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 4) {
                         ForEach(PreviewMode.allCases) { value in
                             chip(label: value.label, icon: value.symbol, isSelected: mode == value) {
@@ -451,8 +451,14 @@ struct FloorplanRealityPreviewView: View {
                             }
                         }
                     }
-                    // I tipi stanno **sotto** la modalità, come nella 2D: prima
-                    // scegli di cosa parli, poi di quale grandezza.
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 5)
+                    .background(.black.opacity(0.34), in: Capsule())
+
+                    // I tipi sono un livello **sotto** la modalità, e devono
+                    // sembrarlo: gruppo separato e più smorzato, come nella 2D
+                    // dove i filtri stanno in una barra loro sotto le modalità.
+                    // Dentro lo stesso blocco parevano due menu appiccicati.
                     if mode == .environment {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 4) {
@@ -464,16 +470,17 @@ struct FloorplanRealityPreviewView: View {
                                          isSelected: sensorFilter == type) { sensorFilter = type }
                                 }
                             }
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 4)
                         }
-                        .frame(maxWidth: 520)
+                        .frame(maxWidth: 500)
+                        .background(.black.opacity(0.22), in: Capsule())
+                        .padding(.leading, 10)
                     }
                 }
                 .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 5)
-        .background(.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     /// Lo strato attivo in due parole, per l'etichetta chiusa.
