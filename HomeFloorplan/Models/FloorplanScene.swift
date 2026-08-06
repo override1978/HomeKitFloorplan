@@ -1,0 +1,73 @@
+import Foundation
+import CoreGraphics
+import simd
+
+// MARK: - FloorplanScene
+
+/// Renderer-agnostic model for a generated 3D floorplan.
+struct FloorplanScene {
+    struct MeshFace {
+        enum MaterialRole: Hashable {
+            case floor
+            case wall
+            case wallTop
+            case glass
+            case frame
+            case door
+            case doorEdge
+            case doorTrim
+            case doorGlass
+            case doorHandle
+            case houseShadow
+            /// La macchia di sole che entra da un vetro e cade sul pavimento.
+            case sunPatch
+            case balcony
+            case balconyTop
+            case furniture
+        }
+
+        var points: [SIMD3<Float>]
+        var role: MaterialRole
+        var roomID: UUID?
+        var roomName: String?
+        var floorKind: FloorKind? = nil
+        var openingKind: OpeningKind? = nil
+        var wallKind: WallKind? = nil
+        var flipSide: Bool = false
+    }
+
+    var faces: [MeshFace]
+    var bounds: Bounds
+
+    var renderSignature: String {
+        [
+            "\(faces.count)",
+            "\(bounds.min.x)",
+            "\(bounds.min.y)",
+            "\(bounds.min.z)",
+            "\(bounds.max.x)",
+            "\(bounds.max.y)",
+            "\(bounds.max.z)"
+        ].joined(separator: ":")
+    }
+
+    struct Bounds {
+        var min: SIMD3<Float>
+        var max: SIMD3<Float>
+
+        var center: SIMD3<Float> {
+            (min + max) / 2
+        }
+
+        var horizontalSize: SIMD2<Float> {
+            SIMD2(max.x - min.x, max.z - min.z)
+        }
+
+        var radius: Float {
+            let width = horizontalSize.x
+            let depth = horizontalSize.y
+            let height = max.y - min.y
+            return Swift.max(Swift.max(width, depth), height) / 2
+        }
+    }
+}

@@ -57,7 +57,12 @@ enum FloorplanExtruder {
             /// un muro tagliato a metà.
             case parapetSide
             case parapetTop
-            /// Un arredo. Porta la propria tinta, quando ne ha una.
+            /// Specchiatura in rilievo sull'anta di una porta.
+        case doorPanel
+        /// Rosetta e leva. È l'unico dettaglio del modello alla scala della mano,
+        /// e per questo è il primo che si riconosce.
+        case handle
+        /// Un arredo. Porta la propria tinta, quando ne ha una.
             case furnitureSide
             case furnitureTop
         }
@@ -68,6 +73,14 @@ enum FloorplanExtruder {
         /// Identità della stanza, per poterla selezionare toccando il pavimento.
         var roomID: UUID?
         var roomName: String?
+        /// Materiale pavimento scelto nel Drawing Context, solo per le facce floor.
+        var floorKind: FloorKind? = nil
+        /// Tipo apertura, solo per pannelli/telai/vetri generati da opening.
+        var openingKind: OpeningKind? = nil
+        /// Tipo muro sorgente, utile per distinguere ingresso, interno e balcone.
+        var wallKind: WallKind? = nil
+        /// Lato apertura scelto nel 2D.
+        var flipSide: Bool = false
         /// Tinta scelta dall'utente per questo arredo, se ne ha una.
         var tint: CGColor?
 
@@ -112,6 +125,7 @@ enum FloorplanExtruder {
                      roomColorIndex: area.colorIndex,
                      roomID: area.id,
                      roomName: area.name,
+                     floorKind: area.floorKind,
                      tint: nil)]
     }
 
@@ -268,18 +282,26 @@ enum FloorplanExtruder {
 
         // Tratti pieni: (da, a) lungo il muro, con la loro fascia verticale.
         var spans: [(from: Double, to: Double, bottom: Double, top: Double)] = []
-        /// I vetri: stessi intervalli, ma una lastra sola invece di un solido.
-        var panes: [(from: Double, to: Double, bottom: Double, top: Double)] = []
-        /// I vani da contornare, col loro rettangolo nel piano del muro.
-        var voids: [(from: Double, to: Double, bottom: Double, top: Double, sill: Bool)] = []
-        /// I battenti delle porte.
-        var leaves: [(from: Double, to: Double, bottom: Double, top: Double)] = []
+        /// I vani, che poi `FloorplanOpeningBuilder` riempie di infisso.
+        var holes: [FloorplanOpeningBuilder.Opening] = []
+        // Un tratto pieno più corto dello spessore del muro non è un muro: è una
+        // pila. E se tocca un estremo si prende anche la coda di giunzione, che
+        // lo spinge **fuori** dallo spigolo — in pianta è invisibile perché la
+        // linea del muro resta continua, in volume diventa un pilastro isolato
+        // accanto alla casa. Si preferisce allargare l'apertura di quei pochi
+        // centimetri: uno stipite spostato non lo nota nessuno, un pilastro sì.
+        let minSpan = thickness
         var cursor = 0.0
         for opening in openings {
             let width = metres(opening.width)
             let centre = Double(opening.t) * length
-            let from = max(0, centre - width / 2)
-            let to   = min(length, centre + width / 2)
+            var from = max(0, centre - width / 2)
+            var to   = min(length, centre + width / 2)
+            // `from` sotto il cursore vuol dire aperture sovrapposte: agganciarlo
+            // al cursore impedisce anche che questo torni indietro e riempia di
+            // muro i vani già scavati.
+            if from - cursor < minSpan { from = cursor }
+            if length - to < minSpan { to = length }
             guard to > from else { continue }
 
             if from > cursor {
@@ -289,22 +311,27 @@ enum FloorplanExtruder {
             case .window:
                 spans.append((from, to, 0, min(heights.windowBottom, wallTop)))
                 spans.append((from, to, heights.windowTop, wallTop))
-                panes.append((from, to, heights.windowBottom, min(heights.windowTop, wallTop)))
-                voids.append((from, to, heights.windowBottom, min(heights.windowTop, wallTop), true))
+                holes.append(.init(from: from, to: to,
+                                   bottom: heights.windowBottom,
+                                   top: min(heights.windowTop, wallTop),
+                                   kind: opening.kind, flipSide: opening.flipSide))
             case .door, .slidingDoor, .frenchDoor:
                 spans.append((from, to, heights.doorTop, wallTop))
                 // Una porta poggia a terra: niente traversa in basso, o
                 // diventa un ostacolo che nella realtà non c'è.
-                voids.append((from, to, 0, min(heights.doorTop, wallTop), false))
-                leaves.append((from, to, 0, min(heights.doorTop, wallTop)))
+                holes.append(.init(from: from, to: to,
+                                   bottom: 0,
+                                   top: min(heights.doorTop, wallTop),
+                                   kind: opening.kind, flipSide: opening.flipSide))
             }
-            cursor = to
+            cursor = max(cursor, to)
         }
         if cursor < length {
             spans.append((cursor, length, 0, wallTop))
         }
 
-        let normal = SIMD2(-axis.y, axis.x) * (thickness / 2)
+        let unitNormal = SIMD2(-axis.y, axis.x)
+        let normal = unitNormal * (thickness / 2)
 
         var faces = spans.flatMap { span -> [Face] in
             guard span.to > span.from, span.top > span.bottom else { return [] }
@@ -317,39 +344,20 @@ enum FloorplanExtruder {
                        bottom: span.bottom, top: span.top, isParapet: isParapet)
         }
 
-        // Telai: quattro listelli sottili nel piano del muro, a metà spessore
-        // così si vedono da entrambi i lati del vano.
-        let jamb = 0.06
-        for hole in voids where hole.top > hole.bottom + jamb && hole.to > hole.from + jamb * 2 {
-            func quad(_ x0: Double, _ x1: Double, _ z0: Double, _ z1: Double) -> Face {
-                let a = start + axis * x0, b = start + axis * x1
-                return Face(points: [SIMD3(a.x, a.y, z0), SIMD3(b.x, b.y, z0),
-                                     SIMD3(b.x, b.y, z1), SIMD3(a.x, a.y, z1)],
-                            kind: .frame, roomColorIndex: nil, roomID: nil, roomName: nil)
-            }
-            faces.append(quad(hole.from, hole.from + jamb, hole.bottom, hole.top))
-            faces.append(quad(hole.to - jamb, hole.to, hole.bottom, hole.top))
-            faces.append(quad(hole.from, hole.to, hole.top - jamb, hole.top))
-            if hole.sill {
-                faces.append(quad(hole.from, hole.to, hole.bottom, hole.bottom + jamb))
+        // Gli infissi non sono più adesivi sulla mezzeria: li costruisce un
+        // builder dedicato come solidi dentro lo spessore del muro. Un parapetto
+        // di balcone non ne ha, quindi non lo si disturba.
+        if !isParapet {
+            let context = FloorplanOpeningBuilder.Wall(start: start,
+                                                       axis: axis,
+                                                       normal: unitNormal,
+                                                       thickness: thickness,
+                                                       kind: wall.kind)
+            for hole in holes {
+                faces += FloorplanOpeningBuilder.faces(for: hole, in: context)
             }
         }
 
-        // Lastre a metà spessore: non sono solidi, quindi niente fiancate né
-        // sommità. Battenti e vetri stanno **dentro** il telaio, non a filo,
-        // così la cornice resta visibile tutto intorno.
-        func panel(_ span: (from: Double, to: Double, bottom: Double, top: Double),
-                   _ kind: Face.Kind) -> Face? {
-            let from = span.from + jamb, to = span.to - jamb
-            let top = span.top - jamb
-            guard to > from, top > span.bottom else { return nil }
-            let a = start + axis * from, b = start + axis * to
-            return Face(points: [SIMD3(a.x, a.y, span.bottom), SIMD3(b.x, b.y, span.bottom),
-                                 SIMD3(b.x, b.y, top), SIMD3(a.x, a.y, top)],
-                        kind: kind, roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil)
-        }
-        faces += panes.compactMap { panel(($0.from, $0.to, $0.bottom + jamb, $0.top), .glass) }
-        faces += leaves.compactMap { panel($0, .doorLeaf) }
         return faces
     }
 
@@ -372,7 +380,7 @@ enum FloorplanExtruder {
             }
             return Face(points: points, kind: kind, roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil)
         }
-        return [
+        var faces = [
             Face(points: corners.map { SIMD3($0.x, $0.y, top) }, kind: topKind,
                  roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil),
             face([0, 1, 1, 0], kind: sideKind, low: bottom, high: top),
@@ -380,6 +388,14 @@ enum FloorplanExtruder {
             face([1, 2, 2, 1], kind: sideKind, low: bottom, high: top),
             face([3, 0, 0, 3], kind: sideKind, low: bottom, high: top)
         ]
+        // Il sotto di un muro che poggia a terra non si vede mai. Quello di un
+        // architrave sopra una porta sì: è l'intradosso del vano, e senza si
+        // guarda dentro un solido vuoto.
+        if bottom > 0.001 {
+            faces.append(Face(points: corners.map { SIMD3($0.x, $0.y, bottom) }, kind: sideKind,
+                              roomColorIndex: nil, roomID: nil, roomName: nil, tint: nil))
+        }
+        return faces
     }
 
     /// Coordinata arrotondata al millimetro: due estremi «uguali» in un disegno

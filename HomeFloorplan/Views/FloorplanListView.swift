@@ -98,10 +98,10 @@ struct FloorplanListView: View {
             // A tutto schermo, non in un foglio: su iPad una card lascerebbe
             // metà spazio ai bordi proprio dove serve il soggetto.
             .fullScreenCover(item: $preview3D) { request in
-                FloorplanPreview3DView(document: request.document,
-                                       title: request.title,
-                                       markers: request.markers,
-                                       linkedRooms: request.linkedRooms)
+                FloorplanRealityPreviewView(document: request.document,
+                                            title: request.title,
+                                            northBearingDegrees: request.northBearingDegrees,
+                                            onNorthBearingChange: request.applyNorthBearing)
             }
             .navigationTitle(isCompact
                              ? String(localized: "floorplans.title", defaultValue: "Floorplans")
@@ -557,6 +557,12 @@ struct FloorplanListView: View {
                 preview3D = Preview3DRequest(
                     document: document,
                     title: floorplan.name,
+                    northBearingDegrees: floorplan.northBearingDegrees,
+                    applyNorthBearing: { [weak floorplan] bearing in
+                        guard let floorplan else { return }
+                        floorplan.northBearingDegrees = bearing
+                        try? modelContext.save()
+                    },
                     markers: floorplan.accessories.map {
                         (CGPoint(x: $0.positionX, y: $0.positionY),
                          $0.customLabel ?? homeKit.accessory(for: $0.homeKitAccessoryUUID)?.name ?? "")

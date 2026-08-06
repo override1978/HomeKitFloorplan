@@ -93,6 +93,14 @@ final class Floorplan {
     var drawingVisualExportStyleRaw: String = "standard"
     /// Raw value of the export-only rotation used for drawing-based floorplans.
     var drawingExportRotationRaw: String = DrawingExportRotation.asDrawn.rawValue
+    /// Verso quale punto cardinale guarda il **lato alto** del disegno, in gradi
+    /// da nord in senso orario.
+    ///
+    /// Sta sul disegno e non sulla casa perché due piani tracciati in giorni
+    /// diversi non sono allineati fra loro: ognuno ha la propria rotazione
+    /// arbitraria sulla tela, quindi ognuno ha il proprio nord. Zero significa
+    /// «in alto sulla pianta è nord», che è il default e non blocca niente.
+    var northBearingDegrees: Double = 0
 
     init(name: String, imageFilename: String, homeUUID: UUID? = nil) {
         self.id = UUID()

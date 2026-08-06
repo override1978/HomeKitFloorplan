@@ -12,7 +12,9 @@ import SwiftData
 //   • If a migration is non-lightweight (e.g. custom mapping), create a
 //     VersionedSchema + SchemaMigrationPlan before shipping.
 //
-// Current schema — v24 (16 @Model types):
+// Current schema — v25 (16 @Model types):
+//   v25: Floorplan += northBearingDegrees: Double (default 0) — orientamento del
+//        disegno per il sole nella preview 3D (additive, lightweight migration)
 //   v24: Rule removed — an empty legacy table with no reader and no writer
 //        (entity removal, lightweight migration)
 //   v23: HabitPattern removed — nothing produced it once the behavioral
@@ -49,7 +51,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 24
+    static let currentVersion: Int = 25
 
     // MARK: - Persistence
 
