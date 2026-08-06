@@ -107,63 +107,66 @@ enum FloorplanMaterialCatalog {
         return material
     }
 
-    /// Nome della stanza sopra, valore sotto, barra di stato in fondo — lo
-    /// stesso badge della 2D, che e' gia' quello che l'utente sa leggere.
+    /// Una **capsula**, non una scheda.
     ///
-    /// Tutte le capsule della **stessa misura**: quando la domanda e' «quale
-    /// stanza sta peggio», l'occhio deve saltare fra i numeri, non fra le forme.
+    /// La versione a due righe con la barra di stato in fondo diceva le stesse
+    /// cose ma pesava come una card, e sopra un modello 3D sette card sono sette
+    /// oggetti che competono con la casa. Una riga sola, angoli pieni, il colore
+    /// affidato a un punto e al bordo: si legge uguale e non ruba la scena.
     private static func flagLabelImage(title: String, value: String, accent: UIColor) -> CGImage? {
-        let size = CGSize(width: 360, height: 172)
+        let size = CGSize(width: 440, height: 112)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
         format.opaque = false
 
-        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
-            let pill = CGRect(origin: .zero, size: size).insetBy(dx: 4, dy: 4)
-            let radius: CGFloat = 26
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            let pill = CGRect(origin: .zero, size: size).insetBy(dx: 5, dy: 5)
+            let radius = pill.height / 2
 
             UIColor(white: 0.07, alpha: 0.88).setFill()
             UIBezierPath(roundedRect: pill, cornerRadius: radius).fill()
 
-            accent.withAlphaComponent(0.55).setStroke()
+            accent.withAlphaComponent(0.6).setStroke()
             let border = UIBezierPath(roundedRect: pill.insetBy(dx: 1.5, dy: 1.5), cornerRadius: radius)
             border.lineWidth = 3
             border.stroke()
 
-            // Barra di stato in fondo, ritagliata dentro l'angolo arrotondato.
-            context.cgContext.saveGState()
-            UIBezierPath(roundedRect: pill, cornerRadius: radius).addClip()
-            accent.withAlphaComponent(0.9).setFill()
-            UIBezierPath(rect: CGRect(x: pill.minX, y: pill.maxY - 9,
-                                      width: pill.width, height: 9)).fill()
-            context.cgContext.restoreGState()
+            // Il pallino di stato al posto della barra: stesso colore, un decimo
+            // dell'ingombro.
+            let dotDiameter: CGFloat = 20
+            let dot = CGRect(x: pill.minX + 22, y: pill.midY - dotDiameter / 2,
+                             width: dotDiameter, height: dotDiameter)
+            accent.setFill()
+            UIBezierPath(ovalIn: dot).fill()
 
-            draw(title, in: pill, centeredAt: pill.midY - 34,
-                 font: .systemFont(ofSize: 32, weight: .medium),
-                 colour: UIColor(white: 1, alpha: 0.72))
-            draw(value, in: pill, centeredAt: pill.midY + 16,
-                 font: .systemFont(ofSize: 44, weight: .semibold),
-                 colour: .white)
+            let textArea = CGRect(x: dot.maxX + 14, y: pill.minY,
+                                  width: pill.maxX - dot.maxX - 36, height: pill.height)
+            drawRow(title: title, value: value, in: textArea)
         }
         return image.cgImage
     }
 
-    /// Scrive centrato, rimpicciolendo se non ci sta: «1450 ppm» deve entrare
-    /// nella stessa capsula di «21°C» senza sbordare.
-    private static func draw(_ text: String, in pill: CGRect, centeredAt y: CGFloat,
-                             font: UIFont, colour: UIColor) {
-        let string = text as NSString
-        var size = font.pointSize
-        var attributes: [NSAttributedString.Key: Any] = [:]
-        var measured = CGSize.zero
-        repeat {
-            attributes = [.font: font.withSize(size), .foregroundColor: colour]
-            measured = string.size(withAttributes: attributes)
-            size -= 2
-        } while measured.width > pill.width - 34 && size > 14
+    /// Nome e valore sulla stessa riga, con il valore in evidenza. Se non ci
+    /// stanno si rimpiccioliscono **insieme**, o cambierebbe la gerarchia.
+    private static func drawRow(title: String, value: String, in area: CGRect) {
+        var scale: CGFloat = 1
+        var titleAttributes: [NSAttributedString.Key: Any] = [:]
+        var valueAttributes: [NSAttributedString.Key: Any] = [:]
+        var line = NSAttributedString()
 
-        string.draw(at: CGPoint(x: pill.midX - measured.width / 2, y: y - measured.height / 2),
-                    withAttributes: attributes)
+        repeat {
+            titleAttributes = [.font: UIFont.systemFont(ofSize: 34 * scale, weight: .medium),
+                               .foregroundColor: UIColor(white: 1, alpha: 0.66)]
+            valueAttributes = [.font: UIFont.systemFont(ofSize: 40 * scale, weight: .semibold),
+                               .foregroundColor: UIColor.white]
+            let composed = NSMutableAttributedString(string: title + "  ", attributes: titleAttributes)
+            composed.append(NSAttributedString(string: value, attributes: valueAttributes))
+            line = composed
+            scale -= 0.06
+        } while line.size().width > area.width && scale > 0.4
+
+        let measured = line.size()
+        line.draw(at: CGPoint(x: area.minX, y: area.midY - measured.height / 2))
     }
 
     /// Il piano su cui la casa appoggia e su cui cade la sua ombra.

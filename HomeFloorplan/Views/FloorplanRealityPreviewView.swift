@@ -861,9 +861,9 @@ private enum RealityFloorplanRenderer {
             stem.position = SIMD3(x, floorY - centre.y + height / 2, z)
             root.addChild(stem)
 
-            let label = ModelEntity(mesh: .generatePlane(width: 1.15, height: 0.55),
+            let label = ModelEntity(mesh: .generatePlane(width: 1.25, height: 0.32),
                                     materials: [material])
-            label.position = SIMD3(x, topY - centre.y + 0.30, z)
+            label.position = SIMD3(x, topY - centre.y + 0.19, z)
             root.addChild(label)
 
             return Flag(root: root, label: label)
