@@ -21,6 +21,8 @@ struct Preview3DRequest: Identifiable {
     /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
     /// marker in coordinate del disegno.
     let exportRotation: DrawingExportRotation
+    /// Lo sfondo scelto nell'editor 2D.
+    let background: UIColor
 }
 
 /// Cosa mostra la bandierina di una stanza. Il contenuto arriva dal modello
@@ -66,6 +68,9 @@ struct FloorplanRealityPreviewView: View {
     /// Serve a invertire l'inquadratura dell'export: i marker sono normalizzati
     /// sull'immagine, che può essere ruotata rispetto alla tela.
     let exportRotation: DrawingExportRotation
+    /// Lo sfondo scelto nell'editor 2D. La stessa casa non può avere due fondali
+    /// a seconda di come la guardi.
+    let background: UIColor
 
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
@@ -75,13 +80,11 @@ struct FloorplanRealityPreviewView: View {
     @State private var cameraResetID = UUID()
     @State private var selectedRoomName: String?
     @State private var exposure: Exposure = .north
-    /// Ora locale con cui si calcola il sole. Parte da adesso.
-    ///
-    /// Serve **perché la funzione sia verificabile**: metà delle volte che apri
-    /// la vista è buio, e senza poter spostare l'ora non vedresti mai se
-    /// l'esposizione che hai scelto è quella giusta. È anche il modo in cui la
-    /// domanda «di mattina il sole entra in cucina?» trova risposta.
-    @State private var hourOfDay: Double = SolarClock.currentHourOfDay()
+    /// L'istante con cui si calcola il sole: **adesso**, aggiornato ogni pochi
+    /// minuti. Il cursore dell'ora serviva a verificare che l'esposizione fosse
+    /// giusta; adesso che lo è, una casa illuminata come non è in questo momento
+    /// è solo un'informazione falsa.
+    @State private var now = Date()
     /// Il modello ambientale è **lo stesso della 2D**: punteggi, giudizi,
     /// soglie e tipi disponibili vengono da qui. Riscriverli darebbe una casa
     /// che dice due cose diverse a seconda di dove la guardi.
@@ -94,6 +97,7 @@ struct FloorplanRealityPreviewView: View {
         ZStack(alignment: .bottom) {
             if let floorplanScene {
                 RealityFloorplanView(scene: floorplanScene,
+                                     background: background,
                                      sun: sun,
                                      flags: roomFlags,
                                      cameraResetID: cameraResetID,
@@ -105,7 +109,12 @@ struct FloorplanRealityPreviewView: View {
 
             controls
         }
-        .overlay(alignment: .top) { topChrome }
+        .overlay(alignment: .top) {
+            VStack(spacing: 10) {
+                topChrome
+                environmentControls
+            }
+        }
         .statusBarHidden()
         .onAppear {
             exposure = Exposure.nearest(to: northBearingDegrees)
@@ -119,6 +128,14 @@ struct FloorplanRealityPreviewView: View {
         // guardando, l'anta si muove. `characteristicValues` è osservabile, e
         // ricalcolare l'insieme costa una manciata di confronti.
         .onChange(of: openOpeningIDs) { _, _ in rebuildScene() }
+        .task {
+            // Il sole si sposta di un grado ogni quattro minuti: più spesso di
+            // così non cambierebbe niente di visibile.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(240))
+                now = Date()
+            }
+        }
     }
 
     /// Una bandierina per stanza. Le stanze senza dati restano **senza**: un
@@ -177,7 +194,7 @@ struct FloorplanRealityPreviewView: View {
     /// perché sulla tela la y cresce verso il basso.
     private var sun: FloorplanSunLight {
         let coordinate = SolarClock.homeCoordinate()
-        let solar = SolarPosition.position(at: SolarClock.date(hourOfDay: hourOfDay),
+        let solar = SolarPosition.position(at: now,
                                            latitude: coordinate.latitude,
                                            longitude: coordinate.longitude)
 
@@ -240,10 +257,6 @@ struct FloorplanRealityPreviewView: View {
                     .transition(.scale.combined(with: .opacity))
             }
 
-            environmentControls
-
-            sunControls
-
             HStack(spacing: 18) {
                 Button {
                     ceilingHeight = max(2.0, ceilingHeight - 0.1)
@@ -262,7 +275,7 @@ struct FloorplanRealityPreviewView: View {
                         .font(.headline.monospacedDigit())
                         .foregroundStyle(.white)
                 }
-                .frame(minWidth: 150)
+                .frame(minWidth: 130)
 
                 Button {
                     ceilingHeight = min(4.0, ceilingHeight + 0.1)
@@ -272,6 +285,10 @@ struct FloorplanRealityPreviewView: View {
                     Image(systemName: "plus")
                         .frame(width: 44, height: 44)
                 }
+
+                Divider().frame(height: 26).overlay(Color.white.opacity(0.25))
+
+                exposureMenu
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 18)
@@ -283,43 +300,38 @@ struct FloorplanRealityPreviewView: View {
 
     /// Otto punti cardinali, che è la granularità con cui la gente conosce casa
     /// propria. Nessuno dice «la mia facciata guarda a 237 gradi».
-    private var sunControls: some View {
-        VStack(spacing: 8) {
-            Text(String(localized: "floorplan.exposure",
-                        defaultValue: "Top of the plan faces"))
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.7))
-
-            HStack(spacing: 4) {
-                ForEach(Exposure.allCases) { value in
-                    Button {
-                        exposure = value
-                        onNorthBearingChange(value.bearingDegrees)
-                    } label: {
+    ///
+    /// Era una scheda a tutta larghezza con la riga dei punti cardinali e il
+    /// cursore dell'ora. Ma l'esposizione **si imposta una volta sola** — è un
+    /// fatto dell'edificio, non un comando — e un comando che si usa una volta
+    /// non merita il posto più grande dello schermo.
+    private var exposureMenu: some View {
+        Menu {
+            ForEach(Exposure.allCases) { value in
+                Button {
+                    exposure = value
+                    onNorthBearingChange(value.bearingDegrees)
+                } label: {
+                    if exposure == value {
+                        Label(value.shortLabel, systemImage: "checkmark")
+                    } else {
                         Text(value.shortLabel)
-                            .font(.caption.weight(exposure == value ? .bold : .regular))
-                            .foregroundStyle(.white.opacity(exposure == value ? 1 : 0.6))
-                            .frame(minWidth: 32, minHeight: 30)
-                            .background(exposure == value ? Color.white.opacity(0.22) : .clear,
-                                        in: Capsule())
                     }
-                    .buttonStyle(.plain)
                 }
             }
-
-            HStack(spacing: 12) {
-                Image(systemName: sun.isAboveHorizon ? "sun.max.fill" : "moon.stars.fill")
-                    .foregroundStyle(.white.opacity(0.8))
-                Slider(value: $hourOfDay, in: 0...24, step: 0.25)
-                Text(SolarClock.label(hourOfDay: hourOfDay))
-                    .font(.subheadline.monospacedDigit())
-                    .frame(width: 52, alignment: .trailing)
+        } label: {
+            VStack(spacing: 2) {
+                Text(String(localized: "floorplan.exposure", defaultValue: "Top of the plan faces"))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
+                HStack(spacing: 4) {
+                    Image(systemName: "location.north.line").font(.caption2)
+                    Text(exposure.shortLabel).font(.headline)
+                }
+                .foregroundStyle(.white)
             }
+            .frame(minWidth: 96)
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-        .background(.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     /// I filtri **non sono un elenco mio**: sono `envVM.availableSensorTypes`,
@@ -399,6 +411,7 @@ struct FloorplanRealityPreviewView: View {
 
 private struct RealityFloorplanView: UIViewRepresentable {
     let scene: FloorplanScene
+    let background: UIColor
     let sun: FloorplanSunLight
     let flags: [RoomFlag]
     let cameraResetID: UUID
@@ -408,7 +421,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         let view = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
         view.renderOptions.insert(.disableMotionBlur)
         view.renderOptions.insert(.disableDepthOfField)
-        view.environment.background = .color(UIColor(red: 0.28, green: 0.36, blue: 0.23, alpha: 1))
+        view.environment.background = .color(background)
         let pan = UIPanGestureRecognizer(target: context.coordinator,
                                          action: #selector(Coordinator.panned(_:)))
         pan.delegate = context.coordinator
@@ -424,12 +437,17 @@ private struct RealityFloorplanView: UIViewRepresentable {
         tap.delegate = context.coordinator
         view.addGestureRecognizer(tap)
 
+        context.coordinator.background = background
         context.coordinator.install(in: view)
         return view
     }
 
     func updateUIView(_ view: ARView, context: Context) {
         context.coordinator.onRoomSelected = onRoomSelected
+        if context.coordinator.background != background {
+            context.coordinator.background = background
+            view.environment.background = .color(background)
+        }
         context.coordinator.updateSceneIfNeeded(scene)
         context.coordinator.updateSun(sun)
         context.coordinator.updateFlags(flags)
@@ -444,6 +462,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var scene: FloorplanScene
         var sun: FloorplanSunLight
+        var background: UIColor = .black
         var azimuth: Double = .pi / 4
         var elevation: Double = .pi / 5
         var distanceMultiplier: Float = 2.2
@@ -641,7 +660,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             contentRoot.children.removeAll()
             selectedRoomID = nil
             selectionRoot.children.removeAll()
-            let rendered = RealityFloorplanRenderer.entity(for: newScene)
+            let rendered = RealityFloorplanRenderer.entity(for: newScene, background: background)
             roomWallEntities = rendered.roomWallEntities
             roomNames = rendered.roomNames
             contentRoot.addChild(rendered.root)
@@ -774,7 +793,7 @@ private enum RealityFloorplanRenderer {
         var roomFloorKinds: [UUID: FloorKind]
     }
 
-    static func entity(for scene: FloorplanScene) -> RenderedFloorplan {
+    static func entity(for scene: FloorplanScene, background: UIColor) -> RenderedFloorplan {
         let root = Entity()
         let center = scene.bounds.center
         let grouped = Dictionary(grouping: scene.faces, by: \.role)
@@ -788,7 +807,7 @@ private enum RealityFloorplanRenderer {
         // proietterebbe l'ombra nel vuoto e resterebbe a galleggiare.
         let groundSize = max(scene.bounds.radius, 1) * 12
         let ground = ModelEntity(mesh: .generatePlane(width: groundSize, depth: groundSize),
-                                 materials: [FloorplanMaterialCatalog.groundMaterial()])
+                                 materials: [FloorplanMaterialCatalog.groundMaterial(background: background)])
         ground.position = SIMD3(0, scene.bounds.min.y - center.y - 0.02, 0)
         root.addChild(ground)
 

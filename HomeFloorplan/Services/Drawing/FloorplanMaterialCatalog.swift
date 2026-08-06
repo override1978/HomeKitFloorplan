@@ -189,8 +189,17 @@ enum FloorplanMaterialCatalog {
     /// Della stessa tinta dello sfondo, appena più scuro: non deve leggersi come
     /// un pavimento in più, solo dare all'ombra una superficie e alla casa un
     /// appoggio invece del vuoto.
-    static func groundMaterial() -> any RealityKit.Material {
-        opaque(UIColor(red: 0.26, green: 0.33, blue: 0.21, alpha: 1), roughness: 0.98)
+    static func groundMaterial(background: UIColor) -> any RealityKit.Material {
+        opaque(darkened(background, by: 0.12), roughness: 0.98)
+    }
+
+    private static func darkened(_ colour: UIColor, by amount: CGFloat) -> UIColor {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard colour.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return colour }
+        return UIColor(red: red * (1 - amount),
+                       green: green * (1 - amount),
+                       blue: blue * (1 - amount),
+                       alpha: 1)
     }
 
     static func floorDetailMaterial(for floorKind: FloorKind?) -> (any RealityKit.Material)? {

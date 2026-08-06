@@ -126,19 +126,6 @@ enum SolarClock {
         return (latitude, longitude)
     }
 
-    static func currentHourOfDay(now: Date = Date()) -> Double {
-        let components = Calendar.current.dateComponents([.hour, .minute], from: now)
-        return Double(components.hour ?? 12) + Double(components.minute ?? 0) / 60
-    }
-
-    static func date(hourOfDay: Double, on day: Date = Date()) -> Date {
-        Calendar.current.startOfDay(for: day).addingTimeInterval(hourOfDay * 3_600)
-    }
-
-    static func label(hourOfDay: Double) -> String {
-        let total = Int((hourOfDay * 60).rounded())
-        return String(format: "%02d:%02d", (total / 60) % 24, total % 60)
-    }
 }
 
 // MARK: - Esposizione

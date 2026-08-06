@@ -28,6 +28,20 @@ struct FloorplanListView: View {
         pinnedFloorplanIDsRaw = (try? String(data: JSONEncoder().encode(ids), encoding: .utf8)) ?? "[]"
     }
 
+    /// Lo sfondo della 3D è quello scelto nell'editor 2D, con la stessa regola
+    /// dell'export: lo stile scuro vince, poi la tinta esterna, poi il bianco.
+    /// La stessa casa non può avere due fondali a seconda di come la guardi.
+    private func previewBackground(for floorplan: Floorplan) -> UIColor {
+        if floorplan.drawingVisualExportStyleRaw == DrawingVisualExportStyle.architecturalDark.rawValue {
+            return DrawingVisualExportStyle.architecturalDarkBackgroundUIColor
+        }
+        if floorplan.exteriorFillColorIndex >= 0,
+           let palette = ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex) {
+            return UIColor(cgColor: palette.cgColor)
+        }
+        return .white
+    }
+
     private func isPinned(_ floorplan: Floorplan) -> Bool {
         decodePinnedIDs().contains(floorplan.id.uuidString)
     }
@@ -103,7 +117,8 @@ struct FloorplanListView: View {
                                             northBearingDegrees: request.northBearingDegrees,
                                             onNorthBearingChange: request.applyNorthBearing,
                                             markers: request.markers,
-                                            exportRotation: request.exportRotation)
+                                            exportRotation: request.exportRotation,
+                                            background: request.background)
             }
             .navigationTitle(isCompact
                              ? String(localized: "floorplans.title", defaultValue: "Floorplans")
@@ -569,7 +584,8 @@ struct FloorplanListView: View {
                         (uuid: $0.homeKitAccessoryUUID, openingID: $0.linkedOpeningID)
                     },
                     linkedRooms: floorplan.linkedRooms,
-                    exportRotation: floorplan.drawingExportRotation)
+                    exportRotation: floorplan.drawingExportRotation,
+                    background: previewBackground(for: floorplan))
             } label: {
                 Label(String(localized: "floorplan.preview3D", defaultValue: "3D preview"),
                       systemImage: "cube")
