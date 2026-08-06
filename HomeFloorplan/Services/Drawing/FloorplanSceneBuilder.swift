@@ -7,10 +7,12 @@ import simd
 enum FloorplanSceneBuilder {
     static func scene(from document: DrawingDocument,
                       ceilingHeight: Double = 2.4,
-                      includesFurniture: Bool = false) -> FloorplanScene? {
+                      includesFurniture: Bool = false,
+                      openOpeningIDs: Set<UUID> = []) -> FloorplanScene? {
         let faces = FloorplanExtruder.faces(
             from: document,
-            heights: .init(ceiling: ceilingHeight)
+            heights: .init(ceiling: ceilingHeight),
+            openOpeningIDs: openOpeningIDs
         )
         .compactMap { face -> FloorplanScene.MeshFace? in
             guard includesFurniture || !isFurniture(face.kind),

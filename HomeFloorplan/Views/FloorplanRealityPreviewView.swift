@@ -13,6 +13,9 @@ struct Preview3DRequest: Identifiable {
     /// La scrittura su SwiftData resta in `FloorplanListView`: l'anteprima
     /// riceve una chiusura e non conosce né il modello né il contesto.
     let applyNorthBearing: (Double) -> Void
+    /// Aperture con il contatto aperto, risolte al momento dell'apertura della
+    /// vista: è una fotografia, non un flusso.
+    let openOpeningIDs: Set<UUID>
     /// Marker della planimetria, in coordinate normalizzate sull'immagine.
     let markers: [(position: CGPoint, name: String)]
     /// Servono a **ricavare** la trasformazione: una stanza esiste in entrambi
@@ -45,6 +48,11 @@ struct FloorplanRealityPreviewView: View {
     /// Chiamata quando l'utente sceglie l'esposizione: la persistenza sta fuori
     /// di qui, così questa vista non conosce SwiftData.
     let onNorthBearingChange: (Double) -> Void
+    /// Le aperture il cui contatto risulta aperto: vengono disegnate **aperte**.
+    ///
+    /// Non è un'icona sopra la casa, è la casa. «Ho chiuso tutto?» si risponde
+    /// guardandola, senza legenda e senza niente che galleggi.
+    let openOpeningIDs: Set<UUID>
 
     @Environment(\.dismiss) private var dismiss
     @State private var ceilingHeight: Double = 2.4
@@ -238,7 +246,8 @@ struct FloorplanRealityPreviewView: View {
     private func rebuildScene() {
         floorplanScene = FloorplanSceneBuilder.scene(from: document,
                                                      ceilingHeight: ceilingHeight,
-                                                     includesFurniture: true)
+                                                     includesFurniture: true,
+                                                     openOpeningIDs: openOpeningIDs)
     }
 }
 

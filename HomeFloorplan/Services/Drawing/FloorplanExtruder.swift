@@ -91,14 +91,17 @@ enum FloorplanExtruder {
 
     // MARK: - Ingresso
 
-    static func faces(from document: DrawingDocument, heights: Heights = Heights()) -> [Face] {
+    static func faces(from document: DrawingDocument,
+                      heights: Heights = Heights(),
+                      openOpeningIDs: Set<UUID> = []) -> [Face] {
         var result: [Face] = []
         for area in document.roomAreas {
             result.append(contentsOf: floorFaces(area))
         }
         let joints = sharedEndpoints(of: document.walls)
         for wall in document.walls {
-            result.append(contentsOf: wallFaces(wall, in: document, heights: heights, joints: joints))
+            result.append(contentsOf: wallFaces(wall, in: document, heights: heights,
+                                                joints: joints, openOpeningIDs: openOpeningIDs))
         }
         // Nell'ordine di disegno del documento, così i tappeti restano sotto
         // come già fanno in pianta.
@@ -271,7 +274,8 @@ enum FloorplanExtruder {
     private static func wallFaces(_ wall: WallSegment,
                                   in document: DrawingDocument,
                                   heights: Heights,
-                                  joints: Set<GridKey>) -> [Face] {
+                                  joints: Set<GridKey>,
+                                  openOpeningIDs: Set<UUID>) -> [Face] {
         let start = SIMD2(metres(wall.start.x), metres(wall.start.y))
         let end   = SIMD2(metres(wall.end.x), metres(wall.end.y))
         let length = simd_distance(start, end)
@@ -333,7 +337,8 @@ enum FloorplanExtruder {
                 holes.append(.init(from: from, to: to,
                                    bottom: heights.windowBottom,
                                    top: min(heights.windowTop, wallTop),
-                                   kind: opening.kind, flipSide: opening.flipSide))
+                                   kind: opening.kind, flipSide: opening.flipSide,
+                                   isOpen: openOpeningIDs.contains(opening.id)))
             case .door, .slidingDoor, .frenchDoor:
                 spans.append((from, to, heights.doorTop, wallTop))
                 // Una porta poggia a terra: niente traversa in basso, o
@@ -341,7 +346,8 @@ enum FloorplanExtruder {
                 holes.append(.init(from: from, to: to,
                                    bottom: 0,
                                    top: min(heights.doorTop, wallTop),
-                                   kind: opening.kind, flipSide: opening.flipSide))
+                                   kind: opening.kind, flipSide: opening.flipSide,
+                                   isOpen: openOpeningIDs.contains(opening.id)))
             }
             cursor = max(cursor, to)
         }

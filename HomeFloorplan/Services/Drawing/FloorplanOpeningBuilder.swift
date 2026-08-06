@@ -29,6 +29,8 @@ enum FloorplanOpeningBuilder {
         var top: Double
         var kind: OpeningKind
         var flipSide: Bool
+        /// Il contatto che sorveglia questo vano risulta aperto.
+        var isOpen: Bool = false
     }
 
     /// Il muro che lo contiene.
@@ -58,6 +60,11 @@ enum FloorplanOpeningBuilder {
     /// porta-finestra diventa a due ante: una lastra di vetro da un metro e mezzo
     /// senza niente in mezzo non esiste, e si vede che non esiste.
     private static let mullionThreshold = 1.30
+    /// Quanto si apre un'anta. Non 90 gradi: una porta spalancata attraversa
+    /// mezza stanza e copre quello che c'è dietro proprio mentre la si sta
+    /// guardando. Serve che si legga «aperta», non che sia misurata.
+    private static let doorSwing = 38.0 * .pi / 180
+    private static let sashSwing = 24.0 * .pi / 180
 
     // MARK: - Ingresso
 
@@ -67,18 +74,57 @@ enum FloorplanOpeningBuilder {
         guard width > 0.15, height > 0.15 else { return [] }
 
         let frameWidth = min(0.06, width * 0.14, height * 0.14)
-        var faces = frameFaces(opening, wall, frameWidth: frameWidth)
+
+        // Il telaio è **fisso**, tutto il resto è l'anta. Separarli qui è ciò
+        // che permette di aprire senza toccare la geometria: un vano aperto è
+        // lo stesso vano con la parte mobile ruotata sul cardine.
+        let fixed = frameFaces(opening, wall, frameWidth: frameWidth)
+        let movable: [Face]
+        let swing: Double
 
         switch opening.kind {
         case .window:
-            faces += windowFaces(opening, wall, frameWidth: frameWidth)
+            movable = windowFaces(opening, wall, frameWidth: frameWidth)
+            swing = sashSwing
         case .frenchDoor, .slidingDoor:
-            faces += glazedDoorFaces(opening, wall, frameWidth: frameWidth)
+            movable = glazedDoorFaces(opening, wall, frameWidth: frameWidth)
+            swing = doorSwing
         case .door:
-            faces += solidDoorFaces(opening, wall, frameWidth: frameWidth)
+            movable = solidDoorFaces(opening, wall, frameWidth: frameWidth)
+            swing = doorSwing
         }
 
-        return faces
+        guard opening.isOpen else { return fixed + movable }
+        return fixed + swung(movable, opening: opening, wall: wall, by: swing)
+    }
+
+    /// L'anta ruota attorno al proprio cardine, che è l'unica cosa che il
+    /// disegno sa già: `flipSide` dice da quale estremo del vano sta.
+    ///
+    /// Il verso di apertura invece **non è nel modello** — nessuno ha mai detto
+    /// se quella porta si apre verso la cucina o verso il corridoio. Si apre
+    /// tutto dallo stesso lato del muro: sbagliato la metà delle volte, ma
+    /// coerente, e nessuna delle due scelte è più informata dell'altra.
+    private static func swung(_ faces: [Face],
+                              opening: Opening,
+                              wall: Wall,
+                              by angle: Double) -> [Face] {
+        let hinge = opening.flipSide ? opening.to : opening.from
+        let pivot = wall.start + wall.axis * hinge
+        let rotation = opening.flipSide ? -angle : angle
+        let (cosine, sine) = (cos(rotation), sin(rotation))
+
+        return faces.map { face in
+            var rotated = face
+            rotated.points = face.points.map { point in
+                let dx = point.x - pivot.x
+                let dy = point.y - pivot.y
+                return SIMD3(pivot.x + dx * cosine - dy * sine,
+                             pivot.y + dx * sine + dy * cosine,
+                             point.z)
+            }
+            return rotated
+        }
     }
 
     // MARK: - Telaio
