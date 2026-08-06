@@ -1,79 +1,35 @@
 import Foundation
 import CoreGraphics
-import HomeKit
 import simd
 
 // MARK: - FloorplanRoomEnvironment
 
-/// Il valore ambientale di ogni stanza, e **dove piantarci la bandierina**.
+/// **Dove** piantare la bandierina di una stanza. Solo geometria.
 ///
-/// Non si passa da `linkedRoomUUID`: si prende la posizione del marker, la si
-/// porta in metri con la stessa inversione dell'export usata per gli infissi, e
-/// si guarda in quale poligono cade. Un marker sta dentro una stanza per
-/// costruzione — è lì che l'utente l'ha messo — mentre gli UUID delle stanze
-/// HomeKit non sono stabili fra device e possono divergere dal disegno.
+/// Il *cosa* mostrarci — punteggio, giudizio, urgenza, elenco dei filtri
+/// disponibili — viene da `EnvironmentViewModel`, che è già l'autorità per la
+/// vista 2D. Qui non si ricalcola niente di tutto quello: una seconda
+/// implementazione delle soglie sarebbe destinata a divergere dalla prima, e a
+/// far dire due cose diverse alla stessa casa.
 enum FloorplanRoomEnvironment {
 
-    struct Reading {
+    struct Anchor {
         var roomID: UUID
         var roomName: String
         /// Punto in cui piantare lo stelo, in metri.
-        var anchor: SIMD2<Double>
-        var text: String
+        var point: SIMD2<Double>
     }
 
-    static func readings(in document: DrawingDocument,
-                         exportRotation: DrawingExportRotation,
-                         markers: [(uuid: UUID, position: CGPoint)],
-                         kind: SensorAdapter.SensorKind,
-                         homeKit: HomeKitService) -> [Reading] {
-        guard let transform = FloorplanOpeningMatcher.transform(document: document,
-                                                                exportRotation: exportRotation)
-        else { return [] }
-
+    static func anchors(in document: DrawingDocument) -> [Anchor] {
         let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
-        let areas = document.roomAreas.map { area -> (area: RoomArea, polygon: [SIMD2<Double>]) in
-            (area, area.effectivePoints.map { SIMD2(Double($0.x) * metresPerPoint,
-                                                    Double($0.y) * metresPerPoint) })
-        }
-
-        // Una lettura per stanza: la prima che si trova. Mediare più sensori
-        // sarebbe possibile per temperatura e CO2, ma non per la qualità
-        // dell'aria, che è una scala di giudizi e non un numero — e una regola
-        // sola è più facile da spiegare di due.
-        var byRoom: [UUID: Reading] = [:]
-
-        for marker in markers {
-            guard let text = value(of: kind, for: marker.uuid, homeKit: homeKit) else { continue }
-            let point = transform.metres(from: marker.position)
-            guard let match = areas.first(where: { contains(point, $0.polygon) }) else { continue }
-            guard byRoom[match.area.id] == nil else { continue }
-            guard let anchor = anchor(in: match.polygon) else { continue }
-
-            byRoom[match.area.id] = Reading(roomID: match.area.id,
-                                            roomName: match.area.name,
-                                            anchor: anchor,
-                                            text: text)
-        }
-
-        return Array(byRoom.values)
-    }
-
-    private static func value(of kind: SensorAdapter.SensorKind,
-                              for accessoryUUID: UUID,
-                              homeKit: HomeKitService) -> String? {
-        guard let accessory = homeKit.accessory(for: accessoryUUID) else { return nil }
-        for service in accessory.services {
-            for characteristic in service.characteristics
-            where characteristic.characteristicType == kind.characteristicType {
-                let raw = homeKit.value(for: characteristic) ?? characteristic.value
-                if let text = kind.formattedValue(raw) { return text }
+        return document.roomAreas.compactMap { area in
+            let polygon = area.effectivePoints.map {
+                SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
             }
+            guard let point = anchor(in: polygon) else { return nil }
+            return Anchor(roomID: area.id, roomName: area.name, point: point)
         }
-        return nil
     }
-
-    // MARK: - Dove sta il centro di una stanza
 
     /// Il punto **più interno** del poligono, non il baricentro.
     ///
@@ -130,33 +86,5 @@ enum FloorplanRoomEnvironment {
             previous = current
         }
         return inside
-    }
-}
-
-// MARK: - Strato ambientale
-
-/// Quale grandezza mostrano le bandierine. **Una sola alla volta**: due
-/// codifiche sovrapposte non si leggono.
-enum EnvironmentLayer: String, CaseIterable, Identifiable {
-    case none, temperature, carbonDioxide, vocDensity
-
-    var id: String { rawValue }
-
-    var sensorKind: SensorAdapter.SensorKind? {
-        switch self {
-        case .none:          nil
-        case .temperature:   .temperature
-        case .carbonDioxide: .carbonDioxide
-        case .vocDensity:    .vocDensity
-        }
-    }
-
-    var shortLabel: String {
-        switch self {
-        case .none:          String(localized: "environment.layer.none", defaultValue: "Off")
-        case .temperature:   String(localized: "environment.layer.temperature", defaultValue: "Temp")
-        case .carbonDioxide: "CO₂"
-        case .vocDensity:    "VOC"
-        }
     }
 }

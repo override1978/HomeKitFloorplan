@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import RealityKit
 import UIKit
 
@@ -19,6 +20,16 @@ struct Preview3DRequest: Identifiable {
     /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
     /// marker in coordinate del disegno.
     let exportRotation: DrawingExportRotation
+}
+
+/// Cosa mostra la bandierina di una stanza. Il contenuto arriva dal modello
+/// ambientale condiviso con la 2D; qui resta solo come disegnarlo.
+struct RoomFlag {
+    var roomID: UUID
+    var anchor: SIMD2<Double>
+    var title: String
+    var value: String
+    var accent: UIColor
 }
 
 // MARK: - FloorplanSunLight
@@ -52,6 +63,7 @@ struct FloorplanRealityPreviewView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
+    @Environment(\.modelContext) private var modelContext
     @State private var ceilingHeight: Double = 2.4
     @State private var floorplanScene: FloorplanScene?
     @State private var cameraResetID = UUID()
@@ -64,14 +76,19 @@ struct FloorplanRealityPreviewView: View {
     /// l'esposizione che hai scelto è quella giusta. È anche il modo in cui la
     /// domanda «di mattina il sole entra in cucina?» trova risposta.
     @State private var hourOfDay: Double = SolarClock.currentHourOfDay()
-    @State private var environmentLayer: EnvironmentLayer = .none
+    /// Il modello ambientale è **lo stesso della 2D**: punteggi, giudizi,
+    /// soglie e tipi disponibili vengono da qui. Riscriverli darebbe una casa
+    /// che dice due cose diverse a seconda di dove la guardi.
+    @State private var envVM = EnvironmentViewModel()
+    @State private var isEnvironmentOn = false
+    @State private var sensorFilter: SensorServiceType?
 
     var body: some View {
         ZStack(alignment: .bottom) {
             if let floorplanScene {
                 RealityFloorplanView(scene: floorplanScene,
                                      sun: sun,
-                                     readings: roomReadings,
+                                     flags: roomFlags,
                                      cameraResetID: cameraResetID,
                                      onRoomSelected: { selectedRoomName = $0 })
                     .ignoresSafeArea()
@@ -89,6 +106,8 @@ struct FloorplanRealityPreviewView: View {
             // chiusi: `startObserving` fa il readValue iniziale e arma le
             // notifiche. La vista si apre dalla lista, che non osserva niente.
             homeKit.startObserving(accessoryUUIDs: Set(markers.map(\.uuid)))
+            envVM.configure(modelContainer: modelContext.container)
+            envVM.loadFromCoreData()
             rebuildScene()
         }
         // Lo stato non è più una fotografia: se apri una finestra mentre stai
@@ -97,18 +116,41 @@ struct FloorplanRealityPreviewView: View {
         .onChange(of: openOpeningIDs) { _, _ in rebuildScene() }
     }
 
-    /// Una lettura per stanza, per lo strato selezionato. Vuoto se lo strato è
-    /// spento: le stanze senza sensore restano **senza bandierina**, che è
-    /// l'unico modo onesto di dire «qui non lo so».
-    private var roomReadings: [FloorplanRoomEnvironment.Reading] {
-        guard let kind = environmentLayer.sensorKind else { return [] }
-        return FloorplanRoomEnvironment.readings(
-            in: document,
-            exportRotation: exportRotation,
-            markers: markers.map { (uuid: $0.uuid, position: $0.position) },
-            kind: kind,
-            homeKit: homeKit
-        )
+    /// Una bandierina per stanza. Le stanze senza dati restano **senza**: un
+    /// valore neutro su una stanza che non misura niente sembra una misura.
+    ///
+    /// Le stanze si accoppiano per **nome**, come fa la 2D — non per UUID, che
+    /// fra device non è stabile.
+    private var roomFlags: [RoomFlag] {
+        guard isEnvironmentOn else { return [] }
+        return FloorplanRoomEnvironment.anchors(in: document).compactMap { anchor in
+            guard let data = envVM.rooms.first(where: { $0.roomName == anchor.roomName })
+            else { return nil }
+
+            if let filter = sensorFilter {
+                guard let sensor = data.sensors.first(where: { $0.serviceType == filter })
+                else { return nil }
+                return RoomFlag(roomID: anchor.roomID, anchor: anchor.point,
+                                title: anchor.roomName,
+                                value: sensor.formattedValue,
+                                accent: UIColor(urgencyColour(sensor.urgency)))
+            }
+
+            return RoomFlag(roomID: anchor.roomID, anchor: anchor.point,
+                            title: anchor.roomName,
+                            value: "\(Int(data.qualityScore * 100))% \(data.qualityLabel)",
+                            accent: UIColor(data.qualityColor))
+        }
+    }
+
+    /// `SensorUrgency.color` dà `.primary` per lo stato normale, che su
+    /// un'etichetta scura sopra un modello sparisce. Qui serve un verde.
+    private func urgencyColour(_ urgency: SensorUrgency) -> Color {
+        switch urgency {
+        case .normal:  .green
+        case .warning: .orange
+        case .danger:  .red
+        }
     }
 
     /// Gli infissi da disegnare aperti, contro lo stato corrente di HomeKit.
@@ -294,28 +336,56 @@ struct FloorplanRealityPreviewView: View {
         .background(.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
-    /// Uno strato per volta. Due grandezze insieme sono due sistemi di lettura
-    /// sovrapposti, ed è il modo più rapido di rendere illeggibile un cruscotto.
+    /// I filtri **non sono un elenco mio**: sono `envVM.availableSensorTypes`,
+    /// cioè i tipi per cui esistono dati veri, gli stessi che la 2D mostra nella
+    /// sua barra. Un secondo elenco scritto a mano sarebbe rimasto indietro al
+    /// primo sensore nuovo.
     private var environmentControls: some View {
-        HStack(spacing: 4) {
-            ForEach(EnvironmentLayer.allCases) { layer in
-                Button {
-                    withAnimation(.easeOut(duration: 0.2)) { environmentLayer = layer }
-                } label: {
-                    Text(layer.shortLabel)
-                        .font(.caption.weight(environmentLayer == layer ? .bold : .regular))
-                        .foregroundStyle(.white.opacity(environmentLayer == layer ? 1 : 0.6))
-                        .padding(.horizontal, 12)
-                        .frame(minHeight: 30)
-                        .background(environmentLayer == layer ? Color.white.opacity(0.22) : .clear,
-                                    in: Capsule())
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                chip(label: String(localized: "environment.layer.none", defaultValue: "Off"),
+                     icon: "eye.slash",
+                     isSelected: !isEnvironmentOn) {
+                    isEnvironmentOn = false
+                    sensorFilter = nil
                 }
-                .buttonStyle(.plain)
+                chip(label: String(localized: "filter.all", defaultValue: "Tutto"),
+                     icon: "leaf.fill",
+                     isSelected: isEnvironmentOn && sensorFilter == nil) {
+                    isEnvironmentOn = true
+                    sensorFilter = nil
+                }
+                ForEach(envVM.availableSensorTypes) { type in
+                    chip(label: type.displayName,
+                         icon: type.sfSymbol,
+                         isSelected: isEnvironmentOn && sensorFilter == type) {
+                        isEnvironmentOn = true
+                        sensorFilter = sensorFilter == type ? nil : type
+                    }
+                }
             }
+            .padding(.horizontal, 8)
         }
-        .padding(.horizontal, 8)
+        .frame(maxWidth: 640)
         .padding(.vertical, 5)
         .background(.black.opacity(0.34), in: Capsule())
+    }
+
+    private func chip(label: String, icon: String, isSelected: Bool,
+                      action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2), action)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 11))
+                Text(label).font(.caption.weight(isSelected ? .bold : .regular))
+            }
+            .foregroundStyle(.white.opacity(isSelected ? 1 : 0.6))
+            .padding(.horizontal, 11)
+            .frame(minHeight: 30)
+            .background(isSelected ? Color.white.opacity(0.22) : .clear, in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func rebuildScene() {
@@ -331,7 +401,7 @@ struct FloorplanRealityPreviewView: View {
 private struct RealityFloorplanView: UIViewRepresentable {
     let scene: FloorplanScene
     let sun: FloorplanSunLight
-    let readings: [FloorplanRoomEnvironment.Reading]
+    let flags: [RoomFlag]
     let cameraResetID: UUID
     let onRoomSelected: (String?) -> Void
 
@@ -363,13 +433,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.onRoomSelected = onRoomSelected
         context.coordinator.updateSceneIfNeeded(scene)
         context.coordinator.updateSun(sun)
-        context.coordinator.updateReadings(readings)
+        context.coordinator.updateFlags(flags)
         context.coordinator.resetCameraIfNeeded(cameraResetID)
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(scene: scene, sun: sun, cameraResetID: cameraResetID, onRoomSelected: onRoomSelected)
-            .prepared(with: readings)
+            .prepared(with: flags)
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
@@ -398,8 +468,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// spostamento.
         private let flagRoot = Entity()
         private var flagLabels: [Entity] = []
-        private var readings: [FloorplanRoomEnvironment.Reading] = []
-        private var readingsSignature = ""
+        private var flags: [RoomFlag] = []
+        private var flagsSignature = ""
         private var installedSignature: String?
         private var handledResetID: UUID
         private var gestureStart: (azimuth: Double, elevation: Double)?
@@ -419,26 +489,42 @@ private struct RealityFloorplanView: UIViewRepresentable {
             self.onRoomSelected = onRoomSelected
         }
 
-        func prepared(with readings: [FloorplanRoomEnvironment.Reading]) -> Coordinator {
-            self.readings = readings
+        func prepared(with flags: [RoomFlag]) -> Coordinator {
+            self.flags = flags
             return self
         }
 
-        func updateReadings(_ newReadings: [FloorplanRoomEnvironment.Reading]) {
-            let signature = newReadings
-                .map { "\($0.roomID)=\($0.text)" }
+        func updateFlags(_ newFlags: [RoomFlag]) {
+            let signature = newFlags
+                .map { "\($0.roomID)=\($0.title)=\($0.value)" }
                 .sorted()
                 .joined(separator: "|")
-            guard signature != readingsSignature else { return }
-            readingsSignature = signature
-            readings = newReadings
+            guard signature != flagsSignature else { return }
+            flagsSignature = signature
+            flags = newFlags
             rebuildFlags()
+            applyRoomTints()
+        }
+
+        /// Il pavimento della stanza prende la tinta del suo stato, come il
+        /// riempimento nella 2D. Il colore risponde a «dov'è il problema» senza
+        /// leggere niente; la bandierina dice «quanto».
+        private func applyRoomTints() {
+            let accents = Dictionary(uniqueKeysWithValues: flags.map { ($0.roomID, $0.accent) })
+            for (roomID, entity) in roomEntities where roomID != selectedRoomID {
+                entity.model?.materials = [
+                    FloorplanMaterialCatalog.material(for: .floor,
+                                                      isSelected: false,
+                                                      floorKind: roomFloorKinds[roomID],
+                                                      tint: accents[roomID])
+                ]
+            }
         }
 
         private func rebuildFlags() {
             flagRoot.children.removeAll()
             flagLabels = []
-            let built = RealityFloorplanRenderer.flagEntities(for: readings, scene: scene)
+            let built = RealityFloorplanRenderer.flagEntities(for: flags, scene: scene)
             for flag in built {
                 flagRoot.addChild(flag.root)
                 flagLabels.append(flag.label)
@@ -632,7 +718,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
                     FloorplanMaterialCatalog.material(
                         for: .floor,
                         isSelected: false,
-                        floorKind: roomFloorKinds[selectedRoomID]
+                        floorKind: roomFloorKinds[selectedRoomID],
+                        tint: flags.first { $0.roomID == selectedRoomID }?.accent
                     )
                 ]
             }
@@ -751,32 +838,32 @@ private enum RealityFloorplanRenderer {
     /// cima. Sopra la linea dei muri, così nessuna bandierina finisce nascosta
     /// da una parete e tutte stanno alla stessa quota — che è ciò che permette
     /// di confrontarle a colpo d'occhio invece di cercarle.
-    static func flagEntities(for readings: [FloorplanRoomEnvironment.Reading],
-                             scene: FloorplanScene) -> [Flag] {
-        guard !readings.isEmpty else { return [] }
+    static func flagEntities(for flags: [RoomFlag], scene: FloorplanScene) -> [Flag] {
+        guard !flags.isEmpty else { return [] }
         let centre = scene.bounds.center
         let floorY = scene.bounds.min.y
-        let topY = scene.bounds.max.y + 0.45
+        let topY = scene.bounds.max.y + 0.55
 
-        return readings.compactMap { reading -> Flag? in
-            guard let material = FloorplanMaterialCatalog.flagLabelMaterial(text: reading.text)
-            else { return nil }
+        return flags.compactMap { flag -> Flag? in
+            guard let material = FloorplanMaterialCatalog.flagLabelMaterial(
+                title: flag.title, value: flag.value, accent: flag.accent
+            ) else { return nil }
 
             // Il disegno ha x/y in pianta, RealityKit ha y in alto: la y del
             // disegno diventa z, come per tutto il resto della scena.
-            let x = Float(reading.anchor.x) - centre.x
-            let z = Float(reading.anchor.y) - centre.z
+            let x = Float(flag.anchor.x) - centre.x
+            let z = Float(flag.anchor.y) - centre.z
 
             let root = Entity()
             let height = topY - floorY
-            let stem = ModelEntity(mesh: .generateBox(size: SIMD3(0.022, height, 0.022)),
+            let stem = ModelEntity(mesh: .generateBox(size: SIMD3(0.026, height, 0.026)),
                                    materials: [FloorplanMaterialCatalog.flagStemMaterial()])
             stem.position = SIMD3(x, floorY - centre.y + height / 2, z)
             root.addChild(stem)
 
-            let label = ModelEntity(mesh: .generatePlane(width: 0.62, height: 0.27),
+            let label = ModelEntity(mesh: .generatePlane(width: 1.15, height: 0.55),
                                     materials: [material])
-            label.position = SIMD3(x, topY - centre.y + 0.16, z)
+            label.position = SIMD3(x, topY - centre.y + 0.30, z)
             root.addChild(label)
 
             return Flag(root: root, label: label)

@@ -7,10 +7,11 @@ import Metal
 enum FloorplanMaterialCatalog {
     static func material(for role: FloorplanScene.MeshFace.MaterialRole,
                          isSelected: Bool = false,
-                         floorKind: FloorKind? = nil) -> any RealityKit.Material {
+                         floorKind: FloorKind? = nil,
+                         tint: UIColor? = nil) -> any RealityKit.Material {
         switch role {
         case .floor:
-            return floorMaterial(for: floorKind, isSelected: isSelected)
+            return floorMaterial(for: floorKind, isSelected: isSelected, tint: tint)
         case .wall:
             return opaque(UIColor(red: 0.90, green: 0.92, blue: 0.95, alpha: 1), roughness: 0.94)
         case .wallTop:
@@ -94,8 +95,8 @@ enum FloorplanMaterialCatalog {
     /// L'etichetta in cima allo stelo, disegnata come immagine e appiccicata a
     /// un rettangolo. **Unlit**: è un'etichetta, non una superficie, e non deve
     /// scurirsi quando la stanza è in ombra — è proprio quando serve leggerla.
-    static func flagLabelMaterial(text: String) -> (any RealityKit.Material)? {
-        guard let image = flagLabelImage(text: text),
+    static func flagLabelMaterial(title: String, value: String, accent: UIColor) -> (any RealityKit.Material)? {
+        guard let image = flagLabelImage(title: title, value: value, accent: accent),
               let texture = try? TextureResource(image: image,
                                                  withName: nil,
                                                  options: .init(semantic: .color))
@@ -106,46 +107,63 @@ enum FloorplanMaterialCatalog {
         return material
     }
 
-    /// Tutte le capsule della **stessa misura**, testo centrato.
+    /// Nome della stanza sopra, valore sotto, barra di stato in fondo — lo
+    /// stesso badge della 2D, che e' gia' quello che l'utente sa leggere.
     ///
-    /// Adattarle al contenuto sembrava più elegante, ma bandierine di larghezza
-    /// diversa si confrontano peggio: quando la domanda è «quale stanza è più
-    /// calda», l'occhio deve saltare fra i numeri, non fra le forme.
-    private static func flagLabelImage(text: String) -> CGImage? {
-        let size = CGSize(width: 256, height: 108)
+    /// Tutte le capsule della **stessa misura**: quando la domanda e' «quale
+    /// stanza sta peggio», l'occhio deve saltare fra i numeri, non fra le forme.
+    private static func flagLabelImage(title: String, value: String, accent: UIColor) -> CGImage? {
+        let size = CGSize(width: 360, height: 172)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
         format.opaque = false
 
-        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            let pill = CGRect(origin: .zero, size: size).insetBy(dx: 3, dy: 3)
-            UIColor(white: 0.06, alpha: 0.86).setFill()
-            UIBezierPath(roundedRect: pill, cornerRadius: pill.height / 2).fill()
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let pill = CGRect(origin: .zero, size: size).insetBy(dx: 4, dy: 4)
+            let radius: CGFloat = 26
 
-            UIColor(white: 1, alpha: 0.32).setStroke()
-            let border = UIBezierPath(roundedRect: pill.insetBy(dx: 1, dy: 1),
-                                      cornerRadius: pill.height / 2)
-            border.lineWidth = 2
+            UIColor(white: 0.07, alpha: 0.88).setFill()
+            UIBezierPath(roundedRect: pill, cornerRadius: radius).fill()
+
+            accent.withAlphaComponent(0.55).setStroke()
+            let border = UIBezierPath(roundedRect: pill.insetBy(dx: 1.5, dy: 1.5), cornerRadius: radius)
+            border.lineWidth = 3
             border.stroke()
 
-            // Il corpo si restringe se il testo è lungo — «1450ppm» sta nella
-            // stessa capsula di «21°C» senza sbordare.
-            var fontSize: CGFloat = 46
-            var attributes: [NSAttributedString.Key: Any] = [:]
-            var textSize = CGSize.zero
-            let string = text as NSString
-            repeat {
-                attributes = [.font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
-                              .foregroundColor: UIColor.white]
-                textSize = string.size(withAttributes: attributes)
-                fontSize -= 2
-            } while textSize.width > pill.width - 34 && fontSize > 18
+            // Barra di stato in fondo, ritagliata dentro l'angolo arrotondato.
+            context.cgContext.saveGState()
+            UIBezierPath(roundedRect: pill, cornerRadius: radius).addClip()
+            accent.withAlphaComponent(0.9).setFill()
+            UIBezierPath(rect: CGRect(x: pill.minX, y: pill.maxY - 9,
+                                      width: pill.width, height: 9)).fill()
+            context.cgContext.restoreGState()
 
-            string.draw(at: CGPoint(x: (size.width - textSize.width) / 2,
-                                    y: (size.height - textSize.height) / 2),
-                        withAttributes: attributes)
+            draw(title, in: pill, centeredAt: pill.midY - 34,
+                 font: .systemFont(ofSize: 32, weight: .medium),
+                 colour: UIColor(white: 1, alpha: 0.72))
+            draw(value, in: pill, centeredAt: pill.midY + 16,
+                 font: .systemFont(ofSize: 44, weight: .semibold),
+                 colour: .white)
         }
         return image.cgImage
+    }
+
+    /// Scrive centrato, rimpicciolendo se non ci sta: «1450 ppm» deve entrare
+    /// nella stessa capsula di «21°C» senza sbordare.
+    private static func draw(_ text: String, in pill: CGRect, centeredAt y: CGFloat,
+                             font: UIFont, colour: UIColor) {
+        let string = text as NSString
+        var size = font.pointSize
+        var attributes: [NSAttributedString.Key: Any] = [:]
+        var measured = CGSize.zero
+        repeat {
+            attributes = [.font: font.withSize(size), .foregroundColor: colour]
+            measured = string.size(withAttributes: attributes)
+            size -= 2
+        } while measured.width > pill.width - 34 && size > 14
+
+        string.draw(at: CGPoint(x: pill.midX - measured.width / 2, y: y - measured.height / 2),
+                    withAttributes: attributes)
     }
 
     /// Il piano su cui la casa appoggia e su cui cade la sua ombra.
@@ -229,11 +247,27 @@ enum FloorplanMaterialCatalog {
     /// moltiplica sopra la texture, quindi la venatura resta e la stanza si
     /// accende lo stesso.
     private static func floorMaterial(for floorKind: FloorKind?,
-                                      isSelected: Bool = false) -> any RealityKit.Material {
+                                      isSelected: Bool = false,
+                                      tint: UIColor? = nil) -> any RealityKit.Material {
         var material = baseFloorMaterial(for: floorKind)
-        guard isSelected else { return material }
-        material.baseColor.tint = UIColor(red: 1.0, green: 0.86, blue: 0.50, alpha: 1)
+        if isSelected {
+            material.baseColor.tint = UIColor(red: 1.0, green: 0.86, blue: 0.50, alpha: 1)
+        } else if let tint {
+            // Il tint **moltiplica**: un rosso pieno annerirebbe il pavimento
+            // invece di colorarlo. Schiarito verso il bianco resta una velatura,
+            // che è quello che serve — lo stato si legge, il materiale pure.
+            material.baseColor.tint = softened(tint, towardsWhite: 0.62)
+        }
         return material
+    }
+
+    private static func softened(_ color: UIColor, towardsWhite amount: CGFloat) -> UIColor {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return color }
+        return UIColor(red: red + (1 - red) * amount,
+                       green: green + (1 - green) * amount,
+                       blue: blue + (1 - blue) * amount,
+                       alpha: 1)
     }
 
     private static func baseFloorMaterial(for floorKind: FloorKind?) -> PhysicallyBasedMaterial {
