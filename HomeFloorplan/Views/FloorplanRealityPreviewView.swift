@@ -415,34 +415,36 @@ struct FloorplanRealityPreviewView: View {
     /// sua barra. Un secondo elenco scritto a mano sarebbe rimasto indietro al
     /// primo sensore nuovo.
     private var environmentControls: some View {
-        HStack(alignment: .top, spacing: 4) {
-            Button {
-                if !isLayerTrayOpen { loadEnvironmentIfNeeded() }
-                withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen.toggle() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: mode.symbol).font(.system(size: 12))
-                    // Da aperto il valore lo dice già il chip selezionato: qui
-                    // sarebbe scritto due volte nella stessa riga.
-                    if !isLayerTrayOpen {
-                        Text(activeLayerLabel).font(.caption.weight(.semibold))
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Button {
+                    if !isLayerTrayOpen { loadEnvironmentIfNeeded() }
+                    withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: mode.symbol).font(.system(size: 12))
+                        // Da aperto il valore lo dice già il chip selezionato:
+                        // qui sarebbe scritto due volte nella stessa riga.
+                        if !isLayerTrayOpen {
+                            Text(activeLayerLabel).font(.caption.weight(.semibold))
+                        }
                     }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, isLayerTrayOpen ? 9 : 12)
+                    .frame(minHeight: 30)
+                    .background(.black.opacity(0.34), in: Capsule())
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, isLayerTrayOpen ? 9 : 12)
-                .frame(minHeight: 30)
-                .background(.black.opacity(0.34), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(String(localized: "floorplan.layers",
-                                            defaultValue: "Overlay")))
-            .accessibilityValue(Text(activeLayerLabel))
-            .accessibilityHint(Text(isLayerTrayOpen
-                                    ? String(localized: "floorplan.layers.close", defaultValue: "Closes the list")
-                                    : String(localized: "floorplan.layers.open", defaultValue: "Opens the list")))
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(String(localized: "floorplan.layers",
+                                                defaultValue: "Overlay")))
+                .accessibilityValue(Text(activeLayerLabel))
+                .accessibilityHint(Text(isLayerTrayOpen
+                                        ? String(localized: "floorplan.layers.close",
+                                                 defaultValue: "Closes the list")
+                                        : String(localized: "floorplan.layers.open",
+                                                 defaultValue: "Opens the list")))
 
-            if isLayerTrayOpen {
-                VStack(alignment: .leading, spacing: 6) {
+                if isLayerTrayOpen {
                     HStack(spacing: 4) {
                         ForEach(PreviewMode.allCases) { value in
                             chip(label: value.label, icon: value.symbol, isSelected: mode == value) {
@@ -454,31 +456,32 @@ struct FloorplanRealityPreviewView: View {
                     .padding(.horizontal, 5)
                     .padding(.vertical, 5)
                     .background(.black.opacity(0.34), in: Capsule())
-
-                    // I tipi sono un livello **sotto** la modalità, e devono
-                    // sembrarlo: gruppo separato e più smorzato, come nella 2D
-                    // dove i filtri stanno in una barra loro sotto le modalità.
-                    // Dentro lo stesso blocco parevano due menu appiccicati.
-                    if mode == .environment {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 4) {
-                                chip(label: String(localized: "filter.all", defaultValue: "Tutto"),
-                                     icon: "leaf.fill",
-                                     isSelected: sensorFilter == nil) { sensorFilter = nil }
-                                ForEach(envVM.availableSensorTypes) { type in
-                                    chip(label: type.displayName, icon: type.sfSymbol,
-                                         isSelected: sensorFilter == type) { sensorFilter = type }
-                                }
-                            }
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 4)
-                        }
-                        .frame(maxWidth: 500)
-                        .background(.black.opacity(0.22), in: Capsule())
-                        .padding(.leading, 10)
-                    }
+                    .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-                .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+
+            // I tipi sono un livello **sotto** la modalità, e devono sembrarlo:
+            // gruppo separato, più smorzato e centrato sotto il suo genitore,
+            // come nella 2D dove i filtri stanno in una barra loro. Dentro lo
+            // stesso blocco parevano due menu appiccicati.
+            if isLayerTrayOpen, mode == .environment {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        chip(label: String(localized: "filter.all", defaultValue: "Tutto"),
+                             icon: "leaf.fill",
+                             isSelected: sensorFilter == nil) { sensorFilter = nil }
+                        ForEach(envVM.availableSensorTypes) { type in
+                            chip(label: type.displayName, icon: type.sfSymbol,
+                                 isSelected: sensorFilter == type) { sensorFilter = type }
+                        }
+                    }
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 4)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: 500)
+                .background(.black.opacity(0.22), in: Capsule())
+                .transition(.opacity)
             }
         }
     }
