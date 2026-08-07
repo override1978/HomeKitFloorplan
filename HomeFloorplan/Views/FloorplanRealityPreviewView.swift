@@ -150,6 +150,7 @@ struct FloorplanRealityPreviewView: View {
                                              isInsideRoom = false
                                          }
                                      },
+                                     onPresenceDebug: { presenceCoordinatorReport = $0 },
                                      ghostWalls: ghostWalls)
                     .ignoresSafeArea()
             } else {
@@ -468,6 +469,7 @@ struct FloorplanRealityPreviewView: View {
             || accessory.category.categoryType == HMAccessoryCategoryTypeVideoDoorbell
     }
 
+    @State private var presenceCoordinatorReport = "coordinatore: mai chiamato"
     #if DEBUG
     /// Perche' una stanza non respira: una riga per sensore di movimento.
     private var presenceDiagnostics: [String] {
@@ -501,6 +503,7 @@ struct FloorplanRealityPreviewView: View {
             lines.append("\(accessory.name): \(kind) · \(state.map(String.init(describing:)) ?? "nil") · \(room)")
         }
         lines.append("stanze che respirano: \(occupiedRoomIDs.count)")
+        lines.append(presenceCoordinatorReport)
         return lines
     }
     #endif
