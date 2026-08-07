@@ -81,14 +81,19 @@ struct FloorplanMarkerEditingCoordinator {
     /// scrittura sul modello come le altre — e come le altre deve passare da
     /// `saveAndMarkForSync`, o la modifica resta sul device e non arriva su
     /// CloudKit.
-    func setLampSettings(accessoryUUID: UUID, height: Double, direction: LampDirection) {
+    /// `direction` a `nil` vuol dire **questo accessorio non punta da nessuna
+    /// parte**: uno split o una valvola hanno una quota ma non un verso, e
+    /// scriverne uno finto lascerebbe in archivio un dato che non significa
+    /// niente e che un giorno qualcuno leggerebbe.
+    func setLampSettings(accessoryUUID: UUID, height: Double, direction: LampDirection?) {
         guard let placed = floorplan.accessories.first(where: {
             $0.homeKitAccessoryUUID == accessoryUUID
         }) else { return }
-        guard placed.mountHeight != height || placed.lightDirectionRaw != direction.rawValue else { return }
+        let newDirection = direction?.rawValue ?? placed.lightDirectionRaw
+        guard placed.mountHeight != height || placed.lightDirectionRaw != newDirection else { return }
 
         placed.mountHeight = height
-        placed.lightDirectionRaw = direction.rawValue
+        placed.lightDirectionRaw = newDirection
         saveAndMarkForSync()
     }
 

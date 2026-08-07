@@ -47,7 +47,7 @@ struct Preview3DFloorplan: Identifiable {
     let lampSettings: (UUID) -> LampSettings
     /// Salva quota e direzione. La scrittura su SwiftData resta fuori: qui si
     /// sa cosa, non dove metterlo.
-    let applyLampSettings: (UUID, Double, LampDirection) -> Void
+    let applyLampSettings: (UUID, Double, LampDirection?) -> Void
     /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
     /// marker in coordinate del disegno.
     let exportRotation: DrawingExportRotation
@@ -94,10 +94,12 @@ struct FloorplanClimateUnit: Equatable {
     var name: String
     var form: FloorplanClimateReader.Form
     var activity: FloorplanClimateReader.Activity
-    /// In metri, nello spazio del disegno.
+    /// In metri, nello spazio del disegno, **già appoggiata al muro**.
     var position: SIMD2<Double>
     /// Quota da terra, in metri.
     var height: Double
+    /// Rotazione attorno alla verticale, per stare in piano contro la parete.
+    var bearing: Double
 }
 
 /// Il campo visivo di una telecamera, appoggiato al pavimento.
@@ -198,7 +200,7 @@ struct FloorplanRealityPreviewView: View {
         rebuildScene()
     }
 
-    private func applyLampSettings(_ uuid: UUID, _ height: Double, _ direction: LampDirection) {
+    private func applyLampSettings(_ uuid: UUID, _ height: Double, _ direction: LampDirection?) {
         current.applyLampSettings(uuid, height, direction)
         // ⚠️ **Niente `rebuildScene()`.** Quota e direzionalita' di una lampada
         // non spostano un muro: qui c'era una riestrusione completa della casa —
@@ -491,6 +493,49 @@ struct FloorplanRealityPreviewView: View {
         }
     }
 
+    /// Sposta un punto contro la parete più vicina e restituisce l'angolo per
+    /// starci in piano.
+    ///
+    /// Il muro più vicino si sceglie sulla **proiezione** e non sugli estremi:
+    /// un termosifone a metà di una parete lunga sarebbe altrimenti più vicino
+    /// allo spigolo di un muretto corto lì accanto.
+    private func againstNearestWall(_ point: SIMD2<Double>,
+                                    depth: Double) -> (position: SIMD2<Double>, bearing: Double) {
+        let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
+        var best: (foot: SIMD2<Double>, axis: SIMD2<Double>, thickness: Double, distance: Double)?
+
+        for wall in document.walls {
+            let a = SIMD2(Double(wall.start.x) * metresPerPoint, Double(wall.start.y) * metresPerPoint)
+            let b = SIMD2(Double(wall.end.x) * metresPerPoint, Double(wall.end.y) * metresPerPoint)
+            let span = b - a
+            let length = simd_length(span)
+            guard length > 0.01 else { continue }
+
+            let axis = span / length
+            let t = max(0, min(length, simd_dot(point - a, axis)))
+            let foot = a + axis * t
+            let distance = simd_distance(point, foot)
+            if best == nil || distance < best!.distance {
+                best = (foot, axis,
+                        Double(DrawingDocument.wallWidth(for: wall.kind)) * metresPerPoint,
+                        distance)
+            }
+        }
+
+        guard let best else { return (point, 0) }
+        // Dal piede della perpendicolare si torna **verso la stanza** di mezzo
+        // spessore più mezza profondità: così l'apparecchio tocca la parete
+        // invece di entrarci dentro.
+        let away = point - best.foot
+        let length = simd_length(away)
+        let outward = length > 0.001 ? away / length : SIMD2(-best.axis.y, best.axis.x)
+        let position = best.foot + outward * (best.thickness / 2 + depth / 2)
+
+        // Il disegno ha y in pianta, RealityKit ha z: la rotazione attorno alla
+        // verticale che porta l'asse locale x sull'asse del muro è l'opposta.
+        return (position, -atan2(best.axis.y, best.axis.x))
+    }
+
     private func isCamera(_ accessory: HMAccessory) -> Bool {
         if accessory.cameraProfiles?.isEmpty == false { return true }
         return accessory.category.categoryType == HMAccessoryCategoryTypeIPCamera
@@ -557,13 +602,21 @@ struct FloorplanRealityPreviewView: View {
             else { return nil }
 
             _ = settingsRevision
+            // Uno split appeso in mezzo alla stanza non esiste: si appoggia al
+            // muro più vicino, e ne prende anche l'inclinazione. La posa in 2D
+            // dice **quale parete**, non il centimetro — quello lo fa la
+            // geometria, che il disegno ce l'ha.
+            let dropped = transform.metres(from: marker.position)
+            let placed = againstNearestWall(dropped, depth: Double(unit.form.size.z))
+
             return FloorplanClimateUnit(accessoryUUID: marker.uuid,
                                         name: accessory.name,
                                         form: unit.form,
                                         activity: unit.activity,
-                                        position: transform.metres(from: marker.position),
+                                        position: placed.position,
                                         height: current.lampSettings(marker.uuid).height
-                                            ?? unit.form.defaultHeight)
+                                            ?? unit.form.defaultHeight,
+                                        bearing: placed.bearing)
         }
     }
 
@@ -903,12 +956,22 @@ struct FloorplanRealityPreviewView: View {
         }
     }
 
-    /// Le lampade della stanza selezionata.
+    /// Un accessorio configurabile, qualunque famiglia sia.
     ///
-    /// Si ricavano dalla **posizione**, non da un elenco: una lampada sta in
-    /// una stanza se il suo punto cade nel poligono di quella stanza. Nessun
-    /// accoppiamento per nome da sbagliare.
-    private var lampsInSelectedRoom: [FloorplanLamp] {
+    /// Il pannello raccoglie i **fatti che la pianta non può contenere**, e a
+    /// che quota sta una cosa è la stessa domanda per un faretto e per uno
+    /// split. Il verso invece no: uno split non punta da nessuna parte, e
+    /// `direction` a `nil` è ciò che lo dice — non un default finto.
+    private struct SetupItem: Identifiable {
+        var id: UUID
+        var name: String
+        var height: Double
+        var direction: LampDirection?
+        var range: ClosedRange<Double>
+        var symbol: String
+    }
+
+    private var setupItemsInSelectedRoom: [SetupItem] {
         guard let selectedRoomID,
               let area = document.roomAreas.first(where: { $0.id == selectedRoomID })
         else { return [] }
@@ -917,7 +980,28 @@ struct FloorplanRealityPreviewView: View {
         let polygon = area.effectivePoints.map {
             SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
         }
-        return litLights.filter { FloorplanRoomEnvironment.contains($0.position, polygon) }
+
+        let lamps = litLights
+            .filter { FloorplanRoomEnvironment.contains($0.position, polygon) }
+            .map { SetupItem(id: $0.accessoryUUID, name: $0.name, height: $0.height,
+                             direction: $0.direction, range: 0.2...3.2,
+                             symbol: "lightbulb.fill") }
+
+        // ⚠️ Il clima si confronta sulla posa **originale**, non su quella
+        // appoggiata al muro: quella e' gia' stata spostata, e potrebbe essere
+        // finita appena oltre il poligono della stanza.
+        let climate = climateUnits.compactMap { unit -> SetupItem? in
+            guard let marker = markers.first(where: { $0.uuid == unit.accessoryUUID }),
+                  let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                    exportRotation: exportRotation),
+                  FloorplanRoomEnvironment.contains(transform.metres(from: marker.position), polygon)
+            else { return nil }
+            return SetupItem(id: unit.accessoryUUID, name: unit.name, height: unit.height,
+                             direction: nil, range: 0.1...2.6,
+                             symbol: unit.form == .split ? "wind" : "thermometer.medium")
+        }
+
+        return lamps + climate
     }
 
     /// Il posto dove si impostano i fatti che la pianta **non può contenere**:
@@ -933,38 +1017,38 @@ struct FloorplanRealityPreviewView: View {
     /// l'altezza fissa qualunque sia il numero di accessori.
     @ViewBuilder
     private var roomSetupPanel: some View {
-        let lamps = lampsInSelectedRoom
-        if let lamp = selectedLamp(among: lamps) {
+        let items = setupItemsInSelectedRoom
+        if let item = selectedItem(among: items) {
             VStack(alignment: .leading, spacing: 12) {
                 // Il recap della selezione: senza, il pannello compare e non si
                 // sa a cosa si riferisce.
                 HStack(spacing: 8) {
-                    Image(systemName: "lightbulb.2.fill").font(.system(size: 13))
+                    Image(systemName: "slider.horizontal.3").font(.system(size: 13))
                     Text(selectedRoomName ?? "")
                         .font(.headline)
                         .lineLimit(1)
-                    Text(lamps.count == 1
-                         ? String(localized: "lamp.count.one", defaultValue: "1 light")
-                         : String(localized: "lamp.count.other", defaultValue: "\(lamps.count) lights"))
+                    Text(items.count == 1
+                         ? String(localized: "setup.count.one", defaultValue: "1 device")
+                         : String(localized: "setup.count.other", defaultValue: "\(items.count) devices"))
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.6))
                         .layoutPriority(1)
                 }
                 .foregroundStyle(.white)
 
-                // Con una lampada sola la fila sarebbe una pastiglia da
+                // Con un accessorio solo la fila sarebbe una pastiglia da
                 // scegliere fra una: resta il nome, che serve comunque a sapere
                 // cosa si sta configurando.
-                if lamps.count > 1 {
-                    lampPicker(lamps, selected: lamp)
+                if items.count > 1 {
+                    setupPicker(items, selected: item)
                 } else {
-                    Text(lamp.name)
+                    Label(item.name, systemImage: item.symbol)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                 }
 
                 Divider().overlay(Color.white.opacity(0.18))
-                lampSetupRow(lamp)
+                setupRow(item)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -983,13 +1067,12 @@ struct FloorplanRealityPreviewView: View {
     }
 
     /// Quello scelto, o il primo se la scelta è di un'altra stanza.
-    private func selectedLamp(among lamps: [FloorplanLamp]) -> FloorplanLamp? {
-        guard !lamps.isEmpty else { return nil }
-        if let selectedLampUUID,
-           let match = lamps.first(where: { $0.accessoryUUID == selectedLampUUID }) {
+    private func selectedItem(among items: [SetupItem]) -> SetupItem? {
+        guard !items.isEmpty else { return nil }
+        if let selectedLampUUID, let match = items.first(where: { $0.id == selectedLampUUID }) {
             return match
         }
-        return lamps.first
+        return items.first
     }
 
     /// La fila degli accessori della stanza.
@@ -1000,15 +1083,18 @@ struct FloorplanRealityPreviewView: View {
     /// mezzo centimetro dal bordo, che è il segnale che dice «di qua ce n'è
     /// ancora».
     @ViewBuilder
-    private func lampPicker(_ lamps: [FloorplanLamp], selected: FloorplanLamp) -> some View {
+    private func setupPicker(_ items: [SetupItem], selected: SetupItem) -> some View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
-                ForEach(lamps, id: \.accessoryUUID) { lamp in
-                    let isSelected = lamp.accessoryUUID == selected.accessoryUUID
+                ForEach(items) { item in
+                    let isSelected = item.id == selected.id
                     Button {
-                        selectedLampUUID = lamp.accessoryUUID
+                        selectedLampUUID = item.id
                     } label: {
-                        Text(lamp.name)
+                        // L'icona distingue le famiglie senza una riga di
+                        // intestazione per ciascuna: in una stanza con quattro
+                        // faretti e uno split, «quale e' lo split» si vede.
+                        Label(item.name, systemImage: item.symbol)
                             .font(.caption.weight(isSelected ? .semibold : .regular))
                             .lineLimit(1)
                             .foregroundStyle(.white.opacity(isSelected ? 1 : 0.62))
@@ -1032,33 +1118,38 @@ struct FloorplanRealityPreviewView: View {
     /// accanto alla scelta attiva toglie l'ambiguità senza occupare una riga in
     /// più per ciascuna.
     @ViewBuilder
-    private func lampSetupRow(_ lamp: FloorplanLamp) -> some View {
+    private func setupRow(_ item: SetupItem) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(String(localized: "lamp.direction.title", defaultValue: "Points"))
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.6))
-                    .frame(width: 58, alignment: .leading)
+            // La riga della direzionalità esiste solo per chi punta da qualche
+            // parte. Mostrarla disattivata su uno split direbbe «qui si potrebbe
+            // scegliere», che è falso.
+            if let direction = item.direction {
+                HStack(spacing: 8) {
+                    Text(String(localized: "lamp.direction.title", defaultValue: "Points"))
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 58, alignment: .leading)
 
-                HStack(spacing: 4) {
-                    ForEach(LampDirection.allCases) { value in
-                        Button {
-                            applyLampSettings(lamp.accessoryUUID, lamp.height, value)
-                        } label: {
-                            directionGlyph(value, isSelected: lamp.direction == value)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 3)
-                                .background(lamp.direction == value ? Color.white.opacity(0.20) : Color.clear,
-                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    HStack(spacing: 4) {
+                        ForEach(LampDirection.allCases) { value in
+                            Button {
+                                applyLampSettings(item.id, item.height, value)
+                            } label: {
+                                directionGlyph(value, isSelected: direction == value)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 3)
+                                    .background(direction == value ? Color.white.opacity(0.20) : Color.clear,
+                                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(Text(value.label))
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(Text(value.label))
                     }
-                }
 
-                Text(lamp.direction.label)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.85))
+                    Text(direction.label)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
             }
 
             HStack(spacing: 8) {
@@ -1067,10 +1158,10 @@ struct FloorplanRealityPreviewView: View {
                     .foregroundStyle(.white.opacity(0.6))
                     .frame(width: 58, alignment: .leading)
 
-                Slider(value: heightBinding(for: lamp), in: 0.2...3.2, step: 0.05)
+                Slider(value: heightBinding(for: item), in: item.range, step: 0.05)
                     .tint(.white.opacity(0.8))
 
-                Text(lamp.height.formatted(.number.precision(.fractionLength(2))) + " m")
+                Text(item.height.formatted(.number.precision(.fractionLength(2))) + " m")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.85))
                     .frame(width: 62, alignment: .trailing)
@@ -1126,10 +1217,10 @@ struct FloorplanRealityPreviewView: View {
         .frame(width: 42, height: 34)
     }
 
-    private func heightBinding(for lamp: FloorplanLamp) -> Binding<Double> {
+    private func heightBinding(for item: SetupItem) -> Binding<Double> {
         Binding(
-            get: { lamp.height },
-            set: { applyLampSettings(lamp.accessoryUUID, $0, lamp.direction) }
+            get: { item.height },
+            set: { applyLampSettings(item.id, $0, item.direction) }
         )
     }
 
@@ -1528,7 +1619,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
             let sameBodies = newUnits.map(\.accessoryUUID).sorted() == climateNodes.keys.sorted()
                 && newUnits.allSatisfy { unit in
                     climate.first { $0.accessoryUUID == unit.accessoryUUID }
-                        .map { $0.position == unit.position && $0.height == unit.height && $0.form == unit.form }
+                        .map { $0.position == unit.position && $0.height == unit.height
+                               && $0.form == unit.form && $0.bearing == unit.bearing }
                         ?? false
                 }
             climate = newUnits
@@ -1550,6 +1642,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 body.position = SIMD3(Float(unit.position.x) - centre.x,
                                       floorY - centre.y + Float(unit.height),
                                       Float(unit.position.y) - centre.z)
+                body.orientation = simd_quatf(angle: Float(unit.bearing), axis: SIMD3(0, 1, 0))
                 // Il bersaglio della pressione lunga: piu' largo del corpo,
                 // perche' una valvola a schermo e' un francobollo.
                 body.collision = CollisionComponent(shapes: [.generateSphere(radius: 0.30)])
