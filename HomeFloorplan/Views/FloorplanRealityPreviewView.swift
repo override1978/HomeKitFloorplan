@@ -1914,7 +1914,11 @@ private struct RealityFloorplanView: UIViewRepresentable {
                                                                           brightness: 1)
                                 ?? UnlitMaterial(color: .clear)]
                 )
-                aura.position = place
+                // ⚠️ Il cono parte **sotto** il bulbo. La sfumatura del fascio e'
+                // piena all'apice, quindi con l'apice alla stessa quota la parte
+                // piu' opaca copriva la sfera e la tingeva: il pallino prendeva
+                // il colore del fascio invece del proprio.
+                aura.position = SIMD3(place.x, place.y - 0.17, place.z)
                 lampRoot.addChild(aura)
 
                 var node = LampNode(bulb: bulb, spot: light, halo: aura, pool: nil)
@@ -1943,7 +1947,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
             node.bulb.position = place
             node.spot.position = place
-            node.halo.position = place
+            node.halo.position = SIMD3(place.x, place.y - 0.17, place.z)
 
             node.bulb.model?.materials = [
                 FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour, isOn: lamp.isOn)

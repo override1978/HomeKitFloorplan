@@ -125,15 +125,20 @@ enum FloorplanMaterialCatalog {
             return off
         }
         // ⚠️ **Opaca, non al 95%.** Quel cinque per cento faceva entrare il
-        // muro dietro, quindi il bulbo prendeva un po' del grigio della parete e
-        // il bianco caldo virava al marroncino. Un lume acceso non e' mai piu'
-        // scuro di cio' che ha dietro.
+        // muro dietro, quindi il bulbo prendeva un po' del grigio della parete.
         //
-        // E schiarito verso il bianco: una lampadina accesa e' quasi bianca al
-        // centro, con la propria tinta attorno — quella la porta il fascio, che
-        // resta al colore pieno. Cosi' il pallino legge «accesa» e il colore
-        // dell'accessorio si riconosce lo stesso.
-        return UnlitMaterial(color: lightened(colour, by: 0.30))
+        // ⚠️ E **quasi bianca**, non del colore dell'accessorio. Una lampadina
+        // che dichiara tinta 30° e saturazione 50 — cioe' come quasi tutte
+        // descrivono il bianco caldo — da' un arancione saturo, e un arancione
+        // su una parete chiara si legge marrone: sembrava tutto fuorche' una
+        // luce. Schiarirlo del 30% non bastava, perche' il problema non era
+        // quanto fosse chiaro ma **che avesse un colore**.
+        //
+        // Guardare una lampada accesa non dice di che colore e' la sua luce: la
+        // sorgente e' bianca e il colore si vede in cio' che illumina. Qui e'
+        // uguale — il pallino dice «accesa», il fascio e la pozza dicono di che
+        // colore, e quelli restano alla tinta piena.
+        return UnlitMaterial(color: lightened(colour, by: 0.72))
     }
 
     private static func lightened(_ colour: UIColor, by amount: CGFloat) -> UIColor {
