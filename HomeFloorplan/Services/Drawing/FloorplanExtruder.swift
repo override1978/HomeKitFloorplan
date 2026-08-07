@@ -136,7 +136,7 @@ enum FloorplanExtruder {
                                                 balconyAreaIDs: balconies))
         }
         for area in document.roomAreas {
-            guard let extended = extendedAwnings[area.id], extended > 0.02 else { continue }
+            guard let extended = extendedAwnings[area.id] else { continue }
             result.append(contentsOf: awningFaces(over: area, in: document,
                                                   extended: extended, heights: heights))
         }
@@ -385,7 +385,7 @@ enum FloorplanExtruder {
                                    top: min(heights.windowTop, wallTop),
                                    kind: opening.kind, flipSide: opening.flipSide,
                                    isOpen: openOpeningIDs.contains(opening.id),
-                                   shutterClosed: closedShutters[opening.id] ?? 0,
+                                   shutterClosed: closedShutters[opening.id],
                                    id: opening.id))
             case .door, .slidingDoor, .frenchDoor:
                 spans.append((from, to, heights.doorTop, wallTop))
@@ -396,7 +396,7 @@ enum FloorplanExtruder {
                                    top: min(heights.doorTop, wallTop),
                                    kind: opening.kind, flipSide: opening.flipSide,
                                    isOpen: openOpeningIDs.contains(opening.id),
-                                   shutterClosed: closedShutters[opening.id] ?? 0,
+                                   shutterClosed: closedShutters[opening.id],
                                    id: opening.id))
             }
             cursor = max(cursor, to)
@@ -601,8 +601,10 @@ enum FloorplanExtruder {
 
         // Esce fin quasi al parapetto opposto, ma non oltre due metri e mezzo:
         // una tenda più lunga di così in casa non c'è.
+        // Ritirata resta il cassonetto sopra la portafinestra, per lo stesso
+        // motivo della tapparella: è l'oggetto che si tocca per stenderla.
         let inward = toCentre / span
-        let reach = min(2.5, span * 1.8) * min(1, max(0, extended))
+        let reach = max(0.24, min(2.5, span * 1.8) * min(1, max(0, extended)))
         let attach = heights.ceiling - 0.10
         let lip = attach - 0.30
 

@@ -36,10 +36,25 @@ struct FloorplanShutterTests {
         return (FloorplanExtruder.faces(from: document, closedShutters: closed), openingID)
     }
 
-    @Test("Senza tapparella non c'è nessuna lastra")
+    @Test("Senza accessorio non c'è nessuna lastra")
     func noShutterNoFace() {
         let (all, _) = Self.faces(shutter: nil)
         #expect(all.filter { $0.kind == .shutter }.isEmpty)
+    }
+
+    /// Tutta su non vuol dire assente: resta il cassonetto, che è l'oggetto da
+    /// toccare per calarla. Senza, una tapparella alzata non si potrebbe più
+    /// chiudere dal 3D — la stessa ragione per cui le lampade spente restano un
+    /// puntino.
+    @Test("Tutta su resta il cassonetto")
+    func fullyOpenKeepsTheBox() {
+        let (all, _) = Self.faces(shutter: 0)
+        guard let box = all.first(where: { $0.kind == .shutter })
+        else { Issue.record("nessun cassonetto emesso"); return }
+
+        let heights = box.points.map(\.z)
+        let drop = (heights.max() ?? 0) - (heights.min() ?? 0)
+        #expect(drop > 0.05 && drop < 0.15)
     }
 
     @Test("Tutta giù copre il vano intero, a metà ne copre metà")
@@ -131,8 +146,10 @@ struct FloorplanShutterTests {
             balcony
         ]
 
+        // Ritirata resta il cassonetto, per lo stesso motivo della tapparella.
         let ritirata = FloorplanExtruder.faces(from: document, extendedAwnings: [balcony.id: 0])
-        #expect(ritirata.filter { $0.kind == .awning }.isEmpty)
+        #expect(ritirata.filter { $0.kind == .awning }.count == 1)
+        #expect(FloorplanExtruder.faces(from: document).filter { $0.kind == .awning }.isEmpty)
 
         let stesa = FloorplanExtruder.faces(from: document, extendedAwnings: [balcony.id: 1])
         guard let awning = stesa.first(where: { $0.kind == .awning })

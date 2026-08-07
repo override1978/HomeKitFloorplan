@@ -32,7 +32,11 @@ enum FloorplanOpeningBuilder {
         /// Il contatto che sorveglia questo vano risulta aperto.
         var isOpen: Bool = false
         /// Quanto è calata la tapparella, da 0 (su) a 1 (giù).
-        var shutterClosed: Double = 0
+        ///
+        /// `nil` vuol dire **questo vano non ha una tapparella**, che è diverso
+        /// da averla tutta su: nel secondo caso il cassonetto c'è, ed è quello
+        /// che si tocca per calarla.
+        var shutterClosed: Double?
         /// L'apertura del disegno da cui viene, per ritrovarla a valle.
         var id: UUID = UUID()
     }
@@ -122,10 +126,13 @@ enum FloorplanOpeningBuilder {
     private static func shutterFaces(_ opening: Opening,
                                      _ wall: Wall,
                                      frameWidth: Double) -> [Face] {
-        let drop = (opening.top - opening.bottom) * min(1, max(0, opening.shutterClosed))
-        // Sotto i due centimetri non è una tapparella calata, è una riga.
-        guard drop > 0.02 else { return [] }
-
+        // ⚠️ **Esiste anche tutta su.** Alzata resta il cassonetto, ed è quello
+        // che si tocca per calarla: se esistesse solo da chiusa non ci sarebbe
+        // niente da toccare per chiuderla — la stessa lezione delle lampade
+        // spente, che restano un puntino apposta.
+        guard let closed = opening.shutterClosed else { return [] }
+        let travel = (opening.top - opening.bottom) * min(1, max(0, closed))
+        let drop = max(0.09, travel)
         let bottom = opening.top - drop
         // Scorre **davanti** al telaio, non dentro il vano: sta larga quanto il
         // vano pieno, che è come si vede da fuori.

@@ -102,6 +102,18 @@ struct FloorplanClimateUnit: Equatable {
     var bearing: Double
 }
 
+/// Cosa c'è sotto il dito.
+///
+/// Una lampada e uno split si identificano con l'accessorio; una tapparella e
+/// una tenda con **il pezzo di casa che coprono**, perché la geometria conosce
+/// il vano e la stanza, non l'UUID HomeKit. La traduzione la fa la vista, che è
+/// quella che ha costruito il legame.
+enum FloorplanTapTarget: Equatable {
+    case accessory(UUID)
+    case awning(roomID: UUID)
+    case shutter(openingID: UUID)
+}
+
 /// Il campo visivo di una telecamera, appoggiato al pavimento.
 struct FloorplanCameraCone: Equatable {
     var accessoryUUID: UUID
@@ -293,10 +305,8 @@ struct FloorplanRealityPreviewView: View {
                                          selectedRoomID = roomID
                                          selectedRoomName = name
                                      },
-                                     onLampTapped: toggleLamp,
-                                     onAccessoryHeld: { uuid in
-                                         detailAccessory = homeKit.accessory(for: uuid)
-                                     })
+                                     onTargetTapped: handleTap,
+                                     onTargetHeld: handleHold)
                     .ignoresSafeArea()
             } else {
                 Color.black.ignoresSafeArea()
@@ -646,15 +656,15 @@ struct FloorplanRealityPreviewView: View {
     /// Il verso invece è l'opposto della tapparella: chiudere una tapparella
     /// vuol dire calarla, chiudere una tenda vuol dire **ritirarla**. Quindi
     /// stesa = aperta.
-    private var extendedAwnings: [UUID: Double] {
+    private var balconyAwnings: [(areaID: UUID, accessoryUUID: UUID, extended: Double)] {
         let balconies = FloorplanExtruder.balconyAreaIDs(in: document)
         guard !balconies.isEmpty,
               let transform = FloorplanOpeningMatcher.transform(document: document,
                                                                 exportRotation: exportRotation)
-        else { return [:] }
+        else { return [] }
 
         let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
-        var result: [UUID: Double] = [:]
+        var result: [(areaID: UUID, accessoryUUID: UUID, extended: Double)] = []
 
         for marker in markers where marker.openingID == nil {
             guard let accessory = homeKit.accessory(for: marker.uuid),
@@ -667,12 +677,51 @@ struct FloorplanRealityPreviewView: View {
                     && FloorplanRoomEnvironment.contains(position, area.effectivePoints.map {
                         SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
                     })
-            }) else { continue }
+            }), !result.contains(where: { $0.areaID == area.id }) else { continue }
 
-            let extended = (max(0, min(1, open / 100)) * 20).rounded() / 20
-            result[area.id] = max(result[area.id] ?? 0, extended)
+            result.append((area.id, marker.uuid,
+                           (max(0, min(1, open / 100)) * 20).rounded() / 20))
         }
         return result
+    }
+
+    private var extendedAwnings: [UUID: Double] {
+        Dictionary(uniqueKeysWithValues: balconyAwnings.map { ($0.areaID, $0.extended) })
+    }
+
+    /// Da cosa si tocca all'accessorio da comandare.
+    private func accessoryUUID(for target: FloorplanTapTarget) -> UUID? {
+        switch target {
+        case .accessory(let uuid):
+            return uuid
+        case .awning(let roomID):
+            return balconyAwnings.first { $0.areaID == roomID }?.accessoryUUID
+        case .shutter(let openingID):
+            return markers.first { marker in
+                marker.openingID == openingID
+                    && homeKit.accessory(for: marker.uuid)
+                        .flatMap { FloorplanOpeningMatcher.coveringPosition($0, using: homeKit) } != nil
+            }?.uuid
+        }
+    }
+
+    /// **Il tocco vale dove ci sono due stati**, la pressione lunga dove c'è una
+    /// scala. Una lampada e una tapparella sono acceso/spento e su/giù: un tocco
+    /// li risolve. Un termostato no — «toccare» un condizionatore non vuol dire
+    /// niente, e per quello c'è la scheda.
+    private func handleTap(_ target: FloorplanTapTarget) {
+        guard let uuid = accessoryUUID(for: target) else { return }
+        if case .accessory = target,
+           let accessory = homeKit.accessory(for: uuid),
+           !FloorplanLampReader.isLight(accessory) {
+            return
+        }
+        toggleAccessory(uuid)
+    }
+
+    private func handleHold(_ target: FloorplanTapTarget) {
+        guard let uuid = accessoryUUID(for: target) else { return }
+        detailAccessory = homeKit.accessory(for: uuid)
     }
 
     /// Quanto è calata ogni tapparella, contro lo stato corrente di HomeKit.
@@ -1274,7 +1323,7 @@ struct FloorplanRealityPreviewView: View {
     /// Passa da `performQuickToggle` dell'adapter, lo stesso che usano i marker
     /// della 2D: una sola strada per comandare, e le protezioni e i log stanno
     /// già lì.
-    private func toggleLamp(_ accessoryUUID: UUID) {
+    private func toggleAccessory(_ accessoryUUID: UUID) {
         guard let accessory = homeKit.accessory(for: accessoryUUID) else { return }
         let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
         guard adapter.supportsQuickToggle else { return }
@@ -1409,13 +1458,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
     let flags: [RoomFlag]
     let cameraResetID: UUID
     let onRoomSelected: (UUID?, String?) -> Void
-    /// Toccare un bulbo lo accende o lo spegne: l'oggetto che mostra lo stato
-    /// è anche quello che lo cambia, senza un segnaposto in mezzo.
-    let onLampTapped: (UUID) -> Void
+    /// Toccare un oggetto lo comanda: quello che mostra lo stato è anche quello
+    /// che lo cambia, senza un segnaposto in mezzo.
+    let onTargetTapped: (FloorplanTapTarget) -> Void
     /// Tenendolo premuto si apre la sua scheda, quella del 2D. Il tocco breve
     /// comanda, la pressione lunga approfondisce: e' la coppia che iOS usa
     /// ovunque, e non aggiunge nessun comando visibile al modello.
-    let onAccessoryHeld: (UUID) -> Void
+    let onTargetHeld: (FloorplanTapTarget) -> Void
 
     func makeUIView(context: Context) -> ARView {
         let view = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
@@ -1453,8 +1502,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
     func updateUIView(_ view: ARView, context: Context) {
         context.coordinator.onRoomSelected = onRoomSelected
-        context.coordinator.onLampTapped = onLampTapped
-        context.coordinator.onAccessoryHeld = onAccessoryHeld
+        context.coordinator.onTargetTapped = onTargetTapped
+        context.coordinator.onTargetHeld = onTargetHeld
         if context.coordinator.background != background {
             context.coordinator.background = background
             view.environment.background = .color(background)
@@ -1472,7 +1521,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(scene: scene, sun: sun, cameraResetID: cameraResetID,
                     onRoomSelected: onRoomSelected,
-                    onLampTapped: onLampTapped, onAccessoryHeld: onAccessoryHeld)
+                    onTargetTapped: onTargetTapped, onTargetHeld: onTargetHeld)
             .prepared(withLamps: lamps)
             .prepared(withClimate: climate)
             .prepared(withLitRooms: litRooms)
@@ -1561,21 +1610,21 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private var roomWallEntities: [UUID: ModelEntity] = [:]
         private var selectedRoomID: UUID?
         var onRoomSelected: (UUID?, String?) -> Void
-        var onLampTapped: (UUID) -> Void
-        var onAccessoryHeld: (UUID) -> Void
+        var onTargetTapped: (FloorplanTapTarget) -> Void
+        var onTargetHeld: (FloorplanTapTarget) -> Void
 
         init(scene: FloorplanScene,
              sun: FloorplanSunLight,
              cameraResetID: UUID,
              onRoomSelected: @escaping (UUID?, String?) -> Void,
-             onLampTapped: @escaping (UUID) -> Void,
-             onAccessoryHeld: @escaping (UUID) -> Void) {
+             onTargetTapped: @escaping (FloorplanTapTarget) -> Void,
+             onTargetHeld: @escaping (FloorplanTapTarget) -> Void) {
             self.scene = scene
             self.sun = sun
             self.handledResetID = cameraResetID
             self.onRoomSelected = onRoomSelected
-            self.onLampTapped = onLampTapped
-            self.onAccessoryHeld = onAccessoryHeld
+            self.onTargetTapped = onTargetTapped
+            self.onTargetHeld = onTargetHeld
         }
 
         func prepared(withCameras cones: [FloorplanCameraCone]) -> Coordinator {
@@ -2197,10 +2246,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 selectRoom(nil)
                 return
             }
-            // Il tocco accende **solo** una lampada: un condizionatore non si
-            // comanda con un interruttore, e per quello c'e' la pressione lunga.
-            if let lampID = accessoryID(from: entity, prefix: "lamp:") {
-                onLampTapped(lampID)
+            if let target = tapTarget(from: entity) {
+                onTargetTapped(target)
                 return
             }
             guard let roomID = roomID(from: entity) else {
@@ -2216,15 +2263,22 @@ private struct RealityFloorplanView: UIViewRepresentable {
             guard recognizer.state == .began,
                   let view = recognizer.view as? ARView,
                   let entity = view.entity(at: recognizer.location(in: view)),
-                  let accessoryID = accessoryID(from: entity, prefix: "lamp:")
-                    ?? accessoryID(from: entity, prefix: "climate:")
+                  let target = tapTarget(from: entity)
             else { return }
 
             // Il ritorno aptico dice che la pressione e' stata presa **prima**
             // che il foglio salga: senza, mezzo secondo col dito fermo sembra
             // che non sia successo niente.
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            onAccessoryHeld(accessoryID)
+            onTargetHeld(target)
+        }
+
+        private func tapTarget(from entity: Entity) -> FloorplanTapTarget? {
+            if let id = accessoryID(from: entity, prefix: "lamp:") { return .accessory(id) }
+            if let id = accessoryID(from: entity, prefix: "climate:") { return .accessory(id) }
+            if let id = accessoryID(from: entity, prefix: "awning:") { return .awning(roomID: id) }
+            if let id = accessoryID(from: entity, prefix: "shutter:") { return .shutter(openingID: id) }
+            return nil
         }
 
         private func roomID(from entity: Entity) -> UUID? {
@@ -2346,6 +2400,27 @@ private enum RealityFloorplanRenderer {
                     model.isEnabled = false
                     root.addChild(model)
                     roomWallEntities[roomID] = model
+                }
+                continue
+            }
+
+            // Tapparelle e tende sono **oggetti**, non superfici: ognuna deve
+            // potersi toccare, quindi non finisce nella mesh unita del proprio
+            // ruolo. Portano il nome di cio' che coprono — il vano, la stanza —
+            // perche' la geometria non conosce gli UUID di HomeKit: la
+            // traduzione la fa la vista, che ha costruito lei quel legame.
+            if role == .shutter || role == .awning {
+                for face in faces {
+                    guard let mesh = mesh(for: [face], role: role, center: center) else { continue }
+                    let model = ModelEntity(mesh: mesh,
+                                            materials: [FloorplanMaterialCatalog.material(for: role)])
+                    model.generateCollisionShapes(recursive: false)
+                    if role == .awning, let roomID = face.roomID {
+                        model.name = "awning:\(roomID.uuidString)"
+                    } else if role == .shutter, let openingID = face.openingID {
+                        model.name = "shutter:\(openingID.uuidString)"
+                    }
+                    root.addChild(model)
                 }
                 continue
             }
