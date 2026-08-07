@@ -477,23 +477,21 @@ struct RealityFloorplanView: UIViewRepresentable {
                 disc.position = place
                 presenceRoot.addChild(disc)
 
-                var small = disc.transform
-                small.scale = SIMD3(0.8, 1, 0.8)
-                var large = disc.transform
-                large.scale = SIMD3(1.08, 1, 1.08)
+                // ⚠️ Il respiro si vede nella **luminosita'**, non nella
+                // taglia: una sfumatura senza bordi che cresce del venti per
+                // cento resta una sfumatura — l'occhio non ha uno spigolo da
+                // tracciare, e la scala pulsante non si percepiva. L'opacita'
+                // da tenue a piena si'.
+                disc.components.set(OpacityComponent(opacity: 1))
                 if let animation = try? AnimationResource.generate(
-                    with: FromToByAnimation<Transform>(from: small, to: large,
-                                                       duration: 1.9,
-                                                       timing: .easeInOut,
-                                                       // ⚠️ Senza il bersaglio esplicito
-                                                       // l'animazione non si aggancia e
-                                                       // il disco resta immobile.
-                                                       bindTarget: .transform,
-                                                       repeatMode: .autoReverse)
+                    with: FromToByAnimation<Float>(from: 0.3, to: 1.0,
+                                                   duration: 1.6,
+                                                   timing: .easeInOut,
+                                                   bindTarget: .opacity,
+                                                   repeatMode: .autoReverse)
                 ) {
-                    // ⚠️ `.autoReverse` da solo fa UN ciclo — su e giu' una
-                    // volta — e si ferma: quando si guarda, ha gia' finito.
-                    // `.repeat()` senza conteggio lo fa respirare per sempre.
+                    // `.autoReverse` da solo fa un ciclo e si ferma:
+                    // `.repeat()` senza conteggio respira per sempre.
                     disc.playAnimation(animation.repeat())
                 }
             }
