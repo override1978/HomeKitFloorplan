@@ -28,29 +28,47 @@ enum FloorplanClimateReader {
             case .off, .idle: nil
             }
         }
+
+        /// Il colore del corpo: caldo se scalda, freddo se raffredda, bianco
+        /// da fermo — un impianto che ha finito non ha niente da dire.
+        var bodyTint: UIColor {
+            switch self {
+            case .heating:
+                UIColor(red: 0.93, green: 0.63, blue: 0.42, alpha: 1)
+            case .cooling:
+                UIColor(red: 0.55, green: 0.76, blue: 0.92, alpha: 1)
+            case .off, .idle:
+                UIColor(red: 0.94, green: 0.94, blue: 0.95, alpha: 1)
+            }
+        }
     }
 
     /// Dove sta appeso, che decide la quota predefinita.
     enum Form: Equatable {
         /// Uno split: in alto su una parete.
         case split
-        /// Una valvola termostatica: in basso, sul radiatore.
-        case valve
+        /// Una valvola termostatica: si disegna **il radiatore che comanda**,
+        /// in basso. Il cilindretto della valvola e' un dettaglio da mano, non
+        /// da stanza: cio' che l'occhio riconosce e' il termosifone.
+        case radiator
+        /// La centralina dell'antifurto: un pannello a muro, ad altezza mano.
+        case securityPanel
 
         var defaultHeight: Double {
             switch self {
-            case .split: 2.10
-            case .valve: 0.45
+            case .split:         2.10
+            case .radiator:      0.40
+            case .securityPanel: 1.40
             }
         }
 
-        /// Larghezza, altezza e profondità in metri. Un'unità interna è larga e
-        /// piatta, una valvola è un cilindretto: bastano le proporzioni a farle
-        /// riconoscere senza modellarle.
+        /// Larghezza, altezza e profondità in metri: bastano le proporzioni a
+        /// far riconoscere gli oggetti senza modellarli.
         var size: SIMD3<Float> {
             switch self {
-            case .split: SIMD3(0.82, 0.27, 0.19)
-            case .valve: SIMD3(0.11, 0.11, 0.13)
+            case .split:         SIMD3(0.82, 0.27, 0.19)
+            case .radiator:      SIMD3(0.78, 0.55, 0.09)
+            case .securityPanel: SIMD3(0.22, 0.30, 0.05)
             }
         }
     }
@@ -64,11 +82,11 @@ enum FloorplanClimateReader {
     static func unit(for accessory: HMAccessory, homeKit: HomeKitService) -> Unit? {
         if let service = service(HMServiceTypeHeaterCooler, in: accessory) {
             return Unit(activity: heaterCoolerActivity(service, homeKit: homeKit),
-                        form: form(of: accessory, isHeaterCooler: true))
+                        form: form(of: accessory, heaterCooler: service))
         }
         if let service = service(HMServiceTypeThermostat, in: accessory) {
             return Unit(activity: thermostatActivity(service, homeKit: homeKit),
-                        form: form(of: accessory, isHeaterCooler: false))
+                        form: form(of: accessory, heaterCooler: nil))
         }
         return nil
     }
@@ -107,13 +125,18 @@ enum FloorplanClimateReader {
         }
     }
 
-    /// Uno split dichiara la categoria oppure espone `HeaterCooler`; una valvola
-    /// vive sul servizio `Thermostat` classico. Non è una regola perfetta — un
-    /// termostato a muro passa per valvola — ma sbaglia solo la quota
-    /// predefinita, che è comunque correggibile.
-    private static func form(of accessory: HMAccessory, isHeaterCooler: Bool) -> Form {
+    /// ⚠️ Il servizio non basta: molte valvole termostatiche espongono
+    /// `HeaterCooler` come gli split, e finivano appese a due metri. Il
+    /// discriminante vero e' la **capacita' di raffreddare**: una valvola non
+    /// ha la soglia di raffreddamento, uno split si'.
+    private static func form(of accessory: HMAccessory, heaterCooler: HMService?) -> Form {
         if accessory.category.categoryType == HMAccessoryCategoryTypeAirConditioner { return .split }
-        return isHeaterCooler ? .split : .valve
+        guard let heaterCooler else { return .radiator }
+        let coolingThresholdUUID = "0000000D-0000-1000-8000-0026BB765291"
+        let canCool = heaterCooler.characteristics.contains {
+            $0.characteristicType == coolingThresholdUUID
+        }
+        return canCool ? .split : .radiator
     }
 
     private static func service(_ type: String, in accessory: HMAccessory) -> HMService? {

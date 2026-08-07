@@ -93,7 +93,9 @@ struct FloorplanClimateUnit: Equatable {
     var accessoryUUID: UUID
     var name: String
     var form: FloorplanClimateReader.Form
-    var activity: FloorplanClimateReader.Activity
+    /// Il colore del corpo: lo stato gia' tradotto, qualunque famiglia sia —
+    /// caldo/freddo per il clima, viola/rosso per l'antifurto.
+    var tint: UIColor
     /// In metri, nello spazio del disegno, **già appoggiata al muro**.
     var position: SIMD2<Double>
     /// Quota da terra, in metri.
@@ -678,10 +680,53 @@ struct FloorplanRealityPreviewView: View {
             return FloorplanClimateUnit(accessoryUUID: marker.uuid,
                                         name: accessory.name,
                                         form: unit.form,
-                                        activity: unit.activity,
+                                        tint: unit.activity.bodyTint,
                                         position: placed.position,
                                         height: current.lampSettings(marker.uuid).height
                                             ?? unit.form.defaultHeight,
+                                        bearing: placed.bearing)
+        } + securityPanels
+    }
+
+    /// La centralina dell'antifurto, se e' stata posata: un pannello a muro
+    /// nella stessa famiglia dei corpi clima. Il colore e' lo stato — viola
+    /// inserito, rosso allarme, bianco a riposo. Nessun tocco rapido: quattro
+    /// stati non sono un interruttore, e per quelli c'e' la scheda.
+    private var securityPanels: [FloorplanClimateUnit] {
+        guard let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                exportRotation: exportRotation)
+        else { return [] }
+
+        return markers.compactMap { marker in
+            guard let accessory = homeKit.accessory(for: marker.uuid),
+                  let service = accessory.services.first(where: {
+                      $0.serviceType == HMServiceTypeSecuritySystem
+                  }),
+                  let characteristic = service.characteristics.first(where: {
+                      $0.characteristicType == HMCharacteristicTypeCurrentSecuritySystemState
+                  })
+            else { return nil }
+
+            let raw = RoomSecurityEvaluator.intValue(
+                homeKit.value(for: characteristic) ?? characteristic.value
+            ) ?? 3
+            let tint: UIColor = switch raw {
+            case 4:  .systemRed
+            case 3:  UIColor(red: 0.94, green: 0.94, blue: 0.95, alpha: 1)
+            default: .systemPurple
+            }
+
+            _ = settingsRevision
+            let form = FloorplanClimateReader.Form.securityPanel
+            let placed = againstNearestWall(transform.metres(from: marker.position),
+                                            depth: Double(form.size.z))
+            return FloorplanClimateUnit(accessoryUUID: marker.uuid,
+                                        name: accessory.name,
+                                        form: form,
+                                        tint: tint,
+                                        position: placed.position,
+                                        height: current.lampSettings(marker.uuid).height
+                                            ?? form.defaultHeight,
                                         bearing: placed.bearing)
         }
     }
@@ -1189,9 +1234,13 @@ struct FloorplanRealityPreviewView: View {
                                                                     exportRotation: exportRotation),
                   FloorplanRoomEnvironment.contains(transform.metres(from: marker.position), polygon)
             else { return nil }
+            let symbol = switch unit.form {
+            case .split:         "wind"
+            case .radiator:      "heater.vertical"
+            case .securityPanel: "shield.lefthalf.filled"
+            }
             return SetupItem(id: unit.accessoryUUID, name: unit.name, height: unit.height,
-                             direction: nil, range: 0.1...2.6,
-                             symbol: unit.form == .split ? "wind" : "thermometer.medium")
+                             direction: nil, range: 0.1...2.6, symbol: symbol)
         }
 
         return lamps + climate
@@ -2025,10 +2074,29 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
             for unit in climate {
                 let size = unit.form.size
-                let body = ModelEntity(
-                    mesh: .generateBox(size: size, cornerRadius: size.y * 0.22),
-                    materials: [FloorplanMaterialCatalog.climateMaterial(activity: unit.activity)]
-                )
+                let material = FloorplanMaterialCatalog.deviceBodyMaterial(tint: unit.tint)
+                let body: ModelEntity
+                if unit.form == .radiator {
+                    // Un termosifone si riconosce dagli **elementi**: una
+                    // lastra liscia in basso e' uno zoccolo qualsiasi.
+                    body = ModelEntity()
+                    let count = 7
+                    let step = size.x / Float(count)
+                    for index in 0..<count {
+                        let fin = ModelEntity(
+                            mesh: .generateBox(size: SIMD3(step * 0.62, size.y, size.z),
+                                               cornerRadius: 0.012),
+                            materials: [material]
+                        )
+                        fin.position = SIMD3(-size.x / 2 + step * (Float(index) + 0.5), 0, 0)
+                        body.addChild(fin)
+                    }
+                } else {
+                    body = ModelEntity(
+                        mesh: .generateBox(size: size, cornerRadius: size.y * 0.22),
+                        materials: [material]
+                    )
+                }
                 body.position = SIMD3(Float(unit.position.x) - centre.x,
                                       floorY - centre.y + Float(unit.height),
                                       Float(unit.position.y) - centre.z)
@@ -2044,8 +2112,16 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
         private func applyClimateStates() {
             for unit in climate {
-                climateNodes[unit.accessoryUUID]?.model?.materials =
-                    [FloorplanMaterialCatalog.climateMaterial(activity: unit.activity)]
+                guard let node = climateNodes[unit.accessoryUUID] else { continue }
+                let material = FloorplanMaterialCatalog.deviceBodyMaterial(tint: unit.tint)
+                if node.model != nil {
+                    node.model?.materials = [material]
+                } else {
+                    // Il radiatore e' un contenitore: la tinta va agli elementi.
+                    for case let fin as ModelEntity in node.children {
+                        fin.model?.materials = [material]
+                    }
+                }
             }
         }
 
