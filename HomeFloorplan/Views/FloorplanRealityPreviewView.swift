@@ -1623,8 +1623,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// l'altro: e' quello che permette di cambiare stato senza ricostruire.
         private struct LampNode {
             var bulb: ModelEntity
-            /// Il bagliore attorno al bulbo acceso.
-            var corona: ModelEntity
             var spot: SpotLight
             var halo: ModelEntity
             var pool: Entity?
@@ -2057,10 +2055,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
             let orientation = simd_quatf(angle: Float(azimuth), axis: SIMD3(0, 1, 0))
                 * simd_quatf(angle: -Float(elevation), axis: SIMD3(1, 0, 0))
             for label in flagLabels { label.orientation = orientation }
-            // Anche i bagliori delle lampade: un disco visto di taglio e' una
-            // linea, e una luce che sparisce girando la casa e' peggio di
-            // nessuna luce.
-            for node in lampNodes.values { node.corona.orientation = orientation }
         }
 
         func prepared(withLamps lamps: [FloorplanLamp]) -> Coordinator {
@@ -2123,22 +2117,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 bulb.name = "lamp:\(lamp.accessoryUUID.uuidString)"
                 lampRoot.addChild(bulb)
 
-                // Il bagliore che fa sembrare il bulbo una luce e non una
-                // pallina: un disco morbido dietro la sfera, girato verso la
-                // telecamera insieme alle bandierine. La tinta dell'accessorio
-                // vive qui, cosi' il bianco del bulbo resta puro.
-                // ⚠️ Poco piu' largo della sfera. A 62 cm era un alone da
-                // lontano e un pallone piatto da vicino: la taglia nel mondo e'
-                // fissa, quindi va scelta per lo zoom **ravvicinato**, che e'
-                // dove si guarda una lampada per toccarla.
-                let corona = ModelEntity(
-                    mesh: .generatePlane(width: 0.36, height: 0.36),
-                    materials: [FloorplanMaterialCatalog.bulbGlowMaterial(colour: lamp.colour)
-                                ?? UnlitMaterial(color: .clear)]
-                )
-                corona.position = place
-                lampRoot.addChild(corona)
-
                 // **Faretto, non lampadina nuda.** Una `PointLight` irradia in
                 // tutte le direzioni e su un modello senza soffitto si perde:
                 // nessun fascio, nessuna pozza netta. Un faretto puntato in basso
@@ -2181,7 +2159,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 aura.position = place
                 lampRoot.addChild(aura)
 
-                var node = LampNode(bulb: bulb, corona: corona, spot: light, halo: aura, pool: nil)
+                var node = LampNode(bulb: bulb, spot: light, halo: aura, pool: nil)
                 lampNodes[lamp.accessoryUUID] = node
                 apply(lamp, to: &node)
                 lampNodes[lamp.accessoryUUID] = node
@@ -2209,18 +2187,12 @@ private struct RealityFloorplanView: UIViewRepresentable {
                               Float(lamp.position.y) - centre.z)
 
             node.bulb.position = place
-            node.corona.position = place
             node.spot.position = place
             node.halo.position = place
 
             node.bulb.model?.materials = [
                 FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour, isOn: lamp.isOn)
             ]
-            // L'alone esiste solo da accesa: e' il bagliore, non un contorno.
-            node.corona.isEnabled = lamp.isOn
-            if let glow = FloorplanMaterialCatalog.bulbGlowMaterial(colour: lamp.colour) {
-                node.corona.model?.materials = [glow]
-            }
 
             node.spot.isEnabled = lamp.isOn
             // ⚠️ **Senza ombra la luce attraversa i muri.** Un faretto vicino a

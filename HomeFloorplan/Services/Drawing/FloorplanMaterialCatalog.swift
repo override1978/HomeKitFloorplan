@@ -145,25 +145,6 @@ enum FloorplanMaterialCatalog {
                        alpha: 1)
     }
 
-    /// Il bagliore attorno a un bulbo acceso: e' **lui** a dire «luce».
-    ///
-    /// ⚠️ Non una sfera. La corona sferica traslucida si mescolava con qualunque
-    /// cosa avesse dietro — sopra lo sfondo grigio della sera diventava un
-    /// pallone grigio-beige che inghiottiva anche il bianco del bulbo: di nuovo
-    /// il pianeta. Un **disco piatto rivolto alla telecamera**, pieno al centro
-    /// e spento al bordo, non ha una silhouette da leggere: e' un chiarore, non
-    /// un oggetto.
-    static func bulbGlowMaterial(colour: UIColor) -> (any RealityKit.Material)? {
-        guard let texture = radialFalloffTexture else { return nil }
-        var glow = UnlitMaterial()
-        glow.color = .init(tint: lightened(colour, by: 0.45),
-                           texture: .init(texture, sampler: clampSampler))
-        // Un bordo, non un protagonista: a 0.9 il disco slavava tutto cio' che
-        // aveva dietro e da vicino diventava lui la cosa da guardare.
-        glow.blending = .transparent(opacity: .init(floatLiteral: 0.55))
-        return glow
-    }
-
     /// Il fascio di luce, dal bulbo verso il pavimento.
     ///
     /// Un alone sferico attorno alla lampada sembrava un pianeta: una palla
