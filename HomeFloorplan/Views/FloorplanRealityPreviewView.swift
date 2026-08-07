@@ -580,22 +580,12 @@ struct FloorplanRealityPreviewView: View {
 
         return markers.compactMap { marker in
             guard let accessory = homeKit.accessory(for: marker.uuid),
-                  let lamp = DimmableLightAdapter(accessory: accessory, homeKit: homeKit),
-                  lamp.isOn
+                  let lamp = FloorplanLampReader.lamp(for: accessory, homeKit: homeKit)
             else { return nil }
 
-            // La luminosità impostata decide quanto illumina: una lampada al 20%
-            // non deve accendere la stanza come una al 100%.
-            let brightness = max(0.12, Double(lamp.currentBrightness) / 100)
-            let colour: UIColor = lamp.supportsColor
-                ? UIColor(hue: CGFloat(lamp.currentHue / 360),
-                          saturation: CGFloat(lamp.currentSaturation / 100),
-                          brightness: 1, alpha: 1)
-                : UIColor(red: 1.0, green: 0.86, blue: 0.68, alpha: 1)
-
             return FloorplanLamp(position: transform.metres(from: marker.position),
-                                 brightness: brightness,
-                                 colour: colour)
+                                 brightness: lamp.brightness,
+                                 colour: lamp.colour)
         }
     }
 
@@ -914,10 +904,26 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 // Lumen, non lux: 900 e' una lampadina piena.
                 light.light.intensity = Float(180 + 720 * lamp.brightness)
                 light.light.attenuationRadius = 4.6
-                light.position = SIMD3(Float(lamp.position.x) - centre.x,
-                                       floorY - centre.y + 2.05,
-                                       Float(lamp.position.y) - centre.z)
+                let place = SIMD3(Float(lamp.position.x) - centre.x,
+                                  floorY - centre.y + 2.05,
+                                  Float(lamp.position.y) - centre.z)
+                light.position = place
                 lampRoot.addChild(light)
+
+                // Il bulbo, non solo il suo effetto. Nella realtà di giorno una
+                // lampada accesa **si vede**: è la luce che getta a non vedersi.
+                // Unlit, quindi resta riconoscibile contro il sole.
+                var glass = UnlitMaterial(color: lamp.colour)
+                glass.blending = .transparent(opacity: .init(floatLiteral: 0.95))
+                let bulb = ModelEntity(mesh: .generateSphere(radius: 0.075), materials: [glass])
+                bulb.position = place
+                lampRoot.addChild(bulb)
+
+                var halo = UnlitMaterial(color: lamp.colour)
+                halo.blending = .transparent(opacity: .init(floatLiteral: 0.16))
+                let aura = ModelEntity(mesh: .generateSphere(radius: 0.20), materials: [halo])
+                aura.position = place
+                lampRoot.addChild(aura)
             }
         }
 
