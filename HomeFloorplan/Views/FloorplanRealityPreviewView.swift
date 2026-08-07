@@ -1445,6 +1445,12 @@ struct FloorplanRealityPreviewView: View {
                     .foregroundStyle(.white.opacity(isSelected ? 1 : 0.88))
                     .lineLimit(1)
             }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            // La selezione ha bisogno di un corpo: senza pillole di base, il
+            // solo grassetto non si notava — all'apertura non si capiva che
+            // «Tutte» fosse attivo.
+            .background(isSelected ? Color.white.opacity(0.18) : .clear, in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
