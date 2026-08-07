@@ -121,49 +121,6 @@ enum FloorplanMaterialCatalog {
         return on
     }
 
-    /// L'icona di una lampada spenta.
-    ///
-    /// Un puntino grigio si vede ma non dice niente: non si capisce che sia una
-    /// lampada, e non invita a toccarlo. Una lampadina disegnata sì — ed è la
-    /// stessa che l'utente vede sul marker in 2D, quindi non c'è niente di
-    /// nuovo da imparare.
-    static func lampIconMaterial() -> (any RealityKit.Material)? {
-        guard let texture = lampIconTexture else { return nil }
-        var material = UnlitMaterial()
-        material.color = .init(tint: .white, texture: .init(texture, sampler: clampSampler))
-        material.blending = .transparent(opacity: .init(floatLiteral: 1))
-        return material
-    }
-
-    private static let lampIconTexture: TextureResource? = {
-        let side = 128
-        let size = CGSize(width: side, height: side)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 2
-        format.opaque = false
-
-        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            let disc = CGRect(origin: .zero, size: size).insetBy(dx: 6, dy: 6)
-            UIColor(white: 0.10, alpha: 0.72).setFill()
-            UIBezierPath(ovalIn: disc).fill()
-            UIColor(white: 1, alpha: 0.34).setStroke()
-            let ring = UIBezierPath(ovalIn: disc.insetBy(dx: 2, dy: 2))
-            ring.lineWidth = 3
-            ring.stroke()
-
-            let configuration = UIImage.SymbolConfiguration(pointSize: 62, weight: .medium)
-            guard let symbol = UIImage(systemName: "lightbulb", withConfiguration: configuration)?
-                .withTintColor(UIColor(white: 1, alpha: 0.88), renderingMode: .alwaysOriginal)
-            else { return }
-            symbol.draw(in: CGRect(x: (size.width - symbol.size.width) / 2,
-                                   y: (size.height - symbol.size.height) / 2,
-                                   width: symbol.size.width,
-                                   height: symbol.size.height))
-        }
-        guard let cgImage = image.cgImage else { return nil }
-        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
-    }()
-
     /// Il contorno della stanza selezionata.
     ///
     /// La selezione **non tinge più il pavimento**. Con uno strato ambientale

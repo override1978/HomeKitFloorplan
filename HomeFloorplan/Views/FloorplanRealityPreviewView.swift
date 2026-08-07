@@ -878,13 +878,20 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// muri e pavimento come farebbero nella stanza.
         private let lampRoot = Entity()
         private var lamps: [FloorplanLamp] = []
+        /// Gli oggetti di ogni lampada, tenuti in vita fra un aggiornamento e
+        /// l'altro: e' quello che permette di cambiare stato senza ricostruire.
+        private struct LampNode {
+            var bulb: ModelEntity
+            var spot: SpotLight
+            var halo: ModelEntity
+            var pool: Entity?
+            var brightness: Double
+        }
+        private var lampNodes: [UUID: LampNode] = [:]
         /// Serve per regolare la luce d'ambiente, che di notte va abbassata:
         /// quella non appartiene a nessuna delle tre direzionali.
         private weak var view: ARView?
         private var flagLabels: [Entity] = []
-        /// Anche le icone delle lampade guardano la telecamera: un disco visto
-        /// di taglio sparisce.
-        private var lampIcons: [Entity] = []
         private var flags: [RoomFlag] = []
         private var flagsSignature = ""
         private var installedSignature: String?
@@ -982,7 +989,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
             let orientation = simd_quatf(angle: Float(azimuth), axis: SIMD3(0, 1, 0))
                 * simd_quatf(angle: -Float(elevation), axis: SIMD3(1, 0, 0))
             for label in flagLabels { label.orientation = orientation }
-            for icon in lampIcons { icon.orientation = orientation }
         }
 
         func prepared(withLamps lamps: [FloorplanLamp]) -> Coordinator {
@@ -992,8 +998,12 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
         func updateLamps(_ newLamps: [FloorplanLamp]) {
             guard lamps != newLamps else { return }
+            // Le stesse lampade in stato diverso si aggiornano in posto; solo
+            // un insieme diverso — cioè un'altra planimetria — merita di
+            // ricostruire.
+            let sameSet = Set(newLamps.map(\.accessoryUUID)) == Set(lampNodes.keys)
             lamps = newLamps
-            rebuildLamps()
+            if sameSet { applyLampStates() } else { rebuildLamps() }
         }
 
         /// Una `PointLight` per lampada accesa.
@@ -1002,9 +1012,15 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// attenua con la distanza e si somma alle altre come farebbe in una
         /// stanza. Di giorno non si vede — ed è giusto così, perché di giorno
         /// una lampada accesa non si vede.
+        /// Costruisce **una volta** gli oggetti di ogni lampada.
+        ///
+        /// ⚠️ Si ricostruisce solo quando cambia l'**insieme** delle lampade —
+        /// cioè al cambio di planimetria. Un acceso/spento non è un cambio di
+        /// scena: prima svuotava e ricreava tutto, e si vedeva a occhio nudo
+        /// sparire e riapparire mezza casa per accendere una luce.
         private func rebuildLamps() {
             lampRoot.children.removeAll()
-            lampIcons = []
+            lampNodes = [:]
             let centre = scene.bounds.center
             let floorY = scene.bounds.min.y
 
@@ -1019,30 +1035,14 @@ private struct RealityFloorplanView: UIViewRepresentable {
                                   Float(lamp.position.y) - centre.z)
 
                 // Il bulbo c'è **sempre**, acceso o spento: se esistesse solo da
-                // acceso non ci sarebbe niente da toccare per accenderlo.
-                //
-                // Ma spento non basta rimpicciolire il vetro: un puntino grigio
-                // si vede e non dice niente. Spento è l'**icona** della
-                // lampadina, la stessa del marker in 2D; acceso è il vetro con
-                // la propria tinta, che a quel punto parla da sé.
-                let bulb: ModelEntity
-                if lamp.isOn {
-                    bulb = ModelEntity(
-                        mesh: .generateSphere(radius: 0.17),
-                        materials: [FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour,
-                                                                         isOn: true)]
-                    )
-                } else if let icon = FloorplanMaterialCatalog.lampIconMaterial() {
-                    bulb = ModelEntity(mesh: .generatePlane(width: 0.42, height: 0.42),
-                                       materials: [icon])
-                    lampIcons.append(bulb)
-                } else {
-                    bulb = ModelEntity(
-                        mesh: .generateSphere(radius: 0.15),
-                        materials: [FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour,
-                                                                         isOn: false)]
-                    )
-                }
+                // acceso non ci sarebbe niente da toccare per accenderlo. Spento
+                // è un puntino discreto — un'icona ruberebbe la scena a una casa
+                // che ne ha già dieci.
+                let bulb = ModelEntity(
+                    mesh: .generateSphere(radius: 0.15),
+                    materials: [FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour,
+                                                                     isOn: lamp.isOn)]
+                )
                 bulb.position = place
                 // Il bersaglio è l'oggetto stesso, non un segnaposto accanto: la
                 // sfera di collisione è più larga del bulbo perché a schermo
@@ -1051,38 +1051,67 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 bulb.name = "lamp:\(lamp.accessoryUUID.uuidString)"
                 lampRoot.addChild(bulb)
 
-                guard lamp.isOn else { continue }
-
                 // **Faretto, non lampadina nuda.** Una `PointLight` irradia in
-                // tutte le direzioni e su un soffitto aperto si perde: nessun
-                // fascio, nessuna pozza netta, e da fuori non si capisce che sia
-                // accesa. Un faretto puntato in basso e' anche cio' che c'e'
-                // davvero — spot nel cartongesso, sospensione sul tavolo.
+                // tutte le direzioni e su un modello senza soffitto si perde:
+                // nessun fascio, nessuna pozza netta. Un faretto puntato in basso
+                // è anche ciò che c'è davvero — spot nel cartongesso,
+                // sospensione sul tavolo.
                 let light = SpotLight()
-                light.light.color = lamp.colour
-                light.light.intensity = Float(600 + 2_400 * lamp.brightness)
                 light.light.innerAngleInDegrees = 32
                 light.light.outerAngleInDegrees = 72
-                light.light.attenuationRadius = Float(3.0 + 2.4 * lamp.brightness)
                 light.position = place
                 light.look(at: SIMD3(place.x, floorY - centre.y, place.z),
                            from: place,
                            relativeTo: nil)
                 lampRoot.addChild(light)
 
-                let aura = ModelEntity(
-                    mesh: .generateSphere(radius: Float(0.24 + 0.20 * lamp.brightness)),
-                    materials: [haloMaterial(lamp.colour, brightness: lamp.brightness)]
-                )
+                let aura = ModelEntity(mesh: .generateSphere(radius: 0.30),
+                                       materials: [haloMaterial(lamp.colour, brightness: 1)])
                 aura.position = place
                 lampRoot.addChild(aura)
 
-                // La pozza sul pavimento: è ciò che rende una luce riconoscibile
-                // **dall'alto**, dove il bulbo lo nasconde il primo muro.
-                if let pool = RealityFloorplanRenderer.lampPoolEntity(for: lamp, scene: scene) {
-                    lampRoot.addChild(pool)
-                }
+                var node = LampNode(bulb: bulb, spot: light, halo: aura, pool: nil, brightness: -1)
+                lampNodes[lamp.accessoryUUID] = node
+                apply(lamp, to: &node)
+                lampNodes[lamp.accessoryUUID] = node
             }
+        }
+
+        /// Aggiorna in posto: nessuna entità nasce o muore, cambiano solo
+        /// materiali, intensità e visibilità. È ciò che toglie lo sfarfallio.
+        private func applyLampStates() {
+            for lamp in lamps {
+                guard var node = lampNodes[lamp.accessoryUUID] else { continue }
+                apply(lamp, to: &node)
+                lampNodes[lamp.accessoryUUID] = node
+            }
+        }
+
+        private func apply(_ lamp: FloorplanLamp, to node: inout LampNode) {
+            node.bulb.model?.materials = [
+                FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour, isOn: lamp.isOn)
+            ]
+
+            node.spot.isEnabled = lamp.isOn
+            node.spot.light.color = lamp.colour
+            node.spot.light.intensity = Float(600 + 2_400 * lamp.brightness)
+            node.spot.light.attenuationRadius = Float(3.0 + 2.4 * lamp.brightness)
+
+            node.halo.isEnabled = lamp.isOn
+            node.halo.model?.materials = [haloMaterial(lamp.colour, brightness: lamp.brightness)]
+            let haloScale = Float(0.8 + 0.7 * lamp.brightness)
+            node.halo.scale = SIMD3(repeating: haloScale)
+
+            // La pozza dipende dalla geometria, quindi si rifà solo quando la
+            // luminosità cambia davvero — accendere e spegnere la nasconde e
+            // basta.
+            if lamp.isOn, abs(node.brightness - lamp.brightness) > 0.12 || node.pool == nil {
+                node.pool?.removeFromParent()
+                node.pool = RealityFloorplanRenderer.lampPoolEntity(for: lamp, scene: scene)
+                if let pool = node.pool { lampRoot.addChild(pool) }
+                node.brightness = lamp.brightness
+            }
+            node.pool?.isEnabled = lamp.isOn
         }
 
         private func haloMaterial(_ colour: UIColor, brightness: Double) -> any RealityKit.Material {
