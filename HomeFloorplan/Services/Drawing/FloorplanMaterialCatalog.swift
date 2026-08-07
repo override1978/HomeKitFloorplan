@@ -502,6 +502,15 @@ enum FloorplanMaterialCatalog {
         return material
     }
 
+    /// Il muro reso vetro, **a richiesta**: per sbirciare dentro dalle
+    /// inquadrature basse senza rinunciare — di default — alla casa vera.
+    /// Stessa tinta dell'intonaco, cosi' accendendola la casa non cambia
+    /// colore, solo corpo.
+    static func ghostWallMaterial() -> any RealityKit.Material {
+        transparent(UIColor(red: 0.86, green: 0.85, blue: 0.83, alpha: 1),
+                    opacity: 0.26, roughness: 0.9)
+    }
+
     /// Un pezzo d'arredo: la tinta la decide l'estrusore membro per membro —
     /// gambe scure, piani in legno, imbottiti col colore dell'oggetto.
     static func furnitureMaterial(tint: UIColor?) -> any RealityKit.Material {

@@ -77,6 +77,8 @@ struct FloorplanRealityPreviewView: View {
     @State private var roomPanelState: RoomPanelState = .actions
     /// Si e' dentro una stanza in prima persona: serve per il bottone d'uscita.
     @State private var isInsideRoom = false
+    /// Muri trasparenti a richiesta: la casa vera resta il default.
+    @State private var ghostWalls = false
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @AppStorage("securityMonitoredUUIDs") private var monitoredUUIDsRaw: String = ""
@@ -146,7 +148,8 @@ struct FloorplanRealityPreviewView: View {
                                          withAnimation(.easeOut(duration: 0.22)) {
                                              isInsideRoom = false
                                          }
-                                     })
+                                     },
+                                     ghostWalls: ghostWalls)
                     .ignoresSafeArea()
             } else {
                 Color.black.ignoresSafeArea()
@@ -813,6 +816,20 @@ struct FloorplanRealityPreviewView: View {
                     } label: {
                         Label(String(localized: "camera.front", defaultValue: "Eye level"),
                               systemImage: "eye")
+                    }
+
+                    Divider()
+
+                    // La trasparenza e' una **scelta**, non un default: la casa
+                    // vera resta vera, e quando serve sbirciare dalle
+                    // inquadrature basse si accende — l'utilita' del
+                    // concorrente senza pagarne il costo fisso.
+                    Button {
+                        ghostWalls.toggle()
+                    } label: {
+                        Label(String(localized: "camera.ghostWalls",
+                                     defaultValue: "See-through walls"),
+                              systemImage: ghostWalls ? "checkmark.square" : "square")
                     }
                 } label: {
                     // Un mirino, non una freccia: e' il bottone delle

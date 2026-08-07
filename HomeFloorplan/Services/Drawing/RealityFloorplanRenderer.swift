@@ -17,10 +17,18 @@ enum RealityFloorplanRenderer {
         var roomWallEntities: [UUID: ModelEntity] = [:]
         var roomNames: [UUID: String]
         var roomFloorKinds: [UUID: FloorKind]
+        /// Muri e sommita', per la trasparenza a richiesta: il coordinatore
+        /// scambia il materiale senza toccare la geometria.
+        var ghostableWalls: [ModelEntity] = []
+        /// Le ombre di contatto alla base: su un muro fantasma fluttuerebbero,
+        /// quindi si spengono insieme.
+        var wallShades: [ModelEntity] = []
     }
 
     static func entity(for scene: FloorplanScene, background: UIColor) -> RenderedFloorplan {
         let root = Entity()
+        var ghostableWalls: [ModelEntity] = []
+        var wallShades: [ModelEntity] = []
         let center = scene.bounds.center
         let grouped = Dictionary(grouping: scene.faces, by: \.role)
         var roomEntities: [UUID: ModelEntity] = [:]
@@ -133,6 +141,8 @@ enum RealityFloorplanRenderer {
                                   floorY: scene.bounds.min.y) else { continue }
 
             let model = ModelEntity(mesh: mesh, materials: [FloorplanMaterialCatalog.material(for: role)])
+            if role == .wall || role == .wallTop { ghostableWalls.append(model) }
+            if role == .wallContact { wallShades.append(model) }
             root.addChild(model)
         }
 
@@ -140,7 +150,9 @@ enum RealityFloorplanRenderer {
                                  roomEntities: roomEntities,
                                  roomWallEntities: roomWallEntities,
                                  roomNames: roomNames,
-                                 roomFloorKinds: roomFloorKinds)
+                                 roomFloorKinds: roomFloorKinds,
+                                 ghostableWalls: ghostableWalls,
+                                 wallShades: wallShades)
     }
 
     // MARK: - Bandierine di stanza

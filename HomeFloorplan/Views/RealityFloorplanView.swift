@@ -37,6 +37,8 @@ struct RealityFloorplanView: UIViewRepresentable {
     /// Il coordinatore esce dalla prima persona anche da solo (doppio tocco):
     /// la vista deve saperlo per ritirare il bottone «esci».
     let onFirstPersonExit: () -> Void
+    /// Muri trasparenti a richiesta, dal menu inquadrature.
+    let ghostWalls: Bool
 
     func makeUIView(context: Context) -> ARView {
         let view = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
@@ -86,6 +88,7 @@ struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.onTargetTapped = onTargetTapped
         context.coordinator.onTargetHeld = onTargetHeld
         context.coordinator.onFirstPersonExit = onFirstPersonExit
+        context.coordinator.updateGhostWalls(ghostWalls)
         if context.coordinator.background != background {
             context.coordinator.background = background
             view.environment.background = .color(background)
@@ -223,6 +226,9 @@ struct RealityFloorplanView: UIViewRepresentable {
         private var gestureStart: (azimuth: Double, elevation: Double)?
         private var roomNames: [UUID: String] = [:]
         private var roomWallEntities: [UUID: ModelEntity] = [:]
+        private var ghostableWalls: [ModelEntity] = []
+        private var wallShades: [ModelEntity] = []
+        private var wallsGhosted = false
         private var selectedRoomID: UUID?
         var onRoomSelected: (UUID?, String?) -> Void
         var onTargetTapped: (FloorplanTapTarget) -> Void
@@ -1074,6 +1080,9 @@ struct RealityFloorplanView: UIViewRepresentable {
             selectionRoot.children.removeAll()
             let rendered = RealityFloorplanRenderer.entity(for: newScene, background: background)
             roomWallEntities = rendered.roomWallEntities
+            ghostableWalls = rendered.ghostableWalls
+            wallShades = rendered.wallShades
+            applyWallGhosting()
             roomNames = rendered.roomNames
             contentRoot.addChild(rendered.root)
             configureLights()
@@ -1090,6 +1099,24 @@ struct RealityFloorplanView: UIViewRepresentable {
             // indefinito.
             let notify = onRoomSelected
             DispatchQueue.main.async { notify(nil, nil) }
+        }
+
+        func updateGhostWalls(_ ghosted: Bool) {
+            guard ghosted != wallsGhosted else { return }
+            wallsGhosted = ghosted
+            applyWallGhosting()
+        }
+
+        /// Scambio di materiale, non di geometria: la casa fantasma e la casa
+        /// vera sono le stesse mesh.
+        private func applyWallGhosting() {
+            for wall in ghostableWalls {
+                wall.model?.materials = [wallsGhosted
+                    ? FloorplanMaterialCatalog.ghostWallMaterial()
+                    : FloorplanMaterialCatalog.material(for: .wall)]
+            }
+            // Le ombre di contatto su un muro di vetro fluttuerebbero.
+            for shade in wallShades { shade.isEnabled = !wallsGhosted }
         }
 
         func updateCamera() {
