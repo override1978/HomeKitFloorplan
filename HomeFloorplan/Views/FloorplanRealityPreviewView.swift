@@ -75,6 +75,8 @@ struct FloorplanRealityPreviewView: View {
     /// delle tre azioni, e il pannello di configurazione solo se scelto.
     private enum RoomPanelState { case actions, setup }
     @State private var roomPanelState: RoomPanelState = .actions
+    /// Si e' dentro una stanza in prima persona: serve per il bottone d'uscita.
+    @State private var isInsideRoom = false
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @AppStorage("securityMonitoredUUIDs") private var monitoredUUIDsRaw: String = ""
@@ -139,7 +141,12 @@ struct FloorplanRealityPreviewView: View {
                                          roomPanelState = .actions
                                      },
                                      onTargetTapped: handleTap,
-                                     onTargetHeld: handleHold)
+                                     onTargetHeld: handleHold,
+                                     onFirstPersonExit: {
+                                         withAnimation(.easeOut(duration: 0.22)) {
+                                             isInsideRoom = false
+                                         }
+                                     })
                     .ignoresSafeArea()
             } else {
                 Color.black.ignoresSafeArea()
@@ -153,6 +160,24 @@ struct FloorplanRealityPreviewView: View {
                 case .actions: roomActionBar
                 case .setup:   roomSetupPanel
                 }
+            } else if isInsideRoom {
+                // L'uscita esplicita: il doppio tocco funziona, ma un bottone
+                // che dice «esci» non va scoperto.
+                Button {
+                    cameraCommand = CameraCommand(id: UUID(), preset: .angle)
+                    withAnimation(.easeOut(duration: 0.22)) { isInsideRoom = false }
+                } label: {
+                    Label(String(localized: "room.exit", defaultValue: "Exit room"),
+                          systemImage: "arrow.uturn.backward")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .frame(minHeight: 44)
+                        .background(.black.opacity(0.58), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 104)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .overlay(alignment: .top) {
@@ -492,6 +517,7 @@ struct FloorplanRealityPreviewView: View {
                                         name: accessory.name,
                                         form: unit.form,
                                         tint: unit.activity.bodyTint,
+                                        modeTint: unit.modeTint,
                                         position: placed.position,
                                         height: current.lampSettings(marker.uuid).height
                                             ?? unit.form.defaultHeight,
@@ -535,6 +561,7 @@ struct FloorplanRealityPreviewView: View {
                                         name: accessory.name,
                                         form: form,
                                         tint: tint,
+                                        modeTint: nil,
                                         position: placed.position,
                                         height: current.lampSettings(marker.uuid).height
                                             ?? form.defaultHeight,
@@ -809,7 +836,9 @@ struct FloorplanRealityPreviewView: View {
 
     private var controls: some View {
         VStack(spacing: 10) {
-            if let caption = lampCaption ?? selectedRoomName {
+            // Solo il nome della lampada toccata: quello della stanza lo porta
+            // gia' il menu delle azioni, e scritto due volte era un doppione.
+            if let caption = lampCaption {
                 Text(caption)
                     .font(.headline)
                     .foregroundStyle(.white)
@@ -1129,6 +1158,7 @@ struct FloorplanRealityPreviewView: View {
                     cameraCommand = CameraCommand(id: UUID(), preset: .inside(roomID: roomID))
                     selectedRoomID = nil
                     selectedRoomName = nil
+                    withAnimation(.easeOut(duration: 0.22)) { isInsideRoom = true }
                 }
 
                 roomAction(String(localized: "room.action.details", defaultValue: "Details"),

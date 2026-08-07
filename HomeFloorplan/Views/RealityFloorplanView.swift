@@ -34,6 +34,9 @@ struct RealityFloorplanView: UIViewRepresentable {
     /// comanda, la pressione lunga approfondisce: e' la coppia che iOS usa
     /// ovunque, e non aggiunge nessun comando visibile al modello.
     let onTargetHeld: (FloorplanTapTarget) -> Void
+    /// Il coordinatore esce dalla prima persona anche da solo (doppio tocco):
+    /// la vista deve saperlo per ritirare il bottone «esci».
+    let onFirstPersonExit: () -> Void
 
     func makeUIView(context: Context) -> ARView {
         let view = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
@@ -82,6 +85,7 @@ struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.onRoomSelected = onRoomSelected
         context.coordinator.onTargetTapped = onTargetTapped
         context.coordinator.onTargetHeld = onTargetHeld
+        context.coordinator.onFirstPersonExit = onFirstPersonExit
         if context.coordinator.background != background {
             context.coordinator.background = background
             view.environment.background = .color(background)
@@ -223,6 +227,7 @@ struct RealityFloorplanView: UIViewRepresentable {
         var onRoomSelected: (UUID?, String?) -> Void
         var onTargetTapped: (FloorplanTapTarget) -> Void
         var onTargetHeld: (FloorplanTapTarget) -> Void
+        var onFirstPersonExit: () -> Void = {}
 
         init(scene: FloorplanScene,
              sun: FloorplanSunLight,
@@ -511,6 +516,20 @@ struct RealityFloorplanView: UIViewRepresentable {
                 // perche' una valvola a schermo e' un francobollo.
                 body.collision = CollisionComponent(shapes: [.generateSphere(radius: 0.30)])
                 body.name = "climate:\(unit.accessoryUUID.uuidString)"
+
+                // Il pallino di modalità: «acceso in freddo» si deve vedere
+                // anche quando il compressore riposa e il corpo resta bianco.
+                if unit.form != .securityPanel {
+                    let dot = ModelEntity(
+                        mesh: .generateSphere(radius: 0.035),
+                        materials: [FloorplanMaterialCatalog.deviceBodyMaterial(
+                            tint: unit.modeTint ?? .white)]
+                    )
+                    dot.name = "modeDot"
+                    dot.position = SIMD3(size.x * 0.32, size.y * 0.22, size.z / 2 + 0.03)
+                    dot.isEnabled = unit.modeTint != nil
+                    body.addChild(dot)
+                }
                 climateRoot.addChild(body)
                 climateNodes[unit.accessoryUUID] = body
             }
@@ -524,8 +543,16 @@ struct RealityFloorplanView: UIViewRepresentable {
                     node.model?.materials = [material]
                 } else {
                     // Il radiatore e' un contenitore: la tinta va agli elementi.
-                    for case let fin as ModelEntity in node.children {
+                    for case let fin as ModelEntity in node.children
+                    where fin.name != "modeDot" {
                         fin.model?.materials = [material]
+                    }
+                }
+                if let dot = node.findEntity(named: "modeDot") as? ModelEntity {
+                    dot.isEnabled = unit.modeTint != nil
+                    if let modeTint = unit.modeTint {
+                        dot.model?.materials =
+                            [FloorplanMaterialCatalog.deviceBodyMaterial(tint: modeTint)]
                     }
                 }
             }
@@ -1093,6 +1120,7 @@ struct RealityFloorplanView: UIViewRepresentable {
             focus = .zero
             focusRadius = nil
             firstPerson = false
+            camera.camera.fieldOfViewInDegrees = 38
             switch command.preset {
             case .top:
                 elevation = 1.45
@@ -1129,7 +1157,11 @@ struct RealityFloorplanView: UIViewRepresentable {
             let roomCentre = (minP + maxP) / 2 - centre
             focus = SIMD3(roomCentre.x, roomCentre.y + 1.5, roomCentre.z)
             firstPerson = true
-            elevation = 0
+            // Leggermente in giu' e **grandangolo**: a 38 gradi — il tele
+            // giusto per l'orbita — una stanza vera e' claustrofobica, si vede
+            // mezza parete e ci si perde la casa. A 68 si sta in una stanza.
+            elevation = -0.12
+            camera.camera.fieldOfViewInDegrees = 68
             updateCamera()
         }
 
@@ -1138,12 +1170,15 @@ struct RealityFloorplanView: UIViewRepresentable {
             // Da dentro, il doppio tocco e' l'uscita: si torna al tre quarti.
             if firstPerson {
                 firstPerson = false
+                camera.camera.fieldOfViewInDegrees = 38
                 focus = .zero
                 focusRadius = nil
                 azimuth = .pi / 4
                 elevation = .pi / 5
                 distanceMultiplier = 2.2
                 updateCamera()
+                let notify = onFirstPersonExit
+                DispatchQueue.main.async { notify() }
                 return
             }
             if let entity = view.entity(at: recognizer.location(in: view)),

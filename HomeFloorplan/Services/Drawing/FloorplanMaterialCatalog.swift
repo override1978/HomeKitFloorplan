@@ -493,7 +493,10 @@ enum FloorplanMaterialCatalog {
     /// l'unico momento in cui esiste.
     static func litWindowMaterial() -> (any RealityKit.Material)? {
         var material = UnlitMaterial(color: UIColor(red: 1.0, green: 0.87, blue: 0.62, alpha: 1))
-        material.blending = .transparent(opacity: .init(floatLiteral: 0.72))
+        // Un vetro acceso resta un vetro: a 0.72 era una lastra gialla piena e
+        // dentro casa non si vedeva piu' niente. A 0.38 il caldo si vede e la
+        // stanza pure.
+        material.blending = .transparent(opacity: .init(floatLiteral: 0.38))
         return material
     }
 

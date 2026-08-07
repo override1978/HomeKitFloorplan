@@ -76,19 +76,63 @@ enum FloorplanClimateReader {
     struct Unit: Equatable {
         var activity: Activity
         var form: Form
+        /// Il colore della **modalità** quando l'unità è accesa: «acceso in
+        /// freddo» è un fatto anche quando la stanza è già in temperatura e il
+        /// compressore riposa. Il corpo dice cosa fa, il pallino com'è
+        /// impostata. `nil` = spenta.
+        var modeTint: UIColor?
     }
 
     /// `nil` solo se **non è un accessorio di clima**.
     static func unit(for accessory: HMAccessory, homeKit: HomeKitService) -> Unit? {
         if let service = service(HMServiceTypeHeaterCooler, in: accessory) {
-            return Unit(activity: heaterCoolerActivity(service, homeKit: homeKit),
-                        form: form(of: accessory, heaterCooler: service))
+            let activity = heaterCoolerActivity(service, homeKit: homeKit)
+            return Unit(activity: activity,
+                        form: form(of: accessory, heaterCooler: service),
+                        modeTint: heaterCoolerModeTint(service, activity: activity,
+                                                       homeKit: homeKit))
         }
         if let service = service(HMServiceTypeThermostat, in: accessory) {
-            return Unit(activity: thermostatActivity(service, homeKit: homeKit),
-                        form: form(of: accessory, heaterCooler: nil))
+            let activity = thermostatActivity(service, homeKit: homeKit)
+            return Unit(activity: activity,
+                        form: form(of: accessory, heaterCooler: nil),
+                        modeTint: thermostatModeTint(service, activity: activity,
+                                                     homeKit: homeKit))
         }
         return nil
+    }
+
+    private static let heatTint = UIColor(red: 0.93, green: 0.63, blue: 0.42, alpha: 1)
+    private static let coolTint = UIColor(red: 0.35, green: 0.62, blue: 0.90, alpha: 1)
+
+    /// `Active` (B0) dice se e' accesa; `TargetHeaterCoolerState` (B2) come:
+    /// 0 auto, 1 caldo, 2 freddo. In auto decide l'attivita' corrente.
+    private static func heaterCoolerModeTint(_ service: HMService, activity: Activity,
+                                             homeKit: HomeKitService) -> UIColor? {
+        let activeUUID = "000000B0-0000-1000-8000-0026BB765291"
+        let targetUUID = "000000B2-0000-1000-8000-0026BB765291"
+        guard let active = number(characteristic(activeUUID, in: service), homeKit: homeKit),
+              active == 1
+        else { return nil }
+        let target = number(characteristic(targetUUID, in: service), homeKit: homeKit)
+        switch Int(target ?? 0) {
+        case 1:  return heatTint
+        case 2:  return coolTint
+        default: return activity == .heating ? heatTint : coolTint
+        }
+    }
+
+    /// `TargetHeatingCooling`: 0 spento, 1 caldo, 2 freddo, 3 auto.
+    private static func thermostatModeTint(_ service: HMService, activity: Activity,
+                                           homeKit: HomeKitService) -> UIColor? {
+        let target = number(characteristic(HMCharacteristicTypeTargetHeatingCooling,
+                                           in: service), homeKit: homeKit)
+        switch Int(target ?? 0) {
+        case 1:  return heatTint
+        case 2:  return coolTint
+        case 3:  return activity == .cooling ? coolTint : heatTint
+        default: return nil
+        }
     }
 
     static func isClimate(_ accessory: HMAccessory) -> Bool {

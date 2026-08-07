@@ -95,6 +95,9 @@ struct FloorplanClimateUnit: Equatable {
     /// Il colore del corpo: lo stato gia' tradotto, qualunque famiglia sia —
     /// caldo/freddo per il clima, viola/rosso per l'antifurto.
     var tint: UIColor
+    /// Il pallino di modalità: acceso-in-freddo/caldo anche quando il corpo
+    /// riposa bianco. `nil` = niente pallino.
+    var modeTint: UIColor?
     /// In metri, nello spazio del disegno, **già appoggiata al muro**.
     var position: SIMD2<Double>
     /// Quota da terra, in metri.
