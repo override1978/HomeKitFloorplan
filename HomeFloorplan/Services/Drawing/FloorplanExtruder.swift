@@ -257,21 +257,26 @@ enum FloorplanExtruder {
         case .tvUnit:
             // Il mobile basso e **la TV nera sopra**, contro il lato muro: lo
             // schermo e' il pezzo che si riconosce, il mobile e' solo il piede.
+            // ⚠️ Lo schermo sta a **+y locale**, non a -y come gli schienali:
+            // il 2D disegna il mobile TV col muro dal lato opposto rispetto a
+            // divani e letti, e con la convenzione degli schienali la TV usciva
+            // rivolta alla parete.
             let tvHalf = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
             return boxFaces(item, from: 0, to: 0.45, tint: soft)
                 + subBox(item,
-                         centreOffset: SIMD2(0, -tvHalf.y + 0.05),
+                         centreOffset: SIMD2(0, tvHalf.y - 0.05),
                          half: SIMD2(min(tvHalf.x * 0.80, 0.80), 0.022),
                          from: 0.47, to: 1.02, tint: blackGlass)
         case .inductionCooktop:
-            // Il vetro nero a filo del piano: due centimetri di membro, tutta
-            // la riconoscibilita'.
+            // **Solo il vetro nero**, appoggiato al top della cucina: il piano
+            // cottura in pianta sta sopra un bancone gia' disegnato, e dargli
+            // un corpo proprio raddoppiava il mobile — una base grigia spessa
+            // sotto due centimetri di vetro.
             let hobHalf = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
-            return boxFaces(item, from: 0, to: 0.88, tint: soft)
-                + subBox(item,
-                         centreOffset: .zero,
-                         half: SIMD2(hobHalf.x * 0.86, hobHalf.y * 0.80),
-                         from: 0.88, to: 0.905, tint: blackGlass)
+            return subBox(item,
+                          centreOffset: .zero,
+                          half: SIMD2(hobHalf.x * 0.92, hobHalf.y * 0.88),
+                          from: 0.90, to: 0.92, tint: blackGlass)
         case .bed:
             // Giroletto scuro, materasso chiaro, cuscini alla testata: tre
             // membri che dicono «letto» meglio di qualunque cassa.
