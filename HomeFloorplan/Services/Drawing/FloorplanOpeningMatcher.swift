@@ -200,7 +200,13 @@ enum FloorplanOpeningMatcher {
         guard accessory.services.contains(where: { $0.serviceType == HMServiceTypeWindowCovering }),
               let adapter = WindowCoveringAdapter(accessory: accessory, homeKit: homeKit)
         else { return nil }
-        return Double(adapter.currentPositionValue)
+        // ⚠️ La **destinazione**, non la posizione. `CurrentPosition` arriva
+        // tardi — molti motori la riportano a fine corsa — e il telo partiva
+        // con un botto di ritardo. `TargetPosition` invece cambia nel momento
+        // stesso del comando: il modello parte subito e percorre la corsa al
+        // proprio passo, piu' o meno insieme alla tenda vera. A riposo le due
+        // coincidono, quindi lo stato da fermo non cambia.
+        return Double(adapter.targetPositionValue)
     }
 
     // MARK: - Lettura HomeKit
