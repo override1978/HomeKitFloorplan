@@ -88,6 +88,9 @@ struct FloorplanLamp: Equatable {
 /// Cosa mostra la bandierina di una stanza. Il contenuto arriva dal modello
 /// condiviso con la 2D; qui resta solo come disegnarlo.
 struct RoomFlag {
+    /// Serve solo alla firma della mappa di calore: la macchia dipende dalla
+    /// stanza e dal colore, non dal numero scritto sulla bandierina.
+    var brightnessKey: Double { needsAttention ? 1 : 0 }
     var roomID: UUID
     var anchor: SIMD2<Double>
     var title: String
@@ -170,6 +173,7 @@ struct FloorplanRealityPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State private var ceilingHeight: Double = 2.4
     @State private var floorplanScene: FloorplanScene?
     @State private var cameraResetID = UUID()
@@ -259,12 +263,20 @@ struct FloorplanRealityPreviewView: View {
         .onChange(of: currentID) { _, _ in observeCurrentFloorplan() }
         .onDisappear { homeKit.stopObserving(accessoryUUIDs: observedUUIDs) }
         .task {
-            // Il sole si sposta di un grado ogni quattro minuti: più spesso di
-            // così non cambierebbe niente di visibile.
+            // ⚠️ La cadenza non la detta la percezione, la detta il **costo**:
+            // ogni aggiornamento rifà la geometria delle macchie di sole. In un
+            // quarto d'ora il sole si sposta di quasi quattro gradi — abbastanza
+            // da vedersi — mentre in quattro minuti si spostava di uno solo, e
+            // lo si pagava quindici volte tanto.
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(240))
+                try? await Task.sleep(for: .seconds(900))
                 now = Date()
             }
+        }
+        // Il ritorno in primo piano copre il caso che la cadenza non copre:
+        // l'app rimasta in background due ore, e una casa illuminata come non è.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { now = Date() }
         }
     }
 
@@ -1009,6 +1021,14 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// quella non appartiene a nessuna delle tre direzionali.
         private weak var view: ARView?
         private var flagLabels: [Entity] = []
+        /// L'etichetta di ogni stanza, tenuta in vita fra un aggiornamento e
+        /// l'altro: cambia il testo, non l'oggetto.
+        private struct FlagNode {
+            var label: ModelEntity
+            var signature: String
+        }
+        private var flagNodes: [UUID: FlagNode] = [:]
+        private var builtHeatSignature = "\u{0}"
         private var flags: [RoomFlag] = []
         private var flagsSignature = ""
         private var installedSignature: String?
@@ -1046,9 +1066,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 .sorted()
                 .joined(separator: "|")
             guard signature != flagsSignature else { return }
+            // Le stesse stanze con valori diversi si aggiornano in posto; solo
+            // un insieme diverso — un altro filtro che scopre stanze nuove, o
+            // un'altra planimetria — merita di ricostruire gli steli.
+            let sameRooms = Set(newFlags.map(\.roomID)) == Set(flagNodes.keys)
             flagsSignature = signature
             flags = newFlags
-            rebuildFlags()
+            if sameRooms { applyFlagStates() } else { rebuildFlags() }
             applyRoomAccents()
             rebuildHeat()
             rebuildLamps()
@@ -1059,7 +1083,22 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// Solo quelle che chiedono attenzione: accendere anche le stanze a
         /// posto vuol dire non accendere niente, perche' l'occhio non sa piu'
         /// dove andare.
+        /// La mappa di calore è geometria, e la geometria dipende solo da
+        /// **quali** stanze sono accese e di che colore — non dal valore.
+        ///
+        /// Cambiare filtro la rifà davvero, perché scopre stanze diverse. Una
+        /// temperatura che si muove di un decimo di grado, dentro la stessa
+        /// fascia, non cambia niente di ciò che è disegnato.
+        private var heatSignature: String {
+            flags.filter(\.needsAttention)
+                .map { "\($0.roomID)|\($0.accent.description)|\(Int($0.brightnessKey * 8))" }
+                .sorted()
+                .joined(separator: ",")
+        }
+
         private func rebuildHeat() {
+            guard heatSignature != builtHeatSignature else { return }
+            builtHeatSignature = heatSignature
             heatRoot.children.removeAll()
             for entity in RealityFloorplanRenderer.roomHeatEntities(for: flags, scene: scene) {
                 heatRoot.addChild(entity)
@@ -1082,15 +1121,43 @@ private struct RealityFloorplanView: UIViewRepresentable {
             }
         }
 
+        /// Costruisce gli steli **una volta per insieme di stanze**.
+        ///
+        /// Cambiare filtro o aggiornare un sensore non sposta nessuna
+        /// bandierina: cambia cosa c'è scritto sopra. Ricostruirle tutte voleva
+        /// dire ridisegnare undici texture per una temperatura che si muove di
+        /// un decimo di grado.
         private func rebuildFlags() {
             flagRoot.children.removeAll()
             flagLabels = []
-            let built = RealityFloorplanRenderer.flagEntities(for: flags, scene: scene)
-            for flag in built {
+            flagNodes = [:]
+            for flag in RealityFloorplanRenderer.flagEntities(for: flags, scene: scene) {
                 flagRoot.addChild(flag.root)
                 flagLabels.append(flag.label)
+                flagNodes[flag.roomID] = FlagNode(label: flag.label, signature: signature(of: flag.roomID))
             }
             orientFlags()
+        }
+
+        /// Aggiorna solo le etichette il cui **testo è cambiato davvero**.
+        private func applyFlagStates() {
+            for flag in flags {
+                guard var node = flagNodes[flag.roomID] else { continue }
+                let current = "\(flag.title)|\(flag.value)|\(flag.accent.description)"
+                guard node.signature != current else { continue }
+                if let material = FloorplanMaterialCatalog.flagLabelMaterial(title: flag.title,
+                                                                            value: flag.value,
+                                                                            accent: flag.accent) {
+                    node.label.model?.materials = [material]
+                }
+                node.signature = current
+                flagNodes[flag.roomID] = node
+            }
+        }
+
+        private func signature(of roomID: UUID) -> String {
+            guard let flag = flags.first(where: { $0.roomID == roomID }) else { return "" }
+            return "\(flag.title)|\(flag.value)|\(flag.accent.description)"
         }
 
         /// Le etichette guardano la telecamera **davvero**, non solo di lato.
@@ -1611,10 +1678,11 @@ private enum RealityFloorplanRenderer {
     // MARK: - Bandierine di stanza
 
     struct Flag {
+        var roomID: UUID
         var root: Entity
         /// Solo l'etichetta si gira verso la telecamera: lo stelo è verticale e
         /// non ha un davanti.
-        var label: Entity
+        var label: ModelEntity
     }
 
     /// Uno stelo piantato nel punto più interno della stanza, con il valore in
@@ -1649,7 +1717,7 @@ private enum RealityFloorplanRenderer {
             label.position = SIMD3(x, topY - centre.y + 0.19, z)
             root.addChild(label)
 
-            return Flag(root: root, label: label)
+            return Flag(roomID: flag.roomID, root: root, label: label)
         }
     }
 
