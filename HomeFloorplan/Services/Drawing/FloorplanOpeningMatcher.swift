@@ -186,19 +186,21 @@ enum FloorplanOpeningMatcher {
         return result
     }
 
-    /// 0…100, quanto è **aperta**. `nil` se non è una copertura.
+    /// 0…100, quanto è **aperta** in senso logico. `nil` se non è una copertura.
+    ///
+    /// ⚠️ La lettura la fa `WindowCoveringAdapter`, lo stesso dei marker 2D: è
+    /// lui che conosce le caratteristiche giuste e passa dal
+    /// `WindowCoveringPositionMapper`, dove vive il flag per-accessorio che
+    /// raddrizza i dispositivi montati al contrario. Una seconda lettura
+    /// scritta qui era la copia destinata a divergere — l'errore già pagato coi
+    /// filtri ambientali e con la security.
+    @MainActor
     static func coveringPosition(_ accessory: HMAccessory,
-                                         using homeKit: HomeKitService) -> Double? {
-        for service in accessory.services where service.serviceType == HMServiceTypeWindowCovering {
-            for characteristic in service.characteristics
-            where characteristic.characteristicType == HMCharacteristicTypeCurrentPosition {
-                let raw = homeKit.value(for: characteristic) ?? characteristic.value
-                if let value = raw as? Double { return value }
-                if let value = raw as? Int { return Double(value) }
-                if let value = raw as? NSNumber { return value.doubleValue }
-            }
-        }
-        return nil
+                                 using homeKit: HomeKitService) -> Double? {
+        guard accessory.services.contains(where: { $0.serviceType == HMServiceTypeWindowCovering }),
+              let adapter = WindowCoveringAdapter(accessory: accessory, homeKit: homeKit)
+        else { return nil }
+        return Double(adapter.currentPositionValue)
     }
 
     // MARK: - Lettura HomeKit

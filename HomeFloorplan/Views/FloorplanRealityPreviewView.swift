@@ -682,10 +682,10 @@ struct FloorplanRealityPreviewView: View {
                 .characteristics.first { $0.characteristicType == HMCharacteristicTypeCurrentPosition }
                 ?? accessory.services[0].characteristics[0]) != nil
             let vano = marker.openingID.map { "vano \($0.uuidString.prefix(4))" } ?? "SENZA vano"
-            lines.append("\(accessory.name): \(Int(open))% aperta · \(vano) · \(cached ? "live" : "CACHE")")
+            lines.append("\(accessory.name): logica \(Int(open))% aperta · \(vano) · \(cached ? "live" : "CACHE")")
         }
         let balconies = FloorplanExtruder.balconyAreaIDs(in: document)
-        lines.append("balconi: \(balconies.count) · tende: \(awnings.map { "\(Int($0.extended * 100))%" }.joined(separator: " "))")
+        lines.append("balconi: \(balconies.count) · stesa: \(awnings.map { "\(Int($0.extended * 100))%" }.joined(separator: " "))")
         return lines
     }
     #endif
@@ -725,8 +725,11 @@ struct FloorplanRealityPreviewView: View {
                     })
             }), !result.contains(where: { $0.areaID == area.id }) else { continue }
 
+            // **Chiusa = copre**, la stessa convenzione della tapparella: una
+            // tenda chiusa è quella stesa a fare ombra. Il verso opposto
+            // disegnava il cassonetto quando il telo era fuori, e viceversa.
             result.append((area.id, marker.uuid,
-                           (max(0, min(1, open / 100)) * 20).rounded() / 20))
+                           (max(0, min(1, 1 - open / 100)) * 20).rounded() / 20))
         }
         return result
     }
