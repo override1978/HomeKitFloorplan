@@ -15,9 +15,12 @@ struct Preview3DMarker {
     let position: CGPoint
     /// Per i contatti: quale apertura sorvegliano.
     let openingID: UUID?
-    /// Quota scelta dall'utente, `nil` se non l'ha mai toccata.
-    let mountHeight: Double?
-    let direction: LampDirection?
+}
+
+/// Quota e direzione di una luce, come stanno **adesso** nel modello.
+struct LampSettings {
+    var height: Double?
+    var direction: LampDirection?
 }
 
 struct Preview3DFloorplan: Identifiable {
@@ -31,8 +34,16 @@ struct Preview3DFloorplan: Identifiable {
     let applyNorthBearing: (Double) -> Void
     /// Gli accessori piazzati.
     let markers: [Preview3DMarker]
-    /// Salva quota e direzione di una luce. La scrittura su SwiftData resta
-    /// fuori: qui si sa cosa, non dove metterlo.
+    /// Legge quota e direzione di una luce **dal modello**, ogni volta.
+    ///
+    /// ⚠️ Non un valore ma una chiusura, e non e' un dettaglio: i marker sono
+    /// una fotografia scattata all'apertura, quindi un valore copiato qui
+    /// resterebbe indietro appena lo si modifica. Tenere una copia nella vista
+    /// per rimediare sarebbe stata una **terza** fonte di verita' accanto a
+    /// SwiftData e alla fotografia. Leggendo si resta disaccoppiati e allineati.
+    let lampSettings: (UUID) -> LampSettings
+    /// Salva quota e direzione. La scrittura su SwiftData resta fuori: qui si
+    /// sa cosa, non dove metterlo.
     let applyLampSettings: (UUID, Double, LampDirection) -> Void
     /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
     /// marker in coordinate del disegno.
@@ -151,8 +162,8 @@ struct FloorplanRealityPreviewView: View {
     private var background: UIColor { current.background }
     private func onNorthBearingChange(_ bearing: Double) { current.applyNorthBearing(bearing) }
     private func applyLampSettings(_ uuid: UUID, _ height: Double, _ direction: LampDirection) {
-        lampOverrides[uuid] = (height, direction)
         current.applyLampSettings(uuid, height, direction)
+        settingsRevision &+= 1
         rebuildScene()
     }
 
@@ -164,13 +175,11 @@ struct FloorplanRealityPreviewView: View {
     @State private var cameraResetID = UUID()
     @State private var selectedRoomName: String?
     @State private var selectedRoomID: UUID?
-    /// Quota e direzione appena cambiate.
+    /// Cambia a ogni salvataggio, per rileggere il modello.
     ///
-    /// ⚠️ `markers` è una **fotografia** scattata quando la vista si è aperta:
-    /// scrivere su SwiftData non la aggiorna, quindi senza questo il cursore
-    /// tornava indietro e sembrava che il pannello non funzionasse. Qui vince
-    /// la modifica; la fotografia si riallinea alla prossima apertura.
-    @State private var lampOverrides: [UUID: (height: Double, direction: LampDirection)] = [:]
+    /// Non contiene dati: e' un segnale. I valori restano in SwiftData, che e'
+    /// l'unica fonte di verita'.
+    @State private var settingsRevision = 0
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @State private var isLayerTrayOpen = false
@@ -653,12 +662,15 @@ struct FloorplanRealityPreviewView: View {
                   let lamp = FloorplanLampReader.lamp(for: accessory, homeKit: homeKit)
             else { return nil }
 
-            let override = lampOverrides[marker.uuid]
-            let direction = override?.direction ?? marker.direction ?? .down
+            // `settingsRevision` si legge apposta: e' cio' che fa rileggere il
+            // modello dopo un salvataggio.
+            _ = settingsRevision
+            let settings = current.lampSettings(marker.uuid)
+            let direction = settings.direction ?? .down
             return FloorplanLamp(accessoryUUID: marker.uuid,
                                  name: accessory.name,
                                  isOn: lamp.isOn,
-                                 height: override?.height ?? marker.mountHeight
+                                 height: settings.height
                                      ?? direction.defaultHeight(ceiling: ceilingHeight),
                                  direction: direction,
                                  position: transform.metres(from: marker.position),

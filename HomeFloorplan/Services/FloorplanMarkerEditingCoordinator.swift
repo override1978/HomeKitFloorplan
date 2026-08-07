@@ -75,6 +75,30 @@ struct FloorplanMarkerEditingCoordinator {
         saveAndMarkForSync()
     }
 
+    /// Quota e direzione di una luce: i due fatti che la pianta non contiene.
+    ///
+    /// Sta qui e non in una chiusura scritta nella vista perche' e' una
+    /// scrittura sul modello come le altre — e come le altre deve passare da
+    /// `saveAndMarkForSync`, o la modifica resta sul device e non arriva su
+    /// CloudKit.
+    func setLampSettings(accessoryUUID: UUID, height: Double, direction: LampDirection) {
+        guard let placed = floorplan.accessories.first(where: {
+            $0.homeKitAccessoryUUID == accessoryUUID
+        }) else { return }
+        guard placed.mountHeight != height || placed.lightDirectionRaw != direction.rawValue else { return }
+
+        placed.mountHeight = height
+        placed.lightDirectionRaw = direction.rawValue
+        saveAndMarkForSync()
+    }
+
+    /// L'esposizione della planimetria: verso dove guarda il lato alto.
+    func setNorthBearing(_ degrees: Double) {
+        guard floorplan.northBearingDegrees != degrees else { return }
+        floorplan.northBearingDegrees = degrees
+        saveAndMarkForSync()
+    }
+
     func applyRename(to markerID: UUID, newLabel: String) {
         guard let placed = marker(withID: markerID) else { return }
         let trimmed = newLabel.trimmingCharacters(in: .whitespaces)

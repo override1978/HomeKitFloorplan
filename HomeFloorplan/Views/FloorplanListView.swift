@@ -28,6 +28,18 @@ struct FloorplanListView: View {
         pinnedFloorplanIDsRaw = (try? String(data: JSONEncoder().encode(ids), encoding: .utf8)) ?? "[]"
     }
 
+    /// Lo stesso coordinator che scrive i marker nell'editor 2D.
+    ///
+    /// Le scritture sul modello passano tutte di qui: cosi' `updatedAt` e la
+    /// coda CloudKit si aggiornano da sole, invece di dover ricordare di farlo
+    /// a ogni chiamante.
+    private func markerCoordinator(for plan: Floorplan) -> FloorplanMarkerEditingCoordinator {
+        FloorplanMarkerEditingCoordinator(floorplan: plan,
+                                          modelContext: modelContext,
+                                          cloudKitSync: cloudKitSync,
+                                          homeKit: homeKit)
+    }
+
     /// Tutte le planimetrie che hanno un disegno, pronte per il volume.
     ///
     /// Si passano **tutte** e non solo quella toccata, così il menu del titolo
@@ -42,24 +54,28 @@ struct FloorplanListView: View {
                 northBearingDegrees: plan.northBearingDegrees,
                 applyNorthBearing: { [weak plan] bearing in
                     guard let plan else { return }
-                    plan.northBearingDegrees = bearing
-                    try? modelContext.save()
+                    markerCoordinator(for: plan).setNorthBearing(bearing)
                 },
                 markers: plan.accessories.map { placed in
                     Preview3DMarker(
                         uuid: placed.homeKitAccessoryUUID,
                         position: CGPoint(x: placed.positionX, y: placed.positionY),
-                        openingID: placed.linkedOpeningID,
-                        mountHeight: placed.mountHeight,
+                        openingID: placed.linkedOpeningID
+                    )
+                },
+                lampSettings: { [weak plan] uuid in
+                    guard let placed = plan?.accessories.first(where: { $0.homeKitAccessoryUUID == uuid })
+                    else { return LampSettings() }
+                    return LampSettings(
+                        height: placed.mountHeight,
                         direction: placed.lightDirectionRaw.flatMap(LampDirection.init(rawValue:))
                     )
                 },
                 applyLampSettings: { [weak plan] uuid, height, direction in
-                    guard let placed = plan?.accessories.first(where: { $0.homeKitAccessoryUUID == uuid })
-                    else { return }
-                    placed.mountHeight = height
-                    placed.lightDirectionRaw = direction.rawValue
-                    try? modelContext.save()
+                    guard let plan else { return }
+                    markerCoordinator(for: plan).setLampSettings(accessoryUUID: uuid,
+                                                                 height: height,
+                                                                 direction: direction)
                 },
                 exportRotation: plan.drawingExportRotation,
                 background: previewBackground(for: plan)
