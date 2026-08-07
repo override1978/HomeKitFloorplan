@@ -203,6 +203,10 @@ enum FloorplanExtruder {
     private static let woodTop = CGColor(red: 0.70, green: 0.57, blue: 0.42, alpha: 1)
     private static let fabricSoft = CGColor(red: 0.82, green: 0.78, blue: 0.72, alpha: 1)
     private static let linenLight = CGColor(red: 0.95, green: 0.94, blue: 0.91, alpha: 1)
+    /// Vetro nero di schermi e piani cottura: il nero pieno e' l'unico
+    /// materiale che si riconosce anche da tre metri.
+    private static let blackGlass = CGColor(red: 0.09, green: 0.09, blue: 0.10, alpha: 1)
+    private static let stoneTop = CGColor(red: 0.46, green: 0.45, blue: 0.43, alpha: 1)
 
     /// Il mobile per **membra**, non per cassa: un tavolo è un piano più
     /// quattro gambe, un divano una seduta fra due braccioli. Sono i volumi che
@@ -240,6 +244,34 @@ enum FloorplanExtruder {
                                 from: 0.42, to: 0.58, tint: soft)
             }
             return faces
+        case .wardrobe:
+            // Le **colonne con le fughe** sono cio' che fa dire «armadio»
+            // invece di «monolite»: le ante non serve disegnarle, bastano le
+            // ombre nelle fessure.
+            return columns(item, to: height(of: kind), moduleWidth: 0.55, tint: soft)
+        case .kitchenCounter:
+            // Basi a moduli sotto un top in pietra che corre intero: e' la
+            // grammatica di qualunque cucina componibile.
+            return columns(item, to: 0.85, moduleWidth: 0.60, tint: soft)
+                + slab(item, from: 0.85, to: 0.90, tint: stoneTop)
+        case .tvUnit:
+            // Il mobile basso e **la TV nera sopra**, contro il lato muro: lo
+            // schermo e' il pezzo che si riconosce, il mobile e' solo il piede.
+            let tvHalf = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+            return boxFaces(item, from: 0, to: 0.45, tint: soft)
+                + subBox(item,
+                         centreOffset: SIMD2(0, -tvHalf.y + 0.05),
+                         half: SIMD2(min(tvHalf.x * 0.80, 0.80), 0.022),
+                         from: 0.47, to: 1.02, tint: blackGlass)
+        case .inductionCooktop:
+            // Il vetro nero a filo del piano: due centimetri di membro, tutta
+            // la riconoscibilita'.
+            let hobHalf = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+            return boxFaces(item, from: 0, to: 0.88, tint: soft)
+                + subBox(item,
+                         centreOffset: .zero,
+                         half: SIMD2(hobHalf.x * 0.86, hobHalf.y * 0.80),
+                         from: 0.88, to: 0.905, tint: blackGlass)
         case .bed:
             // Giroletto scuro, materasso chiaro, cuscini alla testata: tre
             // membri che dicono «letto» meglio di qualunque cassa.
@@ -268,6 +300,31 @@ enum FloorplanExtruder {
             }
             return faces
         }
+    }
+
+    /// Colonne affiancate con una fuga fra l'una e l'altra: la larghezza del
+    /// modulo comanda, il conto delle colonne segue il mobile.
+    private static func columns(_ item: FurnitureItem, to top: Double,
+                                moduleWidth: Double, tint: CGColor?) -> [Face] {
+        let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+        let width = half.x * 2
+        let count = max(1, Int((width / moduleWidth).rounded()))
+        let gap = 0.016
+        let columnWidth = (width - gap * Double(count - 1)) / Double(count)
+        guard columnWidth > 0.05 else {
+            return boxFaces(item, from: 0, to: top, tint: tint)
+        }
+
+        var faces: [Face] = []
+        for index in 0..<count {
+            let centreX = -half.x + columnWidth / 2
+                + Double(index) * (columnWidth + gap)
+            faces += subBox(item,
+                            centreOffset: SIMD2(centreX, 0),
+                            half: SIMD2(columnWidth / 2, half.y),
+                            from: 0, to: top, tint: tint)
+        }
+        return faces
     }
 
     /// Un piano a tutta pianta fra due quote.
