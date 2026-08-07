@@ -1003,15 +1003,23 @@ private struct RealityFloorplanView: UIViewRepresentable {
             let floorY = scene.bounds.min.y
 
             for lamp in lamps {
+                // ⚠️ **Sopra la linea dei muri.** A 2,05 m un bulbo appoggiato a
+                // una parete finisce *dentro* il muro, che arriva a 2,4: sparisce
+                // e sembra che la lampada non esista. A 2,5 sta sempre in aria
+                // libera, si vede da ogni angolazione, e il fascio punta in basso
+                // lo stesso.
                 let place = SIMD3(Float(lamp.position.x) - centre.x,
-                                  floorY - centre.y + 2.05,
+                                  floorY - centre.y + 2.5,
                                   Float(lamp.position.y) - centre.z)
 
                 // Il bulbo c'è **sempre**, acceso o spento: se esistesse solo da
                 // acceso non ci sarebbe niente da toccare per accenderlo.
                 // Spento è un puntino scuro, acceso è la propria tinta.
                 let bulb = ModelEntity(
-                    mesh: .generateSphere(radius: lamp.isOn ? 0.085 : 0.075),
+                    // Sedici centimetri: su una casa da dodici metri sono una
+                    // ventina di pixel. Con otto erano nove, e nove pixel non
+                    // sono un oggetto, sono un granello.
+                    mesh: .generateSphere(radius: lamp.isOn ? 0.17 : 0.15),
                     materials: [FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour,
                                                                      isOn: lamp.isOn)]
                 )
@@ -1019,7 +1027,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 // Il bersaglio è l'oggetto stesso, non un segnaposto accanto: la
                 // sfera di collisione è più larga del bulbo perché a schermo
                 // resta comunque un dito piccolo.
-                bulb.collision = CollisionComponent(shapes: [.generateSphere(radius: 0.26)])
+                bulb.collision = CollisionComponent(shapes: [.generateSphere(radius: 0.34)])
                 bulb.name = "lamp:\(lamp.accessoryUUID.uuidString)"
                 lampRoot.addChild(bulb)
 
@@ -1043,7 +1051,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 lampRoot.addChild(light)
 
                 let aura = ModelEntity(
-                    mesh: .generateSphere(radius: Float(0.13 + 0.13 * lamp.brightness)),
+                    mesh: .generateSphere(radius: Float(0.24 + 0.20 * lamp.brightness)),
                     materials: [haloMaterial(lamp.colour, brightness: lamp.brightness)]
                 )
                 aura.position = place
