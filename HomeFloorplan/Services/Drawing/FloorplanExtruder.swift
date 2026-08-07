@@ -64,6 +64,17 @@ enum FloorplanExtruder {
         /// costruisce l'estrusore perché è l'unico che sa **da che parte** guarda
         /// una facciata — nel renderer il verso della normale non è affidabile.
         case wallGlow
+        /// L'ombra di contatto alla base di un muro, e quella che un arredo
+        /// lascia sul pavimento.
+        ///
+        /// Dentro casa **non entra il sole**: i muri lo fermano, e tutta la luce
+        /// interna arriva da direzionali senza ombra. Senza queste due velature
+        /// nessun oggetto tocca il pavimento e la stanza sembra un collage.
+        /// Sono geometria e non ombre vere perché un'ombra vera qui costerebbe
+        /// una seconda shadow map su tutta la scena, e darebbe una seconda
+        /// direzione d'ombra che in un interno non esiste.
+        case wallContact
+        case groundContact
         /// Specchiatura in rilievo sull'anta di una porta.
         case doorPanel
         /// Rosetta e leva. È l'unico dettaglio del modello alla scala della mano,
@@ -163,7 +174,13 @@ enum FloorplanExtruder {
                          roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint)]
         }
 
-        var faces = boxFaces(item, from: 0, to: height(of: kind), tint: tint)
+        // La macchia è **più larga dell'ingombro**: il nucleo resta nascosto
+        // sotto il mobile e quel che si vede è solo la sfumatura che esce dai
+        // bordi, che è esattamente ciò che fa un'ombra di contatto.
+        var faces = [Face(points: corners(of: item, at: 0.004, scale: 1.5),
+                          kind: .groundContact,
+                          roomColorIndex: nil, roomID: nil, roomName: nil)]
+        faces += boxFaces(item, from: 0, to: height(of: kind), tint: tint)
         if let back = backrest(of: kind) {
             faces += boxFaces(item, from: back.from, to: back.to,
                               tint: tint, fraction: back.depth, placement: back.placement)
@@ -231,10 +248,11 @@ enum FloorplanExtruder {
     /// I quattro angoli del rettangolo, ruotati come nel disegno.
     private static func corners(of item: FurnitureItem, at z: Double,
                                 fraction: Double = 1,
-                                placement: Placement = .centred) -> [SIMD3<Double>] {
+                                placement: Placement = .centred,
+                                scale: Double = 1) -> [SIMD3<Double>] {
         let rect = item.rect
         let centre = SIMD2(metres(rect.midX), metres(rect.midY))
-        let half = SIMD2(metres(rect.width) / 2, metres(rect.height) / 2)
+        let half = SIMD2(metres(rect.width) / 2 * scale, metres(rect.height) / 2 * scale)
 
         // Il volume secondario occupa una fetta lungo la profondità, non tutto
         // il rettangolo: uno schienale largo quanto il divano è un muro.
@@ -418,6 +436,13 @@ enum FloorplanExtruder {
             glow.kind = .wallGlow
             glow.points = faces[index].points.map { SIMD3($0.x + push.x, $0.y + push.y, $0.z) }
             glows.append(glow)
+
+            // Tre millimetri: **davanti** al muro e **dietro** la velatura di
+            // stato, così le due non litigano per lo stesso piano.
+            if let contact = contactFace(faces[index],
+                                         push: unitNormal * (offset > 0 ? 0.003 : -0.003)) {
+                glows.append(contact)
+            }
         }
         faces += glows
 
@@ -434,6 +459,35 @@ enum FloorplanExtruder {
 
         return faces
     }
+
+    /// La fascia scura alla base di una facciata interna.
+    ///
+    /// Solo i tratti che **partono da terra**: sopra una porta il muro c'è, ma
+    /// non tocca niente, e una velatura sospesa a due metri sarebbe una macchia
+    /// senza causa.
+    private static func contactFace(_ face: Face, push: SIMD2<Double>) -> Face? {
+        guard face.kind == .wallSide else { return nil }
+        let heights = face.points.map(\.z)
+        guard let bottom = heights.min(), let top = heights.max(), bottom < 0.02 else { return nil }
+
+        let base = face.points.filter { abs($0.z - bottom) < 0.001 }
+        guard base.count == 2 else { return nil }
+        let ceiling = min(top, bottom + contactHeight)
+
+        var contact = face
+        contact.kind = .wallContact
+        contact.points = [
+            SIMD3(base[0].x + push.x, base[0].y + push.y, bottom),
+            SIMD3(base[1].x + push.x, base[1].y + push.y, bottom),
+            SIMD3(base[1].x + push.x, base[1].y + push.y, ceiling),
+            SIMD3(base[0].x + push.x, base[0].y + push.y, ceiling)
+        ]
+        return contact
+    }
+
+    /// Quanto sale la velatura di contatto. Oltre questa quota la luce ci
+    /// arriva, e scurire diventa sporcare.
+    static let contactHeight: Double = 0.34
 
     /// Le facce di un tratto di muro. Solo quelle **visibili** da un punto di
     /// vista alto: le due fiancate, la sommità e i due tappi. Il sotto non si

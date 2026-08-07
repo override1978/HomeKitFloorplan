@@ -53,8 +53,10 @@ enum FloorplanSceneBuilder {
         SIMD3(Float(point.x), Float(point.z), Float(point.y))
     }
 
+    /// L'ombra a terra segue l'arredo che la getta: senza arredi non c'è niente
+    /// che possa farla.
     private static func isFurniture(_ kind: FloorplanExtruder.Face.Kind) -> Bool {
-        kind == .furnitureTop || kind == .furnitureSide
+        kind == .furnitureTop || kind == .furnitureSide || kind == .groundContact
     }
 
     private static func materialRole(for kind: FloorplanExtruder.Face.Kind) -> FloorplanScene.MeshFace.MaterialRole? {
@@ -73,6 +75,10 @@ enum FloorplanSceneBuilder {
             return .door
         case .wallGlow:
             return .wallGlow
+        case .wallContact:
+            return .wallContact
+        case .groundContact:
+            return .groundContact
         case .doorPanel:
             return .doorTrim
         case .handle:

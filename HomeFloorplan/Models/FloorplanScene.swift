@@ -25,6 +25,10 @@ struct FloorplanScene {
             case balconyTop
             case furniture
             case wallGlow
+            /// L'ombra di contatto alla base di un muro.
+            case wallContact
+            /// L'ombra che un arredo lascia sul pavimento.
+            case groundContact
         }
 
         var points: [SIMD3<Float>]

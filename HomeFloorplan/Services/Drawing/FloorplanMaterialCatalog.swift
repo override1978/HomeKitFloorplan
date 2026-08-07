@@ -37,6 +37,10 @@ enum FloorplanMaterialCatalog {
             // Il colore arriva a runtime dallo stato della stanza; senza, la
             // velatura non si vede.
             return UnlitMaterial(color: .clear)
+        case .wallContact:
+            return contactMaterial(texture: contactFalloffTexture, opacity: 0.30)
+        case .groundContact:
+            return contactMaterial(texture: groundContactTexture, opacity: 0.36)
         case .furniture:
             // Tinta unica per la prova: prima si guarda se sotto luce vera i
             // volumi semplici reggono, poi eventualmente si differenzia.
@@ -392,6 +396,82 @@ enum FloorplanMaterialCatalog {
         descriptor.minFilter = .linear
         descriptor.magFilter = .linear
         return .init(descriptor)
+    }()
+
+    /// L'ombra di contatto, di muro o di arredo.
+    ///
+    /// **Unlit**, e non e' una svista: e' la mancanza di luce, e illuminarla
+    /// vorrebbe dire schiarirla proprio dove la luce non arriva. La tinta non e'
+    /// nera ma un blu molto scuro — l'ombra prende il colore del cielo che la
+    /// riempie, e un nero puro su un interno chiaro sembra sporco.
+    private static func contactMaterial(texture: TextureResource?,
+                                        opacity: Float) -> any RealityKit.Material {
+        guard let texture else { return UnlitMaterial(color: .clear) }
+        var material = UnlitMaterial()
+        material.color = .init(tint: UIColor(red: 0.13, green: 0.14, blue: 0.19, alpha: 1),
+                               texture: .init(texture, sampler: clampSampler))
+        material.blending = .transparent(opacity: .init(floatLiteral: opacity))
+        return material
+    }
+
+    /// Piena a terra e spenta in fretta salendo.
+    ///
+    /// Non riusa `verticalFalloffTexture`, che sfuma quasi lineare su due metri
+    /// e mezzo: un'occlusione si concentra nei primi centimetri, e la stessa
+    /// curva stesa su trenta centimetri leggeva come una fascia dipinta.
+    private static let contactFalloffTexture: TextureResource? = {
+        let size = CGSize(width: 8, height: 256)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let colours = [UIColor(white: 1, alpha: 0).cgColor,
+                           UIColor(white: 1, alpha: 0.08).cgColor,
+                           UIColor(white: 1, alpha: 0.42).cgColor,
+                           UIColor(white: 1, alpha: 1).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                            colors: colours,
+                                            locations: [0, 0.52, 0.84, 1]) else { return }
+            // Come per la velatura di stato: l'estremo pieno sta in fondo
+            // all'immagine, perche' `v = 0` pesca il fondo, non la cima.
+            context.cgContext.drawLinearGradient(gradient,
+                                                 start: CGPoint(x: 0, y: 0),
+                                                 end: CGPoint(x: 0, y: size.height),
+                                                 options: [])
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
+    }()
+
+    /// La macchia sotto un mobile: nucleo pieno, sfumatura solo nel margine.
+    ///
+    /// Un alone radiale sarebbe sbagliato su un letto, che e' lungo il doppio di
+    /// quanto e' largo: alle testate si spegnerebbe molto prima che ai fianchi.
+    /// Rettangoli arrotondati concentrici seguono qualsiasi proporzione, perche'
+    /// la sfumatura vive nella **frazione di margine**, uguale sui due assi.
+    private static let groundContactTexture: TextureResource? = {
+        let side = 256
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side),
+                                            format: format).image { _ in
+            let steps = 28
+            // Il margine e' un terzo del lato: fuori sta il quadrato allargato
+            // a 1.5x dall'estrusore, dentro l'ingombro vero del mobile.
+            let margin = CGFloat(side) / 6
+            for step in 0...steps {
+                let inset = margin * CGFloat(step) / CGFloat(steps)
+                let rect = CGRect(x: inset, y: inset,
+                                  width: CGFloat(side) - inset * 2,
+                                  height: CGFloat(side) - inset * 2)
+                UIColor(white: 1, alpha: 0.10).setFill()
+                UIBezierPath(roundedRect: rect,
+                             cornerRadius: min(rect.width, rect.height) * 0.26).fill()
+            }
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
     }()
 
     /// La velatura sulla parete: piena in basso, spenta salendo.

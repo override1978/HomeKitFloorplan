@@ -1776,7 +1776,8 @@ private enum RealityFloorplanRenderer {
                 continue
             }
 
-            guard let mesh = mesh(for: faces, role: role, center: center) else { continue }
+            guard let mesh = mesh(for: faces, role: role, center: center,
+                                  floorY: scene.bounds.min.y) else { continue }
 
             let model = ModelEntity(mesh: mesh, materials: [FloorplanMaterialCatalog.material(for: role)])
             root.addChild(model)
@@ -2525,6 +2526,18 @@ private enum RealityFloorplanRenderer {
             return points.map {
                 SIMD2(0.5, max(0, min(1, ($0.y - floorY) / wallGlowHeight)))
             }
+        case .wallContact:
+            // Stessa regola della velatura di stato, su una fascia molto piu'
+            // bassa: la v si misura da terra, la u sta ferma a meta' texture.
+            return points.map {
+                SIMD2(0.5, max(0, min(1, ($0.y - floorY) / Float(FloorplanExtruder.contactHeight))))
+            }
+        case .groundContact:
+            // Le UV **seguono l'ordine dei vertici**, non le coordinate del
+            // mondo: il quadrato e' ruotato come il mobile, e una mappatura per
+            // bounding box strapperebbe la macchia di sghembo.
+            guard points.count == 4 else { return points.map { SIMD2($0.x, $0.z) } }
+            return [SIMD2(0, 0), SIMD2(1, 0), SIMD2(1, 1), SIMD2(0, 1)]
         default:
             return points.map { SIMD2($0.x, $0.y) }
         }
@@ -2642,6 +2655,7 @@ private enum RealityFloorplanRenderer {
 private extension FloorplanScene.MeshFace.MaterialRole {
     static let renderOrder: [Self] = [
         .floor,
+        .groundContact,
         .furniture,
         .door,
         .doorTrim,
@@ -2650,6 +2664,7 @@ private extension FloorplanScene.MeshFace.MaterialRole {
         .frame,
         .balcony,
         .wall,
+        .wallContact,
         .wallGlow,
         .balconyTop,
         .wallTop,
