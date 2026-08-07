@@ -150,7 +150,6 @@ struct FloorplanRealityPreviewView: View {
                                              isInsideRoom = false
                                          }
                                      },
-                                     onPresenceDebug: { presenceCoordinatorReport = $0 },
                                      ghostWalls: ghostWalls)
                     .ignoresSafeArea()
             } else {
@@ -159,20 +158,6 @@ struct FloorplanRealityPreviewView: View {
 
             controls
         }
-        #if DEBUG
-        .overlay(alignment: .bottomLeading) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(presenceDiagnostics, id: \.self) { line in
-                    Text(line).font(.caption2.monospaced())
-                }
-            }
-            .foregroundStyle(.yellow)
-            .padding(8)
-            .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-            .padding(.leading, 12)
-            .padding(.bottom, 40)
-        }
-        #endif
         .overlay(alignment: .bottom) {
             if selectedRoomID != nil {
                 switch roomPanelState {
@@ -468,45 +453,6 @@ struct FloorplanRealityPreviewView: View {
         return accessory.category.categoryType == HMAccessoryCategoryTypeIPCamera
             || accessory.category.categoryType == HMAccessoryCategoryTypeVideoDoorbell
     }
-
-    @State private var presenceCoordinatorReport = "coordinatore: mai chiamato"
-    #if DEBUG
-    /// Perche' una stanza non respira: una riga per sensore di movimento.
-    private var presenceDiagnostics: [String] {
-        var lines: [String] = []
-        for marker in markers {
-            guard let accessory = homeKit.accessory(for: marker.uuid),
-                  accessory.services.contains(where: { service in
-                      service.characteristics.contains {
-                          $0.characteristicType == HMCharacteristicTypeMotionDetected
-                              || $0.characteristicType == HMCharacteristicTypeOccupancyDetected
-                      }
-                  })
-            else { continue }
-            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
-            let kind = String(describing: type(of: adapter))
-            let state = (adapter as? MarkerRuntimeStateProviding)?.markerRuntimeState
-
-            // In quale stanza cade il marker, per distinguere «non respira»
-            // da «respira dove non si vede».
-            var room = "NESSUNA"
-            if let transform = FloorplanOpeningMatcher.transform(document: document,
-                                                                 exportRotation: exportRotation) {
-                let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
-                let position = transform.metres(from: marker.position)
-                if let area = document.roomAreas.first(where: { area in
-                    FloorplanRoomEnvironment.contains(position, area.effectivePoints.map {
-                        SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
-                    })
-                }) { room = area.name }
-            }
-            lines.append("\(accessory.name): \(kind) · \(state.map(String.init(describing:)) ?? "nil") · \(room)")
-        }
-        lines.append("stanze che respirano: \(occupiedRoomIDs.count)")
-        lines.append(presenceCoordinatorReport)
-        return lines
-    }
-    #endif
 
     /// Le stanze **abitate adesso**, dai sensori di movimento e presenza.
     ///

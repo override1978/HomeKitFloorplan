@@ -39,9 +39,6 @@ struct RealityFloorplanView: UIViewRepresentable {
     /// Il coordinatore esce dalla prima persona anche da solo (doppio tocco):
     /// la vista deve saperlo per ritirare il bottone «esci».
     let onFirstPersonExit: () -> Void
-    /// Diagnostica presenza: cosa ha davvero costruito il coordinatore.
-    /// Innocua in release: nessuno la legge.
-    let onPresenceDebug: (String) -> Void
     /// Muri trasparenti a richiesta, dal menu inquadrature.
     let ghostWalls: Bool
 
@@ -93,7 +90,6 @@ struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.onTargetTapped = onTargetTapped
         context.coordinator.onTargetHeld = onTargetHeld
         context.coordinator.onFirstPersonExit = onFirstPersonExit
-        context.coordinator.onPresenceDebug = onPresenceDebug
         context.coordinator.updateGhostWalls(ghostWalls)
         if context.coordinator.background != background {
             context.coordinator.background = background
@@ -244,7 +240,6 @@ struct RealityFloorplanView: UIViewRepresentable {
         var onTargetTapped: (FloorplanTapTarget) -> Void
         var onTargetHeld: (FloorplanTapTarget) -> Void
         var onFirstPersonExit: () -> Void = {}
-        var onPresenceDebug: (String) -> Void = { _ in }
 
         init(scene: FloorplanScene,
              sun: FloorplanSunLight,
@@ -446,11 +441,6 @@ struct RealityFloorplanView: UIViewRepresentable {
         /// e giu' con un'animazione RealityKit, nessun timer nostro.
         private func rebuildPresence() {
             presenceRoot.children.removeAll()
-            defer {
-                let report = "dischi: \(presenceRoot.children.count) · stanze: \(occupiedRooms.count)"
-                let notify = onPresenceDebug
-                DispatchQueue.main.async { notify(report) }
-            }
             guard !occupiedRooms.isEmpty,
                   let material = FloorplanMaterialCatalog.presenceGlowMaterial()
             else { return }
