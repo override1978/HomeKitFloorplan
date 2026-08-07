@@ -75,6 +75,9 @@ enum FloorplanExtruder {
         /// direzione d'ombra che in un interno non esiste.
         case wallContact
         case groundContact
+        /// La tapparella calata davanti a un vano. Sta **fuori dal muro** come
+        /// nella realtà: scorre in un cassonetto esterno, non dentro la stanza.
+        case shutter
         /// Specchiatura in rilievo sull'anta di una porta.
         case doorPanel
         /// Rosetta e leva. È l'unico dettaglio del modello alla scala della mano,
@@ -95,6 +98,10 @@ enum FloorplanExtruder {
         var floorKind: FloorKind? = nil
         /// Tipo apertura, solo per pannelli/telai/vetri generati da opening.
         var openingKind: OpeningKind? = nil
+        /// Quale apertura ha generato questa faccia. Serve a sapere che il sole
+        /// non passa da un vetro che ha la tapparella giù: il tipo non basta,
+        /// perché le finestre della casa sono tante e ognuna sta per conto suo.
+        var openingID: UUID? = nil
         /// Tipo muro sorgente, utile per distinguere ingresso, interno e balcone.
         var wallKind: WallKind? = nil
         /// Lato apertura scelto nel 2D.
@@ -111,7 +118,8 @@ enum FloorplanExtruder {
 
     static func faces(from document: DrawingDocument,
                       heights: Heights = Heights(),
-                      openOpeningIDs: Set<UUID> = []) -> [Face] {
+                      openOpeningIDs: Set<UUID> = [],
+                      closedShutters: [UUID: Double] = [:]) -> [Face] {
         var result: [Face] = []
         for area in document.roomAreas {
             result.append(contentsOf: floorFaces(area))
@@ -119,7 +127,8 @@ enum FloorplanExtruder {
         let joints = sharedEndpoints(of: document.walls)
         for wall in document.walls {
             result.append(contentsOf: wallFaces(wall, in: document, heights: heights,
-                                                joints: joints, openOpeningIDs: openOpeningIDs))
+                                                joints: joints, openOpeningIDs: openOpeningIDs,
+                                                closedShutters: closedShutters))
         }
         // Nell'ordine di disegno del documento, così i tappeti restano sotto
         // come già fanno in pianta.
@@ -300,7 +309,8 @@ enum FloorplanExtruder {
                                   in document: DrawingDocument,
                                   heights: Heights,
                                   joints: Set<GridKey>,
-                                  openOpeningIDs: Set<UUID>) -> [Face] {
+                                  openOpeningIDs: Set<UUID>,
+                                  closedShutters: [UUID: Double]) -> [Face] {
         let start = SIMD2(metres(wall.start.x), metres(wall.start.y))
         let end   = SIMD2(metres(wall.end.x), metres(wall.end.y))
         let length = simd_distance(start, end)
@@ -363,7 +373,9 @@ enum FloorplanExtruder {
                                    bottom: heights.windowBottom,
                                    top: min(heights.windowTop, wallTop),
                                    kind: opening.kind, flipSide: opening.flipSide,
-                                   isOpen: openOpeningIDs.contains(opening.id)))
+                                   isOpen: openOpeningIDs.contains(opening.id),
+                                   shutterClosed: closedShutters[opening.id] ?? 0,
+                                   id: opening.id))
             case .door, .slidingDoor, .frenchDoor:
                 spans.append((from, to, heights.doorTop, wallTop))
                 // Una porta poggia a terra: niente traversa in basso, o
@@ -372,7 +384,9 @@ enum FloorplanExtruder {
                                    bottom: 0,
                                    top: min(heights.doorTop, wallTop),
                                    kind: opening.kind, flipSide: opening.flipSide,
-                                   isOpen: openOpeningIDs.contains(opening.id)))
+                                   isOpen: openOpeningIDs.contains(opening.id),
+                                   shutterClosed: closedShutters[opening.id] ?? 0,
+                                   id: opening.id))
             }
             cursor = max(cursor, to)
         }
@@ -447,13 +461,27 @@ enum FloorplanExtruder {
         faces += glows
 
         if !isParapet {
+            // Da che parte è «fuori»: si sporge di trenta centimetri da un lato
+            // del muro e si guarda se si finisce in una stanza. Dedurlo dal verso
+            // della normale non si può — l'estrusore non garantisce un
+            // avvolgimento coerente, che è lo stesso motivo per cui le facce si
+            // emettono da entrambi i lati.
+            let middle = start + axis * (length / 2)
+            let probe = middle + unitNormal * (thickness / 2 + 0.30)
+            let outward = roomPolygons.contains { contains(probe, $0.points) }
+                ? -unitNormal
+                : unitNormal
+
             let context = FloorplanOpeningBuilder.Wall(start: start,
                                                        axis: axis,
                                                        normal: unitNormal,
+                                                       outward: outward,
                                                        thickness: thickness,
                                                        kind: wall.kind)
             for hole in holes {
-                faces += FloorplanOpeningBuilder.faces(for: hole, in: context)
+                var produced = FloorplanOpeningBuilder.faces(for: hole, in: context)
+                for index in produced.indices { produced[index].openingID = hole.id }
+                faces += produced
             }
         }
 

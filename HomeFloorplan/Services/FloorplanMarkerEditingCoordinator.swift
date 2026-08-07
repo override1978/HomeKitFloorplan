@@ -118,9 +118,13 @@ struct FloorplanMarkerEditingCoordinator {
     /// Solo per i sensori di contatto: un termometro appoggiato vicino a una
     /// porta non la sorveglia, e agganciarlo la farebbe aprire quando si alza
     /// la temperatura.
+    /// Gli accessori che **appartengono a un vano**: un contatto che lo sorveglia
+    /// o una tapparella che lo copre. Entrambi si agganciano all'apertura più
+    /// vicina alla posa, e per entrambi il legame vive su `linkedOpeningID`.
     static func watchesOpenings(_ accessory: HMAccessory) -> Bool {
         accessory.services.contains { service in
-            service.characteristics.contains { $0.characteristicType == HMCharacteristicTypeContactState }
+            if service.serviceType == HMServiceTypeWindowCovering { return true }
+            return service.characteristics.contains { $0.characteristicType == HMCharacteristicTypeContactState }
         }
     }
 

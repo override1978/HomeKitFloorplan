@@ -31,6 +31,10 @@ enum FloorplanOpeningBuilder {
         var flipSide: Bool
         /// Il contatto che sorveglia questo vano risulta aperto.
         var isOpen: Bool = false
+        /// Quanto è calata la tapparella, da 0 (su) a 1 (giù).
+        var shutterClosed: Double = 0
+        /// L'apertura del disegno da cui viene, per ritrovarla a valle.
+        var id: UUID = UUID()
     }
 
     /// Il muro che lo contiene.
@@ -39,6 +43,9 @@ enum FloorplanOpeningBuilder {
         var axis: SIMD2<Double>
         /// Perpendicolare **unitaria**: lo spessore lo mette questo builder.
         var normal: SIMD2<Double>
+        /// La perpendicolare unitaria che punta **fuori** dalla stanza. La
+        /// calcola l'estrusore, che è l'unico a sapere dove sono le stanze.
+        var outward: SIMD2<Double>
         var thickness: Double
         var kind: WallKind
     }
@@ -102,8 +109,37 @@ enum FloorplanOpeningBuilder {
             swing = doorSwing
         }
 
-        guard opening.isOpen else { return fixed + leaves.flatMap(\.faces) }
-        return fixed + leaves.flatMap { swung($0, in: wall, by: swing) }
+        let shutter = shutterFaces(opening, wall, frameWidth: frameWidth)
+        guard opening.isOpen else { return fixed + shutter + leaves.flatMap(\.faces) }
+        return fixed + shutter + leaves.flatMap { swung($0, in: wall, by: swing) }
+    }
+
+    /// La tapparella: una lastra che cala dall'architrave.
+    ///
+    /// Un solo quadrilatero, non una scatola: il renderer emette ogni faccia da
+    /// entrambi i lati, quindi una lastra spessa tre centimetri costerebbe sei
+    /// facce per vedere la stessa cosa.
+    private static func shutterFaces(_ opening: Opening,
+                                     _ wall: Wall,
+                                     frameWidth: Double) -> [Face] {
+        let drop = (opening.top - opening.bottom) * min(1, max(0, opening.shutterClosed))
+        // Sotto i due centimetri non è una tapparella calata, è una riga.
+        guard drop > 0.02 else { return [] }
+
+        let bottom = opening.top - drop
+        // Scorre **davanti** al telaio, non dentro il vano: sta larga quanto il
+        // vano pieno, che è come si vede da fuori.
+        let a = wall.start + wall.axis * (opening.from - frameWidth * 0.4)
+        let b = wall.start + wall.axis * (opening.to + frameWidth * 0.4)
+        let offset = wall.outward * (wall.thickness / 2 + 0.012)
+
+        return [Face(points: [
+            SIMD3(a.x + offset.x, a.y + offset.y, bottom),
+            SIMD3(b.x + offset.x, b.y + offset.y, bottom),
+            SIMD3(b.x + offset.x, b.y + offset.y, opening.top),
+            SIMD3(a.x + offset.x, a.y + offset.y, opening.top)
+        ], kind: .shutter, roomColorIndex: nil, roomID: nil, roomName: nil,
+        openingKind: opening.kind, wallKind: wall.kind)]
     }
 
     /// Una parte mobile con il **proprio** cardine.

@@ -29,6 +29,8 @@ struct FloorplanScene {
             case wallContact
             /// L'ombra che un arredo lascia sul pavimento.
             case groundContact
+            /// La tapparella calata davanti a un vano.
+            case shutter
         }
 
         var points: [SIMD3<Float>]
@@ -37,6 +39,9 @@ struct FloorplanScene {
         var roomName: String?
         var floorKind: FloorKind? = nil
         var openingKind: OpeningKind? = nil
+        /// Quale apertura ha generato questa faccia: serve al sole, che non deve
+        /// passare da un vetro con la tapparella giù.
+        var openingID: UUID? = nil
         var wallKind: WallKind? = nil
         var flipSide: Bool = false
     }

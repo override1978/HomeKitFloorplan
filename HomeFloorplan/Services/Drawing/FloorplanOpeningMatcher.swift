@@ -161,6 +161,46 @@ enum FloorplanOpeningMatcher {
         return result
     }
 
+    /// Quanto è calata la tapparella di ogni apertura, da 0 (su) a 1 (giù).
+    ///
+    /// HomeKit conta al contrario di come si guarda una finestra: `CurrentPosition`
+    /// è **quanto è aperta**, quindi 0 vuol dire chiusa. Si converte qui una volta
+    /// sola, o il senso si rovescia a ogni punto d'uso.
+    static func closedShutters(markers: [(uuid: UUID, openingID: UUID?)],
+                               homeKit: HomeKitService) -> [UUID: Double] {
+        var result: [UUID: Double] = [:]
+        for marker in markers {
+            guard let openingID = marker.openingID,
+                  let accessory = homeKit.accessory(for: marker.uuid),
+                  let open = coveringPosition(accessory, using: homeKit)
+            else { continue }
+            // Arrotondata a un ventesimo: la corsa di una tapparella dura una
+            // ventina di secondi e HomeKit la riporta di continuo. A passi del
+            // cinque per cento il movimento resta leggibile e la casa si
+            // riestrude venti volte invece di duecento.
+            let closed = (max(0, min(1, 1 - open / 100)) * 20).rounded() / 20
+            // Due tapparelle sulla stessa apertura: vince la più calata, perché
+            // è quella che decide quanta luce passa.
+            result[openingID] = max(result[openingID] ?? 0, closed)
+        }
+        return result
+    }
+
+    /// 0…100, quanto è **aperta**. `nil` se non è una copertura.
+    private static func coveringPosition(_ accessory: HMAccessory,
+                                         using homeKit: HomeKitService) -> Double? {
+        for service in accessory.services where service.serviceType == HMServiceTypeWindowCovering {
+            for characteristic in service.characteristics
+            where characteristic.characteristicType == HMCharacteristicTypeCurrentPosition {
+                let raw = homeKit.value(for: characteristic) ?? characteristic.value
+                if let value = raw as? Double { return value }
+                if let value = raw as? Int { return Double(value) }
+                if let value = raw as? NSNumber { return value.doubleValue }
+            }
+        }
+        return nil
+    }
+
     // MARK: - Lettura HomeKit
 
     /// `true` se l'accessorio espone un contatto e il contatto è aperto.

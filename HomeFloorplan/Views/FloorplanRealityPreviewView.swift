@@ -290,6 +290,11 @@ struct FloorplanRealityPreviewView: View {
         // guardando, l'anta si muove. `characteristicValues` è osservabile, e
         // ricalcolare l'insieme costa una manciata di confronti.
         .onChange(of: openOpeningIDs) { _, _ in rebuildScene() }
+        // Una tapparella che scende cambia la geometria, quindi va ricostruita —
+        // ma a scatti di un ventesimo, non a ogni millimetro riportato da
+        // HomeKit: una corsa intera fa venti ricostruzioni in venti secondi,
+        // non duecento.
+        .onChange(of: closedShutters) { _, _ in rebuildScene() }
         // Cambiando piano cambiano gli accessori: quelli vecchi si lasciano
         // andare e si osservano i nuovi, o il piano appena aperto avrebbe luci
         // spente e porte chiuse per il solo motivo che nessuno le ha lette.
@@ -409,6 +414,14 @@ struct FloorplanRealityPreviewView: View {
     /// Gli infissi da disegnare aperti, contro lo stato corrente di HomeKit.
     private var openOpeningIDs: Set<UUID> {
         FloorplanOpeningMatcher.openOpenings(
+            markers: markers.map { (uuid: $0.uuid, openingID: $0.openingID) },
+            homeKit: homeKit
+        )
+    }
+
+    /// Quanto è calata ogni tapparella, contro lo stato corrente di HomeKit.
+    private var closedShutters: [UUID: Double] {
+        FloorplanOpeningMatcher.closedShutters(
             markers: markers.map { (uuid: $0.uuid, openingID: $0.openingID) },
             homeKit: homeKit
         )
@@ -1098,7 +1111,8 @@ struct FloorplanRealityPreviewView: View {
         floorplanScene = FloorplanSceneBuilder.scene(from: document,
                                                      ceilingHeight: ceilingHeight,
                                                      includesFurniture: true,
-                                                     openOpeningIDs: openOpeningIDs)
+                                                     openOpeningIDs: openOpeningIDs,
+                                                     closedShutters: closedShutters)
     }
 }
 
@@ -2149,7 +2163,13 @@ private enum RealityFloorplanRenderer {
         var quads: [[SIMD3<Float>]] = []
         var alreadySeen: Set<SIMD2<Int>> = []
 
+        // Un vetro con la tapparella giu' non fa passare niente: la macchia va
+        // tolta, non attenuata. E' il vero effetto della tapparella sul modello,
+        // molto piu' della lastra che si vede da fuori.
+        let blocked = Set(scene.faces.filter { $0.role == .shutter }.compactMap(\.openingID))
+
         for face in scene.faces where face.role == .glass && face.points.count == 4 {
+            if let openingID = face.openingID, blocked.contains(openingID) { continue }
             // Un vetro è un solido sottile, quindi arriva sei volte. Si tengono le
             // facce larghe e verticali, e si scarta chi proietta dove ha già
             // proiettato qualcun altro: due lastre a 8 mm di distanza fanno la
@@ -2667,6 +2687,12 @@ private enum RealityFloorplanRenderer {
             return points.map {
                 SIMD2(0.5, max(0, min(1, ($0.y - floorY) / Float(FloorplanExtruder.contactHeight))))
             }
+        case .shutter:
+            // Il passo delle stecche sta **in metri**, non in frazione di
+            // finestra: sette centimetri sono sette centimetri sia sul bagno
+            // sia sulla portafinestra. Normalizzarlo darebbe stecche larghe il
+            // doppio sulle aperture grandi.
+            return points.map { SIMD2($0.x, $0.y / 0.07) }
         case .groundContact:
             // Le UV **seguono l'ordine dei vertici**, non le coordinate del
             // mondo: il quadrato e' ruotato come il mobile, e una mappatura per
@@ -2798,6 +2824,7 @@ private extension FloorplanScene.MeshFace.MaterialRole {
         .doorEdge,
         .frame,
         .balcony,
+        .shutter,
         .wall,
         .wallContact,
         .wallGlow,

@@ -41,6 +41,8 @@ enum FloorplanMaterialCatalog {
             return contactMaterial(texture: contactFalloffTexture, opacity: 0.30)
         case .groundContact:
             return contactMaterial(texture: groundContactTexture, opacity: 0.36)
+        case .shutter:
+            return shutterMaterial()
         case .furniture:
             // Tinta unica per la prova: prima si guarda se sotto luce vera i
             // volumi semplici reggono, poi eventualmente si differenzia.
@@ -396,6 +398,38 @@ enum FloorplanMaterialCatalog {
         descriptor.minFilter = .linear
         descriptor.magFilter = .linear
         return .init(descriptor)
+    }()
+
+    /// Una tapparella: stecche orizzontali, non una lastra liscia.
+    ///
+    /// Senza le stecche il quadrilatero si legge come «la finestra e' murata».
+    /// Sono l'unica cosa che dice che quello e' un oggetto che scorre, e costano
+    /// una texture da otto pixel per sessantaquattro.
+    private static func shutterMaterial() -> PhysicallyBasedMaterial {
+        var material = opaque(UIColor(red: 0.80, green: 0.79, blue: 0.76, alpha: 1), roughness: 0.62)
+        guard let texture = shutterSlatTexture else { return material }
+        material.baseColor = .init(tint: .white, texture: .init(texture, sampler: repeatSampler))
+        return material
+    }
+
+    /// Una stecca chiara con la fuga scura sotto. La ripetizione la fa la
+    /// coordinata, che sta in metri: cosi' il passo resta lo stesso su una
+    /// finestrella del bagno e su una portafinestra.
+    private static let shutterSlatTexture: TextureResource? = {
+        let size = CGSize(width: 8, height: 64)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(red: 0.84, green: 0.83, blue: 0.79, alpha: 1).setFill()
+            context.cgContext.fill(CGRect(origin: .zero, size: size))
+            UIColor(red: 0.55, green: 0.54, blue: 0.51, alpha: 1).setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: size.width, height: 5))
+            UIColor(red: 0.92, green: 0.91, blue: 0.88, alpha: 1).setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 5, width: size.width, height: 4))
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
     }()
 
     /// L'ombra di contatto, di muro o di arredo.

@@ -8,11 +8,13 @@ enum FloorplanSceneBuilder {
     static func scene(from document: DrawingDocument,
                       ceilingHeight: Double = 2.4,
                       includesFurniture: Bool = false,
-                      openOpeningIDs: Set<UUID> = []) -> FloorplanScene? {
+                      openOpeningIDs: Set<UUID> = [],
+                      closedShutters: [UUID: Double] = [:]) -> FloorplanScene? {
         let faces = FloorplanExtruder.faces(
             from: document,
             heights: .init(ceiling: ceilingHeight),
-            openOpeningIDs: openOpeningIDs
+            openOpeningIDs: openOpeningIDs,
+            closedShutters: closedShutters
         )
         .compactMap { face -> FloorplanScene.MeshFace? in
             guard includesFurniture || !isFurniture(face.kind),
@@ -26,6 +28,7 @@ enum FloorplanSceneBuilder {
                 roomName: face.roomName,
                 floorKind: role == .floor ? face.floorKind : nil,
                 openingKind: face.openingKind,
+                openingID: face.openingID,
                 wallKind: face.wallKind,
                 flipSide: face.flipSide
             )
@@ -43,7 +46,13 @@ enum FloorplanSceneBuilder {
         return FloorplanScene(
             faces: faces,
             bounds: .init(min: minPoint, max: maxPoint),
-            stateSignature: openOpeningIDs.map(\.uuidString).sorted().joined(separator: ",")
+            // Una tapparella che scende **non cambia il numero di facce**: la
+            // lastra c'è già, cambia solo quanto è alta. Senza il suo stato qui,
+            // il filtro anti-ricostruzione scarterebbe l'aggiornamento — lo
+            // stesso inganno già pagato con le ante che si aprivano.
+            stateSignature: (openOpeningIDs.map(\.uuidString).sorted()
+                             + closedShutters.map { "\($0.key):\(Int($0.value * 20))" }.sorted())
+                .joined(separator: ",")
         )
     }
 
@@ -79,6 +88,8 @@ enum FloorplanSceneBuilder {
             return .wallContact
         case .groundContact:
             return .groundContact
+        case .shutter:
+            return .shutter
         case .doorPanel:
             return .doorTrim
         case .handle:
