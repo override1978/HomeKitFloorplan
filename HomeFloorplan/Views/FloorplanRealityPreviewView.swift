@@ -1024,29 +1024,34 @@ struct FloorplanRealityPreviewView: View {
     /// separato, più smorzato, sotto la barra alta — come nella 2D, dove i
     /// filtri stanno in una barra loro sotto le modalità.
     private var filterRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 16) {
-                summaryItem(label: String(localized: "filter.all", defaultValue: "Tutto"),
-                            icon: "leaf.fill", tint: .white, value: nil,
-                            isSelected: sensorFilter == nil) { sensorFilter = nil }
-                ForEach(envVM.availableSensorTypes) { type in
-                    summaryItem(label: type.displayName,
-                                icon: type.sfSymbol,
-                                tint: urgencyColour(worstUrgency(for: type)),
-                                value: summaryText(for: type),
-                                isSelected: sensorFilter == type) { sensorFilter = type }
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+        // Una sintesi che nasconde meta' dei tipi non sintetizza: se la riga ci
+        // sta, si mostra **intera** e la capsula abbraccia il contenuto; lo
+        // scorrimento resta solo come rete per gli schermi stretti. E' il
+        // lavoro di `ViewThatFits` — niente `fixedSize`, che qui e' gia'
+        // costato una volta i chip fuori dal proprio sfondo.
+        ViewThatFits(in: .horizontal) {
+            summaryRowContent
+            ScrollView(.horizontal, showsIndicators: false) { summaryRowContent }
         }
-        // ⚠️ Niente `fixedSize`: faceva prendere alla riga la larghezza di tutto
-        // il contenuto mentre la capsula restava al limite, e i chip finivano
-        // fuori dal proprio sfondo. Il limite serve a farla scorrere **dentro**
-        // la capsula, non a tagliarla.
-        .frame(maxWidth: 640)
-        .background(.black.opacity(0.22), in: Capsule())
+        .background(.black.opacity(0.42), in: Capsule())
         .transition(.opacity)
+    }
+
+    private var summaryRowContent: some View {
+        HStack(spacing: 13) {
+            summaryItem(label: String(localized: "filter.all", defaultValue: "Tutto"),
+                        icon: "leaf.fill", tint: .white, value: nil,
+                        isSelected: sensorFilter == nil) { sensorFilter = nil }
+            ForEach(envVM.availableSensorTypes) { type in
+                summaryItem(label: type.displayName,
+                            icon: type.sfSymbol,
+                            tint: urgencyColour(worstUrgency(for: type)),
+                            value: summaryText(for: type),
+                            isSelected: sensorFilter == type) { sensorFilter = type }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     /// Le lampade accese, con dove stanno e di che colore sono.
@@ -1437,7 +1442,7 @@ struct FloorplanRealityPreviewView: View {
                     .foregroundStyle(tint)
                 Text(value ?? label)
                     .font(.caption.weight(isSelected ? .semibold : .regular))
-                    .foregroundStyle(.white.opacity(isSelected ? 1 : 0.72))
+                    .foregroundStyle(.white.opacity(isSelected ? 1 : 0.88))
                     .lineLimit(1)
             }
             .contentShape(Capsule())
