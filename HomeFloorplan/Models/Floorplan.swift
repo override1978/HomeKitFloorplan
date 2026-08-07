@@ -101,6 +101,14 @@ final class Floorplan {
     /// arbitraria sulla tela, quindi ognuno ha il proprio nord. Zero significa
     /// «in alto sulla pianta è nord», che è il default e non blocca niente.
     var northBearingDegrees: Double = 0
+    /// Altezza dei muri, in metri.
+    ///
+    /// Sta sul disegno per lo stesso motivo del nord: e' un fatto
+    /// dell'edificio, e due piani della stessa casa possono averla diversa —
+    /// una mansarda non e' un piano terra. Il default e' quello che la vista
+    /// usava gia' prima di persisterla, quindi le planimetrie esistenti
+    /// decodificano esattamente com'erano.
+    var ceilingHeightMetres: Double = 2.4
 
     init(name: String, imageFilename: String, homeUUID: UUID? = nil) {
         self.id = UUID()

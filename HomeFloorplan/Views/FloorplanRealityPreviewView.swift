@@ -32,6 +32,9 @@ struct Preview3DFloorplan: Identifiable {
     /// La scrittura su SwiftData resta in `FloorplanListView`: l'anteprima
     /// riceve una chiusura e non conosce né il modello né il contesto.
     let applyNorthBearing: (Double) -> Void
+    /// L'altezza dei muri di questo piano, e come salvarla.
+    let ceilingHeight: Double
+    let applyCeilingHeight: (Double) -> Void
     /// Gli accessori piazzati.
     let markers: [Preview3DMarker]
     /// Legge quota e direzione di una luce **dal modello**, ogni volta.
@@ -166,6 +169,14 @@ struct FloorplanRealityPreviewView: View {
     private var exportRotation: DrawingExportRotation { current.exportRotation }
     private var background: UIColor { current.background }
     private func onNorthBearingChange(_ bearing: Double) { current.applyNorthBearing(bearing) }
+    /// La scrittura resta fuori dalla vista, come per il nord e le lampade.
+    private func applyCeilingHeight(_ metres: Double) {
+        ceilingHeight = metres
+        current.applyCeilingHeight(metres)
+        selectedRoomName = nil
+        rebuildScene()
+    }
+
     private func applyLampSettings(_ uuid: UUID, _ height: Double, _ direction: LampDirection) {
         current.applyLampSettings(uuid, height, direction)
         settingsRevision &+= 1
@@ -176,6 +187,8 @@ struct FloorplanRealityPreviewView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    /// Copia locale per la reattivita' del passo: il modello e' la verita', ma
+    /// il pulsante deve rispondere prima che SwiftData torni indietro.
     @State private var ceilingHeight: Double = 2.4
     @State private var floorplanScene: FloorplanScene?
     @State private var cameraResetID = UUID()
@@ -253,6 +266,7 @@ struct FloorplanRealityPreviewView: View {
         .statusBarHidden()
         .onAppear {
             exposure = Exposure.nearest(to: northBearingDegrees)
+            ceilingHeight = current.ceilingHeight
             // Senza questo i sensori non sono mai stati letti e risultano tutti
             // chiusi: `startObserving` fa il readValue iniziale e arma le
             // notifiche. La vista si apre dalla lista, che non osserva niente.
@@ -266,7 +280,14 @@ struct FloorplanRealityPreviewView: View {
         // Cambiando piano cambiano gli accessori: quelli vecchi si lasciano
         // andare e si osservano i nuovi, o il piano appena aperto avrebbe luci
         // spente e porte chiuse per il solo motivo che nessuno le ha lette.
-        .onChange(of: currentID) { _, _ in observeCurrentFloorplan() }
+        .onChange(of: currentID) { _, _ in
+            observeCurrentFloorplan()
+            // L'altezza e' un fatto di **questo** piano: una mansarda non e' un
+            // piano terra, e portarsi dietro la quota di prima disegnerebbe la
+            // casa sbagliata.
+            ceilingHeight = current.ceilingHeight
+            rebuildScene()
+        }
         .onDisappear { homeKit.stopObserving(accessoryUUIDs: observedUUIDs) }
         .task {
             // ⚠️ La cadenza non la detta la percezione, la detta il **costo**:
@@ -517,9 +538,7 @@ struct FloorplanRealityPreviewView: View {
 
             HStack(spacing: 18) {
                 Button {
-                    ceilingHeight = max(2.0, ceilingHeight - 0.1)
-                    selectedRoomName = nil
-                    rebuildScene()
+                    applyCeilingHeight(max(2.0, ceilingHeight - 0.1))
                 } label: {
                     Image(systemName: "minus")
                         .frame(width: 44, height: 44)
@@ -536,9 +555,7 @@ struct FloorplanRealityPreviewView: View {
                 .frame(minWidth: 130)
 
                 Button {
-                    ceilingHeight = min(4.0, ceilingHeight + 0.1)
-                    selectedRoomName = nil
-                    rebuildScene()
+                    applyCeilingHeight(min(4.0, ceilingHeight + 0.1))
                 } label: {
                     Image(systemName: "plus")
                         .frame(width: 44, height: 44)

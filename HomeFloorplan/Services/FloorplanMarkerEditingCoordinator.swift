@@ -99,6 +99,13 @@ struct FloorplanMarkerEditingCoordinator {
         saveAndMarkForSync()
     }
 
+    /// L'altezza dei muri di questo piano.
+    func setCeilingHeight(_ metres: Double) {
+        guard floorplan.ceilingHeightMetres != metres else { return }
+        floorplan.ceilingHeightMetres = metres
+        saveAndMarkForSync()
+    }
+
     func applyRename(to markerID: UUID, newLabel: String) {
         guard let placed = marker(withID: markerID) else { return }
         let trimmed = newLabel.trimmingCharacters(in: .whitespaces)

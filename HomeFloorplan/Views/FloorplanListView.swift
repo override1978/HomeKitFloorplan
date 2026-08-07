@@ -56,6 +56,11 @@ struct FloorplanListView: View {
                     guard let plan else { return }
                     markerCoordinator(for: plan).setNorthBearing(bearing)
                 },
+                ceilingHeight: plan.ceilingHeightMetres,
+                applyCeilingHeight: { [weak plan] metres in
+                    guard let plan else { return }
+                    markerCoordinator(for: plan).setCeilingHeight(metres)
+                },
                 markers: plan.accessories.map { placed in
                     Preview3DMarker(
                         uuid: placed.homeKitAccessoryUUID,
