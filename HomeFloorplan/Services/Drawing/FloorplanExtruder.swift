@@ -135,7 +135,7 @@ enum FloorplanExtruder {
         // Nell'ordine di disegno del documento, così i tappeti restano sotto
         // come già fanno in pianta.
         for item in document.furnitureDrawOrder {
-            result.append(contentsOf: furnitureFaces(item))
+            result.append(contentsOf: furnitureFaces(item, in: document))
         }
         return result
     }
@@ -170,7 +170,8 @@ enum FloorplanExtruder {
     /// far riconoscere un divano da un tavolo — seduta più schienale, materasso
     /// più testiera — e sono la differenza fra «un mobile» e «quel mobile».
     /// Modellarli davvero è un altro mestiere e non serve a questa vista.
-    private static func furnitureFaces(_ item: FurnitureItem) -> [Face] {
+    private static func furnitureFaces(_ item: FurnitureItem,
+                                       in document: DrawingDocument) -> [Face] {
         let kind = item.kind
         let tint = item.tintIndex.flatMap { index -> CGColor? in
             let tints = FurnitureTint.allCases
@@ -191,8 +192,19 @@ enum FloorplanExtruder {
         var faces = [Face(points: corners(of: item, at: 0.004, scale: 1.5),
                           kind: .groundContact,
                           roomColorIndex: nil, roomID: nil, roomName: nil)]
-        faces += memberFaces(item, kind: kind, tint: tint)
+        faces += memberFaces(item, kind: kind, tint: tint,
+                             supportTop: supportTop(for: item, in: document))
         return faces
+    }
+
+    /// La quota su cui questo mobile appoggia, se in pianta sta sopra un altro:
+    /// e' il disegno a dire dove finisce il bancone, non una costante.
+    private static func supportTop(for item: FurnitureItem,
+                                   in document: DrawingDocument) -> Double? {
+        document.furnitureItems
+            .filter { $0.id != item.id && $0.kind != .rug && $0.rect.intersects(item.rect) }
+            .map { height(of: $0.kind) }
+            .max()
     }
 
     // MARK: - Arredi a membra
@@ -213,7 +225,7 @@ enum FloorplanExtruder {
     /// l'occhio usa per riconoscere, e sotto luce vera una cassa piena si vede
     /// per quello che è.
     private static func memberFaces(_ item: FurnitureItem, kind: FurnitureKind,
-                                    tint: CGColor?) -> [Face] {
+                                    tint: CGColor?, supportTop: Double? = nil) -> [Face] {
         let soft = tint ?? fabricSoft
         switch kind {
         case .diningTable, .generic:
@@ -261,13 +273,15 @@ enum FloorplanExtruder {
             // il 2D disegna il mobile TV col muro dal lato opposto rispetto a
             // divani e letti, e con la convenzione degli schienali la TV usciva
             // rivolta alla parete.
-            // Lo schermo arriva a 1,30 m: un televisore su un mobile basso
-            // occupa la parete, non la fascia dei quadri bassi — a un metro
-            // sembrava un monitor appoggiato.
+            // ⚠️ Lo schermo sta a **minY locale**: e' dove lo disegna il 2D
+            // (`DrawingCanvasContent`, riga della barra TV), la stessa
+            // convenzione degli schienali. Niente piu' congetture sul verso:
+            // le due viste combaciano per costruzione, e se la barra guarda il
+            // muro sbagliato si ruota il mobile nell'editor — e' un dato.
             let tvHalf = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
             return boxFaces(item, from: 0, to: 0.45, tint: soft)
                 + subBox(item,
-                         centreOffset: SIMD2(0, tvHalf.y - 0.05),
+                         centreOffset: SIMD2(0, -tvHalf.y + 0.05),
                          half: SIMD2(min(tvHalf.x * 0.85, 0.85), 0.022),
                          from: 0.55, to: 1.30, tint: blackGlass)
         case .inductionCooktop:
@@ -275,13 +289,20 @@ enum FloorplanExtruder {
             // cottura in pianta sta sopra un bancone gia' disegnato, e dargli
             // un corpo proprio raddoppiava il mobile — una base grigia spessa
             // sotto due centimetri di vetro.
-            // Sporge di quattro centimetri dal top: a filo si confondeva col
-            // bancone e sembrava che il vetro non ci fosse.
+            // Il vetro appoggia su **cio' che sta sotto nel disegno**: la
+            // costante 0,90 lo faceva volare sopra i piani piu' bassi e
+            // sparire dentro quelli piu' alti. Se sotto non c'e' niente, torna
+            // il corpo — un piano cottura orfano non puo' galleggiare.
             let hobHalf = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
-            return subBox(item,
-                          centreOffset: .zero,
-                          half: SIMD2(hobHalf.x * 0.92, hobHalf.y * 0.88),
-                          from: 0.90, to: 0.94, tint: blackGlass)
+            let glassHalf = SIMD2(hobHalf.x * 0.92, hobHalf.y * 0.88)
+            if let supportTop {
+                return subBox(item, centreOffset: .zero, half: glassHalf,
+                              from: supportTop + 0.004, to: supportTop + 0.038,
+                              tint: blackGlass)
+            }
+            return boxFaces(item, from: 0, to: 0.88, tint: soft)
+                + subBox(item, centreOffset: .zero, half: glassHalf,
+                         from: 0.88, to: 0.915, tint: blackGlass)
         case .bed:
             // Giroletto scuro, materasso chiaro, cuscini alla testata: tre
             // membri che dicono «letto» meglio di qualunque cassa.
