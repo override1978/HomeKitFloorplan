@@ -1213,6 +1213,50 @@ struct RealityFloorplanView: UIViewRepresentable {
                 return crossings
             }
 
+            // ⚠️ Il poligono dell'area **non conosce i muri interni**: una
+            // «Cucina» disegnata come rettangolo puo' inglobare zone murate, e
+            // un imbocco dentro il poligono puo' comunque stare a un palmo da
+            // una parete. Un buon punto dove stare lo decidono i muri veri:
+            // aria attorno ai piedi, e via libera davanti allo sguardo.
+            let wallSegments: [(SIMD2<Float>, SIMD2<Float>)] = scene.faces
+                .filter { $0.role == .wall || $0.role == .balcony }
+                .compactMap { face in
+                    let plan = face.points.map { SIMD2($0.x - centre.x, $0.z - centre.z) }
+                    guard let first = plan.first else { return nil }
+                    var a = first, b = first
+                    for point in plan {
+                        for other in plan
+                        where simd_distance(point, other) > simd_distance(a, b) {
+                            a = point; b = other
+                        }
+                    }
+                    return simd_distance(a, b) > 0.05 ? (a, b) : nil
+                }
+
+            func clearance(_ point: SIMD2<Float>) -> Float {
+                wallSegments.map { a, b -> Float in
+                    let ab = b - a
+                    let t = max(0, min(1, simd_dot(point - a, ab)
+                                          / max(simd_dot(ab, ab), 1e-6)))
+                    return simd_distance(point, a + ab * t)
+                }.min() ?? 10
+            }
+
+            func sight(_ point: SIMD2<Float>, _ heading: Double) -> Float {
+                let d = SIMD2(sin(Float(heading)), cos(Float(heading)))
+                var nearest: Float = 8
+                for (a, b) in wallSegments {
+                    let e = b - a
+                    let denom = d.x * e.y - d.y * e.x
+                    guard abs(denom) > 1e-6 else { continue }
+                    let ap = a - point
+                    let t = (ap.x * e.y - ap.y * e.x) / denom
+                    let u = (ap.x * d.y - ap.y * d.x) / denom
+                    if t > 0, u >= 0, u <= 1 { nearest = min(nearest, t) }
+                }
+                return nearest
+            }
+
             let sizeX = maxP.x - minP.x
             let sizeZ = maxP.z - minP.z
             let mid = SIMD2(roomCentre.x, roomCentre.z)
@@ -1225,22 +1269,46 @@ struct RealityFloorplanView: UIViewRepresentable {
             ]
             if sizeZ > sizeX { candidates.swapAt(0, 2); candidates.swapAt(1, 3) }
 
-            let chosen = candidates.first { candidate in
-                let ahead = candidate.eye + SIMD2(sin(Float(candidate.azimuth)),
-                                                  cos(Float(candidate.azimuth))) * 0.6
-                return inside(candidate.eye) && inside(ahead)
+            let chosen = candidates.first {
+                inside($0.eye) && clearance($0.eye) > 0.35 && sight($0.eye, $0.azimuth) > 1.6
             }
 
             if let chosen {
                 focus = SIMD3(chosen.eye.x, roomCentre.y + 1.5, chosen.eye.y)
                 azimuth = chosen.azimuth
-            } else if let flag = flags.first(where: { $0.roomID == roomID }) {
-                let anchor = SIMD2(Float(flag.anchor.x) - centre.x,
-                                   Float(flag.anchor.y) - centre.z)
-                focus = SIMD3(anchor.x, roomCentre.y + 1.5, anchor.y)
-                azimuth = Double(atan2(mid.x - anchor.x, mid.y - anchor.y))
             } else {
-                focus = SIMD3(roomCentre.x, roomCentre.y + 1.5, roomCentre.z)
+                // Nessun imbocco regge: si cerca sul pavimento il punto con
+                // piu' aria e piu' vista, provando otto direzioni. E' una
+                // griglia da qualche decina di campioni, una volta per
+                // ingresso: non e' un costo.
+                var best: (eye: SIMD2<Float>, azimuth: Double, score: Float)?
+                var x = minP.x - centre.x + 0.4
+                while x < maxP.x - centre.x - 0.3 {
+                    var z = minP.z - centre.z + 0.4
+                    while z < maxP.z - centre.z - 0.3 {
+                        let point = SIMD2(x, z)
+                        if inside(point) {
+                            let air = clearance(point)
+                            if air > 0.3 {
+                                for step in 0..<8 {
+                                    let heading = Double(step) * .pi / 4
+                                    let score = min(air, 0.9) * 2 + min(sight(point, heading), 5)
+                                    if score > (best?.score ?? 0) {
+                                        best = (point, heading, score)
+                                    }
+                                }
+                            }
+                        }
+                        z += 0.45
+                    }
+                    x += 0.45
+                }
+                if let best {
+                    focus = SIMD3(best.eye.x, roomCentre.y + 1.5, best.eye.y)
+                    azimuth = best.azimuth
+                } else {
+                    focus = SIMD3(roomCentre.x, roomCentre.y + 1.5, roomCentre.z)
+                }
             }
             firstPerson = true
             // Leggermente in giu' e **grandangolo**: a 38 gradi — il tele
