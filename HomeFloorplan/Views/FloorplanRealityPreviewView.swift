@@ -778,12 +778,11 @@ struct FloorplanRealityPreviewView: View {
                         Button {
                             applyLampSettings(lamp.accessoryUUID, lamp.height, value)
                         } label: {
-                            Image(systemName: value.symbol)
-                                .font(.system(size: 14))
-                                .foregroundStyle(.white.opacity(lamp.direction == value ? 1 : 0.5))
-                                .frame(width: 40, height: 32)
-                                .background(lamp.direction == value ? Color.white.opacity(0.22) : Color.clear,
-                                            in: Capsule())
+                            directionGlyph(value, isSelected: lamp.direction == value)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 3)
+                                .background(lamp.direction == value ? Color.white.opacity(0.20) : Color.clear,
+                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(Text(value.label))
@@ -810,6 +809,54 @@ struct FloorplanRealityPreviewView: View {
                     .frame(width: 62, alignment: .trailing)
             }
         }
+    }
+
+    /// Il pallino con il suo fascio, disegnato.
+    ///
+    /// Una freccia dice «in giù», non dice **cosa ottieni**. Qui si vede la
+    /// lampada e la luce che getta, che è esattamente ciò che comparirà nel
+    /// modello: l'anteprima e il comando diventano la stessa cosa.
+    private func directionGlyph(_ direction: LampDirection, isSelected: Bool) -> some View {
+        Canvas { context, size in
+            let bulb = Color.white.opacity(isSelected ? 0.95 : 0.45)
+            let beam = Color(red: 1.0, green: 0.86, blue: 0.45)
+                .opacity(isSelected ? 0.55 : 0.20)
+            let centreX = size.width / 2
+            let spread = size.width * 0.36
+
+            func dot(at y: CGFloat) {
+                context.fill(Path(ellipseIn: CGRect(x: centreX - 3.5, y: y - 3.5, width: 7, height: 7)),
+                             with: .color(bulb))
+            }
+            func cone(apex: CGFloat, base: CGFloat) {
+                var path = Path()
+                path.move(to: CGPoint(x: centreX, y: apex))
+                path.addLine(to: CGPoint(x: centreX - spread, y: base))
+                path.addLine(to: CGPoint(x: centreX + spread, y: base))
+                path.closeSubpath()
+                context.fill(path, with: .color(beam))
+            }
+
+            switch direction {
+            case .down:
+                cone(apex: 7, base: size.height - 3)
+                dot(at: 7)
+            case .around:
+                for factor in [0.42, 0.28] {
+                    let radius = size.width * factor
+                    context.fill(Path(ellipseIn: CGRect(x: centreX - radius,
+                                                        y: size.height / 2 - radius,
+                                                        width: radius * 2,
+                                                        height: radius * 2)),
+                                 with: .color(beam.opacity(isSelected ? 0.30 : 0.14)))
+                }
+                dot(at: size.height / 2)
+            case .up:
+                cone(apex: size.height - 7, base: 3)
+                dot(at: size.height - 7)
+            }
+        }
+        .frame(width: 42, height: 34)
     }
 
     private func heightBinding(for lamp: FloorplanLamp) -> Binding<Double> {
