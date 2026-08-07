@@ -306,6 +306,7 @@ struct FloorplanRealityPreviewView: View {
                                      background: background,
                                      sun: sun,
                                      lamps: litLights,
+                                     lampEffects: mode == .off,
                                      climate: climateUnits,
                                      litRooms: litRoomIDs,
                                      awnings: awnings,
@@ -434,13 +435,19 @@ struct FloorplanRealityPreviewView: View {
                                 needsAttention: sensor.urgency != .normal)
             }
 
+            // La bandierina porta il **giudizio** (il punteggio, col suo
+            // colore di scala); la velatura su pavimento e muri parla solo la
+            // lingua degli **avvisi** — arancio, rosso — e si accende solo se
+            // un sensore sfora davvero. Il giallo «Discreta» steso a terra si
+            // confondeva con la luce delle lampade e non diceva una gravita'.
+            let worst = worstUrgency(in: data)
             return RoomFlag(roomID: anchor.roomID, anchor: anchor.point,
                             title: anchor.roomName,
                             value: "\(Int(data.qualityScore * 100))% \(data.qualityLabel)",
-                            accent: UIColor(data.qualityColor),
-                            // Stessa soglia con cui `qualityLabel` smette di
-                            // dire «Ottima»: una sola definizione di «sta bene».
-                            needsAttention: data.qualityScore < 0.85)
+                            accent: worst == .normal
+                                ? UIColor(data.qualityColor)
+                                : UIColor(urgencyColour(worst)),
+                            needsAttention: worst != .normal)
         }
     }
 
@@ -1474,6 +1481,13 @@ struct FloorplanRealityPreviewView: View {
         return "\(lowest.formattedValue)–\(highest.formattedValue)"
     }
 
+    private func worstUrgency(in data: RoomEnvironmentData) -> SensorUrgency {
+        let urgencies = data.sensors.map(\.urgency)
+        if urgencies.contains(.danger) { return .danger }
+        if urgencies.contains(.warning) { return .warning }
+        return .normal
+    }
+
     private func worstUrgency(for type: SensorServiceType) -> SensorUrgency {
         let urgencies = envVM.rooms.flatMap(\.sensors)
             .filter { $0.serviceType == type }
@@ -1526,6 +1540,11 @@ private struct RealityFloorplanView: UIViewRepresentable {
     let background: UIColor
     let sun: FloorplanSunLight
     let lamps: [FloorplanLamp]
+    /// Con uno strato tematico attivo il colore del pavimento appartiene allo
+    /// strato: le pozze e i coni dipinti delle lampade si spengono, restano il
+    /// bulbo e la luce vera. Un pavimento colorato in Ambiente deve voler dire
+    /// una cosa sola.
+    let lampEffects: Bool
     let climate: [FloorplanClimateUnit]
     /// Le stanze da far brillare attraverso i vetri, di notte.
     let litRooms: Set<UUID>
@@ -1587,6 +1606,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.updateSceneIfNeeded(scene)
         context.coordinator.updateSun(sun)
         context.coordinator.updateLamps(lamps)
+        context.coordinator.updateLampEffects(lampEffects)
         context.coordinator.updateClimate(climate)
         context.coordinator.updateLitWindows(litRooms)
         context.coordinator.updateAwnings(awnings)
@@ -1680,6 +1700,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             var poolKey: String = ""
         }
         private var lampNodes: [UUID: LampNode] = [:]
+        private var lampEffectsEnabled = true
         /// Serve per regolare la luce d'ambiente, che di notte va abbassata:
         /// quella non appartiene a nessuna delle tre direzionali.
         private weak var view: ARView?
@@ -2110,6 +2131,12 @@ private struct RealityFloorplanView: UIViewRepresentable {
             return self
         }
 
+        func updateLampEffects(_ enabled: Bool) {
+            guard enabled != lampEffectsEnabled else { return }
+            lampEffectsEnabled = enabled
+            applyLampStates()
+        }
+
         func updateLamps(_ newLamps: [FloorplanLamp]) {
             guard lamps != newLamps else { return }
             // Le stesse lampade in stato diverso si aggiornano in posto; solo
@@ -2268,7 +2295,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
             // Il cono si vede solo quando ha una direzione: «intorno» non e' un
             // fascio, e disegnarlo comunque darebbe di nuovo l'effetto pianeta.
-            let showsBeam = lamp.isOn && lamp.direction != .around
+            let showsBeam = lamp.isOn && lamp.direction != .around && lampEffectsEnabled
             node.halo.isEnabled = showsBeam
             if showsBeam, node.beamKey != lamp.beamKey {
                 let height = lamp.direction == .up
@@ -2290,7 +2317,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
             // La pozza dipende dalla geometria, quindi si rifa' solo quando
             // cambia davvero. Una luce puntata in alto non ne fa nessuna.
-            let wantsPool = lamp.isOn && lamp.direction != .up
+            let wantsPool = lamp.isOn && lamp.direction != .up && lampEffectsEnabled
             if wantsPool, node.poolKey != lamp.poolKey {
                 node.pool?.removeFromParent()
                 node.pool = RealityFloorplanRenderer.lampPoolEntity(for: lamp, scene: scene)
