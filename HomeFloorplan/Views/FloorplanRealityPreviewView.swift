@@ -297,6 +297,11 @@ struct FloorplanRealityPreviewView: View {
     /// ma di giorno non c'è modo di verificare le luci — e una funzione che si
     /// può provare solo dopo cena non si sviluppa.
     @State private var forcesNight = false
+    /// Il pannello delle impostazioni della planimetria: altezza soffitto,
+    /// esposizione, anteprima notte. Sono configurazioni — si toccano una
+    /// volta nella vita di una planimetria — e una configurazione non merita
+    /// una pillola permanente sul bordo piu' prezioso dello schermo.
+    @State private var isSettingsOpen = false
     #endif
 
     var body: some View {
@@ -333,6 +338,11 @@ struct FloorplanRealityPreviewView: View {
                 if mode == .environment { filterRow }
                 if mode == .security { securityStatusPill }
             }
+        }
+        .overlay(alignment: .topTrailing) {
+            settingsPanel
+                .padding(.top, 68)
+                .padding(.trailing, 16)
         }
         .statusBarHidden()
         .sheet(item: $detailAccessory) { accessory in
@@ -856,13 +866,11 @@ struct FloorplanRealityPreviewView: View {
 
                 Spacer(minLength: 12)
 
-                #if DEBUG
                 Button {
-                    forcesNight.toggle()
+                    withAnimation(.easeOut(duration: 0.22)) { isSettingsOpen.toggle() }
                 } label: {
-                    chrome(forcesNight ? "moon.fill" : "sun.max")
+                    chrome("gearshape")
                 }
-                #endif
 
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) { cameraResetID = UUID() }
@@ -896,42 +904,72 @@ struct FloorplanRealityPreviewView: View {
                     .background(.black.opacity(0.45), in: Capsule())
                     .transition(.scale.combined(with: .opacity))
             }
-
-            HStack(spacing: 18) {
-                Button {
-                    applyCeilingHeight(max(2.0, ceilingHeight - 0.1))
-                } label: {
-                    Image(systemName: "minus")
-                        .frame(width: 44, height: 44)
-                }
-
-                VStack(spacing: 2) {
-                    Text(String(localized: "floorplan.ceilingHeight", defaultValue: "Ceiling height"))
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
-                    Text(ceilingHeight.formatted(.number.precision(.fractionLength(1))) + " m")
-                        .font(.headline.monospacedDigit())
-                        .foregroundStyle(.white)
-                }
-                .frame(minWidth: 130)
-
-                Button {
-                    applyCeilingHeight(min(4.0, ceilingHeight + 0.1))
-                } label: {
-                    Image(systemName: "plus")
-                        .frame(width: 44, height: 44)
-                }
-
-                Divider().frame(height: 26).overlay(Color.white.opacity(0.25))
-
-                exposureMenu
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .background(.black.opacity(0.34), in: Capsule())
         }
         .padding(.bottom, 28)
+    }
+
+    /// Le impostazioni della planimetria, raccolte dietro l'ingranaggio.
+    ///
+    /// Stile del pannello di stanza: piu' denso della cornice perche' **si
+    /// usa**, traslucido perche' il modello deve reagire mentre regoli.
+    @ViewBuilder
+    private var settingsPanel: some View {
+        if isSettingsOpen {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Image(systemName: "gearshape").font(.system(size: 13))
+                    Text(title).font(.headline).lineLimit(1)
+                }
+                .foregroundStyle(.white)
+
+                Divider().overlay(Color.white.opacity(0.18))
+
+                HStack(spacing: 12) {
+                    Text(String(localized: "floorplan.ceilingHeight", defaultValue: "Ceiling height"))
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                    Spacer()
+                    Button {
+                        applyCeilingHeight(max(2.0, ceilingHeight - 0.1))
+                    } label: {
+                        Image(systemName: "minus").frame(width: 38, height: 34)
+                    }
+                    Text(ceilingHeight.formatted(.number.precision(.fractionLength(1))) + " m")
+                        .font(.headline.monospacedDigit())
+                        .frame(minWidth: 58)
+                    Button {
+                        applyCeilingHeight(min(4.0, ceilingHeight + 0.1))
+                    } label: {
+                        Image(systemName: "plus").frame(width: 38, height: 34)
+                    }
+                }
+                .foregroundStyle(.white)
+
+                HStack(spacing: 12) {
+                    Text(String(localized: "floorplan.exposure", defaultValue: "Top of the plan faces"))
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                    Spacer()
+                    exposureMenu
+                }
+
+                #if DEBUG
+                Toggle(isOn: $forcesNight) {
+                    Text(String(localized: "floorplan.nightPreview", defaultValue: "Night preview"))
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .tint(.indigo)
+                #endif
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(width: 340)
+            .background(.black.opacity(0.58), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     /// Otto punti cardinali, che è la granularità con cui la gente conosce casa
@@ -956,17 +994,17 @@ struct FloorplanRealityPreviewView: View {
                 }
             }
         } label: {
-            VStack(spacing: 2) {
-                Text(String(localized: "floorplan.exposure", defaultValue: "Top of the plan faces"))
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.7))
-                HStack(spacing: 4) {
-                    Image(systemName: "location.north.line").font(.caption2)
-                    Text(exposure.shortLabel).font(.headline)
-                }
-                .foregroundStyle(.white)
+            HStack(spacing: 5) {
+                Image(systemName: "location.north.line").font(.caption)
+                Text(exposure.shortLabel).font(.headline)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
             }
-            .frame(minWidth: 96)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 34)
+            .background(Color.white.opacity(0.12), in: Capsule())
         }
     }
 
