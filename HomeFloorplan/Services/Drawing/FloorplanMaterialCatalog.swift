@@ -159,7 +159,11 @@ enum FloorplanMaterialCatalog {
     /// L'etichetta in cima allo stelo, disegnata come immagine e appiccicata a
     /// un rettangolo. **Unlit**: è un'etichetta, non una superficie, e non deve
     /// scurirsi quando la stanza è in ombra — è proprio quando serve leggerla.
-    static func flagLabelMaterial(title: String, value: String, accent: UIColor) -> (any RealityKit.Material)? {
+    /// Restituisce anche le **proporzioni** della capsula: la larghezza dipende
+    /// da cosa c'e' scritto, e il piano che la porta deve seguirla o il testo
+    /// nuota in una capsula vuota.
+    static func flagLabelMaterial(title: String, value: String, accent: UIColor?)
+        -> (material: any RealityKit.Material, aspect: CGFloat)? {
         guard let image = flagLabelImage(title: title, value: value, accent: accent),
               let texture = try? TextureResource(image: image,
                                                  withName: nil,
@@ -168,7 +172,7 @@ enum FloorplanMaterialCatalog {
 
         var material = UnlitMaterial(texture: texture)
         material.blending = .transparent(opacity: .init(floatLiteral: 1))
-        return material
+        return (material, CGFloat(image.width) / CGFloat(image.height))
     }
 
     /// Una **capsula**, non una scheda.
@@ -177,8 +181,21 @@ enum FloorplanMaterialCatalog {
     /// cose ma pesava come una card, e sopra un modello 3D sette card sono sette
     /// oggetti che competono con la casa. Una riga sola, angoli pieni, il colore
     /// affidato a un punto e al bordo: si legge uguale e non ruba la scena.
-    private static func flagLabelImage(title: String, value: String, accent: UIColor) -> CGImage? {
-        let size = CGSize(width: 440, height: 112)
+    ///
+    /// `accent` a `nil` vuol dire **non c'e' nessuno stato da dire**: niente
+    /// pallino e bordo neutro. Un pallino colorato su una capsula che porta solo
+    /// il nome di una stanza si legge come un semaforo, e sarebbe un semaforo
+    /// che non misura niente.
+    ///
+    /// La larghezza segue il testo: «Cucina» e «68% Discreta» non meritano la
+    /// stessa capsula, e a larghezza fissa la prima resta mezza vuota.
+    private static func flagLabelImage(title: String, value: String, accent: UIColor?) -> CGImage? {
+        let dotDiameter: CGFloat = 20
+        let leading: CGFloat = accent == nil ? 28 : 22 + dotDiameter + 14
+        let measured = composedLine(title: title, value: value, scale: 1).size().width
+        let size = CGSize(width: max(200, (leading + min(measured, 560) + 28).rounded()),
+                          height: 112)
+
         let format = UIGraphicsImageRendererFormat()
         format.scale = 2
         format.opaque = false
@@ -190,21 +207,22 @@ enum FloorplanMaterialCatalog {
             UIColor(white: 0.07, alpha: 0.88).setFill()
             UIBezierPath(roundedRect: pill, cornerRadius: radius).fill()
 
-            accent.withAlphaComponent(0.6).setStroke()
+            (accent?.withAlphaComponent(0.6) ?? UIColor(white: 1, alpha: 0.22)).setStroke()
             let border = UIBezierPath(roundedRect: pill.insetBy(dx: 1.5, dy: 1.5), cornerRadius: radius)
             border.lineWidth = 3
             border.stroke()
 
-            // Il pallino di stato al posto della barra: stesso colore, un decimo
-            // dell'ingombro.
-            let dotDiameter: CGFloat = 20
-            let dot = CGRect(x: pill.minX + 22, y: pill.midY - dotDiameter / 2,
-                             width: dotDiameter, height: dotDiameter)
-            accent.setFill()
-            UIBezierPath(ovalIn: dot).fill()
+            if let accent {
+                // Il pallino di stato al posto della barra: stesso colore, un
+                // decimo dell'ingombro.
+                let dot = CGRect(x: pill.minX + 22, y: pill.midY - dotDiameter / 2,
+                                 width: dotDiameter, height: dotDiameter)
+                accent.setFill()
+                UIBezierPath(ovalIn: dot).fill()
+            }
 
-            let textArea = CGRect(x: dot.maxX + 14, y: pill.minY,
-                                  width: pill.maxX - dot.maxX - 36, height: pill.height)
+            let textArea = CGRect(x: pill.minX + leading, y: pill.minY,
+                                  width: pill.maxX - pill.minX - leading - 22, height: pill.height)
             drawRow(title: title, value: value, in: textArea)
         }
         return image.cgImage
@@ -214,23 +232,33 @@ enum FloorplanMaterialCatalog {
     /// stanno si rimpiccioliscono **insieme**, o cambierebbe la gerarchia.
     private static func drawRow(title: String, value: String, in area: CGRect) {
         var scale: CGFloat = 1
-        var titleAttributes: [NSAttributedString.Key: Any] = [:]
-        var valueAttributes: [NSAttributedString.Key: Any] = [:]
-        var line = NSAttributedString()
-
-        repeat {
-            titleAttributes = [.font: UIFont.systemFont(ofSize: 34 * scale, weight: .medium),
-                               .foregroundColor: UIColor(white: 1, alpha: 0.66)]
-            valueAttributes = [.font: UIFont.systemFont(ofSize: 40 * scale, weight: .semibold),
-                               .foregroundColor: UIColor.white]
-            let composed = NSMutableAttributedString(string: title + "  ", attributes: titleAttributes)
-            composed.append(NSAttributedString(string: value, attributes: valueAttributes))
-            line = composed
+        var line = composedLine(title: title, value: value, scale: scale)
+        while line.size().width > area.width && scale > 0.4 {
             scale -= 0.06
-        } while line.size().width > area.width && scale > 0.4
+            line = composedLine(title: title, value: value, scale: scale)
+        }
 
         let measured = line.size()
         line.draw(at: CGPoint(x: area.minX, y: area.midY - measured.height / 2))
+    }
+
+    /// Titolo vuoto vuol dire **il valore e' tutto**: niente spaziatura fantasma
+    /// prima del testo.
+    private static func composedLine(title: String, value: String, scale: CGFloat) -> NSAttributedString {
+        let valueAttributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 40 * scale, weight: .semibold),
+            .foregroundColor: UIColor.white
+        ]
+        guard !title.isEmpty else {
+            return NSAttributedString(string: value, attributes: valueAttributes)
+        }
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 34 * scale, weight: .medium),
+            .foregroundColor: UIColor(white: 1, alpha: 0.66)
+        ]
+        let composed = NSMutableAttributedString(string: title + "  ", attributes: titleAttributes)
+        composed.append(NSAttributedString(string: value, attributes: valueAttributes))
+        return composed
     }
 
     /// Il piano su cui la casa appoggia e su cui cade la sua ombra.

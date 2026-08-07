@@ -95,7 +95,9 @@ struct RoomFlag {
     var anchor: SIMD2<Double>
     var title: String
     var value: String
-    var accent: UIColor
+    /// `nil` quando la bandierina **non porta uno stato** ma solo un'etichetta:
+    /// niente pallino, niente velatura, niente muri accesi.
+    var accent: UIColor?
     /// Solo le stanze che chiedono attenzione prendono la velatura. Una tinta
     /// su una stanza che sta bene non dice niente: sporca il materiale e toglie
     /// forza all'unica che invece va vista.
@@ -287,9 +289,24 @@ struct FloorplanRealityPreviewView: View {
     /// fra device non è stabile.
     private var roomFlags: [RoomFlag] {
         switch mode {
-        case .off:         []
+        case .off:         nameFlags
         case .environment: environmentFlags
         case .security:    securityFlags
+        }
+    }
+
+    /// Fuori dagli strati tematici le bandierine sono libere, e una casa vista
+    /// dall'alto senza nomi e' un labirinto: qui portano solo **come si chiama
+    /// la stanza**, che e' anche quello che serve per sapere su cosa si sta per
+    /// aprire il pannello luci.
+    ///
+    /// Nessun accento: non c'e' nessuno stato da raccontare, e fingerne uno
+    /// svuoterebbe il colore negli strati dove invece significa qualcosa.
+    private var nameFlags: [RoomFlag] {
+        FloorplanRoomEnvironment.anchors(in: document).map { anchor in
+            RoomFlag(roomID: anchor.roomID, anchor: anchor.point,
+                     title: "", value: anchor.roomName,
+                     accent: nil, needsAttention: false)
         }
     }
 
@@ -1184,7 +1201,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// fascia, non cambia niente di ciò che è disegnato.
         private var heatSignature: String {
             flags.filter(\.needsAttention)
-                .map { "\($0.roomID)|\($0.accent.description)|\(Int($0.brightnessKey * 8))" }
+                .map { "\($0.roomID)|\($0.accent?.description ?? "")|\(Int($0.brightnessKey * 8))" }
                 .sorted()
                 .joined(separator: ",")
         }
@@ -1200,7 +1217,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
         private func applyRoomAccents() {
             let accents = Dictionary(
-                uniqueKeysWithValues: flags.filter(\.needsAttention).map { ($0.roomID, $0.accent) }
+                uniqueKeysWithValues: flags.filter(\.needsAttention)
+                    .compactMap { flag in flag.accent.map { (flag.roomID, $0) } }
             )
             for (roomID, entity) in roomWallEntities {
                 guard let accent = accents[roomID],
@@ -1236,12 +1254,15 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private func applyFlagStates() {
             for flag in flags {
                 guard var node = flagNodes[flag.roomID] else { continue }
-                let current = "\(flag.title)|\(flag.value)|\(flag.accent.description)"
+                let current = "\(flag.title)|\(flag.value)|\(flag.accent?.description ?? "")"
                 guard node.signature != current else { continue }
-                if let material = FloorplanMaterialCatalog.flagLabelMaterial(title: flag.title,
-                                                                            value: flag.value,
-                                                                            accent: flag.accent) {
-                    node.label.model?.materials = [material]
+                if let label = FloorplanMaterialCatalog.flagLabelMaterial(title: flag.title,
+                                                                         value: flag.value,
+                                                                         accent: flag.accent) {
+                    // La capsula si stringe sul testo, quindi cambiando testo
+                    // cambia anche il piano che la porta.
+                    node.label.model?.mesh = RealityFloorplanRenderer.flagLabelMesh(aspect: label.aspect)
+                    node.label.model?.materials = [label.material]
                 }
                 node.signature = current
                 flagNodes[flag.roomID] = node
@@ -1250,7 +1271,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
         private func signature(of roomID: UUID) -> String {
             guard let flag = flags.first(where: { $0.roomID == roomID }) else { return "" }
-            return "\(flag.title)|\(flag.value)|\(flag.accent.description)"
+            return "\(flag.title)|\(flag.value)|\(flag.accent?.description ?? "")"
         }
 
         /// Le etichette guardano la telecamera **davvero**, non solo di lato.
@@ -1789,7 +1810,7 @@ private enum RealityFloorplanRenderer {
         let topY = scene.bounds.max.y + 0.55
 
         return flags.compactMap { flag -> Flag? in
-            guard let material = FloorplanMaterialCatalog.flagLabelMaterial(
+            guard let label = FloorplanMaterialCatalog.flagLabelMaterial(
                 title: flag.title, value: flag.value, accent: flag.accent
             ) else { return nil }
 
@@ -1805,13 +1826,20 @@ private enum RealityFloorplanRenderer {
             stem.position = SIMD3(x, floorY - centre.y + height / 2, z)
             root.addChild(stem)
 
-            let label = ModelEntity(mesh: .generatePlane(width: 1.25, height: 0.32),
-                                    materials: [material])
-            label.position = SIMD3(x, topY - centre.y + 0.19, z)
-            root.addChild(label)
+            let plate = ModelEntity(mesh: flagLabelMesh(aspect: label.aspect),
+                                    materials: [label.material])
+            plate.position = SIMD3(x, topY - centre.y + 0.19, z)
+            root.addChild(plate)
 
-            return Flag(roomID: flag.roomID, root: root, label: label)
+            return Flag(roomID: flag.roomID, root: root, label: plate)
         }
+    }
+
+    /// Altezza fissa, larghezza dal contenuto: cosi' tutte le capsule restano
+    /// sulla stessa riga ottica anche quando dicono cose di lunghezza diversa.
+    static func flagLabelMesh(aspect: CGFloat) -> MeshResource {
+        let height: Float = 0.32
+        return .generatePlane(width: height * Float(aspect), height: height)
     }
 
     /// Una fascia lungo il perimetro del pavimento della stanza.
@@ -2068,7 +2096,8 @@ private enum RealityFloorplanRenderer {
 
         return flags.compactMap { flag -> Entity? in
             guard flag.needsAttention,
-                  let material = FloorplanMaterialCatalog.roomHeatMaterial(flag.accent)
+                  let accent = flag.accent,
+                  let material = FloorplanMaterialCatalog.roomHeatMaterial(accent)
             else { return nil }
 
             let faces = scene.faces.filter { $0.role == .floor && $0.roomID == flag.roomID }
