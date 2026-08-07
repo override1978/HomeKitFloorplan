@@ -114,6 +114,16 @@ enum FloorplanTapTarget: Equatable {
     case shutter(openingID: UUID)
 }
 
+/// Una tenda gia' collocata: la forma, l'accessorio che la muove, quanto e'
+/// fuori.
+struct FloorplanAwning: Equatable {
+    var roomID: UUID
+    var accessoryUUID: UUID
+    /// 0 ritirata … 1 tutta stesa, dallo stato HomeKit.
+    var extended: Double
+    var geometry: FloorplanExtruder.AwningGeometry
+}
+
 /// Il campo visivo di una telecamera, appoggiato al pavimento.
 struct FloorplanCameraCone: Equatable {
     var accessoryUUID: UUID
@@ -298,6 +308,7 @@ struct FloorplanRealityPreviewView: View {
                                      lamps: litLights,
                                      climate: climateUnits,
                                      litRooms: litRoomIDs,
+                                     awnings: awnings,
                                      cameras: cameraCones,
                                      flags: roomFlags,
                                      cameraResetID: cameraResetID,
@@ -344,7 +355,6 @@ struct FloorplanRealityPreviewView: View {
         // HomeKit: una corsa intera fa venti ricostruzioni in venti secondi,
         // non duecento.
         .onChange(of: closedShutters) { _, _ in rebuildScene() }
-        .onChange(of: extendedAwnings) { _, _ in rebuildScene() }
         // Cambiando piano cambiano gli accessori: quelli vecchi si lasciano
         // andare e si osservano i nuovi, o il piano appena aperto avrebbe luci
         // spente e porte chiuse per il solo motivo che nessuno le ha lette.
@@ -685,8 +695,17 @@ struct FloorplanRealityPreviewView: View {
         return result
     }
 
-    private var extendedAwnings: [UUID: Double] {
-        Dictionary(uniqueKeysWithValues: balconyAwnings.map { ($0.areaID, $0.extended) })
+    private var awnings: [FloorplanAwning] {
+        balconyAwnings.compactMap { item in
+            guard let area = document.roomAreas.first(where: { $0.id == item.areaID }),
+                  let geometry = FloorplanExtruder.awningGeometry(over: area, in: document,
+                                                                  heights: .init(ceiling: ceilingHeight))
+            else { return nil }
+            return FloorplanAwning(roomID: item.areaID,
+                                   accessoryUUID: item.accessoryUUID,
+                                   extended: item.extended,
+                                   geometry: geometry)
+        }
     }
 
     /// Da cosa si tocca all'accessorio da comandare.
@@ -1439,8 +1458,7 @@ struct FloorplanRealityPreviewView: View {
                                                      ceilingHeight: ceilingHeight,
                                                      includesFurniture: true,
                                                      openOpeningIDs: openOpeningIDs,
-                                                     closedShutters: closedShutters,
-                                                     extendedAwnings: extendedAwnings)
+                                                     closedShutters: closedShutters)
     }
 }
 
@@ -1454,6 +1472,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
     let climate: [FloorplanClimateUnit]
     /// Le stanze da far brillare attraverso i vetri, di notte.
     let litRooms: Set<UUID>
+    let awnings: [FloorplanAwning]
     let cameras: [FloorplanCameraCone]
     let flags: [RoomFlag]
     let cameraResetID: UUID
@@ -1513,6 +1532,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.updateLamps(lamps)
         context.coordinator.updateClimate(climate)
         context.coordinator.updateLitWindows(litRooms)
+        context.coordinator.updateAwnings(awnings)
         context.coordinator.updateCameraCones(cameras)
         context.coordinator.updateFlags(flags)
         context.coordinator.resetCameraIfNeeded(cameraResetID)
@@ -1525,6 +1545,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             .prepared(withLamps: lamps)
             .prepared(withClimate: climate)
             .prepared(withLitRooms: litRooms)
+            .prepared(withAwnings: awnings)
             .prepared(withCameras: cameras)
             .prepared(with: flags)
     }
@@ -1568,6 +1589,20 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private let litWindowRoot = Entity()
         private let cameraRoot = Entity()
         private var cameras: [FloorplanCameraCone] = []
+        private let awningRoot = Entity()
+        private var awnings: [FloorplanAwning] = []
+        /// Il telo di ogni tenda, tenuto in vita fra un aggiornamento e l'altro:
+        /// la corsa cambia la **mesh**, non l'oggetto.
+        private struct AwningNode {
+            var entity: ModelEntity
+            var geometry: FloorplanExtruder.AwningGeometry
+            /// Quanto e' fuori **adesso**, sullo schermo.
+            var shown: Double
+            /// Quanto dovra' esserlo, secondo HomeKit.
+            var target: Double
+        }
+        private var awningNodes: [UUID: AwningNode] = [:]
+        private var awningTimer: Timer?
         private var litRooms: Set<UUID> = []
         private var builtLitRooms: Set<UUID>? = nil
         private var climate: [FloorplanClimateUnit] = []
@@ -1627,6 +1662,139 @@ private struct RealityFloorplanView: UIViewRepresentable {
             self.onRoomSelected = onRoomSelected
             self.onTargetTapped = onTargetTapped
             self.onTargetHeld = onTargetHeld
+        }
+
+        func prepared(withAwnings awnings: [FloorplanAwning]) -> Coordinator {
+            self.awnings = awnings
+            return self
+        }
+
+        /// Il telo insegue lo stato invece di saltarci.
+        ///
+        /// HomeKit riporta la corsa a pezzi — 100, 74, 51… — e prima ogni
+        /// valore riestrudeva la casa: venti scatti pagati carissimi. Ora la
+        /// tenda e' un oggetto vivo come le lampade: il valore nuovo diventa un
+        /// **bersaglio**, e il telo ci scivola alla velocita' di una tenda vera.
+        func updateAwnings(_ newAwnings: [FloorplanAwning]) {
+            guard newAwnings != awnings else { return }
+            let sameBodies = newAwnings.map(\.roomID).sorted() == awningNodes.keys.sorted()
+                && newAwnings.allSatisfy { awning in
+                    awningNodes[awning.roomID]?.geometry == awning.geometry
+                }
+            awnings = newAwnings
+            guard sameBodies else { rebuildAwnings(); return }
+
+            for awning in newAwnings {
+                awningNodes[awning.roomID]?.target = awning.extended
+            }
+            animateAwningsIfNeeded()
+        }
+
+        /// Costruisce i teli **fermi al loro stato**: l'animazione e' per la
+        /// corsa, non per l'apertura della vista.
+        private func rebuildAwnings() {
+            awningTimer?.invalidate()
+            awningTimer = nil
+            awningRoot.children.removeAll()
+            awningNodes = [:]
+
+            for awning in awnings {
+                guard let mesh = awningMesh(awning.geometry, fraction: awning.extended)
+                else { continue }
+                let entity = ModelEntity(mesh: mesh,
+                                         materials: [FloorplanMaterialCatalog.material(for: .awning)])
+                entity.generateCollisionShapes(recursive: false)
+                entity.name = "awning:\(awning.roomID.uuidString)"
+                awningRoot.addChild(entity)
+                awningNodes[awning.roomID] = AwningNode(entity: entity,
+                                                        geometry: awning.geometry,
+                                                        shown: awning.extended,
+                                                        target: awning.extended)
+            }
+        }
+
+        private func animateAwningsIfNeeded() {
+            guard awningTimer == nil,
+                  awningNodes.values.contains(where: { $0.shown != $0.target })
+            else { return }
+
+            awningTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0,
+                                               repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.stepAwnings() }
+            }
+        }
+
+        private func stepAwnings() {
+            // Corsa completa in nove secondi: il passo di una tenda vera, e
+            // abbastanza lento da assorbire i valori intermedi di HomeKit senza
+            // strappi.
+            let step = 1.0 / 9.0 / 30.0
+            var stillMoving = false
+
+            for (roomID, node) in awningNodes where node.shown != node.target {
+                var node = node
+                let delta = node.target - node.shown
+                if abs(delta) <= step {
+                    node.shown = node.target
+                    // La collisione si rifa' solo a telo fermo: serve al tocco,
+                    // e nessuno tocca una tenda mentre corre.
+                    if let mesh = awningMesh(node.geometry, fraction: node.shown) {
+                        node.entity.model?.mesh = mesh
+                        node.entity.generateCollisionShapes(recursive: false)
+                    }
+                } else {
+                    node.shown += step * (delta > 0 ? 1 : -1)
+                    stillMoving = true
+                    if let mesh = awningMesh(node.geometry, fraction: node.shown) {
+                        node.entity.model?.mesh = mesh
+                    }
+                }
+                awningNodes[roomID] = node
+            }
+
+            if !stillMoving {
+                awningTimer?.invalidate()
+                awningTimer = nil
+            }
+        }
+
+        /// Il telo a una frazione qualsiasi della corsa, gia' nello spazio della
+        /// scena. La discesa scala con l'uscita, cosi' la pendenza resta quella
+        /// e il cassonetto non diventa una parete verticale.
+        private func awningMesh(_ geometry: FloorplanExtruder.AwningGeometry,
+                                fraction: Double) -> MeshResource? {
+            let centre = scene.bounds.center
+            let reach = max(geometry.minReach,
+                            geometry.maxReach * min(1, max(0, fraction)))
+            let drop = geometry.fullDrop * (reach / geometry.maxReach)
+
+            func scenePoint(_ point: SIMD2<Double>, _ height: Double) -> SIMD3<Float> {
+                SIMD3(Float(point.x), Float(height), Float(point.y)) - centre
+            }
+
+            let a0 = scenePoint(geometry.attachA, geometry.attachHeight)
+            let b0 = scenePoint(geometry.attachB, geometry.attachHeight)
+            let a1 = scenePoint(geometry.attachA + geometry.inward * reach,
+                                geometry.attachHeight - drop)
+            let b1 = scenePoint(geometry.attachB + geometry.inward * reach,
+                                geometry.attachHeight - drop)
+
+            // Righe lungo la discesa, in metri: la tenda si riga nel verso in
+            // cui esce, e il passo non dipende da quanto e' fuori.
+            let edge = simd_length(b0 - a0) / 0.22
+            let run = Float(reach) / 0.22
+            let quad = [a0, b0, b1, a1]
+            let uvs: [SIMD2<Float>] = [SIMD2(0, 0), SIMD2(edge, 0),
+                                       SIMD2(edge, run), SIMD2(0, run)]
+            let normal = RealityFloorplanRenderer.faceNormal(for: quad)
+
+            var descriptor = MeshDescriptor(name: "awning")
+            descriptor.positions = MeshBuffers.Positions(quad + quad.reversed())
+            descriptor.normals = MeshBuffers.Normals(Array(repeating: normal, count: 4)
+                                                     + Array(repeating: -normal, count: 4))
+            descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(uvs + uvs.reversed())
+            descriptor.primitives = .triangles([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7])
+            return try? MeshResource.generate(from: [descriptor])
         }
 
         func prepared(withCameras cones: [FloorplanCameraCone]) -> Coordinator {
@@ -2102,6 +2270,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(climateRoot)
             anchor.addChild(litWindowRoot)
             anchor.addChild(cameraRoot)
+            anchor.addChild(awningRoot)
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
@@ -2189,6 +2358,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             applyRoomAccents()
             rebuildHeat()
             rebuildLamps()
+            rebuildAwnings()
             // ⚠️ Fuori dal giro di aggiornamento. `updateSceneIfNeeded` viene
             // chiamata da `updateUIView`, cioè **durante** l'update della vista:
             // scrivere lì uno `@State` è il «Modifying state during view update»
@@ -2422,20 +2592,19 @@ private enum RealityFloorplanRenderer {
                 continue
             }
 
-            // Tapparelle e tende sono **oggetti**, non superfici: ognuna deve
+            // Le tapparelle sono **oggetti**, non superfici: ognuna deve
             // potersi toccare, quindi non finisce nella mesh unita del proprio
-            // ruolo. Portano il nome di cio' che coprono — il vano, la stanza —
-            // perche' la geometria non conosce gli UUID di HomeKit: la
-            // traduzione la fa la vista, che ha costruito lei quel legame.
-            if role == .shutter || role == .awning {
+            // ruolo. Portano il nome del vano che coprono, perche' la geometria
+            // non conosce gli UUID di HomeKit: la traduzione la fa la vista,
+            // che ha costruito lei quel legame. (La tenda non passa di qui: e'
+            // un oggetto vivo del coordinatore, come le lampade.)
+            if role == .shutter {
                 for face in faces {
                     guard let mesh = mesh(for: [face], role: role, center: center) else { continue }
                     let model = ModelEntity(mesh: mesh,
                                             materials: [FloorplanMaterialCatalog.material(for: role)])
                     model.generateCollisionShapes(recursive: false)
-                    if role == .awning, let roomID = face.roomID {
-                        model.name = "awning:\(roomID.uuidString)"
-                    } else if role == .shutter, let openingID = face.openingID {
+                    if let openingID = face.openingID {
                         model.name = "shutter:\(openingID.uuidString)"
                     }
                     root.addChild(model)
@@ -3214,10 +3383,6 @@ private enum RealityFloorplanRenderer {
             return points.map {
                 SIMD2(0.5, max(0, min(1, ($0.y - floorY) / Float(FloorplanExtruder.contactHeight))))
             }
-        case .awning:
-            // Righe lungo la discesa del telo, non lungo il muro: una tenda si
-            // riga nel verso in cui esce.
-            return points.map { SIMD2($0.x / 0.22, $0.z / 0.22) }
         case .shutter:
             // Il passo delle stecche sta **in metri**, non in frazione di
             // finestra: sette centimetri sono sette centimetri sia sul bagno
@@ -3410,7 +3575,6 @@ private extension FloorplanScene.MeshFace.MaterialRole {
         .frame,
         .balcony,
         .shutter,
-        .awning,
         .wall,
         .wallContact,
         .wallGlow,

@@ -146,20 +146,20 @@ struct FloorplanShutterTests {
             balcony
         ]
 
-        // Ritirata resta il cassonetto, per lo stesso motivo della tapparella.
-        let ritirata = FloorplanExtruder.faces(from: document, extendedAwnings: [balcony.id: 0])
-        #expect(ritirata.filter { $0.kind == .awning }.count == 1)
-        #expect(FloorplanExtruder.faces(from: document).filter { $0.kind == .awning }.isEmpty)
+        #expect(FloorplanExtruder.balconyAreaIDs(in: document).count == 1)
 
-        let stesa = FloorplanExtruder.faces(from: document, extendedAwnings: [balcony.id: 1])
-        guard let awning = stesa.first(where: { $0.kind == .awning })
-        else { Issue.record("nessuna tenda emessa"); return }
+        // La geometria è separata dallo stato: la corsa la anima il renderer,
+        // qui si verifica solo la forma.
+        guard let geometry = FloorplanExtruder.awningGeometry(over: balcony, in: document)
+        else { Issue.record("nessuna geometria di tenda"); return }
 
-        // Attaccata al lato di casa (y = 2) e in discesa verso il vuoto (y < 2).
-        let heights = awning.points.map(\.z)
-        #expect((heights.max() ?? 0) > (heights.min() ?? 0))
-        #expect(abs((awning.points.map(\.y).max() ?? 0) - 2.0) < 0.01)
-        #expect((awning.points.map(\.y).min() ?? 9) < 2.0)
+        // Attaccata al lato di casa (y = 2) e in uscita verso il vuoto (y < 2).
+        #expect(abs(geometry.attachA.y - 2.0) < 0.01)
+        #expect(abs(geometry.attachB.y - 2.0) < 0.01)
+        #expect(geometry.inward.y < -0.9)
+        #expect(geometry.maxReach > 0.5)
+        // Ritirata resta il cassonetto: mai a zero.
+        #expect(geometry.minReach > 0.1)
     }
 
     @Test("Ogni faccia dell'apertura sa da quale apertura viene")

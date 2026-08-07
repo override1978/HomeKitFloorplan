@@ -9,14 +9,12 @@ enum FloorplanSceneBuilder {
                       ceilingHeight: Double = 2.4,
                       includesFurniture: Bool = false,
                       openOpeningIDs: Set<UUID> = [],
-                      closedShutters: [UUID: Double] = [:],
-                      extendedAwnings: [UUID: Double] = [:]) -> FloorplanScene? {
+                      closedShutters: [UUID: Double] = [:]) -> FloorplanScene? {
         let faces = FloorplanExtruder.faces(
             from: document,
             heights: .init(ceiling: ceilingHeight),
             openOpeningIDs: openOpeningIDs,
-            closedShutters: closedShutters,
-            extendedAwnings: extendedAwnings
+            closedShutters: closedShutters
         )
         .compactMap { face -> FloorplanScene.MeshFace? in
             guard includesFurniture || !isFurniture(face.kind),
@@ -53,8 +51,7 @@ enum FloorplanSceneBuilder {
             // il filtro anti-ricostruzione scarterebbe l'aggiornamento — lo
             // stesso inganno già pagato con le ante che si aprivano.
             stateSignature: (openOpeningIDs.map(\.uuidString).sorted()
-                             + closedShutters.map { "\($0.key):\(Int($0.value * 20))" }.sorted()
-                             + extendedAwnings.map { "a\($0.key):\(Int($0.value * 20))" }.sorted())
+                             + closedShutters.map { "\($0.key):\(Int($0.value * 20))" }.sorted())
                 .joined(separator: ",")
         )
     }
@@ -93,8 +90,6 @@ enum FloorplanSceneBuilder {
             return .groundContact
         case .shutter:
             return .shutter
-        case .awning:
-            return .awning
         case .doorPanel:
             return .doorTrim
         case .handle:
