@@ -46,7 +46,9 @@ struct FloorplanListView: View {
                     try? modelContext.save()
                 },
                 markers: plan.accessories.map {
-                    (uuid: $0.homeKitAccessoryUUID, openingID: $0.linkedOpeningID)
+                    (uuid: $0.homeKitAccessoryUUID,
+                     position: CGPoint(x: $0.positionX, y: $0.positionY),
+                     openingID: $0.linkedOpeningID)
                 },
                 exportRotation: plan.drawingExportRotation,
                 background: previewBackground(for: plan)

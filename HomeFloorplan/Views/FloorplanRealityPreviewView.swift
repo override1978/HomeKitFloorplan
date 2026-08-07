@@ -17,8 +17,9 @@ struct Preview3DFloorplan: Identifiable {
     /// La scrittura su SwiftData resta in `FloorplanListView`: l'anteprima
     /// riceve una chiusura e non conosce né il modello né il contesto.
     let applyNorthBearing: (Double) -> Void
-    /// I sensori con l'apertura che sorvegliano, già decisa al momento della posa.
-    let markers: [(uuid: UUID, openingID: UUID?)]
+    /// Gli accessori piazzati: dove stanno, e per i contatti quale apertura
+    /// sorvegliano — già decisa al momento della posa.
+    let markers: [(uuid: UUID, position: CGPoint, openingID: UUID?)]
     /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
     /// marker in coordinate del disegno.
     let exportRotation: DrawingExportRotation
@@ -36,6 +37,15 @@ struct Preview3DRequest: Identifiable {
     let id = UUID()
     let floorplans: [Preview3DFloorplan]
     let initialID: UUID
+}
+
+/// Una lampada accesa, pronta a illuminare.
+struct FloorplanLamp: Equatable {
+    /// In metri, nello spazio del disegno.
+    var position: SIMD2<Double>
+    /// 0…1, dalla luminosità impostata sull'accessorio.
+    var brightness: Double
+    var colour: UIColor
 }
 
 /// Cosa mostra la bandierina di una stanza. Il contenuto arriva dal modello
@@ -110,7 +120,7 @@ struct FloorplanRealityPreviewView: View {
     private var document: DrawingDocument { current.document }
     private var title: String { current.name }
     private var northBearingDegrees: Double { current.northBearingDegrees }
-    private var markers: [(uuid: UUID, openingID: UUID?)] { current.markers }
+    private var markers: [(uuid: UUID, position: CGPoint, openingID: UUID?)] { current.markers }
     private var exportRotation: DrawingExportRotation { current.exportRotation }
     private var background: UIColor { current.background }
     private func onNorthBearingChange(_ bearing: Double) { current.applyNorthBearing(bearing) }
@@ -142,6 +152,7 @@ struct FloorplanRealityPreviewView: View {
                 RealityFloorplanView(scene: floorplanScene,
                                      background: background,
                                      sun: sun,
+                                     lamps: litLights,
                                      flags: roomFlags,
                                      cameraResetID: cameraResetID,
                                      onRoomSelected: { selectedRoomName = $0 },
@@ -172,6 +183,8 @@ struct FloorplanRealityPreviewView: View {
             // ⚠️ Anche la centralina, non solo i marker: `homeKit.value(for:)`
             // resta nil finché nessuno ha fatto `readValue`, ed è lo stesso
             // inciampo che ha tenuto chiuse le porte per mezza giornata.
+            // Tutti i marker: fra loro ci sono i contatti degli infissi e le
+            // lampade, e senza `readValue` risulterebbero chiusi e spente.
             var observed = Set(markers.map(\.uuid))
             if let system = securitySystem { observed.insert(system.accessory.uniqueIdentifier) }
             homeKit.startObserving(accessoryUUIDs: observed)
@@ -264,7 +277,10 @@ struct FloorplanRealityPreviewView: View {
 
     /// Gli infissi da disegnare aperti, contro lo stato corrente di HomeKit.
     private var openOpeningIDs: Set<UUID> {
-        FloorplanOpeningMatcher.openOpenings(markers: markers, homeKit: homeKit)
+        FloorplanOpeningMatcher.openOpenings(
+            markers: markers.map { (uuid: $0.uuid, openingID: $0.openingID) },
+            homeKit: homeKit
+        )
     }
 
     // MARK: - Sole
@@ -552,6 +568,37 @@ struct FloorplanRealityPreviewView: View {
         .transition(.opacity)
     }
 
+    /// Le lampade accese, con dove stanno e di che colore sono.
+    ///
+    /// **Non è uno strato**: è la casa che si racconta, come una porta aperta
+    /// che si vede aperta. Quindi non dipende dalla modalità — una luce accesa
+    /// è accesa qualunque cosa tu stia guardando.
+    private var litLights: [FloorplanLamp] {
+        guard let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                exportRotation: exportRotation)
+        else { return [] }
+
+        return markers.compactMap { marker in
+            guard let accessory = homeKit.accessory(for: marker.uuid),
+                  let lamp = DimmableLightAdapter(accessory: accessory, homeKit: homeKit),
+                  lamp.isOn
+            else { return nil }
+
+            // La luminosità impostata decide quanto illumina: una lampada al 20%
+            // non deve accendere la stanza come una al 100%.
+            let brightness = max(0.12, Double(lamp.currentBrightness) / 100)
+            let colour: UIColor = lamp.supportsColor
+                ? UIColor(hue: CGFloat(lamp.currentHue / 360),
+                          saturation: CGFloat(lamp.currentSaturation / 100),
+                          brightness: 1, alpha: 1)
+                : UIColor(red: 1.0, green: 0.86, blue: 0.68, alpha: 1)
+
+            return FloorplanLamp(position: transform.metres(from: marker.position),
+                                 brightness: brightness,
+                                 colour: colour)
+        }
+    }
+
     /// La centralina della casa, se ce n'è una.
     ///
     /// L'adapter si costruisce al volo: legge da `homeKit.characteristicValues`,
@@ -650,6 +697,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
     let scene: FloorplanScene
     let background: UIColor
     let sun: FloorplanSunLight
+    let lamps: [FloorplanLamp]
     let flags: [RoomFlag]
     let cameraResetID: UUID
     let onRoomSelected: (String?) -> Void
@@ -691,6 +739,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         }
         context.coordinator.updateSceneIfNeeded(scene)
         context.coordinator.updateSun(sun)
+        context.coordinator.updateLamps(lamps)
         context.coordinator.updateFlags(flags)
         context.coordinator.resetCameraIfNeeded(cameraResetID)
     }
@@ -698,6 +747,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(scene: scene, sun: sun, cameraResetID: cameraResetID,
                     onRoomSelected: onRoomSelected, onSceneTouched: onSceneTouched)
+            .prepared(withLamps: lamps)
             .prepared(with: flags)
     }
 
@@ -733,6 +783,10 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// Il contorno della stanza selezionata: un canale suo, che non si
         /// somma alle velature di stato.
         private let selectionRoot = Entity()
+        /// Le lampade accese: luci vere, non decalcomanie, quindi illuminano
+        /// muri e pavimento come farebbero nella stanza.
+        private let lampRoot = Entity()
+        private var lamps: [FloorplanLamp] = []
         /// Serve per regolare la luce d'ambiente, che di notte va abbassata:
         /// quella non appartiene a nessuna delle tre direzionali.
         private weak var view: ARView?
@@ -832,6 +886,41 @@ private struct RealityFloorplanView: UIViewRepresentable {
             for label in flagLabels { label.orientation = orientation }
         }
 
+        func prepared(withLamps lamps: [FloorplanLamp]) -> Coordinator {
+            self.lamps = lamps
+            return self
+        }
+
+        func updateLamps(_ newLamps: [FloorplanLamp]) {
+            guard lamps != newLamps else { return }
+            lamps = newLamps
+            rebuildLamps()
+        }
+
+        /// Una `PointLight` per lampada accesa.
+        ///
+        /// Luce vera e non una macchia dipinta: illumina i muri intorno, si
+        /// attenua con la distanza e si somma alle altre come farebbe in una
+        /// stanza. Di giorno non si vede — ed è giusto così, perché di giorno
+        /// una lampada accesa non si vede.
+        private func rebuildLamps() {
+            lampRoot.children.removeAll()
+            let centre = scene.bounds.center
+            let floorY = scene.bounds.min.y
+
+            for lamp in lamps {
+                let light = PointLight()
+                light.light.color = lamp.colour
+                // Lumen, non lux: 900 e' una lampadina piena.
+                light.light.intensity = Float(180 + 720 * lamp.brightness)
+                light.light.attenuationRadius = 4.6
+                light.position = SIMD3(Float(lamp.position.x) - centre.x,
+                                       floorY - centre.y + 2.05,
+                                       Float(lamp.position.y) - centre.z)
+                lampRoot.addChild(light)
+            }
+        }
+
         func updateSun(_ newSun: FloorplanSunLight) {
             guard sun != newSun else { return }
             sun = newSun
@@ -858,6 +947,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(flagRoot)
             anchor.addChild(heatRoot)
             anchor.addChild(selectionRoot)
+            anchor.addChild(lampRoot)
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
