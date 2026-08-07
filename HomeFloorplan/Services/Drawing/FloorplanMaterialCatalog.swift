@@ -127,13 +127,13 @@ enum FloorplanMaterialCatalog {
             // cio' che fa una lampada.
             return opaque(UIColor(red: 0.93, green: 0.92, blue: 0.90, alpha: 1), roughness: 0.4)
         }
-        // **Caldo che emette**, contro il bianco freddo ombreggiato della
-        // spenta: e' la differenza che si legge a qualsiasi zoom, perche' non
-        // dipende dalla taglia di nessun alone. Tinta fissa da incandescenza,
-        // NON quella dell'accessorio: qualunque colore derivato dall'accessorio
-        // su una sfera piccola fra pareti chiare si e' gia' letto due volte
-        // come sporco. Il colore vero resta a fascio e pozza.
-        return UnlitMaterial(color: UIColor(red: 1.0, green: 0.93, blue: 0.80, alpha: 1))
+        // **Gialla, dichiaratamente.** Il bianco caldo «da incandescenza» era
+        // troppo educato: a due passi da pareti bianche non si distingueva. Il
+        // giallo e' il simbolo universale di «luce accesa» — lo stesso delle
+        // icone di casa — e contro la sfera bianca fredda della spenta si legge
+        // a qualsiasi zoom. Tinta fissa, NON quella dell'accessorio: il colore
+        // vero resta a fascio e pozza.
+        return UnlitMaterial(color: UIColor(red: 1.0, green: 0.83, blue: 0.36, alpha: 1))
     }
 
     private static func lightened(_ colour: UIColor, by amount: CGFloat) -> UIColor {
