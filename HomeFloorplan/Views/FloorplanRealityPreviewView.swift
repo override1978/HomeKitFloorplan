@@ -2127,8 +2127,12 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 // pallina: un disco morbido dietro la sfera, girato verso la
                 // telecamera insieme alle bandierine. La tinta dell'accessorio
                 // vive qui, cosi' il bianco del bulbo resta puro.
+                // ⚠️ Poco piu' largo della sfera. A 62 cm era un alone da
+                // lontano e un pallone piatto da vicino: la taglia nel mondo e'
+                // fissa, quindi va scelta per lo zoom **ravvicinato**, che e'
+                // dove si guarda una lampada per toccarla.
                 let corona = ModelEntity(
-                    mesh: .generatePlane(width: 0.62, height: 0.62),
+                    mesh: .generatePlane(width: 0.36, height: 0.36),
                     materials: [FloorplanMaterialCatalog.bulbGlowMaterial(colour: lamp.colour)
                                 ?? UnlitMaterial(color: .clear)]
                 )

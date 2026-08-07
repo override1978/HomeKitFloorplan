@@ -127,13 +127,13 @@ enum FloorplanMaterialCatalog {
             // cio' che fa una lampada.
             return opaque(UIColor(red: 0.93, green: 0.92, blue: 0.90, alpha: 1), roughness: 0.4)
         }
-        // ⚠️ **Bianco puro, punto.** Due tentativi di derivarlo dal colore
-        // dell'accessorio — schiarito del 30, poi del 72 — leggevano ancora
-        // marroncini, perche' qualunque residuo di tinta su una sfera piccola
-        // fra pareti chiare si legge come sporco, non come luce. La sorgente e'
-        // bianca; il colore e' un mestiere dell'alone, del fascio e della
-        // pozza.
-        return UnlitMaterial(color: .white)
+        // **Caldo che emette**, contro il bianco freddo ombreggiato della
+        // spenta: e' la differenza che si legge a qualsiasi zoom, perche' non
+        // dipende dalla taglia di nessun alone. Tinta fissa da incandescenza,
+        // NON quella dell'accessorio: qualunque colore derivato dall'accessorio
+        // su una sfera piccola fra pareti chiare si e' gia' letto due volte
+        // come sporco. Il colore vero resta a fascio e pozza.
+        return UnlitMaterial(color: UIColor(red: 1.0, green: 0.93, blue: 0.80, alpha: 1))
     }
 
     private static func lightened(_ colour: UIColor, by amount: CGFloat) -> UIColor {
@@ -158,7 +158,9 @@ enum FloorplanMaterialCatalog {
         var glow = UnlitMaterial()
         glow.color = .init(tint: lightened(colour, by: 0.45),
                            texture: .init(texture, sampler: clampSampler))
-        glow.blending = .transparent(opacity: .init(floatLiteral: 0.9))
+        // Un bordo, non un protagonista: a 0.9 il disco slavava tutto cio' che
+        // aveva dietro e da vicino diventava lui la cosa da guardare.
+        glow.blending = .transparent(opacity: .init(floatLiteral: 0.55))
         return glow
     }
 
