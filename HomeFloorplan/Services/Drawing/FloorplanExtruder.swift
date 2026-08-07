@@ -261,22 +261,27 @@ enum FloorplanExtruder {
             // il 2D disegna il mobile TV col muro dal lato opposto rispetto a
             // divani e letti, e con la convenzione degli schienali la TV usciva
             // rivolta alla parete.
+            // Lo schermo arriva a 1,30 m: un televisore su un mobile basso
+            // occupa la parete, non la fascia dei quadri bassi — a un metro
+            // sembrava un monitor appoggiato.
             let tvHalf = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
             return boxFaces(item, from: 0, to: 0.45, tint: soft)
                 + subBox(item,
                          centreOffset: SIMD2(0, tvHalf.y - 0.05),
-                         half: SIMD2(min(tvHalf.x * 0.80, 0.80), 0.022),
-                         from: 0.47, to: 1.02, tint: blackGlass)
+                         half: SIMD2(min(tvHalf.x * 0.85, 0.85), 0.022),
+                         from: 0.55, to: 1.30, tint: blackGlass)
         case .inductionCooktop:
             // **Solo il vetro nero**, appoggiato al top della cucina: il piano
             // cottura in pianta sta sopra un bancone gia' disegnato, e dargli
             // un corpo proprio raddoppiava il mobile — una base grigia spessa
             // sotto due centimetri di vetro.
+            // Sporge di quattro centimetri dal top: a filo si confondeva col
+            // bancone e sembrava che il vetro non ci fosse.
             let hobHalf = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
             return subBox(item,
                           centreOffset: .zero,
                           half: SIMD2(hobHalf.x * 0.92, hobHalf.y * 0.88),
-                          from: 0.90, to: 0.92, tint: blackGlass)
+                          from: 0.90, to: 0.94, tint: blackGlass)
         case .bed:
             // Giroletto scuro, materasso chiaro, cuscini alla testata: tre
             // membri che dicono «letto» meglio di qualunque cassa.
