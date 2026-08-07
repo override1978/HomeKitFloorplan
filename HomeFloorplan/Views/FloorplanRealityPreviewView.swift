@@ -1065,8 +1065,17 @@ private struct RealityFloorplanView: UIViewRepresentable {
                            relativeTo: nil)
                 lampRoot.addChild(light)
 
-                let aura = ModelEntity(mesh: .generateSphere(radius: 0.30),
-                                       materials: [haloMaterial(lamp.colour, brightness: 1)])
+                // Il fascio, non un alone: una palla luminosa attorno alla
+                // lampada sembra un pianeta e non dice da che parte va la luce.
+                let beamHeight = place.y - (floorY - centre.y) - 0.02
+                let aura = ModelEntity(
+                    mesh: RealityFloorplanRenderer.lampBeamMesh(height: beamHeight,
+                                                                outerAngleDegrees: 72)
+                        ?? .generateSphere(radius: 0.2),
+                    materials: [FloorplanMaterialCatalog.lampBeamMaterial(colour: lamp.colour,
+                                                                          brightness: 1)
+                                ?? UnlitMaterial(color: .clear)]
+                )
                 aura.position = place
                 lampRoot.addChild(aura)
 
@@ -1098,9 +1107,10 @@ private struct RealityFloorplanView: UIViewRepresentable {
             node.spot.light.attenuationRadius = Float(3.0 + 2.4 * lamp.brightness)
 
             node.halo.isEnabled = lamp.isOn
-            node.halo.model?.materials = [haloMaterial(lamp.colour, brightness: lamp.brightness)]
-            let haloScale = Float(0.8 + 0.7 * lamp.brightness)
-            node.halo.scale = SIMD3(repeating: haloScale)
+            if let beam = FloorplanMaterialCatalog.lampBeamMaterial(colour: lamp.colour,
+                                                                    brightness: lamp.brightness) {
+                node.halo.model?.materials = [beam]
+            }
 
             // La pozza dipende dalla geometria, quindi si rifà solo quando la
             // luminosità cambia davvero — accendere e spegnere la nasconde e
@@ -1112,12 +1122,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 node.brightness = lamp.brightness
             }
             node.pool?.isEnabled = lamp.isOn
-        }
-
-        private func haloMaterial(_ colour: UIColor, brightness: Double) -> any RealityKit.Material {
-            var material = UnlitMaterial(color: colour)
-            material.blending = .transparent(opacity: .init(floatLiteral: Float(0.10 + 0.12 * brightness)))
-            return material
         }
 
         func updateSun(_ newSun: FloorplanSunLight) {
@@ -1556,6 +1560,46 @@ private enum RealityFloorplanRenderer {
 
         return ModelEntity(mesh: mesh,
                            materials: [FloorplanMaterialCatalog.selectionOutlineMaterial()])
+    }
+
+    /// Il cono di luce di un faretto: apice sul bulbo, base sul pavimento.
+    ///
+    /// Costruito a mano invece che con una primitiva perché servono le UV: la
+    /// **v** va da 0 all'apice a 1 alla base, così la sfumatura verticale lo
+    /// spegne scendendo. Emesso da entrambi i lati, o entrandoci dentro con la
+    /// telecamera sparirebbe.
+    static func lampBeamMesh(height: Float, outerAngleDegrees: Float) -> MeshResource? {
+        guard height > 0.1 else { return nil }
+        let segments = 28
+        let radius = height * tan(outerAngleDegrees * .pi / 180 / 2)
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        var uvs: [SIMD2<Float>] = []
+        var indices: [UInt32] = []
+
+        for segment in 0..<segments {
+            let a = Float(segment) / Float(segments) * 2 * .pi
+            let b = Float(segment + 1) / Float(segments) * 2 * .pi
+            let apex = SIMD3<Float>(0, 0, 0)
+            let left = SIMD3(cos(a) * radius, -height, sin(a) * radius)
+            let right = SIMD3(cos(b) * radius, -height, sin(b) * radius)
+            let normal = simd_normalize(simd_cross(left - apex, right - apex))
+
+            for (points, facing) in [([apex, left, right], normal), ([apex, right, left], -normal)] {
+                let start = UInt32(positions.count)
+                positions.append(contentsOf: points)
+                normals.append(contentsOf: Array(repeating: facing, count: 3))
+                uvs.append(contentsOf: [SIMD2(0.5, 0), SIMD2(0.5, 1), SIMD2(0.5, 1)])
+                indices.append(contentsOf: [start, start + 1, start + 2])
+            }
+        }
+
+        var descriptor = MeshDescriptor(name: "lamp-beam")
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(uvs)
+        descriptor.primitives = .triangles(indices)
+        return try? MeshResource.generate(from: [descriptor])
     }
 
     /// La pozza di luce di una lampada, ritagliata sul pavimento.

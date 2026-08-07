@@ -121,6 +121,23 @@ enum FloorplanMaterialCatalog {
         return on
     }
 
+    /// Il fascio di luce, dal bulbo verso il pavimento.
+    ///
+    /// Un alone sferico attorno alla lampada sembrava un pianeta: una palla
+    /// luminosa che non dice da che parte va la luce. Un cono lo dice, ed è
+    /// anche ciò che si vede davvero quando la luce attraversa l'aria.
+    ///
+    /// La texture è la stessa sfumatura verticale delle pareti: piena
+    /// all'apice, spenta alla base — un fascio è più intenso vicino alla
+    /// sorgente.
+    static func lampBeamMaterial(colour: UIColor, brightness: Double) -> (any RealityKit.Material)? {
+        guard let texture = verticalFalloffTexture else { return nil }
+        var material = UnlitMaterial()
+        material.color = .init(tint: colour, texture: .init(texture, sampler: clampSampler))
+        material.blending = .transparent(opacity: .init(floatLiteral: Float(0.10 + 0.16 * brightness)))
+        return material
+    }
+
     /// Il contorno della stanza selezionata.
     ///
     /// La selezione **non tinge più il pavimento**. Con uno strato ambientale
