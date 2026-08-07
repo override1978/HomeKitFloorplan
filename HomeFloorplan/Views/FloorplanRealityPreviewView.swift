@@ -179,8 +179,12 @@ struct FloorplanRealityPreviewView: View {
 
     private func applyLampSettings(_ uuid: UUID, _ height: Double, _ direction: LampDirection) {
         current.applyLampSettings(uuid, height, direction)
+        // ⚠️ **Niente `rebuildScene()`.** Quota e direzionalita' di una lampada
+        // non spostano un muro: qui c'era una riestrusione completa della casa —
+        // muri, aperture, arredi, velature — per **ogni passo** del cursore, e il
+        // cursore ne ha sessanta. Basta il segnale: `litLights` lo rilegge, e le
+        // lampade si aggiornano in posto come gia' fanno per un interruttore.
         settingsRevision &+= 1
-        rebuildScene()
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -1215,6 +1219,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         }
         private var flagNodes: [UUID: FlagNode] = [:]
         private var builtHeatSignature = "\u{0}"
+        private var builtAccentSignature = "\u{0}"
         private var flags: [RoomFlag] = []
         private var flagsSignature = ""
         private var installedSignature: String?
@@ -1291,7 +1296,19 @@ private struct RealityFloorplanView: UIViewRepresentable {
             }
         }
 
+        /// Solo cio' che decide il colore di un muro: quale stanza, e di che
+        /// tinta. Il numero scritto sulla bandierina cambia a ogni lettura del
+        /// sensore e qui non sposta niente.
+        private var accentSignature: String {
+            flags.filter(\.needsAttention)
+                .map { "\($0.roomID)|\($0.accent?.description ?? "")" }
+                .sorted()
+                .joined(separator: ",")
+        }
+
         private func applyRoomAccents() {
+            guard accentSignature != builtAccentSignature else { return }
+            builtAccentSignature = accentSignature
             let accents = Dictionary(
                 uniqueKeysWithValues: flags.filter(\.needsAttention)
                     .compactMap { flag in flag.accent.map { (flag.roomID, $0) } }
