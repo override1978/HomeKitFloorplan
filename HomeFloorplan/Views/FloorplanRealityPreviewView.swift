@@ -326,22 +326,6 @@ struct FloorplanRealityPreviewView: View {
             controls
         }
         .overlay(alignment: .bottom) { roomSetupPanel }
-        #if DEBUG
-        // Diagnostica coperture: da togliere appena capito perche' la tenda
-        // non segue HomeKit. Stessa tecnica che ha chiuso il caso delle porte.
-        .overlay(alignment: .bottomLeading) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(coveringDiagnostics, id: \.self) { line in
-                    Text(line).font(.caption2.monospaced())
-                }
-            }
-            .foregroundStyle(.yellow)
-            .padding(8)
-            .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-            .padding(.leading, 12)
-            .padding(.bottom, 40)
-        }
-        #endif
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
                 topChrome
@@ -670,25 +654,6 @@ struct FloorplanRealityPreviewView: View {
         }
     }
 
-    #if DEBUG
-    /// Una riga per ogni copertura: come la vede questa vista, adesso.
-    private var coveringDiagnostics: [String] {
-        var lines: [String] = []
-        for marker in markers {
-            guard let accessory = homeKit.accessory(for: marker.uuid) else { continue }
-            guard let open = FloorplanOpeningMatcher.coveringPosition(accessory, using: homeKit) else { continue }
-            let cached = homeKit.value(for: accessory
-                .services.first { $0.serviceType == HMServiceTypeWindowCovering }?
-                .characteristics.first { $0.characteristicType == HMCharacteristicTypeCurrentPosition }
-                ?? accessory.services[0].characteristics[0]) != nil
-            let vano = marker.openingID.map { "vano \($0.uuidString.prefix(4))" } ?? "SENZA vano"
-            lines.append("\(accessory.name): logica \(Int(open))% aperta · \(vano) · \(cached ? "live" : "CACHE")")
-        }
-        let balconies = FloorplanExtruder.balconyAreaIDs(in: document)
-        lines.append("balconi: \(balconies.count) · stesa: \(awnings.map { "\(Int($0.extended * 100))%" }.joined(separator: " "))")
-        return lines
-    }
-    #endif
 
     /// Quanto è stesa la tenda di ogni balcone.
     ///
