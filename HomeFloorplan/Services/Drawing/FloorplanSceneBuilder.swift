@@ -9,12 +9,14 @@ enum FloorplanSceneBuilder {
                       ceilingHeight: Double = 2.4,
                       includesFurniture: Bool = false,
                       openOpeningIDs: Set<UUID> = [],
-                      closedShutters: [UUID: Double] = [:]) -> FloorplanScene? {
+                      closedShutters: [UUID: Double] = [:],
+                      televisionSpots: [SIMD2<Double>] = []) -> FloorplanScene? {
         let faces = FloorplanExtruder.faces(
             from: document,
             heights: .init(ceiling: ceilingHeight),
             openOpeningIDs: openOpeningIDs,
-            closedShutters: closedShutters
+            closedShutters: closedShutters,
+            televisionSpots: televisionSpots
         )
         .compactMap { face -> FloorplanScene.MeshFace? in
             guard includesFurniture || !isFurniture(face.kind),

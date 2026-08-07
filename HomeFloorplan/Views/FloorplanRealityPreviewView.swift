@@ -1808,6 +1808,7 @@ struct FloorplanRealityPreviewView: View {
                                                      ceilingHeight: ceilingHeight,
                                                      includesFurniture: true,
                                                      openOpeningIDs: openOpeningIDs,
-                                                     closedShutters: closedShutters)
+                                                     closedShutters: closedShutters,
+                                                     televisionSpots: televisions.map(\.position))
     }
 }

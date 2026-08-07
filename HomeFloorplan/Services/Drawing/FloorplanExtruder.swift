@@ -119,7 +119,8 @@ enum FloorplanExtruder {
     static func faces(from document: DrawingDocument,
                       heights: Heights = Heights(),
                       openOpeningIDs: Set<UUID> = [],
-                      closedShutters: [UUID: Double] = [:]) -> [Face] {
+                      closedShutters: [UUID: Double] = [:],
+                      televisionSpots: [SIMD2<Double>] = []) -> [Face] {
         var result: [Face] = []
         for area in document.roomAreas {
             result.append(contentsOf: floorFaces(area))
@@ -135,7 +136,8 @@ enum FloorplanExtruder {
         // Nell'ordine di disegno del documento, così i tappeti restano sotto
         // come già fanno in pianta.
         for item in document.furnitureDrawOrder {
-            result.append(contentsOf: furnitureFaces(item, in: document))
+            result.append(contentsOf: furnitureFaces(item, in: document,
+                                                     televisionSpots: televisionSpots))
         }
         return result
     }
@@ -171,7 +173,8 @@ enum FloorplanExtruder {
     /// più testiera — e sono la differenza fra «un mobile» e «quel mobile».
     /// Modellarli davvero è un altro mestiere e non serve a questa vista.
     private static func furnitureFaces(_ item: FurnitureItem,
-                                       in document: DrawingDocument) -> [Face] {
+                                       in document: DrawingDocument,
+                                       televisionSpots: [SIMD2<Double>] = []) -> [Face] {
         let kind = item.kind
         let tint = item.tintIndex.flatMap { index -> CGColor? in
             let tints = FurnitureTint.allCases
@@ -193,7 +196,8 @@ enum FloorplanExtruder {
                           kind: .groundContact,
                           roomColorIndex: nil, roomID: nil, roomName: nil)]
         faces += memberFaces(item, kind: kind, tint: tint,
-                             supportTop: supportTop(for: item, in: document))
+                             supportTop: supportTop(for: item, in: document),
+                             televisionSpots: televisionSpots)
         return faces
     }
 
@@ -225,7 +229,8 @@ enum FloorplanExtruder {
     /// l'occhio usa per riconoscere, e sotto luce vera una cassa piena si vede
     /// per quello che è.
     private static func memberFaces(_ item: FurnitureItem, kind: FurnitureKind,
-                                    tint: CGColor?, supportTop: Double? = nil) -> [Face] {
+                                    tint: CGColor?, supportTop: Double? = nil,
+                                    televisionSpots: [SIMD2<Double>] = []) -> [Face] {
         let soft = tint ?? fabricSoft
         switch kind {
         case .diningTable, .generic:
@@ -278,8 +283,17 @@ enum FloorplanExtruder {
             // convenzione degli schienali. Niente piu' congetture sul verso:
             // le due viste combaciano per costruzione, e se la barra guarda il
             // muro sbagliato si ruota il mobile nell'editor — e' un dato.
+            // ⚠️ **Comanda l'accessorio**: se una TV vera e' posata a meno di
+            // un metro e mezzo, il mobile rinuncia al suo schermo decorativo e
+            // resta il piede — due schermi affiancati erano «troppe TV».
+            let tvCentre = SIMD2(metres(item.rect.midX), metres(item.rect.midY))
+            let hasRealTV = televisionSpots.contains {
+                simd_distance($0, tvCentre) < 1.5
+            }
             let tvHalf = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
-            return boxFaces(item, from: 0, to: 0.45, tint: soft)
+            let cabinet = boxFaces(item, from: 0, to: 0.45, tint: soft)
+            guard !hasRealTV else { return cabinet }
+            return cabinet
                 + subBox(item,
                          centreOffset: SIMD2(0, -tvHalf.y + 0.05),
                          half: SIMD2(min(tvHalf.x * 0.85, 0.85), 0.022),
