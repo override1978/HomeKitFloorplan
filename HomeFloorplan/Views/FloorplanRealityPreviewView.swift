@@ -55,7 +55,7 @@ struct FloorplanRealityPreviewView: View {
     /// il pulsante deve rispondere prima che SwiftData torni indietro.
     @State private var ceilingHeight: Double = 2.4
     @State private var floorplanScene: FloorplanScene?
-    @State private var cameraResetID = UUID()
+    @State private var cameraCommand = CameraCommand(id: UUID(), preset: .angle)
     @State private var selectedRoomName: String?
     @State private var selectedRoomID: UUID?
     /// Cambia a ogni salvataggio, per rileggere il modello.
@@ -127,7 +127,7 @@ struct FloorplanRealityPreviewView: View {
                                      awnings: awnings,
                                      cameras: cameraCones,
                                      flags: roomFlags,
-                                     cameraResetID: cameraResetID,
+                                     cameraCommand: cameraCommand,
                                      onRoomSelected: { roomID, name in
                                          selectedRoomID = roomID
                                          selectedRoomName = name
@@ -727,8 +727,28 @@ struct FloorplanRealityPreviewView: View {
                     chrome("gearshape")
                 }
 
-                Button {
-                    withAnimation(.easeOut(duration: 0.2)) { cameraResetID = UUID() }
+                // Tre inquadrature pronte invece di un solo reset: ognuna fa
+                // un mestiere diverso — controllare (alto), guardare (angolo),
+                // mostrare (fronte).
+                Menu {
+                    Button {
+                        cameraCommand = CameraCommand(id: UUID(), preset: .top)
+                    } label: {
+                        Label(String(localized: "camera.top", defaultValue: "From above"),
+                              systemImage: "square.grid.2x2")
+                    }
+                    Button {
+                        cameraCommand = CameraCommand(id: UUID(), preset: .angle)
+                    } label: {
+                        Label(String(localized: "camera.angle", defaultValue: "Three-quarter"),
+                              systemImage: "cube")
+                    }
+                    Button {
+                        cameraCommand = CameraCommand(id: UUID(), preset: .front)
+                    } label: {
+                        Label(String(localized: "camera.front", defaultValue: "Eye level"),
+                              systemImage: "eye")
+                    }
                 } label: {
                     chrome("arrow.counterclockwise")
                 }

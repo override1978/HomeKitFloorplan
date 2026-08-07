@@ -25,7 +25,7 @@ struct RealityFloorplanView: UIViewRepresentable {
     let awnings: [FloorplanAwning]
     let cameras: [FloorplanCameraCone]
     let flags: [RoomFlag]
-    let cameraResetID: UUID
+    let cameraCommand: CameraCommand
     let onRoomSelected: (UUID?, String?) -> Void
     /// Toccare un oggetto lo comanda: quello che mostra lo stato è anche quello
     /// che lo cambia, senza un segnaposto in mezzo.
@@ -54,6 +54,15 @@ struct RealityFloorplanView: UIViewRepresentable {
                                          action: #selector(Coordinator.tapped(_:)))
         tap.delegate = context.coordinator
         view.addGestureRecognizer(tap)
+
+        // Il doppio non fa aspettare il singolo (niente `require(toFail:)`):
+        // il singolo seleziona la stanza, il doppio la inquadra — i due
+        // effetti si compongono invece di competere.
+        let doubleTap = UITapGestureRecognizer(target: context.coordinator,
+                                               action: #selector(Coordinator.doubleTapped(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.delegate = context.coordinator
+        view.addGestureRecognizer(doubleTap)
 
         // Non serve `require(toFail:)`: un tocco tenuto oltre la sua durata
         // massima **fallisce da solo**, quindi la pressione lunga non produce
@@ -86,11 +95,11 @@ struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.updateAwnings(awnings)
         context.coordinator.updateCameraCones(cameras)
         context.coordinator.updateFlags(flags)
-        context.coordinator.resetCameraIfNeeded(cameraResetID)
+        context.coordinator.applyCameraCommandIfNeeded(cameraCommand)
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(scene: scene, sun: sun, cameraResetID: cameraResetID,
+        Coordinator(scene: scene, sun: sun, cameraCommand: cameraCommand,
                     onRoomSelected: onRoomSelected,
                     onTargetTapped: onTargetTapped, onTargetHeld: onTargetHeld)
             .prepared(withLamps: lamps)
@@ -146,6 +155,10 @@ struct RealityFloorplanView: UIViewRepresentable {
         /// la corsa cambia la **mesh**, non l'oggetto.
         private struct AwningNode {
             var entity: ModelEntity
+            /// L'ombra che il telo getta sul pavimento del balcone: e' cio' che
+            /// chiude il cerchio col sole vero — una tenda che non fa ombra non
+            /// sta facendo il suo mestiere.
+            var shadow: ModelEntity
             var geometry: FloorplanExtruder.AwningGeometry
             /// Quanto e' fuori **adesso**, sullo schermo.
             var shown: Double
@@ -165,6 +178,9 @@ struct RealityFloorplanView: UIViewRepresentable {
         /// l'altro: e' quello che permette di cambiare stato senza ricostruire.
         private struct LampNode {
             var bulb: ModelEntity
+            /// Il pendino che aggancia il bulbo al soffitto: senza, una
+            /// sospensione e' una palla a mezz'aria.
+            var cord: ModelEntity
             var spot: SpotLight
             var halo: ModelEntity
             var pool: Entity?
@@ -179,6 +195,7 @@ struct RealityFloorplanView: UIViewRepresentable {
         /// quella non appartiene a nessuna delle tre direzionali.
         private weak var view: ARView?
         private var flagLabels: [Entity] = []
+        private var flagStems: [ModelEntity] = []
         /// L'etichetta di ogni stanza, tenuta in vita fra un aggiornamento e
         /// l'altro: cambia il testo, non l'oggetto.
         private struct FlagNode {
@@ -191,7 +208,11 @@ struct RealityFloorplanView: UIViewRepresentable {
         private var flags: [RoomFlag] = []
         private var flagsSignature = ""
         private var installedSignature: String?
-        private var handledResetID: UUID
+        private var handledCommandID: UUID
+        /// Il punto che la camera guarda: la casa intera, o una stanza dopo un
+        /// doppio tocco.
+        private var focus: SIMD3<Float> = .zero
+        private var focusRadius: Float?
         private var gestureStart: (azimuth: Double, elevation: Double)?
         private var roomNames: [UUID: String] = [:]
         private var roomWallEntities: [UUID: ModelEntity] = [:]
@@ -202,13 +223,13 @@ struct RealityFloorplanView: UIViewRepresentable {
 
         init(scene: FloorplanScene,
              sun: FloorplanSunLight,
-             cameraResetID: UUID,
+             cameraCommand: CameraCommand,
              onRoomSelected: @escaping (UUID?, String?) -> Void,
              onTargetTapped: @escaping (FloorplanTapTarget) -> Void,
              onTargetHeld: @escaping (FloorplanTapTarget) -> Void) {
             self.scene = scene
             self.sun = sun
-            self.handledResetID = cameraResetID
+            self.handledCommandID = cameraCommand.id
             self.onRoomSelected = onRoomSelected
             self.onTargetTapped = onTargetTapped
             self.onTargetHeld = onTargetHeld
@@ -256,10 +277,21 @@ struct RealityFloorplanView: UIViewRepresentable {
                 entity.generateCollisionShapes(recursive: false)
                 entity.name = "awning:\(awning.roomID.uuidString)"
                 awningRoot.addChild(entity)
-                awningNodes[awning.roomID] = AwningNode(entity: entity,
-                                                        geometry: awning.geometry,
-                                                        shown: awning.extended,
-                                                        target: awning.extended)
+
+                var shadowMaterial = UnlitMaterial(color: UIColor(red: 0.12, green: 0.13,
+                                                                  blue: 0.17, alpha: 1))
+                shadowMaterial.blending = .transparent(opacity: .init(floatLiteral: 0.22))
+                let shadow = ModelEntity(mesh: .generatePlane(width: 0.01, height: 0.01),
+                                         materials: [shadowMaterial])
+                awningRoot.addChild(shadow)
+
+                let node = AwningNode(entity: entity,
+                                      shadow: shadow,
+                                      geometry: awning.geometry,
+                                      shown: awning.extended,
+                                      target: awning.extended)
+                updateAwningShadow(node, fraction: awning.extended)
+                awningNodes[awning.roomID] = node
             }
         }
 
@@ -302,6 +334,7 @@ struct RealityFloorplanView: UIViewRepresentable {
                         node.entity.model?.mesh = mesh
                     }
                 }
+                updateAwningShadow(node, fraction: node.shown)
                 awningNodes[roomID] = node
             }
 
@@ -579,10 +612,12 @@ struct RealityFloorplanView: UIViewRepresentable {
         private func rebuildFlags() {
             flagRoot.children.removeAll()
             flagLabels = []
+            flagStems = []
             flagNodes = [:]
             for flag in RealityFloorplanRenderer.flagEntities(for: flags, scene: scene) {
                 flagRoot.addChild(flag.root)
                 flagLabels.append(flag.label)
+                flagStems.append(flag.stem)
                 flagNodes[flag.roomID] = FlagNode(label: flag.label, signature: signature(of: flag.roomID))
             }
             orientFlags()
@@ -693,6 +728,15 @@ struct RealityFloorplanView: UIViewRepresentable {
                 bulb.name = "lamp:\(lamp.accessoryUUID.uuidString)"
                 lampRoot.addChild(bulb)
 
+                // Il pendino: mesh unitaria scalata in `apply`, cosi' il
+                // cursore dell'altezza lo allunga senza rigenerare niente.
+                let cord = ModelEntity(
+                    mesh: .generateBox(size: SIMD3(0.014, 1, 0.014)),
+                    materials: [FloorplanMaterialCatalog.deviceBodyMaterial(
+                        tint: UIColor(white: 0.55, alpha: 1))]
+                )
+                lampRoot.addChild(cord)
+
                 // **Faretto, non lampadina nuda.** Una `PointLight` irradia in
                 // tutte le direzioni e su un modello senza soffitto si perde:
                 // nessun fascio, nessuna pozza netta. Un faretto puntato in basso
@@ -735,7 +779,7 @@ struct RealityFloorplanView: UIViewRepresentable {
                 aura.position = place
                 lampRoot.addChild(aura)
 
-                var node = LampNode(bulb: bulb, spot: light, halo: aura, pool: nil)
+                var node = LampNode(bulb: bulb, cord: cord, spot: light, halo: aura, pool: nil)
                 lampNodes[lamp.accessoryUUID] = node
                 apply(lamp, to: &node)
                 lampNodes[lamp.accessoryUUID] = node
@@ -763,6 +807,15 @@ struct RealityFloorplanView: UIViewRepresentable {
                               Float(lamp.position.y) - centre.z)
 
             node.bulb.position = place
+            // Dal soffitto alla cima del bulbo. Sotto i cinque centimetri non
+            // e' una sospensione, e' un faretto: niente filo.
+            let ceilingY = scene.bounds.max.y - centre.y
+            let gap = ceilingY - (place.y + 0.15)
+            node.cord.isEnabled = gap > 0.05
+            if gap > 0.05 {
+                node.cord.position = SIMD3(place.x, place.y + 0.15 + gap / 2, place.z)
+                node.cord.scale = SIMD3(1, gap, 1)
+            }
             node.spot.position = place
             node.halo.position = place
 
@@ -833,6 +886,50 @@ struct RealityFloorplanView: UIViewRepresentable {
             sun = newSun
             configureLights()
             rebuildSunPatches()
+            // L'ombra della tenda dipende dal sole quanto dal telo.
+            for (roomID, node) in awningNodes {
+                updateAwningShadow(node, fraction: node.shown)
+                awningNodes[roomID] = node
+            }
+        }
+
+        /// L'ombra del telo, proiettata a terra lungo il sole — la stessa
+        /// proiezione delle macchie che entrano dai vetri, al contrario: li'
+        /// il sole passa, qui si ferma.
+        private func updateAwningShadow(_ node: AwningNode, fraction: Double) {
+            guard sun.isAboveHorizon, sun.direction.y > 0.06,
+                  fraction > 0.06,
+                  let mesh = awningShadowMesh(node.geometry, fraction: fraction)
+            else {
+                node.shadow.isEnabled = false
+                return
+            }
+            node.shadow.model?.mesh = mesh
+            node.shadow.isEnabled = true
+        }
+
+        private func awningShadowMesh(_ geometry: FloorplanExtruder.AwningGeometry,
+                                      fraction: Double) -> MeshResource? {
+            let centre = scene.bounds.center
+            let reach = max(geometry.minReach, geometry.maxReach * min(1, max(0, fraction)))
+            let drop = geometry.fullDrop * (reach / geometry.maxReach)
+            let floorY = scene.bounds.min.y
+
+            func scenePoint(_ point: SIMD2<Double>, _ height: Double) -> SIMD3<Float> {
+                SIMD3(Float(point.x), Float(height), Float(point.y)) - centre
+            }
+            let corners = [
+                scenePoint(geometry.attachA, geometry.attachHeight),
+                scenePoint(geometry.attachB, geometry.attachHeight),
+                scenePoint(geometry.attachB + geometry.inward * reach, geometry.attachHeight - drop),
+                scenePoint(geometry.attachA + geometry.inward * reach, geometry.attachHeight - drop)
+            ]
+            let landed = corners.map { point -> SIMD3<Float> in
+                let travel = (point.y - (floorY - centre.y)) / sun.direction.y
+                let ground = point - sun.direction * travel
+                return SIMD3(ground.x, floorY - centre.y + 0.012, ground.z)
+            }
+            return RealityFloorplanRenderer.quadMesh(landed)
         }
 
         private func rebuildSunPatches() {
@@ -962,16 +1059,71 @@ struct RealityFloorplanView: UIViewRepresentable {
         }
 
         func updateCamera() {
-            camera.look(at: .zero, from: cameraPosition, relativeTo: nil)
+            camera.look(at: focus, from: focus + orbitOffset, relativeTo: nil)
             orientFlags()
+            applyStemVisibility()
         }
 
-        func resetCameraIfNeeded(_ resetID: UUID) {
-            guard handledResetID != resetID else { return }
-            handledResetID = resetID
-            azimuth = .pi / 4
-            elevation = .pi / 5
-            distanceMultiplier = 2.2
+        /// Sotto quest'angolo i pali delle bandierine trapassano mobili e
+        /// facciate: a camera bassa restano le etichette, spariscono gli steli.
+        private func applyStemVisibility() {
+            let showStems = elevation > 0.38
+            for stem in flagStems where stem.isEnabled != showStems {
+                stem.isEnabled = showStems
+            }
+        }
+
+        func applyCameraCommandIfNeeded(_ command: CameraCommand) {
+            guard handledCommandID != command.id else { return }
+            handledCommandID = command.id
+            focus = .zero
+            focusRadius = nil
+            switch command.preset {
+            case .top:
+                elevation = 1.45
+                distanceMultiplier = 2.5
+            case .angle:
+                azimuth = .pi / 4
+                elevation = .pi / 5
+                distanceMultiplier = 2.2
+            case .front:
+                elevation = 0.16
+                distanceMultiplier = 1.9
+            }
+            updateCamera()
+        }
+
+        /// Doppio tocco su una stanza: la camera la inquadra, mantenendo
+        /// l'angolo. Sul vuoto, torna alla casa intera.
+        @objc func doubleTapped(_ recognizer: UITapGestureRecognizer) {
+            guard let view = recognizer.view as? ARView else { return }
+            if let entity = view.entity(at: recognizer.location(in: view)),
+               let roomID = roomID(from: entity) {
+                frame(roomID: roomID)
+            } else {
+                focus = .zero
+                focusRadius = nil
+                updateCamera()
+            }
+        }
+
+        private func frame(roomID: UUID) {
+            let points = scene.faces
+                .filter { $0.role == .floor && $0.roomID == roomID }
+                .flatMap(\.points)
+            guard let first = points.first else { return }
+
+            var minP = first, maxP = first
+            for point in points {
+                minP = SIMD3(min(minP.x, point.x), min(minP.y, point.y), min(minP.z, point.z))
+                maxP = SIMD3(max(maxP.x, point.x), max(maxP.y, point.y), max(maxP.z, point.z))
+            }
+            let centre = scene.bounds.center
+            let roomCentre = (minP + maxP) / 2 - centre
+            // Il fuoco sta a mezza altezza stanza, non a terra: guardare il
+            // pavimento taglierebbe fuori i muri.
+            focus = SIMD3(roomCentre.x, roomCentre.y + 1.1, roomCentre.z)
+            focusRadius = max(simd_length(maxP - minP) / 2, 1.2)
             updateCamera()
         }
 
@@ -985,8 +1137,8 @@ struct RealityFloorplanView: UIViewRepresentable {
                            alpha: 1)
         }
 
-        var cameraPosition: SIMD3<Float> {
-            let radius = max(scene.bounds.radius, 1.0) * distanceMultiplier
+        var orbitOffset: SIMD3<Float> {
+            let radius = max(focusRadius ?? scene.bounds.radius, 1.0) * distanceMultiplier
             let horizontal = radius * cos(Float(elevation))
             return SIMD3(
                 horizontal * sin(Float(azimuth)),

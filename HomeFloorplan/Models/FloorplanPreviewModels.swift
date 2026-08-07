@@ -198,6 +198,25 @@ enum PreviewMode: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Camera
+
+/// Le inquadrature pronte: ognuna e' solo una terna azimut/elevazione/distanza.
+enum CameraPreset: Equatable {
+    /// Quasi zenitale: la pianta viva, tutta la casa in un colpo.
+    case top
+    /// Il tre quarti da dashboard, l'inquadratura di apertura.
+    case angle
+    /// Bassa, ad altezza occhi: quella dove la casa sembra una casa.
+    case front
+}
+
+/// Un comando di camera con identita': lo stesso preset chiesto due volte deve
+/// eseguire due volte, ed e' l'`id` a distinguere le richieste.
+struct CameraCommand: Equatable {
+    var id: UUID
+    var preset: CameraPreset
+}
+
 // MARK: - FloorplanSunLight
 
 /// Il sole, già tradotto nello spazio del modello.

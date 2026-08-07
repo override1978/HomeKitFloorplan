@@ -151,6 +151,9 @@ enum RealityFloorplanRenderer {
         /// Solo l'etichetta si gira verso la telecamera: lo stelo è verticale e
         /// non ha un davanti.
         var label: ModelEntity
+        /// Serve al coordinatore per spegnerlo a camera bassa, quando i pali
+        /// trapassano mobili e facciate.
+        var stem: ModelEntity
     }
 
     /// Uno stelo piantato nel punto più interno della stanza, con il valore in
@@ -185,7 +188,7 @@ enum RealityFloorplanRenderer {
             plate.position = SIMD3(x, topY - centre.y + 0.19, z)
             root.addChild(plate)
 
-            return Flag(roomID: flag.roomID, root: root, label: plate)
+            return Flag(roomID: flag.roomID, root: root, label: plate, stem: stem)
         }
     }
 
