@@ -1036,11 +1036,14 @@ struct FloorplanRealityPreviewView: View {
         // scorrimento resta solo come rete per gli schermi stretti. E' il
         // lavoro di `ViewThatFits` — niente `fixedSize`, che qui e' gia'
         // costato una volta i chip fuori dal proprio sfondo.
+        // Capsule **separate**, non una pillola unica: la capsula segmentata e'
+        // da controllo a poche scelte fisse (la pillola delle modalita'); una
+        // fila di filtri scorrevoli in iOS e' fatta di capsule singole — le
+        // categorie di Mappe, i chip dell'App Store.
         ViewThatFits(in: .horizontal) {
             summaryRowContent
             ScrollView(.horizontal, showsIndicators: false) { summaryRowContent }
         }
-        .background(.black.opacity(0.42), in: Capsule())
         .transition(.opacity)
     }
 
@@ -1406,7 +1409,7 @@ struct FloorplanRealityPreviewView: View {
             let triggered = system.currentState == .triggered
             let mode = system.currentMode
             let tint = triggered ? Color.red : mode.tintColor
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 Image(systemName: triggered ? "exclamationmark.shield.fill" : mode.symbolName)
                     .font(.system(size: 13, weight: .semibold))
                 Text(triggered
@@ -1452,12 +1455,15 @@ struct FloorplanRealityPreviewView: View {
                     .foregroundStyle(.white.opacity(isSelected ? 1 : 0.88))
                     .lineLimit(1)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            // La selezione ha bisogno di un corpo: senza pillole di base, il
-            // solo grassetto non si notava — all'apertura non si capiva che
-            // «Tutte» fosse attivo.
-            .background(isSelected ? Color.white.opacity(0.18) : .clear, in: Capsule())
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            // La selezione e' la capsula piena col colore dello strato — lo
+            // stesso verde che Ambiente ha nella pillola delle modalita': una
+            // sola lingua per dire «attivo».
+            .background(isSelected
+                        ? (PreviewMode.environment.accent ?? Color.white.opacity(0.25))
+                        : Color.black.opacity(0.34),
+                        in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
