@@ -43,6 +43,8 @@ struct Preview3DRequest: Identifiable {
 struct FloorplanLamp: Equatable {
     /// L'accessorio da comandare quando si tocca il bulbo.
     var accessoryUUID: UUID
+    var name: String
+    var isOn: Bool
     /// In metri, nello spazio del disegno.
     var position: SIMD2<Double>
     /// 0…1, dalla luminosità impostata sull'accessorio.
@@ -147,6 +149,7 @@ struct FloorplanRealityPreviewView: View {
     /// minuti.
     @State private var now = Date()
     @State private var exposure: Exposure = .north
+    @State private var lampCaption: String?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -396,8 +399,8 @@ struct FloorplanRealityPreviewView: View {
 
     private var controls: some View {
         VStack(spacing: 10) {
-            if let selectedRoomName {
-                Text(selectedRoomName)
+            if let caption = lampCaption ?? selectedRoomName {
+                Text(caption)
                     .font(.headline)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
@@ -587,6 +590,8 @@ struct FloorplanRealityPreviewView: View {
             else { return nil }
 
             return FloorplanLamp(accessoryUUID: marker.uuid,
+                                 name: accessory.name,
+                                 isOn: lamp.isOn,
                                  position: transform.metres(from: marker.position),
                                  brightness: lamp.brightness,
                                  colour: lamp.colour)
@@ -602,7 +607,17 @@ struct FloorplanRealityPreviewView: View {
         guard let accessory = homeKit.accessory(for: accessoryUUID) else { return }
         let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
         guard adapter.supportsQuickToggle else { return }
-        Task { try? await adapter.performQuickToggle(via: homeKit) }
+
+        // Il nome compare toccando, non prima: un'etichetta fissa su ogni
+        // lampada sarebbe l'elenco di segnaposti che stiamo evitando. E serve
+        // anche da conferma — senza, un tocco che non ha effetto immediato
+        // sembra un tocco andato a vuoto.
+        withAnimation(.easeOut(duration: 0.15)) { lampCaption = accessory.name }
+        Task {
+            try? await adapter.performQuickToggle(via: homeKit)
+            try? await Task.sleep(for: .seconds(2.2))
+            withAnimation(.easeOut(duration: 0.3)) { lampCaption = nil }
+        }
     }
 
     /// La centralina della casa, se ce n'è una.
@@ -923,37 +938,56 @@ private struct RealityFloorplanView: UIViewRepresentable {
             let floorY = scene.bounds.min.y
 
             for lamp in lamps {
-                let light = PointLight()
-                light.light.color = lamp.colour
-                // Lumen, non lux: 900 e' una lampadina piena.
-                light.light.intensity = Float(180 + 720 * lamp.brightness)
-                light.light.attenuationRadius = 4.6
                 let place = SIMD3(Float(lamp.position.x) - centre.x,
                                   floorY - centre.y + 2.05,
                                   Float(lamp.position.y) - centre.z)
-                light.position = place
-                lampRoot.addChild(light)
 
-                // Il bulbo, non solo il suo effetto. Nella realtà di giorno una
-                // lampada accesa **si vede**: è la luce che getta a non vedersi.
-                // Unlit, quindi resta riconoscibile contro il sole.
-                var glass = UnlitMaterial(color: lamp.colour)
-                glass.blending = .transparent(opacity: .init(floatLiteral: 0.95))
-                let bulb = ModelEntity(mesh: .generateSphere(radius: 0.075), materials: [glass])
+                // Il bulbo c'è **sempre**, acceso o spento: se esistesse solo da
+                // acceso non ci sarebbe niente da toccare per accenderlo.
+                // Spento è un puntino scuro, acceso è la propria tinta.
+                let bulb = ModelEntity(
+                    mesh: .generateSphere(radius: lamp.isOn ? 0.075 : 0.05),
+                    materials: [FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour,
+                                                                     isOn: lamp.isOn)]
+                )
                 bulb.position = place
-                // Il bersaglio e' l'oggetto stesso, non un segnaposto accanto:
-                // la sfera di collisione e' piu' larga del bulbo perche' a
-                // schermo resta comunque un dito piccolo.
+                // Il bersaglio è l'oggetto stesso, non un segnaposto accanto: la
+                // sfera di collisione è più larga del bulbo perché a schermo
+                // resta comunque un dito piccolo.
                 bulb.collision = CollisionComponent(shapes: [.generateSphere(radius: 0.26)])
                 bulb.name = "lamp:\(lamp.accessoryUUID.uuidString)"
                 lampRoot.addChild(bulb)
 
-                var halo = UnlitMaterial(color: lamp.colour)
-                halo.blending = .transparent(opacity: .init(floatLiteral: 0.16))
-                let aura = ModelEntity(mesh: .generateSphere(radius: 0.20), materials: [halo])
+                guard lamp.isOn else { continue }
+
+                let light = PointLight()
+                light.light.color = lamp.colour
+                // Lumen, non lux. Anche il raggio cresce con la luminosità: una
+                // lampada al minimo illumina meno **e** più vicino.
+                light.light.intensity = Float(180 + 820 * lamp.brightness)
+                light.light.attenuationRadius = Float(2.6 + 2.6 * lamp.brightness)
+                light.position = place
+                lampRoot.addChild(light)
+
+                let aura = ModelEntity(
+                    mesh: .generateSphere(radius: Float(0.13 + 0.13 * lamp.brightness)),
+                    materials: [haloMaterial(lamp.colour, brightness: lamp.brightness)]
+                )
                 aura.position = place
                 lampRoot.addChild(aura)
+
+                // La pozza sul pavimento: è ciò che rende una luce riconoscibile
+                // **dall'alto**, dove il bulbo lo nasconde il primo muro.
+                if let pool = RealityFloorplanRenderer.lampPoolEntity(for: lamp, scene: scene) {
+                    lampRoot.addChild(pool)
+                }
             }
+        }
+
+        private func haloMaterial(_ colour: UIColor, brightness: Double) -> any RealityKit.Material {
+            var material = UnlitMaterial(color: colour)
+            material.blending = .transparent(opacity: .init(floatLiteral: Float(0.10 + 0.12 * brightness)))
+            return material
         }
 
         func updateSun(_ newSun: FloorplanSunLight) {
@@ -1391,6 +1425,54 @@ private enum RealityFloorplanRenderer {
 
         return ModelEntity(mesh: mesh,
                            materials: [FloorplanMaterialCatalog.selectionOutlineMaterial()])
+    }
+
+    /// La pozza di luce di una lampada, ritagliata sul pavimento.
+    ///
+    /// Si riusa il ritaglio a celle delle macchie di sole: la luce non attraversa
+    /// i muri, quindi la pozza deve fermarsi dove finisce il pavimento.
+    static func lampPoolEntity(for lamp: FloorplanLamp, scene: FloorplanScene) -> Entity? {
+        guard let material = FloorplanMaterialCatalog.lampPoolMaterial(lamp.colour) else { return nil }
+        let floors = scene.faces.filter { $0.role == .floor && $0.points.count >= 3 }
+        guard !floors.isEmpty else { return nil }
+
+        let centre = scene.bounds.center
+        let floorY = scene.bounds.min.y + 0.010
+        let radius = Float(1.1 + 1.5 * lamp.brightness)
+        let x = Float(lamp.position.x)
+        let z = Float(lamp.position.y)
+
+        let quad = [
+            SIMD3(x - radius, floorY, z - radius),
+            SIMD3(x + radius, floorY, z - radius),
+            SIMD3(x + radius, floorY, z + radius),
+            SIMD3(x - radius, floorY, z + radius)
+        ]
+
+        var positions: [SIMD3<Float>] = []
+        var normals: [SIMD3<Float>] = []
+        var uvs: [SIMD2<Float>] = []
+        var indices: [UInt32] = []
+
+        for cell in patchCells(of: quad, landingOn: floors) {
+            let start = UInt32(positions.count)
+            positions.append(contentsOf: cell.map { $0 - centre })
+            normals.append(contentsOf: Array(repeating: SIMD3<Float>(0, 1, 0), count: 4))
+            uvs.append(contentsOf: cell.map {
+                SIMD2(0.5 + ($0.x - x) / (2 * radius), 0.5 + ($0.z - z) / (2 * radius))
+            })
+            indices.append(contentsOf: [start, start + 1, start + 2, start, start + 2, start + 3])
+        }
+
+        guard !positions.isEmpty else { return nil }
+        var descriptor = MeshDescriptor(name: "lamp-pool")
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(uvs)
+        descriptor.primitives = .triangles(indices)
+        guard let mesh = try? MeshResource.generate(from: [descriptor]) else { return nil }
+
+        return ModelEntity(mesh: mesh, materials: [material])
     }
 
     // MARK: - Il sole che entra

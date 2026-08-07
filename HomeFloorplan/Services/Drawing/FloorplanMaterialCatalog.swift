@@ -93,6 +93,31 @@ enum FloorplanMaterialCatalog {
         opaque(UIColor(red: 0.72, green: 0.60, blue: 0.32, alpha: 1), roughness: 0.22, metallic: 0.85)
     }
 
+    /// La pozza di luce che una lampada accesa getta sul pavimento.
+    ///
+    /// È ciò che rende una luce riconoscibile **dall'alto**, dove il bulbo lo
+    /// nasconde il primo muro: da lassù il pavimento si vede sempre.
+    static func lampPoolMaterial(_ colour: UIColor) -> (any RealityKit.Material)? {
+        guard let texture = radialFalloffTexture else { return nil }
+        var material = UnlitMaterial()
+        material.color = .init(tint: colour, texture: .init(texture, sampler: clampSampler))
+        material.blending = .transparent(opacity: .init(floatLiteral: 0.5))
+        return material
+    }
+
+    /// Il vetro di una lampada. Spenta è un puntino scuro che sta lì per essere
+    /// toccato; accesa è la propria tinta.
+    static func bulbMaterial(colour: UIColor, isOn: Bool) -> any RealityKit.Material {
+        guard isOn else {
+            var off = UnlitMaterial(color: UIColor(white: 0.30, alpha: 1))
+            off.blending = .transparent(opacity: .init(floatLiteral: 0.55))
+            return off
+        }
+        var on = UnlitMaterial(color: colour)
+        on.blending = .transparent(opacity: .init(floatLiteral: 0.95))
+        return on
+    }
+
     /// Il contorno della stanza selezionata.
     ///
     /// La selezione **non tinge più il pavimento**. Con uno strato ambientale

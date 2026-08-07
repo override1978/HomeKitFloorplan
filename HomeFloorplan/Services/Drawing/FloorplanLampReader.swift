@@ -12,12 +12,16 @@ import HomeKit
 enum FloorplanLampReader {
 
     struct Lamp {
+        var isOn: Bool
         /// 0…1. Vale 1 su una lampada che non regola la luminosità.
         var brightness: Double
         var colour: UIColor
     }
 
-    /// `nil` se non è una lampada o se è spenta.
+    /// `nil` solo se **non è una lampada**.
+    ///
+    /// Una lampada spenta va restituita lo stesso: se esistesse solo da accesa,
+    /// non ci sarebbe niente da toccare per accenderla.
     static func lamp(for accessory: HMAccessory, homeKit: HomeKitService) -> Lamp? {
         guard isLight(accessory) else { return nil }
 
@@ -29,12 +33,14 @@ enum FloorplanLampReader {
         let brightness = brightnessCharacteristic
             .flatMap { number(homeKit.value(for: $0) ?? $0.value) }
 
+        let isOn: Bool
         if let power, let raw = number(homeKit.value(for: power) ?? power.value) {
-            guard raw != 0 else { return nil }
+            isOn = raw != 0
         } else if let brightness {
-            guard brightness > 0 else { return nil }
+            isOn = brightness > 0
         } else {
-            return nil
+            // Nessuno dei due valori è arrivato: meglio spenta che inventata.
+            isOn = false
         }
 
         let hue = characteristic(HMCharacteristicTypeHue, in: accessory)
@@ -53,7 +59,9 @@ enum FloorplanLampReader {
             colour = UIColor(red: 1.0, green: 0.86, blue: 0.68, alpha: 1)
         }
 
-        return Lamp(brightness: max(0.15, (brightness ?? 100) / 100), colour: colour)
+        return Lamp(isOn: isOn,
+                    brightness: max(0.15, (brightness ?? 100) / 100),
+                    colour: colour)
     }
 
     static func isLight(_ accessory: HMAccessory) -> Bool {
