@@ -88,6 +88,18 @@ struct FloorplanLamp: Equatable {
     var colour: UIColor
 }
 
+/// Un'unità di clima già collocata: dov'è, com'è fatta, cosa sta facendo.
+struct FloorplanClimateUnit: Equatable {
+    var accessoryUUID: UUID
+    var name: String
+    var form: FloorplanClimateReader.Form
+    var activity: FloorplanClimateReader.Activity
+    /// In metri, nello spazio del disegno.
+    var position: SIMD2<Double>
+    /// Quota da terra, in metri.
+    var height: Double
+}
+
 /// Cosa mostra la bandierina di una stanza. Il contenuto arriva dal modello
 /// condiviso con la 2D; qui resta solo come disegnarlo.
 struct RoomFlag {
@@ -244,6 +256,7 @@ struct FloorplanRealityPreviewView: View {
                                      background: background,
                                      sun: sun,
                                      lamps: litLights,
+                                     climate: climateUnits,
                                      flags: roomFlags,
                                      cameraResetID: cameraResetID,
                                      onRoomSelected: { roomID, name in
@@ -368,7 +381,8 @@ struct FloorplanRealityPreviewView: View {
                 else { return nil }
                 return RoomFlag(roomID: anchor.roomID, anchor: anchor.point,
                                 title: anchor.roomName,
-                                value: sensor.formattedValue,
+                                value: sensor.formattedValue
+                                    + (filter == .temperature ? climateArrow(inRoomNamed: anchor.roomName) : ""),
                                 accent: UIColor(urgencyColour(sensor.urgency)),
                                 needsAttention: sensor.urgency != .normal)
             }
@@ -417,6 +431,55 @@ struct FloorplanRealityPreviewView: View {
             markers: markers.map { (uuid: $0.uuid, openingID: $0.openingID) },
             homeKit: homeKit
         )
+    }
+
+    /// La freccia accanto ai gradi: dice che qualcosa **sta lavorando**, e in
+    /// che verso.
+    ///
+    /// Sulla bandierina e non sulla tinta della stanza: quel canale è già preso
+    /// da ambiente e sicurezza, e un colore che vuol dire due cose non ne vuol
+    /// dire nessuna — è l'errore già fatto e corretto con l'ambra della
+    /// selezione. Solo accanto a una temperatura: «45% ↑» non vorrebbe dire
+    /// niente.
+    ///
+    /// Le stanze si accoppiano **per nome**, come tutto il resto delle
+    /// bandierine: così la freccia c'è anche su una planimetria appena
+    /// disegnata, dove non è stato posato ancora nessun marker.
+    private func climateArrow(inRoomNamed name: String) -> String {
+        for accessory in RoomSecurityEvaluator.accessories(inRoomNamed: name, homeKit: homeKit) {
+            guard let unit = FloorplanClimateReader.unit(for: accessory, homeKit: homeKit),
+                  let arrow = unit.activity.arrow
+            else { continue }
+            return " " + arrow
+        }
+        return ""
+    }
+
+    /// Le unità di clima **posate sulla planimetria**.
+    ///
+    /// Come le lampade e a differenza delle bandierine: un termosifone lo devi
+    /// aver messo da qualche parte, o non c'è niente da mostrare né da toccare.
+    /// La quota vive su `mountHeight`, lo stesso campo delle lampade — è la
+    /// stessa domanda, «a che altezza sta».
+    private var climateUnits: [FloorplanClimateUnit] {
+        guard let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                exportRotation: exportRotation)
+        else { return [] }
+
+        return markers.compactMap { marker in
+            guard let accessory = homeKit.accessory(for: marker.uuid),
+                  let unit = FloorplanClimateReader.unit(for: accessory, homeKit: homeKit)
+            else { return nil }
+
+            _ = settingsRevision
+            return FloorplanClimateUnit(accessoryUUID: marker.uuid,
+                                        name: accessory.name,
+                                        form: unit.form,
+                                        activity: unit.activity,
+                                        position: transform.metres(from: marker.position),
+                                        height: current.lampSettings(marker.uuid).height
+                                            ?? unit.form.defaultHeight)
+        }
     }
 
     /// Quanto è calata ogni tapparella, contro lo stato corrente di HomeKit.
@@ -1123,6 +1186,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
     let background: UIColor
     let sun: FloorplanSunLight
     let lamps: [FloorplanLamp]
+    let climate: [FloorplanClimateUnit]
     let flags: [RoomFlag]
     let cameraResetID: UUID
     let onRoomSelected: (UUID?, String?) -> Void
@@ -1183,6 +1247,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.updateSceneIfNeeded(scene)
         context.coordinator.updateSun(sun)
         context.coordinator.updateLamps(lamps)
+        context.coordinator.updateClimate(climate)
         context.coordinator.updateFlags(flags)
         context.coordinator.resetCameraIfNeeded(cameraResetID)
     }
@@ -1192,6 +1257,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                     onRoomSelected: onRoomSelected, onSceneTouched: onSceneTouched,
                     onLampTapped: onLampTapped, onAccessoryHeld: onAccessoryHeld)
             .prepared(withLamps: lamps)
+            .prepared(withClimate: climate)
             .prepared(with: flags)
     }
 
@@ -1230,6 +1296,11 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// Le lampade accese: luci vere, non decalcomanie, quindi illuminano
         /// muri e pavimento come farebbero nella stanza.
         private let lampRoot = Entity()
+        private let climateRoot = Entity()
+        private var climate: [FloorplanClimateUnit] = []
+        /// Il corpo di ogni unità, tenuto in vita fra un aggiornamento e l'altro:
+        /// accendere un condizionatore ne cambia il **colore**, non la forma.
+        private var climateNodes: [UUID: ModelEntity] = [:]
         private var lamps: [FloorplanLamp] = []
         /// Gli oggetti di ogni lampada, tenuti in vita fra un aggiornamento e
         /// l'altro: e' quello che permette di cambiare stato senza ricostruire.
@@ -1284,6 +1355,58 @@ private struct RealityFloorplanView: UIViewRepresentable {
             self.onSceneTouched = onSceneTouched
             self.onLampTapped = onLampTapped
             self.onAccessoryHeld = onAccessoryHeld
+        }
+
+        func prepared(withClimate units: [FloorplanClimateUnit]) -> Coordinator {
+            self.climate = units
+            return self
+        }
+
+        /// Un'unità si ricostruisce solo se cambia **dove sta o com'è fatta**.
+        /// Accendersi e spegnersi cambia il materiale, e quello si sostituisce
+        /// in posto — la lezione già pagata con le lampade che sparivano e
+        /// ricomparivano a ogni interruttore.
+        func updateClimate(_ newUnits: [FloorplanClimateUnit]) {
+            guard newUnits != climate else { return }
+            let sameBodies = newUnits.map(\.accessoryUUID).sorted() == climateNodes.keys.sorted()
+                && newUnits.allSatisfy { unit in
+                    climate.first { $0.accessoryUUID == unit.accessoryUUID }
+                        .map { $0.position == unit.position && $0.height == unit.height && $0.form == unit.form }
+                        ?? false
+                }
+            climate = newUnits
+            if sameBodies { applyClimateStates() } else { rebuildClimate() }
+        }
+
+        private func rebuildClimate() {
+            climateRoot.children.removeAll()
+            climateNodes = [:]
+            let centre = scene.bounds.center
+            let floorY = scene.bounds.min.y
+
+            for unit in climate {
+                let size = unit.form.size
+                let body = ModelEntity(
+                    mesh: .generateBox(size: size, cornerRadius: size.y * 0.22),
+                    materials: [FloorplanMaterialCatalog.climateMaterial(activity: unit.activity)]
+                )
+                body.position = SIMD3(Float(unit.position.x) - centre.x,
+                                      floorY - centre.y + Float(unit.height),
+                                      Float(unit.position.y) - centre.z)
+                // Il bersaglio della pressione lunga: piu' largo del corpo,
+                // perche' una valvola a schermo e' un francobollo.
+                body.collision = CollisionComponent(shapes: [.generateSphere(radius: 0.30)])
+                body.name = "climate:\(unit.accessoryUUID.uuidString)"
+                climateRoot.addChild(body)
+                climateNodes[unit.accessoryUUID] = body
+            }
+        }
+
+        private func applyClimateStates() {
+            for unit in climate {
+                climateNodes[unit.accessoryUUID]?.model?.materials =
+                    [FloorplanMaterialCatalog.climateMaterial(activity: unit.activity)]
+            }
         }
 
         func prepared(with flags: [RoomFlag]) -> Coordinator {
@@ -1615,9 +1738,11 @@ private struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(heatRoot)
             anchor.addChild(selectionRoot)
             anchor.addChild(lampRoot)
+            anchor.addChild(climateRoot)
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
+            rebuildClimate()
             configureLights()
             updateCamera()
         }
@@ -1775,7 +1900,9 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 selectRoom(nil)
                 return
             }
-            if let lampID = accessoryID(from: entity) {
+            // Il tocco accende **solo** una lampada: un condizionatore non si
+            // comanda con un interruttore, e per quello c'e' la pressione lunga.
+            if let lampID = accessoryID(from: entity, prefix: "lamp:") {
                 onLampTapped(lampID)
                 return
             }
@@ -1792,7 +1919,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
             guard recognizer.state == .began,
                   let view = recognizer.view as? ARView,
                   let entity = view.entity(at: recognizer.location(in: view)),
-                  let accessoryID = accessoryID(from: entity)
+                  let accessoryID = accessoryID(from: entity, prefix: "lamp:")
+                    ?? accessoryID(from: entity, prefix: "climate:")
             else { return }
 
             // Il ritorno aptico dice che la pressione e' stata presa **prima**
@@ -1807,11 +1935,11 @@ private struct RealityFloorplanView: UIViewRepresentable {
             return entity.parent.flatMap(roomID(from:))
         }
 
-        private func accessoryID(from entity: Entity) -> UUID? {
-            if entity.name.hasPrefix("lamp:") {
-                return UUID(uuidString: String(entity.name.dropFirst(5)))
+        private func accessoryID(from entity: Entity, prefix: String) -> UUID? {
+            if entity.name.hasPrefix(prefix) {
+                return UUID(uuidString: String(entity.name.dropFirst(prefix.count)))
             }
-            return entity.parent.flatMap(accessoryID(from:))
+            return entity.parent.flatMap { accessoryID(from: $0, prefix: prefix) }
         }
 
         private func parseRoomID(_ name: String) -> UUID? {

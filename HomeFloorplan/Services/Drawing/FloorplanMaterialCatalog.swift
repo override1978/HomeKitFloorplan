@@ -400,6 +400,24 @@ enum FloorplanMaterialCatalog {
         return .init(descriptor)
     }()
 
+    /// Il corpo di uno split o di una valvola.
+    ///
+    /// Spento e' bianco come l'apparecchio vero. Al lavoro prende la tinta di
+    /// **cosa sta facendo** — non della temperatura, che sta sulla bandierina:
+    /// qui interessa che si stia muovendo qualcosa, e in quale verso. «In
+    /// temperatura» resta bianco, perche' un impianto che ha finito non ha
+    /// niente da dire.
+    static func climateMaterial(activity: FloorplanClimateReader.Activity) -> any RealityKit.Material {
+        switch activity {
+        case .heating:
+            return opaque(UIColor(red: 0.93, green: 0.63, blue: 0.42, alpha: 1), roughness: 0.42)
+        case .cooling:
+            return opaque(UIColor(red: 0.55, green: 0.76, blue: 0.92, alpha: 1), roughness: 0.42)
+        case .off, .idle:
+            return opaque(UIColor(red: 0.94, green: 0.94, blue: 0.95, alpha: 1), roughness: 0.38)
+        }
+    }
+
     /// Una tapparella: stecche orizzontali, non una lastra liscia.
     ///
     /// Senza le stecche il quadrilatero si legge come «la finestra e' murata».
