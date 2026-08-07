@@ -8,6 +8,18 @@ import UIKit
 ///
 /// Il documento viaggia per valore, così il foglio non tiene vivo il modello
 /// SwiftData mentre è aperto.
+/// Un accessorio piazzato, come lo vede la 3D.
+struct Preview3DMarker {
+    let uuid: UUID
+    /// Normalizzata sull'immagine esportata.
+    let position: CGPoint
+    /// Per i contatti: quale apertura sorvegliano.
+    let openingID: UUID?
+    /// Quota scelta dall'utente, `nil` se non l'ha mai toccata.
+    let mountHeight: Double?
+    let direction: LampDirection?
+}
+
 struct Preview3DFloorplan: Identifiable {
     let id: UUID
     let name: String
@@ -17,9 +29,11 @@ struct Preview3DFloorplan: Identifiable {
     /// La scrittura su SwiftData resta in `FloorplanListView`: l'anteprima
     /// riceve una chiusura e non conosce né il modello né il contesto.
     let applyNorthBearing: (Double) -> Void
-    /// Gli accessori piazzati: dove stanno, e per i contatti quale apertura
-    /// sorvegliano — già decisa al momento della posa.
-    let markers: [(uuid: UUID, position: CGPoint, openingID: UUID?)]
+    /// Gli accessori piazzati.
+    let markers: [Preview3DMarker]
+    /// Salva quota e direzione di una luce. La scrittura su SwiftData resta
+    /// fuori: qui si sa cosa, non dove metterlo.
+    let applyLampSettings: (UUID, Double, LampDirection) -> Void
     /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
     /// marker in coordinate del disegno.
     let exportRotation: DrawingExportRotation
@@ -41,10 +55,18 @@ struct Preview3DRequest: Identifiable {
 
 /// Una lampada accesa, pronta a illuminare.
 struct FloorplanLamp: Equatable {
+    /// Cambia solo quando il cono va rifatto davvero.
+    var beamKey: String { "\(direction.rawValue)|\(Int(height * 20))" }
+    /// La pozza dipende anche da quanto e' luminosa.
+    var poolKey: String { "\(beamKey)|\(Int(brightness * 8))" }
+
     /// L'accessorio da comandare quando si tocca il bulbo.
     var accessoryUUID: UUID
     var name: String
     var isOn: Bool
+    /// Quota da terra, in metri.
+    var height: Double
+    var direction: LampDirection
     /// In metri, nello spazio del disegno.
     var position: SIMD2<Double>
     /// 0…1, dalla luminosità impostata sull'accessorio.
@@ -124,10 +146,14 @@ struct FloorplanRealityPreviewView: View {
     private var document: DrawingDocument { current.document }
     private var title: String { current.name }
     private var northBearingDegrees: Double { current.northBearingDegrees }
-    private var markers: [(uuid: UUID, position: CGPoint, openingID: UUID?)] { current.markers }
+    private var markers: [Preview3DMarker] { current.markers }
     private var exportRotation: DrawingExportRotation { current.exportRotation }
     private var background: UIColor { current.background }
     private func onNorthBearingChange(_ bearing: Double) { current.applyNorthBearing(bearing) }
+    private func applyLampSettings(_ uuid: UUID, _ height: Double, _ direction: LampDirection) {
+        current.applyLampSettings(uuid, height, direction)
+        rebuildScene()
+    }
 
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
@@ -136,6 +162,7 @@ struct FloorplanRealityPreviewView: View {
     @State private var floorplanScene: FloorplanScene?
     @State private var cameraResetID = UUID()
     @State private var selectedRoomName: String?
+    @State private var selectedRoomID: UUID?
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @State private var isLayerTrayOpen = false
@@ -172,7 +199,10 @@ struct FloorplanRealityPreviewView: View {
                                      lamps: litLights,
                                      flags: roomFlags,
                                      cameraResetID: cameraResetID,
-                                     onRoomSelected: { selectedRoomName = $0 },
+                                     onRoomSelected: { roomID, name in
+                                         selectedRoomID = roomID
+                                         selectedRoomName = name
+                                     },
                                      onSceneTouched: {
                                          guard isLayerTrayOpen else { return }
                                          withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen = false }
@@ -185,6 +215,7 @@ struct FloorplanRealityPreviewView: View {
 
             controls
         }
+        .overlay(alignment: .bottom) { roomSetupPanel }
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
                 topChrome
@@ -623,13 +654,99 @@ struct FloorplanRealityPreviewView: View {
                   let lamp = FloorplanLampReader.lamp(for: accessory, homeKit: homeKit)
             else { return nil }
 
+            let direction = marker.direction ?? .down
             return FloorplanLamp(accessoryUUID: marker.uuid,
                                  name: accessory.name,
                                  isOn: lamp.isOn,
+                                 height: marker.mountHeight
+                                     ?? direction.defaultHeight(ceiling: ceilingHeight),
+                                 direction: direction,
                                  position: transform.metres(from: marker.position),
                                  brightness: lamp.brightness,
                                  colour: lamp.colour)
         }
+    }
+
+    /// Le lampade della stanza selezionata.
+    ///
+    /// Si ricavano dalla **posizione**, non da un elenco: una lampada sta in
+    /// una stanza se il suo punto cade nel poligono di quella stanza. Nessun
+    /// accoppiamento per nome da sbagliare.
+    private var lampsInSelectedRoom: [FloorplanLamp] {
+        guard let selectedRoomID,
+              let area = document.roomAreas.first(where: { $0.id == selectedRoomID })
+        else { return [] }
+
+        let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
+        let polygon = area.effectivePoints.map {
+            SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
+        }
+        return litLights.filter { FloorplanRoomEnvironment.contains($0.position, polygon) }
+    }
+
+    /// Il posto dove si impostano i fatti che la pianta **non può contenere**:
+    /// a che altezza sta una luce e dove punta.
+    ///
+    /// Per stanza e non per singola lampada perché la configurazione è
+    /// un'attività a lotti — «i quattro faretti della cucina, tutti a
+    /// soffitto» — e cercarli uno a uno nel modello sarebbe una penitenza.
+    @ViewBuilder
+    private var roomSetupPanel: some View {
+        let lamps = lampsInSelectedRoom
+        if !lamps.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(lamps, id: \.accessoryUUID) { lamp in
+                    lampSetupRow(lamp)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: 560)
+            .background(.black.opacity(0.42), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .padding(.bottom, 104)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder
+    private func lampSetupRow(_ lamp: FloorplanLamp) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(lamp.name)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+
+            HStack(spacing: 4) {
+                ForEach(LampDirection.allCases) { value in
+                    Button {
+                        applyLampSettings(lamp.accessoryUUID, lamp.height, value)
+                    } label: {
+                        Image(systemName: value.symbol)
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white.opacity(lamp.direction == value ? 1 : 0.5))
+                            .frame(width: 40, height: 32)
+                            .background(lamp.direction == value ? Color.white.opacity(0.22) : Color.clear,
+                                        in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(value.label))
+                }
+
+                Slider(value: heightBinding(for: lamp), in: 0.2...3.2, step: 0.05)
+                    .tint(.white.opacity(0.8))
+
+                Text(lamp.height.formatted(.number.precision(.fractionLength(2))) + " m")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 62, alignment: .trailing)
+            }
+        }
+    }
+
+    private func heightBinding(for lamp: FloorplanLamp) -> Binding<Double> {
+        Binding(
+            get: { lamp.height },
+            set: { applyLampSettings(lamp.accessoryUUID, $0, lamp.direction) }
+        )
     }
 
     /// Accende o spegne toccando il bulbo.
@@ -786,7 +903,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
     let lamps: [FloorplanLamp]
     let flags: [RoomFlag]
     let cameraResetID: UUID
-    let onRoomSelected: (String?) -> Void
+    let onRoomSelected: (UUID?, String?) -> Void
     /// Toccare o ruotare il modello vuol dire «ho finito di scegliere»: il
     /// cassetto si richiude da solo e restituisce lo spazio.
     let onSceneTouched: () -> Void
@@ -885,7 +1002,10 @@ private struct RealityFloorplanView: UIViewRepresentable {
             var spot: SpotLight
             var halo: ModelEntity
             var pool: Entity?
-            var brightness: Double
+            /// Firme di cio' che richiede geometria nuova: senza, ogni tocco
+            /// rifarebbe mesh identiche.
+            var beamKey: String = ""
+            var poolKey: String = ""
         }
         private var lampNodes: [UUID: LampNode] = [:]
         /// Serve per regolare la luce d'ambiente, che di notte va abbassata:
@@ -900,14 +1020,14 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private var roomNames: [UUID: String] = [:]
         private var roomWallEntities: [UUID: ModelEntity] = [:]
         private var selectedRoomID: UUID?
-        var onRoomSelected: (String?) -> Void
+        var onRoomSelected: (UUID?, String?) -> Void
         var onSceneTouched: () -> Void
         var onLampTapped: (UUID) -> Void
 
         init(scene: FloorplanScene,
              sun: FloorplanSunLight,
              cameraResetID: UUID,
-             onRoomSelected: @escaping (String?) -> Void,
+             onRoomSelected: @escaping (UUID?, String?) -> Void,
              onSceneTouched: @escaping () -> Void,
              onLampTapped: @escaping (UUID) -> Void) {
             self.scene = scene
@@ -1031,7 +1151,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 // libera, si vede da ogni angolazione, e il fascio punta in basso
                 // lo stesso.
                 let place = SIMD3(Float(lamp.position.x) - centre.x,
-                                  floorY - centre.y + 2.5,
+                                  floorY - centre.y + Float(lamp.height),
                                   Float(lamp.position.y) - centre.z)
 
                 // Il bulbo c'è **sempre**, acceso o spento: se esistesse solo da
@@ -1079,7 +1199,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 aura.position = place
                 lampRoot.addChild(aura)
 
-                var node = LampNode(bulb: bulb, spot: light, halo: aura, pool: nil, brightness: -1)
+                var node = LampNode(bulb: bulb, spot: light, halo: aura, pool: nil)
                 lampNodes[lamp.accessoryUUID] = node
                 apply(lamp, to: &node)
                 lampNodes[lamp.accessoryUUID] = node
@@ -1097,6 +1217,16 @@ private struct RealityFloorplanView: UIViewRepresentable {
         }
 
         private func apply(_ lamp: FloorplanLamp, to node: inout LampNode) {
+            let centre = scene.bounds.center
+            let floorY = scene.bounds.min.y
+            let place = SIMD3(Float(lamp.position.x) - centre.x,
+                              floorY - centre.y + Float(lamp.height),
+                              Float(lamp.position.y) - centre.z)
+
+            node.bulb.position = place
+            node.spot.position = place
+            node.halo.position = place
+
             node.bulb.model?.materials = [
                 FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour, isOn: lamp.isOn)
             ]
@@ -1105,23 +1235,46 @@ private struct RealityFloorplanView: UIViewRepresentable {
             node.spot.light.color = lamp.colour
             node.spot.light.intensity = Float(600 + 2_400 * lamp.brightness)
             node.spot.light.attenuationRadius = Float(3.0 + 2.4 * lamp.brightness)
+            node.spot.light.outerAngleInDegrees = lamp.direction == .around ? 160 : 72
+            // Il faretto guarda dove punta la luce. `look` orienta l'entità, e
+            // basta cambiare il bersaglio per rovesciare il fascio.
+            let target = lamp.direction == .up
+                ? SIMD3(place.x, place.y + 2, place.z)
+                : SIMD3(place.x, floorY - centre.y, place.z)
+            node.spot.look(at: target, from: place, relativeTo: nil)
 
-            node.halo.isEnabled = lamp.isOn
+            // Il cono si vede solo quando ha una direzione: «intorno» non e' un
+            // fascio, e disegnarlo comunque darebbe di nuovo l'effetto pianeta.
+            let showsBeam = lamp.isOn && lamp.direction != .around
+            node.halo.isEnabled = showsBeam
+            if showsBeam, node.beamKey != lamp.beamKey {
+                let height = lamp.direction == .up
+                    ? Float(0.9)
+                    : max(0.2, place.y - (floorY - centre.y) - 0.02)
+                if let mesh = RealityFloorplanRenderer.lampBeamMesh(height: height,
+                                                                    outerAngleDegrees: 72) {
+                    node.halo.model?.mesh = mesh
+                }
+                node.halo.orientation = lamp.direction == .up
+                    ? simd_quatf(angle: .pi, axis: SIMD3(1, 0, 0))
+                    : simd_quatf(angle: 0, axis: SIMD3(0, 1, 0))
+                node.beamKey = lamp.beamKey
+            }
             if let beam = FloorplanMaterialCatalog.lampBeamMaterial(colour: lamp.colour,
                                                                     brightness: lamp.brightness) {
                 node.halo.model?.materials = [beam]
             }
 
-            // La pozza dipende dalla geometria, quindi si rifà solo quando la
-            // luminosità cambia davvero — accendere e spegnere la nasconde e
-            // basta.
-            if lamp.isOn, abs(node.brightness - lamp.brightness) > 0.12 || node.pool == nil {
+            // La pozza dipende dalla geometria, quindi si rifa' solo quando
+            // cambia davvero. Una luce puntata in alto non ne fa nessuna.
+            let wantsPool = lamp.isOn && lamp.direction != .up
+            if wantsPool, node.poolKey != lamp.poolKey {
                 node.pool?.removeFromParent()
                 node.pool = RealityFloorplanRenderer.lampPoolEntity(for: lamp, scene: scene)
                 if let pool = node.pool { lampRoot.addChild(pool) }
-                node.brightness = lamp.brightness
+                node.poolKey = lamp.poolKey
             }
-            node.pool?.isEnabled = lamp.isOn
+            node.pool?.isEnabled = wantsPool
         }
 
         func updateSun(_ newSun: FloorplanSunLight) {
@@ -1240,7 +1393,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             // che compariva in console, e SwiftUI lo dichiara comportamento
             // indefinito.
             let notify = onRoomSelected
-            DispatchQueue.main.async { notify(nil) }
+            DispatchQueue.main.async { notify(nil, nil) }
         }
 
         func updateCamera() {
@@ -1344,13 +1497,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
             selectionRoot.children.removeAll()
 
             guard let roomID else {
-                onRoomSelected(nil)
+                onRoomSelected(nil, nil)
                 return
             }
             if let outline = RealityFloorplanRenderer.selectionOutlineEntity(for: roomID, scene: scene) {
                 selectionRoot.addChild(outline)
             }
-            onRoomSelected(roomNames[roomID])
+            onRoomSelected(roomID, roomNames[roomID])
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,

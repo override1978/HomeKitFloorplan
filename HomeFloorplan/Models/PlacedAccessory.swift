@@ -21,6 +21,15 @@ final class PlacedAccessory : Identifiable{
     /// non correggibile, e per questo impossibile da diagnosticare quando
     /// sbagliava.
     var linkedOpeningID: UUID?
+    /// Altezza da terra in metri, per gli oggetti che in 3D stanno in verticale.
+    ///
+    /// Il disegno 2D non può contenerla: una pianta non ha quota. `nil` vuol
+    /// dire «usa il default del tipo» — soffitto per un faretto, tavolo per una
+    /// lampada da appoggio.
+    var mountHeight: Double?
+    /// Dove punta la luce: basso, intorno, alto. Anche questa non esiste in
+    /// pianta, e cambia completamente come la stanza si illumina.
+    var lightDirectionRaw: String?
     /// Etichetta personalizzata opzionale (sovrascrive il nome HomeKit se valorizzata)
     var customLabel: String?
     var floorplan: Floorplan?

@@ -74,7 +74,7 @@ enum FloorplanRoomEnvironment {
         return nearest
     }
 
-    private static func contains(_ point: SIMD2<Double>, _ polygon: [SIMD2<Double>]) -> Bool {
+    static func contains(_ point: SIMD2<Double>, _ polygon: [SIMD2<Double>]) -> Bool {
         var inside = false
         var previous = polygon.count - 1
         for current in polygon.indices {

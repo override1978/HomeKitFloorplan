@@ -45,10 +45,21 @@ struct FloorplanListView: View {
                     plan.northBearingDegrees = bearing
                     try? modelContext.save()
                 },
-                markers: plan.accessories.map {
-                    (uuid: $0.homeKitAccessoryUUID,
-                     position: CGPoint(x: $0.positionX, y: $0.positionY),
-                     openingID: $0.linkedOpeningID)
+                markers: plan.accessories.map { placed in
+                    Preview3DMarker(
+                        uuid: placed.homeKitAccessoryUUID,
+                        position: CGPoint(x: placed.positionX, y: placed.positionY),
+                        openingID: placed.linkedOpeningID,
+                        mountHeight: placed.mountHeight,
+                        direction: placed.lightDirectionRaw.flatMap(LampDirection.init(rawValue:))
+                    )
+                },
+                applyLampSettings: { [weak plan] uuid, height, direction in
+                    guard let placed = plan?.accessories.first(where: { $0.homeKitAccessoryUUID == uuid })
+                    else { return }
+                    placed.mountHeight = height
+                    placed.lightDirectionRaw = direction.rawValue
+                    try? modelContext.save()
                 },
                 exportRotation: plan.drawingExportRotation,
                 background: previewBackground(for: plan)
