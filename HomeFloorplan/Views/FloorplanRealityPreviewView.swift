@@ -1025,17 +1025,20 @@ struct FloorplanRealityPreviewView: View {
     /// filtri stanno in una barra loro sotto le modalità.
     private var filterRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                chip(label: String(localized: "filter.all", defaultValue: "Tutto"),
-                     icon: "leaf.fill",
-                     isSelected: sensorFilter == nil) { sensorFilter = nil }
+            HStack(spacing: 16) {
+                summaryItem(label: String(localized: "filter.all", defaultValue: "Tutto"),
+                            icon: "leaf.fill", tint: .white, value: nil,
+                            isSelected: sensorFilter == nil) { sensorFilter = nil }
                 ForEach(envVM.availableSensorTypes) { type in
-                    chip(label: type.displayName, icon: type.sfSymbol,
-                         isSelected: sensorFilter == type) { sensorFilter = type }
+                    summaryItem(label: type.displayName,
+                                icon: type.sfSymbol,
+                                tint: urgencyColour(worstUrgency(for: type)),
+                                value: summaryText(for: type),
+                                isSelected: sensorFilter == type) { sensorFilter = type }
                 }
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
         }
         // ⚠️ Niente `fixedSize`: faceva prendere alla riga la larghezza di tutto
         // il contenuto mentre la capsula restava al limite, e i chip finivano
@@ -1416,6 +1419,57 @@ struct FloorplanRealityPreviewView: View {
                 .background(.black.opacity(0.22), in: Capsule())
                 .transition(.opacity)
         }
+    }
+
+    /// Una voce della sintesi: icona colorata + intervallo, niente pillola.
+    ///
+    /// Il colore dell'icona e' **lo stato peggiore** di quel tipo in casa, e il
+    /// testo e' l'intervallo min–max: «23–35°» dice subito che una stanza sta
+    /// cocendo, mentre una media lo nasconderebbe. E' la stessa voce che filtra
+    /// le bandierine: sintesi e filtro sono un oggetto solo, non due righe.
+    @ViewBuilder
+    private func summaryItem(label: String, icon: String, tint: Color, value: String?,
+                             isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(tint)
+                Text(value ?? label)
+                    .font(.caption.weight(isSelected ? .semibold : .regular))
+                    .foregroundStyle(.white.opacity(isSelected ? 1 : 0.72))
+                    .lineLimit(1)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(value ?? ""))
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    /// L'intervallo di un tipo su tutta la casa.
+    ///
+    /// Min–max e non media: la media fra il bagno e il soggiorno non significa
+    /// niente. Per i tipi a scala (qualita' aria, fumo) si mostra **il
+    /// peggiore**, perche' un intervallo di etichette non si legge.
+    private func summaryText(for type: SensorServiceType) -> String? {
+        let sensors = envVM.rooms.flatMap(\.sensors).filter { $0.serviceType == type }
+        guard let lowest = sensors.min(by: { $0.currentValue < $1.currentValue }),
+              let highest = sensors.max(by: { $0.currentValue < $1.currentValue })
+        else { return nil }
+        if type == .airQuality || type == .smoke { return highest.formattedValue }
+        if lowest.formattedValue == highest.formattedValue { return highest.formattedValue }
+        return "\(lowest.formattedValue)–\(highest.formattedValue)"
+    }
+
+    private func worstUrgency(for type: SensorServiceType) -> SensorUrgency {
+        let urgencies = envVM.rooms.flatMap(\.sensors)
+            .filter { $0.serviceType == type }
+            .map(\.urgency)
+        if urgencies.contains(.danger) { return .danger }
+        if urgencies.contains(.warning) { return .warning }
+        return .normal
     }
 
     private func chip(label: String, icon: String, isSelected: Bool,
