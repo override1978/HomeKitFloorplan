@@ -967,7 +967,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 // acceso non ci sarebbe niente da toccare per accenderlo.
                 // Spento è un puntino scuro, acceso è la propria tinta.
                 let bulb = ModelEntity(
-                    mesh: .generateSphere(radius: lamp.isOn ? 0.075 : 0.05),
+                    mesh: .generateSphere(radius: lamp.isOn ? 0.085 : 0.075),
                     materials: [FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour,
                                                                      isOn: lamp.isOn)]
                 )
@@ -981,13 +981,21 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
                 guard lamp.isOn else { continue }
 
-                let light = PointLight()
+                // **Faretto, non lampadina nuda.** Una `PointLight` irradia in
+                // tutte le direzioni e su un soffitto aperto si perde: nessun
+                // fascio, nessuna pozza netta, e da fuori non si capisce che sia
+                // accesa. Un faretto puntato in basso e' anche cio' che c'e'
+                // davvero — spot nel cartongesso, sospensione sul tavolo.
+                let light = SpotLight()
                 light.light.color = lamp.colour
-                // Lumen, non lux. Anche il raggio cresce con la luminosità: una
-                // lampada al minimo illumina meno **e** più vicino.
-                light.light.intensity = Float(180 + 820 * lamp.brightness)
-                light.light.attenuationRadius = Float(2.6 + 2.6 * lamp.brightness)
+                light.light.intensity = Float(600 + 2_400 * lamp.brightness)
+                light.light.innerAngleInDegrees = 32
+                light.light.outerAngleInDegrees = 72
+                light.light.attenuationRadius = Float(3.0 + 2.4 * lamp.brightness)
                 light.position = place
+                light.look(at: SIMD3(place.x, floorY - centre.y, place.z),
+                           from: place,
+                           relativeTo: nil)
                 lampRoot.addChild(light)
 
                 let aura = ModelEntity(

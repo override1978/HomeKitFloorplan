@@ -109,8 +109,11 @@ enum FloorplanMaterialCatalog {
     /// toccato; accesa è la propria tinta.
     static func bulbMaterial(colour: UIColor, isOn: Bool) -> any RealityKit.Material {
         guard isOn else {
-            var off = UnlitMaterial(color: UIColor(white: 0.30, alpha: 1))
-            off.blending = .transparent(opacity: .init(floatLiteral: 0.55))
+            // Spenta deve **vedersi**: e' il bersaglio per accenderla. Un grigio
+            // scuro semitrasparente su una parete bianca spariva, e sembrava che
+            // la lampada non ci fosse invece che spenta.
+            var off = UnlitMaterial(color: UIColor(white: 0.42, alpha: 1))
+            off.blending = .transparent(opacity: .init(floatLiteral: 0.9))
             return off
         }
         var on = UnlitMaterial(color: colour)
