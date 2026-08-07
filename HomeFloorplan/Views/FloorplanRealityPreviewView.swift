@@ -882,6 +882,9 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// quella non appartiene a nessuna delle tre direzionali.
         private weak var view: ARView?
         private var flagLabels: [Entity] = []
+        /// Anche le icone delle lampade guardano la telecamera: un disco visto
+        /// di taglio sparisce.
+        private var lampIcons: [Entity] = []
         private var flags: [RoomFlag] = []
         private var flagsSignature = ""
         private var installedSignature: String?
@@ -924,6 +927,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             rebuildFlags()
             applyRoomAccents()
             rebuildHeat()
+            rebuildLamps()
         }
 
         /// I muri interni della stanza prendono il colore del suo stato.
@@ -978,6 +982,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             let orientation = simd_quatf(angle: Float(azimuth), axis: SIMD3(0, 1, 0))
                 * simd_quatf(angle: -Float(elevation), axis: SIMD3(1, 0, 0))
             for label in flagLabels { label.orientation = orientation }
+            for icon in lampIcons { icon.orientation = orientation }
         }
 
         func prepared(withLamps lamps: [FloorplanLamp]) -> Coordinator {
@@ -999,6 +1004,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// una lampada accesa non si vede.
         private func rebuildLamps() {
             lampRoot.children.removeAll()
+            lampIcons = []
             let centre = scene.bounds.center
             let floorY = scene.bounds.min.y
 
@@ -1014,15 +1020,29 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
                 // Il bulbo c'è **sempre**, acceso o spento: se esistesse solo da
                 // acceso non ci sarebbe niente da toccare per accenderlo.
-                // Spento è un puntino scuro, acceso è la propria tinta.
-                let bulb = ModelEntity(
-                    // Sedici centimetri: su una casa da dodici metri sono una
-                    // ventina di pixel. Con otto erano nove, e nove pixel non
-                    // sono un oggetto, sono un granello.
-                    mesh: .generateSphere(radius: lamp.isOn ? 0.17 : 0.15),
-                    materials: [FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour,
-                                                                     isOn: lamp.isOn)]
-                )
+                //
+                // Ma spento non basta rimpicciolire il vetro: un puntino grigio
+                // si vede e non dice niente. Spento è l'**icona** della
+                // lampadina, la stessa del marker in 2D; acceso è il vetro con
+                // la propria tinta, che a quel punto parla da sé.
+                let bulb: ModelEntity
+                if lamp.isOn {
+                    bulb = ModelEntity(
+                        mesh: .generateSphere(radius: 0.17),
+                        materials: [FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour,
+                                                                         isOn: true)]
+                    )
+                } else if let icon = FloorplanMaterialCatalog.lampIconMaterial() {
+                    bulb = ModelEntity(mesh: .generatePlane(width: 0.42, height: 0.42),
+                                       materials: [icon])
+                    lampIcons.append(bulb)
+                } else {
+                    bulb = ModelEntity(
+                        mesh: .generateSphere(radius: 0.15),
+                        materials: [FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour,
+                                                                         isOn: false)]
+                    )
+                }
                 bulb.position = place
                 // Il bersaglio è l'oggetto stesso, non un segnaposto accanto: la
                 // sfera di collisione è più larga del bulbo perché a schermo
@@ -1180,6 +1200,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             rebuildFlags()
             applyRoomAccents()
             rebuildHeat()
+            rebuildLamps()
             // ⚠️ Fuori dal giro di aggiornamento. `updateSceneIfNeeded` viene
             // chiamata da `updateUIView`, cioè **durante** l'update della vista:
             // scrivere lì uno `@State` è il «Modifying state during view update»
