@@ -2177,10 +2177,15 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 // Il fascio, non un alone: una palla luminosa attorno alla
                 // lampada sembra un pianeta e non dice da che parte va la luce.
                 let beamHeight = place.y - (floorY - centre.y) - 0.02
+                // ⚠️ Il ripiego NON e' una sfera. Con il materiale del fascio
+                // addosso, una sfera e' un pallone lattiginoso a mezz'aria — il
+                // sospettato numero uno di ogni «cos'e' quel coso grigio». Se il
+                // cono non si puo' costruire, meglio nessun velo: la luce vera
+                // del faretto c'e' comunque.
                 let aura = ModelEntity(
                     mesh: RealityFloorplanRenderer.lampBeamMesh(height: beamHeight,
                                                                 outerAngleDegrees: RealityFloorplanRenderer.beamAngle)
-                        ?? .generateSphere(radius: 0.2),
+                        ?? .generatePlane(width: 0.001, height: 0.001),
                     materials: [FloorplanMaterialCatalog.lampBeamMaterial(colour: lamp.colour,
                                                                           brightness: 1)
                                 ?? UnlitMaterial(color: .clear)]

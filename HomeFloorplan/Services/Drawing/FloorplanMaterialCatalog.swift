@@ -117,12 +117,15 @@ enum FloorplanMaterialCatalog {
     /// toccato; accesa è la propria tinta.
     static func bulbMaterial(colour: UIColor, isOn: Bool) -> any RealityKit.Material {
         guard isOn else {
-            // Spenta deve **vedersi**: e' il bersaglio per accenderla. Un grigio
-            // scuro semitrasparente su una parete bianca spariva, e sembrava che
-            // la lampada non ci fosse invece che spenta.
-            var off = UnlitMaterial(color: UIColor(white: 0.42, alpha: 1))
-            off.blending = .transparent(opacity: .init(floatLiteral: 0.9))
-            return off
+            // Spenta e' **un oggetto**, non un simbolo: una plafoniera bianca
+            // opaca, PBR, che prende la luce della scena come tutto il resto
+            // della casa. La sfera grigia semitrasparente di prima non
+            // assomigliava a niente di reale — chi la vedeva si chiedeva cosa
+            // ci facesse li' un pallone grigio. Su una parete chiara si
+            // distingue per l'ombreggiatura, che e' come si distingue una
+            // plafoniera vera; e accendendola si illumina, che e' esattamente
+            // cio' che fa una lampada.
+            return opaque(UIColor(red: 0.93, green: 0.92, blue: 0.90, alpha: 1), roughness: 0.4)
         }
         // ⚠️ **Bianco puro, punto.** Due tentativi di derivarlo dal colore
         // dell'accessorio — schiarito del 30, poi del 72 — leggevano ancora
