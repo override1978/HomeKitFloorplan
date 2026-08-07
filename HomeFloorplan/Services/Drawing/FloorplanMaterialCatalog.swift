@@ -124,21 +124,13 @@ enum FloorplanMaterialCatalog {
             off.blending = .transparent(opacity: .init(floatLiteral: 0.9))
             return off
         }
-        // ⚠️ **Opaca, non al 95%.** Quel cinque per cento faceva entrare il
-        // muro dietro, quindi il bulbo prendeva un po' del grigio della parete.
-        //
-        // ⚠️ E **quasi bianca**, non del colore dell'accessorio. Una lampadina
-        // che dichiara tinta 30° e saturazione 50 — cioe' come quasi tutte
-        // descrivono il bianco caldo — da' un arancione saturo, e un arancione
-        // su una parete chiara si legge marrone: sembrava tutto fuorche' una
-        // luce. Schiarirlo del 30% non bastava, perche' il problema non era
-        // quanto fosse chiaro ma **che avesse un colore**.
-        //
-        // Guardare una lampada accesa non dice di che colore e' la sua luce: la
-        // sorgente e' bianca e il colore si vede in cio' che illumina. Qui e'
-        // uguale — il pallino dice «accesa», il fascio e la pozza dicono di che
-        // colore, e quelli restano alla tinta piena.
-        return UnlitMaterial(color: lightened(colour, by: 0.72))
+        // ⚠️ **Bianco puro, punto.** Due tentativi di derivarlo dal colore
+        // dell'accessorio — schiarito del 30, poi del 72 — leggevano ancora
+        // marroncini, perche' qualunque residuo di tinta su una sfera piccola
+        // fra pareti chiare si legge come sporco, non come luce. La sorgente e'
+        // bianca; il colore e' un mestiere dell'alone, del fascio e della
+        // pozza.
+        return UnlitMaterial(color: .white)
     }
 
     private static func lightened(_ colour: UIColor, by amount: CGFloat) -> UIColor {
@@ -148,6 +140,18 @@ enum FloorplanMaterialCatalog {
                        green: green + (1 - green) * amount,
                        blue: blue + (1 - blue) * amount,
                        alpha: 1)
+    }
+
+    /// L'alone attorno a un bulbo acceso: e' **lui** a dire «luce».
+    ///
+    /// Una sfera bianca da sola e' una pallina da ping-pong; quella vera si
+    /// riconosce dal bagliore che si mangia i propri bordi. Una seconda sfera
+    /// traslucida attorno al bulbo fa esattamente questo, e siccome porta lei
+    /// la tinta dell'accessorio, il bianco del bulbo puo' restare puro.
+    static func bulbCoronaMaterial(colour: UIColor) -> any RealityKit.Material {
+        var corona = UnlitMaterial(color: lightened(colour, by: 0.25))
+        corona.blending = .transparent(opacity: .init(floatLiteral: 0.32))
+        return corona
     }
 
     /// Il fascio di luce, dal bulbo verso il pavimento.

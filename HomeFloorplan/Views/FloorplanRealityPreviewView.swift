@@ -1579,6 +1579,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// l'altro: e' quello che permette di cambiare stato senza ricostruire.
         private struct LampNode {
             var bulb: ModelEntity
+            /// Il bagliore attorno al bulbo acceso.
+            var corona: ModelEntity
             var spot: SpotLight
             var halo: ModelEntity
             var pool: Entity?
@@ -1937,6 +1939,16 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 bulb.name = "lamp:\(lamp.accessoryUUID.uuidString)"
                 lampRoot.addChild(bulb)
 
+                // Il bagliore che fa sembrare il bulbo una luce e non una
+                // pallina: piu' largo della sfera, traslucido, con la tinta
+                // dell'accessorio — cosi' il bianco del bulbo resta puro.
+                let corona = ModelEntity(
+                    mesh: .generateSphere(radius: 0.24),
+                    materials: [FloorplanMaterialCatalog.bulbCoronaMaterial(colour: lamp.colour)]
+                )
+                corona.position = place
+                lampRoot.addChild(corona)
+
                 // **Faretto, non lampadina nuda.** Una `PointLight` irradia in
                 // tutte le direzioni e su un modello senza soffitto si perde:
                 // nessun fascio, nessuna pozza netta. Un faretto puntato in basso
@@ -1970,7 +1982,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 aura.position = SIMD3(place.x, place.y - 0.17, place.z)
                 lampRoot.addChild(aura)
 
-                var node = LampNode(bulb: bulb, spot: light, halo: aura, pool: nil)
+                var node = LampNode(bulb: bulb, corona: corona, spot: light, halo: aura, pool: nil)
                 lampNodes[lamp.accessoryUUID] = node
                 apply(lamp, to: &node)
                 lampNodes[lamp.accessoryUUID] = node
@@ -1995,11 +2007,17 @@ private struct RealityFloorplanView: UIViewRepresentable {
                               Float(lamp.position.y) - centre.z)
 
             node.bulb.position = place
+            node.corona.position = place
             node.spot.position = place
             node.halo.position = SIMD3(place.x, place.y - 0.17, place.z)
 
             node.bulb.model?.materials = [
                 FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour, isOn: lamp.isOn)
+            ]
+            // L'alone esiste solo da accesa: e' il bagliore, non un contorno.
+            node.corona.isEnabled = lamp.isOn
+            node.corona.model?.materials = [
+                FloorplanMaterialCatalog.bulbCoronaMaterial(colour: lamp.colour)
             ]
 
             node.spot.isEnabled = lamp.isOn
