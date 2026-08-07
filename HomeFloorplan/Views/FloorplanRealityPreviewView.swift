@@ -2202,10 +2202,14 @@ private struct RealityFloorplanView: UIViewRepresentable {
             // spente non hanno niente da proiettare.
             node.spot.shadow = lamp.isOn ? SpotLightComponent.Shadow() : nil
             node.spot.light.color = lamp.colour
-            // Raddoppiata quando i muri sono scesi sotto il bianco: la luce
-            // deve **vedersi riflessa** su muri e mobili, non solo esistere. Il
-            // margine per non bruciare ora c'e' — l'ha creato l'intonaco.
-            node.spot.light.intensity = Float(1_400 + 4_800 * lamp.brightness)
+            // ⚠️ **Di giorno si potenzia, non si spegne.** Fisicamente una
+            // lampada in pieno sole non si vede — il key fa 3000 lux, lo spot
+            // ne consegna un centinaio — ma qui la lampada accesa deve vedersi
+            // sul tavolo *sempre*: e' stato, non fotometria. Il fattore vale
+            // solo quando c'e' il sole da battere; di notte la taratura bassa
+            // basta e non brucia.
+            let dayBoost: Float = sun.isAboveHorizon ? 2.8 : 1.0
+            node.spot.light.intensity = dayBoost * Float(1_400 + 4_800 * lamp.brightness)
             node.spot.light.attenuationRadius = Float(3.6 + 2.8 * lamp.brightness)
             node.spot.light.outerAngleInDegrees = lamp.direction == .around ? 160 : 72
             // Il faretto guarda dove punta la luce. `look` orienta l'entità, e

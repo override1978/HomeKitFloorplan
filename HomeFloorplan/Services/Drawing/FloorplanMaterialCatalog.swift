@@ -22,12 +22,14 @@ enum FloorplanMaterialCatalog {
             // trucco che fa funzionare il bagliore nel concorrente: la loro
             // scena e' in penombra. L'intonaco resta percettivamente bianco,
             // perche' il bianco lo decide il contesto, non il numero.
-            // 0.78 era troppo: la casa virava al grigio dichiarato. Mezza via:
-            // abbastanza sotto il bianco da lasciare margine alla luce,
-            // abbastanza sopra il grigio da restare intonaco.
-            return opaque(UIColor(red: 0.81, green: 0.83, blue: 0.87, alpha: 1), roughness: 0.94)
+            // ⚠️ Il «grigio» non era la chiarezza: era la **dominante blu**.
+            // A parita' di luminanza un tono freddo si legge grigio e uno caldo
+            // si legge bianco — 0.81/0.83/0.87 sembrava cemento, questo sembra
+            // intonaco, ed e' piu' scuro del bianco quanto basta perche' la
+            // luce delle lampade abbia margine per staccare.
+            return opaque(UIColor(red: 0.86, green: 0.85, blue: 0.83, alpha: 1), roughness: 0.94)
         case .wallTop:
-            return opaque(UIColor(red: 0.86, green: 0.87, blue: 0.90, alpha: 1), roughness: 0.94)
+            return opaque(UIColor(red: 0.90, green: 0.89, blue: 0.87, alpha: 1), roughness: 0.94)
         case .glass:
             return transparent(UIColor(red: 0.72, green: 0.84, blue: 0.88, alpha: 1),
                                opacity: 0.34, roughness: 0.06)
