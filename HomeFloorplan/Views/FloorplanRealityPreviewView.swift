@@ -155,6 +155,24 @@ enum PreviewMode: String, CaseIterable, Identifiable {
         case .security:    String(localized: "overlay.security", defaultValue: "Security")
         }
     }
+
+    /// Il colore dello strato, sulla capsula che lo seleziona.
+    ///
+    /// Serve a far dire alla cornice **cosa stai guardando**, che prima lo
+    /// diceva solo il modello: capsule tutte uguali e glifi tutti bianchi non
+    /// portavano nessuna informazione, ed e' per quello che la barra sembrava
+    /// spenta — non perche' fosse poco decorata.
+    ///
+    /// Sono le stesse tinte degli strati nel modello, non una tavolozza nuova.
+    /// Controlli resta senza, e non e' una rinuncia: li' davvero non c'e'
+    /// nessuno strato acceso.
+    var accent: Color? {
+        switch self {
+        case .off:         nil
+        case .environment: Color(red: 0.24, green: 0.66, blue: 0.44)
+        case .security:    Color(UIColor.systemPurple)
+        }
+    }
 }
 
 // MARK: - FloorplanSunLight
@@ -235,7 +253,6 @@ struct FloorplanRealityPreviewView: View {
     @State private var detailAccessory: HMAccessory?
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
-    @State private var isLayerTrayOpen = false
     @AppStorage("securityMonitoredUUIDs") private var monitoredUUIDsRaw: String = ""
     @State private var sensorFilter: SensorServiceType?
     /// Il modello ambientale è **lo stesso della 2D**: punteggi, giudizi,
@@ -276,10 +293,6 @@ struct FloorplanRealityPreviewView: View {
                                          selectedRoomID = roomID
                                          selectedRoomName = name
                                      },
-                                     onSceneTouched: {
-                                         guard isLayerTrayOpen else { return }
-                                         withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen = false }
-                                     },
                                      onLampTapped: toggleLamp,
                                      onAccessoryHeld: { uuid in
                                          detailAccessory = homeKit.accessory(for: uuid)
@@ -295,7 +308,7 @@ struct FloorplanRealityPreviewView: View {
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
                 topChrome
-                if isLayerTrayOpen, mode == .environment { filterRow }
+                if mode == .environment { filterRow }
                 if mode == .security { securityStatusPill }
             }
         }
@@ -896,48 +909,38 @@ struct FloorplanRealityPreviewView: View {
     /// sua barra. Un secondo elenco scritto a mano sarebbe rimasto indietro al
     /// primo sensore nuovo.
     private var modeRow: some View {
-        HStack(spacing: 6) {
-            Button {
-                if !isLayerTrayOpen { loadEnvironmentIfNeeded() }
-                withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen.toggle() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: mode.symbol).font(.system(size: 14))
-                    // Da aperto il valore lo dice già il chip selezionato: qui
-                    // sarebbe scritto due volte nella stessa riga.
-                    if !isLayerTrayOpen {
-                        Text(activeLayerLabel).font(.subheadline.weight(.semibold))
+        HStack(spacing: 3) {
+            ForEach(PreviewMode.allCases) { value in
+                let isSelected = mode == value
+                Button {
+                    if value == .environment { loadEnvironmentIfNeeded() }
+                    withAnimation(.easeOut(duration: 0.22)) {
+                        mode = value
+                        if value != .environment { sensorFilter = nil }
                     }
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, isLayerTrayOpen ? 12 : 16)
-                .frame(minHeight: 38)
-                .background(.black.opacity(0.34), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(String(localized: "floorplan.layers", defaultValue: "Overlay")))
-            .accessibilityValue(Text(activeLayerLabel))
-            .accessibilityHint(Text(isLayerTrayOpen
-                                    ? String(localized: "floorplan.layers.close",
-                                             defaultValue: "Closes the list")
-                                    : String(localized: "floorplan.layers.open",
-                                             defaultValue: "Opens the list")))
-
-            if isLayerTrayOpen {
-                HStack(spacing: 4) {
-                    ForEach(PreviewMode.allCases) { value in
-                        chip(label: value.label, icon: value.symbol, isSelected: mode == value) {
-                            mode = value
-                            if value != .environment { sensorFilter = nil }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: value.symbol).font(.system(size: 13, weight: .semibold))
+                        // La parola solo sull'attivo: le tre scritte insieme
+                        // farebbero una barra lunga quanto lo schermo, e le due
+                        // spente non hanno niente da dire.
+                        if isSelected {
+                            Text(value.label).font(.subheadline.weight(.semibold))
                         }
                     }
+                    .foregroundStyle(.white.opacity(isSelected ? 1 : 0.55))
+                    .padding(.horizontal, isSelected ? 14 : 11)
+                    .frame(minHeight: 34)
+                    .background(isSelected ? (value.accent ?? Color.white.opacity(0.20)) : .clear,
+                                in: Capsule())
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 6)
-                .background(.black.opacity(0.34), in: Capsule())
-                .transition(.move(edge: .leading).combined(with: .opacity))
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(value.label))
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
         }
+        .padding(3)
+        .background(.black.opacity(0.34), in: Capsule())
     }
 
     /// I tipi sono un livello **sotto** la modalità, e devono sembrarlo: gruppo
@@ -1338,12 +1341,6 @@ struct FloorplanRealityPreviewView: View {
         }
     }
 
-    /// Lo strato attivo in due parole, per l'etichetta chiusa.
-    private var activeLayerLabel: String {
-        guard mode == .environment else { return mode.label }
-        return sensorFilter?.displayName ?? mode.label
-    }
-
     private func chip(label: String, icon: String, isSelected: Bool,
                       action: @escaping () -> Void) -> some View {
         Button {
@@ -1412,9 +1409,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
     let flags: [RoomFlag]
     let cameraResetID: UUID
     let onRoomSelected: (UUID?, String?) -> Void
-    /// Toccare o ruotare il modello vuol dire «ho finito di scegliere»: il
-    /// cassetto si richiude da solo e restituisce lo spazio.
-    let onSceneTouched: () -> Void
     /// Toccare un bulbo lo accende o lo spegne: l'oggetto che mostra lo stato
     /// è anche quello che lo cambia, senza un segnaposto in mezzo.
     let onLampTapped: (UUID) -> Void
@@ -1459,7 +1453,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
     func updateUIView(_ view: ARView, context: Context) {
         context.coordinator.onRoomSelected = onRoomSelected
-        context.coordinator.onSceneTouched = onSceneTouched
         context.coordinator.onLampTapped = onLampTapped
         context.coordinator.onAccessoryHeld = onAccessoryHeld
         if context.coordinator.background != background {
@@ -1478,7 +1471,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(scene: scene, sun: sun, cameraResetID: cameraResetID,
-                    onRoomSelected: onRoomSelected, onSceneTouched: onSceneTouched,
+                    onRoomSelected: onRoomSelected,
                     onLampTapped: onLampTapped, onAccessoryHeld: onAccessoryHeld)
             .prepared(withLamps: lamps)
             .prepared(withClimate: climate)
@@ -1568,7 +1561,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private var roomWallEntities: [UUID: ModelEntity] = [:]
         private var selectedRoomID: UUID?
         var onRoomSelected: (UUID?, String?) -> Void
-        var onSceneTouched: () -> Void
         var onLampTapped: (UUID) -> Void
         var onAccessoryHeld: (UUID) -> Void
 
@@ -1576,14 +1568,12 @@ private struct RealityFloorplanView: UIViewRepresentable {
              sun: FloorplanSunLight,
              cameraResetID: UUID,
              onRoomSelected: @escaping (UUID?, String?) -> Void,
-             onSceneTouched: @escaping () -> Void,
              onLampTapped: @escaping (UUID) -> Void,
              onAccessoryHeld: @escaping (UUID) -> Void) {
             self.scene = scene
             self.sun = sun
             self.handledResetID = cameraResetID
             self.onRoomSelected = onRoomSelected
-            self.onSceneTouched = onSceneTouched
             self.onLampTapped = onLampTapped
             self.onAccessoryHeld = onAccessoryHeld
         }
@@ -2174,8 +2164,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         @objc func panned(_ recognizer: UIPanGestureRecognizer) {
             switch recognizer.state {
             case .began:
-                onSceneTouched()
-                gestureStart = (azimuth, elevation)
+                    gestureStart = (azimuth, elevation)
             case .changed:
                 let origin = gestureStart ?? (azimuth, elevation)
                 let translation = recognizer.translation(in: recognizer.view)
@@ -2199,7 +2188,6 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
         @objc func tapped(_ recognizer: UITapGestureRecognizer) {
             guard let view = recognizer.view as? ARView else { return }
-            onSceneTouched()
             let location = recognizer.location(in: view)
             guard let entity = view.entity(at: location) else {
                 selectRoom(nil)
