@@ -438,9 +438,13 @@ struct FloorplanRealityPreviewView: View {
         let outward = length > 0.001 ? away / length : SIMD2(-best.axis.y, best.axis.x)
         let position = best.foot + outward * (best.thickness / 2 + depth / 2)
 
-        // Il disegno ha y in pianta, RealityKit ha z: la rotazione attorno alla
-        // verticale che porta l'asse locale x sull'asse del muro è l'opposta.
-        return (position, -atan2(best.axis.y, best.axis.x))
+        // ⚠️ La rotazione si calcola dal verso **fuori dal muro**, non
+        // dall'asse del muro: l'asse lascia il fronte ambiguo di 180 gradi, e
+        // su meta' dei muri il pallino di modalita' finiva nell'intercapedine
+        // fra corpo e parete — invisibile finche' i muri erano pieni, svelato
+        // dalla trasparenza. Con atan2(outward) il +z locale guarda sempre la
+        // stanza, e cio' che sta sul fronte sta davvero davanti.
+        return (position, atan2(outward.x, outward.y))
     }
 
     private func isCamera(_ accessory: HMAccessory) -> Bool {
