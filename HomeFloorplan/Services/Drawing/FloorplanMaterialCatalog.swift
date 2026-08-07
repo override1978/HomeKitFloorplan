@@ -70,10 +70,12 @@ enum FloorplanMaterialCatalog {
             return transparent(UIColor(red: 0.06, green: 0.08, blue: 0.04, alpha: 1),
                                opacity: 0.18, roughness: 1.0)
         case .balcony:
-            return transparent(UIColor(red: 0.62, green: 0.76, blue: 0.88, alpha: 1),
+            // Grigio neutro, non azzurro: il parapetto e' vetro fume', e
+            // l'azzurro stonava con l'intonaco caldo dei muri.
+            return transparent(UIColor(red: 0.72, green: 0.73, blue: 0.75, alpha: 1),
                                opacity: 0.62, roughness: 0.10)
         case .balconyTop:
-            return transparent(UIColor(red: 0.86, green: 0.92, blue: 0.97, alpha: 1),
+            return transparent(UIColor(red: 0.86, green: 0.87, blue: 0.88, alpha: 1),
                                opacity: 0.85, roughness: 0.30)
         }
     }
