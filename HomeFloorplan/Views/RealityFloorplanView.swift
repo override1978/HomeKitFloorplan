@@ -532,7 +532,12 @@ struct RealityFloorplanView: UIViewRepresentable {
                             tint: unit.modeTint ?? .white)]
                     )
                     dot.name = "modeDot"
-                    dot.position = SIMD3(size.x * 0.32, size.y * 0.22, size.z / 2 + 0.03)
+                    // Sullo split sta sul frontale; sul radiatore **di fianco,
+                    // a pari profondita'** — dove sta la testa di una valvola
+                    // vera. Davanti alle alette sembrava un uovo incastrato.
+                    dot.position = unit.form == .radiator
+                        ? SIMD3(size.x / 2 + 0.055, size.y * 0.30, 0)
+                        : SIMD3(size.x * 0.32, size.y * 0.22, size.z / 2 + 0.03)
                     dot.isEnabled = unit.modeTint != nil
                     body.addChild(dot)
                 }
@@ -1182,22 +1187,61 @@ struct RealityFloorplanView: UIViewRepresentable {
             }
             let centre = scene.bounds.center
             let roomCentre = (minP + maxP) / 2 - centre
-            // **Dal fondo del lato lungo, guardando lungo la stanza**: e' il
-            // punto da cui una stanza si abbraccia tutta, e sta per costruzione
-            // DENTRO la stanza. L'arretramento lungo l'azimut corrente poteva
-            // finire oltre un muro o dentro un armadio — «troppo spostati di
-            // posizione», per l'appunto.
+            // **Dal fondo del lato lungo, guardando lungo la stanza** — ma il
+            // rettangolo d'ingombro non basta: una cucina a L ha il fondo del
+            // lato lungo **nella tacca**, cioe' dentro un muro. Ogni candidato
+            // si verifica contro il poligono vero del pavimento, e se nessuno
+            // regge si entra dal punto piu' interno della stanza — lo stesso
+            // che regge la bandierina, che per definizione sta dentro.
+            let polygon = scene.faces
+                .filter { $0.role == .floor && $0.roomID == roomID }
+                .max { $0.points.count < $1.points.count }?
+                .points.map { SIMD2($0.x - centre.x, $0.z - centre.z) } ?? []
+
+            func inside(_ point: SIMD2<Float>) -> Bool {
+                guard polygon.count >= 3 else { return true }
+                var crossings = false
+                var j = polygon.count - 1
+                for i in polygon.indices {
+                    let a = polygon[i], b = polygon[j]
+                    if (a.y > point.y) != (b.y > point.y),
+                       point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x {
+                        crossings.toggle()
+                    }
+                    j = i
+                }
+                return crossings
+            }
+
             let sizeX = maxP.x - minP.x
             let sizeZ = maxP.z - minP.z
-            var eye = SIMD3(roomCentre.x, roomCentre.y + 1.5, roomCentre.z)
-            if sizeX >= sizeZ {
-                eye.x = (minP.x - centre.x) + min(0.5, sizeX * 0.2)
-                azimuth = .pi / 2   // guarda verso +x, il fondo della stanza
-            } else {
-                eye.z = (minP.z - centre.z) + min(0.5, sizeZ * 0.2)
-                azimuth = 0         // guarda verso +z
+            let mid = SIMD2(roomCentre.x, roomCentre.z)
+            // Prima gli imbocchi del lato lungo, poi quelli del corto.
+            var candidates: [(eye: SIMD2<Float>, azimuth: Double)] = [
+                (SIMD2((minP.x - centre.x) + min(0.5, sizeX * 0.2), mid.y), .pi / 2),
+                (SIMD2((maxP.x - centre.x) - min(0.5, sizeX * 0.2), mid.y), -.pi / 2),
+                (SIMD2(mid.x, (minP.z - centre.z) + min(0.5, sizeZ * 0.2)), 0),
+                (SIMD2(mid.x, (maxP.z - centre.z) - min(0.5, sizeZ * 0.2)), .pi)
+            ]
+            if sizeZ > sizeX { candidates.swapAt(0, 2); candidates.swapAt(1, 3) }
+
+            let chosen = candidates.first { candidate in
+                let ahead = candidate.eye + SIMD2(sin(Float(candidate.azimuth)),
+                                                  cos(Float(candidate.azimuth))) * 0.6
+                return inside(candidate.eye) && inside(ahead)
             }
-            focus = eye
+
+            if let chosen {
+                focus = SIMD3(chosen.eye.x, roomCentre.y + 1.5, chosen.eye.y)
+                azimuth = chosen.azimuth
+            } else if let flag = flags.first(where: { $0.roomID == roomID }) {
+                let anchor = SIMD2(Float(flag.anchor.x) - centre.x,
+                                   Float(flag.anchor.y) - centre.z)
+                focus = SIMD3(anchor.x, roomCentre.y + 1.5, anchor.y)
+                azimuth = Double(atan2(mid.x - anchor.x, mid.y - anchor.y))
+            } else {
+                focus = SIMD3(roomCentre.x, roomCentre.y + 1.5, roomCentre.z)
+            }
             firstPerson = true
             // Leggermente in giu' e **grandangolo**: a 38 gradi — il tele
             // giusto per l'orbita — una stanza vera e' claustrofobica. A 68 si
