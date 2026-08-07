@@ -321,6 +321,7 @@ struct FloorplanRealityPreviewView: View {
         // HomeKit: una corsa intera fa venti ricostruzioni in venti secondi,
         // non duecento.
         .onChange(of: closedShutters) { _, _ in rebuildScene() }
+        .onChange(of: extendedAwnings) { _, _ in rebuildScene() }
         // Cambiando piano cambiano gli accessori: quelli vecchi si lasciano
         // andare e si osservano i nuovi, o il piano appena aperto avrebbe luci
         // spente e porte chiuse per il solo motivo che nessuno le ha lette.
@@ -618,6 +619,47 @@ struct FloorplanRealityPreviewView: View {
                                             ?? unit.form.defaultHeight,
                                         bearing: placed.bearing)
         }
+    }
+
+    /// Quanto è stesa la tenda di ogni balcone.
+    ///
+    /// ⚠️ HomeKit espone una tenda **identica** a una tapparella: stesso
+    /// servizio, stessa caratteristica, nessun modo di distinguerle. Si
+    /// distinguono da **dove sono state posate**: `nearestOpening` aggancia un
+    /// marker a un vano solo entro 80 cm, quindi una copertura messa in mezzo a
+    /// un balcone resta senza `linkedOpeningID` — e quella è una tenda. È anche
+    /// il gesto naturale: la tenda non sta sulla porta, sta sopra il balcone.
+    ///
+    /// Il verso invece è l'opposto della tapparella: chiudere una tapparella
+    /// vuol dire calarla, chiudere una tenda vuol dire **ritirarla**. Quindi
+    /// stesa = aperta.
+    private var extendedAwnings: [UUID: Double] {
+        let balconies = FloorplanExtruder.balconyAreaIDs(in: document)
+        guard !balconies.isEmpty,
+              let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                exportRotation: exportRotation)
+        else { return [:] }
+
+        let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
+        var result: [UUID: Double] = [:]
+
+        for marker in markers where marker.openingID == nil {
+            guard let accessory = homeKit.accessory(for: marker.uuid),
+                  let open = FloorplanOpeningMatcher.coveringPosition(accessory, using: homeKit)
+            else { continue }
+
+            let position = transform.metres(from: marker.position)
+            guard let area = document.roomAreas.first(where: { area in
+                balconies.contains(area.id)
+                    && FloorplanRoomEnvironment.contains(position, area.effectivePoints.map {
+                        SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
+                    })
+            }) else { continue }
+
+            let extended = (max(0, min(1, open / 100)) * 20).rounded() / 20
+            result[area.id] = max(result[area.id] ?? 0, extended)
+        }
+        return result
     }
 
     /// Quanto è calata ogni tapparella, contro lo stato corrente di HomeKit.
@@ -1351,7 +1393,8 @@ struct FloorplanRealityPreviewView: View {
                                                      ceilingHeight: ceilingHeight,
                                                      includesFurniture: true,
                                                      openOpeningIDs: openOpeningIDs,
-                                                     closedShutters: closedShutters)
+                                                     closedShutters: closedShutters,
+                                                     extendedAwnings: extendedAwnings)
     }
 }
 
@@ -3086,6 +3129,10 @@ private enum RealityFloorplanRenderer {
             return points.map {
                 SIMD2(0.5, max(0, min(1, ($0.y - floorY) / Float(FloorplanExtruder.contactHeight))))
             }
+        case .awning:
+            // Righe lungo la discesa del telo, non lungo il muro: una tenda si
+            // riga nel verso in cui esce.
+            return points.map { SIMD2($0.x / 0.22, $0.z / 0.22) }
         case .shutter:
             // Il passo delle stecche sta **in metri**, non in frazione di
             // finestra: sette centimetri sono sette centimetri sia sul bagno
@@ -3278,6 +3325,7 @@ private extension FloorplanScene.MeshFace.MaterialRole {
         .frame,
         .balcony,
         .shutter,
+        .awning,
         .wall,
         .wallContact,
         .wallGlow,

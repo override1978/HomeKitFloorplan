@@ -187,7 +187,7 @@ enum FloorplanOpeningMatcher {
     }
 
     /// 0…100, quanto è **aperta**. `nil` se non è una copertura.
-    private static func coveringPosition(_ accessory: HMAccessory,
+    static func coveringPosition(_ accessory: HMAccessory,
                                          using homeKit: HomeKitService) -> Double? {
         for service in accessory.services where service.serviceType == HMServiceTypeWindowCovering {
             for characteristic in service.characteristics

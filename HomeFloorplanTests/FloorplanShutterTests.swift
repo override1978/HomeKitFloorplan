@@ -111,6 +111,40 @@ struct FloorplanShutterTests {
         #expect(y < 2.0)
     }
 
+    @Test("Una tenda stesa compare sopra il balcone, attaccata al lato di casa")
+    func awningHangsFromTheHouseSide() {
+        var document = DrawingDocument()
+        let shared = WallSegment(start: CGPoint(x: 200, y: 200),
+                                 end: CGPoint(x: 700, y: 200), kind: .exterior)
+        document.walls = [
+            shared,
+            WallSegment(start: CGPoint(x: 700, y: 200), end: CGPoint(x: 700, y: 600), kind: .exterior),
+            WallSegment(start: CGPoint(x: 700, y: 600), end: CGPoint(x: 200, y: 600), kind: .exterior),
+            WallSegment(start: CGPoint(x: 200, y: 600), end: CGPoint(x: 200, y: 200), kind: .exterior),
+            WallSegment(start: CGPoint(x: 200, y: 200), end: CGPoint(x: 200, y: 0), kind: .balcony),
+            WallSegment(start: CGPoint(x: 200, y: 0), end: CGPoint(x: 700, y: 0), kind: .balcony),
+            WallSegment(start: CGPoint(x: 700, y: 0), end: CGPoint(x: 700, y: 200), kind: .balcony)
+        ]
+        let balcony = RoomArea(name: "Balcone", rect: CGRect(x: 200, y: 0, width: 500, height: 200))
+        document.roomAreas = [
+            RoomArea(name: "Soggiorno", rect: CGRect(x: 200, y: 200, width: 500, height: 400)),
+            balcony
+        ]
+
+        let ritirata = FloorplanExtruder.faces(from: document, extendedAwnings: [balcony.id: 0])
+        #expect(ritirata.filter { $0.kind == .awning }.isEmpty)
+
+        let stesa = FloorplanExtruder.faces(from: document, extendedAwnings: [balcony.id: 1])
+        guard let awning = stesa.first(where: { $0.kind == .awning })
+        else { Issue.record("nessuna tenda emessa"); return }
+
+        // Attaccata al lato di casa (y = 2) e in discesa verso il vuoto (y < 2).
+        let heights = awning.points.map(\.z)
+        #expect((heights.max() ?? 0) > (heights.min() ?? 0))
+        #expect(abs((awning.points.map(\.y).max() ?? 0) - 2.0) < 0.01)
+        #expect((awning.points.map(\.y).min() ?? 9) < 2.0)
+    }
+
     @Test("Ogni faccia dell'apertura sa da quale apertura viene")
     func facesCarryTheOpeningID() {
         let (all, openingID) = Self.faces(shutter: 1)

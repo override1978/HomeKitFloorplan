@@ -43,6 +43,8 @@ enum FloorplanMaterialCatalog {
             return contactMaterial(texture: groundContactTexture, opacity: 0.36)
         case .shutter:
             return shutterMaterial()
+        case .awning:
+            return awningMaterial()
         case .furniture:
             // Tinta unica per la prova: prima si guarda se sotto luce vera i
             // volumi semplici reggono, poi eventualmente si differenzia.
@@ -442,6 +444,30 @@ enum FloorplanMaterialCatalog {
             return opaque(UIColor(red: 0.94, green: 0.94, blue: 0.95, alpha: 1), roughness: 0.38)
         }
     }
+
+    /// Il telo di una tenda da sole: righe, che e' come si riconosce una tenda
+    /// da una tettoia. Il passo lo decide la coordinata, in metri.
+    private static func awningMaterial() -> PhysicallyBasedMaterial {
+        var material = opaque(UIColor(red: 0.86, green: 0.80, blue: 0.72, alpha: 1), roughness: 0.86)
+        guard let texture = awningStripeTexture else { return material }
+        material.baseColor = .init(tint: .white, texture: .init(texture, sampler: repeatSampler))
+        return material
+    }
+
+    private static let awningStripeTexture: TextureResource? = {
+        let size = CGSize(width: 64, height: 8)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(red: 0.95, green: 0.93, blue: 0.88, alpha: 1).setFill()
+            context.cgContext.fill(CGRect(origin: .zero, size: size))
+            UIColor(red: 0.70, green: 0.55, blue: 0.44, alpha: 1).setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 30, height: size.height))
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
+    }()
 
     /// Una tapparella: stecche orizzontali, non una lastra liscia.
     ///

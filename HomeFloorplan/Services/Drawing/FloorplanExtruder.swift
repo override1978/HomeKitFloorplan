@@ -78,6 +78,8 @@ enum FloorplanExtruder {
         /// La tapparella calata davanti a un vano. Sta **fuori dal muro** come
         /// nella realtà: scorre in un cassonetto esterno, non dentro la stanza.
         case shutter
+        /// La tenda da sole stesa sopra un balcone.
+        case awning
         /// Specchiatura in rilievo sull'anta di una porta.
         case doorPanel
         /// Rosetta e leva. È l'unico dettaglio del modello alla scala della mano,
@@ -119,7 +121,8 @@ enum FloorplanExtruder {
     static func faces(from document: DrawingDocument,
                       heights: Heights = Heights(),
                       openOpeningIDs: Set<UUID> = [],
-                      closedShutters: [UUID: Double] = [:]) -> [Face] {
+                      closedShutters: [UUID: Double] = [:],
+                      extendedAwnings: [UUID: Double] = [:]) -> [Face] {
         var result: [Face] = []
         for area in document.roomAreas {
             result.append(contentsOf: floorFaces(area))
@@ -131,6 +134,11 @@ enum FloorplanExtruder {
                                                 joints: joints, openOpeningIDs: openOpeningIDs,
                                                 closedShutters: closedShutters,
                                                 balconyAreaIDs: balconies))
+        }
+        for area in document.roomAreas {
+            guard let extended = extendedAwnings[area.id], extended > 0.02 else { continue }
+            result.append(contentsOf: awningFaces(over: area, in: document,
+                                                  extended: extended, heights: heights))
         }
         // Nell'ordine di disegno del documento, così i tappeti restano sotto
         // come già fanno in pianta.
@@ -543,6 +551,68 @@ enum FloorplanExtruder {
     /// Quanto sale la velatura di contatto. Oltre questa quota la luce ci
     /// arriva, e scurire diventa sporcare.
     static let contactHeight: Double = 0.34
+
+    /// La tenda stesa sopra un balcone.
+    ///
+    /// Si attacca al **lato di casa**, cioè al bordo del balcone che confina con
+    /// un muro vero e non con un parapetto: è l'unico posto a cui una tenda
+    /// possa essere fissata. Poi esce verso il vuoto e scende di trenta
+    /// centimetri, che è la pendenza che la fa leggere come telo invece che come
+    /// mensola.
+    private static func awningFaces(over area: RoomArea,
+                                    in document: DrawingDocument,
+                                    extended: Double,
+                                    heights: Heights) -> [Face] {
+        let polygon = area.effectivePoints.map { SIMD2(metres($0.x), metres($0.y)) }
+        guard polygon.count >= 3 else { return [] }
+        let solidWalls = document.walls.filter { $0.kind != .balcony }
+        guard !solidWalls.isEmpty else { return [] }
+
+        // Il lato di casa: quello il cui punto medio è più vicino a un muro
+        // pieno. Gli altri danno sul vuoto.
+        var attachment: (a: SIMD2<Double>, b: SIMD2<Double>, distance: Double)?
+        for index in polygon.indices {
+            let a = polygon[index]
+            let b = polygon[(index + 1) % polygon.count]
+            let middle = (a + b) / 2
+            let distance = solidWalls.map { wall -> Double in
+                let start = SIMD2(metres(wall.start.x), metres(wall.start.y))
+                let end = SIMD2(metres(wall.end.x), metres(wall.end.y))
+                let span = end - start
+                let length = simd_length(span)
+                guard length > 0.01 else { return .greatestFiniteMagnitude }
+                let axis = span / length
+                let t = max(0, min(length, simd_dot(middle - start, axis)))
+                return simd_distance(middle, start + axis * t)
+            }.min() ?? .greatestFiniteMagnitude
+
+            if attachment == nil || distance < attachment!.distance {
+                attachment = (a, b, distance)
+            }
+        }
+
+        guard let attachment, attachment.distance < 0.6 else { return [] }
+
+        let centre = polygon.reduce(SIMD2<Double>.zero, +) / Double(polygon.count)
+        let middle = (attachment.a + attachment.b) / 2
+        let toCentre = centre - middle
+        let span = simd_length(toCentre)
+        guard span > 0.3 else { return [] }
+
+        // Esce fin quasi al parapetto opposto, ma non oltre due metri e mezzo:
+        // una tenda più lunga di così in casa non c'è.
+        let inward = toCentre / span
+        let reach = min(2.5, span * 1.8) * min(1, max(0, extended))
+        let attach = heights.ceiling - 0.10
+        let lip = attach - 0.30
+
+        return [Face(points: [
+            SIMD3(attachment.a.x, attachment.a.y, attach),
+            SIMD3(attachment.b.x, attachment.b.y, attach),
+            SIMD3(attachment.b.x + inward.x * reach, attachment.b.y + inward.y * reach, lip),
+            SIMD3(attachment.a.x + inward.x * reach, attachment.a.y + inward.y * reach, lip)
+        ], kind: .awning, roomColorIndex: nil, roomID: area.id, roomName: area.name)]
+    }
 
     /// Le aree che sono **balconi**.
     ///

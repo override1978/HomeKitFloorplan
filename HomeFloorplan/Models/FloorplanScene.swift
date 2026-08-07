@@ -31,6 +31,8 @@ struct FloorplanScene {
             case groundContact
             /// La tapparella calata davanti a un vano.
             case shutter
+            /// La tenda da sole stesa sopra un balcone.
+            case awning
         }
 
         var points: [SIMD3<Float>]
