@@ -718,42 +718,88 @@ struct FloorplanRealityPreviewView: View {
     private var roomSetupPanel: some View {
         let lamps = lampsInSelectedRoom
         if !lamps.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
+                // Il recap della selezione: senza, il pannello compare e non si
+                // sa a cosa si riferisce.
+                HStack(spacing: 8) {
+                    Image(systemName: "lightbulb.2.fill").font(.system(size: 13))
+                    Text(selectedRoomName ?? "")
+                        .font(.headline)
+                    Text(lamps.count == 1
+                         ? String(localized: "lamp.count.one", defaultValue: "1 light")
+                         : String(localized: "lamp.count.other", defaultValue: "\(lamps.count) lights"))
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .foregroundStyle(.white)
+
                 ForEach(lamps, id: \.accessoryUUID) { lamp in
+                    Divider().overlay(Color.white.opacity(0.18))
                     lampSetupRow(lamp)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .frame(maxWidth: 560)
-            .background(.black.opacity(0.42), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            // Più denso del resto della cornice, di proposito: le altre capsule
+            // mostrano stato, questa **si usa**. Un pannello dove ci si ferma ad
+            // agire si merita più peso di uno che si legge di sfuggita — ma
+            // resta traslucido, o si perderebbe il motivo di configurare qui:
+            // vedere il modello reagire mentre si muove il cursore.
+            .background(.black.opacity(0.58), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
             .padding(.bottom, 104)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
 
+    /// Ogni comando dice **cosa fa**, non solo che c'è.
+    ///
+    /// Tre icone senza didascalia sono un indovinello: una freccia in giù può
+    /// voler dire «abbassa», «sposta sotto» o «punta in basso». La parola
+    /// accanto alla scelta attiva toglie l'ambiguità senza occupare una riga in
+    /// più per ciascuna.
     @ViewBuilder
     private func lampSetupRow(_ lamp: FloorplanLamp) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(lamp.name)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
 
-            HStack(spacing: 4) {
-                ForEach(LampDirection.allCases) { value in
-                    Button {
-                        applyLampSettings(lamp.accessoryUUID, lamp.height, value)
-                    } label: {
-                        Image(systemName: value.symbol)
-                            .font(.system(size: 14))
-                            .foregroundStyle(.white.opacity(lamp.direction == value ? 1 : 0.5))
-                            .frame(width: 40, height: 32)
-                            .background(lamp.direction == value ? Color.white.opacity(0.22) : Color.clear,
-                                        in: Capsule())
+            HStack(spacing: 8) {
+                Text(String(localized: "lamp.direction.title", defaultValue: "Points"))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 58, alignment: .leading)
+
+                HStack(spacing: 4) {
+                    ForEach(LampDirection.allCases) { value in
+                        Button {
+                            applyLampSettings(lamp.accessoryUUID, lamp.height, value)
+                        } label: {
+                            Image(systemName: value.symbol)
+                                .font(.system(size: 14))
+                                .foregroundStyle(.white.opacity(lamp.direction == value ? 1 : 0.5))
+                                .frame(width: 40, height: 32)
+                                .background(lamp.direction == value ? Color.white.opacity(0.22) : Color.clear,
+                                            in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text(value.label))
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text(value.label))
                 }
+
+                Text(lamp.direction.label)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+
+            HStack(spacing: 8) {
+                Text(String(localized: "lamp.height.title", defaultValue: "Height"))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 58, alignment: .leading)
 
                 Slider(value: heightBinding(for: lamp), in: 0.2...3.2, step: 0.05)
                     .tint(.white.opacity(0.8))
