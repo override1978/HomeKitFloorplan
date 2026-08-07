@@ -113,6 +113,8 @@ enum FloorplanTapTarget: Equatable {
     case accessory(UUID)
     case awning(roomID: UUID)
     case shutter(openingID: UUID)
+    /// Il pavimento tenuto premuto: la scheda della stanza.
+    case room(roomID: UUID)
 }
 
 /// Una tenda gia' collocata: la forma, l'accessorio che la muove, quanto e'

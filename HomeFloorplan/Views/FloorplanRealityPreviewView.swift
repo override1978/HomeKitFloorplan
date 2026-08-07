@@ -70,6 +70,7 @@ struct FloorplanRealityPreviewView: View {
     /// L'accessorio di cui si sta guardando la scheda. E' la **stessa** del 2D:
     /// il 3D non gestisce l'accessorio, lo consegna.
     @State private var detailAccessory: HMAccessory?
+    @State private var detailRoom: RoomSheetTarget?
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @AppStorage("securityMonitoredUUIDs") private var monitoredUUIDsRaw: String = ""
@@ -157,6 +158,9 @@ struct FloorplanRealityPreviewView: View {
         .statusBarHidden()
         .sheet(item: $detailAccessory) { accessory in
             AccessoryDetailView(accessory: accessory)
+        }
+        .sheet(item: $detailRoom) { target in
+            RoomDetailSheet(room: target.room)
         }
         .onAppear {
             exposure = Exposure.nearest(to: northBearingDegrees)
@@ -597,6 +601,8 @@ struct FloorplanRealityPreviewView: View {
                     && homeKit.accessory(for: marker.uuid)
                         .flatMap { FloorplanOpeningMatcher.coveringPosition($0, using: homeKit) } != nil
             }?.uuid
+        case .room:
+            return nil
         }
     }
 
@@ -615,8 +621,26 @@ struct FloorplanRealityPreviewView: View {
     }
 
     private func handleHold(_ target: FloorplanTapTarget) {
+        if case .room(let roomID) = target {
+            // La stessa scheda stanza del 2D: la stanza si accoppia per nome,
+            // e l'`HMRoom` lo si prende dal primo accessorio che ci abita —
+            // nessuna API nuova per una cosa che la security sa gia' fare.
+            guard let name = document.roomAreas.first(where: { $0.id == roomID })?.name,
+                  let room = RoomSecurityEvaluator
+                      .accessories(inRoomNamed: name, homeKit: homeKit)
+                      .first?.room
+            else { return }
+            detailRoom = RoomSheetTarget(room: room)
+            return
+        }
         guard let uuid = accessoryUUID(for: target) else { return }
         detailAccessory = homeKit.accessory(for: uuid)
+    }
+
+    /// `HMRoom` non e' `Identifiable`: il foglio ha bisogno di un involucro.
+    private struct RoomSheetTarget: Identifiable {
+        let room: HMRoom
+        var id: UUID { room.uniqueIdentifier }
     }
 
     /// Quanto è calata ogni tapparella, contro lo stato corrente di HomeKit.
@@ -750,7 +774,10 @@ struct FloorplanRealityPreviewView: View {
                               systemImage: "eye")
                     }
                 } label: {
-                    chrome("arrow.counterclockwise")
+                    // Un mirino, non una freccia: e' il bottone delle
+                    // inquadrature, e la freccia all'indietro non invitava
+                    // nessuno a premerla.
+                    chrome("viewfinder")
                 }
             }
 

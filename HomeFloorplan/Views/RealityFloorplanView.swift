@@ -434,12 +434,16 @@ struct RealityFloorplanView: UIViewRepresentable {
             for face in scene.faces where face.role == .glass && face.points.count == 4 {
                 guard let roomID = face.roomID, litRooms.contains(roomID) else { continue }
                 let normal = RealityFloorplanRenderer.faceNormal(for: face.points)
-                // Due centimetri lungo la normale: il verso non è affidabile, ma
-                // il vetro sta in mezzo allo spessore del muro, quindi da
-                // entrambe le parti si resta dentro il vano.
-                let quad = face.points.map { $0 + normal * 0.02 - centre }
-                guard let mesh = RealityFloorplanRenderer.quadMesh(quad) else { continue }
-                litWindowRoot.addChild(ModelEntity(mesh: mesh, materials: [material]))
+                // ⚠️ Un velo **per faccia del vetro**, non uno solo: il verso
+                // della normale non e' affidabile, quindi un velo singolo
+                // finiva a caso sul lato interno o esterno — e da fuori le
+                // finestre accese sembravano spente. Due centimetri per parte:
+                // il vetro sta in mezzo allo spessore, si resta nel vano.
+                for side: Float in [0.02, -0.02] {
+                    let quad = face.points.map { $0 + normal * side - centre }
+                    guard let mesh = RealityFloorplanRenderer.quadMesh(quad) else { continue }
+                    litWindowRoot.addChild(ModelEntity(mesh: mesh, materials: [material]))
+                }
             }
         }
 
@@ -1196,7 +1200,11 @@ struct RealityFloorplanView: UIViewRepresentable {
             guard recognizer.state == .began,
                   let view = recognizer.view as? ARView,
                   let entity = view.entity(at: recognizer.location(in: view)),
+                  // Prima gli accessori, poi la stanza: tenere premuto il
+                  // pavimento apre la scheda della stanza — lo stesso gesto,
+                  // la stessa direzione: approfondire.
                   let target = tapTarget(from: entity)
+                    ?? roomID(from: entity).map({ FloorplanTapTarget.room(roomID: $0) })
             else { return }
 
             // Il ritorno aptico dice che la pressione e' stata presa **prima**
