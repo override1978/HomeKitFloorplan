@@ -16,6 +16,8 @@ import SwiftData
 //   v27: PlacedAccessory += mountHeight: Double?, lightDirectionRaw: String? —
 //        quota e direzione della luce, che una pianta non può contenere
 //        (additive, lightweight migration)
+//   v29: PlacedAccessory += isDeclaredLight: Bool (default false) — la spunta
+//        «questo interruttore comanda una luce» (additive, lightweight)
 //   v28: Floorplan += ceilingHeightMetres: Double (default 2.4) — l'altezza dei
 //        muri smetteva di esistere chiudendo la 3D, ed e' la base dell'altezza
 //        predefinita delle lampade (additive, lightweight migration)
@@ -59,7 +61,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 28
+    static let currentVersion: Int = 29
 
     // MARK: - Persistence
 

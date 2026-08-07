@@ -30,6 +30,13 @@ final class PlacedAccessory : Identifiable{
     /// Dove punta la luce: basso, intorno, alto. Anche questa non esiste in
     /// pianta, e cambia completamente come la stanza si illumina.
     var lightDirectionRaw: String?
+    /// L'utente ha dichiarato che questo interruttore/presa comanda una luce.
+    ///
+    /// È una **dichiarazione**, non un'euristica: HomeKit non sa cosa c'è
+    /// attaccato a un relè, e molte luci di casa vivono dietro uno Switch. La
+    /// spunta sta nel pannello di stanza del 3D, il dato viaggia con la
+    /// planimetria.
+    var isDeclaredLight: Bool = false
     /// Etichetta personalizzata opzionale (sovrascrive il nome HomeKit se valorizzata)
     var customLabel: String?
     var floorplan: Floorplan?

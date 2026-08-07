@@ -510,7 +510,8 @@ struct FloorplanRealityPreviewView: View {
             // muro più vicino, e ne prende anche l'inclinazione. La posa in 2D
             // dice **quale parete**, non il centimetro — quello lo fa la
             // geometria, che il disegno ce l'ha.
-            let dropped = transform.metres(from: marker.position)
+            let dropped = transform.metres(from: current.lampSettings(marker.uuid).position
+                                           ?? marker.position)
             let placed = againstNearestWall(dropped, depth: Double(unit.form.size.z))
 
             return FloorplanClimateUnit(accessoryUUID: marker.uuid,
@@ -555,8 +556,9 @@ struct FloorplanRealityPreviewView: View {
 
             _ = settingsRevision
             let form = FloorplanClimateReader.Form.securityPanel
-            let placed = againstNearestWall(transform.metres(from: marker.position),
-                                            depth: Double(form.size.z))
+            let placed = againstNearestWall(
+                transform.metres(from: current.lampSettings(marker.uuid).position ?? marker.position),
+                depth: Double(form.size.z))
             return FloorplanClimateUnit(accessoryUUID: marker.uuid,
                                         name: accessory.name,
                                         form: form,
@@ -1056,14 +1058,15 @@ struct FloorplanRealityPreviewView: View {
         else { return [] }
 
         return markers.compactMap { marker in
-            guard let accessory = homeKit.accessory(for: marker.uuid),
-                  let lamp = FloorplanLampReader.lamp(for: accessory, homeKit: homeKit)
-            else { return nil }
-
             // `settingsRevision` si legge apposta: e' cio' che fa rileggere il
             // modello dopo un salvataggio.
             _ = settingsRevision
             let settings = current.lampSettings(marker.uuid)
+            guard let accessory = homeKit.accessory(for: marker.uuid),
+                  let lamp = FloorplanLampReader.lamp(for: accessory, homeKit: homeKit,
+                                                      treatAsLight: settings.isDeclaredLight)
+            else { return nil }
+
             let direction = settings.direction ?? .down
             return FloorplanLamp(accessoryUUID: marker.uuid,
                                  name: accessory.name,
@@ -1071,7 +1074,7 @@ struct FloorplanRealityPreviewView: View {
                                  height: settings.height
                                      ?? direction.defaultHeight(ceiling: ceilingHeight),
                                  direction: direction,
-                                 position: transform.metres(from: marker.position),
+                                 position: transform.metres(from: settings.position ?? marker.position),
                                  brightness: lamp.brightness,
                                  colour: lamp.colour)
         }
@@ -1145,7 +1148,7 @@ struct FloorplanRealityPreviewView: View {
 
                 Divider().frame(height: 22).overlay(Color.white.opacity(0.25))
 
-                if !setupItemsInSelectedRoom.isEmpty {
+                if !setupItemsInSelectedRoom.isEmpty || !switchablesInSelectedRoom.isEmpty {
                     roomAction(String(localized: "room.action.setup", defaultValue: "Set up"),
                                icon: "slider.horizontal.3") {
                         roomPanelState = .setup
@@ -1204,7 +1207,10 @@ struct FloorplanRealityPreviewView: View {
     @ViewBuilder
     private var roomSetupPanel: some View {
         let items = setupItemsInSelectedRoom
-        if let item = selectedItem(among: items) {
+        // Il pannello vive anche **senza** accessori configurabili: una stanza
+        // con soli interruttori deve poter arrivare alla spunta «e' una luce»,
+        // o quegli interruttori resterebbero irraggiungibili per sempre.
+        if selectedItem(among: items) != nil || !switchablesInSelectedRoom.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 // Il recap della selezione: senza, il pannello compare e non si
                 // sa a cosa si riferisce.
@@ -1225,16 +1231,39 @@ struct FloorplanRealityPreviewView: View {
                 // Con un accessorio solo la fila sarebbe una pastiglia da
                 // scegliere fra una: resta il nome, che serve comunque a sapere
                 // cosa si sta configurando.
-                if items.count > 1 {
-                    setupPicker(items, selected: item)
-                } else {
-                    Label(item.name, systemImage: item.symbol)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                if let item = selectedItem(among: items) {
+                    if items.count > 1 {
+                        setupPicker(items, selected: item)
+                    } else {
+                        Label(item.name, systemImage: item.symbol)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
+
+                    Divider().overlay(Color.white.opacity(0.18))
+                    setupRow(item)
                 }
 
-                Divider().overlay(Color.white.opacity(0.18))
-                setupRow(item)
+                // Gli On/Off della stanza: molti comandano luci, ma HomeKit non
+                // sa cosa c'e' attaccato a un rele'. La spunta e' la
+                // dichiarazione dell'utente; appena attiva, l'interruttore
+                // diventa una lampada a tutti gli effetti — corpo, fascio,
+                // quota e direzione da configurare qui sopra.
+                let switchables = switchablesInSelectedRoom
+                if !switchables.isEmpty {
+                    Divider().overlay(Color.white.opacity(0.18))
+                    ForEach(switchables, id: \.uuid) { candidate in
+                        Toggle(isOn: declaredLightBinding(for: candidate.uuid)) {
+                            Label {
+                                Text(candidate.name).font(.caption)
+                            } icon: {
+                                Image(systemName: "lightswitch.on").font(.system(size: 12))
+                            }
+                            .foregroundStyle(.white.opacity(0.85))
+                        }
+                        .tint(.yellow.opacity(0.7))
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -1250,6 +1279,39 @@ struct FloorplanRealityPreviewView: View {
             .padding(.bottom, 104)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+    }
+
+    /// Gli interruttori e le prese della stanza: i candidati alla spunta.
+    private var switchablesInSelectedRoom: [(uuid: UUID, name: String)] {
+        guard let selectedRoomID,
+              let area = document.roomAreas.first(where: { $0.id == selectedRoomID }),
+              let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                exportRotation: exportRotation)
+        else { return [] }
+        let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
+        let polygon = area.effectivePoints.map {
+            SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
+        }
+        return markers.compactMap { marker in
+            guard let accessory = homeKit.accessory(for: marker.uuid),
+                  FloorplanLampReader.isSwitchable(accessory),
+                  FloorplanRoomEnvironment.contains(
+                      transform.metres(from: current.lampSettings(marker.uuid).position
+                                       ?? marker.position),
+                      polygon)
+            else { return nil }
+            return (marker.uuid, accessory.name)
+        }
+    }
+
+    private func declaredLightBinding(for uuid: UUID) -> Binding<Bool> {
+        Binding(
+            get: { current.lampSettings(uuid).isDeclaredLight },
+            set: { flag in
+                current.applyDeclaredLight(uuid, flag)
+                settingsRevision &+= 1
+            }
+        )
     }
 
     /// Quello scelto, o il primo se la scelta è di un'altra stanza.
@@ -1352,7 +1414,46 @@ struct FloorplanRealityPreviewView: View {
                     .foregroundStyle(.white.opacity(0.85))
                     .frame(width: 62, alignment: .trailing)
             }
+
+            // Il ritocco fine della posa: dieci centimetri a tocco, sugli assi
+            // della pianta. La posa vera resta mestiere del 2D; qui si corregge
+            // guardando il corpo spostarsi.
+            HStack(spacing: 8) {
+                Text(String(localized: "lamp.position.title", defaultValue: "Position"))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 58, alignment: .leading)
+
+                ForEach([("chevron.left", -0.1, 0.0), ("chevron.right", 0.1, 0.0),
+                         ("chevron.up", 0.0, -0.1), ("chevron.down", 0.0, 0.1)],
+                        id: \.0) { symbol, dx, dy in
+                    Button {
+                        nudgeMarker(item.id, dx: dx, dy: dy)
+                    } label: {
+                        Image(systemName: symbol)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .frame(width: 40, height: 34)
+                            .background(Color.white.opacity(0.10),
+                                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
+    }
+
+    /// Dieci centimetri nella direzione chiesta: metri, somma, e ritorno in
+    /// normalizzato con l'inversa esatta dell'inquadratura d'export.
+    private func nudgeMarker(_ uuid: UUID, dx: Double, dy: Double) {
+        guard let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                exportRotation: exportRotation),
+              let marker = markers.first(where: { $0.uuid == uuid })
+        else { return }
+        let position = current.lampSettings(uuid).position ?? marker.position
+        let moved = transform.metres(from: position) + SIMD2(dx, dy)
+        current.applyMarkerPosition(uuid, transform.normalized(from: moved))
+        settingsRevision &+= 1
     }
 
     /// Il pallino con il suo fascio, disegnato.

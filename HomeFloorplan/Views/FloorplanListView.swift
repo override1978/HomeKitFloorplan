@@ -73,7 +73,9 @@ struct FloorplanListView: View {
                     else { return LampSettings() }
                     return LampSettings(
                         height: placed.mountHeight,
-                        direction: placed.lightDirectionRaw.flatMap(LampDirection.init(rawValue:))
+                        direction: placed.lightDirectionRaw.flatMap(LampDirection.init(rawValue:)),
+                        position: CGPoint(x: placed.positionX, y: placed.positionY),
+                        isDeclaredLight: placed.isDeclaredLight
                     )
                 },
                 applyLampSettings: { [weak plan] uuid, height, direction in
@@ -81,6 +83,17 @@ struct FloorplanListView: View {
                     markerCoordinator(for: plan).setLampSettings(accessoryUUID: uuid,
                                                                  height: height,
                                                                  direction: direction)
+                },
+                applyDeclaredLight: { [weak plan] uuid, flag in
+                    guard let plan else { return }
+                    markerCoordinator(for: plan).setDeclaredLight(accessoryUUID: uuid, flag)
+                },
+                applyMarkerPosition: { [weak plan] uuid, position in
+                    guard let plan else { return }
+                    markerCoordinator(for: plan).setMarkerPosition(
+                        accessoryUUID: uuid,
+                        to: NormalizedPoint(x: Double(position.x), y: Double(position.y))
+                    )
                 },
                 exportRotation: plan.drawingExportRotation,
                 background: previewBackground(for: plan)

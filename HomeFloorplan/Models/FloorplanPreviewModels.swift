@@ -20,6 +20,11 @@ struct Preview3DMarker {
 struct LampSettings {
     var height: Double?
     var direction: LampDirection?
+    /// La posizione **viva** del marker: la fotografia scattata all'apertura
+    /// invecchia appena la si sposta dal pannello.
+    var position: CGPoint?
+    /// La spunta «questo interruttore comanda una luce».
+    var isDeclaredLight: Bool = false
 }
 
 struct Preview3DFloorplan: Identifiable {
@@ -47,6 +52,11 @@ struct Preview3DFloorplan: Identifiable {
     /// Salva quota e direzione. La scrittura su SwiftData resta fuori: qui si
     /// sa cosa, non dove metterlo.
     let applyLampSettings: (UUID, Double, LampDirection?) -> Void
+    /// La spunta «è una luce» su un interruttore/presa.
+    let applyDeclaredLight: (UUID, Bool) -> Void
+    /// Lo spostamento fine dal pannello: la posa resta mestiere del 2D, il
+    /// ritocco col riscontro visivo e' mestiere di qui.
+    let applyMarkerPosition: (UUID, CGPoint) -> Void
     /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
     /// marker in coordinate del disegno.
     let exportRotation: DrawingExportRotation

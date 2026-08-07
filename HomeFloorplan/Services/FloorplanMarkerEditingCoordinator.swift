@@ -97,6 +97,25 @@ struct FloorplanMarkerEditingCoordinator {
         saveAndMarkForSync()
     }
 
+    /// La spunta «questo interruttore comanda una luce».
+    func setDeclaredLight(accessoryUUID: UUID, _ flag: Bool) {
+        guard let placed = floorplan.accessories.first(where: {
+            $0.homeKitAccessoryUUID == accessoryUUID
+        }), placed.isDeclaredLight != flag else { return }
+        placed.isDeclaredLight = flag
+        saveAndMarkForSync()
+    }
+
+    /// Lo spostamento fine dal pannello 3D: passa da `moveMarker`, che
+    /// riaggancia stanza e apertura — spostare non deve mai scollegare in
+    /// silenzio.
+    func setMarkerPosition(accessoryUUID: UUID, to position: NormalizedPoint) {
+        guard let placed = floorplan.accessories.first(where: {
+            $0.homeKitAccessoryUUID == accessoryUUID
+        }) else { return }
+        moveMarker(id: placed.id, to: position)
+    }
+
     /// L'esposizione della planimetria: verso dove guarda il lato alto.
     func setNorthBearing(_ degrees: Double) {
         guard floorplan.northBearingDegrees != degrees else { return }

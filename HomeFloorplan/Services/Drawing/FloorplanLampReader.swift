@@ -18,12 +18,27 @@ enum FloorplanLampReader {
         var colour: UIColor
     }
 
+    /// Un interruttore o una presa che **potrebbero** comandare una luce: hanno
+    /// l'acceso/spento ma HomeKit non sa cosa ci sia attaccato. La risposta la
+    /// dà l'utente con la spunta nel pannello di stanza.
+    static func isSwitchable(_ accessory: HMAccessory) -> Bool {
+        guard !isLight(accessory) else { return false }
+        return accessory.services.contains { service in
+            (service.serviceType == HMServiceTypeSwitch
+                || service.serviceType == HMServiceTypeOutlet)
+                && service.characteristics.contains {
+                    $0.characteristicType == HMCharacteristicTypePowerState
+                }
+        }
+    }
+
     /// `nil` solo se **non è una lampada**.
     ///
     /// Una lampada spenta va restituita lo stesso: se esistesse solo da accesa,
     /// non ci sarebbe niente da toccare per accenderla.
-    static func lamp(for accessory: HMAccessory, homeKit: HomeKitService) -> Lamp? {
-        guard isLight(accessory) else { return nil }
+    static func lamp(for accessory: HMAccessory, homeKit: HomeKitService,
+                     treatAsLight: Bool = false) -> Lamp? {
+        guard isLight(accessory) || (treatAsLight && isSwitchable(accessory)) else { return nil }
 
         // Senza `PowerState` ci si affida alla luminosità: alcune lampade
         // dichiarano solo quella, e zero vuol dire spenta.

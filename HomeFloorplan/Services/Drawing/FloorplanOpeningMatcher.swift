@@ -59,6 +59,26 @@ enum FloorplanOpeningMatcher {
             return SIMD2((Double(centre.x) + dx) * metresPerPoint,
                          (Double(centre.y) + dy) * metresPerPoint)
         }
+
+        /// L'inversa esatta di `metres(from:)`: serve al pannello 3D per
+        /// spostare un marker di dieci centimetri — si va in metri, si somma,
+        /// si torna in normalizzato. Se le due divergono, i marker migrano.
+        func normalized(from metres: SIMD2<Double>) -> CGPoint {
+            let dx = metres.x * Double(DrawingDocument.ptsPerMeter) - Double(centre.x)
+            let dy = metres.y * Double(DrawingDocument.ptsPerMeter) - Double(centre.y)
+
+            let (rotatedX, rotatedY): (Double, Double) = switch rotation {
+            case .asDrawn:          (dx, dy)
+            case .clockwise:        (-dy, dx)
+            case .upsideDown:       (-dx, -dy)
+            case .counterClockwise: (dy, -dx)
+            }
+
+            return CGPoint(
+                x: (rotatedX * scaleFactor + Self.outputWidth / 2) / Self.outputWidth,
+                y: (rotatedY * scaleFactor + Self.outputHeight / 2) / Self.outputHeight
+            )
+        }
     }
 
     /// Il bounding box che l'export usa per inquadrare. Deve includere
