@@ -509,9 +509,13 @@ enum FloorplanMaterialCatalog {
     static func presenceGlowMaterial() -> (any RealityKit.Material)? {
         guard let texture = radialFalloffTexture else { return nil }
         var glow = UnlitMaterial()
-        glow.color = .init(tint: UIColor(red: 1.0, green: 0.94, blue: 0.82, alpha: 1),
+        // ⚠️ **Ambra decisa, non bianco-caldo timido.** Il disco c'era ed era
+        // al posto giusto — l'ha provato la diagnostica — ma bianco-caldo al
+        // 30% sopra un pavimento crema in piena luce e' contrasto zero:
+        // invisibile per tinta, non per posizione.
+        glow.color = .init(tint: UIColor(red: 1.0, green: 0.72, blue: 0.36, alpha: 1),
                            texture: .init(texture, sampler: clampSampler))
-        glow.blending = .transparent(opacity: .init(floatLiteral: 0.30))
+        glow.blending = .transparent(opacity: .init(floatLiteral: 0.5))
         return glow
     }
 

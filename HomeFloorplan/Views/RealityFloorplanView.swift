@@ -471,11 +471,8 @@ struct RealityFloorplanView: UIViewRepresentable {
 
                 let disc = ModelEntity(mesh: .generatePlane(width: 2.6, depth: 2.6),
                                        materials: [material])
-                // Quota provvisoriamente alta (mezzo metro) per la diagnosi:
-                // se cosi' si vede, il problema era il disco sepolto sotto i
-                // piani dei mobili o in z-fighting col pavimento.
                 let place = SIMD3(mid.x - centre.x,
-                                  floorY - centre.y + 0.5,
+                                  floorY - centre.y + 0.012,
                                   mid.z - centre.z)
                 disc.position = place
                 presenceRoot.addChild(disc)
