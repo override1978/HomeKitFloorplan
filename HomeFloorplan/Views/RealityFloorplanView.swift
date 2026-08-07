@@ -1155,11 +1155,20 @@ struct RealityFloorplanView: UIViewRepresentable {
             }
             let centre = scene.bounds.center
             let roomCentre = (minP + maxP) / 2 - centre
-            focus = SIMD3(roomCentre.x, roomCentre.y + 1.5, roomCentre.z)
+            // **Sulla soglia, non al centro**: al centro meta' stanza sta alle
+            // spalle. Gli occhi arretrano lungo lo sguardo di tre quarti della
+            // semi-diagonale, cosi' la stanza sta tutta davanti — e' il punto
+            // in cui ci si ferma entrando in una stanza vera.
+            let horizontalHalf = simd_length(SIMD2(maxP.x - minP.x, maxP.z - minP.z)) / 2
+            let setback = max(0.4, horizontalHalf * 0.75)
+            let look = SIMD2(sin(Float(azimuth)), cos(Float(azimuth)))
+            focus = SIMD3(roomCentre.x - look.x * setback,
+                          roomCentre.y + 1.5,
+                          roomCentre.z - look.y * setback)
             firstPerson = true
             // Leggermente in giu' e **grandangolo**: a 38 gradi — il tele
-            // giusto per l'orbita — una stanza vera e' claustrofobica, si vede
-            // mezza parete e ci si perde la casa. A 68 si sta in una stanza.
+            // giusto per l'orbita — una stanza vera e' claustrofobica. A 68 si
+            // sta in una stanza; oltre i 70 diventa un fisheye.
             elevation = -0.12
             camera.camera.fieldOfViewInDegrees = 68
             updateCamera()
