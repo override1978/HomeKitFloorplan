@@ -133,6 +133,7 @@ struct FloorplanRealityPreviewView: View {
                                      lampEffects: mode == .off,
                                      climate: climateUnits,
                                      litRooms: litRoomIDs,
+                                     occupiedRooms: occupiedRoomIDs,
                                      awnings: awnings,
                                      cameras: cameraCones,
                                      flags: roomFlags,
@@ -453,6 +454,45 @@ struct FloorplanRealityPreviewView: View {
             || accessory.category.categoryType == HMAccessoryCategoryTypeVideoDoorbell
     }
 
+    /// Le stanze **abitate adesso**, dai sensori di movimento e presenza.
+    ///
+    /// Il segnale e' quello pubblico di `SensorAdapter`
+    /// (`markerRuntimeState == .sensorTriggered`): nessuna lettura riscritta.
+    /// Si filtra prima per caratteristica, o un sensore di fumo in allarme
+    /// conterebbe come qualcuno in casa.
+    private var occupiedRoomIDs: Set<UUID> {
+        guard let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                exportRotation: exportRotation)
+        else { return [] }
+        let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
+
+        var result: Set<UUID> = []
+        for marker in markers {
+            guard let accessory = homeKit.accessory(for: marker.uuid),
+                  accessory.services.contains(where: { service in
+                      service.characteristics.contains {
+                          $0.characteristicType == HMCharacteristicTypeMotionDetected
+                              || $0.characteristicType == HMCharacteristicTypeOccupancyDetected
+                      }
+                  })
+            else { continue }
+
+            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+            guard (adapter as? MarkerRuntimeStateProviding)?.markerRuntimeState == .sensorTriggered
+            else { continue }
+
+            let position = transform.metres(from: marker.position)
+            if let area = document.roomAreas.first(where: { area in
+                FloorplanRoomEnvironment.contains(position, area.effectivePoints.map {
+                    SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
+                })
+            }) {
+                result.insert(area.id)
+            }
+        }
+        return result
+    }
+
     /// Le stanze illuminate, quando fuori è buio.
     ///
     /// Di giorno resta vuoto di proposito: una finestra accesa in pieno sole non
@@ -530,7 +570,40 @@ struct FloorplanRealityPreviewView: View {
                                         height: current.lampSettings(marker.uuid).height
                                             ?? unit.form.defaultHeight,
                                         bearing: placed.bearing)
-        } + securityPanels
+        } + securityPanels + televisions
+    }
+
+    /// Gli schermi TV posati: il corpo e' il pannello, la spia e' il pallino —
+    /// verde da accesa, niente da spenta — e da accesa lo schermo si schiarisce
+    /// di grigio-blu: una TV accesa in una stanza si vede. Lettura da
+    /// `TelevisionAdapter`, che il servizio Television lo conosce gia'.
+    private var televisions: [FloorplanClimateUnit] {
+        guard let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                exportRotation: exportRotation)
+        else { return [] }
+
+        return markers.compactMap { marker in
+            guard let accessory = homeKit.accessory(for: marker.uuid),
+                  let tv = TelevisionAdapter(accessory: accessory, homeKit: homeKit)
+            else { return nil }
+
+            _ = settingsRevision
+            let form = FloorplanClimateReader.Form.television
+            let placed = againstNearestWall(
+                transform.metres(from: current.lampSettings(marker.uuid).position ?? marker.position),
+                depth: Double(form.size.z))
+            return FloorplanClimateUnit(accessoryUUID: marker.uuid,
+                                        name: accessory.name,
+                                        form: form,
+                                        tint: tv.isOn
+                                            ? UIColor(red: 0.36, green: 0.41, blue: 0.50, alpha: 1)
+                                            : UIColor(red: 0.09, green: 0.09, blue: 0.10, alpha: 1),
+                                        modeTint: tv.isOn ? .systemGreen : nil,
+                                        position: placed.position,
+                                        height: current.lampSettings(marker.uuid).height
+                                            ?? form.defaultHeight,
+                                        bearing: placed.bearing)
+        }
     }
 
     /// La centralina dell'antifurto, se e' stata posata: un pannello a muro
@@ -1153,6 +1226,7 @@ struct FloorplanRealityPreviewView: View {
             case .split:         "wind"
             case .radiator:      "heater.vertical"
             case .securityPanel: "shield.lefthalf.filled"
+            case .television:    "tv"
             }
             return SetupItem(id: unit.accessoryUUID, name: unit.name, height: unit.height,
                              direction: nil, range: 0.1...2.6, symbol: symbol)

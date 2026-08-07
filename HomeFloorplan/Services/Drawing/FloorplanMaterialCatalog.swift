@@ -502,6 +502,19 @@ enum FloorplanMaterialCatalog {
         return material
     }
 
+    /// Il respiro di una stanza abitata: un alone caldo e tenue che pulsa al
+    /// punto piu' interno. Non e' una tinta di strato — quelle parlano la
+    /// lingua degli avvisi — e' vita: un PIR non sa chi, quindi il modello
+    /// dice solo «qui c'e' qualcuno».
+    static func presenceGlowMaterial() -> (any RealityKit.Material)? {
+        guard let texture = radialFalloffTexture else { return nil }
+        var glow = UnlitMaterial()
+        glow.color = .init(tint: UIColor(red: 1.0, green: 0.94, blue: 0.82, alpha: 1),
+                           texture: .init(texture, sampler: clampSampler))
+        glow.blending = .transparent(opacity: .init(floatLiteral: 0.30))
+        return glow
+    }
+
     /// Il muro reso vetro, **a richiesta**: per sbirciare dentro dalle
     /// inquadrature basse senza rinunciare — di default — alla casa vera.
     /// Stessa tinta dell'intonaco, cosi' accendendola la casa non cambia

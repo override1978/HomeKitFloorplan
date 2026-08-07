@@ -22,6 +22,8 @@ struct RealityFloorplanView: UIViewRepresentable {
     let climate: [FloorplanClimateUnit]
     /// Le stanze da far brillare attraverso i vetri, di notte.
     let litRooms: Set<UUID>
+    /// Le stanze abitate adesso: respirano.
+    let occupiedRooms: Set<UUID>
     let awnings: [FloorplanAwning]
     let cameras: [FloorplanCameraCone]
     let flags: [RoomFlag]
@@ -99,6 +101,7 @@ struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.updateLampEffects(lampEffects)
         context.coordinator.updateClimate(climate)
         context.coordinator.updateLitWindows(litRooms)
+        context.coordinator.updatePresence(occupiedRooms)
         context.coordinator.updateAwnings(awnings)
         context.coordinator.updateCameraCones(cameras)
         context.coordinator.updateFlags(flags)
@@ -112,6 +115,7 @@ struct RealityFloorplanView: UIViewRepresentable {
             .prepared(withLamps: lamps)
             .prepared(withClimate: climate)
             .prepared(withLitRooms: litRooms)
+            .prepared(withOccupiedRooms: occupiedRooms)
             .prepared(withAwnings: awnings)
             .prepared(withCameras: cameras)
             .prepared(with: flags)
@@ -154,6 +158,8 @@ struct RealityFloorplanView: UIViewRepresentable {
         private let lampRoot = Entity()
         private let climateRoot = Entity()
         private let litWindowRoot = Entity()
+        private let presenceRoot = Entity()
+        private var occupiedRooms: Set<UUID> = []
         private let cameraRoot = Entity()
         private var cameras: [FloorplanCameraCone] = []
         private let awningRoot = Entity()
@@ -417,6 +423,62 @@ struct RealityFloorplanView: UIViewRepresentable {
                 guard let mesh = RealityFloorplanRenderer.cameraConeMesh(cone, scene: scene)
                 else { continue }
                 cameraRoot.addChild(ModelEntity(mesh: mesh, materials: [material]))
+            }
+        }
+
+        func prepared(withOccupiedRooms rooms: Set<UUID>) -> Coordinator {
+            self.occupiedRooms = rooms
+            return self
+        }
+
+        func updatePresence(_ rooms: Set<UUID>) {
+            guard rooms != occupiedRooms else { return }
+            occupiedRooms = rooms
+            rebuildPresence()
+        }
+
+        /// Un alone che **respira** al centro di ogni stanza abitata: scala su
+        /// e giu' con un'animazione RealityKit, nessun timer nostro.
+        private func rebuildPresence() {
+            presenceRoot.children.removeAll()
+            guard !occupiedRooms.isEmpty,
+                  let material = FloorplanMaterialCatalog.presenceGlowMaterial()
+            else { return }
+            let centre = scene.bounds.center
+            let floorY = scene.bounds.min.y
+
+            for roomID in occupiedRooms {
+                let points = scene.faces
+                    .filter { $0.role == .floor && $0.roomID == roomID }
+                    .flatMap(\.points)
+                guard let first = points.first else { continue }
+                var minP = first, maxP = first
+                for point in points {
+                    minP = SIMD3(min(minP.x, point.x), min(minP.y, point.y), min(minP.z, point.z))
+                    maxP = SIMD3(max(maxP.x, point.x), max(maxP.y, point.y), max(maxP.z, point.z))
+                }
+                let mid = (minP + maxP) / 2
+
+                let disc = ModelEntity(mesh: .generatePlane(width: 2.6, depth: 2.6),
+                                       materials: [material])
+                let place = SIMD3(mid.x - centre.x,
+                                  floorY - centre.y + 0.009,
+                                  mid.z - centre.z)
+                disc.position = place
+                presenceRoot.addChild(disc)
+
+                var small = disc.transform
+                small.scale = SIMD3(0.8, 1, 0.8)
+                var large = disc.transform
+                large.scale = SIMD3(1.08, 1, 1.08)
+                if let animation = try? AnimationResource.generate(
+                    with: FromToByAnimation<Transform>(from: small, to: large,
+                                                       duration: 1.9,
+                                                       timing: .easeInOut,
+                                                       repeatMode: .autoReverse)
+                ) {
+                    disc.playAnimation(animation)
+                }
             }
         }
 
@@ -999,6 +1061,7 @@ struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(lampRoot)
             anchor.addChild(climateRoot)
             anchor.addChild(litWindowRoot)
+            anchor.addChild(presenceRoot)
             anchor.addChild(cameraRoot)
             anchor.addChild(awningRoot)
             view.scene.anchors.append(anchor)
@@ -1006,6 +1069,7 @@ struct RealityFloorplanView: UIViewRepresentable {
             updateSceneIfNeeded(scene)
             builtLitRooms = nil
             rebuildLitWindows()
+            rebuildPresence()
             rebuildCameraCones()
             rebuildClimate()
             configureLights()

@@ -53,12 +53,15 @@ enum FloorplanClimateReader {
         case radiator
         /// La centralina dell'antifurto: un pannello a muro, ad altezza mano.
         case securityPanel
+        /// Uno schermo TV: pannello sottile a muro, sopra il mobile basso.
+        case television
 
         var defaultHeight: Double {
             switch self {
             case .split:         2.10
             case .radiator:      0.40
             case .securityPanel: 1.40
+            case .television:    1.15
             }
         }
 
@@ -69,6 +72,7 @@ enum FloorplanClimateReader {
             case .split:         SIMD3(0.82, 0.27, 0.19)
             case .radiator:      SIMD3(0.78, 0.55, 0.09)
             case .securityPanel: SIMD3(0.22, 0.30, 0.05)
+            case .television:    SIMD3(0.95, 0.55, 0.035)
             }
         }
     }
