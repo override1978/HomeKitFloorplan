@@ -2207,7 +2207,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             // key da 3000 lux da battere; di sera ne serve comunque uno,
             // perche' la prima taratura — pensata per non bruciare muri quasi
             // bianchi — lasciava la pozza visibile solo a zoom ravvicinato.
-            let boost: Float = sun.isAboveHorizon ? 2.8 : 1.7
+            let boost: Float = sun.isAboveHorizon ? 3.3 : 2.0
             node.spot.light.intensity = boost * Float(1_400 + 4_800 * lamp.brightness)
             node.spot.light.attenuationRadius = Float(3.6 + 2.8 * lamp.brightness)
             node.spot.light.outerAngleInDegrees = lamp.direction == .around ? 160 : 72
@@ -2332,8 +2332,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
             // sole, il che è falso ma dà un'ombra plausibile e coerente.
             keyLight.look(at: .zero, from: sun.direction * radius * 3, relativeTo: nil)
 
-            fillLight.light.intensity = isDay ? 300 : 110
-            fillLight.light.color = UIColor(red: 0.84, green: 0.90, blue: 1.0, alpha: 1)
+            // ⚠️ Quasi neutro, non azzurro. Il riempimento e' cio' che colora
+            // le facciate **in ombra**: con un fill blu e il key caldo, la
+            // faccia al sole diventava crema e le altre grigio-azzurre — due
+            // vernici, non luce e ombra. Un residuo di freddo resta (l'ombra
+            // vera e' piu' fredda della luce), ma la forbice si stringe.
+            fillLight.light.intensity = isDay ? 420 : 110
+            fillLight.light.color = UIColor(red: 0.93, green: 0.95, blue: 1.0, alpha: 1)
             fillLight.shadow = nil
             fillLight.look(at: .zero,
                            from: SIMD3(radius * 2.6, radius * 1.4, -radius * 2.2),
