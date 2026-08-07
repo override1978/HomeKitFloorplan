@@ -150,6 +150,12 @@ struct FloorplanRealityPreviewView: View {
     @State private var now = Date()
     @State private var exposure: Exposure = .north
     @State private var lampCaption: String?
+    /// Quali accessori stiamo osservando, per poterli lasciare andare.
+    ///
+    /// Solo quelli di **questa** planimetria più la centralina: osservare tutta
+    /// la casa vorrebbe dire notifiche e batteria per accessori che non si
+    /// stanno nemmeno guardando.
+    @State private var observedUUIDs: Set<UUID> = []
     #if DEBUG
     /// Anteprima notte, **solo in debug**: il sole resta reale in produzione,
     /// ma di giorno non c'è modo di verificare le luci — e una funzione che si
@@ -192,20 +198,18 @@ struct FloorplanRealityPreviewView: View {
             // Senza questo i sensori non sono mai stati letti e risultano tutti
             // chiusi: `startObserving` fa il readValue iniziale e arma le
             // notifiche. La vista si apre dalla lista, che non osserva niente.
-            // ⚠️ Anche la centralina, non solo i marker: `homeKit.value(for:)`
-            // resta nil finché nessuno ha fatto `readValue`, ed è lo stesso
-            // inciampo che ha tenuto chiuse le porte per mezza giornata.
-            // Tutti i marker: fra loro ci sono i contatti degli infissi e le
-            // lampade, e senza `readValue` risulterebbero chiusi e spente.
-            var observed = Set(markers.map(\.uuid))
-            if let system = securitySystem { observed.insert(system.accessory.uniqueIdentifier) }
-            homeKit.startObserving(accessoryUUIDs: observed)
+            observeCurrentFloorplan()
             rebuildScene()
         }
         // Lo stato non è più una fotografia: se apri una finestra mentre stai
         // guardando, l'anta si muove. `characteristicValues` è osservabile, e
         // ricalcolare l'insieme costa una manciata di confronti.
         .onChange(of: openOpeningIDs) { _, _ in rebuildScene() }
+        // Cambiando piano cambiano gli accessori: quelli vecchi si lasciano
+        // andare e si osservano i nuovi, o il piano appena aperto avrebbe luci
+        // spente e porte chiuse per il solo motivo che nessuno le ha lette.
+        .onChange(of: currentID) { _, _ in observeCurrentFloorplan() }
+        .onDisappear { homeKit.stopObserving(accessoryUUIDs: observedUUIDs) }
         .task {
             // Il sole si sposta di un grado ogni quattro minuti: più spesso di
             // così non cambierebbe niente di visibile.
@@ -723,6 +727,22 @@ struct FloorplanRealityPreviewView: View {
         didLoadEnvironment = true
         envVM.configure(modelContainer: modelContext.container)
         envVM.loadFromCoreData()
+    }
+
+    /// Osserva gli accessori del piano corrente, lasciando andare i precedenti.
+    ///
+    /// ⚠️ Serve anche la centralina, non solo i marker: `homeKit.value(for:)`
+    /// resta nil finché nessuno ha fatto `readValue`, ed è lo stesso inciampo
+    /// che ha tenuto chiuse tutte le porte per mezza giornata.
+    private func observeCurrentFloorplan() {
+        var wanted = Set(markers.map(\.uuid))
+        if let system = securitySystem { wanted.insert(system.accessory.uniqueIdentifier) }
+        guard wanted != observedUUIDs else { return }
+
+        let released = observedUUIDs.subtracting(wanted)
+        if !released.isEmpty { homeKit.stopObserving(accessoryUUIDs: released) }
+        homeKit.startObserving(accessoryUUIDs: wanted)
+        observedUUIDs = wanted
     }
 
     private func rebuildScene() {
