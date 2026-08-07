@@ -302,6 +302,19 @@ struct FloorplanRealityPreviewView: View {
     /// volta nella vita di una planimetria — e una configurazione non merita
     /// una pillola permanente sul bordo piu' prezioso dello schermo.
     @State private var isSettingsOpen = false
+
+    /// Al primo ingresso nel 3D di una planimetria il pannello si apre da
+    /// solo: altezza dei muri ed esposizione **vanno chiesti, non scoperti** —
+    /// un utente nuovo non apre l'ingranaggio, e senza esposizione il sole e'
+    /// sbagliato in silenzio. Dalle volte dopo, il pannello sta dietro
+    /// l'ingranaggio. Il segnavia e' locale al device (UserDefaults): e' stato
+    /// di UX, non un fatto della casa, e non merita lo schema.
+    private func presentSetupIfFirstVisit() {
+        let key = "floorplan3D.setupShown.\(currentID.uuidString)"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        withAnimation(.easeOut(duration: 0.3)) { isSettingsOpen = true }
+    }
     #endif
 
     var body: some View {
