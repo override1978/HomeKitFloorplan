@@ -1472,23 +1472,6 @@ struct FloorplanRealityPreviewView: View {
         return .normal
     }
 
-    private func chip(label: String, icon: String, isSelected: Bool,
-                      action: @escaping () -> Void) -> some View {
-        Button {
-            withAnimation(.easeOut(duration: 0.2), action)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 13))
-                Text(label).font(.subheadline.weight(isSelected ? .semibold : .regular))
-            }
-            .foregroundStyle(.white.opacity(isSelected ? 1 : 0.62))
-            .padding(.horizontal, 14)
-            .frame(minHeight: 36)
-            .background(isSelected ? Color.white.opacity(0.22) : .clear, in: Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
     /// Il modello ambientale costa **oltre un secondo sul main actor**, e la
     /// vista si apre con lo strato spento: caricarlo all'apparire voleva dire
     /// pagarlo sempre, anche per chi guarda solo la casa. Si carica alla prima
