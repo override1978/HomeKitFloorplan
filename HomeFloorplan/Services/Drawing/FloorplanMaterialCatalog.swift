@@ -400,6 +400,20 @@ enum FloorplanMaterialCatalog {
         return .init(descriptor)
     }()
 
+    /// Il campo visivo di una telecamera.
+    ///
+    /// Il viola della sicurezza, e non un colore nuovo: chi vede questo cono sta
+    /// gia' guardando lo strato Sicurezza, e una terza tinta in quella scena
+    /// vorrebbe dire una terza cosa da imparare.
+    static func cameraConeMaterial() -> (any RealityKit.Material)? {
+        guard let texture = verticalFalloffTexture else { return nil }
+        var material = UnlitMaterial()
+        material.color = .init(tint: UIColor(red: 0.68, green: 0.52, blue: 0.92, alpha: 1),
+                               texture: .init(texture, sampler: clampSampler))
+        material.blending = .transparent(opacity: .init(floatLiteral: 0.34))
+        return material
+    }
+
     /// Il vetro di una stanza accesa, visto da fuori.
     ///
     /// **Unlit**: è luce che esce, non una superficie che la riceve, e

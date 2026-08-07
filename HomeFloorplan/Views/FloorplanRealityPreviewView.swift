@@ -100,6 +100,15 @@ struct FloorplanClimateUnit: Equatable {
     var height: Double
 }
 
+/// Il campo visivo di una telecamera, appoggiato al pavimento.
+struct FloorplanCameraCone: Equatable {
+    var accessoryUUID: UUID
+    /// In metri, nello spazio del disegno.
+    var position: SIMD2<Double>
+    /// Versore di dove guarda, nello spazio del disegno.
+    var direction: SIMD2<Double>
+}
+
 /// Cosa mostra la bandierina di una stanza. Il contenuto arriva dal modello
 /// condiviso con la 2D; qui resta solo come disegnarlo.
 struct RoomFlag {
@@ -258,6 +267,7 @@ struct FloorplanRealityPreviewView: View {
                                      lamps: litLights,
                                      climate: climateUnits,
                                      litRooms: litRoomIDs,
+                                     cameras: cameraCones,
                                      flags: roomFlags,
                                      cameraResetID: cameraResetID,
                                      onRoomSelected: { roomID, name in
@@ -432,6 +442,59 @@ struct FloorplanRealityPreviewView: View {
             markers: markers.map { (uuid: $0.uuid, openingID: $0.openingID) },
             homeKit: homeKit
         )
+    }
+
+    /// Il campo visivo delle telecamere posate, solo nello strato Sicurezza.
+    ///
+    /// Lo strato dice **che** una telecamera c'è; il cono dice **cosa vede**,
+    /// che è la domanda vera quando si guarda una casa dall'alto.
+    ///
+    /// ⚠️ Il verso non è nel modello — nessuno ha mai detto dove guarda quella
+    /// telecamera. Il default non è però un tiro a caso come per le porte: una
+    /// telecamera sta su una parete e guarda **dentro** la stanza, quindi punta
+    /// verso il punto più interno — lo stesso che regge la bandierina. Sbaglia
+    /// solo su chi inquadra di sbieco, e resta correggibile il giorno che ci
+    /// sarà un ispettore.
+    private var cameraCones: [FloorplanCameraCone] {
+        guard mode == .security,
+              let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                exportRotation: exportRotation)
+        else { return [] }
+
+        let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
+        let anchors = FloorplanRoomEnvironment.anchors(in: document)
+
+        return markers.compactMap { marker -> FloorplanCameraCone? in
+            guard let accessory = homeKit.accessory(for: marker.uuid),
+                  isCamera(accessory)
+            else { return nil }
+
+            let position = transform.metres(from: marker.position)
+            let room = document.roomAreas.first { area in
+                FloorplanRoomEnvironment.contains(position, area.effectivePoints.map {
+                    SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
+                })
+            }
+            guard let room,
+                  let anchor = anchors.first(where: { $0.roomID == room.id })
+            else { return nil }
+
+            let delta = anchor.point - position
+            let distance = simd_length(delta)
+            // Una telecamera piazzata proprio sul punto d'ancoraggio non ha un
+            // verso: meglio nessun cono che uno inventato.
+            guard distance > 0.35 else { return nil }
+
+            return FloorplanCameraCone(accessoryUUID: marker.uuid,
+                                       position: position,
+                                       direction: delta / distance)
+        }
+    }
+
+    private func isCamera(_ accessory: HMAccessory) -> Bool {
+        if accessory.cameraProfiles?.isEmpty == false { return true }
+        return accessory.category.categoryType == HMAccessoryCategoryTypeIPCamera
+            || accessory.category.categoryType == HMAccessoryCategoryTypeVideoDoorbell
     }
 
     /// Le stanze illuminate, quando fuori è buio.
@@ -1211,6 +1274,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
     let climate: [FloorplanClimateUnit]
     /// Le stanze da far brillare attraverso i vetri, di notte.
     let litRooms: Set<UUID>
+    let cameras: [FloorplanCameraCone]
     let flags: [RoomFlag]
     let cameraResetID: UUID
     let onRoomSelected: (UUID?, String?) -> Void
@@ -1273,6 +1337,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.updateLamps(lamps)
         context.coordinator.updateClimate(climate)
         context.coordinator.updateLitWindows(litRooms)
+        context.coordinator.updateCameraCones(cameras)
         context.coordinator.updateFlags(flags)
         context.coordinator.resetCameraIfNeeded(cameraResetID)
     }
@@ -1284,6 +1349,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             .prepared(withLamps: lamps)
             .prepared(withClimate: climate)
             .prepared(withLitRooms: litRooms)
+            .prepared(withCameras: cameras)
             .prepared(with: flags)
     }
 
@@ -1324,6 +1390,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private let lampRoot = Entity()
         private let climateRoot = Entity()
         private let litWindowRoot = Entity()
+        private let cameraRoot = Entity()
+        private var cameras: [FloorplanCameraCone] = []
         private var litRooms: Set<UUID> = []
         private var builtLitRooms: Set<UUID>? = nil
         private var climate: [FloorplanClimateUnit] = []
@@ -1384,6 +1452,29 @@ private struct RealityFloorplanView: UIViewRepresentable {
             self.onSceneTouched = onSceneTouched
             self.onLampTapped = onLampTapped
             self.onAccessoryHeld = onAccessoryHeld
+        }
+
+        func prepared(withCameras cones: [FloorplanCameraCone]) -> Coordinator {
+            self.cameras = cones
+            return self
+        }
+
+        func updateCameraCones(_ cones: [FloorplanCameraCone]) {
+            guard cones != cameras else { return }
+            cameras = cones
+            rebuildCameraCones()
+        }
+
+        private func rebuildCameraCones() {
+            cameraRoot.children.removeAll()
+            guard !cameras.isEmpty,
+                  let material = FloorplanMaterialCatalog.cameraConeMaterial()
+            else { return }
+            for cone in cameras {
+                guard let mesh = RealityFloorplanRenderer.cameraConeMesh(cone, scene: scene)
+                else { continue }
+                cameraRoot.addChild(ModelEntity(mesh: mesh, materials: [material]))
+            }
         }
 
         func prepared(withLitRooms rooms: Set<UUID>) -> Coordinator {
@@ -1806,11 +1897,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(lampRoot)
             anchor.addChild(climateRoot)
             anchor.addChild(litWindowRoot)
+            anchor.addChild(cameraRoot)
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
             builtLitRooms = nil
             rebuildLitWindows()
+            rebuildCameraCones()
             rebuildClimate()
             configureLights()
             updateCamera()
@@ -2928,6 +3021,47 @@ private enum RealityFloorplanRenderer {
             signedArea += points[index].x * next.z - next.x * points[index].z
         }
         return signedArea > 0
+    }
+
+    /// Un ventaglio appoggiato al pavimento: pieno all'obiettivo, spento al
+    /// bordo.
+    ///
+    /// Non è ritagliato sulla stanza, e non serve che lo sia: si spegne prima di
+    /// arrivare dove finirebbe, quindi un bordo che sbordasse di mezzo metro non
+    /// avrebbe comunque una forma da riconoscere. È la stessa ragione per cui la
+    /// mappa di calore non ha bisogno del contorno del pavimento.
+    static func cameraConeMesh(_ cone: FloorplanCameraCone, scene: FloorplanScene) -> MeshResource? {
+        let centre = scene.bounds.center
+        let apex = SIMD3(Float(cone.position.x) - centre.x,
+                         scene.bounds.min.y - centre.y + 0.018,
+                         Float(cone.position.y) - centre.z)
+        let bearing = atan2(cone.direction.y, cone.direction.x)
+        let halfSpread = Double.pi * 40 / 180
+        let reach: Double = 4.2
+        let steps = 18
+
+        var positions: [SIMD3<Float>] = [apex]
+        var uvs: [SIMD2<Float>] = [SIMD2(0.5, 0)]
+        var indices: [UInt32] = []
+
+        for step in 0...steps {
+            let angle = bearing - halfSpread + halfSpread * 2 * Double(step) / Double(steps)
+            positions.append(SIMD3(apex.x + Float(cos(angle) * reach),
+                                   apex.y,
+                                   apex.z + Float(sin(angle) * reach)))
+            uvs.append(SIMD2(0.5, 1))
+            if step > 0 {
+                indices.append(contentsOf: [0, UInt32(step), UInt32(step + 1)])
+            }
+        }
+
+        var descriptor = MeshDescriptor(name: "camera-cone")
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.normals = MeshBuffers.Normals(Array(repeating: SIMD3<Float>(0, 1, 0),
+                                                       count: positions.count))
+        descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(uvs)
+        descriptor.primitives = .triangles(indices)
+        return try? MeshResource.generate(from: [descriptor])
     }
 
     /// Un quadrilatero sciolto, con la sua normale. Serve ai veli che non
