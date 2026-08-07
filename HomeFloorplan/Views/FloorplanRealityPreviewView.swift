@@ -484,7 +484,21 @@ struct FloorplanRealityPreviewView: View {
             let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
             let kind = String(describing: type(of: adapter))
             let state = (adapter as? MarkerRuntimeStateProviding)?.markerRuntimeState
-            lines.append("\(accessory.name): \(kind) · \(state.map(String.init(describing:)) ?? "nil")")
+
+            // In quale stanza cade il marker, per distinguere «non respira»
+            // da «respira dove non si vede».
+            var room = "NESSUNA"
+            if let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                                 exportRotation: exportRotation) {
+                let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
+                let position = transform.metres(from: marker.position)
+                if let area = document.roomAreas.first(where: { area in
+                    FloorplanRoomEnvironment.contains(position, area.effectivePoints.map {
+                        SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
+                    })
+                }) { room = area.name }
+            }
+            lines.append("\(accessory.name): \(kind) · \(state.map(String.init(describing:)) ?? "nil") · \(room)")
         }
         lines.append("stanze che respirano: \(occupiedRoomIDs.count)")
         return lines
