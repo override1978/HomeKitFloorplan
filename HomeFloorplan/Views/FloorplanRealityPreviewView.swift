@@ -2081,6 +2081,10 @@ private struct RealityFloorplanView: UIViewRepresentable {
             let orientation = simd_quatf(angle: Float(azimuth), axis: SIMD3(0, 1, 0))
                 * simd_quatf(angle: -Float(elevation), axis: SIMD3(1, 0, 0))
             for label in flagLabels { label.orientation = orientation }
+            // Anche i bagliori delle lampade: un disco visto di taglio e' una
+            // linea, e una luce che sparisce girando la casa e' peggio di
+            // nessuna luce.
+            for node in lampNodes.values { node.corona.orientation = orientation }
         }
 
         func prepared(withLamps lamps: [FloorplanLamp]) -> Coordinator {
@@ -2144,11 +2148,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 lampRoot.addChild(bulb)
 
                 // Il bagliore che fa sembrare il bulbo una luce e non una
-                // pallina: piu' largo della sfera, traslucido, con la tinta
-                // dell'accessorio — cosi' il bianco del bulbo resta puro.
+                // pallina: un disco morbido dietro la sfera, girato verso la
+                // telecamera insieme alle bandierine. La tinta dell'accessorio
+                // vive qui, cosi' il bianco del bulbo resta puro.
                 let corona = ModelEntity(
-                    mesh: .generateSphere(radius: 0.24),
-                    materials: [FloorplanMaterialCatalog.bulbCoronaMaterial(colour: lamp.colour)]
+                    mesh: .generatePlane(width: 0.62, height: 0.62),
+                    materials: [FloorplanMaterialCatalog.bulbGlowMaterial(colour: lamp.colour)
+                                ?? UnlitMaterial(color: .clear)]
                 )
                 corona.position = place
                 lampRoot.addChild(corona)
@@ -2191,6 +2197,9 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 apply(lamp, to: &node)
                 lampNodes[lamp.accessoryUUID] = node
             }
+            // I dischi appena nati vanno girati subito verso la telecamera, o
+            // restano di taglio fino al primo movimento.
+            orientFlags()
         }
 
         /// Aggiorna in posto: nessuna entità nasce o muore, cambiano solo
@@ -2220,9 +2229,9 @@ private struct RealityFloorplanView: UIViewRepresentable {
             ]
             // L'alone esiste solo da accesa: e' il bagliore, non un contorno.
             node.corona.isEnabled = lamp.isOn
-            node.corona.model?.materials = [
-                FloorplanMaterialCatalog.bulbCoronaMaterial(colour: lamp.colour)
-            ]
+            if let glow = FloorplanMaterialCatalog.bulbGlowMaterial(colour: lamp.colour) {
+                node.corona.model?.materials = [glow]
+            }
 
             node.spot.isEnabled = lamp.isOn
             // ⚠️ **Senza ombra la luce attraversa i muri.** Un faretto vicino a
