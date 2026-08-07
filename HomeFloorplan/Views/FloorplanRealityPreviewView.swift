@@ -434,6 +434,15 @@ struct FloorplanRealityPreviewView: View {
                     .transition(.scale.combined(with: .opacity))
             }
 
+            #if DEBUG
+            Text(lampDiagnostics)
+                .font(.system(size: 10).monospaced())
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(.black.opacity(0.4), in: Capsule())
+            #endif
+
             HStack(spacing: 18) {
                 Button {
                     ceilingHeight = max(2.0, ceilingHeight - 0.1)
@@ -644,6 +653,21 @@ struct FloorplanRealityPreviewView: View {
             withAnimation(.easeOut(duration: 0.3)) { lampCaption = nil }
         }
     }
+
+    #if DEBUG
+    /// Dove si perdono le lampade. Ogni anello puo' fallire in silenzio e da
+    /// fuori sembrano tutti lo stesso sintomo: nessun bulbo.
+    private var lampDiagnostics: String {
+        let resolved = markers.compactMap { homeKit.accessory(for: $0.uuid) }
+        let lights = resolved.filter { FloorplanLampReader.isLight($0) }
+        let lamps = litLights
+        let transformOK = FloorplanOpeningMatcher.transform(document: document,
+                                                            exportRotation: exportRotation) != nil
+        return "marker \(markers.count) · risolti \(resolved.count) · luci \(lights.count)"
+            + " · bulbi \(lamps.count) · accesi \(lamps.filter(\.isOn).count)"
+            + " · calib \(transformOK ? "ok" : "NO") · hk \(homeKit.isReady ? "ok" : "NO")"
+    }
+    #endif
 
     /// La centralina della casa, se ce n'è una.
     ///
