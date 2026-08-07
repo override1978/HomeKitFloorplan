@@ -257,6 +257,7 @@ struct FloorplanRealityPreviewView: View {
                                      sun: sun,
                                      lamps: litLights,
                                      climate: climateUnits,
+                                     litRooms: litRoomIDs,
                                      flags: roomFlags,
                                      cameraResetID: cameraResetID,
                                      onRoomSelected: { roomID, name in
@@ -431,6 +432,27 @@ struct FloorplanRealityPreviewView: View {
             markers: markers.map { (uuid: $0.uuid, openingID: $0.openingID) },
             homeKit: homeKit
         )
+    }
+
+    /// Le stanze illuminate, quando fuori è buio.
+    ///
+    /// Di giorno resta vuoto di proposito: una finestra accesa in pieno sole non
+    /// si vede nemmeno nella realtà, e disegnarla sarebbe una luce che non c'è.
+    private var litRoomIDs: Set<UUID> {
+        guard !sun.isAboveHorizon else { return [] }
+
+        let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
+        let lit = litLights.filter(\.isOn)
+        guard !lit.isEmpty else { return [] }
+
+        return Set(document.roomAreas.compactMap { area -> UUID? in
+            let polygon = area.effectivePoints.map {
+                SIMD2(Double($0.x) * metresPerPoint, Double($0.y) * metresPerPoint)
+            }
+            return lit.contains { FloorplanRoomEnvironment.contains($0.position, polygon) }
+                ? area.id
+                : nil
+        })
     }
 
     /// La freccia accanto ai gradi: dice che qualcosa **sta lavorando**, e in
@@ -1187,6 +1209,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
     let sun: FloorplanSunLight
     let lamps: [FloorplanLamp]
     let climate: [FloorplanClimateUnit]
+    /// Le stanze da far brillare attraverso i vetri, di notte.
+    let litRooms: Set<UUID>
     let flags: [RoomFlag]
     let cameraResetID: UUID
     let onRoomSelected: (UUID?, String?) -> Void
@@ -1248,6 +1272,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.updateSun(sun)
         context.coordinator.updateLamps(lamps)
         context.coordinator.updateClimate(climate)
+        context.coordinator.updateLitWindows(litRooms)
         context.coordinator.updateFlags(flags)
         context.coordinator.resetCameraIfNeeded(cameraResetID)
     }
@@ -1258,6 +1283,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                     onLampTapped: onLampTapped, onAccessoryHeld: onAccessoryHeld)
             .prepared(withLamps: lamps)
             .prepared(withClimate: climate)
+            .prepared(withLitRooms: litRooms)
             .prepared(with: flags)
     }
 
@@ -1297,6 +1323,9 @@ private struct RealityFloorplanView: UIViewRepresentable {
         /// muri e pavimento come farebbero nella stanza.
         private let lampRoot = Entity()
         private let climateRoot = Entity()
+        private let litWindowRoot = Entity()
+        private var litRooms: Set<UUID> = []
+        private var builtLitRooms: Set<UUID>? = nil
         private var climate: [FloorplanClimateUnit] = []
         /// Il corpo di ogni unità, tenuto in vita fra un aggiornamento e l'altro:
         /// accendere un condizionatore ne cambia il **colore**, non la forma.
@@ -1355,6 +1384,43 @@ private struct RealityFloorplanView: UIViewRepresentable {
             self.onSceneTouched = onSceneTouched
             self.onLampTapped = onLampTapped
             self.onAccessoryHeld = onAccessoryHeld
+        }
+
+        func prepared(withLitRooms rooms: Set<UUID>) -> Coordinator {
+            self.litRooms = rooms
+            return self
+        }
+
+        func updateLitWindows(_ rooms: Set<UUID>) {
+            litRooms = rooms
+            rebuildLitWindows()
+        }
+
+        /// Un velo caldo appoggiato ai vetri delle stanze accese.
+        ///
+        /// Non è una luce vera: una `PointLight` per stanza costerebbe e
+        /// illuminerebbe anche l'esterno, che di notte deve restare buio. Qui
+        /// interessa solo ciò che si vede **da fuori** — il vetro che brilla — ed
+        /// è esattamente quello che si disegna.
+        private func rebuildLitWindows() {
+            guard builtLitRooms != litRooms else { return }
+            builtLitRooms = litRooms
+            litWindowRoot.children.removeAll()
+            guard !litRooms.isEmpty,
+                  let material = FloorplanMaterialCatalog.litWindowMaterial()
+            else { return }
+
+            let centre = scene.bounds.center
+            for face in scene.faces where face.role == .glass && face.points.count == 4 {
+                guard let roomID = face.roomID, litRooms.contains(roomID) else { continue }
+                let normal = RealityFloorplanRenderer.faceNormal(for: face.points)
+                // Due centimetri lungo la normale: il verso non è affidabile, ma
+                // il vetro sta in mezzo allo spessore del muro, quindi da
+                // entrambe le parti si resta dentro il vano.
+                let quad = face.points.map { $0 + normal * 0.02 - centre }
+                guard let mesh = RealityFloorplanRenderer.quadMesh(quad) else { continue }
+                litWindowRoot.addChild(ModelEntity(mesh: mesh, materials: [material]))
+            }
         }
 
         func prepared(withClimate units: [FloorplanClimateUnit]) -> Coordinator {
@@ -1739,9 +1805,12 @@ private struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(selectionRoot)
             anchor.addChild(lampRoot)
             anchor.addChild(climateRoot)
+            anchor.addChild(litWindowRoot)
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
+            builtLitRooms = nil
+            rebuildLitWindows()
             rebuildClimate()
             configureLights()
             updateCamera()
@@ -2861,7 +2930,20 @@ private enum RealityFloorplanRenderer {
         return signedArea > 0
     }
 
-    private static func faceNormal(for points: [SIMD3<Float>]) -> SIMD3<Float> {
+    /// Un quadrilatero sciolto, con la sua normale. Serve ai veli che non
+    /// appartengono alla geometria della casa e si rifanno per conto loro.
+    static func quadMesh(_ points: [SIMD3<Float>]) -> MeshResource? {
+        guard points.count == 4 else { return nil }
+        let normal = faceNormal(for: points)
+        var descriptor = MeshDescriptor(name: "quad")
+        descriptor.positions = MeshBuffers.Positions(points + points.reversed())
+        descriptor.normals = MeshBuffers.Normals(Array(repeating: normal, count: 4)
+                                                 + Array(repeating: -normal, count: 4))
+        descriptor.primitives = .triangles([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7])
+        return try? MeshResource.generate(from: [descriptor])
+    }
+
+    static func faceNormal(for points: [SIMD3<Float>]) -> SIMD3<Float> {
         guard points.count >= 3 else { return [0, 1, 0] }
         let a = points[1] - points[0]
         let b = points[2] - points[0]

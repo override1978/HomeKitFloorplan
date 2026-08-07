@@ -400,6 +400,17 @@ enum FloorplanMaterialCatalog {
         return .init(descriptor)
     }()
 
+    /// Il vetro di una stanza accesa, visto da fuori.
+    ///
+    /// **Unlit**: è luce che esce, non una superficie che la riceve, e
+    /// ombreggiarla vorrebbe dire spegnerla proprio dove serve — di notte, che è
+    /// l'unico momento in cui esiste.
+    static func litWindowMaterial() -> (any RealityKit.Material)? {
+        var material = UnlitMaterial(color: UIColor(red: 1.0, green: 0.87, blue: 0.62, alpha: 1))
+        material.blending = .transparent(opacity: .init(floatLiteral: 0.72))
+        return material
+    }
+
     /// Il corpo di uno split o di una valvola.
     ///
     /// Spento e' bianco come l'apparecchio vero. Al lavoro prende la tinta di

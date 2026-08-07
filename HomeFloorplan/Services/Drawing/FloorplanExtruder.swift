@@ -491,6 +491,10 @@ enum FloorplanExtruder {
             } else {
                 outward = -unitNormal
             }
+            // La stanza che questa apertura **serve**: quella dal lato opposto a
+            // fuori. Serve alle finestre per sapere se di notte la loro stanza è
+            // accesa, e viene gratis da un conto che stiamo già facendo.
+            let servedRoom = outward == unitNormal ? behind : ahead
 
             let context = FloorplanOpeningBuilder.Wall(start: start,
                                                        axis: axis,
@@ -500,7 +504,10 @@ enum FloorplanExtruder {
                                                        kind: wall.kind)
             for hole in holes {
                 var produced = FloorplanOpeningBuilder.faces(for: hole, in: context)
-                for index in produced.indices { produced[index].openingID = hole.id }
+                for index in produced.indices {
+                    produced[index].openingID = hole.id
+                    produced[index].roomID = servedRoom
+                }
                 faces += produced
             }
         }
