@@ -173,7 +173,7 @@ struct FloorplanRealityPreviewView: View {
                     Label(String(localized: "room.exit", defaultValue: "Exit room"),
                           systemImage: "arrow.uturn.backward")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.primary)
                         .padding(.horizontal, 18)
                         .frame(minHeight: 44)
                         .background(.regularMaterial, in: Capsule())
@@ -785,7 +785,10 @@ struct FloorplanRealityPreviewView: View {
                         Text(title).font(.headline).lineLimit(1)
                         Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
                     }
-                    .foregroundStyle(.primary)
+                    // ⚠️ `Color.primary` esplicito, non lo stile gerarchico:
+                    // dentro Button e Menu quello gerarchico perde contro la
+                    // tinta di sistema, e le scritte diventavano blu.
+                    .foregroundStyle(Color.primary)
                     .padding(.horizontal, 16)
                     .frame(minHeight: 38)
                     .background(.regularMaterial, in: Capsule())
@@ -852,7 +855,7 @@ struct FloorplanRealityPreviewView: View {
     private func chrome(_ symbol: String) -> some View {
         Image(systemName: symbol)
             .font(.headline)
-            .foregroundStyle(.primary)
+            .foregroundStyle(Color.primary)
             .frame(width: 44, height: 44)
             .background(.regularMaterial, in: Circle())
     }
@@ -909,7 +912,7 @@ struct FloorplanRealityPreviewView: View {
                         Image(systemName: "plus").frame(width: 38, height: 34)
                     }
                 }
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color.primary)
 
                 HStack(spacing: 12) {
                     Text(String(localized: "floorplan.exposure", defaultValue: "Top of the plan faces"))
@@ -965,7 +968,7 @@ struct FloorplanRealityPreviewView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
-            .foregroundStyle(.primary)
+            .foregroundStyle(Color.primary)
             .padding(.horizontal, 12)
             .frame(minHeight: 34)
             .background(Color.primary.opacity(0.12), in: Capsule())
@@ -1238,7 +1241,7 @@ struct FloorplanRealityPreviewView: View {
                 Image(systemName: icon).font(.system(size: 18, weight: .semibold))
                 Text(title).font(.caption)
             }
-            .foregroundStyle(.primary)
+            .foregroundStyle(Color.primary)
             .frame(minWidth: 68, minHeight: 56)
             .background(Color.primary.opacity(0.07),
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -1313,7 +1316,7 @@ struct FloorplanRealityPreviewView: View {
                             } icon: {
                                 Image(systemName: "lightswitch.on").font(.system(size: 12))
                             }
-                            .foregroundStyle(.primary.opacity(0.9))
+                            .foregroundStyle(Color.primary.opacity(0.9))
                         }
                         .tint(.yellow.opacity(0.7))
                     }
@@ -1443,7 +1446,7 @@ struct FloorplanRealityPreviewView: View {
 
                     Text(direction.label)
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.primary.opacity(0.9))
+                        .foregroundStyle(Color.primary.opacity(0.9))
                 }
             }
 
@@ -1458,7 +1461,7 @@ struct FloorplanRealityPreviewView: View {
 
                 Text(item.height.formatted(.number.precision(.fractionLength(2))) + " m")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.primary.opacity(0.9))
+                    .foregroundStyle(Color.primary.opacity(0.9))
                     .frame(width: 62, alignment: .trailing)
             }
 
@@ -1479,7 +1482,7 @@ struct FloorplanRealityPreviewView: View {
                     } label: {
                         Image(systemName: symbol)
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary.opacity(0.9))
+                            .foregroundStyle(Color.primary.opacity(0.9))
                             .frame(width: 40, height: 34)
                             .background(Color.primary.opacity(0.08),
                                         in: RoundedRectangle(cornerRadius: 10, style: .continuous))
