@@ -886,14 +886,14 @@ struct FloorplanRealityPreviewView: View {
                     Image(systemName: "gearshape").font(.system(size: 15))
                     Text(title).font(.title3.weight(.semibold)).lineLimit(1)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
 
-                Divider().overlay(Color.white.opacity(0.18))
+                Divider().overlay(Color.primary.opacity(0.2))
 
                 HStack(spacing: 12) {
                     Text(String(localized: "floorplan.ceilingHeight", defaultValue: "Ceiling height"))
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.secondary)
                     Spacer()
                     Button {
                         applyCeilingHeight(max(2.0, ceilingHeight - 0.1))
@@ -909,12 +909,12 @@ struct FloorplanRealityPreviewView: View {
                         Image(systemName: "plus").frame(width: 38, height: 34)
                     }
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
 
                 HStack(spacing: 12) {
                     Text(String(localized: "floorplan.exposure", defaultValue: "Top of the plan faces"))
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.secondary)
                     Spacer()
                     exposureMenu
                 }
@@ -923,7 +923,7 @@ struct FloorplanRealityPreviewView: View {
                 Toggle(isOn: $forcesNight) {
                     Text(String(localized: "floorplan.nightPreview", defaultValue: "Night preview"))
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.secondary)
                 }
                 .tint(.indigo)
                 #endif
@@ -963,12 +963,12 @@ struct FloorplanRealityPreviewView: View {
                 Text(exposure.shortLabel).font(.headline)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.secondary)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 12)
             .frame(minHeight: 34)
-            .background(Color.white.opacity(0.12), in: Capsule())
+            .background(Color.primary.opacity(0.12), in: Capsule())
         }
     }
 
@@ -1157,13 +1157,16 @@ struct FloorplanRealityPreviewView: View {
     /// sono sheet: si regola guardando la casa reagire.
     private struct PanelChrome: ViewModifier {
         func body(content: Content) -> some View {
+            // Adattivo, per prova: il materiale segue il tema di sistema —
+            // chiaro in light mode, come le superfici Apple — e i contenuti
+            // usano colori semantici. La cornice attorno resta scura: sta
+            // sopra la scena, non sopra uno sfondo di sistema.
             content
-                .background(.ultraThinMaterial,
+                .background(.regularMaterial,
                             in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-                .environment(\.colorScheme, .dark)
                 .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
-                .shadow(color: .black.opacity(0.28), radius: 22, y: 10)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+                .shadow(color: .black.opacity(0.22), radius: 22, y: 10)
         }
     }
 
@@ -1178,10 +1181,10 @@ struct FloorplanRealityPreviewView: View {
             HStack(spacing: 8) {
                 Text(selectedRoomName ?? "")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                Divider().frame(height: 30).overlay(Color.white.opacity(0.25))
+                Divider().frame(height: 30).overlay(Color.primary.opacity(0.25))
 
                 if !setupItemsInSelectedRoom.isEmpty || !switchablesInSelectedRoom.isEmpty {
                     roomAction(String(localized: "room.action.setup", defaultValue: "Set up"),
@@ -1230,9 +1233,9 @@ struct FloorplanRealityPreviewView: View {
                 Image(systemName: icon).font(.system(size: 18, weight: .semibold))
                 Text(title).font(.caption)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .frame(minWidth: 68, minHeight: 56)
-            .background(Color.white.opacity(0.08),
+            .background(Color.primary.opacity(0.07),
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
@@ -1269,10 +1272,10 @@ struct FloorplanRealityPreviewView: View {
                          ? String(localized: "setup.count.one", defaultValue: "1 device")
                          : String(localized: "setup.count.other", defaultValue: "\(items.count) devices"))
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.secondary)
                         .layoutPriority(1)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
 
                 // Con un accessorio solo la fila sarebbe una pastiglia da
                 // scegliere fra una: resta il nome, che serve comunque a sapere
@@ -1283,10 +1286,10 @@ struct FloorplanRealityPreviewView: View {
                     } else {
                         Label(item.name, systemImage: item.symbol)
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.primary)
                     }
 
-                    Divider().overlay(Color.white.opacity(0.18))
+                    Divider().overlay(Color.primary.opacity(0.2))
                     setupRow(item)
                 }
 
@@ -1297,7 +1300,7 @@ struct FloorplanRealityPreviewView: View {
                 // quota e direzione da configurare qui sopra.
                 let switchables = switchablesInSelectedRoom
                 if !switchables.isEmpty {
-                    Divider().overlay(Color.white.opacity(0.18))
+                    Divider().overlay(Color.primary.opacity(0.2))
                     ForEach(switchables, id: \.uuid) { candidate in
                         Toggle(isOn: declaredLightBinding(for: candidate.uuid)) {
                             Label {
@@ -1305,7 +1308,7 @@ struct FloorplanRealityPreviewView: View {
                             } icon: {
                                 Image(systemName: "lightswitch.on").font(.system(size: 12))
                             }
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(.primary.opacity(0.9))
                         }
                         .tint(.yellow.opacity(0.7))
                     }
@@ -1384,7 +1387,7 @@ struct FloorplanRealityPreviewView: View {
                         Label(item.name, systemImage: item.symbol)
                             .font(.caption.weight(isSelected ? .semibold : .regular))
                             .lineLimit(1)
-                            .foregroundStyle(.white.opacity(isSelected ? 1 : 0.62))
+                            .foregroundStyle(.primary.opacity(isSelected ? 1 : 0.62))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
                             .background(Color.white.opacity(isSelected ? 0.22 : 0.07), in: Capsule())
@@ -1414,7 +1417,7 @@ struct FloorplanRealityPreviewView: View {
                 HStack(spacing: 8) {
                     Text(String(localized: "lamp.direction.title", defaultValue: "Points"))
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.secondary)
                         .frame(width: 58, alignment: .leading)
 
                     HStack(spacing: 4) {
@@ -1425,7 +1428,7 @@ struct FloorplanRealityPreviewView: View {
                                 directionGlyph(value, isSelected: direction == value)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 3)
-                                    .background(direction == value ? Color.white.opacity(0.20) : Color.clear,
+                                    .background(direction == value ? Color.primary.opacity(0.14) : Color.clear,
                                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             }
                             .buttonStyle(.plain)
@@ -1435,22 +1438,22 @@ struct FloorplanRealityPreviewView: View {
 
                     Text(direction.label)
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(.primary.opacity(0.9))
                 }
             }
 
             HStack(spacing: 8) {
                 Text(String(localized: "lamp.height.title", defaultValue: "Height"))
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.secondary)
                     .frame(width: 58, alignment: .leading)
 
                 Slider(value: heightBinding(for: item), in: item.range, step: 0.05)
-                    .tint(.white.opacity(0.8))
+                    .tint(.primary.opacity(0.7))
 
                 Text(item.height.formatted(.number.precision(.fractionLength(2))) + " m")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(.primary.opacity(0.9))
                     .frame(width: 62, alignment: .trailing)
             }
 
@@ -1460,7 +1463,7 @@ struct FloorplanRealityPreviewView: View {
             HStack(spacing: 8) {
                 Text(String(localized: "lamp.position.title", defaultValue: "Position"))
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.secondary)
                     .frame(width: 58, alignment: .leading)
 
                 ForEach([("chevron.left", -0.1, 0.0), ("chevron.right", 0.1, 0.0),
@@ -1471,9 +1474,9 @@ struct FloorplanRealityPreviewView: View {
                     } label: {
                         Image(systemName: symbol)
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(.primary.opacity(0.9))
                             .frame(width: 40, height: 34)
-                            .background(Color.white.opacity(0.10),
+                            .background(Color.primary.opacity(0.08),
                                         in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                     .buttonStyle(.plain)
@@ -1502,7 +1505,7 @@ struct FloorplanRealityPreviewView: View {
     /// modello: l'anteprima e il comando diventano la stessa cosa.
     private func directionGlyph(_ direction: LampDirection, isSelected: Bool) -> some View {
         Canvas { context, size in
-            let bulb = Color.white.opacity(isSelected ? 0.95 : 0.45)
+            let bulb = Color.primary.opacity(isSelected ? 0.95 : 0.45)
             let beam = Color(red: 1.0, green: 0.86, blue: 0.45)
                 .opacity(isSelected ? 0.55 : 0.20)
             let centreX = size.width / 2
