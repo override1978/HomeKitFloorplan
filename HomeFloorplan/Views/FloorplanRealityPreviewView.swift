@@ -883,8 +883,8 @@ struct FloorplanRealityPreviewView: View {
         if isSettingsOpen {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 8) {
-                    Image(systemName: "gearshape").font(.system(size: 13))
-                    Text(title).font(.headline).lineLimit(1)
+                    Image(systemName: "gearshape").font(.system(size: 15))
+                    Text(title).font(.title3.weight(.semibold)).lineLimit(1)
                 }
                 .foregroundStyle(.white)
 
@@ -928,12 +928,10 @@ struct FloorplanRealityPreviewView: View {
                 .tint(.indigo)
                 #endif
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .frame(width: 340)
-            .background(.black.opacity(0.58), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 18)
+            .frame(width: 370)
+            .modifier(PanelChrome())
             .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
@@ -1153,6 +1151,22 @@ struct FloorplanRealityPreviewView: View {
         return lamps + climate
     }
 
+    /// Il vestito comune dei pannelli che **si usano**: vetro scuro vero al
+    /// posto del nero piatto, un bordo che raccoglie e un'ombra che stacca
+    /// dalla scena. Il modello resta visibile sotto — e' il motivo per cui non
+    /// sono sheet: si regola guardando la casa reagire.
+    private struct PanelChrome: ViewModifier {
+        func body(content: Content) -> some View {
+            content
+                .background(.ultraThinMaterial,
+                            in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .environment(\.colorScheme, .dark)
+                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
+                .shadow(color: .black.opacity(0.28), radius: 22, y: 10)
+        }
+    }
+
     /// Il menu della stanza: tre azioni, una riga.
     ///
     /// Un tocco sulla stanza non decide piu' da solo cosa vuoi farci: apre il
@@ -1163,11 +1177,11 @@ struct FloorplanRealityPreviewView: View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
                 Text(selectedRoomName ?? "")
-                    .font(.headline)
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
 
-                Divider().frame(height: 22).overlay(Color.white.opacity(0.25))
+                Divider().frame(height: 30).overlay(Color.white.opacity(0.25))
 
                 if !setupItemsInSelectedRoom.isEmpty || !switchablesInSelectedRoom.isEmpty {
                     roomAction(String(localized: "room.action.setup", defaultValue: "Set up"),
@@ -1201,10 +1215,9 @@ struct FloorplanRealityPreviewView: View {
                     handleHold(.room(roomID: roomID))
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .background(.black.opacity(0.58), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            .padding(.horizontal, 22)
+            .padding(.vertical, 14)
+            .modifier(PanelChrome())
         }
         .padding(.bottom, 104)
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1213,13 +1226,15 @@ struct FloorplanRealityPreviewView: View {
     private func roomAction(_ title: String, icon: String,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon).font(.system(size: 15, weight: .semibold))
-                Text(title).font(.caption2)
+            VStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 18, weight: .semibold))
+                Text(title).font(.caption)
             }
             .foregroundStyle(.white)
-            .frame(minWidth: 58, minHeight: 44)
-            .contentShape(Rectangle())
+            .frame(minWidth: 68, minHeight: 56)
+            .background(Color.white.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -1246,9 +1261,9 @@ struct FloorplanRealityPreviewView: View {
                 // Il recap della selezione: senza, il pannello compare e non si
                 // sa a cosa si riferisce.
                 HStack(spacing: 8) {
-                    Image(systemName: "slider.horizontal.3").font(.system(size: 13))
+                    Image(systemName: "slider.horizontal.3").font(.system(size: 15))
                     Text(selectedRoomName ?? "")
-                        .font(.headline)
+                        .font(.title3.weight(.semibold))
                         .lineLimit(1)
                     Text(items.count == 1
                          ? String(localized: "setup.count.one", defaultValue: "1 device")
@@ -1296,17 +1311,10 @@ struct FloorplanRealityPreviewView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .frame(maxWidth: 560)
-            // Più denso del resto della cornice, di proposito: le altre capsule
-            // mostrano stato, questa **si usa**. Un pannello dove ci si ferma ad
-            // agire si merita più peso di uno che si legge di sfuggita — ma
-            // resta traslucido, o si perderebbe il motivo di configurare qui:
-            // vedere il modello reagire mentre si muove il cursore.
-            .background(.black.opacity(0.58), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 18)
+            .frame(maxWidth: 580)
+            .modifier(PanelChrome())
             .padding(.bottom, 104)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
