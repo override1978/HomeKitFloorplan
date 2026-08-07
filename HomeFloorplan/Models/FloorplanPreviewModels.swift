@@ -210,6 +210,9 @@ enum CameraPreset: Equatable {
     case angle
     /// Bassa, ad altezza occhi: quella dove la casa sembra una casa.
     case front
+    /// Dentro la stanza, in prima persona: si guarda intorno trascinando.
+    /// Non e' ARKit — e' la stessa camera con i piedi per terra.
+    case inside(roomID: UUID)
 }
 
 /// Un comando di camera con identita': lo stesso preset chiesto due volte deve

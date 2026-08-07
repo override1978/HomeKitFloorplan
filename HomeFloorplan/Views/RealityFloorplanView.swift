@@ -213,6 +213,9 @@ struct RealityFloorplanView: UIViewRepresentable {
         /// doppio tocco.
         private var focus: SIMD3<Float> = .zero
         private var focusRadius: Float?
+        /// In prima persona la camera **sta** nel fuoco e guarda fuori; in
+        /// orbita sta fuori e guarda il fuoco. Stessi tre numeri, verso opposto.
+        private var firstPerson = false
         private var gestureStart: (azimuth: Double, elevation: Double)?
         private var roomNames: [UUID: String] = [:]
         private var roomWallEntities: [UUID: ModelEntity] = [:]
@@ -1063,7 +1066,14 @@ struct RealityFloorplanView: UIViewRepresentable {
         }
 
         func updateCamera() {
-            camera.look(at: focus, from: focus + orbitOffset, relativeTo: nil)
+            if firstPerson {
+                let direction = SIMD3(cos(Float(elevation)) * sin(Float(azimuth)),
+                                      sin(Float(elevation)),
+                                      cos(Float(elevation)) * cos(Float(azimuth)))
+                camera.look(at: focus + direction, from: focus, relativeTo: nil)
+            } else {
+                camera.look(at: focus, from: focus + orbitOffset, relativeTo: nil)
+            }
             orientFlags()
             applyStemVisibility()
         }
@@ -1082,6 +1092,7 @@ struct RealityFloorplanView: UIViewRepresentable {
             handledCommandID = command.id
             focus = .zero
             focusRadius = nil
+            firstPerson = false
             switch command.preset {
             case .top:
                 elevation = 1.45
@@ -1093,14 +1104,48 @@ struct RealityFloorplanView: UIViewRepresentable {
             case .front:
                 elevation = 0.16
                 distanceMultiplier = 1.9
+            case .inside(let roomID):
+                enterRoom(roomID)
+                return
             }
             updateCamera()
         }
 
         /// Doppio tocco su una stanza: la camera la inquadra, mantenendo
         /// l'angolo. Sul vuoto, torna alla casa intera.
+        /// I piedi al centro della stanza, gli occhi a un metro e mezzo:
+        /// trascinare gira lo sguardo, il doppio tocco riporta fuori.
+        private func enterRoom(_ roomID: UUID) {
+            let points = scene.faces
+                .filter { $0.role == .floor && $0.roomID == roomID }
+                .flatMap(\.points)
+            guard let first = points.first else { return }
+            var minP = first, maxP = first
+            for point in points {
+                minP = SIMD3(min(minP.x, point.x), min(minP.y, point.y), min(minP.z, point.z))
+                maxP = SIMD3(max(maxP.x, point.x), max(maxP.y, point.y), max(maxP.z, point.z))
+            }
+            let centre = scene.bounds.center
+            let roomCentre = (minP + maxP) / 2 - centre
+            focus = SIMD3(roomCentre.x, roomCentre.y + 1.5, roomCentre.z)
+            firstPerson = true
+            elevation = 0
+            updateCamera()
+        }
+
         @objc func doubleTapped(_ recognizer: UITapGestureRecognizer) {
             guard let view = recognizer.view as? ARView else { return }
+            // Da dentro, il doppio tocco e' l'uscita: si torna al tre quarti.
+            if firstPerson {
+                firstPerson = false
+                focus = .zero
+                focusRadius = nil
+                azimuth = .pi / 4
+                elevation = .pi / 5
+                distanceMultiplier = 2.2
+                updateCamera()
+                return
+            }
             if let entity = view.entity(at: recognizer.location(in: view)),
                let roomID = roomID(from: entity) {
                 frame(roomID: roomID)
@@ -1170,7 +1215,8 @@ struct RealityFloorplanView: UIViewRepresentable {
         }
 
         @objc func pinched(_ recognizer: UIPinchGestureRecognizer) {
-            guard recognizer.state == .changed else { return }
+            // Da dentro la stanza non c'e' una distanza da stringere.
+            guard !firstPerson, recognizer.state == .changed else { return }
             distanceMultiplier = min(max(distanceMultiplier / Float(recognizer.scale), 1.4), 4.0)
             recognizer.scale = 1
             updateCamera()

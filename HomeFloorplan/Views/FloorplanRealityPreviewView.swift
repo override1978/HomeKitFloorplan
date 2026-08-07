@@ -71,6 +71,10 @@ struct FloorplanRealityPreviewView: View {
     /// il 3D non gestisce l'accessorio, lo consegna.
     @State private var detailAccessory: HMAccessory?
     @State private var detailRoom: RoomSheetTarget?
+    /// Cosa mostra il bordo basso per la stanza selezionata: prima il menu
+    /// delle tre azioni, e il pannello di configurazione solo se scelto.
+    private enum RoomPanelState { case actions, setup }
+    @State private var roomPanelState: RoomPanelState = .actions
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @AppStorage("securityMonitoredUUIDs") private var monitoredUUIDsRaw: String = ""
@@ -132,6 +136,7 @@ struct FloorplanRealityPreviewView: View {
                                      onRoomSelected: { roomID, name in
                                          selectedRoomID = roomID
                                          selectedRoomName = name
+                                         roomPanelState = .actions
                                      },
                                      onTargetTapped: handleTap,
                                      onTargetHeld: handleHold)
@@ -142,7 +147,14 @@ struct FloorplanRealityPreviewView: View {
 
             controls
         }
-        .overlay(alignment: .bottom) { roomSetupPanel }
+        .overlay(alignment: .bottom) {
+            if selectedRoomID != nil {
+                switch roomPanelState {
+                case .actions: roomActionBar
+                case .setup:   roomSetupPanel
+                }
+            }
+        }
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
                 topChrome
@@ -1086,6 +1098,66 @@ struct FloorplanRealityPreviewView: View {
         }
 
         return lamps + climate
+    }
+
+    /// Il menu della stanza: tre azioni, una riga.
+    ///
+    /// Un tocco sulla stanza non decide piu' da solo cosa vuoi farci: apre il
+    /// bivio — configurare, entrarci, o vederne la scheda. Il pannello di
+    /// configurazione arriva solo se scelto.
+    @ViewBuilder
+    private var roomActionBar: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Text(selectedRoomName ?? "")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+
+                Divider().frame(height: 22).overlay(Color.white.opacity(0.25))
+
+                if !setupItemsInSelectedRoom.isEmpty {
+                    roomAction(String(localized: "room.action.setup", defaultValue: "Set up"),
+                               icon: "slider.horizontal.3") {
+                        roomPanelState = .setup
+                    }
+                }
+
+                roomAction(String(localized: "room.action.enter", defaultValue: "Enter"),
+                           icon: "person.fill.viewfinder") {
+                    guard let roomID = selectedRoomID else { return }
+                    cameraCommand = CameraCommand(id: UUID(), preset: .inside(roomID: roomID))
+                    selectedRoomID = nil
+                    selectedRoomName = nil
+                }
+
+                roomAction(String(localized: "room.action.details", defaultValue: "Details"),
+                           icon: "info.circle") {
+                    guard let roomID = selectedRoomID else { return }
+                    handleHold(.room(roomID: roomID))
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(.black.opacity(0.58), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        }
+        .padding(.bottom, 104)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func roomAction(_ title: String, icon: String,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 15, weight: .semibold))
+                Text(title).font(.caption2)
+            }
+            .foregroundStyle(.white)
+            .frame(minWidth: 58, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Il posto dove si impostano i fatti che la pianta **non può contenere**:
