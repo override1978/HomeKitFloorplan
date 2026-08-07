@@ -491,7 +491,10 @@ struct RealityFloorplanView: UIViewRepresentable {
                                                        bindTarget: .transform,
                                                        repeatMode: .autoReverse)
                 ) {
-                    disc.playAnimation(animation)
+                    // ⚠️ `.autoReverse` da solo fa UN ciclo — su e giu' una
+                    // volta — e si ferma: quando si guarda, ha gia' finito.
+                    // `.repeat()` senza conteggio lo fa respirare per sempre.
+                    disc.playAnimation(animation.repeat())
                 }
             }
         }
