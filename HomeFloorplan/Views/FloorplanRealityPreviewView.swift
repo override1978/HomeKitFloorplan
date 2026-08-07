@@ -1729,10 +1729,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
         }
 
         private func stepAwnings() {
-            // Corsa completa in nove secondi: il passo di una tenda vera, e
-            // abbastanza lento da assorbire i valori intermedi di HomeKit senza
-            // strappi.
-            let step = 1.0 / 9.0 / 30.0
+            // Corsa completa in ventidue secondi. I nove della prima stesura
+            // sembravano «da tenda vera» sulla carta, ma accanto a quella vera
+            // il telo del modello arrivava con largo anticipo: un motore da
+            // balcone ci mette venti-trenta secondi. HomeKit non espone la
+            // durata del singolo motore, quindi e' una costante — se un giorno
+            // serve per-accessorio, il posto e' l'adapter.
+            let step = 1.0 / 22.0 / 30.0
             var stillMoving = false
 
             for (roomID, node) in awningNodes where node.shown != node.target {
