@@ -125,10 +125,12 @@ enum FloorplanExtruder {
             result.append(contentsOf: floorFaces(area))
         }
         let joints = sharedEndpoints(of: document.walls)
+        let balconies = balconyAreaIDs(in: document)
         for wall in document.walls {
             result.append(contentsOf: wallFaces(wall, in: document, heights: heights,
                                                 joints: joints, openOpeningIDs: openOpeningIDs,
-                                                closedShutters: closedShutters))
+                                                closedShutters: closedShutters,
+                                                balconyAreaIDs: balconies))
         }
         // Nell'ordine di disegno del documento, così i tappeti restano sotto
         // come già fanno in pianta.
@@ -310,7 +312,8 @@ enum FloorplanExtruder {
                                   heights: Heights,
                                   joints: Set<GridKey>,
                                   openOpeningIDs: Set<UUID>,
-                                  closedShutters: [UUID: Double]) -> [Face] {
+                                  closedShutters: [UUID: Double],
+                                  balconyAreaIDs: Set<UUID> = []) -> [Face] {
         let start = SIMD2(metres(wall.start.x), metres(wall.start.y))
         let end   = SIMD2(metres(wall.end.x), metres(wall.end.y))
         let length = simd_distance(start, end)
@@ -466,11 +469,28 @@ enum FloorplanExtruder {
             // della normale non si può — l'estrusore non garantisce un
             // avvolgimento coerente, che è lo stesso motivo per cui le facce si
             // emettono da entrambi i lati.
+            //
+            // ⚠️ Non basta guardare **un** lato. Una portafinestra su un balcone
+            // ha una stanza da tutte e due le parti — il soggiorno e il balcone,
+            // che e' un'area come le altre — e fermandosi al primo controllo la
+            // tapparella finiva **dentro il soggiorno**. Quando entrambi i lati
+            // sono stanze vince il balcone, che e' l'unico posto dove una
+            // copertura ha senso.
             let middle = start + axis * (length / 2)
-            let probe = middle + unitNormal * (thickness / 2 + 0.30)
-            let outward = roomPolygons.contains { contains(probe, $0.points) }
-                ? -unitNormal
-                : unitNormal
+            let reach = thickness / 2 + 0.30
+            let ahead = roomPolygons.first { contains(middle + unitNormal * reach, $0.points) }?.id
+            let behind = roomPolygons.first { contains(middle - unitNormal * reach, $0.points) }?.id
+
+            let outward: SIMD2<Double>
+            if ahead == nil {
+                outward = unitNormal
+            } else if behind == nil {
+                outward = -unitNormal
+            } else if let ahead, balconyAreaIDs.contains(ahead) {
+                outward = unitNormal
+            } else {
+                outward = -unitNormal
+            }
 
             let context = FloorplanOpeningBuilder.Wall(start: start,
                                                        axis: axis,
@@ -516,6 +536,38 @@ enum FloorplanExtruder {
     /// Quanto sale la velatura di contatto. Oltre questa quota la luce ci
     /// arriva, e scurire diventa sporcare.
     static let contactHeight: Double = 0.34
+
+    /// Le aree che sono **balconi**.
+    ///
+    /// Il disegno non ha un modo per dirlo: sa solo che certi muri sono
+    /// parapetti. Ma un balcone e' proprio l'area che se li ritrova attorno,
+    /// quindi la si riconosce da quelli invece di chiedere all'utente una cosa
+    /// che ha gia' disegnato.
+    static func balconyAreaIDs(in document: DrawingDocument) -> Set<UUID> {
+        let parapets = document.walls.filter { $0.kind == .balcony }
+        guard !parapets.isEmpty else { return [] }
+
+        var result: Set<UUID> = []
+        for area in document.roomAreas {
+            let polygon = area.effectivePoints.map { SIMD2(metres($0.x), metres($0.y)) }
+            guard polygon.count >= 3 else { continue }
+            let centre = polygon.reduce(SIMD2<Double>.zero, +) / Double(polygon.count)
+
+            let touched = parapets.contains { wall in
+                let mid = SIMD2(metres((wall.start.x + wall.end.x) / 2),
+                                metres((wall.start.y + wall.end.y) / 2))
+                // Il punto medio di un parapetto sta **sul bordo** dell'area: si
+                // sposta di un palmo verso il centro, o il risultato dipende da
+                // quanto precisamente e' stata disegnata.
+                let toCentre = centre - mid
+                let distance = simd_length(toCentre)
+                guard distance > 0.001 else { return true }
+                return contains(mid + toCentre / distance * 0.15, polygon)
+            }
+            if touched { result.insert(area.id) }
+        }
+        return result
+    }
 
     /// Le facce di un tratto di muro. Solo quelle **visibili** da un punto di
     /// vista alto: le due fiancate, la sommità e i due tappi. Il sotto non si

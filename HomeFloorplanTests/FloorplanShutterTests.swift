@@ -73,6 +73,44 @@ struct FloorplanShutterTests {
         #expect(y < 2.0)
     }
 
+    /// Il caso che ha fatto trovare il bug: una portafinestra su un balcone ha
+    /// una stanza **da tutte e due le parti**, perché il balcone è un'area come
+    /// le altre. Fermandosi al primo controllo la tapparella finiva dentro il
+    /// soggiorno.
+    @Test("Su una portafinestra verso il balcone la copertura sta sul balcone")
+    func coveringGoesToTheBalconySide() {
+        var document = DrawingDocument()
+        // Soggiorno da y = 2 a y = 6; balcone da y = 0 a y = 2, chiuso da parapetti.
+        let shared = WallSegment(start: CGPoint(x: 200, y: 200),
+                                 end: CGPoint(x: 700, y: 200), kind: .exterior)
+        document.walls = [
+            shared,
+            WallSegment(start: CGPoint(x: 700, y: 200), end: CGPoint(x: 700, y: 600), kind: .exterior),
+            WallSegment(start: CGPoint(x: 700, y: 600), end: CGPoint(x: 200, y: 600), kind: .exterior),
+            WallSegment(start: CGPoint(x: 200, y: 600), end: CGPoint(x: 200, y: 200), kind: .exterior),
+            WallSegment(start: CGPoint(x: 200, y: 200), end: CGPoint(x: 200, y: 0), kind: .balcony),
+            WallSegment(start: CGPoint(x: 200, y: 0), end: CGPoint(x: 700, y: 0), kind: .balcony),
+            WallSegment(start: CGPoint(x: 700, y: 0), end: CGPoint(x: 700, y: 200), kind: .balcony)
+        ]
+        let door = PlacedOpening(wallID: shared.id, t: 0.5, kind: .frenchDoor, width: 120)
+        document.openings = [door]
+        document.roomAreas = [
+            RoomArea(name: "Soggiorno", rect: CGRect(x: 200, y: 200, width: 500, height: 400)),
+            RoomArea(name: "Balcone", rect: CGRect(x: 200, y: 0, width: 500, height: 200))
+        ]
+
+        let balconies = FloorplanExtruder.balconyAreaIDs(in: document)
+        #expect(balconies.count == 1)
+
+        let faces = FloorplanExtruder.faces(from: document, closedShutters: [door.id: 1])
+        guard let shutter = faces.first(where: { $0.kind == .shutter })
+        else { Issue.record("nessuna copertura emessa"); return }
+
+        // Il muro condiviso sta a y = 2: il balcone è sotto, il soggiorno sopra.
+        let y = shutter.points.map(\.y).reduce(0, +) / Double(shutter.points.count)
+        #expect(y < 2.0)
+    }
+
     @Test("Ogni faccia dell'apertura sa da quale apertura viene")
     func facesCarryTheOpeningID() {
         let (all, openingID) = Self.faces(shutter: 1)
