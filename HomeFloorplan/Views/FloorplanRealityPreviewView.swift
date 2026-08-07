@@ -207,6 +207,9 @@ struct FloorplanRealityPreviewView: View {
     /// stanza: un UUID di un'altra stanza semplicemente non trova riscontro, e
     /// si ricade sul primo della lista.
     @State private var selectedLampUUID: UUID?
+    /// L'accessorio di cui si sta guardando la scheda. E' la **stessa** del 2D:
+    /// il 3D non gestisce l'accessorio, lo consegna.
+    @State private var detailAccessory: HMAccessory?
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @State private var isLayerTrayOpen = false
@@ -251,7 +254,10 @@ struct FloorplanRealityPreviewView: View {
                                          guard isLayerTrayOpen else { return }
                                          withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen = false }
                                      },
-                                     onLampTapped: toggleLamp)
+                                     onLampTapped: toggleLamp,
+                                     onAccessoryHeld: { uuid in
+                                         detailAccessory = homeKit.accessory(for: uuid)
+                                     })
                     .ignoresSafeArea()
             } else {
                 Color.black.ignoresSafeArea()
@@ -268,6 +274,9 @@ struct FloorplanRealityPreviewView: View {
             }
         }
         .statusBarHidden()
+        .sheet(item: $detailAccessory) { accessory in
+            AccessoryDetailView(accessory: accessory)
+        }
         .onAppear {
             exposure = Exposure.nearest(to: northBearingDegrees)
             ceilingHeight = current.ceilingHeight
@@ -1109,6 +1118,10 @@ private struct RealityFloorplanView: UIViewRepresentable {
     /// Toccare un bulbo lo accende o lo spegne: l'oggetto che mostra lo stato
     /// è anche quello che lo cambia, senza un segnaposto in mezzo.
     let onLampTapped: (UUID) -> Void
+    /// Tenendolo premuto si apre la sua scheda, quella del 2D. Il tocco breve
+    /// comanda, la pressione lunga approfondisce: e' la coppia che iOS usa
+    /// ovunque, e non aggiunge nessun comando visibile al modello.
+    let onAccessoryHeld: (UUID) -> Void
 
     func makeUIView(context: Context) -> ARView {
         let view = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
@@ -1130,6 +1143,15 @@ private struct RealityFloorplanView: UIViewRepresentable {
         tap.delegate = context.coordinator
         view.addGestureRecognizer(tap)
 
+        // Non serve `require(toFail:)`: un tocco tenuto oltre la sua durata
+        // massima **fallisce da solo**, quindi la pressione lunga non produce
+        // anche un'accensione. Incatenarli avrebbe invece ritardato di mezzo
+        // secondo ogni accensione, che e' il gesto piu' frequente.
+        let hold = UILongPressGestureRecognizer(target: context.coordinator,
+                                                action: #selector(Coordinator.held(_:)))
+        hold.delegate = context.coordinator
+        view.addGestureRecognizer(hold)
+
         context.coordinator.background = background
         context.coordinator.install(in: view)
         return view
@@ -1139,6 +1161,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
         context.coordinator.onRoomSelected = onRoomSelected
         context.coordinator.onSceneTouched = onSceneTouched
         context.coordinator.onLampTapped = onLampTapped
+        context.coordinator.onAccessoryHeld = onAccessoryHeld
         if context.coordinator.background != background {
             context.coordinator.background = background
             view.environment.background = .color(background)
@@ -1153,7 +1176,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(scene: scene, sun: sun, cameraResetID: cameraResetID,
                     onRoomSelected: onRoomSelected, onSceneTouched: onSceneTouched,
-                    onLampTapped: onLampTapped)
+                    onLampTapped: onLampTapped, onAccessoryHeld: onAccessoryHeld)
             .prepared(withLamps: lamps)
             .prepared(with: flags)
     }
@@ -1231,19 +1254,22 @@ private struct RealityFloorplanView: UIViewRepresentable {
         var onRoomSelected: (UUID?, String?) -> Void
         var onSceneTouched: () -> Void
         var onLampTapped: (UUID) -> Void
+        var onAccessoryHeld: (UUID) -> Void
 
         init(scene: FloorplanScene,
              sun: FloorplanSunLight,
              cameraResetID: UUID,
              onRoomSelected: @escaping (UUID?, String?) -> Void,
              onSceneTouched: @escaping () -> Void,
-             onLampTapped: @escaping (UUID) -> Void) {
+             onLampTapped: @escaping (UUID) -> Void,
+             onAccessoryHeld: @escaping (UUID) -> Void) {
             self.scene = scene
             self.sun = sun
             self.handledResetID = cameraResetID
             self.onRoomSelected = onRoomSelected
             self.onSceneTouched = onSceneTouched
             self.onLampTapped = onLampTapped
+            self.onAccessoryHeld = onAccessoryHeld
         }
 
         func prepared(with flags: [RoomFlag]) -> Coordinator {
@@ -1744,6 +1770,22 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 return
             }
             selectRoom(roomID)
+        }
+
+        /// Solo sugli accessori: tenere premuto un muro o un pavimento non
+        /// apre niente, perche' una stanza non ha una scheda da aprire.
+        @objc func held(_ recognizer: UILongPressGestureRecognizer) {
+            guard recognizer.state == .began,
+                  let view = recognizer.view as? ARView,
+                  let entity = view.entity(at: recognizer.location(in: view)),
+                  let accessoryID = accessoryID(from: entity)
+            else { return }
+
+            // Il ritorno aptico dice che la pressione e' stata presa **prima**
+            // che il foglio salga: senza, mezzo secondo col dito fermo sembra
+            // che non sia successo niente.
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onAccessoryHeld(accessoryID)
         }
 
         private func roomID(from entity: Entity) -> UUID? {
