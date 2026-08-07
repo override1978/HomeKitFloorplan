@@ -2202,8 +2202,11 @@ private struct RealityFloorplanView: UIViewRepresentable {
             // spente non hanno niente da proiettare.
             node.spot.shadow = lamp.isOn ? SpotLightComponent.Shadow() : nil
             node.spot.light.color = lamp.colour
-            node.spot.light.intensity = Float(600 + 2_400 * lamp.brightness)
-            node.spot.light.attenuationRadius = Float(3.0 + 2.4 * lamp.brightness)
+            // Raddoppiata quando i muri sono scesi sotto il bianco: la luce
+            // deve **vedersi riflessa** su muri e mobili, non solo esistere. Il
+            // margine per non bruciare ora c'e' — l'ha creato l'intonaco.
+            node.spot.light.intensity = Float(1_400 + 4_800 * lamp.brightness)
+            node.spot.light.attenuationRadius = Float(3.6 + 2.8 * lamp.brightness)
             node.spot.light.outerAngleInDegrees = lamp.direction == .around ? 160 : 72
             // Il faretto guarda dove punta la luce. `look` orienta l'entità, e
             // basta cambiare il bersaglio per rovesciare il fascio.

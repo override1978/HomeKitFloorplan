@@ -22,9 +22,12 @@ enum FloorplanMaterialCatalog {
             // trucco che fa funzionare il bagliore nel concorrente: la loro
             // scena e' in penombra. L'intonaco resta percettivamente bianco,
             // perche' il bianco lo decide il contesto, non il numero.
-            return opaque(UIColor(red: 0.78, green: 0.80, blue: 0.84, alpha: 1), roughness: 0.94)
+            // 0.78 era troppo: la casa virava al grigio dichiarato. Mezza via:
+            // abbastanza sotto il bianco da lasciare margine alla luce,
+            // abbastanza sopra il grigio da restare intonaco.
+            return opaque(UIColor(red: 0.81, green: 0.83, blue: 0.87, alpha: 1), roughness: 0.94)
         case .wallTop:
-            return opaque(UIColor(red: 0.84, green: 0.85, blue: 0.88, alpha: 1), roughness: 0.94)
+            return opaque(UIColor(red: 0.86, green: 0.87, blue: 0.90, alpha: 1), roughness: 0.94)
         case .glass:
             return transparent(UIColor(red: 0.72, green: 0.84, blue: 0.88, alpha: 1),
                                opacity: 0.34, roughness: 0.06)
@@ -134,13 +137,18 @@ enum FloorplanMaterialCatalog {
             // cio' che fa una lampada.
             return opaque(UIColor(red: 0.93, green: 0.92, blue: 0.90, alpha: 1), roughness: 0.4)
         }
-        // **Gialla, dichiaratamente.** Il bianco caldo «da incandescenza» era
-        // troppo educato: a due passi da pareti bianche non si distingueva. Il
-        // giallo e' il simbolo universale di «luce accesa» — lo stesso delle
-        // icone di casa — e contro la sfera bianca fredda della spenta si legge
-        // a qualsiasi zoom. Tinta fissa, NON quella dell'accessorio: il colore
-        // vero resta a fascio e pozza.
-        return UnlitMaterial(color: UIColor(red: 1.0, green: 0.83, blue: 0.36, alpha: 1))
+        // **Gialla, e con il volume.** La prima gialla era unlit: niente
+        // ombreggiatura per definizione, quindi un cerchio piatto accanto alla
+        // spenta che invece e' PBR e ha corpo. Emissiva: la sfera resta
+        // ombreggiata come un oggetto — stessa tridimensionalita' della
+        // spenta — ma emette giallo. Tinta fissa, NON quella dell'accessorio:
+        // il colore vero resta a fascio e pozza.
+        var lit = PhysicallyBasedMaterial()
+        lit.baseColor = .init(tint: UIColor(red: 1.0, green: 0.83, blue: 0.36, alpha: 1))
+        lit.emissiveColor = .init(color: UIColor(red: 1.0, green: 0.78, blue: 0.28, alpha: 1))
+        lit.roughness = 0.4
+        lit.metallic = 0.0
+        return lit
     }
 
     private static func lightened(_ colour: UIColor, by amount: CGFloat) -> UIColor {
