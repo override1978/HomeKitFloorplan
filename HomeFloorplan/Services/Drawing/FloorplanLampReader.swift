@@ -56,7 +56,11 @@ enum FloorplanLampReader {
         } else {
             // Bianco caldo: è quello che fa una lampadina da casa, e un bianco
             // puro in un modello già bianco non si distinguerebbe.
-            colour = UIColor(red: 1.0, green: 0.86, blue: 0.68, alpha: 1)
+            //
+            // ⚠️ Alzato da 0,86/0,68: quel beige, messo su una sfera piccola
+            // sopra una parete chiara, si leggeva **marrone** invece che caldo.
+            // Resta visibilmente caldo, ma dalla parte della luce.
+            colour = UIColor(red: 1.0, green: 0.92, blue: 0.80, alpha: 1)
         }
 
         return Lamp(isOn: isOn,

@@ -124,9 +124,25 @@ enum FloorplanMaterialCatalog {
             off.blending = .transparent(opacity: .init(floatLiteral: 0.9))
             return off
         }
-        var on = UnlitMaterial(color: colour)
-        on.blending = .transparent(opacity: .init(floatLiteral: 0.95))
-        return on
+        // ⚠️ **Opaca, non al 95%.** Quel cinque per cento faceva entrare il
+        // muro dietro, quindi il bulbo prendeva un po' del grigio della parete e
+        // il bianco caldo virava al marroncino. Un lume acceso non e' mai piu'
+        // scuro di cio' che ha dietro.
+        //
+        // E schiarito verso il bianco: una lampadina accesa e' quasi bianca al
+        // centro, con la propria tinta attorno — quella la porta il fascio, che
+        // resta al colore pieno. Cosi' il pallino legge «accesa» e il colore
+        // dell'accessorio si riconosce lo stesso.
+        return UnlitMaterial(color: lightened(colour, by: 0.30))
+    }
+
+    private static func lightened(_ colour: UIColor, by amount: CGFloat) -> UIColor {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        guard colour.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return colour }
+        return UIColor(red: red + (1 - red) * amount,
+                       green: green + (1 - green) * amount,
+                       blue: blue + (1 - blue) * amount,
+                       alpha: 1)
     }
 
     /// Il fascio di luce, dal bulbo verso il pavimento.
@@ -274,8 +290,47 @@ enum FloorplanMaterialCatalog {
     /// Della stessa tinta dello sfondo, appena più scuro: non deve leggersi come
     /// un pavimento in più, solo dare all'ombra una superficie e alla casa un
     /// appoggio invece del vuoto.
+    /// Il piano su cui la casa appoggia, con la casa **in mezzo a qualcosa**.
+    ///
+    /// Era la stessa tinta piatta dello sfondo: nessun orizzonte, nessuno
+    /// stacco, e il modello finiva sospeso in un campo uniforme — da qui
+    /// l'impressione che il 3D «spenga tutto». La tinta resta quella scelta in
+    /// 2D, perche' e' una scelta dell'utente: cambia che ora ha un centro
+    /// chiaro sotto la casa e si spegne verso il bordo, che e' esattamente cio'
+    /// che fa un orizzonte.
     static func groundMaterial(background: UIColor) -> any RealityKit.Material {
-        opaque(darkened(background, by: 0.12), roughness: 0.98)
+        guard let image = groundGradientImage(background),
+              let texture = try? TextureResource(image: image, withName: nil,
+                                                 options: .init(semantic: .color))
+        else { return opaque(darkened(background, by: 0.12), roughness: 0.98) }
+
+        var material = PhysicallyBasedMaterial()
+        material.baseColor = .init(tint: .white, texture: .init(texture, sampler: clampSampler))
+        material.roughness = 0.98
+        material.metallic = 0.0
+        return material
+    }
+
+    private static func groundGradientImage(_ background: UIColor) -> CGImage? {
+        let side = 256
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side),
+                                            format: format).image { context in
+            let colours = [lightened(background, by: 0.12).cgColor,
+                           darkened(background, by: 0.10).cgColor,
+                           darkened(background, by: 0.42).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                            colors: colours,
+                                            locations: [0, 0.28, 1]) else { return }
+            let centre = CGPoint(x: CGFloat(side) / 2, y: CGFloat(side) / 2)
+            context.cgContext.drawRadialGradient(gradient,
+                                                 startCenter: centre, startRadius: 0,
+                                                 endCenter: centre, endRadius: CGFloat(side) * 0.62,
+                                                 options: [.drawsAfterEndLocation])
+        }
+        return image.cgImage
     }
 
     private static func darkened(_ colour: UIColor, by amount: CGFloat) -> UIColor {
