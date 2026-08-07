@@ -186,6 +186,10 @@ struct FloorplanRealityPreviewView: View {
     /// Non contiene dati: e' un segnale. I valori restano in SwiftData, che e'
     /// l'unica fonte di verita'.
     @State private var settingsRevision = 0
+    /// Quale accessorio si sta configurando. Non serve azzerarlo cambiando
+    /// stanza: un UUID di un'altra stanza semplicemente non trova riscontro, e
+    /// si ricade sul primo della lista.
+    @State private var selectedLampUUID: UUID?
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @State private var isLayerTrayOpen = false
@@ -731,29 +735,45 @@ struct FloorplanRealityPreviewView: View {
     /// Per stanza e non per singola lampada perché la configurazione è
     /// un'attività a lotti — «i quattro faretti della cucina, tutti a
     /// soffitto» — e cercarli uno a uno nel modello sarebbe una penitenza.
+    ///
+    /// Ma il lotto si **sfoglia**, non si impila: una stanza con otto faretti
+    /// faceva un pannello alto quanto lo schermo, con il nome della stanza
+    /// spinto fuori dal bordo di sopra. Una configurazione alla volta tiene
+    /// l'altezza fissa qualunque sia il numero di accessori.
     @ViewBuilder
     private var roomSetupPanel: some View {
         let lamps = lampsInSelectedRoom
-        if !lamps.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
+        if let lamp = selectedLamp(among: lamps) {
+            VStack(alignment: .leading, spacing: 12) {
                 // Il recap della selezione: senza, il pannello compare e non si
                 // sa a cosa si riferisce.
                 HStack(spacing: 8) {
                     Image(systemName: "lightbulb.2.fill").font(.system(size: 13))
                     Text(selectedRoomName ?? "")
                         .font(.headline)
+                        .lineLimit(1)
                     Text(lamps.count == 1
                          ? String(localized: "lamp.count.one", defaultValue: "1 light")
                          : String(localized: "lamp.count.other", defaultValue: "\(lamps.count) lights"))
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.6))
+                        .layoutPriority(1)
                 }
                 .foregroundStyle(.white)
 
-                ForEach(lamps, id: \.accessoryUUID) { lamp in
-                    Divider().overlay(Color.white.opacity(0.18))
-                    lampSetupRow(lamp)
+                // Con una lampada sola la fila sarebbe una pastiglia da
+                // scegliere fra una: resta il nome, che serve comunque a sapere
+                // cosa si sta configurando.
+                if lamps.count > 1 {
+                    lampPicker(lamps, selected: lamp)
+                } else {
+                    Text(lamp.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
                 }
+
+                Divider().overlay(Color.white.opacity(0.18))
+                lampSetupRow(lamp)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -771,6 +791,49 @@ struct FloorplanRealityPreviewView: View {
         }
     }
 
+    /// Quello scelto, o il primo se la scelta è di un'altra stanza.
+    private func selectedLamp(among lamps: [FloorplanLamp]) -> FloorplanLamp? {
+        guard !lamps.isEmpty else { return nil }
+        if let selectedLampUUID,
+           let match = lamps.first(where: { $0.accessoryUUID == selectedLampUUID }) {
+            return match
+        }
+        return lamps.first
+    }
+
+    /// La fila degli accessori della stanza.
+    ///
+    /// I margini negativi non sono un trucco: annullano il bordo del pannello
+    /// **solo per lo scorrimento**, e il rientro torna dentro l'`HStack`. Così
+    /// le pastiglie passano sotto gli angoli arrotondati invece di fermarsi a
+    /// mezzo centimetro dal bordo, che è il segnale che dice «di qua ce n'è
+    /// ancora».
+    @ViewBuilder
+    private func lampPicker(_ lamps: [FloorplanLamp], selected: FloorplanLamp) -> some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(lamps, id: \.accessoryUUID) { lamp in
+                    let isSelected = lamp.accessoryUUID == selected.accessoryUUID
+                    Button {
+                        selectedLampUUID = lamp.accessoryUUID
+                    } label: {
+                        Text(lamp.name)
+                            .font(.caption.weight(isSelected ? .semibold : .regular))
+                            .lineLimit(1)
+                            .foregroundStyle(.white.opacity(isSelected ? 1 : 0.62))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Color.white.opacity(isSelected ? 0.22 : 0.07), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .scrollIndicators(.hidden)
+        .padding(.horizontal, -16)
+    }
+
     /// Ogni comando dice **cosa fa**, non solo che c'è.
     ///
     /// Tre icone senza didascalia sono un indovinello: una freccia in giù può
@@ -780,10 +843,6 @@ struct FloorplanRealityPreviewView: View {
     @ViewBuilder
     private func lampSetupRow(_ lamp: FloorplanLamp) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(lamp.name)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-
             HStack(spacing: 8) {
                 Text(String(localized: "lamp.direction.title", defaultValue: "Points"))
                     .font(.caption)
