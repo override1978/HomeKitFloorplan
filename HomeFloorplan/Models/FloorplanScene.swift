@@ -46,6 +46,9 @@ struct FloorplanScene {
         var openingID: UUID? = nil
         var wallKind: WallKind? = nil
         var flipSide: Bool = false
+        /// Tinta del pezzo, solo per gli arredi: l'estrusore la assegnava gia',
+        /// ma la pipeline la perdeva qui e tutto usciva dello stesso beige.
+        var tint: CGColor? = nil
     }
 
     var faces: [MeshFace]

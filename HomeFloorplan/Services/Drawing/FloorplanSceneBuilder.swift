@@ -30,7 +30,8 @@ enum FloorplanSceneBuilder {
                 openingKind: face.openingKind,
                 openingID: face.openingID,
                 wallKind: face.wallKind,
-                flipSide: face.flipSide
+                flipSide: face.flipSide,
+                tint: face.tint
             )
         }
 

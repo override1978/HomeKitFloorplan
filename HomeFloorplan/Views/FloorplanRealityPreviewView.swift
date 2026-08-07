@@ -2819,6 +2819,24 @@ private enum RealityFloorplanRenderer {
                 continue
             }
 
+            // Gli arredi si raggruppano **per tinta**: una mesh per colore,
+            // non una per mobile — le draw call restano una manciata e ogni
+            // pezzo porta finalmente il proprio materiale.
+            if role == .furniture {
+                let groups = Dictionary(grouping: faces) { face in
+                    face.tint.map { UIColor(cgColor: $0).description } ?? ""
+                }
+                for (_, group) in groups {
+                    guard let mesh = mesh(for: group, role: role, center: center) else { continue }
+                    let tint = group.first?.tint.map { UIColor(cgColor: $0) }
+                    root.addChild(ModelEntity(
+                        mesh: mesh,
+                        materials: [FloorplanMaterialCatalog.furnitureMaterial(tint: tint)]
+                    ))
+                }
+                continue
+            }
+
             // Le tapparelle sono **oggetti**, non superfici: ognuna deve
             // potersi toccare, quindi non finisce nella mesh unita del proprio
             // ruolo. Portano il nome del vano che coprono, perche' la geometria

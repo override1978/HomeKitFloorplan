@@ -58,9 +58,7 @@ enum FloorplanMaterialCatalog {
         case .awning:
             return awningMaterial()
         case .furniture:
-            // Tinta unica per la prova: prima si guarda se sotto luce vera i
-            // volumi semplici reggono, poi eventualmente si differenzia.
-            return opaque(UIColor(red: 0.80, green: 0.76, blue: 0.71, alpha: 1), roughness: 0.72)
+            return furnitureMaterial(tint: nil)
         case .sunPatch:
             // **Unlit**, non PBR: una macchia di luce non è una superficie, e
             // ombreggiarla vorrebbe dire scurire la luce stessa.
@@ -497,6 +495,12 @@ enum FloorplanMaterialCatalog {
         var material = UnlitMaterial(color: UIColor(red: 1.0, green: 0.87, blue: 0.62, alpha: 1))
         material.blending = .transparent(opacity: .init(floatLiteral: 0.72))
         return material
+    }
+
+    /// Un pezzo d'arredo: la tinta la decide l'estrusore membro per membro —
+    /// gambe scure, piani in legno, imbottiti col colore dell'oggetto.
+    static func furnitureMaterial(tint: UIColor?) -> any RealityKit.Material {
+        opaque(tint ?? UIColor(red: 0.80, green: 0.76, blue: 0.71, alpha: 1), roughness: 0.72)
     }
 
     /// Il corpo di un apparecchio a muro — split, radiatore, centralina.
