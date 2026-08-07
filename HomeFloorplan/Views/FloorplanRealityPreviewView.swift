@@ -173,10 +173,10 @@ struct FloorplanRealityPreviewView: View {
                     Label(String(localized: "room.exit", defaultValue: "Exit room"),
                           systemImage: "arrow.uturn.backward")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .padding(.horizontal, 18)
                         .frame(minHeight: 44)
-                        .background(.black.opacity(0.58), in: Capsule())
+                        .background(.regularMaterial, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .padding(.bottom, 104)
@@ -864,10 +864,10 @@ struct FloorplanRealityPreviewView: View {
             if let caption = lampCaption {
                 Text(caption)
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
-                    .background(.black.opacity(0.45), in: Capsule())
+                    .background(.regularMaterial, in: Capsule())
                     .transition(.scale.combined(with: .opacity))
             }
         }
@@ -1052,7 +1052,8 @@ struct FloorplanRealityPreviewView: View {
     private var summaryRowContent: some View {
         HStack(spacing: 13) {
             summaryItem(label: String(localized: "filter.all", defaultValue: "Tutto"),
-                        icon: "leaf.fill", tint: .white, value: nil,
+                        icon: "leaf.fill",
+                        tint: sensorFilter == nil ? .white : .primary, value: nil,
                         isSelected: sensorFilter == nil) { sensorFilter = nil }
             ForEach(envVM.availableSensorTypes) { type in
                 summaryItem(label: type.displayName,
@@ -1609,7 +1610,7 @@ struct FloorplanRealityPreviewView: View {
             .foregroundStyle(tint)
             .padding(.horizontal, 14)
             .frame(minHeight: 36)
-            .background(.black.opacity(0.34), in: Capsule())
+            .background(.regularMaterial, in: Capsule())
             .overlay(Capsule().strokeBorder(tint.opacity(0.45), lineWidth: 1.5))
             .transition(.opacity)
         } else {
@@ -1617,10 +1618,10 @@ struct FloorplanRealityPreviewView: View {
             // che sembra un guasto.
             Text(String(localized: "security.noSystem", defaultValue: "No alarm system"))
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(.secondary)
                 .padding(.horizontal, 14)
                 .frame(minHeight: 36)
-                .background(.black.opacity(0.22), in: Capsule())
+                .background(.regularMaterial, in: Capsule())
                 .transition(.opacity)
         }
     }
