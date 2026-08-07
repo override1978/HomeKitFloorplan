@@ -1183,6 +1183,16 @@ struct FloorplanRealityPreviewView: View {
                     selectedRoomID = nil
                     selectedRoomName = nil
                     withAnimation(.easeOut(duration: 0.22)) { isInsideRoom = true }
+                    // Il gesto per guardarsi intorno non si indovina: lo si
+                    // dice, una volta, e la scritta se ne va da sola.
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        lampCaption = String(localized: "room.enter.hint",
+                                             defaultValue: "Drag to look around")
+                    }
+                    Task {
+                        try? await Task.sleep(for: .seconds(2.8))
+                        withAnimation(.easeOut(duration: 0.3)) { lampCaption = nil }
+                    }
                 }
 
                 roomAction(String(localized: "room.action.details", defaultValue: "Details"),

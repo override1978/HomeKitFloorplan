@@ -1182,21 +1182,27 @@ struct RealityFloorplanView: UIViewRepresentable {
             }
             let centre = scene.bounds.center
             let roomCentre = (minP + maxP) / 2 - centre
-            // **Sulla soglia, non al centro**: al centro meta' stanza sta alle
-            // spalle. Gli occhi arretrano lungo lo sguardo di tre quarti della
-            // semi-diagonale, cosi' la stanza sta tutta davanti — e' il punto
-            // in cui ci si ferma entrando in una stanza vera.
-            let horizontalHalf = simd_length(SIMD2(maxP.x - minP.x, maxP.z - minP.z)) / 2
-            let setback = max(0.4, horizontalHalf * 0.75)
-            let look = SIMD2(sin(Float(azimuth)), cos(Float(azimuth)))
-            focus = SIMD3(roomCentre.x - look.x * setback,
-                          roomCentre.y + 1.5,
-                          roomCentre.z - look.y * setback)
+            // **Dal fondo del lato lungo, guardando lungo la stanza**: e' il
+            // punto da cui una stanza si abbraccia tutta, e sta per costruzione
+            // DENTRO la stanza. L'arretramento lungo l'azimut corrente poteva
+            // finire oltre un muro o dentro un armadio — «troppo spostati di
+            // posizione», per l'appunto.
+            let sizeX = maxP.x - minP.x
+            let sizeZ = maxP.z - minP.z
+            var eye = SIMD3(roomCentre.x, roomCentre.y + 1.5, roomCentre.z)
+            if sizeX >= sizeZ {
+                eye.x = (minP.x - centre.x) + min(0.5, sizeX * 0.2)
+                azimuth = .pi / 2   // guarda verso +x, il fondo della stanza
+            } else {
+                eye.z = (minP.z - centre.z) + min(0.5, sizeZ * 0.2)
+                azimuth = 0         // guarda verso +z
+            }
+            focus = eye
             firstPerson = true
             // Leggermente in giu' e **grandangolo**: a 38 gradi — il tele
             // giusto per l'orbita — una stanza vera e' claustrofobica. A 68 si
             // sta in una stanza; oltre i 70 diventa un fisheye.
-            elevation = -0.12
+            elevation = -0.08
             camera.camera.fieldOfViewInDegrees = 68
             updateCamera()
         }
@@ -1275,8 +1281,14 @@ struct RealityFloorplanView: UIViewRepresentable {
                 let origin = gestureStart ?? (azimuth, elevation)
                 let translation = recognizer.translation(in: recognizer.view)
                 azimuth = origin.azimuth - Double(translation.x) * 0.006
-                elevation = min(max(origin.elevation + Double(translation.y) * 0.004,
-                                    .pi / 12), .pi / 2.4)
+                // ⚠️ Il morsetto dell'orbita — da 15 a 75 gradi in su — in prima
+                // persona era una trappola: al primo trascinamento lo sguardo
+                // scattava al soffitto e non poteva piu' scendere. Dentro si
+                // guarda anche in basso, come farebbe chiunque in una stanza.
+                let raised = origin.elevation + Double(translation.y) * 0.004
+                elevation = firstPerson
+                    ? min(max(raised, -0.65), 0.9)
+                    : min(max(raised, .pi / 12), .pi / 2.4)
                 updateCamera()
             case .ended, .cancelled, .failed:
                 gestureStart = nil
