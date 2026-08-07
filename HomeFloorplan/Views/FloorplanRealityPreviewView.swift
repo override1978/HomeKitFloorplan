@@ -785,10 +785,10 @@ struct FloorplanRealityPreviewView: View {
                         Text(title).font(.headline).lineLimit(1)
                         Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .padding(.horizontal, 16)
                     .frame(minHeight: 38)
-                    .background(.black.opacity(0.34), in: Capsule())
+                    .background(.regularMaterial, in: Capsule())
                 }
 
                 Spacer(minLength: 12)
@@ -852,9 +852,9 @@ struct FloorplanRealityPreviewView: View {
     private func chrome(_ symbol: String) -> some View {
         Image(systemName: symbol)
             .font(.headline)
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .frame(width: 44, height: 44)
-            .background(.black.opacity(0.35), in: Circle())
+            .background(.regularMaterial, in: Circle())
     }
 
     private var controls: some View {
@@ -1009,10 +1009,14 @@ struct FloorplanRealityPreviewView: View {
                             Text(value.label).font(.subheadline.weight(.semibold))
                         }
                     }
-                    .foregroundStyle(.white.opacity(isSelected ? 1 : 0.55))
+                    // Sul colore dello strato il testo resta bianco; sul
+                    // materiale i colori sono semantici.
+                    .foregroundStyle(isSelected
+                                     ? (value.accent != nil ? Color.white : Color.primary)
+                                     : Color.primary.opacity(0.55))
                     .padding(.horizontal, isSelected ? 14 : 13)
                     .frame(minWidth: isSelected ? 0 : 44, minHeight: 38)
-                    .background(isSelected ? (value.accent ?? Color.white.opacity(0.20)) : .clear,
+                    .background(isSelected ? (value.accent ?? Color.primary.opacity(0.14)) : .clear,
                                 in: Capsule())
                     // ⚠️ Senza questa riga i segmenti spenti si toccavano solo
                     // sull'icona: lo sfondo e' trasparente, e SwiftUI non
@@ -1026,7 +1030,7 @@ struct FloorplanRealityPreviewView: View {
             }
         }
         .padding(3)
-        .background(.black.opacity(0.34), in: Capsule())
+        .background(.regularMaterial, in: Capsule())
     }
 
     /// I tipi sono un livello **sotto** la modalità, e devono sembrarlo: gruppo
@@ -1391,7 +1395,7 @@ struct FloorplanRealityPreviewView: View {
                             .foregroundStyle(.primary.opacity(isSelected ? 1 : 0.62))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
-                            .background(Color.white.opacity(isSelected ? 0.22 : 0.07), in: Capsule())
+                            .background(Color.primary.opacity(isSelected ? 0.16 : 0.06), in: Capsule())
                     }
                     .buttonStyle(.plain)
                 }
@@ -1642,7 +1646,7 @@ struct FloorplanRealityPreviewView: View {
                     .foregroundStyle(tint)
                 Text(value ?? label)
                     .font(.caption.weight(isSelected ? .semibold : .regular))
-                    .foregroundStyle(.white.opacity(isSelected ? 1 : 0.88))
+                    .foregroundStyle(isSelected ? Color.white : Color.primary)
                     .lineLimit(1)
             }
             .padding(.horizontal, 12)
@@ -1651,8 +1655,8 @@ struct FloorplanRealityPreviewView: View {
             // stesso verde che Ambiente ha nella pillola delle modalita': una
             // sola lingua per dire «attivo».
             .background(isSelected
-                        ? (PreviewMode.environment.accent ?? Color.white.opacity(0.25))
-                        : Color.black.opacity(0.34),
+                        ? AnyShapeStyle(PreviewMode.environment.accent ?? Color.primary.opacity(0.2))
+                        : AnyShapeStyle(.regularMaterial),
                         in: Capsule())
             .contentShape(Capsule())
         }
