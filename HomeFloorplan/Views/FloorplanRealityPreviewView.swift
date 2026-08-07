@@ -1014,9 +1014,11 @@ struct FloorplanRealityPreviewView: View {
                     }
                     // Sul colore dello strato il testo resta bianco; sul
                     // materiale i colori sono semantici.
+                    // 0.55 su vetro chiaro leggeva «disabilitato», non
+                    // «non selezionato»: la gerarchia resta, il grigiore no.
                     .foregroundStyle(isSelected
                                      ? (value.accent != nil ? Color.white : Color.primary)
-                                     : Color.primary.opacity(0.55))
+                                     : Color.primary.opacity(0.78))
                     .padding(.horizontal, isSelected ? 14 : 13)
                     .frame(minWidth: isSelected ? 0 : 44, minHeight: 38)
                     .background(isSelected ? (value.accent ?? Color.primary.opacity(0.14)) : .clear,
