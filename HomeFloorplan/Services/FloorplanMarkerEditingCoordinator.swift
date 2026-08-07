@@ -102,6 +102,29 @@ struct FloorplanMarkerEditingCoordinator {
         )
     }
 
+    /// Ricalcola il legame con l'apertura per **tutti** i contatti.
+    ///
+    /// Va chiamata quando il disegno cambia: il marker resta dov'era ma i vani
+    /// si sono spostati, o sono spariti, o ne sono nati di nuovi. Senza questo
+    /// il legame resta quello di prima e punta a un'apertura che magari non
+    /// esiste più — e siccome non si vede da nessuna parte, il difetto sarebbe
+    /// silenzioso.
+    func refreshMarkerOpeningLinks() {
+        guard floorplan.drawingDocument != nil else { return }
+
+        var didUpdate = false
+        for marker in floorplan.accessories {
+            guard let accessory = homeKit.accessory(for: marker.homeKitAccessoryUUID),
+                  Self.watchesOpenings(accessory)
+            else { continue }
+            let resolved = openingID(under: marker.position)
+            guard marker.linkedOpeningID != resolved else { continue }
+            marker.linkedOpeningID = resolved
+            didUpdate = true
+        }
+        if didUpdate { saveAndMarkForSync() }
+    }
+
     /// Riempie i legami mancanti sui marker già posati, così chi ha una
     /// planimetria da prima non deve rifare niente.
     func backfillMarkerOpeningLinksIfNeeded() {

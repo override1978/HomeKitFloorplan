@@ -41,6 +41,11 @@ struct FloorplanDrawingUpdateCoordinator {
             floorplan.linkedRooms = update.rooms
         }
 
+        // Il disegno e' cambiato: i vani si sono spostati, o spariti, o ne sono
+        // nati di nuovi. Il legame sensore↔apertura va rifatto qui, o resta
+        // quello di prima e punta a un'apertura che magari non esiste piu'.
+        markerEditingCoordinator.refreshMarkerOpeningLinks()
+
         floorplan.updatedAt = .now
         try? modelContext.save()
         cloudKitSync.markFloorplanNeedsSync(floorplan.id)
