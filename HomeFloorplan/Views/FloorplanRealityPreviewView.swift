@@ -151,6 +151,7 @@ struct FloorplanRealityPreviewView: View {
     private var background: UIColor { current.background }
     private func onNorthBearingChange(_ bearing: Double) { current.applyNorthBearing(bearing) }
     private func applyLampSettings(_ uuid: UUID, _ height: Double, _ direction: LampDirection) {
+        lampOverrides[uuid] = (height, direction)
         current.applyLampSettings(uuid, height, direction)
         rebuildScene()
     }
@@ -163,6 +164,13 @@ struct FloorplanRealityPreviewView: View {
     @State private var cameraResetID = UUID()
     @State private var selectedRoomName: String?
     @State private var selectedRoomID: UUID?
+    /// Quota e direzione appena cambiate.
+    ///
+    /// ⚠️ `markers` è una **fotografia** scattata quando la vista si è aperta:
+    /// scrivere su SwiftData non la aggiorna, quindi senza questo il cursore
+    /// tornava indietro e sembrava che il pannello non funzionasse. Qui vince
+    /// la modifica; la fotografia si riallinea alla prossima apertura.
+    @State private var lampOverrides: [UUID: (height: Double, direction: LampDirection)] = [:]
     @State private var mode: PreviewMode = .off
     @State private var didLoadEnvironment = false
     @State private var isLayerTrayOpen = false
@@ -465,15 +473,6 @@ struct FloorplanRealityPreviewView: View {
                     .transition(.scale.combined(with: .opacity))
             }
 
-            #if DEBUG
-            Text(lampDiagnostics)
-                .font(.system(size: 10).monospaced())
-                .foregroundStyle(.white.opacity(0.75))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(.black.opacity(0.4), in: Capsule())
-            #endif
-
             HStack(spacing: 18) {
                 Button {
                     ceilingHeight = max(2.0, ceilingHeight - 0.1)
@@ -654,11 +653,12 @@ struct FloorplanRealityPreviewView: View {
                   let lamp = FloorplanLampReader.lamp(for: accessory, homeKit: homeKit)
             else { return nil }
 
-            let direction = marker.direction ?? .down
+            let override = lampOverrides[marker.uuid]
+            let direction = override?.direction ?? marker.direction ?? .down
             return FloorplanLamp(accessoryUUID: marker.uuid,
                                  name: accessory.name,
                                  isOn: lamp.isOn,
-                                 height: marker.mountHeight
+                                 height: override?.height ?? marker.mountHeight
                                      ?? direction.defaultHeight(ceiling: ceilingHeight),
                                  direction: direction,
                                  position: transform.metres(from: marker.position),
@@ -770,21 +770,6 @@ struct FloorplanRealityPreviewView: View {
             withAnimation(.easeOut(duration: 0.3)) { lampCaption = nil }
         }
     }
-
-    #if DEBUG
-    /// Dove si perdono le lampade. Ogni anello puo' fallire in silenzio e da
-    /// fuori sembrano tutti lo stesso sintomo: nessun bulbo.
-    private var lampDiagnostics: String {
-        let resolved = markers.compactMap { homeKit.accessory(for: $0.uuid) }
-        let lights = resolved.filter { FloorplanLampReader.isLight($0) }
-        let lamps = litLights
-        let transformOK = FloorplanOpeningMatcher.transform(document: document,
-                                                            exportRotation: exportRotation) != nil
-        return "marker \(markers.count) · risolti \(resolved.count) · luci \(lights.count)"
-            + " · bulbi \(lamps.count) · accesi \(lamps.filter(\.isOn).count)"
-            + " · calib \(transformOK ? "ok" : "NO") · hk \(homeKit.isReady ? "ok" : "NO")"
-    }
-    #endif
 
     /// La centralina della casa, se ce n'è una.
     ///
