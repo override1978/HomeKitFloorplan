@@ -356,6 +356,7 @@ struct FloorplanRealityPreviewView: View {
             // notifiche. La vista si apre dalla lista, che non osserva niente.
             observeCurrentFloorplan()
             rebuildScene()
+            presentSetupIfFirstVisit()
         }
         // Lo stato non è più una fotografia: se apri una finestra mentre stai
         // guardando, l'anta si muove. `characteristicValues` è osservabile, e
@@ -376,6 +377,7 @@ struct FloorplanRealityPreviewView: View {
             // casa sbagliata.
             ceilingHeight = current.ceilingHeight
             rebuildScene()
+            presentSetupIfFirstVisit()
         }
         .onDisappear { homeKit.stopObserving(accessoryUUIDs: observedUUIDs) }
         .task {
