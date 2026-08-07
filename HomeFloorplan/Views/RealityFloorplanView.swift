@@ -475,6 +475,10 @@ struct RealityFloorplanView: UIViewRepresentable {
                     with: FromToByAnimation<Transform>(from: small, to: large,
                                                        duration: 1.9,
                                                        timing: .easeInOut,
+                                                       // ⚠️ Senza il bersaglio esplicito
+                                                       // l'animazione non si aggancia e
+                                                       // il disco resta immobile.
+                                                       bindTarget: .transform,
                                                        repeatMode: .autoReverse)
                 ) {
                     disc.playAnimation(animation)
