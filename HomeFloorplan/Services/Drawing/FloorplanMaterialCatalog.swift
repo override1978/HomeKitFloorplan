@@ -13,11 +13,18 @@ enum FloorplanMaterialCatalog {
         case .wall:
             // A 0.90/0.92/0.95 il bianco era a un soffio dalla saturazione:
             // appena la luce saliva non restava margine perché l'ombreggiatura
-            // si vedesse. Scesi di sei punti, l'intonaco resta chiaro ma le
-            // facce tornano a distinguersi fra loro.
-            return opaque(UIColor(red: 0.84, green: 0.86, blue: 0.90, alpha: 1), roughness: 0.94)
+            // si vedesse. Scesi di sei punti, l'intonaco restava chiaro ma le
+            // facce tornavano a distinguersi.
+            //
+            // Poi giu' di altri sei, e stavolta per la luce: una lampada accesa
+            // «brilla» solo se ha qualcosa di piu' scuro attorno — su un muro
+            // quasi bianco la sua pozza non ha margine per emergere. E' il
+            // trucco che fa funzionare il bagliore nel concorrente: la loro
+            // scena e' in penombra. L'intonaco resta percettivamente bianco,
+            // perche' il bianco lo decide il contesto, non il numero.
+            return opaque(UIColor(red: 0.78, green: 0.80, blue: 0.84, alpha: 1), roughness: 0.94)
         case .wallTop:
-            return opaque(UIColor(red: 0.89, green: 0.90, blue: 0.93, alpha: 1), roughness: 0.94)
+            return opaque(UIColor(red: 0.84, green: 0.85, blue: 0.88, alpha: 1), roughness: 0.94)
         case .glass:
             return transparent(UIColor(red: 0.72, green: 0.84, blue: 0.88, alpha: 1),
                                opacity: 0.34, roughness: 0.06)
