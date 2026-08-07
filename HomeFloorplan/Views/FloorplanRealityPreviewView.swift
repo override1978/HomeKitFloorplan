@@ -1770,6 +1770,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 let light = SpotLight()
                 light.light.innerAngleInDegrees = 32
                 light.light.outerAngleInDegrees = 72
+                light.shadow = SpotLightComponent.Shadow()
                 light.position = place
                 light.look(at: SIMD3(place.x, floorY - centre.y, place.z),
                            from: place,
@@ -1781,7 +1782,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 let beamHeight = place.y - (floorY - centre.y) - 0.02
                 let aura = ModelEntity(
                     mesh: RealityFloorplanRenderer.lampBeamMesh(height: beamHeight,
-                                                                outerAngleDegrees: 72)
+                                                                outerAngleDegrees: RealityFloorplanRenderer.beamAngle)
                         ?? .generateSphere(radius: 0.2),
                     materials: [FloorplanMaterialCatalog.lampBeamMaterial(colour: lamp.colour,
                                                                           brightness: 1)
@@ -1823,6 +1824,12 @@ private struct RealityFloorplanView: UIViewRepresentable {
             ]
 
             node.spot.isEnabled = lamp.isOn
+            // ⚠️ **Senza ombra la luce attraversa i muri.** Un faretto vicino a
+            // una parete esterna la illuminava anche **da fuori**, come se il
+            // muro non ci fosse: di sera la casa perdeva i suoi contorni. Solo
+            // sulle lampade accese, perche' ognuna costa una mappa d'ombra e le
+            // spente non hanno niente da proiettare.
+            node.spot.shadow = lamp.isOn ? SpotLightComponent.Shadow() : nil
             node.spot.light.color = lamp.colour
             node.spot.light.intensity = Float(600 + 2_400 * lamp.brightness)
             node.spot.light.attenuationRadius = Float(3.0 + 2.4 * lamp.brightness)
@@ -1843,7 +1850,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
                     ? Float(0.9)
                     : max(0.2, place.y - (floorY - centre.y) - 0.02)
                 if let mesh = RealityFloorplanRenderer.lampBeamMesh(height: height,
-                                                                    outerAngleDegrees: 72) {
+                                                                    outerAngleDegrees: RealityFloorplanRenderer.beamAngle) {
                     node.halo.model?.mesh = mesh
                 }
                 node.halo.orientation = lamp.direction == .up
@@ -2347,6 +2354,15 @@ private enum RealityFloorplanRenderer {
     /// **v** va da 0 all'apice a 1 alla base, così la sfumatura verticale lo
     /// spegne scendendo. Emesso da entrambi i lati, o entrandoci dentro con la
     /// telecamera sparirebbe.
+    /// Il cono **visibile** e' piu' stretto di quello che illumina.
+    ///
+    /// A 72 gradi la base larga come tutta l'apertura del faretto usciva dal
+    /// muro quando la lampada era a mezzo metro da una parete, e quel pezzo di
+    /// cono si vedeva **da fuori casa**. La luce resta larga; il velo che la
+    /// racconta si stringe, perche' il suo mestiere e' dire da che parte va,
+    /// non misurare l'apertura.
+    static let beamAngle: Float = 44
+
     static func lampBeamMesh(height: Float, outerAngleDegrees: Float) -> MeshResource? {
         guard height > 0.1 else { return nil }
         let segments = 28
