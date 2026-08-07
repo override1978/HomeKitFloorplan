@@ -2166,11 +2166,15 @@ private struct RealityFloorplanView: UIViewRepresentable {
                                                                           brightness: 1)
                                 ?? UnlitMaterial(color: .clear)]
                 )
-                // ⚠️ Il cono parte **sotto** il bulbo. La sfumatura del fascio e'
-                // piena all'apice, quindi con l'apice alla stessa quota la parte
-                // piu' opaca copriva la sfera e la tingeva: il pallino prendeva
-                // il colore del fascio invece del proprio.
-                aura.position = SIMD3(place.x, place.y - 0.17, place.z)
+                // ⚠️ L'apice del cono sta **sul bulbo**, per tutte le direzioni.
+                // Il distacco di 17 cm era il rimedio a un bulbo traslucido che
+                // il fascio tingeva — ma il bulbo ora e' bianco opaco, e il velo
+                // caldo davanti al bianco lo scalda invece di sporcarlo. Il
+                // distacco invece faceva danni suoi: con «in alto» il cono
+                // capovolto avvolgeva il bulbo e le tre direzioni sembravano
+                // uguali; con «in basso» restava un pallino che fluttua staccato
+                // dal proprio fascio.
+                aura.position = place
                 lampRoot.addChild(aura)
 
                 var node = LampNode(bulb: bulb, corona: corona, spot: light, halo: aura, pool: nil)
@@ -2203,7 +2207,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
             node.bulb.position = place
             node.corona.position = place
             node.spot.position = place
-            node.halo.position = SIMD3(place.x, place.y - 0.17, place.z)
+            node.halo.position = place
 
             node.bulb.model?.materials = [
                 FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour, isOn: lamp.isOn)
