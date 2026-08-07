@@ -1001,10 +1001,15 @@ struct FloorplanRealityPreviewView: View {
                         }
                     }
                     .foregroundStyle(.white.opacity(isSelected ? 1 : 0.55))
-                    .padding(.horizontal, isSelected ? 14 : 11)
-                    .frame(minHeight: 34)
+                    .padding(.horizontal, isSelected ? 14 : 13)
+                    .frame(minWidth: isSelected ? 0 : 44, minHeight: 38)
                     .background(isSelected ? (value.accent ?? Color.white.opacity(0.20)) : .clear,
                                 in: Capsule())
+                    // ⚠️ Senza questa riga i segmenti spenti si toccavano solo
+                    // sull'icona: lo sfondo e' trasparente, e SwiftUI non
+                    // considera tappabili i pixel trasparenti. La forma di
+                    // hit-test va dichiarata, non dedotta dal colore.
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(value.label))
