@@ -150,6 +150,12 @@ struct FloorplanRealityPreviewView: View {
     @State private var now = Date()
     @State private var exposure: Exposure = .north
     @State private var lampCaption: String?
+    #if DEBUG
+    /// Anteprima notte, **solo in debug**: il sole resta reale in produzione,
+    /// ma di giorno non c'è modo di verificare le luci — e una funzione che si
+    /// può provare solo dopo cena non si sviluppa.
+    @State private var forcesNight = false
+    #endif
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -299,7 +305,14 @@ struct FloorplanRealityPreviewView: View {
     /// perché sulla tela la y cresce verso il basso.
     private var sun: FloorplanSunLight {
         let coordinate = SolarClock.homeCoordinate()
-        let solar = SolarPosition.position(at: now,
+        #if DEBUG
+        let instant = forcesNight
+            ? Calendar.current.startOfDay(for: now).addingTimeInterval(23 * 3_600)
+            : now
+        #else
+        let instant = now
+        #endif
+        let solar = SolarPosition.position(at: instant,
                                            latitude: coordinate.latitude,
                                            longitude: coordinate.longitude)
 
@@ -375,6 +388,14 @@ struct FloorplanRealityPreviewView: View {
                 }
 
                 Spacer(minLength: 12)
+
+                #if DEBUG
+                Button {
+                    forcesNight.toggle()
+                } label: {
+                    chrome(forcesNight ? "moon.fill" : "sun.max")
+                }
+                #endif
 
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) { cameraResetID = UUID() }
