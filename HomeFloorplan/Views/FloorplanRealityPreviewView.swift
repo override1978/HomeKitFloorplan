@@ -41,6 +41,8 @@ struct Preview3DRequest: Identifiable {
 
 /// Una lampada accesa, pronta a illuminare.
 struct FloorplanLamp: Equatable {
+    /// L'accessorio da comandare quando si tocca il bulbo.
+    var accessoryUUID: UUID
     /// In metri, nello spazio del disegno.
     var position: SIMD2<Double>
     /// 0…1, dalla luminosità impostata sull'accessorio.
@@ -159,7 +161,8 @@ struct FloorplanRealityPreviewView: View {
                                      onSceneTouched: {
                                          guard isLayerTrayOpen else { return }
                                          withAnimation(.easeOut(duration: 0.22)) { isLayerTrayOpen = false }
-                                     })
+                                     },
+                                     onLampTapped: toggleLamp)
                     .ignoresSafeArea()
             } else {
                 Color.black.ignoresSafeArea()
@@ -583,10 +586,23 @@ struct FloorplanRealityPreviewView: View {
                   let lamp = FloorplanLampReader.lamp(for: accessory, homeKit: homeKit)
             else { return nil }
 
-            return FloorplanLamp(position: transform.metres(from: marker.position),
+            return FloorplanLamp(accessoryUUID: marker.uuid,
+                                 position: transform.metres(from: marker.position),
                                  brightness: lamp.brightness,
                                  colour: lamp.colour)
         }
+    }
+
+    /// Accende o spegne toccando il bulbo.
+    ///
+    /// Passa da `performQuickToggle` dell'adapter, lo stesso che usano i marker
+    /// della 2D: una sola strada per comandare, e le protezioni e i log stanno
+    /// già lì.
+    private func toggleLamp(_ accessoryUUID: UUID) {
+        guard let accessory = homeKit.accessory(for: accessoryUUID) else { return }
+        let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+        guard adapter.supportsQuickToggle else { return }
+        Task { try? await adapter.performQuickToggle(via: homeKit) }
     }
 
     /// La centralina della casa, se ce n'è una.
@@ -694,6 +710,9 @@ private struct RealityFloorplanView: UIViewRepresentable {
     /// Toccare o ruotare il modello vuol dire «ho finito di scegliere»: il
     /// cassetto si richiude da solo e restituisce lo spazio.
     let onSceneTouched: () -> Void
+    /// Toccare un bulbo lo accende o lo spegne: l'oggetto che mostra lo stato
+    /// è anche quello che lo cambia, senza un segnaposto in mezzo.
+    let onLampTapped: (UUID) -> Void
 
     func makeUIView(context: Context) -> ARView {
         let view = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
@@ -723,6 +742,7 @@ private struct RealityFloorplanView: UIViewRepresentable {
     func updateUIView(_ view: ARView, context: Context) {
         context.coordinator.onRoomSelected = onRoomSelected
         context.coordinator.onSceneTouched = onSceneTouched
+        context.coordinator.onLampTapped = onLampTapped
         if context.coordinator.background != background {
             context.coordinator.background = background
             view.environment.background = .color(background)
@@ -736,7 +756,8 @@ private struct RealityFloorplanView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(scene: scene, sun: sun, cameraResetID: cameraResetID,
-                    onRoomSelected: onRoomSelected, onSceneTouched: onSceneTouched)
+                    onRoomSelected: onRoomSelected, onSceneTouched: onSceneTouched,
+                    onLampTapped: onLampTapped)
             .prepared(withLamps: lamps)
             .prepared(with: flags)
     }
@@ -791,17 +812,20 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private var selectedRoomID: UUID?
         var onRoomSelected: (String?) -> Void
         var onSceneTouched: () -> Void
+        var onLampTapped: (UUID) -> Void
 
         init(scene: FloorplanScene,
              sun: FloorplanSunLight,
              cameraResetID: UUID,
              onRoomSelected: @escaping (String?) -> Void,
-             onSceneTouched: @escaping () -> Void) {
+             onSceneTouched: @escaping () -> Void,
+             onLampTapped: @escaping (UUID) -> Void) {
             self.scene = scene
             self.sun = sun
             self.handledResetID = cameraResetID
             self.onRoomSelected = onRoomSelected
             self.onSceneTouched = onSceneTouched
+            self.onLampTapped = onLampTapped
         }
 
         func prepared(with flags: [RoomFlag]) -> Coordinator {
@@ -917,6 +941,11 @@ private struct RealityFloorplanView: UIViewRepresentable {
                 glass.blending = .transparent(opacity: .init(floatLiteral: 0.95))
                 let bulb = ModelEntity(mesh: .generateSphere(radius: 0.075), materials: [glass])
                 bulb.position = place
+                // Il bersaglio e' l'oggetto stesso, non un segnaposto accanto:
+                // la sfera di collisione e' piu' larga del bulbo perche' a
+                // schermo resta comunque un dito piccolo.
+                bulb.collision = CollisionComponent(shapes: [.generateSphere(radius: 0.26)])
+                bulb.name = "lamp:\(lamp.accessoryUUID.uuidString)"
                 lampRoot.addChild(bulb)
 
                 var halo = UnlitMaterial(color: lamp.colour)
@@ -1109,9 +1138,15 @@ private struct RealityFloorplanView: UIViewRepresentable {
             guard let view = recognizer.view as? ARView else { return }
             onSceneTouched()
             let location = recognizer.location(in: view)
-            guard let entity = view.entity(at: location),
-                  let roomID = roomID(from: entity)
-            else {
+            guard let entity = view.entity(at: location) else {
+                selectRoom(nil)
+                return
+            }
+            if let lampID = accessoryID(from: entity) {
+                onLampTapped(lampID)
+                return
+            }
+            guard let roomID = roomID(from: entity) else {
                 selectRoom(nil)
                 return
             }
@@ -1121,6 +1156,13 @@ private struct RealityFloorplanView: UIViewRepresentable {
         private func roomID(from entity: Entity) -> UUID? {
             if let id = parseRoomID(entity.name) { return id }
             return entity.parent.flatMap(roomID(from:))
+        }
+
+        private func accessoryID(from entity: Entity) -> UUID? {
+            if entity.name.hasPrefix("lamp:") {
+                return UUID(uuidString: String(entity.name.dropFirst(5)))
+            }
+            return entity.parent.flatMap(accessoryID(from:))
         }
 
         private func parseRoomID(_ name: String) -> UUID? {
