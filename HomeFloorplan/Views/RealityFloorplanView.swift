@@ -125,9 +125,13 @@ struct RealityFloorplanView: UIViewRepresentable {
         var scene: FloorplanScene
         var sun: FloorplanSunLight
         var background: UIColor = .black
-        var azimuth: Double = .pi / 4
-        var elevation: Double = .pi / 5
-        var distanceMultiplier: Float = 2.2
+        // L'inquadratura d'apertura: pianta **allineata allo schermo** e vista
+        // quasi dall'alto, con un filo di prospettiva — la casa intera al primo
+        // sguardo, scelta dall'utente su screenshot. I preset del menu restano
+        // inquadrature diverse: questa e' solo la partenza.
+        var azimuth: Double = 0
+        var elevation: Double = 1.2
+        var distanceMultiplier: Float = 2.3
         private let anchor = AnchorEntity(world: .zero)
         private let contentRoot = Entity()
         private let camera = PerspectiveCamera()
