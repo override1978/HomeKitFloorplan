@@ -25,6 +25,36 @@ struct DrawingTopBar: View {
     var onDone: () -> Void
 
     var body: some View {
+        if isCompact {
+            compactBar
+        } else {
+            regularBar
+        }
+    }
+
+    /// La barra da pollice: niente riga unica — due gruppi flottanti.
+    /// Sopra, solo uscita e conferma (i due gesti che chiudono qualcosa);
+    /// sotto a destra, la pulsantiera di lavoro (undo/redo/stile/aiuto).
+    /// Su 390 punti una riga con tutto era una fila di bersagli da 36 pt
+    /// schiacciati contro la status bar.
+    private var compactBar: some View {
+        VStack(spacing: 10) {
+            HStack {
+                cancelButton
+                Spacer()
+                doneButton
+            }
+            HStack(spacing: 10) {
+                Spacer()
+                undoButton
+                redoButton
+                compactStyleMenu
+                helpButton
+            }
+        }
+    }
+
+    private var regularBar: some View {
         // Ogni item ha la PROPRIA superficie, e la barra non ne ha nessuna.
         //
         // È la struttura che Apple usa per le toolbar, ed è obbligata qui: un
@@ -37,8 +67,34 @@ struct DrawingTopBar: View {
         // ridotta — spariscono insieme.
         LiquidGlassContainer(spacing: 12) {
             HStack(spacing: 12) {
-                // Cancel
-                Button(action: onCancel) {
+                cancelButton
+                helpButton
+
+                Spacer()
+
+                undoButton
+                redoButton
+
+                if isCompact {
+                    compactStyleMenu
+                } else {
+                styleMenus
+                }
+
+                doneButton
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .modifier(BarSheetOnlyWhenLegacy(
+            shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
+            border: Color.white.opacity(0.28),
+            shadow: GlassChromeShadow(color: .black.opacity(0.14), radius: 18, y: 8)
+        ))
+    }
+
+    private var cancelButton: some View {
+        Button(action: onCancel) {
                     Image(systemName: "xmark")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.primary)
@@ -46,9 +102,11 @@ struct DrawingTopBar: View {
                         .modifier(ToolbarItemSurface(shape: Circle(),
                                                      legacyFill: Color.primary.opacity(0.07)))
                 }
-                .buttonStyle(.plain)
+        .buttonStyle(.plain)
+    }
 
-                Button(action: onHelp) {
+    private var helpButton: some View {
+        Button(action: onHelp) {
                     Image(systemName: "info.circle")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.primary)
@@ -56,12 +114,11 @@ struct DrawingTopBar: View {
                         .modifier(ToolbarItemSurface(shape: Circle(),
                                                      legacyFill: Color.primary.opacity(0.07)))
                 }
-                .buttonStyle(.plain)
+        .buttonStyle(.plain)
+    }
 
-                Spacer()
-
-                // Undo
-                Button(action: onUndo) {
+    private var undoButton: some View {
+        Button(action: onUndo) {
                     Image(systemName: "arrow.uturn.backward")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(canUndo ? .primary : .secondary)
@@ -69,11 +126,12 @@ struct DrawingTopBar: View {
                         .modifier(ToolbarItemSurface(shape: Circle(),
                                                      legacyFill: Color.primary.opacity(canUndo ? 0.07 : 0.035)))
                 }
-                .disabled(!canUndo)
-                .buttonStyle(.plain)
+        .disabled(!canUndo)
+        .buttonStyle(.plain)
+    }
 
-                // Redo
-                Button(action: onRedo) {
+    private var redoButton: some View {
+        Button(action: onRedo) {
                     Image(systemName: "arrow.uturn.forward")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(canRedo ? .primary : .secondary)
@@ -81,15 +139,15 @@ struct DrawingTopBar: View {
                         .modifier(ToolbarItemSurface(shape: Circle(),
                                                      legacyFill: Color.primary.opacity(canRedo ? 0.07 : 0.035)))
                 }
-                .disabled(!canRedo)
-                .buttonStyle(.plain)
+        .disabled(!canRedo)
+        .buttonStyle(.plain)
+    }
 
-                if isCompact {
-                    compactStyleMenu
-                } else {
-                // Ognuno di questi tre Menu tiene la propria superficie: è la
-                // condizione perché il sollevamento prenda solo lui.
-                Menu {
+    /// I tre menu di stile dell'iPad, ognuno con la propria superficie: è la
+    /// condizione perché il sollevamento del popover prenda solo lui.
+    @ViewBuilder
+    private var styleMenus: some View {
+        Menu {
                     ForEach(DrawingExportRotation.allCases) { rotation in
                         Button {
                             onExportRotationChange(rotation)
@@ -197,38 +255,28 @@ struct DrawingTopBar: View {
                     .buttonStyle(.plain)
                     .disabled(isExporting)
                 }
-                }
+    }
 
-                // Done resta un riempimento pieno di brand, non vetro: è
-                // l'azione primaria della schermata e deve staccare dagli altri
-                // item. Farla di vetro come tutto il resto le toglierebbe la
-                // gerarchia che ha oggi.
-                Button(action: onDone) {
-                    HStack(spacing: 7) {
-                        if isExporting {
-                            ProgressView()
-                                .tint(.white)
-                                .controlSize(.small)
-                        }
-                        Text(String(localized: "drawing.topbar.done", defaultValue: "Done"))
-                            .font(.system(size: 16, weight: .semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 8)
-                    .background(isExporting ? Color.secondary : BrandColor.primary, in: Capsule())
+    /// Done resta un riempimento pieno di brand, non vetro: è l'azione
+    /// primaria della schermata e deve staccare dagli altri item.
+    private var doneButton: some View {
+        Button(action: onDone) {
+            HStack(spacing: 7) {
+                if isExporting {
+                    ProgressView()
+                        .tint(.white)
+                        .controlSize(.small)
                 }
-                .disabled(isExporting)
-                .buttonStyle(.plain)
+                Text(String(localized: "drawing.topbar.done", defaultValue: "Done"))
+                    .font(.system(size: 16, weight: .semibold))
             }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 8)
+            .background(isExporting ? Color.secondary : BrandColor.primary, in: Capsule())
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .modifier(BarSheetOnlyWhenLegacy(
-            shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
-            border: Color.white.opacity(0.28),
-            shadow: GlassChromeShadow(color: .black.opacity(0.14), radius: 18, y: 8)
-        ))
+        .disabled(isExporting)
+        .buttonStyle(.plain)
     }
 
     /// Su iPhone tre menu affiancati sono la barra intera: diventano sottomenu

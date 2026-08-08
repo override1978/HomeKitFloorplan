@@ -190,6 +190,13 @@ struct DrawingFloorplanSheet: View {
         showAreaRoomPicker = true
     }
 
+    /// L'inset superiore vero della finestra attiva.
+    private static var windowSafeAreaTop: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow?.safeAreaInsets.top }
+            .max() ?? 0
+    }
+
     var body: some View {
         GeometryReader { geo in
         ZStack(alignment: .bottom) {
@@ -377,7 +384,12 @@ struct DrawingFloorplanSheet: View {
                 }
                 .frame(maxWidth: 640)
                 .padding(.horizontal, 18)
-                .padding(.top, max(geo.safeAreaInsets.top + 12, 28))
+                // L'inset lo dice la finestra UIKit, non il GeometryReader: la
+                // propagazione SwiftUI dentro questo fullScreenCover riportava
+                // zero su iPhone e la barra finiva nella status bar — due giri
+                // di correzioni «geometricamente impossibili» dopo, si chiede
+                // alla fonte.
+                .padding(.top, max(max(geo.safeAreaInsets.top, Self.windowSafeAreaTop) + 12, 28))
                 Spacer()
             }
 

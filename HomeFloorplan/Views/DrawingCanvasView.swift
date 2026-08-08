@@ -338,11 +338,20 @@ struct DrawingCanvasView: UIViewRepresentable {
         /// restava incollato in alto col bianco sotto — lo «sparisce mezzo
         /// disegno» di iPhone, dove lo schermo stretto ci finisce di continuo.
         func centerContent(_ scrollView: UIScrollView) {
-            guard let view = hostedView else { return }
-            view.frame.origin = .zero
-            let dx = max((scrollView.bounds.width  - view.frame.width)  / 2, 0)
-            let dy = max((scrollView.bounds.height - view.frame.height) / 2, 0)
+            // Mai toccare il frame della vista zoomata: durante il pinch la
+            // scrollview la governa via transform, e scriverle il frame sotto
+            // le mani corrompeva l'ancora dello zoom («resize spinto» = mezzo
+            // disegno sparito). Il contentSize lo tiene giusto la scrollview.
+            let dx = max((scrollView.bounds.width  - scrollView.contentSize.width)  / 2, 0)
+            let dy = max((scrollView.bounds.height - scrollView.contentSize.height) / 2, 0)
             scrollView.contentInset = UIEdgeInsets(top: dy, left: dx, bottom: dy, right: dx)
+        }
+
+        /// Il rimbalzo sotto lo zoom minimo passa di qui alla fine: la
+        /// centratura va rifatta sullo stato assestato.
+        func scrollViewDidEndZooming(_ scrollView: UIScrollView,
+                                     with view: UIView?, atScale scale: CGFloat) {
+            centerContent(scrollView)
         }
 
         // MARK: Main gesture (draw walls OR drag openings/labels)
