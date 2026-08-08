@@ -1,6 +1,74 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "drawing.toolbar.opening" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opening"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apertura"
+          }
+        }
+      }
+    },
+    "drawing.topbar.exterior" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Surroundings"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esterno"
+          }
+        }
+      }
+    },
+    "drawing.topbar.rotation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotation"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotazione"
+          }
+        }
+      }
+    },
+    "drawing.topbar.style" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Style"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stile"
+          }
+        }
+      }
+    },
     "camera.angle" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -507,13 +575,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Floorplans are drawn on iPad. Here you can view them and control the accessories."
+            "value" : "New floorplans are created on iPad. Existing ones can be viewed and edited here."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le planimetrie si disegnano su iPad. Qui puoi vederle e comandare gli accessori."
+            "value" : "Le planimetrie nuove si creano su iPad. Quelle esistenti si vedono e si modificano anche qui."
           }
         }
       }

@@ -5,6 +5,9 @@ import SwiftUI
 /// Top navigation bar for the 2D drawing editor.
 /// Shows: cancel (X), undo/redo, spacer, "Fatto" done button.
 struct DrawingTopBar: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompact: Bool { horizontalSizeClass == .compact }
+
 
     var canUndo: Bool
     var canRedo: Bool
@@ -81,6 +84,9 @@ struct DrawingTopBar: View {
                 .disabled(!canRedo)
                 .buttonStyle(.plain)
 
+                if isCompact {
+                    compactStyleMenu
+                } else {
                 // Ognuno di questi tre Menu tiene la propria superficie: è la
                 // condizione perché il sollevamento prenda solo lui.
                 Menu {
@@ -191,6 +197,7 @@ struct DrawingTopBar: View {
                     .buttonStyle(.plain)
                     .disabled(isExporting)
                 }
+                }
 
                 // Done resta un riempimento pieno di brand, non vetro: è
                 // l'azione primaria della schermata e deve staccare dagli altri
@@ -222,6 +229,84 @@ struct DrawingTopBar: View {
             border: Color.white.opacity(0.28),
             shadow: GlassChromeShadow(color: .black.opacity(0.14), radius: 18, y: 8)
         ))
+    }
+
+    /// Su iPhone tre menu affiancati sono la barra intera: diventano sottomenu
+    /// di un unico bottone. Essendo UN solo `Menu`, la regola «mai due Menu
+    /// sulla stessa superficie» è rispettata gratis.
+    private var compactStyleMenu: some View {
+        Menu {
+            Menu {
+                ForEach(DrawingExportRotation.allCases) { rotation in
+                    Button {
+                        onExportRotationChange(rotation)
+                    } label: {
+                        Label {
+                            Text(rotation.localizedTitle)
+                        } icon: {
+                            Image(systemName: rotation == exportRotation ? "checkmark.circle.fill" : rotation.iconName)
+                        }
+                    }
+                }
+            } label: {
+                Label(String(localized: "drawing.topbar.rotation", defaultValue: "Rotation"),
+                      systemImage: exportRotation.iconName)
+            }
+
+            Menu {
+                ForEach(DrawingVisualExportStyle.toolbarVisibleStyles) { style in
+                    Button {
+                        onVisualExportStyleChange(style)
+                    } label: {
+                        Label {
+                            Text(style.localizedTitle)
+                        } icon: {
+                            Image(systemName: style == visualExportStyle ? "checkmark.circle.fill" : "circle")
+                        }
+                    }
+                }
+            } label: {
+                Label(String(localized: "drawing.topbar.style", defaultValue: "Style"),
+                      systemImage: visualExportStyle.toolbarIconName)
+            }
+
+            if visualExportStyle != .architecturalDark {
+                Menu {
+                    Button {
+                        onExteriorFillChange(-1)
+                    } label: {
+                        Label {
+                            Text(String(localized: "exterior.fill.none", defaultValue: "None"))
+                        } icon: {
+                            Image(systemName: exteriorFillColorIndex < 0 ? "checkmark.circle.fill" : "circle")
+                        }
+                    }
+                    ForEach(ExteriorFillPalette.allCases, id: \.rawValue) { preset in
+                        Button {
+                            onExteriorFillChange(preset.rawValue)
+                        } label: {
+                            Label {
+                                Text(preset.localizedName)
+                            } icon: {
+                                Image(systemName: exteriorFillColorIndex == preset.rawValue ? "checkmark.circle.fill" : "circle")
+                            }
+                        }
+                    }
+                } label: {
+                    Label(String(localized: "drawing.topbar.exterior", defaultValue: "Surroundings"),
+                          systemImage: "building.2")
+                }
+            }
+        } label: {
+            Image(systemName: "paintpalette")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.primary)
+                .frame(width: 36, height: 36)
+                .modifier(ToolbarItemSurface(shape: Circle(),
+                                             legacyFill: Color.primary.opacity(0.07)))
+        }
+        .buttonStyle(.plain)
+        .disabled(isExporting)
     }
 }
 
@@ -618,6 +703,8 @@ struct PlaceOpeningBanner: View {
 ///   - Porta / Finestra tap buttons (centre)
 ///   - delete button when something is selected (right)
 struct DrawingToolbar: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompact: Bool { horizontalSizeClass == .compact }
 
     @Binding var mode: DrawingMode
     @Binding var wallKind: WallKind
@@ -628,6 +715,16 @@ struct DrawingToolbar: View {
     var onDelete: () -> Void
 
     var body: some View {
+        if isCompact {
+            compactToolbar
+        } else {
+            regularToolbar
+        }
+    }
+
+    // MARK: iPad — tutto espanso
+
+    private var regularToolbar: some View {
         // Stessa struttura della barra superiore: nessuna superficie sulla
         // barra, una per item o per gruppo, tutto dentro un container che ne
         // fonde le superfici vicine. Qui c'è un `Menu` (scelta del mobile) e
@@ -770,6 +867,222 @@ struct DrawingToolbar: View {
                 .transition(.opacity)
             }
         }
+    }
+
+
+    // MARK: iPhone — il dock
+
+    /// Gli stessi strumenti dell'iPad, compressi per il pollice: le quattro
+    /// aperture dietro un menu, snap e quote dietro «Altro», il tipo di muro
+    /// come pillola che compare solo col Muro in mano. Su iPad tutto espanso
+    /// è comodo; qui i compromessi sono il design, non un ripiego.
+    private var compactToolbar: some View {
+        VStack(spacing: 8) {
+            if mode == .draw {
+                HStack(spacing: 0) {
+                    wallKindButton(kind: .exterior, icon: "square.on.square",
+                                   label: String(localized: "drawing.toolbar.wall.exterior", defaultValue: "Perim."))
+                    wallKindButton(kind: .interior, icon: "square.dashed",
+                                   label: String(localized: "drawing.toolbar.wall.interior", defaultValue: "Interior"))
+                    wallKindButton(kind: .balcony,  icon: "line.diagonal",
+                                   label: String(localized: "drawing.toolbar.wall.balcony",  defaultValue: "Balcony"))
+                }
+                .glassChromeSurface(
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+                    legacyFill: AnyShapeStyle(.ultraThinMaterial),
+                    legacyBorder: Color.white.opacity(0.2)
+                )
+                .transition(.opacity)
+            }
+
+            LiquidGlassContainer(spacing: 10) {
+                HStack(spacing: 6) {
+                    HStack(spacing: 0) {
+                        compactModeButton(icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
+                                          label: String(localized: "drawing.toolbar.mode.select", defaultValue: "Select"),
+                                          active: mode == .select) { mode = .select }
+                        compactModeButton(icon: "pencil.tip",
+                                          label: String(localized: "drawing.toolbar.mode.draw", defaultValue: "Wall"),
+                                          active: mode == .draw) { mode = .draw }
+                    }
+                    .glassChromeSurface(
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+                        legacyFill: AnyShapeStyle(.ultraThinMaterial),
+                        legacyBorder: Color.white.opacity(0.2)
+                    )
+
+                    compactOpeningMenu
+
+                    compactSlot(icon: "rectangle.dashed",
+                                label: String(localized: "drawing.toolbar.roomArea", defaultValue: "Room"),
+                                active: mode == .drawRoomArea) {
+                        mode = mode == .drawRoomArea ? .select : .drawRoomArea
+                    }
+
+                    compactFurnitureMenu
+
+                    if hasSelection {
+                        Button(action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.red)
+                                .frame(width: 44, height: 52)
+                                .background(Color(.systemFill),
+                                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.opacity)
+                    } else {
+                        compactMoreMenu
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .modifier(BarSheetOnlyWhenLegacy(
+            shape: Rectangle(),
+            fill: AnyShapeStyle(.ultraThinMaterial)
+        ))
+        .animation(.spring(response: 0.3), value: hasSelection)
+        .animation(.spring(response: 0.3), value: mode == .draw)
+    }
+
+    /// Le quattro aperture dietro un solo slot: su 390 punti quattro bottoni
+    /// da 68 sarebbero la barra intera.
+    private var compactOpeningMenu: some View {
+        let isPlacing: Bool
+        if case .placeOpening = mode { isPlacing = true } else { isPlacing = false }
+        return Menu {
+            compactOpeningEntry(.door, icon: "door.left.hand.open",
+                                label: String(localized: "drawing.toolbar.door", defaultValue: "Door"))
+            compactOpeningEntry(.slidingDoor, icon: "door.sliding.right.hand.closed",
+                                label: String(localized: "drawing.toolbar.slidingDoor", defaultValue: "Sliding"))
+            compactOpeningEntry(.frenchDoor, icon: "door.french.open",
+                                label: String(localized: "drawing.toolbar.frenchDoor", defaultValue: "French"))
+            compactOpeningEntry(.window, icon: "rectangle.split.2x1",
+                                label: String(localized: "drawing.toolbar.window", defaultValue: "Window"))
+        } label: {
+            compactSlotLabel(icon: "door.left.hand.open",
+                             label: String(localized: "drawing.toolbar.opening", defaultValue: "Opening"),
+                             active: isPlacing)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func compactOpeningEntry(_ kind: OpeningKind, icon: String, label: String) -> some View {
+        let isActive: Bool
+        if case .placeOpening(let k) = mode { isActive = k == kind } else { isActive = false }
+        return Button {
+            mode = isActive ? .select : .placeOpening(kind)
+        } label: {
+            Label {
+                Text(label)
+            } icon: {
+                Image(systemName: isActive ? "checkmark.circle.fill" : icon)
+            }
+        }
+    }
+
+    private var compactFurnitureMenu: some View {
+        Menu {
+            ForEach(FurnitureKind.allCases) { kind in
+                Button {
+                    furnitureKind = kind
+                    mode = .placeFurniture
+                } label: {
+                    Label {
+                        Text(kind.localizedName)
+                    } icon: {
+                        Image(systemName: kind == furnitureKind ? "checkmark.circle.fill" : kind.systemImage)
+                    }
+                }
+            }
+        } label: {
+            compactSlotLabel(icon: furnitureKind.systemImage,
+                             label: furnitureKind.localizedName,
+                             active: mode == .placeFurniture)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Snap e quote: interruttori che si toccano una volta a sessione, non
+    /// meritano uno slot ciascuno sulla larghezza di un telefono.
+    private var compactMoreMenu: some View {
+        Menu {
+            Toggle(isOn: $vertexSnapEnabled) {
+                Label(String(localized: "drawing.toolbar.snap", defaultValue: "Snap"),
+                      systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+            }
+            Toggle(isOn: $showDimensions) {
+                Label(String(localized: "drawing.toolbar.dimensions", defaultValue: "Quote"),
+                      systemImage: "ruler")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color.primary)
+                .frame(width: 44, height: 52)
+                .background(Color(.systemFill),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func compactModeButton(icon: String, label: String, active: Bool,
+                                   action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: active ? .semibold : .regular))
+                Text(label)
+                    .font(.system(size: 9, weight: active ? .semibold : .regular))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .foregroundStyle(active ? BrandColor.primary : .secondary)
+            .frame(width: 56, height: 52)
+            .background(active ? BrandColor.primary.opacity(0.12) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func compactSlot(icon: String, label: String, active: Bool,
+                             action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            compactSlotLabel(icon: icon, label: label, active: active)
+        }
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.25), value: active)
+    }
+
+    private func compactSlotLabel(icon: String, label: String, active: Bool) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: active ? .semibold : .regular))
+            Text(label)
+                .font(.system(size: 9, weight: active ? .semibold : .regular))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        // `Color.primary` esplicito: dentro Button/Menu il `.primary`
+        // gerarchico perde contro il tint di sistema.
+        .foregroundStyle(active ? BrandColor.primary : Color.primary)
+        .frame(maxWidth: .infinity, minHeight: 52)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(active ? BrandColor.primary.opacity(0.15) : Color(.systemFill))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(active ? BrandColor.primary.opacity(0.5) : Color.clear,
+                              lineWidth: 1.5)
+        )
+        .contentShape(Rectangle())
     }
 
     // MARK: Private helpers

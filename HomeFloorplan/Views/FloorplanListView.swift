@@ -326,7 +326,7 @@ struct FloorplanListView: View {
                 // Offrire un bottone che non esiste è peggio che non offrirne.
                 if isCompact {
                     Label(String(localized: "compact.floorplans.iPadOnly",
-                                 defaultValue: "Floorplans are drawn on iPad. Here you can view them and control the accessories."),
+                                 defaultValue: "New floorplans are created on iPad. Existing ones can be viewed and edited here."),
                           systemImage: "ipad.landscape")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -515,16 +515,16 @@ struct FloorplanListView: View {
                         Label(String(localized: "common.delete", defaultValue: "Delete"), systemImage: "trash")
                     }
                     Button {
-                        // Stessa regola del menu contestuale: niente editor 2D
-                        // su iPhone.
-                        if !isCompact, floorplan.drawingDocumentJSON != nil {
+                        // L'editor 2D ha la chrome compatta: stessa porta su
+                        // iPad e iPhone.
+                        if floorplan.drawingDocumentJSON != nil {
                             drawingEditFloorplan = floorplan
                         } else {
                             editingFloorplan = floorplan
                         }
                     } label: {
                         Label(String(localized: "common.edit", defaultValue: "Edit"),
-                              systemImage: (!isCompact && floorplan.drawingDocumentJSON != nil) ? "pencil.and.ruler" : "pencil")
+                              systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "pencil")
                     }
                     .tint(.blue)
                 }
@@ -617,18 +617,17 @@ struct FloorplanListView: View {
             Label(String(localized: "common.rename", defaultValue: "Rename"), systemImage: "pencil")
         }
         Button {
-            // Su iPhone "Modifica" porta sempre al foglio dei dati: l'editor 2D
-            // di disegno è escluso per decisione di prodotto e non è mai stato
-            // adattato alla larghezza compatta. Da qui ci si arrivava con una
-            // pressione lunga, ed era l'unica porta rimasta aperta.
-            if !isCompact, floorplan.drawingDocumentJSON != nil {
+            // L'editor 2D ha la chrome compatta: la decisione di prodotto
+            // che lo escludeva da iPhone è superata, resta solo la creazione
+            // su iPad.
+            if floorplan.drawingDocumentJSON != nil {
                 drawingEditFloorplan = floorplan
             } else {
                 editingFloorplan = floorplan
             }
         } label: {
             Label(String(localized: "common.edit", defaultValue: "Edit"),
-                  systemImage: (!isCompact && floorplan.drawingDocumentJSON != nil) ? "pencil.and.ruler" : "photo")
+                  systemImage: floorplan.drawingDocumentJSON != nil ? "pencil.and.ruler" : "photo")
         }
         Button {
             duplicate(floorplan)

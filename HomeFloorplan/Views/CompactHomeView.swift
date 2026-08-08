@@ -108,7 +108,7 @@ struct CompactHomeView: View {
                     // un modo di creare una planimetria e non trova né il
                     // comando né una ragione.
                     Label(String(localized: "compact.floorplans.iPadOnly",
-                                 defaultValue: "Floorplans are drawn on iPad. Here you can view them and control the accessories."),
+                                 defaultValue: "New floorplans are created on iPad. Existing ones can be viewed and edited here."),
                           systemImage: "ipad.landscape")
                         .font(.footnote)
                         .padding(.top, 4)
