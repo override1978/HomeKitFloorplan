@@ -153,9 +153,11 @@ struct FloorplanListView: View {
                     .presentationDragIndicator(.visible)
             }
             .fullScreenCover(item: fullScreenDrawingEditBinding) { floorplan in
+                // Niente ignoresSafeArea sul foglio intero: il canvas ha già il
+                // suo, e togliere gli inset a tutto mandava la top bar sotto la
+                // status bar dell'iPhone (il GeometryReader leggeva zero).
                 drawingEditor(for: floorplan)
                     .environment(homeKit)
-                    .ignoresSafeArea()
             }
             .alert(String(localized: "floorplan.delete.title", defaultValue: "Delete floorplan?"),
                    isPresented: Binding(

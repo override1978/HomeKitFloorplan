@@ -52,9 +52,11 @@ struct FloorplanEditorPresentationModifier: ViewModifier {
                 FloorplanHelpSheet(onDone: onHelpClose)
             }
             .fullScreenCover(item: $ui.drawingEditFloorplan, onDismiss: onDrawingDismiss) { editingFloorplan in
+                // Come nella lista: il canvas ha il suo ignoresSafeArea, il
+                // foglio no — o la chrome perde gli inset e finisce nella
+                // status bar su iPhone.
                 drawingEditor(editingFloorplan)
                     .environment(homeKit)
-                    .ignoresSafeArea()
             }
             .alert(
                 String(localized: "floorplan.marker.delete.title", defaultValue: "Remove accessory from floorplan?"),

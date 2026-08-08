@@ -98,6 +98,10 @@ struct DrawingCanvasView: UIViewRepresentable {
         sv.showsVerticalScrollIndicator   = false
         sv.delegate    = context.coordinator
         sv.bouncesZoom = true
+        // Gli inset li governa il disegno, non il sistema: il foglio ora
+        // rispetta la safe area e senza questo la scrollview sposterebbe i
+        // contenuti di quanto è alta la status bar.
+        sv.contentInsetAdjustmentBehavior = .never
 
         let size = DrawingDocument.canvasSize
         sv.contentSize = CGSize(width: size, height: size)
@@ -137,6 +141,14 @@ struct DrawingCanvasView: UIViewRepresentable {
         tapGesture.require(toFail: doubleTapGesture)
         sv.addGestureRecognizer(tapGesture)
 
+        // Quando parte un gesto a due dita (pan o pinch), il tratto in corso
+        // si annulla: senza questo, zoomare mentre si disegna committava un
+        // muro spazzatura sotto lo zoom — il grosso delle «bizze» su iPhone.
+        sv.panGestureRecognizer.addTarget(context.coordinator,
+                                          action: #selector(Coordinator.cancelDrawOnScrollGesture(_:)))
+        sv.pinchGestureRecognizer?.addTarget(context.coordinator,
+                                             action: #selector(Coordinator.cancelDrawOnScrollGesture(_:)))
+
         return sv
     }
 
@@ -148,7 +160,11 @@ struct DrawingCanvasView: UIViewRepresentable {
         else if case .drawRoomArea = mode { panDisabled = true }
         else { panDisabled = false }
 
-        sv.panGestureRecognizer.isEnabled  = !panDisabled
+        // In disegno il pan non sparisce: passa a due dita. Un dito disegna,
+        // due spostano — è la grammatica di qualunque app di disegno, e su
+        // iPhone è l'unica alternativa al cambiare modalità per ogni pan.
+        sv.panGestureRecognizer.isEnabled = true
+        sv.panGestureRecognizer.minimumNumberOfTouches = panDisabled ? 2 : 1
         let gestureEnabled: Bool
         switch mode {
         case .draw, .select, .drawRoomArea: gestureEnabled = true
@@ -870,8 +886,26 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         func gestureRecognizer(_ gr: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            if gr === mainGesture && other is UIPanGestureRecognizer { return false }
+            if gr === mainGesture && other is UIPanGestureRecognizer {
+                // In select il pan a un dito e il drag si contendono lo stesso
+                // tocco: mai simultanei. In disegno il pan richiede due dita e
+                // DEVE poter partire mentre il tratto è attivo, perché è
+                // proprio lui a cancellarlo.
+                return (other as? UIPanGestureRecognizer)?.minimumNumberOfTouches == 2
+            }
             return true
+        }
+
+        /// Il tratto muore appena il gesto di scroll/zoom comincia: il
+        /// toggle di `isEnabled` è il modo canonico di forzare `.cancelled`,
+        /// e il ramo `.cancelled` dei gesti pulisce senza committare.
+        @objc func cancelDrawOnScrollGesture(_ gr: UIGestureRecognizer) {
+            guard gr.state == .began,
+                  let main = mainGesture,
+                  main.state == .began || main.state == .changed
+            else { return }
+            main.isEnabled = false
+            main.isEnabled = true
         }
 
         func gestureRecognizer(_ gr: UIGestureRecognizer,
