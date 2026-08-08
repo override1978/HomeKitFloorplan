@@ -177,7 +177,7 @@ struct FloorplanRealityPreviewView: View {
                         .foregroundStyle(Color.primary)
                         .padding(.horizontal, 18)
                         .frame(minHeight: 44)
-                        .background(.regularMaterial, in: Capsule())
+                        .glassChromeSurface(in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .padding(.bottom, 104)
@@ -864,7 +864,7 @@ struct FloorplanRealityPreviewView: View {
                     .foregroundStyle(Color.primary)
                     .padding(.horizontal, 16)
                     .frame(minHeight: 38)
-                    .background(.regularMaterial, in: Capsule())
+                    .glassChromeSurface(in: Capsule())
                 }
 
                 Spacer(minLength: 12)
@@ -925,12 +925,16 @@ struct FloorplanRealityPreviewView: View {
         .padding(.top, 12)
     }
 
+    /// La superficie e' `glassChromeSurface`, come tutta la chrome dell'app:
+    /// vetro vero col toggle attivo, esattamente il materiale di oggi
+    /// altrimenti. Il 3D l'aveva bypassata con `.regularMaterial` crudo — la
+    /// base grigia che si vedeva.
     private func chrome(_ symbol: String) -> some View {
         Image(systemName: symbol)
             .font(.headline)
             .foregroundStyle(Color.primary)
             .frame(width: 44, height: 44)
-            .background(.regularMaterial, in: Circle())
+            .glassChromeSurface(in: Circle())
     }
 
     private var controls: some View {
@@ -943,7 +947,7 @@ struct FloorplanRealityPreviewView: View {
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
-                    .background(.regularMaterial, in: Capsule())
+                    .glassChromeSurface(in: Capsule())
                     .transition(.scale.combined(with: .opacity))
             }
         }
@@ -1108,7 +1112,7 @@ struct FloorplanRealityPreviewView: View {
             }
         }
         .padding(3)
-        .background(.regularMaterial, in: Capsule())
+        .glassChromeSurface(in: Capsule())
     }
 
     /// I tipi sono un livello **sotto** la modalità, e devono sembrarlo: gruppo
@@ -1241,16 +1245,15 @@ struct FloorplanRealityPreviewView: View {
     /// sono sheet: si regola guardando la casa reagire.
     private struct PanelChrome: ViewModifier {
         func body(content: Content) -> some View {
-            // Adattivo, per prova: il materiale segue il tema di sistema —
-            // chiaro in light mode, come le superfici Apple — e i contenuti
-            // usano colori semantici. La cornice attorno resta scura: sta
-            // sopra la scena, non sopra uno sfondo di sistema.
+            // Vetro di casa: `glassChromeSurface` — Liquid Glass col toggle
+            // attivo, e il ramo legacy porta bordo e ombra di oggi. Sul vetro
+            // niente bordo/ombra a mano: il vetro ha i suoi.
             content
-                .background(.regularMaterial,
-                            in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
-                .shadow(color: .black.opacity(0.22), radius: 22, y: 10)
+                .glassChromeSurface(
+                    in: RoundedRectangle(cornerRadius: 28, style: .continuous),
+                    legacyBorder: Color.primary.opacity(0.12),
+                    legacyShadow: GlassChromeShadow(color: .black.opacity(0.22),
+                                                    radius: 22, y: 10))
         }
     }
 
@@ -1693,7 +1696,7 @@ struct FloorplanRealityPreviewView: View {
             .foregroundStyle(tint)
             .padding(.horizontal, 14)
             .frame(minHeight: 36)
-            .background(.regularMaterial, in: Capsule())
+            .glassChromeSurface(in: Capsule())
             .overlay(Capsule().strokeBorder(tint.opacity(0.45), lineWidth: 1.5))
             .transition(.opacity)
         } else {
@@ -1704,7 +1707,7 @@ struct FloorplanRealityPreviewView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 14)
                 .frame(minHeight: 36)
-                .background(.regularMaterial, in: Capsule())
+                .glassChromeSurface(in: Capsule())
                 .transition(.opacity)
         }
     }
@@ -1733,10 +1736,12 @@ struct FloorplanRealityPreviewView: View {
             // La selezione e' la capsula piena col colore dello strato — lo
             // stesso verde che Ambiente ha nella pillola delle modalita': una
             // sola lingua per dire «attivo».
-            .background(isSelected
-                        ? AnyShapeStyle(PreviewMode.environment.accent ?? Color.primary.opacity(0.2))
-                        : AnyShapeStyle(.regularMaterial),
-                        in: Capsule())
+            .glassChromeSurface(
+                in: Capsule(),
+                tint: isSelected ? PreviewMode.environment.accent : nil,
+                legacyFill: isSelected
+                    ? AnyShapeStyle(PreviewMode.environment.accent ?? Color.primary.opacity(0.2))
+                    : AnyShapeStyle(.regularMaterial))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
