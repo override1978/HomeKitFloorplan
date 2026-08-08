@@ -45,74 +45,10 @@ struct FloorplanListView: View {
     /// Si passano **tutte** e non solo quella toccata, così il menu del titolo
     /// può cambiare piano senza uscire dalla vista — come fa la barra della 2D.
     private var previewableFloorplans: [Preview3DFloorplan] {
-        floorplans.compactMap { plan in
-            guard let document = plan.drawingDocument, !document.walls.isEmpty else { return nil }
-            return Preview3DFloorplan(
-                id: plan.id,
-                name: plan.name,
-                document: document,
-                northBearingDegrees: plan.northBearingDegrees,
-                applyNorthBearing: { [weak plan] bearing in
-                    guard let plan else { return }
-                    markerCoordinator(for: plan).setNorthBearing(bearing)
-                },
-                ceilingHeight: plan.ceilingHeightMetres,
-                applyCeilingHeight: { [weak plan] metres in
-                    guard let plan else { return }
-                    markerCoordinator(for: plan).setCeilingHeight(metres)
-                },
-                markers: plan.accessories.map { placed in
-                    Preview3DMarker(
-                        uuid: placed.homeKitAccessoryUUID,
-                        position: CGPoint(x: placed.positionX, y: placed.positionY),
-                        openingID: placed.linkedOpeningID
-                    )
-                },
-                lampSettings: { [weak plan] uuid in
-                    guard let placed = plan?.accessories.first(where: { $0.homeKitAccessoryUUID == uuid })
-                    else { return LampSettings() }
-                    return LampSettings(
-                        height: placed.mountHeight,
-                        direction: placed.lightDirectionRaw.flatMap(LampDirection.init(rawValue:)),
-                        position: CGPoint(x: placed.positionX, y: placed.positionY),
-                        isDeclaredLight: placed.isDeclaredLight
-                    )
-                },
-                applyLampSettings: { [weak plan] uuid, height, direction in
-                    guard let plan else { return }
-                    markerCoordinator(for: plan).setLampSettings(accessoryUUID: uuid,
-                                                                 height: height,
-                                                                 direction: direction)
-                },
-                applyDeclaredLight: { [weak plan] uuid, flag in
-                    guard let plan else { return }
-                    markerCoordinator(for: plan).setDeclaredLight(accessoryUUID: uuid, flag)
-                },
-                applyMarkerPosition: { [weak plan] uuid, position in
-                    guard let plan else { return }
-                    markerCoordinator(for: plan).setMarkerPosition(
-                        accessoryUUID: uuid,
-                        to: NormalizedPoint(x: Double(position.x), y: Double(position.y))
-                    )
-                },
-                exportRotation: plan.drawingExportRotation,
-                background: previewBackground(for: plan)
-            )
+        floorplans.compactMap {
+            Preview3DFactory.preview($0, modelContext: modelContext,
+                                     cloudKitSync: cloudKitSync, homeKit: homeKit)
         }
-    }
-
-    /// Lo sfondo della 3D è quello scelto nell'editor 2D, con la stessa regola
-    /// dell'export: lo stile scuro vince, poi la tinta esterna, poi il bianco.
-    /// La stessa casa non può avere due fondali a seconda di come la guardi.
-    private func previewBackground(for floorplan: Floorplan) -> UIColor {
-        if floorplan.drawingVisualExportStyleRaw == DrawingVisualExportStyle.architecturalDark.rawValue {
-            return DrawingVisualExportStyle.architecturalDarkBackgroundUIColor
-        }
-        if floorplan.exteriorFillColorIndex >= 0,
-           let palette = ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex) {
-            return UIColor(cgColor: palette.cgColor)
-        }
-        return .white
     }
 
     private func isPinned(_ floorplan: Floorplan) -> Bool {
@@ -641,7 +577,7 @@ struct FloorplanListView: View {
                     initialID: floorplan.id
                 )
             } label: {
-                Label(String(localized: "floorplan.preview3D", defaultValue: "3D preview"),
+                Label(String(localized: "floorplan.preview3D", defaultValue: "View in 3D"),
                       systemImage: "cube")
             }
         }

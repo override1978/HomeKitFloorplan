@@ -26,6 +26,7 @@ struct FloorplanTopBarView: View {
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
     let onEditDrawing: () -> Void
+    let onView3D: () -> Void
     let onShowScenes: () -> Void
     let onToggleEditing: () -> Void
     let onPauseSmartLighting: () -> Void
@@ -98,6 +99,7 @@ struct FloorplanTopBarView: View {
                                 onShowHelp: onShowHelp,
                                 onShowDiagnostics: onShowDiagnostics,
                                 onEditDrawing: onEditDrawing,
+                                onView3D: onView3D,
                                 onShowScenes: onShowScenes,
                                 onToggleEditing: onToggleEditing
                             )
@@ -405,6 +407,7 @@ struct FloorplanTopRightActions: View {
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
     let onEditDrawing: () -> Void
+    let onView3D: () -> Void
     let onShowScenes: () -> Void
     let onToggleEditing: () -> Void
 
@@ -445,6 +448,7 @@ struct FloorplanTopRightActions: View {
                         onShowHelp: onShowHelp,
                         onShowDiagnostics: onShowDiagnostics,
                         onEditDrawing: onEditDrawing,
+                        onView3D: onView3D,
                         onShowScenes: onShowScenes,
                         onToggleEditing: onToggleEditing
                     )
@@ -513,6 +517,7 @@ struct FloorplanToolsMenu: View {
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
     let onEditDrawing: () -> Void
+    let onView3D: () -> Void
     let onShowScenes: () -> Void
     let onToggleEditing: () -> Void
 
@@ -552,6 +557,14 @@ struct FloorplanToolsMenu: View {
                 onEditDrawing()
             } label: {
                 Label(String(localized: "floorplan.drawing.edit", defaultValue: "Edit 2D drawing"), systemImage: "pencil.and.ruler")
+            }
+            .disabled(!isDrawingAvailable)
+
+            Button {
+                onView3D()
+            } label: {
+                Label(String(localized: "floorplan.preview3D", defaultValue: "View in 3D"),
+                      systemImage: "cube")
             }
             .disabled(!isDrawingAvailable)
         } label: {
