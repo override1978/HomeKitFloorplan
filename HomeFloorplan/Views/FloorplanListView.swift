@@ -1,4 +1,5 @@
 import SwiftUI
+import HomeKit
 import SwiftData
 
 /// Vista di gestione planimetrie: galleria con miniature.
@@ -27,6 +28,29 @@ struct FloorplanListView: View {
         pinnedFloorplanIDsRaw = (try? String(data: JSONEncoder().encode(ids), encoding: .utf8)) ?? "[]"
     }
 
+    /// Lo stesso coordinator che scrive i marker nell'editor 2D.
+    ///
+    /// Le scritture sul modello passano tutte di qui: cosi' `updatedAt` e la
+    /// coda CloudKit si aggiornano da sole, invece di dover ricordare di farlo
+    /// a ogni chiamante.
+    private func markerCoordinator(for plan: Floorplan) -> FloorplanMarkerEditingCoordinator {
+        FloorplanMarkerEditingCoordinator(floorplan: plan,
+                                          modelContext: modelContext,
+                                          cloudKitSync: cloudKitSync,
+                                          homeKit: homeKit)
+    }
+
+    /// Tutte le planimetrie che hanno un disegno, pronte per il volume.
+    ///
+    /// Si passano **tutte** e non solo quella toccata, così il menu del titolo
+    /// può cambiare piano senza uscire dalla vista — come fa la barra della 2D.
+    private var previewableFloorplans: [Preview3DFloorplan] {
+        floorplans.compactMap {
+            Preview3DFactory.preview($0, modelContext: modelContext,
+                                     cloudKitSync: cloudKitSync, homeKit: homeKit)
+        }
+    }
+
     private func isPinned(_ floorplan: Floorplan) -> Bool {
         decodePinnedIDs().contains(floorplan.id.uuidString)
     }
@@ -51,6 +75,7 @@ struct FloorplanListView: View {
     }
 
     @State private var layout: GalleryLayout = .grid
+    @State private var preview3D: Preview3DRequest?
     @State private var pendingDelete: Floorplan?
     @State private var showingNewSheet = false
     @State private var editingFloorplan: Floorplan?
@@ -93,6 +118,12 @@ struct FloorplanListView: View {
             // modo di tornare indietro. Le tre azioni della pill flottante si
             // spostano nella barra, dove su schermo stretto stanno meglio.
             .toolbar(isCompact ? .automatic : .hidden, for: .navigationBar)
+            // A tutto schermo, non in un foglio: su iPad una card lascerebbe
+            // metà spazio ai bordi proprio dove serve il soggetto.
+            .fullScreenCover(item: $preview3D) { request in
+                FloorplanRealityPreviewView(floorplans: request.floorplans,
+                                            initialID: request.initialID)
+            }
             .navigationTitle(isCompact
                              ? String(localized: "floorplans.title", defaultValue: "Floorplans")
                              : "")
@@ -154,28 +185,25 @@ struct FloorplanListView: View {
             initialVisualExportStyle: DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard,
             initialExportRotation: floorplan.drawingExportRotation
         ) { image, rooms, doc, colorIndex, visualStyle, exportRotation in
-            let previousRooms = floorplan.linkedRooms
-            let previousRotation = floorplan.drawingExportRotation
-            if let newData = image.jpegData(compressionQuality: 0.85) {
-                floorplan.imageData = newData
-            }
-            floorplan.drawingDocument = doc
-            floorplan.exteriorFillColorIndex = colorIndex
-            floorplan.drawingVisualExportStyleRaw = visualStyle.rawValue
-            floorplan.drawingExportRotation = exportRotation
-            if !rooms.isEmpty {
-                preserveMarkerPositions(
-                    on: floorplan,
-                    from: previousRooms,
-                    to: rooms,
-                    previousRotation: previousRotation,
-                    newRotation: exportRotation
-                )
-                floorplan.linkedRooms = rooms
-            }
-            floorplan.updatedAt = .now
-            try? modelContext.save()
-            cloudKitSync.markFloorplanNeedsSync(floorplan.id)
+            // Lo stesso coordinatore dell'altro punto di salvataggio. Qui c'era
+            // una copia a mano che era **rimasta indietro** su tre cose: JPEG
+            // invece del PNG lossless, contenimento stanza solo-rettangolo (il
+            // difetto che l'estrazione in `FloorplanMarkerRemapper` aveva
+            // corretto rendendolo poligonale), e nessun ricalcolo del legame
+            // sensore↔apertura dopo un ridisegno.
+            FloorplanDrawingUpdateCoordinator(
+                floorplan: floorplan,
+                modelContext: modelContext,
+                cloudKitSync: cloudKitSync,
+                markerEditingCoordinator: markerCoordinator(for: floorplan)
+            ).apply(
+                FloorplanDrawingUpdate(image: image,
+                                       rooms: rooms,
+                                       document: doc,
+                                       exteriorFillColorIndex: colorIndex,
+                                       visualStyle: visualStyle,
+                                       exportRotation: exportRotation)
+            )
         }
     }
 
@@ -540,6 +568,20 @@ struct FloorplanListView: View {
         let isPrimary = primaryFloorplanID == floorplan.id.uuidString
         let pinned    = isPinned(floorplan)
 
+        // — Anteprima in volume — solo se c'è un disegno da estrudere: da una
+        // foto ricalcata non si ricava niente.
+        if let document = floorplan.drawingDocument, !document.walls.isEmpty {
+            Button {
+                preview3D = Preview3DRequest(
+                    floorplans: previewableFloorplans,
+                    initialID: floorplan.id
+                )
+            } label: {
+                Label(String(localized: "floorplan.preview3D", defaultValue: "View in 3D"),
+                      systemImage: "cube")
+            }
+        }
+
         // — Pin / principale —
         if !pinned {
             Button {
@@ -651,64 +693,4 @@ struct FloorplanListView: View {
         cloudKitSync.markFloorplanNeedsSync(copy.id)
     }
 
-    private func preserveMarkerPositions(on floorplan: Floorplan,
-                                         from previousRooms: [LinkedRoom],
-                                         to newRooms: [LinkedRoom],
-                                         previousRotation: DrawingExportRotation,
-                                         newRotation: DrawingExportRotation) {
-        guard !previousRooms.isEmpty, !newRooms.isEmpty else { return }
-
-        let previousByID = Dictionary(uniqueKeysWithValues: previousRooms.map { ($0.hmRoomUUID, $0) })
-        let newByID = Dictionary(uniqueKeysWithValues: newRooms.map { ($0.hmRoomUUID, $0) })
-        let rotationDelta = (newRotation.quarterTurns - previousRotation.quarterTurns + 4) % 4
-
-        for marker in floorplan.accessories {
-            let markerPoint = NormalizedPoint(x: marker.positionX, y: marker.positionY)
-            guard let roomID = marker.linkedRoomUUID ?? roomID(containing: markerPoint, in: previousRooms),
-                  let previousRoom = previousByID[roomID],
-                  let newRoom = newByID[roomID] else { continue }
-
-            let previousRect = previousRoom.normalizedRect
-            let newRect = newRoom.normalizedRect
-            guard previousRect.width > 0, previousRect.height > 0 else { continue }
-
-            let localX = (marker.positionX - previousRect.x) / previousRect.width
-            let localY = (marker.positionY - previousRect.y) / previousRect.height
-            let rotatedLocal = rotatedLocalPoint(x: localX, y: localY, quarterTurns: rotationDelta)
-
-            marker.positionX = clamped(newRect.x + rotatedLocal.x * newRect.width)
-            marker.positionY = clamped(newRect.y + rotatedLocal.y * newRect.height)
-            marker.linkedRoomUUID = FloorplanRoomMatcher.linkedRoomID(
-                containing: marker.position,
-                in: newRooms
-            ) ?? roomID
-        }
-    }
-
-    private func rotatedLocalPoint(x: Double, y: Double, quarterTurns: Int) -> (x: Double, y: Double) {
-        switch quarterTurns {
-        case 1:
-            return (1 - y, x)
-        case 2:
-            return (1 - x, 1 - y)
-        case 3:
-            return (y, 1 - x)
-        default:
-            return (x, y)
-        }
-    }
-
-    private func roomID(containing point: NormalizedPoint, in rooms: [LinkedRoom]) -> UUID? {
-        rooms.first { room in
-            let rect = room.normalizedRect
-            return point.x >= rect.x &&
-                point.x <= rect.x + rect.width &&
-                point.y >= rect.y &&
-                point.y <= rect.y + rect.height
-        }?.hmRoomUUID
-    }
-
-    private func clamped(_ value: Double) -> Double {
-        min(1, max(0, value))
-    }
 }

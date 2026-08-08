@@ -35,6 +35,9 @@ struct FloorplanMarkerEditingCoordinator {
                 in: floorplan.linkedRooms
             )
         )
+        if Self.watchesOpenings(accessory) {
+            placed.linkedOpeningID = openingID(under: markerPosition)
+        }
         placed.floorplan = floorplan
         modelContext.insert(placed)
         floorplan.accessories.append(placed)
@@ -65,6 +68,65 @@ struct FloorplanMarkerEditingCoordinator {
             containing: position,
             in: floorplan.linkedRooms
         )
+        if let accessory = homeKit.accessory(for: placed.homeKitAccessoryUUID),
+           Self.watchesOpenings(accessory) {
+            placed.linkedOpeningID = openingID(under: position)
+        }
+        saveAndMarkForSync()
+    }
+
+    /// Quota e direzione di una luce: i due fatti che la pianta non contiene.
+    ///
+    /// Sta qui e non in una chiusura scritta nella vista perche' e' una
+    /// scrittura sul modello come le altre — e come le altre deve passare da
+    /// `saveAndMarkForSync`, o la modifica resta sul device e non arriva su
+    /// CloudKit.
+    /// `direction` a `nil` vuol dire **questo accessorio non punta da nessuna
+    /// parte**: uno split o una valvola hanno una quota ma non un verso, e
+    /// scriverne uno finto lascerebbe in archivio un dato che non significa
+    /// niente e che un giorno qualcuno leggerebbe.
+    func setLampSettings(accessoryUUID: UUID, height: Double, direction: LampDirection?) {
+        guard let placed = floorplan.accessories.first(where: {
+            $0.homeKitAccessoryUUID == accessoryUUID
+        }) else { return }
+        let newDirection = direction?.rawValue ?? placed.lightDirectionRaw
+        guard placed.mountHeight != height || placed.lightDirectionRaw != newDirection else { return }
+
+        placed.mountHeight = height
+        placed.lightDirectionRaw = newDirection
+        saveAndMarkForSync()
+    }
+
+    /// La spunta «questo interruttore comanda una luce».
+    func setDeclaredLight(accessoryUUID: UUID, _ flag: Bool) {
+        guard let placed = floorplan.accessories.first(where: {
+            $0.homeKitAccessoryUUID == accessoryUUID
+        }), placed.isDeclaredLight != flag else { return }
+        placed.isDeclaredLight = flag
+        saveAndMarkForSync()
+    }
+
+    /// Lo spostamento fine dal pannello 3D: passa da `moveMarker`, che
+    /// riaggancia stanza e apertura — spostare non deve mai scollegare in
+    /// silenzio.
+    func setMarkerPosition(accessoryUUID: UUID, to position: NormalizedPoint) {
+        guard let placed = floorplan.accessories.first(where: {
+            $0.homeKitAccessoryUUID == accessoryUUID
+        }) else { return }
+        moveMarker(id: placed.id, to: position)
+    }
+
+    /// L'esposizione della planimetria: verso dove guarda il lato alto.
+    func setNorthBearing(_ degrees: Double) {
+        guard floorplan.northBearingDegrees != degrees else { return }
+        floorplan.northBearingDegrees = degrees
+        saveAndMarkForSync()
+    }
+
+    /// L'altezza dei muri di questo piano.
+    func setCeilingHeight(_ metres: Double) {
+        guard floorplan.ceilingHeightMetres != metres else { return }
+        floorplan.ceilingHeightMetres = metres
         saveAndMarkForSync()
     }
 
@@ -73,6 +135,70 @@ struct FloorplanMarkerEditingCoordinator {
         let trimmed = newLabel.trimmingCharacters(in: .whitespaces)
         placed.customLabel = trimmed.isEmpty ? nil : trimmed
         saveAndMarkForSync()
+    }
+
+    /// L'apertura sotto un marker, se ce n'è una.
+    ///
+    /// Solo per i sensori di contatto: un termometro appoggiato vicino a una
+    /// porta non la sorveglia, e agganciarlo la farebbe aprire quando si alza
+    /// la temperatura.
+    /// Gli accessori che **appartengono a un vano**: un contatto che lo sorveglia
+    /// o una tapparella che lo copre. Entrambi si agganciano all'apertura più
+    /// vicina alla posa, e per entrambi il legame vive su `linkedOpeningID`.
+    static func watchesOpenings(_ accessory: HMAccessory) -> Bool {
+        accessory.services.contains { service in
+            if service.serviceType == HMServiceTypeWindowCovering { return true }
+            return service.characteristics.contains { $0.characteristicType == HMCharacteristicTypeContactState }
+        }
+    }
+
+    private func openingID(under position: NormalizedPoint) -> UUID? {
+        guard let document = floorplan.drawingDocument else { return nil }
+        return FloorplanOpeningMatcher.nearestOpening(
+            to: CGPoint(x: position.x, y: position.y),
+            in: document,
+            exportRotation: floorplan.drawingExportRotation
+        )
+    }
+
+    /// Ricalcola il legame con l'apertura per **tutti** i contatti.
+    ///
+    /// Va chiamata quando il disegno cambia: il marker resta dov'era ma i vani
+    /// si sono spostati, o sono spariti, o ne sono nati di nuovi. Senza questo
+    /// il legame resta quello di prima e punta a un'apertura che magari non
+    /// esiste più — e siccome non si vede da nessuna parte, il difetto sarebbe
+    /// silenzioso.
+    func refreshMarkerOpeningLinks() {
+        guard floorplan.drawingDocument != nil else { return }
+
+        var didUpdate = false
+        for marker in floorplan.accessories {
+            guard let accessory = homeKit.accessory(for: marker.homeKitAccessoryUUID),
+                  Self.watchesOpenings(accessory)
+            else { continue }
+            let resolved = openingID(under: marker.position)
+            guard marker.linkedOpeningID != resolved else { continue }
+            marker.linkedOpeningID = resolved
+            didUpdate = true
+        }
+        if didUpdate { saveAndMarkForSync() }
+    }
+
+    /// Riempie i legami mancanti sui marker già posati, così chi ha una
+    /// planimetria da prima non deve rifare niente.
+    func backfillMarkerOpeningLinksIfNeeded() {
+        guard floorplan.drawingDocument != nil else { return }
+
+        var didUpdate = false
+        for marker in floorplan.accessories where marker.linkedOpeningID == nil {
+            guard let accessory = homeKit.accessory(for: marker.homeKitAccessoryUUID),
+                  Self.watchesOpenings(accessory),
+                  let openingID = openingID(under: marker.position)
+            else { continue }
+            marker.linkedOpeningID = openingID
+            didUpdate = true
+        }
+        if didUpdate { saveAndMarkForSync() }
     }
 
     func alignMarkerRoomLink(id markerID: UUID) {

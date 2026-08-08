@@ -254,72 +254,9 @@ struct SecurityOverlayView: View {
     // MARK: Security status
 
     private func securityStatus(for room: LinkedRoom) -> RoomSecurityStatus {
-        let monitoredIDs = monitoredAccessoryIDs
-        let roomAccessories = accessories(in: room)
-
-        var hasLock = false
-        var hasAlarm = false
-        var hasContactSensor = false
-        var hasOpenContact = false
-        var isTriggered = false
-        var isArmed = false
-        var isLocked = false
-
-        for accessory in roomAccessories {
-            for service in accessory.services {
-                switch service.serviceType {
-                case HMServiceTypeSecuritySystem:
-                    hasAlarm = true
-                    if let char = service.characteristics.first(where: {
-                        $0.characteristicType == HMCharacteristicTypeCurrentSecuritySystemState
-                    }) {
-                        let raw = (char.value as? Int) ?? 3
-                        if raw == 4 { isTriggered = true }
-                        else if raw != 3 { isArmed = true }
-                    }
-                case HMServiceTypeLockMechanism:
-                    hasLock = true
-                    if let char = service.characteristics.first(where: {
-                        $0.characteristicType == HMCharacteristicTypeCurrentLockMechanismState
-                    }) {
-                        let raw = (char.value as? Int) ?? 0
-                        if raw == 1 { isLocked = true }
-                    }
-                case HMServiceTypeGarageDoorOpener, HMServiceTypeDoorbell:
-                    hasLock = true
-                case HMServiceTypeContactSensor:
-                    guard monitoredIDs.contains(accessory.uniqueIdentifier.uuidString) else { break }
-                    hasContactSensor = true
-                    if let char = service.characteristics.first(where: {
-                        $0.characteristicType == HMCharacteristicTypeContactState
-                    }) {
-                        let raw = homeKit.value(for: char) ?? char.value
-                        if let value = Self.intValue(raw), value != 0 {
-                            hasOpenContact = true
-                        }
-                    }
-                default:
-                    break
-                }
-            }
-        }
-
-        if isTriggered  { return .alarmed }
-        if isArmed      { return .armed }
-        if hasAlarm     { return .disarmed }
-        if hasOpenContact { return .unlocked }
-        if isLocked     { return .locked }
-        if hasLock      { return .unlocked }
-        if hasContactSensor { return .protected }
-        return .none
-    }
-
-    private static func intValue(_ raw: Any?) -> Int? {
-        if let value = raw as? Int { return value }
-        if let value = raw as? UInt8 { return Int(value) }
-        if let value = raw as? NSNumber { return value.intValue }
-        if let value = raw as? Bool { return value ? 1 : 0 }
-        return nil
+        RoomSecurityEvaluator.status(of: accessories(in: room),
+                                     monitoredIDs: monitoredAccessoryIDs,
+                                     homeKit: homeKit)
     }
 
     private func fillColor(_ status: RoomSecurityStatus) -> Color {

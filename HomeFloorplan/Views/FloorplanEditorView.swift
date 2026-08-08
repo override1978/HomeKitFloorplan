@@ -39,6 +39,10 @@ struct FloorplanEditorView: View {
     /// Stato UI raggruppato: editing/selezione marker, picker, presentazioni.
     @State private var ui = FloorplanEditorUIState()
 
+    /// La 3D aperta da qui: secondo ingresso alla stessa vista della lista,
+    /// costruita dalla stessa factory — mai una copia del cablaggio.
+    @State private var preview3D: Preview3DRequest?
+
     @AppStorage("floorplan.help.hasSeen.v1")
     private var hasSeenFloorplanHelp = false
     
@@ -342,6 +346,22 @@ struct FloorplanEditorView: View {
             trackSecurityModeChange()
         }
         .task(id: overlayVM?.activeMode, refreshEnvironmentOverlayWhileActive)
+        .fullScreenCover(item: $preview3D) { request in
+            FloorplanRealityPreviewView(floorplans: request.floorplans,
+                                        initialID: request.initialID)
+        }
+    }
+
+    /// Tutte le planimetrie, non solo questa: il menu del titolo nella 3D
+    /// permette di cambiare piano, e da un solo piano sembrerebbe rotto.
+    private func openPreview3D() {
+        let descriptor = FetchDescriptor<Floorplan>(sortBy: [SortDescriptor(\.name)])
+        let all = (try? modelContext.fetch(descriptor)) ?? [floorplan]
+        preview3D = Preview3DFactory.request(initialID: floorplan.id,
+                                             floorplans: all,
+                                             modelContext: modelContext,
+                                             cloudKitSync: cloudKitSync,
+                                             homeKit: homeKit)
     }
 
     /// Installazioni "a muro": il loop foreground campiona ogni ~5 min, ma
@@ -475,6 +495,7 @@ struct FloorplanEditorView: View {
             onShowHelp: chromeController.showHelpManually,
             onShowDiagnostics: { ui.showFloorplanDiagnostics = true },
             onEditDrawing: { ui.drawingEditFloorplan = floorplan },
+            onView3D: openPreview3D,
             onShowScenes: { ui.showScenesPanel = true },
             onToggleEditing: ui.toggleEditing,
             onPauseSmartLighting: smartLightingEngine.pauseFromFloorplan,
@@ -1103,5 +1124,8 @@ struct FloorplanEditorView: View {
 
     private func backfillMarkerRoomLinksIfNeeded() {
         markerEditingCoordinator.backfillMarkerRoomLinksIfNeeded()
+        // Stesso momento, stessa logica: chi ha marker posati da prima si
+        // ritrova il legame con l'apertura senza dover rifare niente.
+        markerEditingCoordinator.backfillMarkerOpeningLinksIfNeeded()
     }
 }
