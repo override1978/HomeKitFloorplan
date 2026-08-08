@@ -1143,7 +1143,7 @@ struct FloorplanRealityPreviewView: View {
 
     private var summaryRowContent: some View {
         HStack(spacing: 13) {
-            summaryItem(label: String(localized: "filter.all", defaultValue: "Tutto"),
+            summaryItem(label: String(localized: "filter.all", defaultValue: "All"),
                         icon: "leaf.fill",
                         tint: sensorFilter == nil ? .white : .primary, value: nil,
                         isSelected: sensorFilter == nil) { sensorFilter = nil }
@@ -1695,7 +1695,7 @@ struct FloorplanRealityPreviewView: View {
                 Image(systemName: triggered ? "exclamationmark.shield.fill" : mode.symbolName)
                     .font(.system(size: 13, weight: .semibold))
                 Text(triggered
-                     ? String(localized: "security.state.triggered", defaultValue: "Alarm")
+                     ? String(localized: "security.state.triggered", defaultValue: "Triggered")
                      : mode.displayName)
                     .font(.subheadline.weight(.semibold))
             }
