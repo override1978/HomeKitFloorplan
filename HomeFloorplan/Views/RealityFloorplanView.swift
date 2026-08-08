@@ -1227,6 +1227,10 @@ struct RealityFloorplanView: UIViewRepresentable {
             firstPerson = false
             camera.camera.fieldOfViewInDegrees = 38
             switch command.preset {
+            case .plan:
+                azimuth = 0
+                elevation = 1.2
+                distanceMultiplier = 2.3
             case .top:
                 elevation = 1.45
                 distanceMultiplier = 2.5

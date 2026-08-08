@@ -880,6 +880,12 @@ struct FloorplanRealityPreviewView: View {
                 // mostrare (fronte).
                 Menu {
                     Button {
+                        cameraCommand = CameraCommand(id: UUID(), preset: .plan)
+                    } label: {
+                        Label(String(localized: "camera.plan", defaultValue: "Plan"),
+                              systemImage: "map")
+                    }
+                    Button {
                         cameraCommand = CameraCommand(id: UUID(), preset: .top)
                     } label: {
                         Label(String(localized: "camera.top", defaultValue: "From above"),

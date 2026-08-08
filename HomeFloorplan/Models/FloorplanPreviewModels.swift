@@ -217,6 +217,9 @@ enum PreviewMode: String, CaseIterable, Identifiable {
 
 /// Le inquadrature pronte: ognuna e' solo una terna azimut/elevazione/distanza.
 enum CameraPreset: Equatable {
+    /// L'inquadratura d'apertura: pianta allineata allo schermo, quasi
+    /// dall'alto con un filo di prospettiva.
+    case plan
     /// Quasi zenitale: la pianta viva, tutta la casa in un colpo.
     case top
     /// Il tre quarti da dashboard, l'inquadratura di apertura.
