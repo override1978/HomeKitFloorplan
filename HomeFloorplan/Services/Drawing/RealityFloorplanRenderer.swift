@@ -737,7 +737,13 @@ enum RealityFloorplanRenderer {
         var lines: [(SIMD2<Float>, SIMD2<Float>, Float)] = []
         let start = axis == .x ? bounds.minX : bounds.minZ
         let end = axis == .x ? bounds.maxX : bounds.maxZ
-        var cursor = start + spacing
+        // Le fughe stanno sui multipli **mondiali** del passo, non sui bounds
+        // della stanza: due stanze adiacenti con lo stesso pavimento devono
+        // condividere la griglia, o alla porta le righe si sfalsano e il
+        // pavimento si legge come due. Le texture (doghe, marmo) sono già
+        // continue perché le UV sono metriche sul mondo — questa era l'unica
+        // parte ancorata alla stanza.
+        var cursor = (start / spacing).rounded(.down) * spacing + spacing
 
         while cursor < end {
             let segment: (SIMD2<Float>, SIMD2<Float>)
