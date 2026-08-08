@@ -1360,6 +1360,10 @@ private extension CloudKitSyncService {
         fp.drawingExportRotationRaw    = record["drawingExportRotationRaw"] as? String ?? fp.drawingExportRotationRaw
         fp.homeUUID                    = (record["homeUUID"] as? String).flatMap(UUID.init)
         fp.linkedRoomsJSON             = record["linkedRoomsJSON"] as? Data
+        // Assenti nei record scritti prima della 3D: in quel caso il valore
+        // locale resta — un record vecchio non sa niente di soffitti e nord.
+        fp.northBearingDegrees         = record["northBearingDegrees"] as? Double ?? fp.northBearingDegrees
+        fp.ceilingHeightMetres         = record["ceilingHeightMetres"] as? Double ?? fp.ceilingHeightMetres
         let roomIDMap                  = remapLinkedRooms(on: fp)
 
         if let asset = record["imageData"] as? CKAsset,
@@ -1434,6 +1438,17 @@ private extension CloudKitSyncService {
                 existing.positionY      = snap.positionY
                 existing.linkedRoomUUID = localLinkedRoomUUID
                 existing.customLabel    = snap.customLabel
+                // Solo se il record viene da una build che conosce la 3D
+                // (sentinella `isDeclaredLight` presente): un record vecchio
+                // che azzera il setup locale sarebbe una cancellazione, non
+                // una sincronizzazione. Quando la sentinella c'è, si applicano
+                // anche i nil — sono azzeramenti voluti sull'altro device.
+                if let declaredLight = snap.isDeclaredLight {
+                    existing.linkedOpeningID   = snap.linkedOpeningID
+                    existing.mountHeight       = snap.mountHeight
+                    existing.lightDirectionRaw = snap.lightDirectionRaw
+                    existing.isDeclaredLight   = declaredLight
+                }
             } else {
                 SyncDiagnosticsLogger.log(
                     "Applied marker insert floorplan=\(fp.id.uuidString) marker=\(snap.id.uuidString) position=(\(Self.formatCoordinate(snap.positionX)),\(Self.formatCoordinate(snap.positionY)))"
@@ -1446,6 +1461,10 @@ private extension CloudKitSyncService {
                 )
                 placed.id       = snap.id
                 placed.floorplan = fp
+                placed.linkedOpeningID   = snap.linkedOpeningID
+                placed.mountHeight       = snap.mountHeight
+                placed.lightDirectionRaw = snap.lightDirectionRaw
+                placed.isDeclaredLight   = snap.isDeclaredLight ?? false
                 context.insert(placed)
                 fp.accessories.append(placed)
             }

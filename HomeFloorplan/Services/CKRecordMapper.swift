@@ -16,6 +16,14 @@ struct PlacedAccessorySnapshot: Codable {
     var linkedRoomUUID: UUID?
     var customLabel: String?
     var iconOverride: String?
+    // Il setup 3D del marker. Tutti opzionali per decodificare i record scritti
+    // prima della 3D; `isDeclaredLight` fa anche da sentinella di formato — le
+    // build che conoscono la 3D lo scrivono sempre, quindi se manca il record
+    // è vecchio e i valori locali non vanno toccati.
+    var linkedOpeningID: UUID?
+    var mountHeight: Double?
+    var lightDirectionRaw: String?
+    var isDeclaredLight: Bool?
 }
 
 // MARK: - Floorplan → CKRecord
@@ -45,6 +53,8 @@ extension Floorplan {
         record["drawingExportRotationRaw"]    = drawingExportRotationRaw
         record["homeUUID"]                    = homeUUID?.uuidString
         record["linkedRoomsJSON"]             = linkedRoomsJSON
+        record["northBearingDegrees"]         = northBearingDegrees
+        record["ceilingHeightMetres"]         = ceilingHeightMetres
 
         // Markers: serialize all PlacedAccessory objects as JSON inline.
         // Typical size: ~200 bytes/marker × 30 markers ≈ 6 KB — well under the 1 MB field limit.
@@ -59,7 +69,11 @@ extension Floorplan {
                 positionY:            $0.positionY,
                 linkedRoomUUID:       $0.linkedRoomUUID,
                 customLabel:          $0.customLabel,
-                iconOverride:         iconOverrideProvider?($0.homeKitAccessoryUUID)
+                iconOverride:         iconOverrideProvider?($0.homeKitAccessoryUUID),
+                linkedOpeningID:      $0.linkedOpeningID,
+                mountHeight:          $0.mountHeight,
+                lightDirectionRaw:    $0.lightDirectionRaw,
+                isDeclaredLight:      $0.isDeclaredLight
             )
         }
         if let data = try? JSONEncoder().encode(snapshots) {
