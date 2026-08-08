@@ -39,6 +39,9 @@ struct DrawingCanvasView: UIViewRepresentable {
     var onMoveRoomLabel: (UUID, CGPoint) -> Void
     /// Called when a room area drag is committed (canvas-space rect).
     var onCommitRoomArea: (CGRect) -> Void
+    /// Tocco secco in modalità Stanza: il foglio prova a ricavare il
+    /// poligono dai muri. Il trascinamento resta la via manuale.
+    var onTapRoomArea: ((CGPoint) -> Void)? = nil
     /// Called once when the user begins dragging a room area (used to push undo).
     var onBeginMoveRoomArea: (UUID) -> Void
     /// Called when a room area is dragged by a delta (translation CGSize).
@@ -175,6 +178,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         context.coordinator.showDimensions    = showDimensions
 
         context.coordinator.updateContent(document: document, mode: mode, selection: selection)
+        context.coordinator.centerContent(sv)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -325,10 +329,20 @@ struct DrawingCanvasView: UIViewRepresentable {
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { hostedView }
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            centerContent(scrollView)
+        }
+
+        /// Quando il canvas è più piccolo dello schermo galleggia al centro
+        /// **tramite contentInset**, non spostando il frame: il frame combatte
+        /// col contentOffset, e al primo scroll a zoom basso il disegno
+        /// restava incollato in alto col bianco sotto — lo «sparisce mezzo
+        /// disegno» di iPhone, dove lo schermo stretto ci finisce di continuo.
+        func centerContent(_ scrollView: UIScrollView) {
             guard let view = hostedView else { return }
-            let offsetX = max((scrollView.bounds.width  - view.frame.width)  / 2, 0)
-            let offsetY = max((scrollView.bounds.height - view.frame.height) / 2, 0)
-            view.frame.origin = CGPoint(x: offsetX, y: offsetY)
+            view.frame.origin = .zero
+            let dx = max((scrollView.bounds.width  - view.frame.width)  / 2, 0)
+            let dy = max((scrollView.bounds.height - view.frame.height) / 2, 0)
+            scrollView.contentInset = UIEdgeInsets(top: dy, left: dx, bottom: dy, right: dx)
         }
 
         // MARK: Main gesture (draw walls OR drag openings/labels)
@@ -787,7 +801,9 @@ struct DrawingCanvasView: UIViewRepresentable {
                     selectionHaptic.selectionChanged()
                 }
                 parent.selection = newSelection
-            case .draw, .drawRoomArea:
+            case .drawRoomArea:
+                parent.onTapRoomArea?(tapPoint)
+            case .draw:
                 break
             }
         }

@@ -1341,7 +1341,7 @@ struct DrawRoomAreaBanner: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(localized: "drawing.banner.roomArea.title",
-                            defaultValue: "Drag to draw a HomeKit room area"))
+                            defaultValue: "Tap inside a closed room, or drag an area"))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                 Text(String(localized: "drawing.banner.roomArea.subtitle",

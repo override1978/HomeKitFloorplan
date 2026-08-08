@@ -18245,13 +18245,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Drag to draw a room area"
+            "value" : "Tap inside a closed room, or drag an area"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trascina per disegnare l'area della stanza"
+            "value" : "Tocca dentro una stanza chiusa, o trascina un'area"
           }
         }
       }

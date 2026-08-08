@@ -141,6 +141,7 @@ struct DrawingFloorplanSheet: View {
     /// Canvas rect saved when the user finishes dragging in .drawRoomArea mode;
     /// cleared after the room picker resolves.
     @State private var pendingAreaRect: CGRect?
+    @State private var pendingAreaPoints: [CGPoint]?
     @State private var showAreaRoomPicker = false
 
     // MARK: Undo stack (max 30 snapshots)
@@ -178,6 +179,17 @@ struct DrawingFloorplanSheet: View {
 
     // MARK: Body
 
+    /// Il tocco dentro una stanza chiusa fa tutto: i muri ne conoscono già
+    /// la forma, all'utente resta la sola scelta della stanza HomeKit. Se il
+    /// punto non è racchiuso, non succede niente: resta il trascinamento.
+    private func handleTapRoomArea(at point: CGPoint) {
+        guard let polygon = RoomShapeTracer.roomPolygon(containing: point,
+                                                        walls: document.walls)
+        else { return }
+        pendingAreaPoints = polygon
+        showAreaRoomPicker = true
+    }
+
     var body: some View {
         GeometryReader { geo in
         ZStack(alignment: .bottom) {
@@ -200,6 +212,7 @@ struct DrawingFloorplanSheet: View {
                 onBeginMoveRoomLabel: { _ in pushUndo() },
                 onMoveRoomLabel: handleMoveRoomLabel(id:at:),
                 onCommitRoomArea: handleCommitRoomArea(rect:),
+                onTapRoomArea: handleTapRoomArea(at:),
                 onBeginMoveRoomArea: { _ in pushUndo() },
                 onMoveRoomArea: handleMoveRoomArea(id:delta:),
                 onBeginResizeRoomArea: { _ in pushUndo() },
@@ -456,18 +469,29 @@ struct DrawingFloorplanSheet: View {
             RoomPickerSheet(
                 rooms: homeKit.currentHome?.rooms ?? [],
                 onPick: { room in
-                    guard let rect = pendingAreaRect else { return }
-                    // New areas are always created as polygons (4 draggable vertices from birth).
-                    let initialPoints: [CGPoint] = [
-                        CGPoint(x: rect.minX, y: rect.minY),
-                        CGPoint(x: rect.maxX, y: rect.minY),
-                        CGPoint(x: rect.maxX, y: rect.maxY),
-                        CGPoint(x: rect.minX, y: rect.maxY)
-                    ]
+                    // Due strade, stessa foce: il poligono tracciato dai muri
+                    // (tocco dentro la stanza) o il rettangolo trascinato a
+                    // mano. In ogni caso l'area nasce poligono, con le
+                    // maniglie sui vertici.
+                    let initialPoints: [CGPoint]
+                    if let polygon = pendingAreaPoints {
+                        initialPoints = polygon
+                    } else if let rect = pendingAreaRect {
+                        initialPoints = [
+                            CGPoint(x: rect.minX, y: rect.minY),
+                            CGPoint(x: rect.maxX, y: rect.minY),
+                            CGPoint(x: rect.maxX, y: rect.maxY),
+                            CGPoint(x: rect.minX, y: rect.maxY)
+                        ]
+                    } else { return }
+                    let xs = initialPoints.map(\.x), ys = initialPoints.map(\.y)
+                    let bounds = CGRect(x: xs.min() ?? 0, y: ys.min() ?? 0,
+                                        width: (xs.max() ?? 0) - (xs.min() ?? 0),
+                                        height: (ys.max() ?? 0) - (ys.min() ?? 0))
                     let area = RoomArea(
                         hmRoomUUID: room.uniqueIdentifier,
                         name: room.name,
-                        rect: rect,
+                        rect: bounds,
                         colorIndex: document.roomAreas.count,
                         points: initialPoints
                     )
@@ -475,10 +499,12 @@ struct DrawingFloorplanSheet: View {
                     document.roomAreas.append(area)
                     selection = .roomArea(area.id)
                     pendingAreaRect = nil
+                    pendingAreaPoints = nil
                     mode = .select
                 },
                 onCancel: {
                     pendingAreaRect = nil
+                    pendingAreaPoints = nil
                     mode = .select
                 }
             )
