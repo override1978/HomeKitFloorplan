@@ -103,6 +103,7 @@ struct FloorplanRealityPreviewView: View {
     /// ma di giorno non c'è modo di verificare le luci — e una funzione che si
     /// può provare solo dopo cena non si sviluppa.
     @State private var forcesNight = false
+    #endif
     /// Il pannello delle impostazioni della planimetria: altezza soffitto,
     /// esposizione, anteprima notte. Sono configurazioni — si toccano una
     /// volta nella vita di una planimetria — e una configurazione non merita
@@ -121,7 +122,6 @@ struct FloorplanRealityPreviewView: View {
         UserDefaults.standard.set(true, forKey: key)
         withAnimation(.easeOut(duration: 0.3)) { isSettingsOpen = true }
     }
-    #endif
 
     var body: some View {
         ZStack(alignment: .bottom) {
