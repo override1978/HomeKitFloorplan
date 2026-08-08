@@ -20,6 +20,7 @@ import HomeKit
 /// Le destinazioni restano descritte da `SidebarSelection`, così iPad e iPhone
 /// non divergono su *cosa* è raggiungibile — solo su come ci si arriva.
 struct CompactHomeView: View {
+    @State private var showNewFloorplan = false
 
     @Environment(HomeKitService.self) private var homeKit
     @Environment(AISettings.self) private var aiSettings
@@ -90,9 +91,9 @@ struct CompactHomeView: View {
                 }
 
                 Section {
-                    // "Nuova planimetria" non sta qui: la crea il + nella barra,
-                    // e in un elenco di destinazioni una voce che apre un foglio
-                    // è l'unica che non porta da nessuna parte.
+                    // "Nuova planimetria" non sta in elenco: la crea il + nella
+                    // barra, e in un elenco di destinazioni una voce che apre un
+                    // foglio è l'unica che non porta da nessuna parte.
                     destinationRow(.allFloorplans,
                                    title: String(localized: "sidebar.allFloorplans", defaultValue: "All Floorplans"),
                                    icon: "rectangle.stack")
@@ -103,15 +104,6 @@ struct CompactHomeView: View {
                     }
                 } header: {
                     Text(String(localized: "sidebar.section.floorplans", defaultValue: "Floorplans"))
-                } footer: {
-                    // Senza questa riga l'assenza del "+" è muta: l'utente cerca
-                    // un modo di creare una planimetria e non trova né il
-                    // comando né una ragione.
-                    Label(String(localized: "compact.floorplans.iPadOnly",
-                                 defaultValue: "New floorplans are created on iPad. Existing ones can be viewed and edited here."),
-                          systemImage: "ipad.landscape")
-                        .font(.footnote)
-                        .padding(.top, 4)
                 }
 
                 Section {
@@ -167,9 +159,20 @@ struct CompactHomeView: View {
             .listStyle(.insetGrouped)
             .tint(BrandColor.primary)
             .navigationTitle(homeKit.currentHome?.name ?? "Home Floorplan")
-            // Niente creazione planimetrie su iPhone: è un'azione da editor, e
-            // una planimetria creata qui resterebbe vuota — posizionare i
-            // marker è modifica, e la modifica non c'è. Si creano su iPad.
+            // Da quando l'editor 2D ha la chrome compatta, creare da iPhone è
+            // un flusso completo: foglio dati, poi disegno e marker sul posto.
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showNewFloorplan = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showNewFloorplan) {
+                NewFloorplanSheet()
+            }
         }
         // L'assistente sta QUI e non sulla planimetria. Su iPad è un riquadro
         // flottante in alto a destra tarato su ~430 punti di larghezza: sopra
@@ -273,11 +276,21 @@ struct CompactHomeView: View {
                 .font(.headline)
 
             Text(String(localized: "compact.noFloorplans.message",
-                        defaultValue: "Draw your first floorplan on iPad. It will show up here through iCloud, ready to view and control."))
+                        defaultValue: "Create your first floorplan with the + button, or draw one on iPad — iCloud keeps them in sync."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                showNewFloorplan = true
+            } label: {
+                Label(String(localized: "floorplan.create", defaultValue: "Create floorplan"),
+                      systemImage: "plus.circle.fill")
+                    .font(.body.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
