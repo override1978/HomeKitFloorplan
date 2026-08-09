@@ -93,8 +93,19 @@ struct DrawingCanvasView: UIViewRepresentable {
 
     // MARK: makeUIView
 
+    /// L'unico punto che UIKit garantisce a ogni cambio di geometria è
+    /// `layoutSubviews`: pavimento dello zoom e centratura vivono lì, non
+    /// sparsi fra callback che a volte non arrivano.
+    final class DrawingScrollView: UIScrollView {
+        var onLayout: (() -> Void)?
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            onLayout?()
+        }
+    }
+
     func makeUIView(context: Context) -> UIScrollView {
-        let sv = UIScrollView()
+        let sv = DrawingScrollView()
         // Adattivo: in dark mode lo sfondo bianco fisso disegnava una lastra
         // chiara oltre il bordo del canvas.
         sv.backgroundColor = .systemBackground
@@ -104,7 +115,12 @@ struct DrawingCanvasView: UIViewRepresentable {
         sv.showsHorizontalScrollIndicator = false
         sv.showsVerticalScrollIndicator   = false
         sv.delegate    = context.coordinator
-        sv.bouncesZoom = true
+        // Il rimbalzo elastico sotto il minimo era la porta di ogni stato
+        // «incastrato»: l'animazione di ritorno si interrompe (un tocco, un
+        // aggiornamento SwiftUI) e la scala resta sotto il pavimento, col
+        // foglio rannicchiato in alto a sinistra. Senza rimbalzo la scala
+        // non può proprio scendere sotto il minimo.
+        sv.bouncesZoom = false
         // Gli inset li governa il disegno, non il sistema: il foglio ora
         // rispetta la safe area e senza questo la scrollview sposterebbe i
         // contenuti di quanto è alta la status bar.
@@ -118,6 +134,11 @@ struct DrawingCanvasView: UIViewRepresentable {
         hostVC.view.backgroundColor = .systemBackground
         sv.addSubview(hostVC.view)
         context.coordinator.hostedView = hostVC.view
+        sv.onLayout = { [weak sv, coordinator = context.coordinator] in
+            guard let sv else { return }
+            coordinator.enforceZoomFloor(sv)
+            coordinator.centerContent(sv)
+        }
 
         // Main gesture: zero-delay long-press used for both drawing and dragging
         let mainGesture = UILongPressGestureRecognizer(
