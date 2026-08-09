@@ -15,10 +15,12 @@ import CoreGraphics
 /// la faccia più piccola che contiene il tocco.
 enum RoomShapeTracer {
 
-    /// Tolleranza di fusione dei vertici, in punti canvas. I muri nascono
-    /// snappati fra loro: questa assorbe solo il rumore numerico, non
-    /// ricuce disegni sconnessi.
-    private static let epsilon: CGFloat = 1.0
+    /// Tolleranza di fusione dei vertici, in punti canvas (~mezzo spessore
+    /// di muro). Un angolo con 5 pt di varco È chiuso per l'occhio — «a
+    /// vista sembra ok» — e deve esserlo anche per il tracciatore, o il tap
+    /// non fa nulla senza spiegarsi. La griglia è a 25 pt: vertici distinti
+    /// restano lontani il quadruplo.
+    private static let epsilon: CGFloat = 6.0
 
     /// Sotto quest'area una faccia è un artefatto di spezzatura, non una
     /// stanza (20×20 pt ≈ mezzo modulo di griglia).
@@ -63,17 +65,16 @@ enum RoomShapeTracer {
         }
 
         // ── Vertici fusi su griglia di tolleranza, lati dedotti ──
-        struct VertexKey: Hashable { let x: Int; let y: Int }
-        func key(_ p: CGPoint) -> VertexKey {
-            VertexKey(x: Int((p.x / epsilon).rounded()),
-                      y: Int((p.y / epsilon).rounded()))
-        }
-        var indexByKey: [VertexKey: Int] = [:]
+        // Fusione per distanza vera, non per cella: due estremi a 5 pt l'uno
+        // dall'altro possono cadere in celle diverse, e il varco resterebbe
+        // aperto proprio nel caso per cui la tolleranza esiste. Lineare, ma
+        // i vertici di una planimetria si contano in decine.
         var positions: [CGPoint] = []
         func vertexIndex(_ p: CGPoint) -> Int {
-            let k = key(p)
-            if let existing = indexByKey[k] { return existing }
-            indexByKey[k] = positions.count
+            for (index, existing) in positions.enumerated()
+            where hypot(existing.x - p.x, existing.y - p.y) <= epsilon {
+                return index
+            }
             positions.append(p)
             return positions.count - 1
         }

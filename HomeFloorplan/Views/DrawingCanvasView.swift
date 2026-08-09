@@ -42,6 +42,8 @@ struct DrawingCanvasView: UIViewRepresentable {
     /// Tocco secco in modalità Stanza: il foglio prova a ricavare il
     /// poligono dai muri. Il trascinamento resta la via manuale.
     var onTapRoomArea: ((CGPoint) -> Void)? = nil
+    /// Su iPhone lo zoom minimo tiene il canvas a copertura dello schermo.
+    var coversViewportAtMinimumZoom: Bool = false
     /// Called once when the user begins dragging a room area (used to push undo).
     var onBeginMoveRoomArea: (UUID) -> Void
     /// Called when a room area is dragged by a delta (translation CGSize).
@@ -93,7 +95,9 @@ struct DrawingCanvasView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIScrollView {
         let sv = UIScrollView()
-        sv.backgroundColor = .white
+        // Adattivo: in dark mode lo sfondo bianco fisso disegnava una lastra
+        // chiara oltre il bordo del canvas.
+        sv.backgroundColor = .systemBackground
         sv.minimumZoomScale = 0.3
         sv.maximumZoomScale = 4.0
         sv.zoomScale = 0.6
@@ -111,7 +115,7 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         let hostVC = context.coordinator.makeHostingController()
         hostVC.view.frame           = CGRect(x: 0, y: 0, width: size, height: size)
-        hostVC.view.backgroundColor = .white
+        hostVC.view.backgroundColor = .systemBackground
         sv.addSubview(hostVC.view)
         context.coordinator.hostedView = hostVC.view
 
@@ -168,6 +172,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         // iPhone è l'unica alternativa al cambiare modalità per ogni pan.
         sv.panGestureRecognizer.isEnabled = true
         sv.panGestureRecognizer.minimumNumberOfTouches = panDisabled ? 2 : 1
+        context.coordinator.enforceZoomFloor(sv)
         let gestureEnabled: Bool
         switch mode {
         case .draw, .select, .drawRoomArea: gestureEnabled = true
@@ -332,6 +337,28 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { hostedView }
 
+        /// Su iPhone il minimo è «il canvas copre lo schermo»: oltre quel
+        /// limite si vedrebbe solo il vuoto fuori dall'area di disegno — il
+        /// «taglio» riportato tre volte. Su iPad resta 0.3: lì la vista
+        /// d'insieme dell'intero canvas ha senso e lo schermo la regge.
+        /// In più, se lo zoom è rimasto incastrato SOTTO il minimo (rimbalzo
+        /// interrotto), qui si riaggancia.
+        func enforceZoomFloor(_ scrollView: UIScrollView) {
+            guard scrollView.bounds.width > 0 else { return }
+            if parent.coversViewportAtMinimumZoom {
+                let cover = max(scrollView.bounds.width, scrollView.bounds.height)
+                    / DrawingDocument.canvasSize
+                scrollView.minimumZoomScale = max(0.3, cover)
+            } else {
+                scrollView.minimumZoomScale = 0.3
+            }
+            if !scrollView.isZooming, !scrollView.isZoomBouncing,
+               scrollView.zoomScale < scrollView.minimumZoomScale - 0.001 {
+                scrollView.setZoomScale(scrollView.minimumZoomScale, animated: false)
+                centerContent(scrollView)
+            }
+        }
+
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
             centerContent(scrollView)
         }
@@ -352,9 +379,11 @@ struct DrawingCanvasView: UIViewRepresentable {
         }
 
         /// Il rimbalzo sotto lo zoom minimo passa di qui alla fine: la
-        /// centratura va rifatta sullo stato assestato.
+        /// centratura va rifatta sullo stato assestato, e lo zoom incastrato
+        /// sotto il minimo si riaggancia.
         func scrollViewDidEndZooming(_ scrollView: UIScrollView,
                                      with view: UIView?, atScale scale: CGFloat) {
+            enforceZoomFloor(scrollView)
             centerContent(scrollView)
         }
 

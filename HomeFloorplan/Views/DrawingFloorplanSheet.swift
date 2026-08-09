@@ -86,6 +86,7 @@ private struct DrawingSessionDraft: Codable {
 /// }
 /// ```
 struct DrawingFloorplanSheet: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// Called when the user taps "Fatto" — provides the rendered PNG, linked rooms, drawing document,
     /// exterior-fill color index, and visual export style so the caller can persist them on the floorplan.
@@ -185,7 +186,12 @@ struct DrawingFloorplanSheet: View {
     private func handleTapRoomArea(at point: CGPoint) {
         guard let polygon = RoomShapeTracer.roomPolygon(containing: point,
                                                         walls: document.walls)
-        else { return }
+        else {
+            // «Fai tap e non fa nulla» è il peggio: almeno il polso dice che
+            // il tocco è arrivato ma la stanza non risulta chiusa.
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            return
+        }
         pendingAreaPoints = polygon
         showAreaRoomPicker = true
     }
@@ -220,6 +226,7 @@ struct DrawingFloorplanSheet: View {
                 onMoveRoomLabel: handleMoveRoomLabel(id:at:),
                 onCommitRoomArea: handleCommitRoomArea(rect:),
                 onTapRoomArea: handleTapRoomArea(at:),
+                coversViewportAtMinimumZoom: horizontalSizeClass == .compact,
                 onBeginMoveRoomArea: { _ in pushUndo() },
                 onMoveRoomArea: handleMoveRoomArea(id:delta:),
                 onBeginResizeRoomArea: { _ in pushUndo() },
