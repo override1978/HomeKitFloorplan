@@ -36,7 +36,7 @@ struct AccessoryDetailView: View {
         // specializzato (sarebbe ridondante).
         if adapter.makeControlSection(homeKit: homeKit) == nil,
            let text = adapter.primaryStatusText, !text.isEmpty {
-            Section {
+            detailCard {
                 HStack {
                     Text(String(localized: "accessory.detail.status", defaultValue: "Stato"))
                     Spacer()
@@ -47,29 +47,51 @@ struct AccessoryDetailView: View {
             }
         }
     }
+
+    /// La card comune della scheda: contenuto largo tutta la riga, vetro col
+    /// toggle acceso, card da gruppo in legacy.
+    private func detailCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous),
+                legacyFill: AnyShapeStyle(Color(.secondarySystemGroupedBackground))
+            )
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.footnote)
+            .textCase(.uppercase)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 16)
+            .padding(.top, 2)
+    }
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-            heroCard
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
+            // Niente più Form: ogni sezione è una card — vetro col toggle,
+            // insetGrouped-like in legacy — così la scheda parla la stessa
+            // lingua della lista accessori.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    heroCard
 
-            Form {
-                if let quickInfo = adapter.primaryStatusText, !quickInfo.isEmpty {
                     quickInfoSection
-                }
-                
-                if let controlView = adapter.makeControlSection(homeKit: homeKit) {
-                    Section(String(localized: "accessory.detail.controls", defaultValue: "Controls")) {
-                        controlView
-                    }
-                }
 
-                matterEnergySection
-                
-                rawSection
-            }
+                    if let controlView = adapter.makeControlSection(homeKit: homeKit) {
+                        sectionHeader(String(localized: "accessory.detail.controls", defaultValue: "Controls"))
+                        detailCard { controlView }
+                    }
+
+                    matterEnergySection
+
+                    rawSection
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle(accessory.name)
@@ -151,7 +173,8 @@ struct AccessoryDetailView: View {
     @ViewBuilder
     private var matterEnergySection: some View {
         if let snapshot = energySnapshot {
-            Section("Energia") {
+            sectionHeader("Energia")
+            detailCard {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
                         energyMetricCard(
@@ -189,7 +212,6 @@ struct AccessoryDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.vertical, 4)
             }
         }
     }
@@ -242,7 +264,7 @@ struct AccessoryDetailView: View {
     }
     
     private var rawSection: some View {
-        Section {
+        detailCard {
             DisclosureGroup(
                 String(format: String(localized: "accessory.detail.rawTitle", defaultValue: "Dettagli tecnici (%d)"), totalCharacteristicsCount),
                 isExpanded: $rawExpanded
