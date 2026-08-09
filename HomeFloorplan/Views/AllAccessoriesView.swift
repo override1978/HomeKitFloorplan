@@ -10,6 +10,16 @@ struct AllAccessoriesView: View {
     @State private var selectedCategory: AccessoryCategory = .all
     @State private var selectedStateFilter: AccessoryStateFilter = .all
 
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+
+    /// Stesso criterio di `GlassChromeSurface`: vetro solo col toggle acceso
+    /// E il sistema che lo sa fare.
+    private var usesGlassChrome: Bool {
+        if #available(iOS 26.0, *) { return isLiquidGlassEnabled }
+        return false
+    }
+
     // Group accessories by room name, or "No Room" if unavailable
     private var accessoriesByRoom: [String: [HMAccessory]] {
         let filtered: [HMAccessory]
@@ -245,7 +255,7 @@ struct AllAccessoriesView: View {
         VStack(spacing: 8) {
             // Riga 1: Categorie
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: usesGlassChrome ? 0 : 8) {
                     ForEach(AccessoryCategory.allCases) { category in
                         filterPill(
                             title: category.displayName,
@@ -257,12 +267,17 @@ struct AllAccessoriesView: View {
                         }
                     }
                 }
+                // Il vetro sta sul GRUPPO, mai dentro la label dei bottoni
+                // (lì resterebbe una lastra ferma — anti-pattern già pagato).
+                // In legacy la capsula di gruppo non esiste: fill trasparente.
+                .padding(usesGlassChrome ? 3 : 0)
+                .glassChromeSurface(in: Capsule(), legacyFill: AnyShapeStyle(.clear))
                 .padding(.horizontal)
             }
-            
+
             // Riga 2: Stato
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: usesGlassChrome ? 0 : 8) {
                     ForEach(AccessoryStateFilter.allCases) { state in
                         filterPill(
                             title: state.displayName,
@@ -275,14 +290,20 @@ struct AllAccessoriesView: View {
                         }
                     }
                 }
+                .padding(usesGlassChrome ? 3 : 0)
+                .glassChromeSurface(in: Capsule(), legacyFill: AnyShapeStyle(.clear))
                 .padding(.horizontal)
             }
         }
         .padding(.vertical, 8)
-        .background(
-            Color.clear
-                .overlay(.thinMaterial.opacity(0.6))   // mescola brand + material per leggibilità
-        )
+        .background {
+            // Col vetro la barra non ha superficie propria: ce l'hanno i due
+            // gruppi. La banda di material resta solo in legacy.
+            if !usesGlassChrome {
+                Color.clear
+                    .overlay(.thinMaterial.opacity(0.6))   // mescola brand + material per leggibilità
+            }
+        }
     }
 
     private func filterPill(
@@ -305,15 +326,20 @@ struct AllAccessoriesView: View {
                         .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
                 }
             }
-            .foregroundStyle(isSelected ? .white : .primary)
+            .foregroundStyle(isSelected
+                             ? .white
+                             : (usesGlassChrome ? Color.primary.opacity(0.78) : Color.primary))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
                 Capsule()
                     .fill(isSelected
                           ? AnyShapeStyle(BrandColor.heroGradient)
-                          : AnyShapeStyle(.regularMaterial))
+                          : (usesGlassChrome ? AnyShapeStyle(.clear) : AnyShapeStyle(.regularMaterial)))
             )
+            // Sul vetro le spente sono trasparenti, e i pixel trasparenti non
+            // sono tappabili: la forma di hit-test va dichiarata.
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.3), value: isSelected)
