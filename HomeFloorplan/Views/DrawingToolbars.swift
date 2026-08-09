@@ -834,7 +834,7 @@ struct DrawingToolbar: View {
                     wallKindButton(kind: .balcony,  icon: "line.diagonal",
                                    label: String(localized: "drawing.toolbar.wall.balcony",  defaultValue: "Balcony"))
                     wallKindButton(kind: .logical, icon: "divide",
-                                   label: String(localized: "drawing.toolbar.wall.logical", defaultValue: "Logico"))
+                                   label: String(localized: "drawing.toolbar.wall.logical", defaultValue: "Logical"))
                 }
                 .glassChromeSurface(
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous),
