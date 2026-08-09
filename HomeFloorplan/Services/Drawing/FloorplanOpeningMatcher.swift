@@ -132,7 +132,8 @@ enum FloorplanOpeningMatcher {
         let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
         return document.openings.compactMap { opening in
             guard let wall = document.walls.first(where: { $0.id == opening.wallID }),
-                  wall.kind != .balcony
+                  wall.kind != .balcony,
+                  wall.kind.rendersAsPhysicalWall
             else { return nil }
             let start = SIMD2(Double(wall.start.x) * metresPerPoint, Double(wall.start.y) * metresPerPoint)
             let end = SIMD2(Double(wall.end.x) * metresPerPoint, Double(wall.end.y) * metresPerPoint)

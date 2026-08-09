@@ -31,6 +31,12 @@ struct DrawingCanvasContent: View {
     let axisSnapGuide: (from: CGPoint, to: CGPoint)?
     /// When false, dimension labels (wall lengths in metres) are not rendered.
     let showDimensions: Bool
+    /// iPhone-only precision lens while dragging endpoints or drawing walls.
+    let magnifierPoint: CGPoint?
+    let magnifierZoomScale: CGFloat
+    let showsMagnifier: Bool
+    /// Visual-only snap feedback for precision editing.
+    let snapPreview: SnapResult?
 
     @AppStorage(DimensionUnit.appStorageKey)
     private var dimensionUnitRaw: String = DimensionUnit.metric.rawValue
@@ -68,15 +74,19 @@ struct DrawingCanvasContent: View {
                      spacing: DrawingDocument.gridSpacing,
                      context: &ctx)
 
-            // 2. Committed walls — draw order: balcony first, interior, exterior last.
+            // 2. Committed walls — logical boundaries first, then physical walls.
             // Walls of a kind are stroked as connected chains (mitered joins).
-            let wallDrawOrder: [WallKind] = [.balcony, .interior, .exterior]
+            let wallDrawOrder: [WallKind] = [.logical, .balcony, .interior, .exterior]
             for kind in wallDrawOrder {
                 if case .wall(let id) = selection,
                    let selectedWall = document.wall(for: id), selectedWall.kind == kind {
                     drawWallSelectionHalo(selectedWall, context: &ctx)
                 }
                 drawWallChains(document, kind: kind, context: &ctx)
+            }
+            if case .wall(let id) = selection,
+               let selectedWall = document.wall(for: id) {
+                drawEditorWallOverlay(selectedWall, context: &ctx)
             }
 
             // 3. Preview wall (in-progress draw stroke)
@@ -85,7 +95,13 @@ struct DrawingCanvasContent: View {
                 var previewPath = Path()
                 previewPath.move(to: pw.start)
                 previewPath.addLine(to: pw.end)
-                if pw.kind == .balcony {
+                if pw.kind == .logical {
+                    ctx.stroke(previewPath,
+                               with: .color(DrawingStyle.selectionColor.opacity(0.65)),
+                               style: StrokeStyle(lineWidth: w,
+                                                  lineCap: .round,
+                                                  dash: [12, 8]))
+                } else if pw.kind == .balcony {
                     ctx.stroke(previewPath,
                                with: .color(DrawingStyle.wallColor.opacity(0.45)),
                                style: StrokeStyle(lineWidth: w, lineCap: .square))
@@ -168,9 +184,6 @@ struct DrawingCanvasContent: View {
             if case .draw = mode { isDrawMode = true } else { isDrawMode = false }
             if isDrawMode, let pt = cursorPoint {
                 drawCrosshair(at: pt, context: &ctx)
-                if isVertexSnap {
-                    drawVertexSnapIndicator(at: pt, context: &ctx)
-                }
             }
 
             // 5b. Axis snap guide line (shown while dragging a wall endpoint)
@@ -183,8 +196,18 @@ struct DrawingCanvasContent: View {
                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [6, 4]))
             }
 
+            if let snapPreview {
+                drawSnapPreview(snapPreview, context: &ctx)
+            }
+
             // 6. Selection handles
             drawSelectionHandles(selection: selection, document: document, context: &ctx)
+
+            if showsMagnifier, let magnifierPoint {
+                drawMagnifier(around: magnifierPoint,
+                              zoomScale: magnifierZoomScale,
+                              context: &ctx)
+            }
         }
         .frame(width: size, height: size)
         .background(Color(.systemBackground))
@@ -224,6 +247,173 @@ struct DrawingCanvasContent: View {
         vPath.addLine(to: CGPoint(x: point.x, y: point.y + arm))
         context.stroke(hPath, with: .color(DrawingStyle.selectionColor.opacity(0.8)), style: style)
         context.stroke(vPath, with: .color(DrawingStyle.selectionColor.opacity(0.8)), style: style)
+    }
+
+    private func drawMagnifier(around point: CGPoint,
+                               zoomScale: CGFloat,
+                               context: inout GraphicsContext) {
+        let effectiveZoom = max(zoomScale, 0.01)
+        let screenRadius: CGFloat = 58
+        let radius = screenRadius / effectiveZoom
+        let inset = 12 / effectiveZoom
+        let center = magnifierCenter(for: point, radius: radius, inset: inset, zoomScale: effectiveZoom)
+        let rect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+        let lensPath = Path(ellipseIn: rect)
+
+        context.fill(lensPath, with: .color(Color(.systemBackground).opacity(0.96)))
+
+        var lensContext = context
+        lensContext.clip(to: lensPath)
+        lensContext.translateBy(x: center.x, y: center.y)
+        lensContext.scaleBy(x: 2.35, y: 2.35)
+        lensContext.translateBy(x: -point.x, y: -point.y)
+        drawMagnifierDocument(context: &lensContext)
+        drawCrosshair(at: point, context: &lensContext)
+        if let snapPreview {
+            drawSnapPreview(snapPreview, context: &lensContext)
+        }
+
+        context.stroke(lensPath,
+                       with: .color(Color(.systemBackground).opacity(0.9)),
+                       style: StrokeStyle(lineWidth: 3 / effectiveZoom))
+        context.stroke(lensPath,
+                       with: .color(DrawingStyle.selectionColor.opacity(0.95)),
+                       style: StrokeStyle(lineWidth: 2 / effectiveZoom))
+    }
+
+    private func magnifierCenter(for point: CGPoint,
+                                 radius: CGFloat,
+                                 inset: CGFloat,
+                                 zoomScale: CGFloat) -> CGPoint {
+        let canvasSize = DrawingDocument.canvasSize
+        let horizontalOffset = 82 / zoomScale
+        let verticalOffset = -112 / zoomScale
+        var center = CGPoint(x: point.x + horizontalOffset, y: point.y + verticalOffset)
+
+        if center.x + radius + inset > canvasSize {
+            center.x = point.x - horizontalOffset
+        }
+        if center.y - radius - inset < 0 {
+            center.y = point.y + 100 / zoomScale
+        }
+
+        center.x = min(max(center.x, radius + inset), canvasSize - radius - inset)
+        center.y = min(max(center.y, radius + inset), canvasSize - radius - inset)
+        return center
+    }
+
+    private func drawMagnifierDocument(context: inout GraphicsContext) {
+        let canvasSize = DrawingDocument.canvasSize
+        let canvasRect = CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize)
+
+        for area in document.roomAreas {
+            let isSelected: Bool
+            if case .roomArea(let id) = selection { isSelected = area.id == id } else { isSelected = false }
+            drawRoomArea(area, context: &context, selected: isSelected)
+        }
+        if let previewArea {
+            drawPreviewArea(previewArea, context: &context)
+        }
+        for item in document.furnitureDrawOrder {
+            let isSelected: Bool
+            if case .furniture(let id) = selection { isSelected = item.id == id } else { isSelected = false }
+            drawFurnitureItem(item, context: &context, selected: isSelected)
+        }
+
+        drawGrid(in: canvasRect, spacing: DrawingDocument.gridSpacing, context: &context)
+
+        for kind in [WallKind.logical, .balcony, .interior, .exterior] {
+            if case .wall(let id) = selection,
+               let selectedWall = document.wall(for: id),
+               selectedWall.kind == kind {
+                drawWallSelectionHalo(selectedWall, context: &context)
+            }
+            drawWallChains(document, kind: kind, context: &context)
+        }
+        if case .wall(let id) = selection,
+           let selectedWall = document.wall(for: id) {
+            drawEditorWallOverlay(selectedWall, context: &context)
+        }
+
+        if let previewWall {
+            var path = Path()
+            path.move(to: previewWall.start)
+            path.addLine(to: previewWall.end)
+            context.stroke(path,
+                           with: .color(DrawingStyle.wallColor.opacity(0.55)),
+                           style: StrokeStyle(lineWidth: DrawingDocument.wallWidth(for: previewWall.kind),
+                                              lineCap: .square,
+                                              dash: previewWall.kind == .logical ? [12, 8] : [8, 4]))
+        }
+
+        for opening in document.openings {
+            guard let wall = document.wall(for: opening.wallID) else { continue }
+            let isSelected: Bool
+            if case .opening(let id) = selection { isSelected = opening.id == id } else { isSelected = false }
+            switch opening.kind {
+            case .door:        drawDoor(opening, wall: wall, context: &context, selected: isSelected)
+            case .window:      drawWindow(opening, wall: wall, context: &context, selected: isSelected)
+            case .slidingDoor: drawSlidingDoor(opening, wall: wall, context: &context, selected: isSelected)
+            case .frenchDoor:  drawFrenchDoor(opening, wall: wall, context: &context, selected: isSelected)
+            }
+        }
+
+        drawSelectionHandles(selection: selection, document: document, context: &context)
+    }
+
+    private func drawSnapPreview(_ snap: SnapResult, context: inout GraphicsContext) {
+        switch snap {
+        case .vertex(let point):
+            drawVertexSnapIndicator(at: point, context: &context)
+
+        case .wall(let point):
+            let r: CGFloat = 10
+            var diamond = Path()
+            diamond.move(to: CGPoint(x: point.x, y: point.y - r))
+            diamond.addLine(to: CGPoint(x: point.x + r, y: point.y))
+            diamond.addLine(to: CGPoint(x: point.x, y: point.y + r))
+            diamond.addLine(to: CGPoint(x: point.x - r, y: point.y))
+            diamond.closeSubpath()
+            context.fill(diamond, with: .color(.cyan.opacity(0.22)))
+            context.stroke(diamond,
+                           with: .color(.cyan.opacity(0.95)),
+                           style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+            drawCrosshair(at: point, context: &context)
+
+        case .grid(let point):
+            let r: CGFloat = 4
+            let rect = CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)
+            context.fill(Path(ellipseIn: rect), with: .color(Color.secondary.opacity(0.35)))
+        }
+    }
+
+    private func drawEditorWallOverlay(_ wall: WallSegment, context: inout GraphicsContext) {
+        var path = Path()
+        path.move(to: wall.start)
+        path.addLine(to: wall.end)
+        let width = DrawingDocument.wallWidth(for: wall.kind)
+
+        if wall.kind == .logical {
+            context.stroke(path,
+                           with: .color(DrawingStyle.selectionColor.opacity(0.9)),
+                           style: StrokeStyle(lineWidth: width,
+                                              lineCap: .round,
+                                              lineJoin: .round,
+                                              dash: [12, 8]))
+        } else {
+            context.stroke(path,
+                           with: .color(DrawingStyle.wallColor),
+                           style: StrokeStyle(lineWidth: width,
+                                              lineCap: .square,
+                                              lineJoin: .miter))
+            if wall.kind == .balcony {
+                context.stroke(path,
+                               with: .color(Color(.systemBackground)),
+                               style: StrokeStyle(lineWidth: width * 0.45,
+                                                  lineCap: .square,
+                                                  lineJoin: .miter))
+            }
+        }
     }
 
     private func drawSelectionHandles(selection: DrawingSelection,
@@ -864,7 +1054,7 @@ func drawEdgeMidpointIndicator(at point: CGPoint, context: inout GraphicsContext
 func drawEndpointHandle(at point: CGPoint,
                         context: inout GraphicsContext,
                         filled: Bool = false) {
-    let r: CGFloat = 5
+    let r: CGFloat = 7
     let rect = CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)
     let circlePath = Path(ellipseIn: rect)
 
@@ -874,7 +1064,7 @@ func drawEndpointHandle(at point: CGPoint,
         context.fill(circlePath, with: .color(Color(.systemBackground)))
         context.stroke(circlePath,
                        with: .color(DrawingStyle.selectionColor),
-                       lineWidth: 2)
+                       lineWidth: 2.5)
     }
 }
 

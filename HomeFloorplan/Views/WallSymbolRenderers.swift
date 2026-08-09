@@ -113,6 +113,16 @@ func drawWallChains(_ doc: DrawingDocument,
     let w = DrawingDocument.wallWidth(for: kind)
     let style = StrokeStyle(lineWidth: w, lineCap: .square, lineJoin: .miter)
 
+    if kind == .logical {
+        context.stroke(path,
+                       with: .color(DrawingStyle.selectionColor.opacity(0.55)),
+                       style: StrokeStyle(lineWidth: w,
+                                          lineCap: .round,
+                                          lineJoin: .round,
+                                          dash: [12, 8]))
+        return
+    }
+
     context.stroke(path, with: .color(DrawingStyle.wallColor), style: style)
     if kind == .balcony {
         // Inner line (background color) — creates the hollow / double-line look
@@ -463,7 +473,7 @@ private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
     for kind in wallDrawOrder {
         drawDarkWallChainsCG(doc, kind: kind, context: context)
     }
-    for wall in doc.walls where wall.kind != .balcony {
+    for wall in doc.walls where wall.kind != .balcony && wall.kind.rendersAsPhysicalWall {
         drawDarkWallHighlightCG(wall, context: context)
     }
 
@@ -1795,7 +1805,7 @@ private func drawWallCastShadowsCG(_ doc: DrawingDocument, context: CGContext) {
 }
 
 private func drawWallBevelsCG(_ doc: DrawingDocument, context: CGContext) {
-    for wall in doc.walls where wall.kind != .balcony {
+    for wall in doc.walls where wall.kind != .balcony && wall.kind.rendersAsPhysicalWall {
         drawWallBevelCG(wall, context: context)
     }
 }

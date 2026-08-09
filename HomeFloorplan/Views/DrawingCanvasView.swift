@@ -44,6 +44,12 @@ struct DrawingCanvasView: UIViewRepresentable {
     var onTapRoomArea: ((CGPoint) -> Void)? = nil
     /// Su iPhone lo zoom minimo tiene il canvas a copertura dello schermo.
     var coversViewportAtMinimumZoom: Bool = false
+    /// Area occupata dalla chrome flottante. La scroll view la usa come spazio
+    /// di respiro operativo: il canvas resta sotto il vetro, ma può essere
+    /// centrato e pannato fuori da top bar, inspector e dock.
+    var chromeInsets: UIEdgeInsets = .zero
+    /// iPhone-only precision lens while drawing or reshaping small geometry.
+    var showsMagnifier: Bool = false
     /// Called once when the user begins dragging a room area (used to push undo).
     var onBeginMoveRoomArea: (UUID) -> Void
     /// Called when a room area is dragged by a delta (translation CGSize).
@@ -167,6 +173,7 @@ struct DrawingCanvasView: UIViewRepresentable {
             action: #selector(Coordinator.handleTap(_:))
         )
         tapGesture.require(toFail: doubleTapGesture)
+        tapGesture.delegate = context.coordinator
         sv.addGestureRecognizer(tapGesture)
 
         // Quando parte un gesto a due dita (pan o pinch), il tratto in corso
@@ -183,6 +190,8 @@ struct DrawingCanvasView: UIViewRepresentable {
     // MARK: updateUIView
 
     func updateUIView(_ sv: UIScrollView, context: Context) {
+        context.coordinator.parent = self
+
         let panDisabled: Bool
         if case .draw = mode { panDisabled = true }
         else if case .drawRoomArea = mode { panDisabled = true }
@@ -227,6 +236,11 @@ struct DrawingCanvasView: UIViewRepresentable {
         private var currentPreviewWall: WallSegment?
         private var currentCursor: CGPoint?
         private var currentIsVertexSnap: Bool = false
+        private var currentMagnifierPoint: CGPoint?
+        private var currentSnapPreview: SnapResult?
+        private weak var autoPanScrollView: UIScrollView?
+        private var autoPanVelocity: CGPoint = .zero
+        private var autoPanDisplayLink: CADisplayLink?
 
         // Draw room area state
         private var drawAreaStart: CGPoint?
@@ -280,10 +294,130 @@ struct DrawingCanvasView: UIViewRepresentable {
                 // i 30 pt canvas fissi diventavano 12 pt sotto il dito, e gli
                 // angoli «non si prendevano». Così il raggio è costante al
                 // polpastrello a qualunque zoom.
-                return parent.document.smartSnap(point, maxDistance: canvasThreshold(30))
+                return parent.document.smartSnap(point, maxDistance: canvasThreshold(precisionModeEnabled ? 34 : 26))
             } else {
                 return .grid(DrawingDocument.snap(point))
             }
+        }
+
+        private func performDrawSnap(_ point: CGPoint) -> SnapResult {
+            guard vertexSnapEnabled else {
+                return .grid(DrawingDocument.snap(point))
+            }
+
+            if let vertex = parent.document.nearestEndpoint(
+                to: point,
+                maxDistance: canvasThreshold(precisionModeEnabled ? 40 : 30)
+            ) {
+                return .vertex(vertex)
+            }
+            if let hit = parent.document.nearestWall(
+                to: point,
+                maxDistance: canvasThreshold(parent.showsMagnifier ? 18 : 10)
+            ),
+               let wall = parent.document.wall(for: hit.wallID) {
+                return .wall(wall.project(point).closest)
+            }
+            return .grid(DrawingDocument.snap(point))
+        }
+
+        private func performEndpointSnap(_ point: CGPoint,
+                                         movingWallID: UUID) -> SnapResult {
+            guard vertexSnapEnabled else {
+                return .grid(DrawingDocument.snap(point))
+            }
+
+            if let vertex = nearestEndpoint(
+                to: point,
+                maxDistance: canvasThreshold(precisionModeEnabled ? 44 : 34),
+                excludingWallID: movingWallID
+            ) {
+                return .vertex(vertex)
+            }
+            if let wallPoint = nearestWallPoint(
+                to: point,
+                maxDistance: canvasThreshold(parent.showsMagnifier ? 5 : 10),
+                excludingWallID: movingWallID
+            ) {
+                return .wall(wallPoint)
+            }
+            return .grid(DrawingDocument.snap(point))
+        }
+
+        private func nearestWallPoint(to point: CGPoint,
+                                      maxDistance: CGFloat,
+                                      excludingWallID: UUID) -> CGPoint? {
+            var bestPoint: CGPoint?
+            var bestDistance: CGFloat = .greatestFiniteMagnitude
+
+            for wall in parent.document.walls where wall.id != excludingWallID && wall.kind.rendersAsPhysicalWall {
+                let projection = wall.project(point)
+                guard projection.t > 0, projection.t < 1 else { continue }
+                if projection.distance < bestDistance {
+                    bestDistance = projection.distance
+                    bestPoint = projection.closest
+                }
+            }
+
+            guard bestDistance <= maxDistance else { return nil }
+            return bestPoint
+        }
+
+        private func nearestEndpoint(to point: CGPoint,
+                                     maxDistance: CGFloat,
+                                     excludingWallID: UUID) -> CGPoint? {
+            var bestPoint: CGPoint?
+            var bestDistance: CGFloat = .greatestFiniteMagnitude
+
+            for wall in parent.document.walls where wall.id != excludingWallID {
+                for endpoint in [wall.start, wall.end] {
+                    let distance = hypot(endpoint.x - point.x, endpoint.y - point.y)
+                    if distance < bestDistance {
+                        bestDistance = distance
+                        bestPoint = endpoint
+                    }
+                }
+            }
+
+            guard bestDistance <= maxDistance else { return nil }
+            return bestPoint
+        }
+
+        private func axisSnap(_ point: CGPoint,
+                              maxDistance: CGFloat,
+                              excludingWallID: UUID) -> AxisSnapResult? {
+            var bestX: (dist: CGFloat, vertex: CGPoint)?
+            var bestY: (dist: CGFloat, vertex: CGPoint)?
+
+            for wall in parent.document.walls where wall.id != excludingWallID {
+                for endpoint in [wall.start, wall.end] {
+                    let dx = abs(endpoint.x - point.x)
+                    let dy = abs(endpoint.y - point.y)
+                    if dx < maxDistance, bestX == nil || dx < bestX!.dist { bestX = (dx, endpoint) }
+                    if dy < maxDistance, bestY == nil || dy < bestY!.dist { bestY = (dy, endpoint) }
+                }
+            }
+
+            if let bestX, let bestY {
+                return bestX.dist <= bestY.dist
+                    ? AxisSnapResult(point: CGPoint(x: bestX.vertex.x, y: point.y),
+                                     axis: .vertical,
+                                     referenceVertex: bestX.vertex)
+                    : AxisSnapResult(point: CGPoint(x: point.x, y: bestY.vertex.y),
+                                     axis: .horizontal,
+                                     referenceVertex: bestY.vertex)
+            }
+            if let bestX {
+                return AxisSnapResult(point: CGPoint(x: bestX.vertex.x, y: point.y),
+                                      axis: .vertical,
+                                      referenceVertex: bestX.vertex)
+            }
+            if let bestY {
+                return AxisSnapResult(point: CGPoint(x: point.x, y: bestY.vertex.y),
+                                      axis: .horizontal,
+                                      referenceVertex: bestY.vertex)
+            }
+            return nil
         }
 
         /// Signed angular distance in degrees, wrap-aware (result in [-180, 180]).
@@ -300,7 +434,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         /// dragged length (rounded to 5 pt = 5 cm); free angle everywhere else,
         /// so arbitrary inclinations like 15° or 20° are drawable.
         private func angleSnappedEnd(from start: CGPoint, to end: CGPoint, snapResult: SnapResult) -> CGPoint {
-            guard !snapResult.isVertex else { return end }
+            guard !snapResult.isGeometrySnap else { return end }
 
             let dx = end.x - start.x
             let dy = end.y - start.y
@@ -309,8 +443,11 @@ struct DrawingCanvasView: UIViewRepresentable {
 
             let deg = atan2(dy, dx) * 180 / .pi
 
+            let octantTolerance: CGFloat = parent.showsMagnifier ? 12 : 7
+            let fineAngleTolerance: CGFloat = parent.showsMagnifier ? 5 : 4
+
             let octantDeg = (deg / 45).rounded() * 45
-            if abs(angularDistance(deg, octantDeg)) <= 7 {
+            if abs(angularDistance(deg, octantDeg)) <= octantTolerance {
                 let snappedAngle = octantDeg * .pi / 180
                 let directionX = cos(snappedAngle)
                 let directionY = sin(snappedAngle)
@@ -326,7 +463,7 @@ struct DrawingCanvasView: UIViewRepresentable {
             }
 
             let stepDeg = (deg / 15).rounded() * 15
-            if abs(angularDistance(deg, stepDeg)) <= 4 {
+            if abs(angularDistance(deg, stepDeg)) <= fineAngleTolerance {
                 let snappedAngle = stepDeg * .pi / 180
                 let roundedLength = (length / 5).rounded() * 5
                 return CGPoint(x: start.x + cos(snappedAngle) * roundedLength,
@@ -352,6 +489,10 @@ struct DrawingCanvasView: UIViewRepresentable {
             contentState.cursorPoint     = currentCursor
             contentState.isVertexSnap    = currentIsVertexSnap
             contentState.showDimensions  = showDimensions
+            contentState.magnifierPoint  = parent.showsMagnifier ? currentMagnifierPoint : nil
+            contentState.magnifierZoomScale = currentZoomScale
+            contentState.showsMagnifier  = parent.showsMagnifier
+            contentState.snapPreview     = currentSnapPreview
         }
 
         // MARK: Zoom centering
@@ -381,6 +522,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         }
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            contentState.magnifierZoomScale = scrollView.zoomScale
             centerContent(scrollView)
         }
 
@@ -394,9 +536,24 @@ struct DrawingCanvasView: UIViewRepresentable {
             // scrollview la governa via transform, e scriverle il frame sotto
             // le mani corrompeva l'ancora dello zoom («resize spinto» = mezzo
             // disegno sparito). Il contentSize lo tiene giusto la scrollview.
-            let dx = max((scrollView.bounds.width  - scrollView.contentSize.width)  / 2, 0)
-            let dy = max((scrollView.bounds.height - scrollView.contentSize.height) / 2, 0)
-            scrollView.contentInset = UIEdgeInsets(top: dy, left: dx, bottom: dy, right: dx)
+            let chrome = parent.chromeInsets
+            let visibleSize = operativeViewportSize(in: scrollView)
+            let dx = max((visibleSize.width  - scrollView.contentSize.width)  / 2, 0)
+            let dy = max((visibleSize.height - scrollView.contentSize.height) / 2, 0)
+            scrollView.contentInset = UIEdgeInsets(
+                top: chrome.top + dy,
+                left: chrome.left + dx,
+                bottom: chrome.bottom + dy,
+                right: chrome.right + dx
+            )
+        }
+
+        private func operativeViewportSize(in scrollView: UIScrollView) -> CGSize {
+            let chrome = parent.chromeInsets
+            return CGSize(
+                width: max(scrollView.bounds.width - chrome.left - chrome.right, 1),
+                height: max(scrollView.bounds.height - chrome.top - chrome.bottom, 1)
+            )
         }
 
         /// Il rimbalzo sotto lo zoom minimo passa di qui alla fine: la
@@ -408,6 +565,97 @@ struct DrawingCanvasView: UIViewRepresentable {
             centerContent(scrollView)
         }
 
+        private func updateAutoPan(for gesture: UILongPressGestureRecognizer) {
+            guard parent.showsMagnifier,
+                  let scrollView = gesture.view as? UIScrollView,
+                  gesture.state == .began || gesture.state == .changed
+            else {
+                stopAutoPan()
+                return
+            }
+
+            let point = gesture.location(in: scrollView)
+            let bounds = scrollView.bounds
+            let chrome = parent.chromeInsets
+            let activeRect = CGRect(
+                x: bounds.minX + chrome.left,
+                y: bounds.minY + chrome.top,
+                width: max(bounds.width - chrome.left - chrome.right, 1),
+                height: max(bounds.height - chrome.top - chrome.bottom, 1)
+            )
+            let edge: CGFloat = 76
+            let maxStep: CGFloat = precisionModeEnabled ? 13 : 9
+
+            func edgeVelocity(distance: CGFloat) -> CGFloat {
+                guard distance < edge else { return 0 }
+                let ratio = max(0, min(1, (edge - distance) / edge))
+                return maxStep * ratio * ratio
+            }
+
+            var velocity = CGPoint.zero
+            velocity.x -= edgeVelocity(distance: point.x - activeRect.minX)
+            velocity.x += edgeVelocity(distance: activeRect.maxX - point.x)
+            velocity.y -= edgeVelocity(distance: point.y - activeRect.minY)
+            velocity.y += edgeVelocity(distance: activeRect.maxY - point.y)
+
+            autoPanVelocity = velocity
+            autoPanScrollView = scrollView
+            if velocity == .zero {
+                stopAutoPan()
+            } else {
+                startAutoPanIfNeeded()
+            }
+        }
+
+        private func startAutoPanIfNeeded() {
+            guard autoPanDisplayLink == nil else { return }
+            let link = CADisplayLink(target: self, selector: #selector(handleAutoPanTick))
+            link.add(to: .main, forMode: .common)
+            autoPanDisplayLink = link
+        }
+
+        private func stopAutoPan() {
+            autoPanDisplayLink?.invalidate()
+            autoPanDisplayLink = nil
+            autoPanVelocity = .zero
+            autoPanScrollView = nil
+        }
+
+        @objc private func handleAutoPanTick() {
+            guard let scrollView = autoPanScrollView, autoPanVelocity != .zero else {
+                stopAutoPan()
+                return
+            }
+
+            let minX = -scrollView.contentInset.left
+            let minY = -scrollView.contentInset.top
+            let maxX = max(minX, scrollView.contentSize.width - scrollView.bounds.width + scrollView.contentInset.right)
+            let maxY = max(minY, scrollView.contentSize.height - scrollView.bounds.height + scrollView.contentInset.bottom)
+            var next = scrollView.contentOffset
+            next.x = min(max(next.x + autoPanVelocity.x, minX), maxX)
+            next.y = min(max(next.y + autoPanVelocity.y, minY), maxY)
+            scrollView.setContentOffset(next, animated: false)
+            refreshActiveGestureAfterAutoPan()
+        }
+
+        private func refreshActiveGestureAfterAutoPan() {
+            guard let mainGesture,
+                  mainGesture.state == .changed,
+                  let hostedView else { return }
+
+            let rawPoint = mainGesture.location(in: hostedView)
+            switch parent.mode {
+            case .draw:
+                handleDrawGesture(mainGesture, rawPoint: rawPoint)
+            case .select:
+                handleDragGesture(mainGesture, rawPoint: rawPoint)
+            case .drawRoomArea:
+                handleDrawAreaGesture(mainGesture, rawPoint: rawPoint)
+            default:
+                break
+            }
+        }
+
         // MARK: Main gesture (draw walls OR drag openings/labels)
 
         @objc func handleMainGesture(_ gr: UILongPressGestureRecognizer) {
@@ -416,10 +664,18 @@ struct DrawingCanvasView: UIViewRepresentable {
             // continuava a tracciare il primo e il pinch non partiva mai — il
             // muro diagonale fantasma. La guardia sta nel gesto stesso.
             if gr.numberOfTouches > 1, gr.state == .began || gr.state == .changed {
+                stopAutoPan()
                 cancelMainGesture()
                 return
             }
             let rawPoint = gr.location(in: hostedView)
+            if let hostedView,
+               parent.chromeInsets.contains(rawPoint, in: hostedView.bounds),
+               gr.state == .began || gr.state == .changed {
+                stopAutoPan()
+                cancelMainGesture()
+                return
+            }
 
             switch parent.mode {
             case .draw:
@@ -431,13 +687,25 @@ struct DrawingCanvasView: UIViewRepresentable {
             default:
                 break
             }
+
+            stopAutoPan()
         }
 
         // MARK: Draw walls
 
         private func handleDrawGesture(_ gr: UILongPressGestureRecognizer, rawPoint: CGPoint) {
-            let snapResult = performSnap(rawPoint)
-            let snapped = snapResult.point
+            var snapResult = performDrawSnap(rawPoint)
+            var snapped = snapResult.point
+            if let start = drawStartPoint,
+               case .wall = snapResult,
+               let intersection = axisPreservingWallIntersection(from: start,
+                                                                  rawPoint: rawPoint,
+                                                                  directionVector: CGPoint(x: rawPoint.x - start.x,
+                                                                                           y: rawPoint.y - start.y),
+                                                                  excludingWallID: nil) {
+                snapResult = .wall(intersection)
+                snapped = intersection
+            }
 
             switch gr.state {
             case .began:
@@ -446,16 +714,20 @@ struct DrawingCanvasView: UIViewRepresentable {
                 didExceedDrawDragThreshold = false
                 currentCursor       = snapped
                 currentIsVertexSnap = snapResult.isVertex
+                currentMagnifierPoint = snapped
+                currentSnapPreview = snapResult
                 refreshPreview()
             case .changed:
                 let constrained = drawStartPoint.map {
                     angleSnappedEnd(from: $0, to: snapped, snapResult: snapResult)
                 } ?? snapped
                 let didCursorMove   = constrained != currentCursor
-                let didSnapChange   = snapResult.isVertex != currentIsVertexSnap
+                let didSnapChange   = snapPreviewKind(currentSnapPreview) != snapPreviewKind(snapResult)
                 currentCursor       = constrained
                 currentIsVertexSnap = snapResult.isVertex
-                if snapResult.isVertex && didSnapChange {
+                currentMagnifierPoint = constrained
+                currentSnapPreview = snapResult.at(constrained)
+                if snapResult.isGeometrySnap && didSnapChange {
                     snapHaptic.impactOccurred()
                 }
                 if let touchStart = drawTouchStartPoint,
@@ -470,6 +742,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 }
                 if didCursorMove || didSnapChange { refreshPreview() }
             case .ended, .cancelled, .failed:
+                stopAutoPan()
                 if gr.state == .ended {
                     if didExceedDrawDragThreshold {
                         if let start = drawStartPoint {
@@ -489,6 +762,8 @@ struct DrawingCanvasView: UIViewRepresentable {
                 drawTouchStartPoint = nil
                 didExceedDrawDragThreshold = false
                 currentPreviewWall  = nil
+                currentMagnifierPoint = nil
+                currentSnapPreview = nil
                 if pendingTapWallStart == nil {
                     currentCursor       = nil
                     currentIsVertexSnap = false
@@ -501,7 +776,18 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         private func handleTapWallPoint(_ point: CGPoint, snapResult: SnapResult) {
             if let start = pendingTapWallStart {
-                let constrained = angleSnappedEnd(from: start, to: point, snapResult: snapResult)
+                var finalPoint = point
+                var finalSnap = snapResult
+                if case .wall = snapResult,
+                   let intersection = axisPreservingWallIntersection(from: start,
+                                                                      rawPoint: point,
+                                                                      directionVector: CGPoint(x: point.x - start.x,
+                                                                                               y: point.y - start.y),
+                                                                      excludingWallID: nil) {
+                    finalPoint = intersection
+                    finalSnap = .wall(intersection)
+                }
+                let constrained = angleSnappedEnd(from: start, to: finalPoint, snapResult: finalSnap)
                 if start != constrained {
                     commitWall(start: start, end: constrained, kind: pendingTapWallKind ?? parent.wallKind)
                 }
@@ -511,6 +797,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 pendingTapWallKind  = parent.wallKind
                 currentCursor       = point
                 currentIsVertexSnap = snapResult.isVertex
+                currentSnapPreview  = snapResult
             }
         }
 
@@ -527,6 +814,8 @@ struct DrawingCanvasView: UIViewRepresentable {
             currentCursor       = nil
             currentIsVertexSnap = false
             currentPreviewWall  = nil
+            currentMagnifierPoint = nil
+            currentSnapPreview = nil
         }
 
         // MARK: Draw room area
@@ -548,6 +837,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 currentPreviewArea = CGRect(x: minX, y: minY, width: w, height: h)
                 contentState.previewArea = currentPreviewArea
             case .ended, .cancelled, .failed:
+                stopAutoPan()
                 if let rect = currentPreviewArea, rect.width > 40, rect.height > 40 {
                     commitHaptic.impactOccurred()
                     parent.onCommitRoomArea(rect)
@@ -580,7 +870,12 @@ struct DrawingCanvasView: UIViewRepresentable {
                     // (onInsertRoomAreaVertex pushes undo, so the whole insert+drag
                     // is one undo step — do not also call onBeginResizeRoomArea.)
                     if let edge = area.nearestEdge(to: rawPoint, threshold: canvasThreshold()) {
-                        let snapped = wallAwareSnap(edge.point)
+                        let snapResult = wallAwareSnapResult(edge.point)
+                        let snapped = snapResult.point
+                        currentMagnifierPoint = snapped
+                        currentSnapPreview = snapResult
+                        contentState.magnifierPoint = parent.showsMagnifier ? snapped : nil
+                        contentState.snapPreview = snapResult
                         parent.onInsertRoomAreaVertex?(id, edge.edgeIndex, snapped)
                         resizingRoomAreaID  = id
                         resizingCornerIndex = edge.edgeIndex + 1
@@ -638,18 +933,27 @@ struct DrawingCanvasView: UIViewRepresentable {
                    let wall = parent.document.wall(for: id) {
                     let distToStart = hypot(rawPoint.x - wall.start.x, rawPoint.y - wall.start.y)
                     let distToEnd   = hypot(rawPoint.x - wall.end.x,   rawPoint.y - wall.end.y)
-                    if distToStart < 20 {
+                    let endpointHitRadius = canvasThreshold(parent.showsMagnifier ? 56 : 44)
+                    if distToStart < endpointHitRadius {
                         draggingWallEndpointID = id
                         draggingEndpointIndex  = 0
                         parent.onBeginMoveWallEndpoint?(id)
-                    } else if distToEnd < 20 {
+                    } else if distToEnd < endpointHitRadius {
                         draggingWallEndpointID = id
                         draggingEndpointIndex  = 1
                         parent.onBeginMoveWallEndpoint?(id)
+                    } else if parent.showsMagnifier {
+                        let mid = CGPoint(x: (wall.start.x + wall.end.x) / 2,
+                                          y: (wall.start.y + wall.end.y) / 2)
+                        if hypot(rawPoint.x - mid.x, rawPoint.y - mid.y) < canvasThreshold(34) {
+                            draggingWallID      = id
+                            dragWallTouchStart  = rawPoint
+                            parent.onBeginMoveWall?(id)
+                        }
                     } else {
                         // No endpoint handle hit — check if the touch is on the wall body
                         let proj = wall.project(rawPoint)
-                        let tolerance = DrawingDocument.wallWidth(for: wall.kind) / 2 + 6
+                        let tolerance = DrawingDocument.wallWidth(for: wall.kind) / 2 + canvasThreshold(12)
                         if proj.distance < tolerance {
                             draggingWallID      = id
                             dragWallTouchStart  = rawPoint
@@ -685,7 +989,12 @@ struct DrawingCanvasView: UIViewRepresentable {
                 // Resize / reshape room area vertex
                 if let id = resizingRoomAreaID,
                    let cornerIdx = resizingCornerIndex {
-                    let snapped = wallAwareSnap(rawPoint)
+                    let snapResult = wallAwareSnapResult(rawPoint)
+                    let snapped = snapResult.point
+                    currentMagnifierPoint = snapped
+                    currentSnapPreview = snapResult
+                    contentState.magnifierPoint = parent.showsMagnifier ? snapped : nil
+                    contentState.snapPreview = snapResult
                     // Always delegate to handleMoveRoomAreaVertex which auto-promotes
                     // legacy rect areas to polygon on the first vertex drag.
                     parent.onMoveRoomAreaVertex?(id, cornerIdx, snapped)
@@ -708,18 +1017,38 @@ struct DrawingCanvasView: UIViewRepresentable {
                 }
                 // Move wall endpoint
                 if let id = draggingWallEndpointID, let epIdx = draggingEndpointIndex {
-                    let snapResult = performSnap(rawPoint)
+                    let snapResult = performEndpointSnap(rawPoint, movingWallID: id)
                     var snapped = snapResult.point
                     var axisGuide: (from: CGPoint, to: CGPoint)? = nil
-                    if !snapResult.isVertex, let axisResult = parent.document.axisSnap(rawPoint, maxDistance: canvasThreshold(30)) {
+                    let alignmentAxis = axisSnap(rawPoint,
+                                                 maxDistance: canvasThreshold(parent.showsMagnifier ? 38 : 22),
+                                                 excludingWallID: id)
+                    if case .grid = snapResult,
+                       let axisResult = alignmentAxis {
                         // Axis snap fires: lock one coordinate, grid-snap the free axis.
                         snapped = DrawingDocument.snap(axisResult.point)
                         axisGuide = (from: axisResult.referenceVertex, to: snapped)
                     } else if let wall = parent.document.wall(for: id) {
                         let anchor = epIdx == 0 ? wall.end : wall.start
-                        snapped = angleSnappedEnd(from: anchor, to: snapped, snapResult: snapResult)
+                        if let intersection = axisPreservingWallIntersection(from: anchor,
+                                                                             rawPoint: rawPoint,
+                                                                             directionVector: CGPoint(x: wall.end.x - wall.start.x,
+                                                                                                      y: wall.end.y - wall.start.y),
+                                                                             excludingWallID: id) {
+                            snapped = intersection
+                            axisGuide = (from: anchor, to: intersection)
+                        } else {
+                            snapped = angleSnappedEnd(from: anchor, to: snapped, snapResult: snapResult)
+                        }
+                        if axisGuide == nil, let axisResult = alignmentAxis {
+                            axisGuide = (from: axisResult.referenceVertex, to: snapped)
+                        }
                     }
                     contentState.axisSnapGuide = axisGuide
+                    currentMagnifierPoint = snapped
+                    currentSnapPreview = snapResult.at(snapped)
+                    contentState.magnifierPoint = parent.showsMagnifier ? snapped : nil
+                    contentState.snapPreview = currentSnapPreview
                     parent.onMoveWallEndpoint?(id, epIdx, snapped)
                 }
                 // Move whole wall
@@ -729,6 +1058,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                     parent.onMoveWall?(id, delta)
                 }
             case .ended, .cancelled, .failed:
+                stopAutoPan()
                 draggingOpeningID            = nil
                 draggingRoomLabelID          = nil
                 draggingRoomAreaID           = nil
@@ -747,6 +1077,10 @@ struct DrawingCanvasView: UIViewRepresentable {
                 draggingWallID               = nil
                 dragWallTouchStart           = nil
                 contentState.axisSnapGuide   = nil
+                currentMagnifierPoint        = nil
+                currentSnapPreview           = nil
+                contentState.magnifierPoint  = nil
+                contentState.snapPreview     = nil
             default:
                 break
             }
@@ -759,6 +1093,10 @@ struct DrawingCanvasView: UIViewRepresentable {
             (hostedView?.superview as? UIScrollView)?.zoomScale ?? 1.0
         }
 
+        private var precisionModeEnabled: Bool {
+            parent.showsMagnifier && currentZoomScale < 0.85
+        }
+
         /// Converts a screen-space touch radius to canvas-space, accounting for zoom.
         /// A 24pt finger target on screen becomes 24/zoomScale canvas units.
         private func canvasThreshold(_ screenPts: CGFloat = 24) -> CGFloat {
@@ -769,13 +1107,110 @@ struct DrawingCanvasView: UIViewRepresentable {
         /// wall bodies, then the fine grid — so the area outline clicks onto the
         /// walls that describe the real room.
         private func wallAwareSnap(_ point: CGPoint) -> CGPoint {
+            wallAwareSnapResult(point).point
+        }
+
+        private func wallAwareSnapResult(_ point: CGPoint) -> SnapResult {
             let doc = parent.document
-            if let ep = doc.nearestEndpoint(to: point, maxDistance: 24) { return ep }
-            if let hit = doc.nearestWall(to: point, maxDistance: 16),
-               let wall = doc.wall(for: hit.wallID) {
-                return wall.project(point).closest
+            let endpointRadius = precisionModeEnabled ? CGFloat(52) : 44
+            let wallRadius = precisionModeEnabled ? CGFloat(9) : 12
+            if let ep = doc.nearestEndpoint(to: point, maxDistance: canvasThreshold(endpointRadius)) {
+                return .vertex(ep)
             }
-            return DrawingDocument.fineSnap(point)
+            if let hit = doc.nearestWall(to: point, maxDistance: canvasThreshold(wallRadius)),
+               let wall = doc.wall(for: hit.wallID) {
+                return .wall(wall.project(point).closest)
+            }
+            return .grid(DrawingDocument.fineSnap(point))
+        }
+
+        private func axisPreservingWallIntersection(from anchor: CGPoint,
+                                                    rawPoint: CGPoint,
+                                                    directionVector: CGPoint,
+                                                    excludingWallID: UUID?) -> CGPoint? {
+            let length = hypot(directionVector.x, directionVector.y)
+            guard length > 0 else { return nil }
+
+            let lockedAngle = lockedAxisAngle(forVector: directionVector)
+            let direction = CGPoint(x: cos(lockedAngle), y: sin(lockedAngle))
+            let wallSearchDistance: CGFloat = parent.showsMagnifier ? 22 : 14
+            let intersectionTolerance: CGFloat = parent.showsMagnifier ? 72 : 44
+            guard let targetWall = nearestPhysicalWall(to: rawPoint,
+                                                       excludingWallID: excludingWallID,
+                                                       maxDistance: canvasThreshold(wallSearchDistance)) else {
+                return nil
+            }
+
+            guard let intersection = lineSegmentIntersection(linePoint: anchor,
+                                                             lineDirection: direction,
+                                                             segmentStart: targetWall.start,
+                                                             segmentEnd: targetWall.end) else {
+                return nil
+            }
+
+            guard distance(rawPoint, intersection) <= canvasThreshold(intersectionTolerance) else { return nil }
+            return intersection
+        }
+
+        private func lockedAxisAngle(forVector vector: CGPoint) -> CGFloat {
+            let rawAngle = atan2(vector.y, vector.x)
+            let snap = CGFloat.pi / 4
+            return (rawAngle / snap).rounded() * snap
+        }
+
+        private func nearestPhysicalWall(to point: CGPoint,
+                                         excludingWallID: UUID?,
+                                         maxDistance: CGFloat) -> WallSegment? {
+            var bestWall: WallSegment?
+            var bestDistance: CGFloat = .greatestFiniteMagnitude
+
+            for wall in parent.document.walls where wall.id != excludingWallID && wall.kind.rendersAsPhysicalWall {
+                let projection = wall.project(point)
+                guard projection.t >= 0, projection.t <= 1 else { continue }
+                if projection.distance < bestDistance {
+                    bestDistance = projection.distance
+                    bestWall = wall
+                }
+            }
+
+            guard bestDistance <= maxDistance else { return nil }
+            return bestWall
+        }
+
+        private func lineSegmentIntersection(linePoint: CGPoint,
+                                             lineDirection: CGPoint,
+                                             segmentStart: CGPoint,
+                                             segmentEnd: CGPoint) -> CGPoint? {
+            let sx = segmentEnd.x - segmentStart.x
+            let sy = segmentEnd.y - segmentStart.y
+            let denominator = cross(lineDirection, CGPoint(x: sx, y: sy))
+            guard abs(denominator) > 0.0001 else { return nil }
+
+            let delta = CGPoint(x: segmentStart.x - linePoint.x,
+                                y: segmentStart.y - linePoint.y)
+            let lineT = cross(delta, CGPoint(x: sx, y: sy)) / denominator
+            let segmentT = cross(delta, lineDirection) / denominator
+            guard segmentT >= -0.02, segmentT <= 1.02 else { return nil }
+
+            return CGPoint(x: linePoint.x + lineDirection.x * lineT,
+                           y: linePoint.y + lineDirection.y * lineT)
+        }
+
+        private func cross(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+            a.x * b.y - a.y * b.x
+        }
+
+        private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+            hypot(a.x - b.x, a.y - b.y)
+        }
+
+        private func snapPreviewKind(_ result: SnapResult?) -> Int {
+            switch result {
+            case .vertex: return 2
+            case .wall: return 1
+            case .grid: return 0
+            case nil: return -1
+            }
         }
 
         /// Returns the vertex index if `point` is within `threshold` of any effective
@@ -839,6 +1274,9 @@ struct DrawingCanvasView: UIViewRepresentable {
             contentState.previewWall  = currentPreviewWall
             contentState.cursorPoint  = currentCursor
             contentState.isVertexSnap = currentIsVertexSnap
+            contentState.magnifierPoint = parent.showsMagnifier ? currentMagnifierPoint : nil
+            contentState.magnifierZoomScale = currentZoomScale
+            contentState.snapPreview = currentSnapPreview
         }
 
         // MARK: Tap gesture
@@ -952,7 +1390,7 @@ struct DrawingCanvasView: UIViewRepresentable {
             var bestWall: (id: UUID, dist: CGFloat)?
             for wall in doc.walls {
                 let proj      = wall.project(point)
-                let tolerance = DrawingDocument.wallWidth(for: wall.kind) / 2 + 6
+                let tolerance = DrawingDocument.wallWidth(for: wall.kind) / 2 + canvasThreshold(12)
                 if proj.distance < tolerance {
                     if bestWall == nil || proj.distance < bestWall!.dist {
                         bestWall = (wall.id, proj.distance)
@@ -994,6 +1432,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         /// Il toggle di `isEnabled` è il modo canonico di forzare `.cancelled`;
         /// il ramo `.cancelled` dei gesti pulisce senza committare.
         private func cancelMainGesture() {
+            stopAutoPan()
             guard let main = mainGesture,
                   main.state == .began || main.state == .changed
             else { return }
@@ -1009,6 +1448,13 @@ struct DrawingCanvasView: UIViewRepresentable {
         /// near the touch-down point triggers a tap, deselecting the element just dragged.
         func gestureRecognizer(_ gr: UIGestureRecognizer,
                                shouldReceive touch: UITouch) -> Bool {
+            if let view = gr.view {
+                let point = touch.location(in: view)
+                if parent.chromeInsets.contains(point, in: view.bounds) {
+                    return false
+                }
+            }
+
             // If this is the tap recognizer and the main gesture is mid-drag, swallow the tap.
             if gr is UITapGestureRecognizer,
                let main = mainGesture,
@@ -1016,6 +1462,25 @@ struct DrawingCanvasView: UIViewRepresentable {
                 return false
             }
             return true
+        }
+    }
+}
+
+private extension UIEdgeInsets {
+    func contains(_ point: CGPoint, in bounds: CGRect) -> Bool {
+        point.x < bounds.minX + left ||
+        point.x > bounds.maxX - right ||
+        point.y < bounds.minY + top ||
+        point.y > bounds.maxY - bottom
+    }
+}
+
+private extension SnapResult {
+    func at(_ point: CGPoint) -> SnapResult {
+        switch self {
+        case .vertex: return .vertex(point)
+        case .wall: return .wall(point)
+        case .grid: return .grid(point)
         }
     }
 }
@@ -1035,6 +1500,10 @@ final class DrawingContentState {
     var axisSnapGuide: (from: CGPoint, to: CGPoint)? = nil
     /// When false, dimension labels (wall lengths in metres) are hidden on the canvas.
     var showDimensions: Bool = true
+    var magnifierPoint: CGPoint?
+    var magnifierZoomScale: CGFloat = 1
+    var showsMagnifier: Bool = false
+    var snapPreview: SnapResult?
 }
 
 struct DrawingContentWrapper: View {
@@ -1050,7 +1519,11 @@ struct DrawingContentWrapper: View {
             cursorPoint:    state.cursorPoint,
             isVertexSnap:   state.isVertexSnap,
             axisSnapGuide:  state.axisSnapGuide,
-            showDimensions: state.showDimensions
+            showDimensions: state.showDimensions,
+            magnifierPoint: state.magnifierPoint,
+            magnifierZoomScale: state.magnifierZoomScale,
+            showsMagnifier: state.showsMagnifier,
+            snapPreview: state.snapPreview
         )
     }
 }

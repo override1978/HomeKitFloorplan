@@ -125,9 +125,10 @@ enum FloorplanExtruder {
         for area in document.roomAreas {
             result.append(contentsOf: floorFaces(area))
         }
-        let joints = sharedEndpoints(of: document.walls)
+        let physicalWalls = document.walls.filter(\.kind.rendersAsPhysicalWall)
+        let joints = sharedEndpoints(of: physicalWalls)
         let balconies = balconyAreaIDs(in: document)
-        for wall in document.walls {
+        for wall in physicalWalls {
             result.append(contentsOf: wallFaces(wall, in: document, heights: heights,
                                                 joints: joints, openOpeningIDs: openOpeningIDs,
                                                 closedShutters: closedShutters,
@@ -806,7 +807,7 @@ enum FloorplanExtruder {
                                heights: Heights = Heights()) -> AwningGeometry? {
         let polygon = area.effectivePoints.map { SIMD2(metres($0.x), metres($0.y)) }
         guard polygon.count >= 3 else { return nil }
-        let solidWalls = document.walls.filter { $0.kind != .balcony }
+        let solidWalls = document.walls.filter { $0.kind != .balcony && $0.kind.rendersAsPhysicalWall }
         guard !solidWalls.isEmpty else { return nil }
 
         // Il lato di casa: quello il cui punto medio è più vicino a un muro

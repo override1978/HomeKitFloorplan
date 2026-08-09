@@ -412,7 +412,7 @@ struct FloorplanRealityPreviewView: View {
         let metresPerPoint = 1.0 / Double(DrawingDocument.ptsPerMeter)
         var best: (foot: SIMD2<Double>, axis: SIMD2<Double>, thickness: Double, distance: Double)?
 
-        for wall in document.walls {
+        for wall in document.walls where wall.kind.rendersAsPhysicalWall {
             let a = SIMD2(Double(wall.start.x) * metresPerPoint, Double(wall.start.y) * metresPerPoint)
             let b = SIMD2(Double(wall.end.x) * metresPerPoint, Double(wall.end.y) * metresPerPoint)
             let span = b - a

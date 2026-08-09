@@ -29,11 +29,11 @@ extension View {
 // MARK: - DrawingTopBar
 
 /// Top navigation bar for the 2D drawing editor.
-/// Shows: cancel (X), undo/redo, spacer, "Fatto" done button.
+    /// Shows: cancel (X), undo/redo, spacer, "Fatto" done button.
 struct DrawingTopBar: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var isCompact: Bool { horizontalSizeClass == .compact }
-
+    private var topBarIconSide: CGFloat { 48 }
 
     var canUndo: Bool
     var canRedo: Bool
@@ -74,31 +74,22 @@ struct DrawingTopBar: View {
     }
 
     private var regularBar: some View {
-        // Ogni item ha la PROPRIA superficie, e la barra non ne ha nessuna.
+        // Anche su iPad usiamo lo stesso modello operativo dell'iPhone: un solo
+        // menu per impostazioni/stile e target da dito pieni. I menu multipli
+        // funzionavano visivamente, ma in pratica rendevano la top bar troppo
+        // difficile da colpire quando il canvas sottostante prendeva gesti.
         //
-        // È la struttura che Apple usa per le toolbar, ed è obbligata qui: un
-        // `Menu` solleva dentro il proprio popover la superficie di vetro a cui
-        // è ancorato. Con una lastra unica spariva l'intera barra (bug reale,
-        // corretto in `78af2e2` tornando al materiale); con le superfici sui
-        // singoli item si solleva solo il bottone toccato, che è il
-        // comportamento voluto. Corollario: **due Menu non possono condividere
-        // una superficie**, altrimenti si ripresenta lo stesso bug in scala
-        // ridotta — spariscono insieme.
+        // Manteniamo comunque il contenitore regolare per lasciare alla barra
+        // iPad una larghezza prevedibile e una superficie legacy coerente.
         LiquidGlassContainer(spacing: 12) {
             HStack(spacing: 12) {
                 cancelButton
-                helpButton
 
                 Spacer()
 
                 undoButton
                 redoButton
-
-                if isCompact {
-                    compactStyleMenu
-                } else {
-                styleMenus
-                }
+                compactStyleMenu
 
                 doneButton
             }
@@ -113,53 +104,46 @@ struct DrawingTopBar: View {
     }
 
     private var cancelButton: some View {
-        Button(action: onCancel) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 36, height: 36)
-                        .modifier(ToolbarItemSurface(shape: Circle(),
-                                                     legacyFill: Color.primary.opacity(0.07)))
-                }
-        .buttonStyle(.plain)
+        topBarCircleButton(icon: "xmark", action: onCancel)
     }
 
     private var helpButton: some View {
-        Button(action: onHelp) {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 36, height: 36)
-                        .modifier(ToolbarItemSurface(shape: Circle(),
-                                                     legacyFill: Color.primary.opacity(0.07)))
-                }
-        .buttonStyle(.plain)
+        topBarCircleButton(icon: "info.circle", action: onHelp)
     }
 
     private var undoButton: some View {
-        Button(action: onUndo) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(canUndo ? .primary : .secondary)
-                        .frame(width: 36, height: 36)
-                        .modifier(ToolbarItemSurface(shape: Circle(),
-                                                     legacyFill: Color.primary.opacity(canUndo ? 0.07 : 0.035)))
-                }
-        .disabled(!canUndo)
-        .buttonStyle(.plain)
+        topBarCircleButton(icon: "arrow.uturn.backward",
+                           foreground: canUndo ? .primary : .secondary,
+                           isEnabled: canUndo,
+                           action: onUndo)
     }
 
     private var redoButton: some View {
-        Button(action: onRedo) {
-                    Image(systemName: "arrow.uturn.forward")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(canRedo ? .primary : .secondary)
-                        .frame(width: 36, height: 36)
-                        .modifier(ToolbarItemSurface(shape: Circle(),
-                                                     legacyFill: Color.primary.opacity(canRedo ? 0.07 : 0.035)))
+        topBarCircleButton(icon: "arrow.uturn.forward",
+                           foreground: canRedo ? .primary : .secondary,
+                           isEnabled: canRedo,
+                           action: onRedo)
+    }
+
+    private func topBarCircleButton(icon: String,
+                                    foreground: Color = .primary,
+                                    isEnabled: Bool = true,
+                                    action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(foreground)
+                .frame(width: topBarIconSide, height: topBarIconSide)
+                .background(.regularMaterial, in: Circle())
+                .background(Color.primary.opacity(isEnabled ? 0.06 : 0.025), in: Circle())
+                .overlay {
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
                 }
-        .disabled(!canRedo)
+                .contentShape(Circle())
+        }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
     }
 
     /// I tre menu di stile dell'iPad, ognuno con la propria superficie: è la
@@ -182,7 +166,7 @@ struct DrawingTopBar: View {
                     Image(systemName: exportRotation.iconName)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(exportRotation == .asDrawn ? .primary : BrandColor.primary)
-                        .frame(width: 36, height: 36)
+                        .frame(width: topBarIconSide, height: topBarIconSide)
                         .modifier(ToolbarItemSurface(
                             shape: Circle(),
                             tint: exportRotation == .asDrawn ? nil : BrandColor.primary,
@@ -220,7 +204,7 @@ struct DrawingTopBar: View {
                     }
                     .foregroundStyle(isDark ? Color.white : (isNonStandard ? BrandColor.primary : Color.primary))
                     .padding(.horizontal, 11)
-                    .frame(height: 36)
+                    .frame(height: topBarIconSide)
                     // Lo stile "architectural dark" resta un riempimento pieno
                     // anche col vetro: qui il colore non decora, mostra quale
                     // fondo avrà l'export. Una tinta traslucida lo falserebbe.
@@ -262,7 +246,7 @@ struct DrawingTopBar: View {
                         Image(systemName: exteriorFillColorIndex >= 0 ? "building.2.fill" : "building.2")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(exteriorFillColorIndex >= 0 ? BrandColor.primary : .primary)
-                            .frame(width: 36, height: 36)
+                            .frame(width: topBarIconSide, height: topBarIconSide)
                             .modifier(ToolbarItemSurface(
                                 shape: Circle(),
                                 tint: exteriorFillColorIndex >= 0 ? BrandColor.primary : nil,
@@ -291,7 +275,8 @@ struct DrawingTopBar: View {
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 18)
-            .padding(.vertical, 8)
+            .frame(minHeight: topBarIconSide)
+            .padding(.vertical, isCompact ? 0 : 8)
             .background(isExporting ? Color.secondary : BrandColor.primary, in: Capsule())
         }
         .disabled(isExporting)
@@ -373,7 +358,7 @@ struct DrawingTopBar: View {
             Image(systemName: "paintpalette")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.primary)
-                .frame(width: 36, height: 36)
+                .frame(width: topBarIconSide, height: topBarIconSide)
                 .modifier(ToolbarItemSurface(shape: Circle(),
                                              legacyFill: Color.primary.opacity(0.07)))
         }
@@ -848,6 +833,8 @@ struct DrawingToolbar: View {
                                    label: String(localized: "drawing.toolbar.wall.interior", defaultValue: "Interior"))
                     wallKindButton(kind: .balcony,  icon: "line.diagonal",
                                    label: String(localized: "drawing.toolbar.wall.balcony",  defaultValue: "Balcony"))
+                    wallKindButton(kind: .logical, icon: "divide",
+                                   label: String(localized: "drawing.toolbar.wall.logical", defaultValue: "Logico"))
                 }
                 .glassChromeSurface(
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous),
@@ -949,65 +936,37 @@ struct DrawingToolbar: View {
     /// come pillola che compare solo col Muro in mano. Su iPad tutto espanso
     /// è comodo; qui i compromessi sono il design, non un ripiego.
     private var compactToolbar: some View {
-        VStack(spacing: 8) {
-            if mode == .draw {
-                HStack(spacing: 0) {
-                    wallKindButton(kind: .exterior, icon: "square.on.square",
-                                   label: String(localized: "drawing.toolbar.wall.exterior", defaultValue: "Perim."))
-                    wallKindButton(kind: .interior, icon: "square.dashed",
-                                   label: String(localized: "drawing.toolbar.wall.interior", defaultValue: "Interior"))
-                    wallKindButton(kind: .balcony,  icon: "line.diagonal",
-                                   label: String(localized: "drawing.toolbar.wall.balcony",  defaultValue: "Balcony"))
+        LiquidGlassContainer(spacing: 10) {
+            HStack(spacing: 8) {
+                compactSlot(icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
+                            label: String(localized: "drawing.toolbar.mode.select", defaultValue: "Select"),
+                            active: mode == .select) {
+                    mode = .select
                 }
-                .glassChromeSurface(
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous),
-                    legacyFill: AnyShapeStyle(.ultraThinMaterial),
-                    legacyBorder: Color.white.opacity(0.2)
-                )
-                .transition(.opacity)
-            }
 
-            LiquidGlassContainer(spacing: 10) {
-                HStack(spacing: 6) {
-                    HStack(spacing: 0) {
-                        compactModeButton(icon: "arrow.up.left.and.down.right.and.arrow.up.right.and.down.left",
-                                          label: String(localized: "drawing.toolbar.mode.select", defaultValue: "Select"),
-                                          active: mode == .select) { mode = .select }
-                        compactModeButton(icon: "pencil.tip",
-                                          label: String(localized: "drawing.toolbar.mode.draw", defaultValue: "Wall"),
-                                          active: mode == .draw) { mode = .draw }
+                compactWallKindMenu
+
+                compactOpeningMenu
+
+                compactSlot(icon: "rectangle.dashed",
+                            label: String(localized: "drawing.toolbar.roomArea", defaultValue: "Room"),
+                            active: mode == .drawRoomArea) {
+                    mode = mode == .drawRoomArea ? .select : .drawRoomArea
+                }
+
+                compactFurnitureMenu
+
+                if hasSelection {
+                    Button(action: onDelete) {
+                        compactIconLabel(icon: "trash",
+                                         label: String(localized: "common.delete", defaultValue: "Delete"),
+                                         active: false,
+                                         foreground: .red)
                     }
-                    .glassChromeSurface(
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous),
-                        legacyFill: AnyShapeStyle(.ultraThinMaterial),
-                        legacyBorder: Color.white.opacity(0.2)
-                    )
-
-                    compactOpeningMenu
-
-                    compactSlot(icon: "rectangle.dashed",
-                                label: String(localized: "drawing.toolbar.roomArea", defaultValue: "Room"),
-                                active: mode == .drawRoomArea) {
-                        mode = mode == .drawRoomArea ? .select : .drawRoomArea
-                    }
-
-                    compactFurnitureMenu
-
-                    if hasSelection {
-                        Button(action: onDelete) {
-                            Image(systemName: "trash")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(.red)
-                                .frame(width: 44, height: 52)
-                                .background(Color(.systemFill),
-                                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .transition(.opacity)
-                    } else {
-                        compactMoreMenu
-                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity)
+                } else {
+                    compactMoreMenu
                 }
             }
         }
@@ -1018,7 +977,51 @@ struct DrawingToolbar: View {
             fill: AnyShapeStyle(.ultraThinMaterial)
         ))
         .animation(.spring(response: 0.3), value: hasSelection)
-        .animation(.spring(response: 0.3), value: mode == .draw)
+        .animation(.spring(response: 0.3), value: mode)
+    }
+
+    private var compactWallKindMenu: some View {
+        Menu {
+            compactWallKindEntry(kind: .exterior,
+                                 icon: "square.on.square",
+                                 label: String(localized: "drawing.toolbar.wall.exterior", defaultValue: "Perim."))
+            compactWallKindEntry(kind: .interior,
+                                 icon: "square.dashed",
+                                 label: String(localized: "drawing.toolbar.wall.interior", defaultValue: "Interior"))
+            compactWallKindEntry(kind: .balcony,
+                                 icon: "line.diagonal",
+                                 label: String(localized: "drawing.toolbar.wall.balcony", defaultValue: "Balcony"))
+            compactWallKindEntry(kind: .logical,
+                                 icon: "divide",
+                                 label: String(localized: "drawing.toolbar.wall.logical", defaultValue: "Logical"))
+        } label: {
+            compactIconLabel(icon: wallKindIconName,
+                             label: String(localized: "drawing.toolbar.mode.draw", defaultValue: "Wall"),
+                             active: mode == .draw)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func compactWallKindEntry(kind: WallKind, icon: String, label: String) -> some View {
+        Button {
+            wallKind = kind
+            mode = .draw
+        } label: {
+            Label {
+                Text(label)
+            } icon: {
+                Image(systemName: wallKind == kind ? "checkmark.circle.fill" : icon)
+            }
+        }
+    }
+
+    private var wallKindIconName: String {
+        switch wallKind {
+        case .exterior: return "square.on.square"
+        case .interior: return "square.dashed"
+        case .balcony: return "line.diagonal"
+        case .logical: return "divide"
+        }
     }
 
     /// Le quattro aperture dietro un solo slot: su 390 punti quattro bottoni
@@ -1036,7 +1039,7 @@ struct DrawingToolbar: View {
             compactOpeningEntry(.window, icon: "rectangle.split.2x1",
                                 label: String(localized: "drawing.toolbar.window", defaultValue: "Window"))
         } label: {
-            compactSlotLabel(icon: "door.left.hand.open",
+            compactIconLabel(icon: "door.left.hand.open",
                              label: String(localized: "drawing.toolbar.opening", defaultValue: "Opening"),
                              active: isPlacing)
         }
@@ -1072,7 +1075,7 @@ struct DrawingToolbar: View {
                 }
             }
         } label: {
-            compactSlotLabel(icon: furnitureKind.systemImage,
+            compactIconLabel(icon: furnitureKind.systemImage,
                              label: furnitureKind.localizedName,
                              active: mode == .placeFurniture)
         }
@@ -1092,33 +1095,9 @@ struct DrawingToolbar: View {
                       systemImage: "ruler")
             }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.primary)
-                .frame(width: 44, height: 52)
-                .background(Color(.systemFill),
-                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func compactModeButton(icon: String, label: String, active: Bool,
-                                   action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: active ? .semibold : .regular))
-                Text(label)
-                    .font(.system(size: 9, weight: active ? .semibold : .regular))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            .foregroundStyle(active ? BrandColor.primary : .secondary)
-            .frame(width: 56, height: 52)
-            .background(active ? BrandColor.primary.opacity(0.12) : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .contentShape(Rectangle())
+            compactIconLabel(icon: "ellipsis",
+                             label: String(localized: "drawing.toolbar.more", defaultValue: "More"),
+                             active: false)
         }
         .buttonStyle(.plain)
     }
@@ -1126,35 +1105,31 @@ struct DrawingToolbar: View {
     private func compactSlot(icon: String, label: String, active: Bool,
                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            compactSlotLabel(icon: icon, label: label, active: active)
+            compactIconLabel(icon: icon, label: label, active: active)
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.25), value: active)
     }
 
-    private func compactSlotLabel(icon: String, label: String, active: Bool) -> some View {
-        VStack(spacing: 3) {
-            Image(systemName: icon)
-                .font(.system(size: 17, weight: active ? .semibold : .regular))
-            Text(label)
-                .font(.system(size: 9, weight: active ? .semibold : .regular))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        // `Color.primary` esplicito: dentro Button/Menu il `.primary`
-        // gerarchico perde contro il tint di sistema.
-        .foregroundStyle(active ? BrandColor.primary : Color.primary)
-        .frame(maxWidth: .infinity, minHeight: 52)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(active ? BrandColor.primary.opacity(0.15) : Color(.systemFill))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(active ? BrandColor.primary.opacity(0.5) : Color.clear,
-                              lineWidth: 1.5)
-        )
-        .contentShape(Rectangle())
+    private func compactIconLabel(icon: String,
+                                  label: String,
+                                  active: Bool,
+                                  foreground: Color = Color.primary) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 20, weight: active ? .semibold : .regular))
+            .foregroundStyle(active ? BrandColor.primary : foreground)
+            .frame(width: 52, height: 52)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(active ? BrandColor.primary.opacity(0.15) : Color(.systemFill))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(active ? BrandColor.primary.opacity(0.5) : Color.clear,
+                                  lineWidth: 1.5)
+            )
+            .contentShape(Rectangle())
+            .accessibilityLabel(label)
     }
 
     // MARK: Private helpers
@@ -1852,6 +1827,14 @@ struct WallInspectorPanel: View {
         onSetGeometry(lengthPt, angleRadians)
     }
 
+    private func setLengthKeepingAngle(_ value: Double) {
+        let meters = dimensionUnit == .metric ? value : value * 0.3048
+        let lengthPt = CGFloat(meters) * DrawingDocument.ptsPerMeter
+        guard lengthPt >= 5 else { return }
+        let angleRadians = -currentAngleDegrees * .pi / 180
+        onSetGeometry(lengthPt, angleRadians)
+    }
+
     private func refreshInputs() {
         lengthInput = (currentLengthInUnit * 100).rounded() / 100
         angleInput = (currentAngleDegrees * 10).rounded() / 10
@@ -1862,6 +1845,7 @@ struct WallInspectorPanel: View {
         case .exterior: return String(localized: "drawing.inspector.wall.kind.exterior", defaultValue: "Exterior wall")
         case .interior: return String(localized: "drawing.inspector.wall.kind.interior", defaultValue: "Interior wall")
         case .balcony:  return String(localized: "drawing.inspector.wall.kind.balcony",  defaultValue: "Balcony / terrace")
+        case .logical:  return String(localized: "drawing.inspector.wall.kind.logical",  defaultValue: "Logical divider")
         }
     }
 
@@ -1885,9 +1869,12 @@ struct WallInspectorPanel: View {
                 Spacer()
 
                 Stepper(
-                    value: Binding(get: { gridUnits }, set: { onResize($0) }),
-                    in: 1...100,
-                    step: 1
+                    value: Binding(
+                        get: { currentLengthInUnit },
+                        set: { setLengthKeepingAngle($0) }
+                    ),
+                    in: (dimensionUnit == .metric ? 0.05 : 0.16)...50,
+                    step: dimensionUnit == .metric ? 0.05 : 0.25
                 ) { EmptyView() }
                 .labelsHidden()
             }

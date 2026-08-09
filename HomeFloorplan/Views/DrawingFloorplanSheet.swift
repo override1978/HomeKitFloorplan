@@ -192,6 +192,7 @@ struct DrawingFloorplanSheet: View {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
             return
         }
+        pendingAreaRect = nil
         pendingAreaPoints = polygon
         showAreaRoomPicker = true
     }
@@ -203,8 +204,15 @@ struct DrawingFloorplanSheet: View {
             .max() ?? 0
     }
 
+    private static var windowSafeAreaBottom: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow?.safeAreaInsets.bottom }
+            .max() ?? 0
+    }
+
     var body: some View {
         GeometryReader { geo in
+        let chromeInsets = drawingChromeInsets(in: geo)
         ZStack(alignment: .bottom) {
             // Canvas (fills entire screen)
             DrawingCanvasView(
@@ -227,6 +235,8 @@ struct DrawingFloorplanSheet: View {
                 onCommitRoomArea: handleCommitRoomArea(rect:),
                 onTapRoomArea: handleTapRoomArea(at:),
                 coversViewportAtMinimumZoom: horizontalSizeClass == .compact,
+                chromeInsets: chromeInsets,
+                showsMagnifier: horizontalSizeClass == .compact,
                 onBeginMoveRoomArea: { _ in pushUndo() },
                 onMoveRoomArea: handleMoveRoomArea(id:delta:),
                 onBeginResizeRoomArea: { _ in pushUndo() },
@@ -397,7 +407,6 @@ struct DrawingFloorplanSheet: View {
                     )
                 }
                 .frame(maxWidth: 640)
-                .shieldsCanvasTouches()
                 .padding(.horizontal, 18)
                 // L'inset lo dice la finestra UIKit, non il GeometryReader: la
                 // propagazione SwiftUI dentro questo fullScreenCover riportava
@@ -407,6 +416,8 @@ struct DrawingFloorplanSheet: View {
                 .padding(.top, max(max(geo.safeAreaInsets.top, Self.windowSafeAreaTop) + 12, 28))
                 Spacer()
             }
+            .shieldsCanvasTouches()
+            .zIndex(2)
 
             if isExporting {
                 Color.black.opacity(0.18)
@@ -515,16 +526,34 @@ struct DrawingFloorplanSheet: View {
                     let bounds = CGRect(x: xs.min() ?? 0, y: ys.min() ?? 0,
                                         width: (xs.max() ?? 0) - (xs.min() ?? 0),
                                         height: (ys.max() ?? 0) - (ys.min() ?? 0))
-                    let area = RoomArea(
-                        hmRoomUUID: room.uniqueIdentifier,
-                        name: room.name,
-                        rect: bounds,
-                        colorIndex: document.roomAreas.count,
-                        points: initialPoints
-                    )
                     pushUndo()
-                    document.roomAreas.append(area)
-                    selection = .roomArea(area.id)
+                    if let existingIndex = document.roomAreas.firstIndex(where: { $0.hmRoomUUID == room.uniqueIdentifier }) {
+                        let existing = document.roomAreas[existingIndex]
+                        let updatedArea = RoomArea(
+                            id: existing.id,
+                            hmRoomUUID: room.uniqueIdentifier,
+                            name: room.name,
+                            rect: bounds,
+                            colorIndex: existing.colorIndex,
+                            points: initialPoints,
+                            floorKind: existing.floorKind
+                        )
+                        document.roomAreas[existingIndex] = updatedArea
+                        document.roomAreas.removeAll {
+                            $0.hmRoomUUID == room.uniqueIdentifier && $0.id != updatedArea.id
+                        }
+                        selection = .roomArea(updatedArea.id)
+                    } else {
+                        let area = RoomArea(
+                            hmRoomUUID: room.uniqueIdentifier,
+                            name: room.name,
+                            rect: bounds,
+                            colorIndex: document.roomAreas.count,
+                            points: initialPoints
+                        )
+                        document.roomAreas.append(area)
+                        selection = .roomArea(area.id)
+                    }
                     pendingAreaRect = nil
                     pendingAreaPoints = nil
                     mode = .select
@@ -552,6 +581,44 @@ struct DrawingFloorplanSheet: View {
         }
         .suppressesIdleScreensaver(.drawingEditor)
         } // GeometryReader
+    }
+
+    private func drawingChromeInsets(in geo: GeometryProxy) -> UIEdgeInsets {
+        let safeTop = max(geo.safeAreaInsets.top, Self.windowSafeAreaTop)
+        let safeBottom = max(geo.safeAreaInsets.bottom, Self.windowSafeAreaBottom)
+
+        let topChrome: CGFloat = safeTop + 122
+        let bottomChrome = safeBottom + 28 + compactBottomChromeHeight
+
+        return UIEdgeInsets(top: topChrome, left: 0, bottom: bottomChrome, right: 0)
+    }
+
+    private var compactBottomChromeHeight: CGFloat {
+        var height: CGFloat = 78
+
+        switch mode {
+        case .placeOpening, .placeRoomLabel, .drawRoomArea, .placeFurniture:
+            height += 64
+        case .draw, .select:
+            break
+        }
+
+        if case .select = mode {
+            switch selection {
+            case .opening, .roomLabel:
+                height += 78
+            case .wall:
+                height += 138
+            case .roomArea:
+                height += 164
+            case .furniture:
+                height += 184
+            case .none:
+                break
+            }
+        }
+
+        return height
     }
 
     private func updateExportViewportSize(_ size: CGSize) {
@@ -610,6 +677,7 @@ struct DrawingFloorplanSheet: View {
 
     /// Called when the user finishes dragging to define a new room area rectangle.
     private func handleCommitRoomArea(rect: CGRect) {
+        pendingAreaPoints = nil
         pendingAreaRect = rect
         showAreaRoomPicker = true
     }

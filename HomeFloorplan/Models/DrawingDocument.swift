@@ -7,6 +7,11 @@ enum WallKind: String, Codable, Equatable {
     case exterior   // thick perimeter wall
     case interior   // thin partition wall
     case balcony    // thin dashed wall for balconies/terraces
+    case logical    // invisible boundary used only to split room areas
+
+    var rendersAsPhysicalWall: Bool {
+        self != .logical
+    }
 }
 
 // MARK: - WallSegment
@@ -688,11 +693,13 @@ struct AxisSnapResult {
 /// Indicates whether a point was snapped to an existing wall vertex or to the grid.
 enum SnapResult: Equatable {
     case vertex(CGPoint)
+    case wall(CGPoint)
     case grid(CGPoint)
 
     var point: CGPoint {
         switch self {
         case .vertex(let p): return p
+        case .wall(let p):   return p
         case .grid(let p):   return p
         }
     }
@@ -700,6 +707,13 @@ enum SnapResult: Equatable {
     var isVertex: Bool {
         if case .vertex = self { return true }
         return false
+    }
+
+    var isGeometrySnap: Bool {
+        switch self {
+        case .vertex, .wall: return true
+        case .grid: return false
+        }
     }
 }
 
@@ -770,6 +784,7 @@ struct DrawingDocument: Equatable, nonisolated Codable {
         case .exterior: return 16
         case .interior: return 8
         case .balcony:  return 16   // same outer width as exterior; inner white stroke creates double-line look
+        case .logical:  return 4
         }
     }
 
@@ -943,7 +958,7 @@ struct DrawingDocument: Equatable, nonisolated Codable {
 
     func nearestWall(to point: CGPoint, maxDistance: CGFloat = 40) -> (wallID: UUID, t: CGFloat)? {
         var best: (wallID: UUID, t: CGFloat, dist: CGFloat)?
-        for wall in walls {
+        for wall in walls where wall.kind.rendersAsPhysicalWall {
             let proj = wall.project(point)
             guard proj.t > 0, proj.t < 1 else { continue }
             if best == nil || proj.distance < best!.dist {
