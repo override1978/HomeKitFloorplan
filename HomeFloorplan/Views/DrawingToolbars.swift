@@ -1,5 +1,31 @@
 import SwiftUI
 
+// MARK: - Scudo tocchi della chrome
+
+/// Una UIView vera dietro la chrome. I recognizer del canvas (la scrollview
+/// a tutto schermo là sotto) ricevono ogni tocco il cui hit-test UIKit cade
+/// su di loro o sui loro discendenti — e i controlli SwiftUI, disegnati come
+/// layer della hosting view, **non partecipano all'hit-test UIKit**: un tap
+/// su Undo faceva l'undo E piazzava un punto di muro. Lo scudo vince
+/// l'hit-test e il canvas non vede il tocco; i bottoni continuano a
+/// funzionare perché i gesti SwiftUI vivono sulla hosting view, che dello
+/// scudo è antenata.
+private struct CanvasTouchShield: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        return view
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+extension View {
+    /// Da applicare a ogni blocco di chrome che galleggia sopra il canvas.
+    func shieldsCanvasTouches() -> some View {
+        background(CanvasTouchShield())
+    }
+}
+
 // MARK: - DrawingTopBar
 
 /// Top navigation bar for the 2D drawing editor.
@@ -32,25 +58,18 @@ struct DrawingTopBar: View {
         }
     }
 
-    /// La barra da pollice: niente riga unica — due gruppi flottanti.
-    /// Sopra, solo uscita e conferma (i due gesti che chiudono qualcosa);
-    /// sotto a destra, la pulsantiera di lavoro (undo/redo/stile/aiuto).
-    /// Su 390 punti una riga con tutto era una fila di bersagli da 36 pt
-    /// schiacciati contro la status bar.
+    /// La barra da pollice: una riga sola ma corta — X, poi undo/redo,
+    /// menu stile e Fatto. L'aiuto vive dentro il menu: cinque bersagli
+    /// stanno comodi su 390 punti, sette no. (La versione a due gruppi
+    /// flottanti è stata bocciata sul campo: «brutta così spezzata».)
     private var compactBar: some View {
-        VStack(spacing: 10) {
-            HStack {
-                cancelButton
-                Spacer()
-                doneButton
-            }
-            HStack(spacing: 10) {
-                Spacer()
-                undoButton
-                redoButton
-                compactStyleMenu
-                helpButton
-            }
+        HStack(spacing: 10) {
+            cancelButton
+            Spacer()
+            undoButton
+            redoButton
+            compactStyleMenu
+            doneButton
         }
     }
 
@@ -344,6 +363,11 @@ struct DrawingTopBar: View {
                     Label(String(localized: "drawing.topbar.exterior", defaultValue: "Surroundings"),
                           systemImage: "building.2")
                 }
+            }
+            Divider()
+            Button(action: onHelp) {
+                Label(String(localized: "drawing.topbar.help", defaultValue: "Guide"),
+                      systemImage: "info.circle")
             }
         } label: {
             Image(systemName: "paintpalette")

@@ -250,7 +250,11 @@ struct DrawingCanvasView: UIViewRepresentable {
         /// Returns either smartSnap (vertex-first) or plain grid snap depending on the toggle.
         private func performSnap(_ point: CGPoint) -> SnapResult {
             if vertexSnapEnabled {
-                return parent.document.smartSnap(point)
+                // Il magnete si misura in punti SCHERMO: a zoom 0.4 su iPhone
+                // i 30 pt canvas fissi diventavano 12 pt sotto il dito, e gli
+                // angoli «non si prendevano». Così il raggio è costante al
+                // polpastrello a qualunque zoom.
+                return parent.document.smartSnap(point, maxDistance: canvasThreshold(30))
             } else {
                 return .grid(DrawingDocument.snap(point))
             }
@@ -357,6 +361,14 @@ struct DrawingCanvasView: UIViewRepresentable {
         // MARK: Main gesture (draw walls OR drag openings/labels)
 
         @objc func handleMainGesture(_ gr: UILongPressGestureRecognizer) {
+            // Due dita = zoom o pan, mai un tratto. Il delegato dei gesti non
+            // basta: verificato nel simulatore, col secondo dito il long-press
+            // continuava a tracciare il primo e il pinch non partiva mai — il
+            // muro diagonale fantasma. La guardia sta nel gesto stesso.
+            if gr.numberOfTouches > 1, gr.state == .began || gr.state == .changed {
+                cancelMainGesture()
+                return
+            }
             let rawPoint = gr.location(in: hostedView)
 
             switch parent.mode {
@@ -649,7 +661,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                     let snapResult = performSnap(rawPoint)
                     var snapped = snapResult.point
                     var axisGuide: (from: CGPoint, to: CGPoint)? = nil
-                    if !snapResult.isVertex, let axisResult = parent.document.axisSnap(rawPoint) {
+                    if !snapResult.isVertex, let axisResult = parent.document.axisSnap(rawPoint, maxDistance: canvasThreshold(30)) {
                         // Axis snap fires: lock one coordinate, grid-snap the free axis.
                         snapped = DrawingDocument.snap(axisResult.point)
                         axisGuide = (from: axisResult.referenceVertex, to: snapped)
@@ -925,8 +937,14 @@ struct DrawingCanvasView: UIViewRepresentable {
         /// toggle di `isEnabled` è il modo canonico di forzare `.cancelled`,
         /// e il ramo `.cancelled` dei gesti pulisce senza committare.
         @objc func cancelDrawOnScrollGesture(_ gr: UIGestureRecognizer) {
-            guard gr.state == .began,
-                  let main = mainGesture,
+            guard gr.state == .began else { return }
+            cancelMainGesture()
+        }
+
+        /// Il toggle di `isEnabled` è il modo canonico di forzare `.cancelled`;
+        /// il ramo `.cancelled` dei gesti pulisce senza committare.
+        private func cancelMainGesture() {
+            guard let main = mainGesture,
                   main.state == .began || main.state == .changed
             else { return }
             main.isEnabled = false

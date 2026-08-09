@@ -243,6 +243,11 @@ struct DrawingFloorplanSheet: View {
             VStack(spacing: 0) {
                 Spacer()
 
+                // Da qui in giù è chrome: lo scudo copre tutto il blocco,
+                // spazi compresi — meglio una striscia non disegnabile che un
+                // muro fantasma sotto il cestino.
+                VStack(spacing: 0) {
+
                 // Opening inspector — shown when an opening is selected in select mode
                 if case .select = mode,
                    case .opening(let id) = selection,
@@ -351,6 +356,8 @@ struct DrawingFloorplanSheet: View {
                     hasSelection: selection != .none,
                     onDelete: deleteSelected
                 )
+                }
+                .shieldsCanvasTouches()
             }
             .animation(.spring(response: 0.3), value: selection)
 
@@ -383,6 +390,7 @@ struct DrawingFloorplanSheet: View {
                     )
                 }
                 .frame(maxWidth: 640)
+                .shieldsCanvasTouches()
                 .padding(.horizontal, 18)
                 // L'inset lo dice la finestra UIKit, non il GeometryReader: la
                 // propagazione SwiftUI dentro questo fullScreenCover riportava

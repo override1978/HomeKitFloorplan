@@ -897,8 +897,8 @@ struct DrawingDocument: Equatable, nonisolated Codable {
     }
 
     /// Smart snap: vertex snapping (30pt radius) takes priority over grid snap.
-    func smartSnap(_ point: CGPoint) -> SnapResult {
-        if let vertex = nearestEndpoint(to: point, maxDistance: 30) {
+    func smartSnap(_ point: CGPoint, maxDistance: CGFloat = 30) -> SnapResult {
+        if let vertex = nearestEndpoint(to: point, maxDistance: maxDistance) {
             return .vertex(vertex)
         }
         return .grid(Self.snap(point))
