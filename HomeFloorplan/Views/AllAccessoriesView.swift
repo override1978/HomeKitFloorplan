@@ -39,7 +39,8 @@ struct AllAccessoriesView: View {
             VStack(spacing: 0) {
                 filterBar
                 
-                List {
+                ScrollView {
+                    LazyVStack(spacing: 14) {
                     if homeKit.allAccessories.isEmpty {
                         // Caso A: casa HomeKit vuota
                         ContentUnavailableView {
@@ -71,15 +72,19 @@ struct AllAccessoriesView: View {
                                               : String(localized: "accessories.noResults.searchHint", defaultValue: "Adjust your search or filters."))
                         )
                     } else {
-                        // Caso C: normale - renderizza le sezioni stanze
+                        // Caso C: normale — una card per stanza. Le card sono
+                        // l'esperimento Liquid chiesto dall'utente: col toggle
+                        // acceso sono vetro vero, spento tornano le card
+                        // insetGrouped di sempre. Fuori da List perché lì lo
+                        // sfondo delle sezioni non è governabile.
                         ForEach(filteredGroups, id: \.roomID) { group in
-                            roomSection(group)
+                            roomCard(group)
                         }
                     }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                 }
-                .listStyle(.insetGrouped)
-                .scrollContentBackground(.hidden)
-                //.background(Color.clear)
                 .sheet(item: $selectedRoom) { room in
                     RoomDetailSheet(room: room)
                         .presentationDetents([.medium, .large])
@@ -92,22 +97,45 @@ struct AllAccessoriesView: View {
         }
     }
 
-    // MARK: - Room section (insetGrouped + custom expand/collapse)
+    // MARK: - Room card (vetro col toggle, insetGrouped-like in legacy)
 
-    private func roomSection(_ group: RoomGroup) -> some View {
+    private func roomCard(_ group: RoomGroup) -> some View {
         let isExpanded = !collapsedRooms.contains(group.roomID)
-        
-        return Section {
+
+        return VStack(spacing: 0) {
+            cardHeader(group, isExpanded: isExpanded)
+
             if isExpanded {
-                ForEach(group.accessories, id: \.uniqueIdentifier) { accessory in
+                ForEach(Array(group.accessories.enumerated()), id: \.element.uniqueIdentifier) { index, accessory in
+                    if index > 0 {
+                        Divider().padding(.leading, 50)
+                    }
                     NavigationLink {
                         AccessoryDetailView(accessory: accessory)
                     } label: {
-                        accessoryRow(accessory)
+                        HStack(spacing: 8) {
+                            accessoryRow(accessory)
+                            // Fuori da List il chevron non è gratis.
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
             }
-        } header: {
+        }
+        .padding(.bottom, isExpanded ? 6 : 0)
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous),
+            legacyFill: AnyShapeStyle(Color(.secondarySystemGroupedBackground))
+        )
+    }
+
+    private func cardHeader(_ group: RoomGroup, isExpanded: Bool) -> some View {
             HStack(spacing: 10) {
                 // Chevron: espande/collassa la sezione
                 Button {
@@ -145,9 +173,8 @@ struct AllAccessoriesView: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            .padding(.vertical, 4)
-            .textCase(nil)
-        }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
     }
 
     // MARK: - Expanded state

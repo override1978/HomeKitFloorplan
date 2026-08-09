@@ -50,9 +50,12 @@ struct AccessoryDetailView: View {
     
     var body: some View {
         NavigationStack {
+            VStack(spacing: 0) {
+            heroCard
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+
             Form {
-                headerSection
-                
                 if let quickInfo = adapter.primaryStatusText, !quickInfo.isEmpty {
                     quickInfoSection
                 }
@@ -67,6 +70,8 @@ struct AccessoryDetailView: View {
                 
                 rawSection
             }
+            }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle(accessory.name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -91,8 +96,10 @@ struct AccessoryDetailView: View {
     
     // MARK: - Sections
     
-    private var headerSection: some View {
-        Section {
+    /// L'hero della scheda: fuori dal Form, così può essere una card di
+    /// vetro quando il toggle è acceso. In legacy è una card identica a una
+    /// sezione di Form.
+    private var heroCard: some View {
             HStack(spacing: 14) {
                 AccessoryIconView(iconName: iconName)
                     .foregroundStyle(AccessoryAppearance.from(adapter).statusColor)
@@ -122,8 +129,12 @@ struct AccessoryDetailView: View {
                         BatteryBadgeView(info: battery)
                     }
             }
-            .padding(.vertical, 4)
-        }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous),
+                legacyFill: AnyShapeStyle(Color(.secondarySystemGroupedBackground))
+            )
     }
     
     private func quickInfoSection(_ text: String) -> some View {
