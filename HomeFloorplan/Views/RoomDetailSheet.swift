@@ -64,6 +64,16 @@ struct RoomDetailSheet: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
             }
+            // Sul systemBackground puro (nero in dark) il vetro delle tile
+            // non aveva niente da mostrare: fondale a gruppi + il gradiente
+            // sottile del brand, e le superfici tornano a leggersi.
+            .background {
+                ZStack {
+                    Color(.systemGroupedBackground)
+                    BrandColor.subtleGradient
+                }
+                .ignoresSafeArea()
+            }
             .navigationTitle(room.name)
             .navigationBarTitleDisplayMode(.large)
             .toolbar {

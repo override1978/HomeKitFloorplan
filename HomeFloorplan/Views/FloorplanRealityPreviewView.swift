@@ -75,6 +75,8 @@ struct FloorplanRealityPreviewView: View {
     /// delle tre azioni, e il pannello di configurazione solo se scelto.
     private enum RoomPanelState { case actions, setup }
     @State private var roomPanelState: RoomPanelState = .actions
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isCompact: Bool { horizontalSizeClass == .compact }
     /// Si e' dentro una stanza in prima persona: serve per il bottone d'uscita.
     @State private var isInsideRoom = false
     /// Muri trasparenti a richiesta: la casa vera resta il default.
@@ -162,7 +164,11 @@ struct FloorplanRealityPreviewView: View {
             if selectedRoomID != nil {
                 switch roomPanelState {
                 case .actions: roomActionBar
-                case .setup:   roomSetupPanel
+                case .setup:
+                    // Su iPhone il Placement è uno sheet nativo coi detent:
+                    // si adatta, scorre, rispetta le safe area. Il pannello
+                    // flottante resta il formato da iPad.
+                    if !isCompact { roomSetupPanel }
                 }
             } else if isInsideRoom {
                 // L'uscita esplicita: il doppio tocco funziona, ma un bottone
@@ -197,6 +203,26 @@ struct FloorplanRealityPreviewView: View {
                 .padding(.trailing, 16)
         }
         .statusBarHidden()
+        .sheet(isPresented: compactSetupSheetBinding) {
+            NavigationStack {
+                ScrollView {
+                    setupPanelContent
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                }
+                .navigationTitle(selectedRoomName ?? "")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(String(localized: "common.done", defaultValue: "Done")) {
+                            roomPanelState = .actions
+                        }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         .sheet(item: $detailAccessory) { accessory in
             AccessoryDetailView(accessory: accessory)
         }
@@ -1353,6 +1379,19 @@ struct FloorplanRealityPreviewView: View {
     /// faceva un pannello alto quanto lo schermo, con il nome della stanza
     /// spinto fuori dal bordo di sopra. Una configurazione alla volta tiene
     /// l'altezza fissa qualunque sia il numero di accessori.
+    /// Lo sheet compatto esiste solo quando c'è qualcosa da configurare e la
+    /// modalità è quella giusta; chiuderlo (drag o Fatto) torna al menu stanza.
+    private var compactSetupSheetBinding: Binding<Bool> {
+        Binding(
+            get: {
+                isCompact && roomPanelState == .setup && selectedRoomID != nil
+                    && (selectedItem(among: setupItemsInSelectedRoom) != nil
+                        || !switchablesInSelectedRoom.isEmpty)
+            },
+            set: { if !$0 { roomPanelState = .actions } }
+        )
+    }
+
     @ViewBuilder
     private var roomSetupPanel: some View {
         let items = setupItemsInSelectedRoom
@@ -1360,7 +1399,21 @@ struct FloorplanRealityPreviewView: View {
         // con soli interruttori deve poter arrivare alla spunta «e' una luce»,
         // o quegli interruttori resterebbero irraggiungibili per sempre.
         if selectedItem(among: items) != nil || !switchablesInSelectedRoom.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            setupPanelContent
+            .padding(.horizontal, 20)
+            .padding(.vertical, 18)
+            .frame(maxWidth: 580)
+            .modifier(PanelChrome())
+            .padding(.horizontal, 10)
+            .padding(.bottom, 104)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    /// Il contenuto del Placement, condiviso fra pannello iPad e sheet iPhone.
+    private var setupPanelContent: some View {
+        let items = setupItemsInSelectedRoom
+        return VStack(alignment: .leading, spacing: 12) {
                 // Il recap della selezione: senza, il pannello compare e non si
                 // sa a cosa si riferisce.
                 HStack(spacing: 8) {
@@ -1414,14 +1467,6 @@ struct FloorplanRealityPreviewView: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 18)
-            .frame(maxWidth: 580)
-            .modifier(PanelChrome())
-            .padding(.horizontal, 10)
-            .padding(.bottom, 104)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
     }
 
     /// Gli interruttori e le prese della stanza: i candidati alla spunta.
