@@ -792,17 +792,27 @@ private struct SecurityModeActionButton: View {
             .frame(width: 72)
             .padding(.vertical, 10)
             .padding(.horizontal, 4)
-            .background(
+            // Niente material qui, per questo era sfuggita al giro vetro: il
+            // fondo era systemBackground semi-trasparente. Il velo colorato
+            // della modalità attiva è un DATO e resta sopra; il vetro sta
+            // sotto, e in legacy tutto torna com'era.
+            .background {
+                if isActive {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(mode.tintColor.opacity(0.1))
+                }
+            }
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                legacyFill: isActive
+                    ? AnyShapeStyle(.clear)
+                    : AnyShapeStyle(Color(.systemBackground).opacity(0.5))
+            )
+            .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isActive
-                          ? mode.tintColor.opacity(0.1)
-                          : Color(.systemBackground).opacity(0.5))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(
-                                isActive ? mode.tintColor.opacity(0.4) : Color.secondary.opacity(0.15),
-                                lineWidth: 1
-                            )
+                    .strokeBorder(
+                        isActive ? mode.tintColor.opacity(0.4) : Color.secondary.opacity(0.15),
+                        lineWidth: 1
                     )
             )
         }
