@@ -93,6 +93,10 @@ struct AccessoryDetailView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
             }
+            // Fuori dal Form i controlli ereditano il tint di sistema (blu):
+            // il DisclosureGroup dei dettagli tecnici era la spia. Il brand
+            // color è un color set, quindi chiaro/scuro li gestisce l'asset.
+            .tint(BrandColor.primary)
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle(accessory.name)
             .navigationBarTitleDisplayMode(.inline)
