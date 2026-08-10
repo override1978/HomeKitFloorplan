@@ -507,12 +507,17 @@ struct DrawingCanvasView: UIViewRepresentable {
         /// interrotto), qui si riaggancia.
         func enforceZoomFloor(_ scrollView: UIScrollView) {
             guard scrollView.bounds.width > 0 else { return }
+            let floor: CGFloat
             if parent.coversViewportAtMinimumZoom {
                 let cover = max(scrollView.bounds.width, scrollView.bounds.height)
                     / DrawingDocument.canvasSize
-                scrollView.minimumZoomScale = max(0.3, cover)
+                floor = max(0.3, cover)
             } else {
-                scrollView.minimumZoomScale = 0.3
+                floor = 0.3
+            }
+            // Stessa regola di centerContent: si scrive solo se cambia.
+            if abs(scrollView.minimumZoomScale - floor) > 0.001 {
+                scrollView.minimumZoomScale = floor
             }
             if !scrollView.isZooming, !scrollView.isZoomBouncing,
                scrollView.zoomScale < scrollView.minimumZoomScale - 0.001 {
@@ -540,12 +545,26 @@ struct DrawingCanvasView: UIViewRepresentable {
             let visibleSize = operativeViewportSize(in: scrollView)
             let dx = max((visibleSize.width  - scrollView.contentSize.width)  / 2, 0)
             let dy = max((visibleSize.height - scrollView.contentSize.height) / 2, 0)
-            scrollView.contentInset = UIEdgeInsets(
+            let target = UIEdgeInsets(
                 top: chrome.top + dy,
                 left: chrome.left + dx,
                 bottom: chrome.bottom + dy,
                 right: chrome.right + dx
             )
+            // ⚠️ Idempotente, o è un anello: scrivere contentInset rifà
+            // layout, layoutSubviews richiama centerContent (onLayout), e
+            // quando l'inspector cambia le fasce chrome i valori possono
+            // oscillare — il main thread gira a vuoto e l'editor «freeza»
+            // alla selezione di un arredo. Stessa famiglia dell'anello
+            // topBarHeight già pagato caro.
+            let current = scrollView.contentInset
+            let differs = abs(current.top - target.top) > 0.5
+                || abs(current.left - target.left) > 0.5
+                || abs(current.bottom - target.bottom) > 0.5
+                || abs(current.right - target.right) > 0.5
+            if differs {
+                scrollView.contentInset = target
+            }
         }
 
         private func operativeViewportSize(in scrollView: UIScrollView) -> CGSize {
