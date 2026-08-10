@@ -1254,7 +1254,14 @@ struct FloorplanRealityPreviewView: View {
             // Vetro di casa: `glassChromeSurface` — Liquid Glass col toggle
             // attivo, e il ramo legacy porta bordo e ombra di oggi. Sul vetro
             // niente bordo/ombra a mano: il vetro ha i suoi.
+            //
+            // E sotto il vetro, lo scudo: l'ARView è una UIView a tutto
+            // schermo e i suoi recognizer UIKit ricevono anche i tocchi dati
+            // ai pannelli SwiftUI (stesso tap-through dell'editor 2D) — un
+            // tocco sul pannello deselezionava la stanza e il pannello si
+            // chiudeva da solo sotto le dita.
             content
+                .shieldsCanvasTouches()
                 .glassChromeSurface(
                     in: RoundedRectangle(cornerRadius: 28, style: .continuous),
                     legacyBorder: Color.primary.opacity(0.12),
@@ -1411,6 +1418,7 @@ struct FloorplanRealityPreviewView: View {
             .padding(.vertical, 18)
             .frame(maxWidth: 580)
             .modifier(PanelChrome())
+            .padding(.horizontal, 10)
             .padding(.bottom, 104)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
@@ -1513,19 +1521,23 @@ struct FloorplanRealityPreviewView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 58, alignment: .leading)
 
-                    HStack(spacing: 4) {
-                        ForEach(LampDirection.allCases) { value in
-                            Button {
-                                applyLampSettings(item.id, item.height, value)
-                            } label: {
-                                directionGlyph(value, isSelected: direction == value)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 3)
-                                    .background(direction == value ? Color.primary.opacity(0.14) : Color.clear,
-                                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    // Su iPhone la fila intera sfora i ~350 pt utili e si
+                    // tagliava: scorre. Su iPad ci sta e non scrolla mai.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 4) {
+                            ForEach(LampDirection.allCases) { value in
+                                Button {
+                                    applyLampSettings(item.id, item.height, value)
+                                } label: {
+                                    directionGlyph(value, isSelected: direction == value)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 3)
+                                        .background(direction == value ? Color.primary.opacity(0.14) : Color.clear,
+                                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(Text(value.label))
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(Text(value.label))
                         }
                     }
 

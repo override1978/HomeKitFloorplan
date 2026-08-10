@@ -165,10 +165,10 @@ struct RoomDetailSheet: View {
             }
             .padding(12)
             .frame(minWidth: 130, maxWidth: 130, minHeight: 130, alignment: .topLeading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+                legacyFill: AnyShapeStyle(.ultraThinMaterial),
+                legacyShadow: GlassChromeShadow(color: .black.opacity(0.06), radius: 4, y: 2)
             )
         }
         .buttonStyle(SceneTileButtonStyle())
@@ -271,9 +271,14 @@ struct RoomDetailSheet: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+            legacyFill: AnyShapeStyle(.ultraThinMaterial)
+        )
+        // Il bordo d'urgenza è un DATO: resta sopra il vetro.
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(
