@@ -36,9 +36,15 @@ struct AccessoryRoomCard: View {
         }
         .buttonStyle(.plain)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
+        // Il bordo è un DATO (stanza che chiede attenzione): resta sopra il
+        // vetro in entrambi i mondi.
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
+                .fill(.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .strokeBorder(

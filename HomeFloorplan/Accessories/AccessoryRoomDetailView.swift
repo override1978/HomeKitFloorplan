@@ -192,7 +192,10 @@ struct AccessoryRoomDetailView: View {
                 .background(room.healthLevel.color.opacity(0.12), in: Capsule())
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
     }
 
     // MARK: - Section rendering
@@ -403,7 +406,10 @@ private struct RoomScenesStrip: View {
                 .padding(.bottom, 12)
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
     }
 
     private func runScene(_ scene: SceneItem) {
@@ -499,7 +505,10 @@ private struct SceneRoomCard: View {
         }
         .padding(14)
         .frame(width: 160, height: 130)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(isSuggested
@@ -542,7 +551,10 @@ private struct DetailSectionCard<Content: View>: View {
             content()
                 .padding(.vertical, 4)
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
     }
 }
 

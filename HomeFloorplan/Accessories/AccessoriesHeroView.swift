@@ -167,15 +167,17 @@ struct AccessoriesHeroView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 18)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(level.color.opacity(0.6))
-                        .frame(height: 3)
-                }
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
         )
+        // La riga colorata in basso è un DATO (livello di salute): sta sopra
+        // il vetro, mai dentro.
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(level.color.opacity(0.6))
+                .frame(height: 3)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: level.color.opacity(0.12), radius: 12, x: 0, y: 4)
         .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)

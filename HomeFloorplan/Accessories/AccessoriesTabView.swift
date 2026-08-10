@@ -17,6 +17,16 @@ import HomeKit
 //   Tap su riga flat    →  Sheet  →  AccessoryDetailView
 
 struct AccessoriesTabView: View {
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+
+    /// Stesso criterio di `GlassChromeSurface`: vetro solo col toggle acceso
+    /// E il sistema che lo sa fare.
+    private var usesGlassChrome: Bool {
+        if #available(iOS 26.0, *) { return isLiquidGlassEnabled }
+        return false
+    }
+
 
     @Environment(HomeKitService.self) private var homeKit
     @Environment(IconOverrideStore.self) private var iconOverrides
@@ -204,7 +214,10 @@ struct AccessoriesTabView: View {
                 }
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
     }
 
     // MARK: - States
@@ -387,6 +400,14 @@ private struct AccessoriesFilterBar: View {
 
     @Bindable var vm: AccessoriesViewModel
 
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+
+    private var usesGlassChrome: Bool {
+        if #available(iOS 26.0, *) { return isLiquidGlassEnabled }
+        return false
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             // Riga 1: categorie
@@ -402,6 +423,8 @@ private struct AccessoriesFilterBar: View {
                         }
                     }
                 }
+                .padding(usesGlassChrome ? 3 : 0)
+                .glassChromeSurface(in: Capsule(), legacyFill: AnyShapeStyle(.clear))
                 .padding(.horizontal, 16)
             }
 
@@ -418,11 +441,19 @@ private struct AccessoriesFilterBar: View {
                         }
                     }
                 }
+                .padding(usesGlassChrome ? 3 : 0)
+                .glassChromeSurface(in: Capsule(), legacyFill: AnyShapeStyle(.clear))
                 .padding(.horizontal, 16)
             }
         }
         .padding(.vertical, 8)
-        .background(Color.clear.overlay(.thinMaterial.opacity(0.6)))
+        .background {
+            // Col vetro la barra non ha superficie propria: ce l'hanno i
+            // gruppi di pill. La banda resta solo in legacy.
+            if !usesGlassChrome {
+                Color.clear.overlay(.thinMaterial.opacity(0.6))
+            }
+        }
     }
 
     private func filterPill(
@@ -438,15 +469,20 @@ private struct AccessoriesFilterBar: View {
                 Text(title)
                     .font(.subheadline.weight(.medium))
             }
-            .foregroundStyle(isSelected ? .white : .primary)
+            .foregroundStyle(isSelected
+                             ? .white
+                             : (usesGlassChrome ? Color.primary.opacity(0.78) : Color.primary))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
                 Capsule()
                     .fill(isSelected
                           ? AnyShapeStyle(BrandColor.heroGradient)
-                          : AnyShapeStyle(.regularMaterial))
+                          : (usesGlassChrome ? AnyShapeStyle(.clear) : AnyShapeStyle(.regularMaterial)))
             )
+            // Sul vetro le spente sono trasparenti, e i pixel trasparenti non
+            // sono tappabili.
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.3), value: isSelected)
