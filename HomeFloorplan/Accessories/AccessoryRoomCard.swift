@@ -28,13 +28,12 @@ struct AccessoryRoomCard: View {
     // MARK: - Body
 
     var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 0) {
-                header
-                collapsedIndicators
-            }
+        // Contenuto puro, niente Button: la card vive dentro la label di un
+        // NavigationLink, e un Button lì dentro si mangia il tap del link.
+        VStack(spacing: 0) {
+            header
+            collapsedIndicators
         }
-        .buttonStyle(.plain)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .glassChromeSurface(
             in: RoundedRectangle(cornerRadius: 20, style: .continuous),

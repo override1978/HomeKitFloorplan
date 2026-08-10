@@ -65,9 +65,6 @@ struct AccessoriesTabView: View {
                 ),
                 placement: .navigationBarDrawer(displayMode: .always)
             )
-            .navigationDestination(item: $selectedRoom) { room in
-                AccessoryRoomDetailView(room: room)
-            }
             .sheet(item: $selectedAccessory) { accessory in
                 AccessoryDetailView(accessory: accessory)
             }
@@ -177,9 +174,18 @@ struct AccessoriesTabView: View {
                     } else {
                         LazyVGrid(columns: columns, spacing: 14) {
                             ForEach(filtered) { room in
-                                AccessoryRoomCard(room: room) {
-                                    selectedRoom = room
+                                // Link classico, non navigationDestination:
+                                // su iPhone questa vista arriva già pushata da
+                                // un NavigationLink vecchio stile, e mescolare
+                                // i due mondi sullo stesso stack fa saltare il
+                                // back alla radice (bug SwiftUI noto — il
+                                // «torna alla home» segnalato dall'utente).
+                                NavigationLink {
+                                    AccessoryRoomDetailView(room: room)
+                                } label: {
+                                    AccessoryRoomCard(room: room) { }
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -423,8 +429,6 @@ private struct AccessoriesFilterBar: View {
                         }
                     }
                 }
-                .padding(usesGlassChrome ? 3 : 0)
-                .glassChromeSurface(in: Capsule(), legacyFill: AnyShapeStyle(.clear))
                 .padding(.horizontal, 16)
             }
 
@@ -441,8 +445,6 @@ private struct AccessoriesFilterBar: View {
                         }
                     }
                 }
-                .padding(usesGlassChrome ? 3 : 0)
-                .glassChromeSurface(in: Capsule(), legacyFill: AnyShapeStyle(.clear))
                 .padding(.horizontal, 16)
             }
         }
@@ -469,19 +471,18 @@ private struct AccessoriesFilterBar: View {
                 Text(title)
                     .font(.subheadline.weight(.medium))
             }
-            .foregroundStyle(isSelected
-                             ? .white
-                             : (usesGlassChrome ? Color.primary.opacity(0.78) : Color.primary))
+            .foregroundStyle(isSelected ? .white : .primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                Capsule()
-                    .fill(isSelected
-                          ? AnyShapeStyle(BrandColor.heroGradient)
-                          : (usesGlassChrome ? AnyShapeStyle(.clear) : AnyShapeStyle(.regularMaterial)))
+            .background {
+                if isSelected {
+                    Capsule().fill(BrandColor.heroGradient)
+                }
+            }
+            .glassChromeSurface(
+                in: Capsule(),
+                legacyFill: isSelected ? AnyShapeStyle(.clear) : AnyShapeStyle(.regularMaterial)
             )
-            // Sul vetro le spente sono trasparenti, e i pixel trasparenti non
-            // sono tappabili.
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
