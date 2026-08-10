@@ -563,8 +563,13 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
         // ARView in modalità **AR vera** (non il .nonAR della 3D): il feed
         // camera arriva da ARKit insieme alla posa 6DOF — è il salto da
         // «mostrare il mondo» a «sapere dove sei nel mondo».
+        //
+        // ⚠️ Sessione AUTO-configurata: col run() manuale dentro makeUIView
+        // la sessione partiva prima che la vista entrasse nel render loop —
+        // tracking vivo, feed nero («si ferma così»). Lasciandola all'ARView,
+        // parte quando la vista è in finestra e i pixel arrivano.
         let view = ARView(frame: .zero, cameraMode: .ar,
-                          automaticallyConfigureSession: false)
+                          automaticallyConfigureSession: true)
         context.coordinator.configure(on: view)
         return view
     }
@@ -596,14 +601,11 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
                 )))
                 return
             }
-            let configuration = ARWorldTrackingConfiguration()
-            configuration.worldAlignment = .gravity
+            // Niente run() manuale: la configurazione world-tracking la avvia
+            // l'ARView stessa quando entra in finestra. Qui solo osservazione.
             view.session.delegate = self
             session = view.session
             update(.starting)
-            // Il permesso camera lo chiede ARKit da sé; il rifiuto arriva in
-            // didFailWithError come cameraUnauthorized.
-            view.session.run(configuration)
         }
 
         func stop() {
