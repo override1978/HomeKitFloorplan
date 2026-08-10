@@ -225,7 +225,7 @@ struct AutomationsView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(.regularMaterial, in: Capsule())
+                .glassChromeSurface(in: Capsule(), legacyFill: AnyShapeStyle(.regularMaterial))
         }
     }
 
@@ -242,13 +242,17 @@ struct AutomationsView: View {
                 .foregroundStyle(isSelected ? .white : .primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(
-                    Capsule().fill(isSelected ? AnyShapeStyle(BrandColor.heroGradient) : AnyShapeStyle(.regularMaterial))
-                )
-                .overlay {
-                    Capsule()
-                        .strokeBorder(isSelected ? Color.clear : Color.secondary.opacity(0.16), lineWidth: 1)
+                .background {
+                    if isSelected {
+                        Capsule().fill(BrandColor.heroGradient)
+                    }
                 }
+                .glassChromeSurface(
+                    in: Capsule(),
+                    legacyFill: isSelected ? AnyShapeStyle(.clear) : AnyShapeStyle(.regularMaterial),
+                    legacyBorder: isSelected ? nil : Color.secondary.opacity(0.16)
+                )
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.3), value: isSelected)
@@ -358,7 +362,10 @@ struct AutomationsView: View {
             }
         }
         .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Color.secondary.opacity(0.10), lineWidth: 1)
@@ -460,13 +467,13 @@ private struct AutomationsHeroView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 14)
         }
-        .background(
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(BrandColor.primary.opacity(0.18), lineWidth: 1)
-                )
+                .strokeBorder(BrandColor.primary.opacity(0.18), lineWidth: 1)
         )
         .shadow(color: BrandColor.primary.opacity(0.08), radius: 12, x: 0, y: 4)
         .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
@@ -621,7 +628,10 @@ private struct ExistingAutomationSheet: View {
                         }
                     }
                     .padding(18)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .glassChromeSurface(
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous),
+                        legacyFill: AnyShapeStyle(.regularMaterial)
+                    )
 
                     if !item.actionSetNames.isEmpty {
                         Button {
@@ -700,7 +710,10 @@ private struct ExistingAutomationSheet: View {
             Spacer()
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(BrandColor.primary.opacity(0.28), lineWidth: 1)
@@ -805,7 +818,10 @@ private struct ExistingAutomationSheet: View {
             Spacer()
         }
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
     }
 
     private func typeColor(_ type: AutomationTriggerType) -> Color {
