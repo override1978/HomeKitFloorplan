@@ -452,9 +452,7 @@ struct HomeIntelligenceDashboardView: View {
                     }
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-            )
+            .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
         }
     }
 
@@ -485,9 +483,7 @@ struct HomeIntelligenceDashboardView: View {
                 }
                 .foregroundStyle(.primary)
                 .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-                )
+                .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
             }
             .buttonStyle(.plain)
 
@@ -821,9 +817,7 @@ struct HomeIntelligenceDashboardView: View {
                     }
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-            )
+            .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
         }
     }
 
@@ -970,9 +964,7 @@ struct HomeIntelligenceDashboardView: View {
                         }
                     }
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-                )
+                .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
             }
         }
     }
@@ -1012,9 +1004,7 @@ struct HomeIntelligenceDashboardView: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-                )
+                .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(recent.enumerated()), id: \.element.id) { idx, notif in
@@ -1024,9 +1014,7 @@ struct HomeIntelligenceDashboardView: View {
                         }
                     }
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-                )
+                .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
             }
         }
     }
@@ -1093,9 +1081,7 @@ struct HomeIntelligenceDashboardView: View {
                         }
                     }
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-                )
+                .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
             }
         }
     }
@@ -1176,9 +1162,7 @@ struct HomeIntelligenceDashboardView: View {
                                 }
                             }
                         }
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-                        )
+                        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
                     }
                 }
             }
@@ -1212,9 +1196,7 @@ struct HomeIntelligenceDashboardView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-        )
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
     }
 
     private var loadingState: some View {
@@ -1238,9 +1220,7 @@ struct HomeIntelligenceDashboardView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-        )
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
     }
 
     // MARK: - Toolbar
@@ -1302,9 +1282,7 @@ struct HomeIntelligenceDashboardView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-        )
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
     }
 
     // Shown in effectivenessSection when AI is disabled and there's no data yet.
@@ -1338,13 +1316,10 @@ struct HomeIntelligenceDashboardView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
+        .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.secondary.opacity(0.10), lineWidth: 1)
-                )
+                .strokeBorder(Color.secondary.opacity(0.10), lineWidth: 1)
         )
     }
 
@@ -1464,16 +1439,13 @@ private struct HomeBriefingCard: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(color.opacity(0.55))
-                        .frame(height: 3)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        )
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 20, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(color.opacity(0.55))
+                .frame(height: 3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: color.opacity(0.10), radius: 12, x: 0, y: 4)
         .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
     }
@@ -1636,13 +1608,10 @@ private struct IntelligenceStatusHeroCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 18, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
+        .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(color.opacity(0.28), lineWidth: 1)
-                )
+                .strokeBorder(color.opacity(0.28), lineWidth: 1)
         )
     }
 
@@ -1863,9 +1832,7 @@ private struct IncoherenceConflictCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-        )
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
     }
 }
 
@@ -1977,9 +1944,7 @@ private struct IntelligenceEvidenceCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-        )
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
     }
 }
 
@@ -2105,9 +2070,7 @@ private struct IntelligenceDomainDetailSheet: View {
                         }
                         .padding(18)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial)
-                        )
+                        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
                     } else {
                         ForEach(groups) { group in
                             if group.primary.kind == .incoherence {
@@ -2269,16 +2232,13 @@ private struct IntelligenceAssistantSummaryCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(color.opacity(0.55))
-                        .frame(height: 3)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        )
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 20, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(color.opacity(0.55))
+                .frame(height: 3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: color.opacity(0.10), radius: 12, x: 0, y: 4)
         .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
     }
@@ -2400,16 +2360,13 @@ private struct PhaseHeroCard: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 18)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(svc.learningPhase.accentColor.opacity(0.5))
-                        .frame(height: 3)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        )
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 20, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(svc.learningPhase.accentColor.opacity(0.5))
+                .frame(height: 3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: svc.learningPhase.accentColor.opacity(0.10), radius: 12, x: 0, y: 4)
         .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
         .onAppear {
@@ -2499,13 +2456,10 @@ private struct TrustScoreCard: View {
             }
         }
         .padding(16)
-        .background(
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
+        .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(color.opacity(0.20), lineWidth: 1)
-                )
+                .strokeBorder(color.opacity(0.20), lineWidth: 1)
         )
     }
 
@@ -2705,13 +2659,10 @@ private struct RoomTrendCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 14, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
+        .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(accentColor.opacity(0.20), lineWidth: 1)
-                )
+                .strokeBorder(accentColor.opacity(0.20), lineWidth: 1)
         )
     }
 }
@@ -2776,13 +2727,10 @@ private struct DomainCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 14, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
+        .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(statusColor.opacity(0.20), lineWidth: 1)
-                )
+                .strokeBorder(statusColor.opacity(0.20), lineWidth: 1)
         )
         .onAppear {
             withAnimation(.spring(response: 0.8, dampingFraction: 0.75).delay(0.1)) {
@@ -2917,13 +2865,10 @@ private struct AIStatTile: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
+        .glassChromeSurface(in: RoundedRectangle(cornerRadius: 16, style: .continuous), legacyFill: AnyShapeStyle(.regularMaterial))
+        .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(color.opacity(0.20), lineWidth: 1)
-                )
+                .strokeBorder(color.opacity(0.20), lineWidth: 1)
         )
     }
 }
