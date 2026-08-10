@@ -1993,9 +1993,13 @@ private struct IntelligenceDomainTile: View {
         .padding(14)
         .frame(minHeight: 124, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.regularMaterial.opacity(summary.count == 0 ? 0.62 : 1.0))
+        // L'opacità condizionale sul material (smorzata a conteggio zero)
+        // aveva nascosto questa tile alla conversione: era l'unica superficie
+        // rimasta fuori dal vetro. Sul vetro lo stato «zero anomalie» lo
+        // dicono già icona secondaria e pallino: la superficie resta una.
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial.opacity(summary.count == 0 ? 0.62 : 1.0))
         )
     }
 }
