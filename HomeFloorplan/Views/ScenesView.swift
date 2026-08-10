@@ -434,13 +434,14 @@ private struct ScenesHeroView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 14)
         }
-        .background(
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
+        // Il bordo arancio è identità della sezione: sopra il vetro, non dentro.
+        .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
-                )
+                .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
         )
         .shadow(color: Color.orange.opacity(0.08), radius: 12, x: 0, y: 4)
         .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
@@ -595,13 +596,13 @@ private struct SceneSuggestionCard: View {
         }
         .padding(14)
         .frame(width: 180)
-        .background(
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
-                )
+                .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
         )
         .shadow(color: Color.orange.opacity(0.06), radius: 8, x: 0, y: 3)
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -657,16 +658,22 @@ private struct SceneIntentCategoryBar: View {
             .foregroundStyle(isSelected ? .white : .primary)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(
-                Capsule()
-                    .fill(isSelected
-                          ? AnyShapeStyle(LinearGradient(
-                              colors: [Color.orange, Color(red: 1, green: 0.75, blue: 0)],
-                              startPoint: .leading,
-                              endPoint: .trailing
-                            ))
-                          : AnyShapeStyle(Color(.tertiarySystemGroupedBackground)))
+            .background {
+                if isSelected {
+                    Capsule().fill(LinearGradient(
+                        colors: [Color.orange, Color(red: 1, green: 0.75, blue: 0)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ))
+                }
+            }
+            .glassChromeSurface(
+                in: Capsule(),
+                legacyFill: isSelected
+                    ? AnyShapeStyle(.clear)
+                    : AnyShapeStyle(Color(.tertiarySystemGroupedBackground))
             )
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -808,17 +815,18 @@ private struct SceneFeaturedCard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
+        // Il verde del successo è un DATO: resta sopra il vetro.
+        .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(
-                            justSucceeded
-                                ? Color.green.opacity(0.4)
-                                : Color(.separator).opacity(0.45),
-                            lineWidth: 1
-                        )
+                .strokeBorder(
+                    justSucceeded
+                        ? Color.green.opacity(0.4)
+                        : Color(.separator).opacity(0.45),
+                    lineWidth: 1
                 )
         )
         .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
