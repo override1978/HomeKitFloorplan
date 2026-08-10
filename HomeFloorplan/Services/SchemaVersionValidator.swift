@@ -61,7 +61,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 29
+    static let currentVersion: Int = 30   // v30: PlacedAccessory.lightRenderStyleRaw (additiva, opzionale)
 
     // MARK: - Persistence
 
