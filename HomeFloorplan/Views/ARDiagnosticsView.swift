@@ -9,6 +9,10 @@ struct ARPoseSample: Equatable {
     var position: SIMD3<Float>
     var trackingLabel: String
     var isNormal: Bool
+    /// Strumentazione per il feed nero: quanti frame ARKit ha consegnato e
+    /// quanto è grande davvero la vista che dovrebbe disegnarli.
+    var frameCount: Int = 0
+    var viewSize: CGSize = .zero
 }
 
 struct ARDiagnosticsSnapshot: Identifiable {
@@ -238,7 +242,7 @@ struct ARDiagnosticsView: View {
                     Image(systemName: arPose.isNormal ? "move.3d" : "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(arPose.isNormal ? Color.green : Color.orange)
-                    Text(verbatim: "AR · \(arPose.trackingLabel)")
+                    Text(verbatim: "AR · \(arPose.trackingLabel) · f\(arPose.frameCount) · \(Int(arPose.viewSize.width))×\(Int(arPose.viewSize.height))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 8)
@@ -586,6 +590,8 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
         private weak var session: ARSession?
         private var lastReported = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
         private var didReportReady = false
+        private var frameCount = 0
+        private weak var view: ARView?
 
         init(status: Binding<ARDiagnosticsCameraStatus>,
              onPose: ((ARPoseSample) -> Void)?) {
@@ -605,6 +611,7 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
             // l'ARView stessa quando entra in finestra. Qui solo osservazione.
             view.session.delegate = self
             session = view.session
+            self.view = view
             update(.starting)
         }
 
@@ -615,22 +622,26 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
         // MARK: ARSessionDelegate
 
         func session(_ session: ARSession, didUpdate frame: ARFrame) {
+            frameCount += 1
             if !didReportReady {
                 didReportReady = true
                 update(.ready)
             }
             let translation = frame.camera.transform.columns.3
             let position = SIMD3(translation.x, translation.y, translation.z)
-            // Si riporta solo oltre 3 cm di spostamento: la UI non ha bisogno
-            // dei 60 Hz della sessione.
-            guard simd_distance(position, lastReported) > 0.03 else { return }
+            // Si riporta oltre 3 cm di spostamento, o comunque ogni 60 frame:
+            // il contatore deve avanzare a video anche da fermi.
+            guard simd_distance(position, lastReported) > 0.03
+                || frameCount % 60 == 0 else { return }
             lastReported = position
             let (label, isNormal) = Self.describe(frame.camera.trackingState)
-            let sample = ARPoseSample(position: position,
-                                      trackingLabel: label,
-                                      isNormal: isNormal)
-            DispatchQueue.main.async { [onPose] in
-                onPose?(sample)
+            let count = frameCount
+            DispatchQueue.main.async { [onPose, weak view] in
+                onPose?(ARPoseSample(position: position,
+                                     trackingLabel: label,
+                                     isNormal: isNormal,
+                                     frameCount: count,
+                                     viewSize: view?.bounds.size ?? .zero))
             }
         }
 
