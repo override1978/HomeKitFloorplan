@@ -672,13 +672,13 @@ private struct SecurityInsightCard: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
         }
-        .background(
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+            legacyFill: AnyShapeStyle(.ultraThinMaterial)
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(insight.priority.color.opacity(0.15), lineWidth: 1)
-                )
+                .strokeBorder(insight.priority.color.opacity(0.15), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
@@ -997,17 +997,18 @@ private struct SecuritySensorCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 120, alignment: .topLeading)
-        .background(
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+            legacyFill: AnyShapeStyle(.ultraThinMaterial)
+        )
+        // Il bordo d'urgenza è un DATO: resta sopra il vetro.
+        .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(
-                            adapter.visualUrgency == .normal
-                                ? Color.secondary.opacity(0.1)
-                                : urgencyColor.opacity(0.3),
-                            lineWidth: 1
-                        )
+                .strokeBorder(
+                    adapter.visualUrgency == .normal
+                        ? Color.secondary.opacity(0.1)
+                        : urgencyColor.opacity(0.3),
+                    lineWidth: 1
                 )
         )
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -1139,7 +1140,10 @@ private struct CameraFeedCard: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 6)
         }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+            legacyFill: AnyShapeStyle(.ultraThinMaterial)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 

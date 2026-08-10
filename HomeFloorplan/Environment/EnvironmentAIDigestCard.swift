@@ -100,15 +100,15 @@ struct EnvironmentAIDigestCard: View {
                 Spacer().frame(height: 8)
             }
         }
-        .background(
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(
-                            Color.blue.opacity(0.15),
-                            lineWidth: 1
-                        )
+                .strokeBorder(
+                    Color.blue.opacity(0.15),
+                    lineWidth: 1
                 )
         )
         .shadow(color: Color.blue.opacity(0.08), radius: 12, x: 0, y: 4)

@@ -92,17 +92,18 @@ struct RoomSectionView: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .background(
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
+        // Il bordo d'urgenza è un DATO: resta sopra il vetro.
+        .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(
-                            room.worstUrgency == .normal
-                                ? Color(.separator).opacity(0.20)
-                                : accentColor.opacity(0.40),
-                            lineWidth: room.worstUrgency == .normal ? 0.5 : 1.5
-                        )
+                .strokeBorder(
+                    room.worstUrgency == .normal
+                        ? Color(.separator).opacity(0.20)
+                        : accentColor.opacity(0.40),
+                    lineWidth: room.worstUrgency == .normal ? 0.5 : 1.5
                 )
         )
         .shadow(

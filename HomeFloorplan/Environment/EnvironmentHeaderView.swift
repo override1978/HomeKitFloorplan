@@ -86,24 +86,22 @@ struct EnvironmentHeaderView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    VStack {
-                        Spacer()
-                        RoundedRectangle(cornerRadius: 0)
-                            .fill(color)
-                            .frame(height: 3)
-                            .clipShape(
-                                .rect(
-                                    bottomLeadingRadius: 20,
-                                    bottomTrailingRadius: 20
-                                )
-                            )
-                    }
-                )
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
         )
+        // La barretta colorata è la firma dello stato: sopra il vetro.
+        .overlay(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 0)
+                .fill(color)
+                .frame(height: 3)
+                .clipShape(
+                    .rect(
+                        bottomLeadingRadius: 20,
+                        bottomTrailingRadius: 20
+                    )
+                )
+        }
         .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
     }
 }

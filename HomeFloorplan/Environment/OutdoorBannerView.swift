@@ -108,13 +108,13 @@ struct OutdoorBannerView: View {
             }
         }
         .padding(16)
-        .background(
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.regularMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color(.separator).opacity(0.25), lineWidth: 0.5)
-                )
+                .strokeBorder(Color(.separator).opacity(0.25), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
     }
