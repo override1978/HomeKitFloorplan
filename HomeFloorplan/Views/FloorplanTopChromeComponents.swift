@@ -103,6 +103,38 @@ struct FloorplanTopBarView: View {
                                 onShowScenes: onShowScenes,
                                 onToggleEditing: onToggleEditing
                             )
+                        } else {
+                            // Su iPhone la planimetria resta solo controllo,
+                            // ma le due porte verso le altre facce della
+                            // stessa casa — l'editor 2D e la 3D — ci devono
+                            // essere: entrambe ormai vivono bene sul telefono.
+                            // UN solo Menu con la propria superficie: la
+                            // regola «mai due Menu su una superficie» regge.
+                            Menu {
+                                Button {
+                                    onEditDrawing()
+                                } label: {
+                                    Label(String(localized: "floorplan.drawing.edit", defaultValue: "Edit 2D drawing"),
+                                          systemImage: "pencil.and.ruler")
+                                }
+                                .disabled(floorplan.drawingDocumentJSON == nil)
+
+                                Button {
+                                    onView3D()
+                                } label: {
+                                    Label(String(localized: "floorplan.preview3D", defaultValue: "View in 3D"),
+                                          systemImage: "cube")
+                                }
+                                .disabled(floorplan.drawingDocumentJSON == nil)
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    // `Color.primary` esplicito: dentro Menu lo
+                                    // stile gerarchico perde contro il tint.
+                                    .foregroundStyle(Color.primary)
+                                    .frame(width: 36, height: 36)
+                                    .glassChromeSurface(in: Circle())
+                            }
                         }
                     }
                 }
