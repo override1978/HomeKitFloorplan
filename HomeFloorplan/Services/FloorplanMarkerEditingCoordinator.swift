@@ -85,15 +85,23 @@ struct FloorplanMarkerEditingCoordinator {
     /// parte**: uno split o una valvola hanno una quota ma non un verso, e
     /// scriverne uno finto lascerebbe in archivio un dato che non significa
     /// niente e che un giorno qualcuno leggerebbe.
-    func setLampSettings(accessoryUUID: UUID, height: Double, direction: LampDirection?) {
+    func setLampSettings(accessoryUUID: UUID,
+                         height: Double,
+                         direction: LampDirection?,
+                         renderStyle: LampRenderStyle? = nil) {
         guard let placed = floorplan.accessories.first(where: {
             $0.homeKitAccessoryUUID == accessoryUUID
         }) else { return }
         let newDirection = direction?.rawValue ?? placed.lightDirectionRaw
-        guard placed.mountHeight != height || placed.lightDirectionRaw != newDirection else { return }
+        let newRenderStyle = renderStyle?.rawValue ?? placed.lightRenderStyleRaw
+        guard placed.mountHeight != height
+                || placed.lightDirectionRaw != newDirection
+                || placed.lightRenderStyleRaw != newRenderStyle
+        else { return }
 
         placed.mountHeight = height
         placed.lightDirectionRaw = newDirection
+        placed.lightRenderStyleRaw = newRenderStyle
         saveAndMarkForSync()
     }
 
@@ -103,6 +111,9 @@ struct FloorplanMarkerEditingCoordinator {
             $0.homeKitAccessoryUUID == accessoryUUID
         }), placed.isDeclaredLight != flag else { return }
         placed.isDeclaredLight = flag
+        if flag, placed.lightRenderStyleRaw == nil {
+            placed.lightRenderStyleRaw = LampRenderStyle.marker.rawValue
+        }
         saveAndMarkForSync()
     }
 

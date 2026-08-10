@@ -30,6 +30,9 @@ final class PlacedAccessory : Identifiable{
     /// Dove punta la luce: basso, intorno, alto. Anche questa non esiste in
     /// pianta, e cambia completamente come la stanza si illumina.
     var lightDirectionRaw: String?
+    /// Come rappresentare la luce nel 3D: faretto con fascio/pozze oppure
+    /// marker discreto. La geometria della casa non cambia.
+    var lightRenderStyleRaw: String?
     /// L'utente ha dichiarato che questo interruttore/presa comanda una luce.
     ///
     /// È una **dichiarazione**, non un'euristica: HomeKit non sa cosa c'è

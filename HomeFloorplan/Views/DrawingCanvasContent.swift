@@ -822,6 +822,28 @@ private func drawFurnitureShape(_ item: FurnitureItem, context: inout GraphicsCo
         context.fill(Path(ellipseIn: CGRect(x: body.midX - 6, y: body.midY - 2, width: 4, height: 4)), with: .color(detail))
         context.fill(Path(ellipseIn: CGRect(x: body.midX + 2, y: body.midY - 2, width: 4, height: 4)), with: .color(detail))
 
+    case .bookcase:
+        let body = rect.insetBy(dx: rect.width * 0.05, dy: rect.height * 0.08)
+        context.fill(rounded(body, radius: 4), with: .color(fill))
+        context.stroke(rounded(body, radius: 4), with: .color(stroke), style: style)
+        let rows = 4
+        for index in 1..<rows {
+            let y = body.minY + body.height * CGFloat(index) / CGFloat(rows)
+            strokeLine(CGPoint(x: body.minX, y: y), CGPoint(x: body.maxX, y: y), color: detail)
+        }
+        let columns = 6
+        let shelfHeight = body.height / CGFloat(rows)
+        let bookWidth = body.width / CGFloat(columns)
+        for row in 0..<rows {
+            for column in 0..<columns where (row + column).isMultiple(of: 2) {
+                let book = CGRect(x: body.minX + CGFloat(column) * bookWidth + bookWidth * 0.18,
+                                  y: body.minY + CGFloat(row) * shelfHeight + shelfHeight * 0.22,
+                                  width: bookWidth * 0.42,
+                                  height: shelfHeight * 0.52)
+                context.fill(rounded(book, radius: 1.5), with: .color(detail.opacity(0.5)))
+            }
+        }
+
     case .toilet:
         let tank = CGRect(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.12, width: rect.width * 0.56, height: rect.height * 0.24)
         let bowl = CGRect(x: rect.minX + rect.width * 0.18, y: rect.minY + rect.height * 0.34, width: rect.width * 0.64, height: rect.height * 0.46)

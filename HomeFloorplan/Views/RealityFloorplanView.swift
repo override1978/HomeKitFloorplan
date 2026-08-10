@@ -205,6 +205,7 @@ struct RealityFloorplanView: UIViewRepresentable {
             /// rifarebbe mesh identiche.
             var beamKey: String = ""
             var poolKey: String = ""
+            var renderStyle: LampRenderStyle = .spotlight
         }
         private var lampNodes: [UUID: LampNode] = [:]
         private var lampEffectsEnabled = true
@@ -597,17 +598,31 @@ struct RealityFloorplanView: UIViewRepresentable {
                 // Il pallino di modalità: «acceso in freddo» si deve vedere
                 // anche quando il compressore riposa e il corpo resta bianco.
                 if unit.form != .securityPanel {
+                    if unit.form == .radiator {
+                        let valve = ModelEntity(
+                            mesh: .generateBox(size: SIMD3(0.075, 0.045, 0.034),
+                                               cornerRadius: 0.010),
+                            materials: [FloorplanMaterialCatalog.deviceBodyMaterial(tint: .systemGray)]
+                        )
+                        valve.name = "modeDotValve"
+                        valve.position = SIMD3(size.x / 2 + 0.028,
+                                               size.y * 0.30,
+                                               size.z / 2 + 0.012)
+                        valve.isEnabled = unit.modeTint != nil
+                        body.addChild(valve)
+                    }
+
                     let dot = ModelEntity(
-                        mesh: .generateSphere(radius: 0.035),
+                        mesh: .generateSphere(radius: unit.form == .radiator ? 0.026 : 0.035),
                         materials: [FloorplanMaterialCatalog.deviceBodyMaterial(
                             tint: unit.modeTint ?? .white)]
                     )
                     dot.name = "modeDot"
-                    // Sullo split sta sul frontale; sul radiatore **di fianco,
-                    // a pari profondita'** — dove sta la testa di una valvola
-                    // vera. Davanti alle alette sembrava un uovo incastrato.
+                    // Sullo split sta sul frontale. Sul radiatore non resta più
+                    // sospeso a lato: sta sulla piccola valvola frontale, così
+                    // l'indicatore si legge come parte del termosifone.
                     dot.position = unit.form == .radiator
-                        ? SIMD3(size.x / 2 + 0.055, size.y * 0.30, 0)
+                        ? SIMD3(size.x / 2 + 0.072, size.y * 0.30, size.z / 2 + 0.030)
                         : SIMD3(size.x * 0.32, size.y * 0.22, size.z / 2 + 0.03)
                     dot.isEnabled = unit.modeTint != nil
                     body.addChild(dot)
@@ -626,9 +641,12 @@ struct RealityFloorplanView: UIViewRepresentable {
                 } else {
                     // Il radiatore e' un contenitore: la tinta va agli elementi.
                     for case let fin as ModelEntity in node.children
-                    where fin.name != "modeDot" {
+                    where fin.name != "modeDot" && fin.name != "modeDotValve" {
                         fin.model?.materials = [material]
                     }
+                }
+                if let valve = node.findEntity(named: "modeDotValve") as? ModelEntity {
+                    valve.isEnabled = unit.modeTint != nil
                 }
                 if let dot = node.findEntity(named: "modeDot") as? ModelEntity {
                     dot.isEnabled = unit.modeTint != nil
@@ -927,7 +945,17 @@ struct RealityFloorplanView: UIViewRepresentable {
             // e' una sospensione, e' un faretto: niente filo.
             let ceilingY = scene.bounds.max.y - centre.y
             let gap = ceilingY - (place.y + 0.15)
-            node.cord.isEnabled = gap > 0.05
+            let usesSpotlight = lamp.renderStyle == .spotlight
+            if node.renderStyle != lamp.renderStyle {
+                node.bulb.model?.mesh = usesSpotlight
+                    ? .generateSphere(radius: 0.15)
+                    : .generateSphere(radius: 0.09)
+                node.bulb.collision = CollisionComponent(shapes: [
+                    .generateSphere(radius: usesSpotlight ? 0.34 : 0.26)
+                ])
+                node.renderStyle = lamp.renderStyle
+            }
+            node.cord.isEnabled = usesSpotlight && gap > 0.05
             if gap > 0.05 {
                 node.cord.position = SIMD3(place.x, place.y + 0.15 + gap / 2, place.z)
                 node.cord.scale = SIMD3(1, gap, 1)
@@ -936,16 +964,18 @@ struct RealityFloorplanView: UIViewRepresentable {
             node.halo.position = place
 
             node.bulb.model?.materials = [
-                FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour, isOn: lamp.isOn)
+                usesSpotlight
+                    ? FloorplanMaterialCatalog.bulbMaterial(colour: lamp.colour, isOn: lamp.isOn)
+                    : FloorplanMaterialCatalog.lampMarkerMaterial(isOn: lamp.isOn)
             ]
 
-            node.spot.isEnabled = lamp.isOn
+            node.spot.isEnabled = usesSpotlight && lamp.isOn
             // ⚠️ **Senza ombra la luce attraversa i muri.** Un faretto vicino a
             // una parete esterna la illuminava anche **da fuori**, come se il
             // muro non ci fosse: di sera la casa perdeva i suoi contorni. Solo
             // sulle lampade accese, perche' ognuna costa una mappa d'ombra e le
             // spente non hanno niente da proiettare.
-            node.spot.shadow = lamp.isOn ? SpotLightComponent.Shadow() : nil
+            node.spot.shadow = usesSpotlight && lamp.isOn ? SpotLightComponent.Shadow() : nil
             node.spot.light.color = lamp.colour
             // ⚠️ **La lampada deve vedersi sul tavolo sempre**: e' stato, non
             // fotometria. Di giorno serve il fattore grosso perche' c'e' un
@@ -965,7 +995,7 @@ struct RealityFloorplanView: UIViewRepresentable {
 
             // Il cono si vede solo quando ha una direzione: «intorno» non e' un
             // fascio, e disegnarlo comunque darebbe di nuovo l'effetto pianeta.
-            let showsBeam = lamp.isOn && lamp.direction != .around && lampEffectsEnabled
+            let showsBeam = usesSpotlight && lamp.isOn && lamp.direction != .around && lampEffectsEnabled
             node.halo.isEnabled = showsBeam
             if showsBeam, node.beamKey != lamp.beamKey {
                 let height = lamp.direction == .up
@@ -987,7 +1017,7 @@ struct RealityFloorplanView: UIViewRepresentable {
 
             // La pozza dipende dalla geometria, quindi si rifa' solo quando
             // cambia davvero. Una luce puntata in alto non ne fa nessuna.
-            let wantsPool = lamp.isOn && lamp.direction != .up && lampEffectsEnabled
+            let wantsPool = usesSpotlight && lamp.isOn && lamp.direction != .up && lampEffectsEnabled
             if wantsPool, node.poolKey != lamp.poolKey {
                 node.pool?.removeFromParent()
                 node.pool = RealityFloorplanRenderer.lampPoolEntity(for: lamp, scene: scene)

@@ -37,8 +37,11 @@ struct FloorplanRealityPreviewView: View {
         rebuildScene()
     }
 
-    private func applyLampSettings(_ uuid: UUID, _ height: Double, _ direction: LampDirection?) {
-        current.applyLampSettings(uuid, height, direction)
+    private func applyLampSettings(_ uuid: UUID,
+                                   _ height: Double,
+                                   _ direction: LampDirection?,
+                                   _ renderStyle: LampRenderStyle? = nil) {
+        current.applyLampSettings(uuid, height, direction, renderStyle)
         // ⚠️ **Niente `rebuildScene()`.** Quota e direzionalita' di una lampada
         // non spostano un muro: qui c'era una riestrusione completa della casa —
         // muri, aperture, arredi, velature — per **ogni passo** del cursore, e il
@@ -67,6 +70,7 @@ struct FloorplanRealityPreviewView: View {
     /// stanza: un UUID di un'altra stanza semplicemente non trova riscontro, e
     /// si ricade sul primo della lista.
     @State private var selectedLampUUID: UUID?
+    @State private var showsPlacementSwitches = false
     /// L'accessorio di cui si sta guardando la scheda. E' la **stessa** del 2D:
     /// il 3D non gestisce l'accessorio, lo consegna.
     @State private var detailAccessory: HMAccessory?
@@ -94,6 +98,7 @@ struct FloorplanRealityPreviewView: View {
     @State private var now = Date()
     @State private var exposure: Exposure = .north
     @State private var lampCaption: String?
+    @State private var showsPlacementLampEffects = true
     /// Quali accessori stiamo osservando, per poterli lasciare andare.
     ///
     /// Solo quelli di **questa** planimetria più la centralina: osservare tutta
@@ -125,14 +130,43 @@ struct FloorplanRealityPreviewView: View {
         withAnimation(.easeOut(duration: 0.3)) { isSettingsOpen = true }
     }
 
+    private func presentRoomSetupPanel() {
+        showsPlacementSwitches = setupItemsInSelectedRoom.isEmpty && !switchablesInSelectedRoom.isEmpty
+        if isCompact {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                roomPanelState = .setup
+            }
+        } else {
+            withAnimation(.easeOut(duration: 0.22)) {
+                roomPanelState = .setup
+            }
+        }
+    }
+
+    private func dismissRoomSetupPanel() {
+        if isCompact {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                roomPanelState = .actions
+            }
+        } else {
+            withAnimation(.easeOut(duration: 0.22)) {
+                roomPanelState = .actions
+            }
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             if let floorplanScene {
                 RealityFloorplanView(scene: floorplanScene,
                                      background: background,
                                      sun: sun,
-                                     lamps: litLights,
-                                     lampEffects: mode == .off,
+                                     lamps: previewLamps,
+                                     lampEffects: mode == .off || (roomPanelState == .setup && showsPlacementLampEffects),
                                      climate: climateUnits,
                                      litRooms: litRoomIDs,
                                      occupiedRooms: occupiedRoomIDs,
@@ -144,6 +178,7 @@ struct FloorplanRealityPreviewView: View {
                                          selectedRoomID = roomID
                                          selectedRoomName = name
                                          roomPanelState = .actions
+                                         showsPlacementSwitches = false
                                      },
                                      onTargetTapped: handleTap,
                                      onTargetHeld: handleHold,
@@ -215,10 +250,14 @@ struct FloorplanRealityPreviewView: View {
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button(String(localized: "common.done", defaultValue: "Done")) {
-                            roomPanelState = .actions
+                            dismissRoomSetupPanel()
                         }
                     }
                 }
+            }
+            .transaction { transaction in
+                transaction.disablesAnimations = true
+                transaction.animation = nil
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -1214,7 +1253,31 @@ struct FloorplanRealityPreviewView: View {
                                  direction: direction,
                                  position: transform.metres(from: settings.position ?? marker.position),
                                  brightness: lamp.brightness,
-                                 colour: lamp.colour)
+                                 colour: lamp.colour,
+                                 renderStyle: settings.renderStyle)
+        }
+    }
+
+    /// Lampade da passare alla scena. Nel Placement il toggle "Light effects" è
+    /// una preview locale: mostra fascio e pozza anche se HomeKit riporta la
+    /// luce spenta, così altezza e direzione si capiscono mentre le regoli.
+    private var previewLamps: [FloorplanLamp] {
+        let lamps = litLights
+        guard roomPanelState == .setup,
+              showsPlacementLampEffects
+        else { return lamps }
+
+        let previewIDs = Set(setupItemsInSelectedRoom.compactMap { item in
+            item.direction == nil ? nil : item.id
+        })
+        guard !previewIDs.isEmpty else { return lamps }
+
+        return lamps.map { lamp in
+            guard previewIDs.contains(lamp.accessoryUUID) else { return lamp }
+            var preview = lamp
+            preview.isOn = true
+            preview.brightness = max(preview.brightness, 0.75)
+            return preview
         }
     }
 
@@ -1229,6 +1292,7 @@ struct FloorplanRealityPreviewView: View {
         var name: String
         var height: Double
         var direction: LampDirection?
+        var renderStyle: LampRenderStyle?
         var range: ClosedRange<Double>
         var symbol: String
     }
@@ -1246,7 +1310,8 @@ struct FloorplanRealityPreviewView: View {
         let lamps = litLights
             .filter { FloorplanRoomEnvironment.contains($0.position, polygon) }
             .map { SetupItem(id: $0.accessoryUUID, name: $0.name, height: $0.height,
-                             direction: $0.direction, range: 0.2...3.2,
+                             direction: $0.direction, renderStyle: $0.renderStyle,
+                             range: 0.2...3.2,
                              symbol: "lightbulb.fill") }
 
         // ⚠️ Il clima si confronta sulla posa **originale**, non su quella
@@ -1265,7 +1330,7 @@ struct FloorplanRealityPreviewView: View {
             case .television:    "tv"
             }
             return SetupItem(id: unit.accessoryUUID, name: unit.name, height: unit.height,
-                             direction: nil, range: 0.1...2.6, symbol: symbol)
+                             direction: nil, renderStyle: nil, range: 0.1...2.6, symbol: symbol)
         }
 
         return lamps + climate
@@ -1315,7 +1380,7 @@ struct FloorplanRealityPreviewView: View {
                 if !setupItemsInSelectedRoom.isEmpty || !switchablesInSelectedRoom.isEmpty {
                     roomAction(String(localized: "room.action.setup", defaultValue: "Set up"),
                                icon: "slider.horizontal.3") {
-                        roomPanelState = .setup
+                        presentRoomSetupPanel()
                     }
                 }
 
@@ -1388,7 +1453,7 @@ struct FloorplanRealityPreviewView: View {
                     && (selectedItem(among: setupItemsInSelectedRoom) != nil
                         || !switchablesInSelectedRoom.isEmpty)
             },
-            set: { if !$0 { roomPanelState = .actions } }
+            set: { if !$0 { dismissRoomSetupPanel() } }
         )
     }
 
@@ -1399,15 +1464,209 @@ struct FloorplanRealityPreviewView: View {
         // con soli interruttori deve poter arrivare alla spunta «e' una luce»,
         // o quegli interruttori resterebbero irraggiungibili per sempre.
         if selectedItem(among: items) != nil || !switchablesInSelectedRoom.isEmpty {
-            setupPanelContent
-            .padding(.horizontal, 20)
-            .padding(.vertical, 18)
-            .frame(maxWidth: 580)
-            .modifier(PanelChrome())
-            .padding(.horizontal, 10)
-            .padding(.bottom, 104)
+            GeometryReader { proxy in
+                let inset: CGFloat = 24
+                let width = max(680, proxy.size.width - inset * 2)
+                let listWidth = min(max(width * 0.30, 320), 460)
+                HStack {
+                    Spacer(minLength: 0)
+                    iPadPlacementInspector(items: items, listWidth: listWidth)
+                        .frame(width: width, height: 420)
+                        .modifier(PanelChrome())
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            }
+            .frame(height: 430)
+            .padding(.bottom, 10)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+    }
+
+    private func iPadPlacementInspector(items: [SetupItem], listWidth: CGFloat) -> some View {
+        let switchables = switchablesInSelectedRoom
+        let showsSwitches = (showsPlacementSwitches && !switchables.isEmpty)
+            || (items.isEmpty && !switchables.isEmpty)
+        let selected = showsSwitches ? nil : selectedItem(among: items)
+
+        return HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(selectedRoomName ?? "")
+                            .font(.headline.weight(.semibold))
+                            .lineLimit(1)
+                        Text(items.count == 1
+                             ? String(localized: "setup.count.one", defaultValue: "1 device")
+                             : String(localized: "setup.count.other", defaultValue: "\(items.count) devices"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundStyle(.primary)
+
+                ScrollView {
+                    VStack(spacing: 6) {
+                        ForEach(items) { item in
+                            iPadPlacementAccessoryRow(item, isSelected: item.id == selected?.id)
+                        }
+
+                        if !switchables.isEmpty {
+                            iPadPlacementSwitchesRow(
+                                count: switchables.count,
+                                isSelected: showsSwitches
+                            )
+                        }
+                    }
+                    .padding(.trailing, 2)
+                }
+                .scrollIndicators(.hidden)
+            }
+            .padding(.leading, 20)
+            .padding(.vertical, 18)
+            .frame(width: listWidth, alignment: .topLeading)
+
+            Divider()
+                .overlay(Color.primary.opacity(0.18))
+                .padding(.vertical, 16)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if showsSwitches {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(String(localized: "placement.switches.title",
+                                            defaultValue: "Switches"))
+                                    .font(.title3.weight(.semibold))
+                                Text(switchables.count == 1
+                                     ? String(localized: "setup.count.one", defaultValue: "1 device")
+                                     : String(localized: "setup.count.other", defaultValue: "\(switchables.count) devices"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "lightswitch.on")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .foregroundStyle(.primary)
+
+                        ForEach(switchables, id: \.uuid) { candidate in
+                            Toggle(isOn: declaredLightBinding(for: candidate.uuid)) {
+                                Label {
+                                    Text(candidate.name).font(.subheadline)
+                                } icon: {
+                                    Image(systemName: "lightswitch.on").font(.system(size: 13))
+                                }
+                                .foregroundStyle(Color.primary.opacity(0.9))
+                            }
+                            .tint(.yellow.opacity(0.7))
+                        }
+                    } else if let selected {
+                        Label(selected.name, systemImage: selected.symbol)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+
+                        setupRow(selected)
+                    }
+
+                    if selected?.direction != nil {
+                        Divider().overlay(Color.primary.opacity(0.18))
+                        Toggle(isOn: $showsPlacementLampEffects) {
+                            Label {
+                                Text(String(localized: "placement.lightEffects",
+                                            defaultValue: "Light effects"))
+                                    .font(.caption)
+                            } icon: {
+                                Image(systemName: "lightbulb.max")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundStyle(Color.primary.opacity(0.9))
+                        }
+                        .tint(.yellow.opacity(0.75))
+                    }
+
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 18)
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+
+    private func iPadPlacementAccessoryRow(_ item: SetupItem, isSelected: Bool) -> some View {
+        Button {
+            showsPlacementSwitches = false
+            selectedLampUUID = item.id
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: item.symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 28, height: 28)
+                    .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.82))
+                    .background(isSelected ? Color.accentColor : Color.primary.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                        .lineLimit(1)
+                    Text(item.direction == nil
+                         ? String(localized: "placement.device.generic", defaultValue: "Device")
+                         : ((item.renderStyle ?? .spotlight).label))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color.primary.opacity(isSelected ? 0.15 : 0.055),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func iPadPlacementSwitchesRow(count: Int, isSelected: Bool) -> some View {
+        Button {
+            showsPlacementSwitches = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "lightswitch.on")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 28, height: 28)
+                    .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.82))
+                    .background(isSelected ? Color.accentColor : Color.primary.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(localized: "placement.switches.title",
+                                defaultValue: "Switches"))
+                        .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                        .lineLimit(1)
+                    Text(count == 1
+                         ? String(localized: "setup.count.one", defaultValue: "1 device")
+                         : String(localized: "setup.count.other", defaultValue: "\(count) devices"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color.primary.opacity(isSelected ? 0.15 : 0.055),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     /// Il contenuto del Placement, condiviso fra pannello iPad e sheet iPhone.
@@ -1444,6 +1703,22 @@ struct FloorplanRealityPreviewView: View {
 
                     Divider().overlay(Color.primary.opacity(0.2))
                     setupRow(item)
+                }
+
+                if selectedItem(among: items)?.direction != nil {
+                    Divider().overlay(Color.primary.opacity(0.2))
+                    Toggle(isOn: $showsPlacementLampEffects) {
+                        Label {
+                            Text(String(localized: "placement.lightEffects",
+                                        defaultValue: "Light effects"))
+                                .font(.caption)
+                        } icon: {
+                            Image(systemName: "lightbulb.max")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundStyle(Color.primary.opacity(0.9))
+                    }
+                    .tint(.yellow.opacity(0.75))
                 }
 
                 // Gli On/Off della stanza: molti comandano luci, ma HomeKit non
@@ -1572,7 +1847,7 @@ struct FloorplanRealityPreviewView: View {
                         HStack(spacing: 4) {
                             ForEach(LampDirection.allCases) { value in
                                 Button {
-                                    applyLampSettings(item.id, item.height, value)
+                                    applyLampSettings(item.id, item.height, value, item.renderStyle)
                                 } label: {
                                     directionGlyph(value, isSelected: direction == value)
                                         .padding(.horizontal, 4)
@@ -1589,6 +1864,31 @@ struct FloorplanRealityPreviewView: View {
                     Text(direction.label)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(Color.primary.opacity(0.9))
+                }
+
+                HStack(spacing: 8) {
+                    Text(String(localized: "lamp.renderStyle.title", defaultValue: "Look"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 58, alignment: .leading)
+
+                    HStack(spacing: 4) {
+                        ForEach(LampRenderStyle.allCases) { style in
+                            let isSelected = (item.renderStyle ?? .spotlight) == style
+                            Button {
+                                applyLampSettings(item.id, item.height, direction, style)
+                            } label: {
+                                Label(style.label, systemImage: style.systemImage)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                                    .padding(.horizontal, 10)
+                                    .frame(height: 32)
+                                    .background(isSelected ? Color.primary.opacity(0.14) : Color.primary.opacity(0.06),
+                                                in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
 
@@ -1699,7 +1999,7 @@ struct FloorplanRealityPreviewView: View {
     private func heightBinding(for item: SetupItem) -> Binding<Double> {
         Binding(
             get: { item.height },
-            set: { applyLampSettings(item.id, $0, item.direction) }
+            set: { applyLampSettings(item.id, $0, item.direction, item.renderStyle) }
         )
     }
 

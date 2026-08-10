@@ -1447,6 +1447,7 @@ private extension CloudKitSyncService {
                     existing.linkedOpeningID   = snap.linkedOpeningID
                     existing.mountHeight       = snap.mountHeight
                     existing.lightDirectionRaw = snap.lightDirectionRaw
+                    existing.lightRenderStyleRaw = snap.lightRenderStyleRaw
                     existing.isDeclaredLight   = declaredLight
                 }
             } else {
@@ -1464,6 +1465,7 @@ private extension CloudKitSyncService {
                 placed.linkedOpeningID   = snap.linkedOpeningID
                 placed.mountHeight       = snap.mountHeight
                 placed.lightDirectionRaw = snap.lightDirectionRaw
+                placed.lightRenderStyleRaw = snap.lightRenderStyleRaw
                 placed.isDeclaredLight   = snap.isDeclaredLight ?? false
                 context.insert(placed)
                 fp.accessories.append(placed)

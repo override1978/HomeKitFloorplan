@@ -69,18 +69,23 @@ enum Preview3DFactory {
             lampSettings: { [weak plan] uuid in
                 guard let placed = plan?.accessories.first(where: { $0.homeKitAccessoryUUID == uuid })
                 else { return LampSettings() }
+                let renderStyle = placed.lightRenderStyleRaw
+                    .flatMap(LampRenderStyle.init(rawValue:))
+                    ?? (placed.isDeclaredLight ? .marker : .spotlight)
                 return LampSettings(
                     height: placed.mountHeight,
                     direction: placed.lightDirectionRaw.flatMap(LampDirection.init(rawValue:)),
+                    renderStyle: renderStyle,
                     position: CGPoint(x: placed.positionX, y: placed.positionY),
                     isDeclaredLight: placed.isDeclaredLight
                 )
             },
-            applyLampSettings: { [weak plan] uuid, height, direction in
+            applyLampSettings: { [weak plan] uuid, height, direction, renderStyle in
                 guard let plan else { return }
                 coordinator(plan).setLampSettings(accessoryUUID: uuid,
                                                   height: height,
-                                                  direction: direction)
+                                                  direction: direction,
+                                                  renderStyle: renderStyle)
             },
             applyDeclaredLight: { [weak plan] uuid, flag in
                 guard let plan else { return }

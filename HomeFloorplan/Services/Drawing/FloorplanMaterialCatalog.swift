@@ -153,6 +153,18 @@ enum FloorplanMaterialCatalog {
         return lit
     }
 
+    static func lampMarkerMaterial(isOn: Bool) -> any RealityKit.Material {
+        var material = PhysicallyBasedMaterial()
+        let colour = isOn
+            ? UIColor(red: 0.20, green: 0.62, blue: 1.0, alpha: 1)
+            : UIColor(red: 0.42, green: 0.48, blue: 0.56, alpha: 1)
+        material.baseColor = .init(tint: colour)
+        material.emissiveColor = .init(color: colour.withAlphaComponent(isOn ? 0.75 : 0.25))
+        material.roughness = 0.32
+        material.metallic = 0.0
+        return material
+    }
+
     private static func lightened(_ colour: UIColor, by amount: CGFloat) -> UIColor {
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
         guard colour.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return colour }
@@ -530,8 +542,21 @@ enum FloorplanMaterialCatalog {
 
     /// Un pezzo d'arredo: la tinta la decide l'estrusore membro per membro —
     /// gambe scure, piani in legno, imbottiti col colore dell'oggetto.
-    static func furnitureMaterial(tint: UIColor?) -> any RealityKit.Material {
-        opaque(tint ?? UIColor(red: 0.80, green: 0.76, blue: 0.71, alpha: 1), roughness: 0.72)
+    static func furnitureMaterial(tint: UIColor?,
+                                  style: FurnitureMaterialStyle = .plain) -> any RealityKit.Material {
+        let base = tint ?? UIColor(red: 0.80, green: 0.76, blue: 0.71, alpha: 1)
+        switch style {
+        case .wood:
+            return texturedOpaque(base, texture: woodGrainTexture, roughness: 0.68)
+        case .fabric:
+            return texturedOpaque(base, texture: fabricWeaveTexture, roughness: 0.96)
+        case .stone:
+            return texturedOpaque(base, texture: stoneSpeckleTexture, roughness: 0.72)
+        case .glass:
+            return opaque(base, roughness: 0.14, metallic: 0.05)
+        case .plain:
+            return opaque(base, roughness: 0.72)
+        }
     }
 
     /// Il corpo di un apparecchio a muro — split, radiatore, centralina.
@@ -551,6 +576,87 @@ enum FloorplanMaterialCatalog {
         material.baseColor = .init(tint: .white, texture: .init(texture, sampler: repeatSampler))
         return material
     }
+
+    private static func texturedOpaque(_ color: UIColor,
+                                       texture: TextureResource?,
+                                       roughness: Float,
+                                       metallic: Float = 0) -> PhysicallyBasedMaterial {
+        var material = opaque(color, roughness: roughness, metallic: metallic)
+        guard let texture else { return material }
+        material.baseColor = .init(tint: color, texture: .init(texture, sampler: repeatSampler))
+        return material
+    }
+
+    /// Grana orizzontale molto leggera: deve dire "legno" senza trasformare un
+    /// tavolo visto dall'alto in una texture rumorosa.
+    private static let woodGrainTexture: TextureResource? = {
+        let size = CGSize(width: 128, height: 32)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(white: 0.78, alpha: 1).setFill()
+            context.cgContext.fill(CGRect(origin: .zero, size: size))
+            for row in stride(from: 3, to: Int(size.height), by: 5) {
+                let alpha = CGFloat(0.10 + Double(row % 3) * 0.035)
+                UIColor(white: 0.38, alpha: alpha).setStroke()
+                let path = UIBezierPath()
+                path.lineWidth = row.isMultiple(of: 2) ? 1 : 2
+                path.move(to: CGPoint(x: 0, y: CGFloat(row)))
+                for x in stride(from: 0, through: Int(size.width), by: 16) {
+                    path.addLine(to: CGPoint(x: CGFloat(x), y: CGFloat(row) + sin(CGFloat(x) * 0.18) * 1.4))
+                }
+                path.stroke()
+            }
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
+    }()
+
+    /// Trama incrociata a basso contrasto per imbottiti: leggibile sulle
+    /// poltrone, ma abbastanza fine da non sporcare la vista generale.
+    private static let fabricWeaveTexture: TextureResource? = {
+        let size = CGSize(width: 48, height: 48)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(white: 0.74, alpha: 1).setFill()
+            context.cgContext.fill(CGRect(origin: .zero, size: size))
+            UIColor(white: 0.56, alpha: 0.30).setFill()
+            for index in stride(from: 0, to: Int(size.width), by: 6) {
+                context.cgContext.fill(CGRect(x: CGFloat(index), y: 0, width: 1, height: size.height))
+                context.cgContext.fill(CGRect(x: 0, y: CGFloat(index), width: size.width, height: 1))
+            }
+            UIColor(white: 0.92, alpha: 0.20).setFill()
+            for index in stride(from: 3, to: Int(size.width), by: 6) {
+                context.cgContext.fill(CGRect(x: CGFloat(index), y: 0, width: 1, height: size.height))
+                context.cgContext.fill(CGRect(x: 0, y: CGFloat(index), width: size.width, height: 1))
+            }
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
+    }()
+
+    private static let stoneSpeckleTexture: TextureResource? = {
+        let size = CGSize(width: 64, height: 64)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(white: 0.72, alpha: 1).setFill()
+            context.cgContext.fill(CGRect(origin: .zero, size: size))
+            for index in 0..<120 {
+                let x = CGFloat((index * 17) % Int(size.width))
+                let y = CGFloat((index * 31) % Int(size.height))
+                let shade = CGFloat(0.50 + Double(index % 5) * 0.06)
+                UIColor(white: shade, alpha: 0.24).setFill()
+                context.cgContext.fillEllipse(in: CGRect(x: x, y: y, width: 1.5, height: 1.5))
+            }
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
+    }()
 
     private static let awningStripeTexture: TextureResource? = {
         let size = CGSize(width: 64, height: 8)

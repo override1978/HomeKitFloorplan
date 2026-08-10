@@ -23,6 +23,7 @@ struct PlacedAccessorySnapshot: Codable {
     var linkedOpeningID: UUID?
     var mountHeight: Double?
     var lightDirectionRaw: String?
+    var lightRenderStyleRaw: String?
     var isDeclaredLight: Bool?
 }
 
@@ -73,6 +74,7 @@ extension Floorplan {
                 linkedOpeningID:      $0.linkedOpeningID,
                 mountHeight:          $0.mountHeight,
                 lightDirectionRaw:    $0.lightDirectionRaw,
+                lightRenderStyleRaw:  $0.lightRenderStyleRaw,
                 isDeclaredLight:      $0.isDeclaredLight
             )
         }
@@ -167,4 +169,3 @@ extension PersistedInsight {
         return record
     }
 }
-

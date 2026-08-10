@@ -104,14 +104,15 @@ enum RealityFloorplanRenderer {
             // pezzo porta finalmente il proprio materiale.
             if role == .furniture {
                 let groups = Dictionary(grouping: faces) { face in
-                    face.tint.map { UIColor(cgColor: $0).description } ?? ""
+                    "\(face.furnitureMaterial)|\(face.tint.map { UIColor(cgColor: $0).description } ?? "")"
                 }
                 for (_, group) in groups {
                     guard let mesh = mesh(for: group, role: role, center: center) else { continue }
                     let tint = group.first?.tint.map { UIColor(cgColor: $0) }
+                    let materialStyle = group.first?.furnitureMaterial ?? .plain
                     root.addChild(ModelEntity(
                         mesh: mesh,
-                        materials: [FloorplanMaterialCatalog.furnitureMaterial(tint: tint)]
+                        materials: [FloorplanMaterialCatalog.furnitureMaterial(tint: tint, style: materialStyle)]
                     ))
                 }
                 continue
@@ -160,23 +161,29 @@ enum RealityFloorplanRenderer {
     struct Flag {
         var roomID: UUID
         var root: Entity
-        /// Solo l'etichetta si gira verso la telecamera: lo stelo è verticale e
-        /// non ha un davanti.
+        /// Solo l'etichetta si gira verso la telecamera: lo stelo resta un
+        /// collegamento fisico fra anchor e pill.
         var label: ModelEntity
-        /// Serve al coordinatore per spegnerlo a camera bassa, quando i pali
-        /// trapassano mobili e facciate.
+        /// Serve al coordinatore per spegnerlo a camera bassa, quando i
+        /// collegamenti visivi diventano piu' ingombranti che utili.
         var stem: ModelEntity
     }
 
-    /// Uno stelo piantato nel punto più interno della stanza, con il valore in
-    /// cima. Sopra la linea dei muri, così nessuna bandierina finisce nascosta
-    /// da una parete e tutte stanno alla stessa quota — che è ciò che permette
-    /// di confrontarle a colpo d'occhio invece di cercarle.
+    private struct FlagPlacement {
+        var center: SIMD2<Float>
+        var width: Float
+        var depth: Float
+    }
+
+    /// Una pill per stanza, sopra la linea dei muri e leggermente fuori
+    /// dall'anchor. Il collegamento resta ancorato al punto reale, ma la pill non
+    /// si appoggia sopra mobili e marker; se due pill finiscono vicine, vengono
+    /// spinte quel tanto che basta per restare leggibili.
     static func flagEntities(for flags: [RoomFlag], scene: FloorplanScene) -> [Flag] {
         guard !flags.isEmpty else { return [] }
         let centre = scene.bounds.center
-        let floorY = scene.bounds.min.y
         let topY = scene.bounds.max.y + 0.55
+        var placements: [FlagPlacement] = []
 
         return flags.compactMap { flag -> Flag? in
             guard let label = FloorplanMaterialCatalog.flagLabelMaterial(
@@ -187,28 +194,86 @@ enum RealityFloorplanRenderer {
             // disegno diventa z, come per tutto il resto della scena.
             let x = Float(flag.anchor.x) - centre.x
             let z = Float(flag.anchor.y) - centre.z
+            let anchor = SIMD2(x, z)
+            let labelSize = flagLabelSize(aspect: label.aspect)
+            let labelXZ = flagLabelPosition(anchor: anchor,
+                                            labelSize: labelSize,
+                                            existing: placements)
+            placements.append(FlagPlacement(center: labelXZ,
+                                            width: labelSize.x,
+                                            depth: labelSize.y))
 
             let root = Entity()
-            let height = topY - floorY
-            let stem = ModelEntity(mesh: .generateBox(size: SIMD3(0.026, height, 0.026)),
-                                   materials: [FloorplanMaterialCatalog.flagStemMaterial()])
-            stem.position = SIMD3(x, floorY - centre.y + height / 2, z)
+            let anchorTop = SIMD3(x, topY - centre.y - 0.05, z)
+            let labelPoint = SIMD3(labelXZ.x, topY - centre.y + 0.19, labelXZ.y)
+            guard let stem = flagStemEntity(from: anchorTop,
+                                            to: labelPoint - SIMD3(0, 0.16, 0)) else { return nil }
             root.addChild(stem)
 
             let plate = ModelEntity(mesh: flagLabelMesh(aspect: label.aspect),
                                     materials: [label.material])
-            plate.position = SIMD3(x, topY - centre.y + 0.19, z)
+            plate.position = labelPoint
             root.addChild(plate)
 
             return Flag(roomID: flag.roomID, root: root, label: plate, stem: stem)
         }
     }
 
+    private static func flagLabelPosition(anchor: SIMD2<Float>,
+                                          labelSize: SIMD2<Float>,
+                                          existing: [FlagPlacement]) -> SIMD2<Float> {
+        let length = simd_length(anchor)
+        let outward = length > 0.001 ? anchor / length : SIMD2<Float>(0, 1)
+        let side = SIMD2<Float>(-outward.y, outward.x)
+        var position = anchor + outward * (0.38 + labelSize.x * 0.34)
+
+        for attempt in 0..<7 {
+            let candidate = FlagPlacement(center: position,
+                                          width: labelSize.x,
+                                          depth: labelSize.y)
+            guard existing.contains(where: { flagLabelsOverlap(candidate, $0) }) else {
+                return position
+            }
+
+            let direction: Float = attempt.isMultiple(of: 2) ? 1 : -1
+            position += outward * 0.18 + side * direction * (0.16 + Float(attempt) * 0.04)
+        }
+
+        return position
+    }
+
+    private static func flagLabelsOverlap(_ first: FlagPlacement,
+                                          _ second: FlagPlacement) -> Bool {
+        let padding: Float = 0.12
+        let dx = abs(first.center.x - second.center.x)
+        let dz = abs(first.center.y - second.center.y)
+        return dx < (first.width + second.width) / 2 + padding
+            && dz < (first.depth + second.depth) / 2 + padding
+    }
+
+    private static func flagStemEntity(from start: SIMD3<Float>,
+                                       to end: SIMD3<Float>) -> ModelEntity? {
+        let vector = end - start
+        let length = simd_length(vector)
+        guard length > 0.001 else { return nil }
+
+        let entity = ModelEntity(mesh: .generateBox(size: SIMD3(0.022, length, 0.022)),
+                                 materials: [FloorplanMaterialCatalog.flagStemMaterial()])
+        entity.position = (start + end) / 2
+        entity.orientation = simd_quatf(from: SIMD3<Float>(0, 1, 0), to: vector / length)
+        return entity
+    }
+
     /// Altezza fissa, larghezza dal contenuto: cosi' tutte le capsule restano
     /// sulla stessa riga ottica anche quando dicono cose di lunghezza diversa.
     static func flagLabelMesh(aspect: CGFloat) -> MeshResource {
+        let size = flagLabelSize(aspect: aspect)
+        return .generatePlane(width: size.x, height: size.y)
+    }
+
+    private static func flagLabelSize(aspect: CGFloat) -> SIMD2<Float> {
         let height: Float = 0.32
-        return .generatePlane(width: height * Float(aspect), height: height)
+        return SIMD2(height * Float(aspect), height)
     }
 
     /// Una fascia lungo il perimetro del pavimento della stanza.

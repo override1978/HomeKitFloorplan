@@ -384,6 +384,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     case chair
     case bed
     case wardrobe
+    case bookcase
     case toilet
     case sink
     case inductionCooktop
@@ -418,6 +419,8 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
             return String(localized: "drawing.furniture.bed", defaultValue: "Bed")
         case .wardrobe:
             return String(localized: "drawing.furniture.wardrobe", defaultValue: "Wardrobe")
+        case .bookcase:
+            return String(localized: "drawing.furniture.bookcase", defaultValue: "Libreria")
         case .toilet:
             return String(localized: "drawing.furniture.toilet", defaultValue: "Toilet")
         case .sink:
@@ -460,6 +463,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         case .chair: return "chair.fill"
         case .bed: return "bed.double.fill"
         case .wardrobe: return "cabinet.fill"
+        case .bookcase: return "books.vertical.fill"
         case .toilet: return "toilet.fill"
         case .sink: return "sink.fill"
         case .inductionCooktop: return "circle.grid.2x2.fill"
@@ -483,7 +487,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     var supportsTint: Bool {
         switch self {
         case .generic, .sofa, .armchair, .diningTable, .chair, .bed,
-             .wardrobe, .kitchenCounter, .tvUnit, .rug:
+             .wardrobe, .bookcase, .kitchenCounter, .tvUnit, .rug:
             return true
         case .toilet, .sink, .inductionCooktop, .washingMachine,
              .bathtub, .shower, .plant, .stairs, .spiralStairs, .kitchenSink,
@@ -501,6 +505,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         case .chair: return CGSize(width: 50, height: 50)
         case .bed: return CGSize(width: 120, height: 160)
         case .wardrobe: return CGSize(width: 140, height: 55)
+        case .bookcase: return CGSize(width: 150, height: 45)
         case .toilet: return CGSize(width: 55, height: 70)
         case .sink: return CGSize(width: 70, height: 50)
         case .inductionCooktop: return CGSize(width: 90, height: 65)

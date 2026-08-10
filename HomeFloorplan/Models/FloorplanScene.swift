@@ -4,6 +4,14 @@ import simd
 
 // MARK: - FloorplanScene
 
+enum FurnitureMaterialStyle: Hashable {
+    case plain
+    case wood
+    case fabric
+    case stone
+    case glass
+}
+
 /// Renderer-agnostic model for a generated 3D floorplan.
 struct FloorplanScene {
     struct MeshFace {
@@ -49,6 +57,9 @@ struct FloorplanScene {
         /// Tinta del pezzo, solo per gli arredi: l'estrusore la assegnava gia',
         /// ma la pipeline la perdeva qui e tutto usciva dello stesso beige.
         var tint: CGColor? = nil
+        /// Finitura del pezzo d'arredo. Non è dato utente: è una decisione di
+        /// presentazione ricavata dal tipo di volume che l'estrusore costruisce.
+        var furnitureMaterial: FurnitureMaterialStyle = .plain
     }
 
     var faces: [MeshFace]

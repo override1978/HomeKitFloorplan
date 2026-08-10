@@ -108,6 +108,8 @@ enum FloorplanExtruder {
         var flipSide: Bool = false
         /// Tinta scelta dall'utente per questo arredo, se ne ha una.
         var tint: CGColor?
+        /// Finitura render dell'arredo: resta nel 3D, non nello schema salvato.
+        var furnitureMaterial: FurnitureMaterialStyle? = nil
 
         var centroid: SIMD3<Double> {
             points.reduce(.zero, +) / Double(points.count)
@@ -187,7 +189,8 @@ enum FloorplanExtruder {
         // spigoli dove nella realtà non si inciampa.
         if kind == .rug {
             return [Face(points: corners(of: item, at: 0.002), kind: .furnitureTop,
-                         roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint)]
+                         roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint,
+                         furnitureMaterial: .fabric)]
         }
 
         // La macchia è **più larga dell'ingombro**: il nucleo resta nascosto
@@ -224,6 +227,13 @@ enum FloorplanExtruder {
     /// materiale che si riconosce anche da tre metri.
     private static let blackGlass = CGColor(red: 0.09, green: 0.09, blue: 0.10, alpha: 1)
     private static let stoneTop = CGColor(red: 0.46, green: 0.45, blue: 0.43, alpha: 1)
+    private static let bookRed = CGColor(red: 0.55, green: 0.18, blue: 0.16, alpha: 1)
+    private static let bookBlue = CGColor(red: 0.18, green: 0.30, blue: 0.52, alpha: 1)
+    private static let bookGreen = CGColor(red: 0.22, green: 0.42, blue: 0.28, alpha: 1)
+    private static let ceramicWhite = CGColor(red: 0.92, green: 0.92, blue: 0.88, alpha: 1)
+    private static let applianceWhite = CGColor(red: 0.86, green: 0.88, blue: 0.88, alpha: 1)
+    private static let chromeGrey = CGColor(red: 0.62, green: 0.64, blue: 0.65, alpha: 1)
+    private static let showerGlass = CGColor(red: 0.70, green: 0.84, blue: 0.90, alpha: 0.65)
 
     /// Il mobile per **membra**, non per cassa: un tavolo è un piano più
     /// quattro gambe, un divano una seduta fra due braccioli. Sono i volumi che
@@ -236,30 +246,57 @@ enum FloorplanExtruder {
         switch kind {
         case .diningTable, .generic:
             let top = height(of: kind)
-            return slab(item, from: top - 0.05, to: top, tint: woodTop)
-                + legs(item, to: top - 0.05, side: 0.055, inset: 0.06, tint: woodDark)
+            return slab(item, from: top - 0.05, to: top, tint: woodTop, material: .wood)
+                + legs(item, to: top - 0.05, side: 0.055, inset: 0.06, tint: woodDark, material: .wood)
         case .chair:
-            var faces = legs(item, to: 0.40, side: 0.035, inset: 0.025, tint: woodDark)
-            faces += slab(item, from: 0.40, to: 0.46, tint: soft)
-            if let back = backrest(of: kind) {
-                faces += boxFaces(item, from: 0.46, to: back.to,
-                                  tint: soft, fraction: back.depth, placement: back.placement)
-            }
+            let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+            let seatHalf = SIMD2(max(0.12, half.x * 0.82), max(0.12, half.y * 0.78))
+            let backDepth = min(0.09, half.y * 0.28)
+            var faces = legs(item, to: 0.40, side: 0.03, inset: 0.055,
+                             tint: woodDark, material: .wood)
+            faces += subBox(item, centreOffset: SIMD2(0, half.y * 0.06),
+                            half: seatHalf, from: 0.39, to: 0.49,
+                            tint: soft, material: .fabric)
+            faces += subBox(item, centreOffset: SIMD2(0, -half.y + backDepth / 2),
+                            half: SIMD2(max(0.10, half.x * 0.72), backDepth / 2),
+                            from: 0.48, to: 0.92, tint: soft, material: .fabric)
+            faces += subBox(item, centreOffset: SIMD2(0, -half.y + backDepth / 2),
+                            half: SIMD2(max(0.09, half.x * 0.64), backDepth / 2),
+                            from: 0.92, to: 0.98, tint: linenLight, material: .fabric)
             return faces
         case .sofa, .armchair:
-            var faces = boxFaces(item, from: 0, to: 0.42, tint: soft)
-            if let back = backrest(of: kind) {
-                faces += boxFaces(item, from: back.from, to: back.to,
-                                  tint: soft, fraction: back.depth, placement: back.placement)
-            }
-            // Braccioli: e' la sagoma a U vista dall'alto che dice «divano».
             let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
-            let armWidth = min(0.12, half.x * 0.35)
+            let seatHalf = SIMD2(max(0.18, half.x * 0.84), max(0.16, half.y * 0.74))
+            let backDepth = min(0.16, half.y * 0.30)
+            let armWidth = min(kind == .armchair ? 0.11 : 0.13, half.x * 0.30)
+            var faces = legs(item, to: 0.16, side: 0.045, inset: 0.08,
+                             tint: woodDark, material: .wood)
+            faces += subBox(item, centreOffset: SIMD2(0, half.y * 0.06),
+                            half: seatHalf, from: 0.16, to: 0.43,
+                            tint: soft, material: .fabric)
+            faces += subBox(item, centreOffset: SIMD2(0, -half.y + backDepth / 2),
+                            half: SIMD2(max(0.16, half.x * 0.88), backDepth / 2),
+                            from: 0.34, to: 0.82, tint: soft, material: .fabric)
+            // Braccioli: piu' stretti e staccati dalla cassa, cosi' non sembrano
+            // due muri pieni attaccati a un blocco.
             for side in [-1.0, 1.0] {
                 faces += subBox(item,
                                 centreOffset: SIMD2(side * (half.x - armWidth / 2), 0),
-                                half: SIMD2(armWidth / 2, half.y),
-                                from: 0.42, to: 0.58, tint: soft)
+                                half: SIMD2(armWidth / 2, max(0.14, half.y * 0.72)),
+                                from: 0.24, to: 0.62, tint: soft, material: .fabric)
+            }
+            if kind == .sofa {
+                let cushionCount = max(2, min(3, Int((half.x * 2 / 0.65).rounded())))
+                let gap = 0.035
+                let cushionWidth = (half.x * 1.64 - gap * Double(cushionCount - 1)) / Double(cushionCount)
+                for index in 0..<cushionCount {
+                    let x = -half.x * 0.82 + cushionWidth / 2
+                        + Double(index) * (cushionWidth + gap)
+                    faces += subBox(item, centreOffset: SIMD2(x, half.y * 0.10),
+                                    half: SIMD2(cushionWidth / 2, max(0.12, half.y * 0.34)),
+                                    from: 0.43, to: 0.49, tint: linenLight,
+                                    material: .fabric)
+                }
             }
             return faces
         case .wardrobe:
@@ -267,11 +304,13 @@ enum FloorplanExtruder {
             // invece di «monolite»: le ante non serve disegnarle, bastano le
             // ombre nelle fessure.
             return columns(item, to: height(of: kind), moduleWidth: 0.55, tint: soft)
+        case .bookcase:
+            return bookcaseFaces(item, tint: tint ?? woodTop)
         case .kitchenCounter:
             // Basi a moduli sotto un top in pietra che corre intero: e' la
             // grammatica di qualunque cucina componibile.
             return columns(item, to: 0.85, moduleWidth: 0.60, tint: soft)
-                + slab(item, from: 0.85, to: 0.90, tint: stoneTop)
+                + slab(item, from: 0.85, to: 0.90, tint: stoneTop, material: .stone)
         case .tvUnit:
             // Il mobile basso e **la TV nera sopra**, contro il lato muro: lo
             // schermo e' il pezzo che si riconosce, il mobile e' solo il piede.
@@ -298,7 +337,7 @@ enum FloorplanExtruder {
                 + subBox(item,
                          centreOffset: SIMD2(0, -tvHalf.y + 0.05),
                          half: SIMD2(min(tvHalf.x * 0.85, 0.85), 0.022),
-                         from: 0.55, to: 1.30, tint: blackGlass)
+                         from: 0.55, to: 1.30, tint: blackGlass, material: .glass)
         case .inductionCooktop:
             // **Solo il vetro nero**, appoggiato al top della cucina: il piano
             // cottura in pianta sta sopra un bancone gia' disegnato, e dargli
@@ -313,20 +352,27 @@ enum FloorplanExtruder {
             if let supportTop {
                 return subBox(item, centreOffset: .zero, half: glassHalf,
                               from: supportTop + 0.004, to: supportTop + 0.038,
-                              tint: blackGlass)
+                              tint: blackGlass, material: .glass)
             }
             return boxFaces(item, from: 0, to: 0.88, tint: soft)
                 + subBox(item, centreOffset: .zero, half: glassHalf,
-                         from: 0.88, to: 0.915, tint: blackGlass)
+                         from: 0.88, to: 0.915, tint: blackGlass, material: .glass)
+        case .toilet:
+            return toiletFaces(item)
+        case .washingMachine:
+            return washingMachineFaces(item)
+        case .shower:
+            return showerFaces(item)
         case .bed:
             // Giroletto scuro, materasso chiaro, cuscini alla testata: tre
             // membri che dicono «letto» meglio di qualunque cassa.
-            var faces = boxFaces(item, from: 0, to: 0.16, tint: woodDark)
+            var faces = boxFaces(item, from: 0, to: 0.16, tint: woodDark, material: .wood)
             faces += boxFaces(item, from: 0.16, to: 0.50, tint: linenLight, fraction: 0.985,
-                              placement: .centred)
+                              placement: .centred, material: .fabric)
             if let back = backrest(of: kind) {
                 faces += boxFaces(item, from: back.from, to: back.to,
-                                  tint: woodDark, fraction: back.depth, placement: back.placement)
+                                  tint: woodDark, fraction: back.depth, placement: back.placement,
+                                  material: .wood)
             }
             let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
             let pillowHalf = SIMD2(min(0.24, half.x * 0.34), 0.15)
@@ -335,7 +381,7 @@ enum FloorplanExtruder {
                                 centreOffset: SIMD2(side * half.x * 0.45,
                                                     -half.y + 0.12 + pillowHalf.y),
                                 half: pillowHalf,
-                                from: 0.50, to: 0.61, tint: soft)
+                                from: 0.50, to: 0.61, tint: soft, material: .fabric)
             }
             return faces
         default:
@@ -351,14 +397,15 @@ enum FloorplanExtruder {
     /// Colonne affiancate con una fuga fra l'una e l'altra: la larghezza del
     /// modulo comanda, il conto delle colonne segue il mobile.
     private static func columns(_ item: FurnitureItem, to top: Double,
-                                moduleWidth: Double, tint: CGColor?) -> [Face] {
+                                moduleWidth: Double, tint: CGColor?,
+                                material: FurnitureMaterialStyle = .plain) -> [Face] {
         let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
         let width = half.x * 2
         let count = max(1, Int((width / moduleWidth).rounded()))
         let gap = 0.016
         let columnWidth = (width - gap * Double(count - 1)) / Double(count)
         guard columnWidth > 0.05 else {
-            return boxFaces(item, from: 0, to: top, tint: tint)
+            return boxFaces(item, from: 0, to: top, tint: tint, material: material)
         }
 
         var faces: [Face] = []
@@ -368,20 +415,177 @@ enum FloorplanExtruder {
             faces += subBox(item,
                             centreOffset: SIMD2(centreX, 0),
                             half: SIMD2(columnWidth / 2, half.y),
-                            from: 0, to: top, tint: tint)
+                            from: 0, to: top, tint: tint, material: material)
         }
+        return faces
+    }
+
+    /// Libreria alta: montanti e ripiani leggibili anche da lontano, più una
+    /// fila di libri sul fronte. Il volume resta sottile come un mobile da muro,
+    /// non una cassa profonda come un armadio.
+    private static func bookcaseFaces(_ item: FurnitureItem, tint: CGColor?) -> [Face] {
+        let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+        let top = height(of: .bookcase)
+        let frame = tint ?? woodTop
+        let side = min(0.055, half.x * 0.16)
+        let shelfThickness = 0.045
+        var faces: [Face] = []
+
+        faces += subBox(item, centreOffset: SIMD2(0, half.y - min(0.035, half.y * 0.32)),
+                        half: SIMD2(max(0.08, half.x), min(0.035, half.y * 0.32)),
+                        from: 0, to: top, tint: woodDark, material: .wood)
+        for sideSign in [-1.0, 1.0] {
+            faces += subBox(item,
+                            centreOffset: SIMD2(sideSign * (half.x - side / 2), 0),
+                            half: SIMD2(side / 2, half.y),
+                            from: 0, to: top, tint: frame, material: .wood)
+        }
+
+        let shelfCount = 5
+        for index in 0...shelfCount {
+            let z = Double(index) / Double(shelfCount) * (top - shelfThickness)
+            faces += subBox(item, centreOffset: .zero,
+                            half: SIMD2(max(0.08, half.x), min(half.y, 0.035)),
+                            from: z, to: z + shelfThickness,
+                            tint: frame, material: .wood)
+        }
+
+        let moduleCount = max(3, min(7, Int((half.x * 2 / 0.22).rounded())))
+        let bookWidth = (half.x * 1.72) / Double(moduleCount)
+        let bookColors = [bookRed, bookBlue, bookGreen, linenLight]
+        for row in 0..<shelfCount {
+            let bottom = 0.12 + Double(row) * ((top - 0.25) / Double(shelfCount))
+            let bookHeight = min(0.28, (top / Double(shelfCount)) * 0.58)
+            for column in 0..<moduleCount {
+                let x = -half.x * 0.86 + bookWidth / 2 + Double(column) * bookWidth
+                let color = bookColors[(row + column) % bookColors.count]
+                faces += subBox(item,
+                                centreOffset: SIMD2(x, -half.y + min(0.09, half.y * 0.55)),
+                                half: SIMD2(bookWidth * 0.34, min(0.025, half.y * 0.24)),
+                                from: bottom, to: bottom + bookHeight,
+                                tint: color, material: .plain)
+            }
+        }
+
+        return faces
+    }
+
+    /// WC in tre segni riconoscibili: cassetta a muro, tazza a gradini e foro
+    /// scuro. Non e' rotondo, ma da camera alta legge come sanitario e non come
+    /// mobiletto bianco.
+    private static func toiletFaces(_ item: FurnitureItem) -> [Face] {
+        let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+        let tankDepth = min(0.20, half.y * 0.38)
+        var faces: [Face] = []
+
+        faces += subBox(item,
+                        centreOffset: SIMD2(0, -half.y + tankDepth / 2),
+                        half: SIMD2(max(0.16, half.x * 0.62), tankDepth / 2),
+                        from: 0.36, to: 0.82, tint: ceramicWhite, material: .plain)
+        faces += subBox(item,
+                        centreOffset: SIMD2(0, -half.y + tankDepth * 0.45),
+                        half: SIMD2(max(0.06, half.x * 0.16), min(0.018, tankDepth * 0.18)),
+                        from: 0.825, to: 0.845, tint: chromeGrey, material: .plain)
+
+        faces += subBox(item,
+                        centreOffset: SIMD2(0, half.y * 0.10),
+                        half: SIMD2(max(0.10, half.x * 0.26), max(0.12, half.y * 0.26)),
+                        from: 0, to: 0.24, tint: ceramicWhite, material: .plain)
+        faces += subBox(item,
+                        centreOffset: SIMD2(0, half.y * 0.12),
+                        half: SIMD2(max(0.16, half.x * 0.48), max(0.18, half.y * 0.42)),
+                        from: 0.24, to: 0.38, tint: ceramicWhite, material: .plain)
+        faces += subBox(item,
+                        centreOffset: SIMD2(0, half.y * 0.12),
+                        half: SIMD2(max(0.14, half.x * 0.40), max(0.14, half.y * 0.32)),
+                        from: 0.385, to: 0.43, tint: linenLight, material: .plain)
+        faces += subBox(item,
+                        centreOffset: SIMD2(0, half.y * 0.13),
+                        half: SIMD2(max(0.07, half.x * 0.20), max(0.07, half.y * 0.17)),
+                        from: 0.433, to: 0.446, tint: blackGlass, material: .glass)
+
+        return faces
+    }
+
+    /// Lavatrice: corpo pieno, fascia comandi e oblò scuro frontale. I dettagli
+    /// sono sottili ma rialzati, cosi' con la luce radente non spariscono.
+    private static func washingMachineFaces(_ item: FurnitureItem) -> [Face] {
+        let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+        let frontY = -half.y + min(0.022, half.y * 0.12)
+        let doorHalf = SIMD2(max(0.11, half.x * 0.32), min(0.026, half.y * 0.18))
+        var faces = boxFaces(item, from: 0, to: 0.84, tint: applianceWhite, material: .plain)
+
+        faces += subBox(item,
+                        centreOffset: SIMD2(0, frontY),
+                        half: SIMD2(max(0.18, half.x * 0.72), min(0.020, half.y * 0.14)),
+                        from: 0.66, to: 0.77, tint: chromeGrey, material: .plain)
+        faces += subBox(item,
+                        centreOffset: SIMD2(0, frontY - 0.002),
+                        half: doorHalf,
+                        from: 0.30, to: 0.60, tint: blackGlass, material: .glass)
+        faces += subBox(item,
+                        centreOffset: SIMD2(half.x * 0.42, frontY - 0.004),
+                        half: SIMD2(max(0.035, half.x * 0.09), min(0.018, half.y * 0.12)),
+                        from: 0.69, to: 0.735, tint: blackGlass, material: .glass)
+        faces += subBox(item,
+                        centreOffset: SIMD2(-half.x * 0.34, frontY - 0.004),
+                        half: SIMD2(max(0.06, half.x * 0.15), min(0.014, half.y * 0.10)),
+                        from: 0.70, to: 0.725, tint: blackGlass, material: .glass)
+
+        return faces
+    }
+
+    /// Doccia: piatto basso, due/quattro vetri e colonna. L'oggetto rimane
+    /// leggero: se diventasse un cubo pieno sembrerebbe un ripostiglio.
+    private static func showerFaces(_ item: FurnitureItem) -> [Face] {
+        let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+        let rail = min(0.035, min(half.x, half.y) * 0.16)
+        var faces: [Face] = []
+
+        faces += subBox(item, centreOffset: .zero,
+                        half: SIMD2(max(0.16, half.x * 0.92), max(0.16, half.y * 0.92)),
+                        from: 0, to: 0.10, tint: ceramicWhite, material: .plain)
+        faces += subBox(item, centreOffset: .zero,
+                        half: SIMD2(max(0.11, half.x * 0.62), max(0.11, half.y * 0.62)),
+                        from: 0.105, to: 0.125, tint: chromeGrey, material: .plain)
+
+        let glassHeight = 1.95
+        for side in [-1.0, 1.0] {
+            faces += subBox(item,
+                            centreOffset: SIMD2(side * (half.x - rail / 2), 0),
+                            half: SIMD2(rail / 2, max(0.14, half.y * 0.92)),
+                            from: 0.10, to: glassHeight,
+                            tint: showerGlass, material: .glass)
+            faces += subBox(item,
+                            centreOffset: SIMD2(0, side * (half.y - rail / 2)),
+                            half: SIMD2(max(0.14, half.x * 0.92), rail / 2),
+                            from: 0.10, to: glassHeight,
+                            tint: showerGlass, material: .glass)
+        }
+
+        faces += subBox(item,
+                        centreOffset: SIMD2(-half.x + rail * 1.5, -half.y + rail * 1.5),
+                        half: SIMD2(rail, rail),
+                        from: 0.10, to: 1.90, tint: chromeGrey, material: .plain)
+        faces += subBox(item,
+                        centreOffset: SIMD2(-half.x + rail * 2.8, -half.y + rail * 1.5),
+                        half: SIMD2(max(0.045, half.x * 0.12), rail / 2),
+                        from: 1.72, to: 1.78, tint: chromeGrey, material: .plain)
+
         return faces
     }
 
     /// Un piano a tutta pianta fra due quote.
     private static func slab(_ item: FurnitureItem, from bottom: Double, to top: Double,
-                             tint: CGColor?) -> [Face] {
-        boxFaces(item, from: bottom, to: top, tint: tint)
+                             tint: CGColor?,
+                             material: FurnitureMaterialStyle = .plain) -> [Face] {
+        boxFaces(item, from: bottom, to: top, tint: tint, material: material)
     }
 
     /// Quattro gambe agli angoli, rientrate dal bordo.
     private static func legs(_ item: FurnitureItem, to top: Double, side: Double,
-                             inset: Double, tint: CGColor?) -> [Face] {
+                             inset: Double, tint: CGColor?,
+                             material: FurnitureMaterialStyle = .plain) -> [Face] {
         let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
         let offset = SIMD2(max(side / 2, half.x - inset - side / 2),
                            max(side / 2, half.y - inset - side / 2))
@@ -391,7 +595,7 @@ enum FloorplanExtruder {
                 faces += subBox(item,
                                 centreOffset: SIMD2(dx * offset.x, dy * offset.y),
                                 half: SIMD2(side / 2, side / 2),
-                                from: 0, to: top, tint: tint)
+                                from: 0, to: top, tint: tint, material: material)
             }
         }
         return faces
@@ -400,7 +604,8 @@ enum FloorplanExtruder {
     /// Una scatola in coordinate **locali** del mobile, ruotata come lui.
     private static func subBox(_ item: FurnitureItem, centreOffset: SIMD2<Double>,
                                half: SIMD2<Double>, from bottom: Double, to top: Double,
-                               tint: CGColor?) -> [Face] {
+                               tint: CGColor?,
+                               material: FurnitureMaterialStyle = .plain) -> [Face] {
         guard top > bottom else { return [] }
         func ring(at z: Double) -> [SIMD3<Double>] {
             let rect = item.rect
@@ -419,12 +624,14 @@ enum FloorplanExtruder {
         let low = ring(at: bottom)
         let high = ring(at: top)
         var faces = [Face(points: high, kind: .furnitureTop,
-                          roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint)]
+                          roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint,
+                          furnitureMaterial: material)]
         for index in 0..<4 {
             let next = (index + 1) % 4
             faces.append(Face(points: [low[index], low[next], high[next], high[index]],
                               kind: .furnitureSide,
-                              roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint))
+                              roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint,
+                              furnitureMaterial: material))
         }
         return faces
     }
@@ -438,6 +645,7 @@ enum FloorplanExtruder {
         case .diningTable:          0.75
         case .bed:                  0.50
         case .wardrobe:             2.10
+        case .bookcase:             2.15
         case .toilet:               0.40
         case .sink, .kitchenSink:   0.85
         case .inductionCooktop:     0.90
@@ -514,17 +722,20 @@ enum FloorplanExtruder {
 
     private static func boxFaces(_ item: FurnitureItem, from bottom: Double, to top: Double,
                                  tint: CGColor?, fraction: Double = 1,
-                                 placement: Placement = .centred) -> [Face] {
+                                 placement: Placement = .centred,
+                                 material: FurnitureMaterialStyle = .plain) -> [Face] {
         guard top > bottom else { return [] }
         let low = corners(of: item, at: bottom, fraction: fraction, placement: placement)
         let high = corners(of: item, at: top, fraction: fraction, placement: placement)
         var faces = [Face(points: high, kind: .furnitureTop,
-                          roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint)]
+                          roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint,
+                          furnitureMaterial: material)]
         for index in 0..<4 {
             let next = (index + 1) % 4
             faces.append(Face(points: [low[index], low[next], high[next], high[index]],
                               kind: .furnitureSide,
-                              roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint))
+                              roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint,
+                              furnitureMaterial: material))
         }
         return faces
     }

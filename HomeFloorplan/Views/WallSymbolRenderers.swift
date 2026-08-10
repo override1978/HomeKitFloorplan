@@ -590,6 +590,8 @@ private func furnitureShadowPath(_ item: FurnitureItem) -> UIBezierPath {
         path = rounded(rect.insetBy(dx: rect.width * 0.08, dy: rect.height * 0.06), 7)
     case .wardrobe:
         path = rounded(rect.insetBy(dx: rect.width * 0.06, dy: rect.height * 0.10), 4)
+    case .bookcase:
+        path = rounded(rect.insetBy(dx: rect.width * 0.05, dy: rect.height * 0.08), 4)
     case .toilet:
         let tank = CGRect(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.12,
                           width: rect.width * 0.56, height: rect.height * 0.22)
@@ -750,7 +752,7 @@ private func darkFurnitureProminence(for kind: FurnitureKind) -> (fillAlpha: CGF
                                                                   shadowAlpha: CGFloat,
                                                                   hasSheen: Bool) {
     switch kind {
-    case .sofa, .bed, .diningTable, .kitchenCounter, .wardrobe, .tvUnit, .bathtub:
+    case .sofa, .bed, .diningTable, .kitchenCounter, .wardrobe, .bookcase, .tvUnit, .bathtub:
         return (0.50, 0.72, 0.30, 0.54, 0.38, 1.0, 0.18, true)
     case .rug, .stairs, .spiralStairs, .tree, .hedge:
         return (0.24, 0.40, 0.18, 0.32, 0.24, 0.8, 0.00, false)
@@ -1474,6 +1476,26 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         detailColor.setFill()
         UIBezierPath(ovalIn: CGRect(x: body.midX - 6, y: body.midY - 2, width: 4, height: 4)).fill()
         UIBezierPath(ovalIn: CGRect(x: body.midX + 2, y: body.midY - 2, width: 4, height: 4)).fill()
+
+    case .bookcase:
+        let body = rect.insetBy(dx: rect.width * 0.05, dy: rect.height * 0.08)
+        fillStroke(rounded(body, radius: 4))
+        for index in 1..<4 {
+            let y = body.minY + body.height * CGFloat(index) / 4
+            line(CGPoint(x: body.minX, y: y), CGPoint(x: body.maxX, y: y), color: detailColor)
+        }
+        detailColor.withAlphaComponent(0.5).setFill()
+        let shelfHeight = body.height / 4
+        let bookWidth = body.width / 6
+        for row in 0..<4 {
+            for column in 0..<6 where (row + column).isMultiple(of: 2) {
+                let book = CGRect(x: body.minX + CGFloat(column) * bookWidth + bookWidth * 0.18,
+                                  y: body.minY + CGFloat(row) * shelfHeight + shelfHeight * 0.22,
+                                  width: bookWidth * 0.42,
+                                  height: shelfHeight * 0.52)
+                rounded(book, radius: 1.5).fill()
+            }
+        }
 
     case .toilet:
         let tank = CGRect(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.12, width: rect.width * 0.56, height: rect.height * 0.24)

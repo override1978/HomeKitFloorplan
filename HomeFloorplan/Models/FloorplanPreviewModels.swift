@@ -16,10 +16,34 @@ struct Preview3DMarker {
     let openingID: UUID?
 }
 
-/// Quota e direzione di una luce, come stanno **adesso** nel modello.
+enum LampRenderStyle: String, Codable, CaseIterable, Identifiable {
+    case spotlight
+    case marker
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .spotlight:
+            String(localized: "lamp.renderStyle.spotlight", defaultValue: "Spotlight")
+        case .marker:
+            String(localized: "lamp.renderStyle.marker", defaultValue: "Marker")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .spotlight: "lightbulb.max.fill"
+        case .marker: "mappin.circle.fill"
+        }
+    }
+}
+
+/// Quota, direzione e resa di una luce, come stanno **adesso** nel modello.
 struct LampSettings {
     var height: Double?
     var direction: LampDirection?
+    var renderStyle: LampRenderStyle = .spotlight
     /// La posizione **viva** del marker: la fotografia scattata all'apertura
     /// invecchia appena la si sposta dal pannello.
     var position: CGPoint?
@@ -49,9 +73,9 @@ struct Preview3DFloorplan: Identifiable {
     /// per rimediare sarebbe stata una **terza** fonte di verita' accanto a
     /// SwiftData e alla fotografia. Leggendo si resta disaccoppiati e allineati.
     let lampSettings: (UUID) -> LampSettings
-    /// Salva quota e direzione. La scrittura su SwiftData resta fuori: qui si
-    /// sa cosa, non dove metterlo.
-    let applyLampSettings: (UUID, Double, LampDirection?) -> Void
+    /// Salva quota, direzione e resa. La scrittura su SwiftData resta fuori:
+    /// qui si sa cosa, non dove metterlo.
+    let applyLampSettings: (UUID, Double, LampDirection?, LampRenderStyle?) -> Void
     /// La spunta «è una luce» su un interruttore/presa.
     let applyDeclaredLight: (UUID, Bool) -> Void
     /// Lo spostamento fine dal pannello: la posa resta mestiere del 2D, il
@@ -95,6 +119,7 @@ struct FloorplanLamp: Equatable {
     /// 0…1, dalla luminosità impostata sull'accessorio.
     var brightness: Double
     var colour: UIColor
+    var renderStyle: LampRenderStyle = .spotlight
 }
 
 /// Un'unità di clima già collocata: dov'è, com'è fatta, cosa sta facendo.
