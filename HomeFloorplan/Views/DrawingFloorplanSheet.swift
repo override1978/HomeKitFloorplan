@@ -416,7 +416,11 @@ struct DrawingFloorplanSheet: View {
                 .padding(.top, max(max(geo.safeAreaInsets.top, Self.windowSafeAreaTop) + 12, 28))
                 Spacer()
             }
-            .shieldsCanvasTouches()
+            // ⚠️ MAI lo scudo su questo VStack: contiene lo Spacer che riempie
+            // lo schermo, e lo scudo diventava una UIView a tutto schermo che
+            // uccideva OGNI tocco UIKit dell'editor — canvas, zoom, e i Menu
+            // delle toolbar («tutto bloccato» su iPad). Le fasce chrome sono
+            // già protette da chromeInsets in shouldReceive, che è preciso.
             .zIndex(2)
 
             if isExporting {
