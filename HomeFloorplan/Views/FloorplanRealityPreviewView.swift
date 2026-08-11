@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Combine
 import RealityKit
 import HomeKit
 import UIKit
@@ -79,6 +80,17 @@ struct FloorplanRealityPreviewView: View {
     /// delle tre azioni, e il pannello di configurazione solo se scelto.
     private enum RoomPanelState { case actions, setup }
     @State private var roomPanelState: RoomPanelState = .actions
+
+    /// NON «sei qui» — quello lo dicono già i dischi che respirano. Questa è
+    /// l'escalation: la stanza dove i sensori ti vedono HA un problema
+    /// ambientale, e te lo dice in parole. Se va tutto bene, niente capsula.
+    struct PresenceIssue: Equatable {
+        var roomName: String
+        var message: String
+        var urgency: SensorUrgency
+    }
+    @State private var presenceIssue: PresenceIssue?
+    private let presenceTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var isCompact: Bool { horizontalSizeClass == .compact }
     /// Si e' dentro una stanza in prima persona: serve per il bottone d'uscita.
@@ -206,6 +218,32 @@ struct FloorplanRealityPreviewView: View {
                     // flottante resta il formato da iPad.
                     if !isCompact { roomSetupPanel }
                 }
+            } else if let presenceIssue {
+                Button {
+                    openRoomDetails(named: presenceIssue.roomName)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.bubble.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(urgencyColour(presenceIssue.urgency))
+                        Text(presenceIssue.message)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.primary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 44)
+                    .glassChromeSurface(in: Capsule())
+                    // Il colore dell'urgenza è un DATO: bordo sopra il vetro.
+                    .overlay(
+                        Capsule().strokeBorder(
+                            urgencyColour(presenceIssue.urgency).opacity(0.45),
+                            lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 104)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if isInsideRoom {
                 // L'uscita esplicita: il doppio tocco funziona, ma un bottone
                 // che dice «esci» non va scoperto.
@@ -281,6 +319,11 @@ struct FloorplanRealityPreviewView: View {
             observeCurrentFloorplan()
             rebuildScene()
             presentSetupIfFirstVisit()
+            loadEnvironmentIfNeeded()
+            homeKit.startObserving(accessoryUUIDs: RoomPresenceLocator.presenceAccessoryUUIDs(homeKit: homeKit))
+        }
+        .onReceive(presenceTick) { _ in
+            refreshPresenceIssue()
         }
         // Lo stato non è più una fotografia: se apri una finestra mentre stai
         // guardando, l'anta si muove. `characteristicValues` è osservabile, e
@@ -407,6 +450,48 @@ struct FloorplanRealityPreviewView: View {
 
     /// `SensorUrgency.color` dà `.primary` per lo stato normale, che su
     /// un'etichetta scura sopra un modello sparisce. Qui serve un verde.
+    /// Presenza × problema: la capsula esiste solo se la stanza dove i
+    /// sensori ti vedono ha almeno un sensore fuori norma. Il messaggio è il
+    /// peggiore: «Cucina: CO₂ 1400 ppm».
+    private func refreshPresenceIssue() {
+        let detected = RoomPresenceLocator.activeDetections(homeKit: homeKit).first?.roomName
+        guard let roomName = detected,
+              document.roomAreas.contains(where: { $0.name == roomName }),
+              let data = envVM.rooms.first(where: { $0.roomName == roomName })
+        else {
+            if presenceIssue != nil {
+                withAnimation(.easeOut(duration: 0.25)) { presenceIssue = nil }
+            }
+            return
+        }
+        let worst = data.sensors
+            .filter { $0.urgency != .normal }
+            .max { $0.urgency.rawValue < $1.urgency.rawValue }
+        guard let worst else {
+            if presenceIssue != nil {
+                withAnimation(.easeOut(duration: 0.25)) { presenceIssue = nil }
+            }
+            return
+        }
+        let issue = PresenceIssue(
+            roomName: roomName,
+            message: "\(roomName): \(worst.serviceType.displayName) \(worst.formattedValue)",
+            urgency: worst.urgency
+        )
+        if issue != presenceIssue {
+            withAnimation(.easeOut(duration: 0.25)) { presenceIssue = issue }
+        }
+    }
+
+    /// La stessa scheda stanza del menu Details, per nome.
+    private func openRoomDetails(named name: String) {
+        guard let room = RoomSecurityEvaluator
+            .accessories(inRoomNamed: name, homeKit: homeKit)
+            .first?.room
+        else { return }
+        detailRoom = RoomSheetTarget(room: room)
+    }
+
     private func urgencyColour(_ urgency: SensorUrgency) -> Color {
         switch urgency {
         case .normal:  .green
