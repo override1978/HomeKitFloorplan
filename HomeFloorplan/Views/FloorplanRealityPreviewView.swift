@@ -2581,16 +2581,6 @@ private struct PresenceIssuePanelView: View {
 
                 Spacer(minLength: 8)
 
-                Button {
-                    onOpenRoom(current.roomName)
-                } label: {
-                    Text(String(localized: "presence.issue.openRoom",
-                                defaultValue: "Open room details"))
-                        .font(.subheadline.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-                .tint(BrandColor.primary)
-
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
                         .font(.system(size: 14, weight: .semibold))
@@ -2606,37 +2596,51 @@ private struct PresenceIssuePanelView: View {
             // il testo delle anomalie Intelligence. Lo swipe ritinge la casa.
             TabView(selection: $page) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    HStack(spacing: 14) {
-                        Image(systemName: item.sensor.serviceType.sfSymbol)
-                            .font(.system(size: 26, weight: .semibold))
-                            .foregroundStyle(urgencyColour(item.sensor.urgency))
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(item.sensor.serviceType.displayName)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            Text(item.sensor.formattedValue)
-                                .font(.system(size: 34, weight: .bold, design: .rounded))
-                                .monospacedDigit()
+                    // La pagina È il bottone: tocchi l'anomalia, si apre la
+                    // stanza. Il bottone a parte nel header su iPhone si
+                    // schiacciava male — e questo bersaglio è enorme.
+                    Button {
+                        onOpenRoom(item.roomName)
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: item.sensor.serviceType.sfSymbol)
+                                .font(.system(size: 26, weight: .semibold))
                                 .foregroundStyle(urgencyColour(item.sensor.urgency))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.6)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.sensor.serviceType.displayName)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Text(item.sensor.formattedValue)
+                                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(urgencyColour(item.sensor.urgency))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.6)
+                            }
+                            Spacer(minLength: 0)
+                            VStack(alignment: .trailing, spacing: 6) {
+                                Text(item.sensor.urgency == .danger
+                                     ? String(localized: "presence.issue.critical", defaultValue: "Critical")
+                                     : String(localized: "presence.issue.warning", defaultValue: "Warning"))
+                                    .font(.caption.weight(.bold))
+                                    .textCase(.uppercase)
+                                    .foregroundStyle(urgencyColour(item.sensor.urgency))
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
-                        Spacer(minLength: 0)
-                        Text(item.sensor.urgency == .danger
-                             ? String(localized: "presence.issue.critical", defaultValue: "Critical")
-                             : String(localized: "presence.issue.warning", defaultValue: "Warning"))
-                            .font(.caption.weight(.bold))
-                            .textCase(.uppercase)
-                            .foregroundStyle(urgencyColour(item.sensor.urgency))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(urgencyColour(item.sensor.urgency).opacity(0.10))
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(urgencyColour(item.sensor.urgency).opacity(0.10))
-                    )
+                    .buttonStyle(.plain)
                     .padding(.horizontal, 2)
                     .tag(index)
                 }
