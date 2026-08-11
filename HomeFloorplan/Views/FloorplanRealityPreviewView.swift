@@ -91,6 +91,10 @@ struct FloorplanRealityPreviewView: View {
     }
     @State private var presenceIssue: PresenceIssue?
     private let presenceTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+    /// Cooldown dell'auto-apertura: (stanza|tipo sensore) → ultima
+    /// presentazione. Chiudere lo sheet vale come «ho visto»: lo stesso
+    /// problema non torna a bussare prima di 15 minuti.
+    @State private var autoPresentedIssues: [String: Date] = [:]
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var isCompact: Bool { horizontalSizeClass == .compact }
     /// Si e' dentro una stanza in prima persona: serve per il bottone d'uscita.
@@ -480,6 +484,21 @@ struct FloorplanRealityPreviewView: View {
         )
         if issue != presenceIssue {
             withAnimation(.easeOut(duration: 0.25)) { presenceIssue = issue }
+        }
+
+        // ── L'auto-apertura da pannello a muro: la casa viene da te. ──
+        // Solo su un problema, mai sopra qualcos'altro, e col cooldown:
+        // l'ingresso in una stanza sana non apre niente, e lo stesso
+        // problema non si ripresenta a ogni passaggio.
+        let cooldownKey = "\(roomName)|\(worst.serviceType.rawValue)"
+        let cooldown: TimeInterval = 15 * 60
+        let isFreeOfModals = detailRoom == nil && detailAccessory == nil
+            && selectedRoomID == nil && !isInsideRoom
+        let lastShown = autoPresentedIssues[cooldownKey]
+        if isFreeOfModals,
+           lastShown.map({ Date.now.timeIntervalSince($0) > cooldown }) ?? true {
+            autoPresentedIssues[cooldownKey] = .now
+            openRoomDetails(named: roomName)
         }
     }
 
