@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import SwiftData
 import HomeKit
 
@@ -21,6 +22,11 @@ struct EnvironmentDashboardView: View {
     @Environment(ActionExecutionService.self) private var executionService
 
     @State private var vm = EnvironmentViewModel()
+
+    /// La stanza dove i sensori vedono vita, con sorgente e istante: resta
+    /// mostrata anche quando i sensori tornano quieti («2 min fa»).
+    @State private var currentPresence: (roomName: String, source: String, at: Date)?
+    private let presenceTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     @Environment(WeatherKitService.self) private var weatherKit
 
@@ -120,6 +126,12 @@ struct EnvironmentDashboardView: View {
                 vm.loadFromCoreData()
                 AlertNotificationService.shared.clearBadge()
                 sampleIfNeeded()
+                homeKit.startObserving(accessoryUUIDs: RoomPresenceLocator.presenceAccessoryUUIDs(homeKit: homeKit))
+            }
+            .onReceive(presenceTick) { _ in
+                if let strongest = RoomPresenceLocator.activeDetections(homeKit: homeKit).first {
+                    currentPresence = (strongest.roomName, strongest.accessoryName, .now)
+                }
             }
         }
         // Sheet automazione — sul NavigationStack per evitare conflitti con gli altri sheet.
@@ -132,11 +144,78 @@ struct EnvironmentDashboardView: View {
         }
     }
 
+    // MARK: - Stanza corrente (localizzazione dai sensori)
+
+    @ViewBuilder
+    private func currentRoomCard(_ presence: (roomName: String, source: String, at: Date)) -> some View {
+        let roomData = vm.rooms.first { $0.roomName == presence.roomName }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "figure.walk.motion")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(BrandColor.primary)
+                Text(String(localized: "environment.currentRoom.title",
+                            defaultValue: "You are in: \(presence.roomName)"))
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if let roomData {
+                    Text("\(Int(roomData.qualityScore * 100))%")
+                        .font(.headline.monospacedDigit())
+                        .foregroundStyle(roomData.qualityColor)
+                }
+            }
+
+            if let roomData, !roomData.sensors.isEmpty {
+                HStack(spacing: 14) {
+                    ForEach(roomData.sensors.prefix(3), id: \.id) { sensor in
+                        HStack(spacing: 5) {
+                            Image(systemName: sensor.serviceType.sfSymbol)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(sensor.formattedValue)
+                                .font(.subheadline.weight(.semibold))
+                                .monospacedDigit()
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+
+            Text(String(localized: "environment.currentRoom.source",
+                        defaultValue: "Detected by \(presence.source)"))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            + Text(verbatim: " · ")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            + Text(presence.at, style: .relative)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+            legacyFill: AnyShapeStyle(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(BrandColor.primary.opacity(0.22), lineWidth: 1)
+        )
+        .animation(.spring(response: 0.35), value: presence.roomName)
+    }
+
     // MARK: - Contenuto principale
 
     private var scrollContent: some View {
         ScrollView {
             VStack(spacing: 16) {
+
+                // ── 0. Dove sei: la localizzazione la fanno i sensori ──
+                if let currentPresence {
+                    currentRoomCard(currentPresence)
+                }
 
                 // ── 1. Hero: score globale ─────────────────────────────
                 EnvironmentHeroView(
