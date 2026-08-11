@@ -53,6 +53,26 @@ enum RoomPresenceLocator {
         return result.sorted { $0.isOccupancy && !$1.isOccupancy }
     }
 
+    /// Le stanze che hanno ALMENO un sensore di presenza/movimento: le
+    /// stanze fuori da questo insieme sono «cieche» — lì la presenza non
+    /// scatterà mai, e chi le monitora deve avvisare a prescindere (il
+    /// balcone è il caso che ha fatto nascere la regola).
+    @MainActor
+    static func roomNamesWithPresenceSensors(homeKit: HomeKitService) -> Set<String> {
+        var result: Set<String> = []
+        for accessory in homeKit.allAccessories {
+            guard let roomName = accessory.room?.name else { continue }
+            let hasPresence = accessory.services.contains { service in
+                service.characteristics.contains {
+                    $0.characteristicType == HMCharacteristicTypeMotionDetected
+                        || $0.characteristicType == HMCharacteristicTypeOccupancyDetected
+                }
+            }
+            if hasPresence { result.insert(roomName) }
+        }
+        return result
+    }
+
     /// Gli accessori con sensori di presenza/movimento: sono quelli da
     /// osservare perché le letture si aggiornino senza polling di HomeKit.
     @MainActor

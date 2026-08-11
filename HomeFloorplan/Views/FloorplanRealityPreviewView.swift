@@ -470,42 +470,68 @@ struct FloorplanRealityPreviewView: View {
 
     /// `SensorUrgency.color` dà `.primary` per lo stato normale, che su
     /// un'etichetta scura sopra un modello sparisce. Qui serve un verde.
-    /// Presenza × problema, da pannello a muro: se la stanza dove i sensori
-    /// ti vedono ha un sensore fuori norma, il pannello si apre da solo.
-    /// Solo su un problema, mai sopra qualcos'altro, e col cooldown: lo
-    /// stesso problema non si ripresenta a ogni passaggio.
+    /// L'escalation da pannello a muro, in due tempi: prima il problema
+    /// nella stanza DOVE SEI (presenza × anomalia); poi le stanze CIECHE —
+    /// quelle senza sensori di presenza, balcone in testa — dove nessuno
+    /// verrà mai «visto» e l'avviso deve arrivare a prescindere. Sempre:
+    /// solo su un problema, mai sopra qualcos'altro, col cooldown.
     private func refreshPresenceIssue() {
-        let detected = RoomPresenceLocator.activeDetections(homeKit: homeKit).first?.roomName
-        guard let roomName = detected,
-              document.roomAreas.contains(where: { $0.name == roomName }),
-              let data = envVM.rooms.first(where: { $0.roomName == roomName }),
-              let worst = data.sensors
-                  .filter({ $0.urgency != .normal })
-                  .max(by: { $0.urgency.rawValue < $1.urgency.rawValue })
-        else { return }
-
-        let cooldownKey = "\(roomName)|\(worst.serviceType.rawValue)"
-        let cooldown: TimeInterval = 15 * 60
         let isFreeOfModals = detailRoom == nil && detailAccessory == nil
             && selectedRoomID == nil && !isInsideRoom
             && presenceIssueSheet == nil
-        let lastShown = autoPresentedIssues[cooldownKey]
-        if isFreeOfModals,
-           lastShown.map({ Date.now.timeIntervalSince($0) > cooldown }) ?? true {
-            autoPresentedIssues[cooldownKey] = .now
-            withAnimation(.easeOut(duration: 0.3)) {
-                presentIssueSheet(for: roomName)
-                // Il contesto dietro l'avviso: la casa si accende sul layer
-                // Ambiente, filtrata sul tipo peggiore — così vedi subito se
-                // è solo questa stanza o tutto il piano. SOLO da Off: una
-                // modalità scelta dall'utente non si ruba.
-                if mode == .off {
-                    mode = .environment
-                    sensorFilter = worst.serviceType
-                    autoActivatedEnvironment = true
-                }
+        guard isFreeOfModals else { return }
+
+        // ── 1. Dove sei ──
+        if let roomName = RoomPresenceLocator.activeDetections(homeKit: homeKit).first?.roomName,
+           document.roomAreas.contains(where: { $0.name == roomName }),
+           escalate(roomName: roomName) {
+            return
+        }
+
+        // ── 2. Le stanze cieche, dalla peggiore ──
+        let attendedRooms = RoomPresenceLocator.roomNamesWithPresenceSensors(homeKit: homeKit)
+        let blindWithIssues = document.roomAreas
+            .filter { !attendedRooms.contains($0.name) }
+            .compactMap { area -> (name: String, urgency: SensorUrgency)? in
+                guard let data = envVM.rooms.first(where: { $0.roomName == area.name }),
+                      data.worstUrgency != .normal else { return nil }
+                return (area.name, data.worstUrgency)
+            }
+            .sorted { $0.urgency.rawValue > $1.urgency.rawValue }
+        for candidate in blindWithIssues where escalate(roomName: candidate.name) {
+            return
+        }
+    }
+
+    /// Presenta il pannello per la stanza, se il cooldown lo consente.
+    /// Ritorna `true` se ha presentato.
+    @discardableResult
+    private func escalate(roomName: String) -> Bool {
+        guard let data = envVM.rooms.first(where: { $0.roomName == roomName }),
+              let worst = data.sensors
+                  .filter({ $0.urgency != .normal })
+                  .max(by: { $0.urgency.rawValue < $1.urgency.rawValue })
+        else { return false }
+
+        let cooldownKey = "\(roomName)|\(worst.serviceType.rawValue)"
+        let cooldown: TimeInterval = 15 * 60
+        if let lastShown = autoPresentedIssues[cooldownKey],
+           Date.now.timeIntervalSince(lastShown) <= cooldown {
+            return false
+        }
+        autoPresentedIssues[cooldownKey] = .now
+        withAnimation(.easeOut(duration: 0.3)) {
+            presentIssueSheet(for: roomName)
+            // Il contesto dietro l'avviso: la casa si accende sul layer
+            // Ambiente, filtrata sul tipo peggiore. SOLO da Off: una
+            // modalità scelta dall'utente non si ruba.
+            if mode == .off {
+                mode = .environment
+                sensorFilter = worst.serviceType
+                autoActivatedEnvironment = true
             }
         }
+        return true
     }
 
     /// I soli sensori fuori norma, dal peggiore: la segnalazione, non il catalogo.
