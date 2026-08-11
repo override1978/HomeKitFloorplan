@@ -1,12 +1,12 @@
 import SwiftUI
 import ARKit
-import RealityKit
 import CoreMotion
 
 /// Una lettura di posa dalla sessione ARKit: posizione della camera in metri
 /// nel sistema della sessione (origine = dove è partito il tracking).
 struct ARPoseSample: Equatable {
     var position: SIMD3<Float>
+    var forwardXZ: SIMD2<Float>
     var trackingLabel: String
     var isNormal: Bool
     /// Strumentazione per il feed nero: quanti frame ARKit ha consegnato e
@@ -22,11 +22,48 @@ struct ARDiagnosticsSnapshot: Identifiable {
     var metrics: [ARDiagnosticsMetric]
     var rooms: [ARDiagnosticsRoom] = []
     var suggestedRoomID: UUID?
+    var planRooms: [ARDiagnosticsPlanRoom] = []
+    var planWalls: [ARDiagnosticsPlanWall] = []
+    var pointsPerMeter: CGFloat = DrawingDocument.ptsPerMeter
+    var savedCalibration: ARFloorCalibration?
+    var applyARCalibration: ((ARFloorCalibration?) -> Void)?
 }
 
-struct ARDiagnosticsRoom: Identifiable, Hashable {
+struct ARDiagnosticsPlanRoom: Identifiable {
     var id: UUID
     var name: String
+    var points: [CGPoint]
+    var anchor: CGPoint
+
+    func contains(_ point: CGPoint) -> Bool {
+        guard points.count >= 3 else { return false }
+        var inside = false
+        var previousIndex = points.count - 1
+        for index in points.indices {
+            let current = points[index]
+            let previous = points[previousIndex]
+            let crossesY = (current.y > point.y) != (previous.y > point.y)
+            if crossesY {
+                let xIntersection = (previous.x - current.x) * (point.y - current.y) / (previous.y - current.y) + current.x
+                if point.x < xIntersection { inside.toggle() }
+            }
+            previousIndex = index
+        }
+        return inside
+    }
+}
+
+struct ARDiagnosticsPlanWall: Identifiable {
+    var id: UUID
+    var start: CGPoint
+    var end: CGPoint
+}
+
+struct ARDiagnosticsRoom: Identifiable {
+    var id: UUID
+    var name: String
+    var subtitle: String
+    var metrics: [ARDiagnosticsMetric]
 }
 
 struct ARDiagnosticsMetric: Identifiable {
@@ -46,6 +83,10 @@ struct ARDiagnosticsView: View {
     @State private var motionTracker = DiagnosticsMotionTracker()
     @State private var selectedCalibrationRoomID: UUID?
     @State private var calibratedRoomID: UUID?
+    @State private var calibrationOrigin: SIMD3<Float>?
+    @State private var calibrationForwardXZ: SIMD2<Float>?
+    @State private var calibrationMapOrigin: CGPoint?
+    @State private var savedCalibration: ARFloorCalibration?
     @State private var arPose: ARPoseSample?
 
     var body: some View {
@@ -72,6 +113,10 @@ struct ARDiagnosticsView: View {
                 Spacer(minLength: 0)
                 scanPanel
                     .padding(.bottom, 10)
+                if showsMiniFloorplan {
+                    miniFloorplanPanel
+                        .padding(.bottom, 10)
+                }
                 diagnosticsPanel
             }
             .padding(.horizontal, 18)
@@ -90,8 +135,11 @@ struct ARDiagnosticsView: View {
         }
         .statusBarHidden()
         .onAppear {
+            savedCalibration = snapshot.savedCalibration
             if selectedCalibrationRoomID == nil {
-                selectedCalibrationRoomID = snapshot.suggestedRoomID ?? snapshot.rooms.first?.id
+                selectedCalibrationRoomID = savedCalibration?.originRoomID
+                    ?? snapshot.suggestedRoomID
+                    ?? snapshot.rooms.first?.id
             }
             motionTracker.start { state in
                 scanState = state
@@ -216,6 +264,11 @@ struct ARDiagnosticsView: View {
             }
 
             if calibratedRoomID == nil, !snapshot.rooms.isEmpty {
+                Text(String(localized: "ar.locator.originRoom",
+                            defaultValue: "Origin room"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(snapshot.rooms) { room in
@@ -242,39 +295,60 @@ struct ARDiagnosticsView: View {
                     Image(systemName: arPose.isNormal ? "move.3d" : "exclamationmark.triangle")
                         .font(.caption)
                         .foregroundStyle(arPose.isNormal ? Color.green : Color.orange)
-                    Text(verbatim: "AR · \(arPose.trackingLabel) · f\(arPose.frameCount) · \(Int(arPose.viewSize.width))×\(Int(arPose.viewSize.height))")
+                    Text(verbatim: arPoseLabel(arPose))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 8)
-                    Text(verbatim: String(format: "x %+.1f  z %+.1f m",
-                                          arPose.position.x, arPose.position.z))
+                    Text(verbatim: arPoseDistanceLabel(arPose))
                         .font(.caption.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.primary)
                 }
             }
 
             HStack(spacing: 10) {
-                ProgressView(value: calibratedRoomID == nil ? scanState.progress : locatorConfidence)
-                    .tint(locatorTint)
+                if calibratedRoomID == nil {
+                    ProgressView(value: scanState.progress)
+                        .tint(locatorTint)
+                } else {
+                    Label(String(localized: "ar.locator.originLocked",
+                                 defaultValue: "Origin locked"),
+                          systemImage: "mappin.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(locatorTint)
+                }
 
                 if calibratedRoomID == nil {
+                    if savedCalibration != nil {
+                        Button {
+                            useSavedFloorOriginHere()
+                        } label: {
+                            Label(String(localized: "ar.locator.useSavedOrigin",
+                                         defaultValue: "Use saved origin here"),
+                                  systemImage: "location.viewfinder")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(arPose?.isNormal != true)
+                    }
+
                     Button {
-                        calibratedRoomID = selectedCalibrationRoomID
+                        setFloorOriginHere()
                     } label: {
-                        Label(String(localized: "ar.locator.calibrate",
-                                     defaultValue: "Calibrate here"),
+                        Label(String(localized: "ar.locator.setFloorOrigin",
+                                     defaultValue: "Set floor origin"),
                               systemImage: "mappin.and.ellipse")
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .disabled(selectedCalibrationRoomID == nil)
+                    .disabled(selectedCalibrationRoomID == nil || arPose?.isNormal != true)
                 } else {
                     Button {
-                        calibratedRoomID = nil
+                        resetFloorCalibration()
                     } label: {
-                        Label(String(localized: "ar.locator.reset",
-                                     defaultValue: "Reset"),
+                        Label(String(localized: "ar.locator.resetFloor",
+                                     defaultValue: "Reset floor"),
                               systemImage: "arrow.counterclockwise")
                             .font(.caption.weight(.semibold))
                     }
@@ -302,13 +376,26 @@ struct ARDiagnosticsView: View {
         snapshot.rooms.first { $0.id == calibratedRoomID }
     }
 
-    private var locatorConfidence: Double {
-        guard calibratedRoomID != nil else { return 0 }
-        return min(0.92, 0.56 + scanState.progress * 0.32)
+    private var locatedPlanRoom: ARDiagnosticsPlanRoom? {
+        guard calibratedRoomID != nil, let point = planPointerPoint else { return nil }
+        return snapshot.planRooms.first { $0.contains(point) }
+    }
+
+    private var locatedDiagnosticsRoom: ARDiagnosticsRoom? {
+        guard let locatedPlanRoom else { return nil }
+        return snapshot.rooms.first { $0.id == locatedPlanRoom.id }
+            ?? snapshot.rooms.first {
+                $0.name.localizedCaseInsensitiveCompare(locatedPlanRoom.name) == .orderedSame
+            }
+    }
+
+    private var activeDiagnosticsRoom: ARDiagnosticsRoom? {
+        locatedDiagnosticsRoom ?? calibratedRoom
     }
 
     private var locatorTint: Color {
-        calibratedRoomID == nil ? scanState.tint : .green
+        guard calibratedRoomID != nil else { return scanState.tint }
+        return arPose?.isNormal == true ? .green : .orange
     }
 
     private var locatorSystemImage: String {
@@ -316,41 +403,261 @@ struct ARDiagnosticsView: View {
     }
 
     private var locatorTitle: String {
-        if let calibratedRoom {
-            return String(localized: "ar.locator.calibratedRoom",
-                          defaultValue: "Calibrated room: \(calibratedRoom.name)")
+        if let locatedPlanRoom {
+            return String(localized: "ar.locator.estimatedRoom",
+                          defaultValue: "Estimated room: \(locatedPlanRoom.name)")
         }
-        return String(localized: "ar.locator.chooseRoom",
-                      defaultValue: "Choose the room you are in")
+        if let calibratedRoom {
+            return String(localized: "ar.locator.floorOrigin",
+                          defaultValue: "Floor origin: \(calibratedRoom.name)")
+        }
+        if let savedCalibration {
+            return String(localized: "ar.locator.savedFloor",
+                          defaultValue: "Saved floor origin: \(savedCalibration.originRoomName)")
+        }
+        return String(localized: "ar.locator.chooseOrigin",
+                      defaultValue: "Set a floor origin")
     }
 
     private var locatorDetail: String {
+        if locatedPlanRoom != nil {
+            return String(localized: "ar.locator.estimated.detail",
+                          defaultValue: "Room data follows the local AR position on the floorplan.")
+        }
         if calibratedRoom != nil {
             return String(localized: "ar.locator.local.detail",
-                          defaultValue: "Room data is tied to your explicit calibration, not automatic recognition.")
+                          defaultValue: "One origin and alignment map the whole floor.")
+        }
+        if savedCalibration != nil {
+            return String(localized: "ar.locator.saved.detail",
+                          defaultValue: "Stand at the saved origin and reuse it for this AR session.")
         }
         return selectedCalibrationRoom.map {
             String(localized: "ar.locator.calibrate.detail",
-                   defaultValue: "Point inside \($0.name), then tap Calibrate here.")
+                   defaultValue: "Stand in \($0.name), set the floor origin, then align the map once.")
         } ?? String(localized: "ar.locator.noRooms",
                     defaultValue: "No rooms are available for calibration.")
     }
 
     private var locatorValue: String {
         if calibratedRoomID != nil {
-            return "\(Int(locatorConfidence * 100))%"
+            guard let arPose else { return "--" }
+            return String(format: "%.1f m", localDistance(from: arPose))
         }
-        return "\(Int(scanState.progress * 100))%"
+        return arPose?.isNormal == true
+            ? String(localized: "ar.locator.ready", defaultValue: "Ready")
+            : String(localized: "ar.locator.waiting", defaultValue: "Waiting")
+    }
+
+    private var activeDiagnosticsTitle: String {
+        locatedPlanRoom?.name ?? activeDiagnosticsRoom?.name ?? snapshot.title
+    }
+
+    private var activeDiagnosticsSubtitle: String {
+        if locatedPlanRoom != nil {
+            return String(localized: "ar.diagnostics.estimated.subtitle",
+                          defaultValue: "Room diagnostics from calibrated AR map position.")
+        }
+        guard let activeDiagnosticsRoom else { return snapshot.subtitle }
+        return activeDiagnosticsRoom.subtitle
+    }
+
+    private var activeDiagnosticsMetrics: [ARDiagnosticsMetric] {
+        if let activeDiagnosticsRoom {
+            if !activeDiagnosticsRoom.metrics.isEmpty { return activeDiagnosticsRoom.metrics }
+            return [
+                ARDiagnosticsMetric(title: String(localized: "ar.diagnostics.roomSensors",
+                                                  defaultValue: "Room sensors"),
+                                    value: String(localized: "common.none", defaultValue: "None"),
+                                    systemImage: "sensor",
+                                    tint: .secondary),
+                ARDiagnosticsMetric(title: String(localized: "ar.diagnostics.localOrigin",
+                                                  defaultValue: "Local origin"),
+                                    value: arPose.map { String(format: "%.1f m", localDistance(from: $0)) } ?? "--",
+                                    systemImage: "mappin.circle.fill",
+                                    tint: locatorTint)
+            ]
+        }
+        return snapshot.metrics
+    }
+
+    private var showsMiniFloorplan: Bool {
+        calibratedRoomID != nil && !snapshot.planRooms.isEmpty
+    }
+
+    private var miniFloorplanPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Label(String(localized: "ar.plan.localMap", defaultValue: "Local map"),
+                      systemImage: "map")
+                    .font(.subheadline.weight(.semibold))
+
+                Spacer(minLength: 8)
+
+                Text(planRoomName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(planRoomTint)
+                    .lineLimit(1)
+
+                Button {
+                    calibrationForwardXZ = arPose?.forwardXZ
+                } label: {
+                    Label(String(localized: "ar.plan.align", defaultValue: "Align"),
+                          systemImage: "location.north.line")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(arPose?.isNormal != true)
+            }
+
+            ARDiagnosticsMiniFloorplanView(rooms: snapshot.planRooms,
+                                           walls: snapshot.planWalls,
+                                           calibratedRoomID: calibratedRoomID,
+                                           pointerPoint: planPointerPoint)
+                .frame(height: 118)
+        }
+        .foregroundStyle(Color.primary)
+        .padding(14)
+        .frame(maxWidth: 760)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    private var planPointerPoint: CGPoint? {
+        guard let calibratedRoomID,
+              let arPose,
+              let calibratedPlanRoom = snapshot.planRooms.first(where: { $0.id == calibratedRoomID })
+        else { return nil }
+
+        let offset = localOffset(from: arPose)
+        let projectedOffset = projectedPlanOffset(from: offset)
+        let origin = calibrationMapOrigin ?? calibratedPlanRoom.anchor
+        return CGPoint(
+            x: origin.x + projectedOffset.x * snapshot.pointsPerMeter,
+            y: origin.y + projectedOffset.y * snapshot.pointsPerMeter
+        )
+    }
+
+    private var planRoomName: String {
+        guard let point = planPointerPoint else {
+            return String(localized: "ar.plan.waiting", defaultValue: "Waiting")
+        }
+        if let room = snapshot.planRooms.first(where: { $0.contains(point) }) {
+            return room.name
+        }
+        return String(localized: "ar.plan.outside", defaultValue: "Outside mapped rooms")
+    }
+
+    private var planRoomTint: Color {
+        guard let calibratedRoomID, let point = planPointerPoint else { return .secondary }
+        if snapshot.planRooms.first(where: { $0.id == calibratedRoomID })?.contains(point) == true {
+            return .green
+        }
+        if snapshot.planRooms.contains(where: { $0.contains(point) }) {
+            return .orange
+        }
+        return .red
+    }
+
+    private func localDistance(from pose: ARPoseSample) -> Float {
+        guard let calibrationOrigin else { return 0 }
+        return simd_distance(pose.position, calibrationOrigin)
+    }
+
+    private func localOffset(from pose: ARPoseSample) -> SIMD3<Float> {
+        guard let calibrationOrigin else { return .zero }
+        return pose.position - calibrationOrigin
+    }
+
+    private func projectedPlanOffset(from offset: SIMD3<Float>) -> CGPoint {
+        let worldOffset = SIMD2<Float>(offset.x, offset.z)
+        guard let calibrationForwardXZ,
+              simd_length(calibrationForwardXZ) > 0.001
+        else {
+            return CGPoint(x: CGFloat(offset.x), y: CGFloat(offset.z))
+        }
+
+        let mapUp = simd_normalize(calibrationForwardXZ)
+        let mapRight = SIMD2<Float>(-mapUp.y, mapUp.x)
+        return CGPoint(
+            x: CGFloat(simd_dot(worldOffset, mapRight)),
+            y: CGFloat(-simd_dot(worldOffset, mapUp))
+        )
+    }
+
+    private func setFloorOriginHere() {
+        guard let roomID = selectedCalibrationRoomID,
+              let arPose,
+              let planRoom = snapshot.planRooms.first(where: { $0.id == roomID })
+        else { return }
+
+        calibratedRoomID = roomID
+        calibrationOrigin = arPose.position
+        calibrationForwardXZ = arPose.forwardXZ
+        calibrationMapOrigin = planRoom.anchor
+
+        let now = Date()
+        let calibration = ARFloorCalibration(
+            originRoomID: roomID,
+            originRoomName: planRoom.name,
+            originPoint: planRoom.anchor,
+            mapForward: CGPoint(x: 0, y: -1),
+            createdAt: savedCalibration?.createdAt ?? now,
+            updatedAt: now
+        )
+        savedCalibration = calibration
+        snapshot.applyARCalibration?(calibration)
+    }
+
+    private func useSavedFloorOriginHere() {
+        guard let savedCalibration, let arPose else { return }
+        calibratedRoomID = savedCalibration.originRoomID
+            ?? snapshot.planRooms.first {
+                $0.name.localizedCaseInsensitiveCompare(savedCalibration.originRoomName) == .orderedSame
+            }?.id
+        selectedCalibrationRoomID = calibratedRoomID
+        calibrationOrigin = arPose.position
+        calibrationForwardXZ = arPose.forwardXZ
+        calibrationMapOrigin = savedCalibration.originPoint
+    }
+
+    private func resetFloorCalibration() {
+        calibratedRoomID = nil
+        calibrationOrigin = nil
+        calibrationForwardXZ = nil
+        calibrationMapOrigin = nil
+        savedCalibration = nil
+        snapshot.applyARCalibration?(nil)
+    }
+
+    private func arPoseLabel(_ pose: ARPoseSample) -> String {
+        guard calibratedRoomID != nil else {
+            return "AR · \(pose.trackingLabel) · f\(pose.frameCount)"
+        }
+        return "AR local · \(pose.trackingLabel)"
+    }
+
+    private func arPoseDistanceLabel(_ pose: ARPoseSample) -> String {
+        guard calibratedRoomID != nil else {
+            return String(format: "x %+.1f  z %+.1f m", pose.position.x, pose.position.z)
+        }
+        let offset = localOffset(from: pose)
+        return String(format: "%.1f m · x %+.1f z %+.1f",
+                      localDistance(from: pose), offset.x, offset.z)
     }
 
     private var diagnosticsPanel: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(snapshot.title)
+                    Text(activeDiagnosticsTitle)
                         .font(.title3.weight(.semibold))
                         .lineLimit(1)
-                    Text(snapshot.subtitle)
+                    Text(activeDiagnosticsSubtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -362,7 +669,7 @@ struct ARDiagnosticsView: View {
             }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(snapshot.metrics) { metric in
+                ForEach(activeDiagnosticsMetrics) { metric in
                     metricTile(metric)
                 }
             }
@@ -394,6 +701,112 @@ struct ARDiagnosticsView: View {
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct ARDiagnosticsMiniFloorplanView: View {
+    var rooms: [ARDiagnosticsPlanRoom]
+    var walls: [ARDiagnosticsPlanWall]
+    var calibratedRoomID: UUID?
+    var pointerPoint: CGPoint?
+
+    var body: some View {
+        Canvas { context, size in
+            guard let bounds = drawingBounds, bounds.width > 1, bounds.height > 1 else { return }
+
+            let inset: CGFloat = 10
+            let available = CGSize(width: max(1, size.width - inset * 2),
+                                   height: max(1, size.height - inset * 2))
+            let scale = min(available.width / bounds.width, available.height / bounds.height)
+            let drawnSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+            let origin = CGPoint(x: (size.width - drawnSize.width) / 2,
+                                 y: (size.height - drawnSize.height) / 2)
+
+            func map(_ point: CGPoint) -> CGPoint {
+                CGPoint(x: origin.x + (point.x - bounds.minX) * scale,
+                        y: origin.y + (point.y - bounds.minY) * scale)
+            }
+
+            for room in rooms {
+                guard let path = path(for: room.points, map: map) else { continue }
+                let isCalibrated = room.id == calibratedRoomID
+                context.fill(path, with: .color(isCalibrated ? Color.green.opacity(0.26) : Color.white.opacity(0.22)))
+                context.stroke(path,
+                               with: .color(isCalibrated ? Color.green.opacity(0.85) : Color.primary.opacity(0.18)),
+                               lineWidth: isCalibrated ? 2.2 : 1)
+            }
+
+            for wall in walls {
+                var path = Path()
+                path.move(to: map(wall.start))
+                path.addLine(to: map(wall.end))
+                context.stroke(path, with: .color(Color.primary.opacity(0.34)), lineWidth: 2)
+            }
+
+            if let pointerPoint {
+                let mappedPointer = map(pointerPoint)
+                context.fill(Path(ellipseIn: CGRect(x: mappedPointer.x - 6,
+                                                    y: mappedPointer.y - 6,
+                                                    width: 12,
+                                                    height: 12)),
+                             with: .color(.blue))
+                context.stroke(Path(ellipseIn: CGRect(x: mappedPointer.x - 12,
+                                                      y: mappedPointer.y - 12,
+                                                      width: 24,
+                                                      height: 24)),
+                               with: .color(Color.blue.opacity(0.45)),
+                               lineWidth: 3)
+            }
+        }
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(alignment: .bottomTrailing) {
+            if pointerPoint != nil {
+                Label(String(localized: "ar.plan.pointer", defaultValue: "AR offset"),
+                      systemImage: "location.fill")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(8)
+            }
+        }
+    }
+
+    private var drawingBounds: CGRect? {
+        let roomPoints = rooms.flatMap(\.points)
+        let wallPoints = walls.flatMap { [$0.start, $0.end] }
+        let allPoints = roomPoints + wallPoints
+        guard let first = allPoints.first else { return nil }
+
+        var minX = first.x
+        var minY = first.y
+        var maxX = first.x
+        var maxY = first.y
+
+        for point in allPoints.dropFirst() {
+            minX = min(minX, point.x)
+            minY = min(minY, point.y)
+            maxX = max(maxX, point.x)
+            maxY = max(maxY, point.y)
+        }
+
+        return CGRect(x: minX,
+                      y: minY,
+                      width: max(1, maxX - minX),
+                      height: max(1, maxY - minY))
+            .insetBy(dx: -24, dy: -24)
+    }
+
+    private func path(for points: [CGPoint], map: (CGPoint) -> CGPoint) -> Path? {
+        guard let first = points.first else { return nil }
+        var path = Path()
+        path.move(to: map(first))
+        for point in points.dropFirst() {
+            path.addLine(to: map(point))
+        }
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -563,35 +976,51 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
         Coordinator(status: $status, onPose: onPose)
     }
 
-    func makeUIView(context: Context) -> ARView {
-        // ARView in modalità **AR vera** (non il .nonAR della 3D): il feed
-        // camera arriva da ARKit insieme alla posa 6DOF — è il salto da
-        // «mostrare il mondo» a «sapere dove sei nel mondo».
-        //
-        // ⚠️ Sessione AUTO-configurata: col run() manuale dentro makeUIView
-        // la sessione partiva prima che la vista entrasse nel render loop —
-        // tracking vivo, feed nero («si ferma così»). Lasciandola all'ARView,
-        // parte quando la vista è in finestra e i pixel arrivano.
-        let view = ARView(frame: .zero, cameraMode: .ar,
-                          automaticallyConfigureSession: true)
+    func makeUIView(context: Context) -> CameraFrameView {
+        let view = CameraFrameView()
         context.coordinator.configure(on: view)
         return view
     }
 
-    func updateUIView(_ uiView: ARView, context: Context) { }
+    func updateUIView(_ uiView: CameraFrameView, context: Context) { }
 
-    static func dismantleUIView(_ uiView: ARView, coordinator: Coordinator) {
+    static func dismantleUIView(_ uiView: CameraFrameView, coordinator: Coordinator) {
         coordinator.stop()
+    }
+
+    final class CameraFrameView: UIView {
+        let imageView = UIImageView()
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            backgroundColor = .black
+            imageView.contentMode = .scaleAspectFill
+            imageView.clipsToBounds = true
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(imageView)
+            NSLayoutConstraint.activate([
+                imageView.leadingAnchor.constraint(equalTo: leadingAnchor),
+                imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
+                imageView.topAnchor.constraint(equalTo: topAnchor),
+                imageView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            ])
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
     }
 
     final class Coordinator: NSObject, ARSessionDelegate {
         private var status: Binding<ARDiagnosticsCameraStatus>
         private let onPose: ((ARPoseSample) -> Void)?
-        private weak var session: ARSession?
+        private let session = ARSession()
+        private let ciContext = CIContext()
         private var lastReported = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
         private var didReportReady = false
         private var frameCount = 0
-        private weak var view: ARView?
+        private var lastImageTime: CFAbsoluteTime = 0
+        private weak var view: CameraFrameView?
 
         init(status: Binding<ARDiagnosticsCameraStatus>,
              onPose: ((ARPoseSample) -> Void)?) {
@@ -599,7 +1028,7 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
             self.onPose = onPose
         }
 
-        func configure(on view: ARView) {
+        func configure(on view: CameraFrameView) {
             guard ARWorldTrackingConfiguration.isSupported else {
                 update(.unavailable(String(
                     localized: "ar.status.unsupported.detail",
@@ -607,16 +1036,18 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
                 )))
                 return
             }
-            // Niente run() manuale: la configurazione world-tracking la avvia
-            // l'ARView stessa quando entra in finestra. Qui solo osservazione.
-            view.session.delegate = self
-            session = view.session
             self.view = view
+            session.delegate = self
+
+            let configuration = ARWorldTrackingConfiguration()
+            configuration.planeDetection = [.horizontal, .vertical]
+            configuration.environmentTexturing = .automatic
+            session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
             update(.starting)
         }
 
         func stop() {
-            session?.pause()
+            session.pause()
         }
 
         // MARK: ARSessionDelegate
@@ -627,8 +1058,11 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
                 didReportReady = true
                 update(.ready)
             }
-            let translation = frame.camera.transform.columns.3
+            updateCameraImage(from: frame)
+            let transform = frame.camera.transform
+            let translation = transform.columns.3
             let position = SIMD3(translation.x, translation.y, translation.z)
+            let forwardXZ = Self.forwardXZ(from: transform)
             // Si riporta oltre 3 cm di spostamento, o comunque ogni 60 frame:
             // il contatore deve avanzare a video anche da fermi.
             guard simd_distance(position, lastReported) > 0.03
@@ -638,10 +1072,26 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
             let count = frameCount
             DispatchQueue.main.async { [onPose, weak view] in
                 onPose?(ARPoseSample(position: position,
+                                     forwardXZ: forwardXZ,
                                      trackingLabel: label,
                                      isNormal: isNormal,
                                      frameCount: count,
                                      viewSize: view?.bounds.size ?? .zero))
+            }
+        }
+
+        private func updateCameraImage(from frame: ARFrame) {
+            let now = CFAbsoluteTimeGetCurrent()
+            guard now - lastImageTime > 1.0 / 15.0 else { return }
+            lastImageTime = now
+
+            let pixelBuffer = frame.capturedImage
+            let image = CIImage(cvPixelBuffer: pixelBuffer)
+            guard let cgImage = ciContext.createCGImage(image, from: image.extent) else { return }
+            let orientation = Self.imageOrientationForCurrentDevice()
+            let uiImage = UIImage(cgImage: cgImage, scale: 1, orientation: orientation)
+            DispatchQueue.main.async { [weak view] in
+                view?.imageView.image = uiImage
             }
         }
 
@@ -664,6 +1114,22 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
             case .limited(.insufficientFeatures):  return ("low features", false)
             case .limited(.relocalizing):          return ("relocalizing", false)
             case .limited:                         return ("limited", false)
+            }
+        }
+
+        private static func forwardXZ(from transform: simd_float4x4) -> SIMD2<Float> {
+            let cameraForward = SIMD2<Float>(-transform.columns.2.x, -transform.columns.2.z)
+            let length = simd_length(cameraForward)
+            guard length > 0.001 else { return SIMD2<Float>(0, -1) }
+            return cameraForward / length
+        }
+
+        private static func imageOrientationForCurrentDevice() -> UIImage.Orientation {
+            switch UIDevice.current.orientation {
+            case .landscapeLeft: return .up
+            case .landscapeRight: return .down
+            case .portraitUpsideDown: return .left
+            default: return .right
             }
         }
 

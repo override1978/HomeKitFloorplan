@@ -771,12 +771,24 @@ enum DimensionUnit: String, CaseIterable {
 
 // MARK: - DrawingDocument
 
+struct ARFloorCalibration: Equatable, Codable {
+    var originRoomID: UUID?
+    var originRoomName: String
+    var originPoint: CGPoint
+    /// Direction on the floorplan that the user aligned the real-world view to.
+    /// In the current MVP this is map-up, kept explicit for future variants.
+    var mapForward: CGPoint
+    var createdAt: Date
+    var updatedAt: Date
+}
+
 struct DrawingDocument: Equatable, nonisolated Codable {
     var walls: [WallSegment]          = []
     var openings: [PlacedOpening]     = []
     var roomLabels: [RoomLabel]       = []
     var roomAreas: [RoomArea]         = []
     var furnitureItems: [FurnitureItem] = []
+    var arCalibration: ARFloorCalibration? = nil
 
     static let canvasSize: CGFloat  = 2000
     static let gridSpacing: CGFloat = 20

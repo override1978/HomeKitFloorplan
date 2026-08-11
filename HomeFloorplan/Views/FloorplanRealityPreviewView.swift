@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Combine
 import RealityKit
 import HomeKit
 import UIKit
@@ -79,6 +80,10 @@ struct FloorplanRealityPreviewView: View {
     /// delle tre azioni, e il pannello di configurazione solo se scelto.
     private enum RoomPanelState { case actions, setup }
     @State private var roomPanelState: RoomPanelState = .actions
+    /// La stanza dove i sensori vedono vita ADESSO — la risposta della casa,
+    /// non della camera. Mostrata solo se esiste su questa planimetria.
+    @State private var presenceRoomName: String?
+    private let presenceTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var isCompact: Bool { horizontalSizeClass == .compact }
     /// Si e' dentro una stanza in prima persona: serve per il bottone d'uscita.
@@ -116,6 +121,7 @@ struct FloorplanRealityPreviewView: View {
     /// volta nella vita di una planimetria — e una configurazione non merita
     /// una pillola permanente sul bordo piu' prezioso dello schermo.
     @State private var isSettingsOpen = false
+    @State private var arDiagnosticsSnapshot: ARDiagnosticsSnapshot?
 
     /// Al primo ingresso nel 3D di una planimetria il pannello si apre da
     /// solo: altezza dei muri ed esposizione **vanno chiesti, non scoperti** —
@@ -205,6 +211,30 @@ struct FloorplanRealityPreviewView: View {
                     // flottante resta il formato da iPad.
                     if !isCompact { roomSetupPanel }
                 }
+            } else if let presenceRoomName {
+                // La casa che dice dove sei: stesso segnale dei dischi che
+                // respirano, dichiarato a parole. Il tocco seleziona la
+                // stanza — il menu (Set up / Enter / Details) fa il resto.
+                Button {
+                    if let area = document.roomAreas.first(where: { $0.name == presenceRoomName }) {
+                        selectedRoomID = area.id
+                        selectedRoomName = area.name
+                        roomPanelState = .actions
+                        showsPlacementSwitches = false
+                    }
+                } label: {
+                    Label(String(localized: "room.presence.here",
+                                 defaultValue: "You are in: \(presenceRoomName)"),
+                          systemImage: "figure.walk.motion")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.primary)
+                        .padding(.horizontal, 18)
+                        .frame(minHeight: 44)
+                        .glassChromeSurface(in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 104)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if isInsideRoom {
                 // L'uscita esplicita: il doppio tocco funziona, ma un bottone
                 // che dice «esci» non va scoperto.
@@ -268,6 +298,9 @@ struct FloorplanRealityPreviewView: View {
         .sheet(item: $detailRoom) { target in
             RoomDetailSheet(room: target.room)
         }
+        .fullScreenCover(item: $arDiagnosticsSnapshot) { snapshot in
+            ARDiagnosticsView(snapshot: snapshot)
+        }
         .onAppear {
             exposure = Exposure.nearest(to: northBearingDegrees)
             ceilingHeight = current.ceilingHeight
@@ -277,6 +310,16 @@ struct FloorplanRealityPreviewView: View {
             observeCurrentFloorplan()
             rebuildScene()
             presentSetupIfFirstVisit()
+            homeKit.startObserving(accessoryUUIDs: RoomPresenceLocator.presenceAccessoryUUIDs(homeKit: homeKit))
+        }
+        .onReceive(presenceTick) { _ in
+            let detected = RoomPresenceLocator.activeDetections(homeKit: homeKit).first?.roomName
+            let known = detected.flatMap { name in
+                document.roomAreas.contains { $0.name == name } ? name : nil
+            }
+            if let known, known != presenceRoomName {
+                withAnimation(.easeOut(duration: 0.25)) { presenceRoomName = known }
+            }
         }
         // Lo stato non è più una fotografia: se apri una finestra mentre stai
         // guardando, l'anta si muove. `characteristicValues` è osservabile, e
@@ -970,6 +1013,14 @@ struct FloorplanRealityPreviewView: View {
                     }
 
                     Divider()
+
+                    Button {
+                        presentARDiagnostics()
+                    } label: {
+                        Label(String(localized: "ar.diagnostics.title",
+                                     defaultValue: "AR Diagnostics"),
+                              systemImage: "arkit")
+                    }
 
                     // La trasparenza e' una **scelta**, non un default: la casa
                     // vera resta vera, e quando serve sbirciare dalle
@@ -2126,6 +2177,114 @@ struct FloorplanRealityPreviewView: View {
         if type == .airQuality || type == .smoke { return highest.formattedValue }
         if lowest.formattedValue == highest.formattedValue { return highest.formattedValue }
         return "\(lowest.formattedValue)–\(highest.formattedValue)"
+    }
+
+    private func presentARDiagnostics() {
+        loadEnvironmentIfNeeded()
+        arDiagnosticsSnapshot = makeARDiagnosticsSnapshot()
+    }
+
+    private func makeARDiagnosticsSnapshot() -> ARDiagnosticsSnapshot {
+        let roomName = selectedRoomName
+        let planRooms = document.roomAreas.map { area in
+            ARDiagnosticsPlanRoom(id: area.id,
+                                  name: area.name,
+                                  points: area.effectivePoints,
+                                  anchor: area.centroid)
+        }
+        let planWalls = document.walls
+            .filter { $0.kind.rendersAsPhysicalWall }
+            .map { wall in
+                ARDiagnosticsPlanWall(id: wall.id,
+                                      start: wall.start,
+                                      end: wall.end)
+            }
+        let rooms = FloorplanRoomEnvironment.anchors(in: document)
+            .map { anchor in
+                let data = envVM.rooms.first { $0.roomName == anchor.roomName }
+                return ARDiagnosticsRoom(
+                    id: anchor.roomID,
+                    name: anchor.roomName,
+                    subtitle: String(localized: "ar.diagnostics.room.explicit.subtitle",
+                                     defaultValue: "Room diagnostics from explicit AR calibration."),
+                    metrics: data.map(arMetrics) ?? []
+                )
+            }
+        let roomData = roomName.flatMap { name in
+            envVM.rooms.first { $0.roomName == name }
+        }
+
+        if let roomName, let roomData {
+            return ARDiagnosticsSnapshot(
+                title: roomName,
+                subtitle: String(localized: "ar.diagnostics.room.subtitle",
+                                 defaultValue: "Live room diagnostics over the camera feed."),
+                metrics: arMetrics(for: roomData),
+                rooms: rooms,
+                suggestedRoomID: selectedRoomID,
+                planRooms: planRooms,
+                planWalls: planWalls,
+                pointsPerMeter: DrawingDocument.ptsPerMeter,
+                savedCalibration: document.arCalibration,
+                applyARCalibration: current.applyARCalibration
+            )
+        }
+
+        let lightsOn = litLights.filter(\.isOn).count
+        let metrics = [
+            ARDiagnosticsMetric(title: String(localized: "environment.rooms",
+                                              defaultValue: "Rooms"),
+                                value: "\(document.roomAreas.count)",
+                                systemImage: "rectangle.3.group",
+                                tint: .green),
+            ARDiagnosticsMetric(title: "Marker",
+                                value: "\(markers.count)",
+                                systemImage: "sensor.tag.radiowaves.forward",
+                                tint: .blue),
+            ARDiagnosticsMetric(title: String(localized: "ar.diagnostics.lightsOn",
+                                              defaultValue: "Lights on"),
+                                value: "\(lightsOn)",
+                                systemImage: "lightbulb.fill",
+                                tint: lightsOn > 0 ? .yellow : .secondary),
+            ARDiagnosticsMetric(title: String(localized: "ar.diagnostics.sensors",
+                                              defaultValue: "Sensors"),
+                                value: "\(envVM.rooms.flatMap(\.sensors).count)",
+                                systemImage: "waveform.path.ecg",
+                                tint: .orange)
+        ]
+
+        return ARDiagnosticsSnapshot(
+            title: title,
+            subtitle: String(localized: "ar.diagnostics.floor.subtitle",
+                             defaultValue: "Point your iPhone or iPad around the room and keep the floorplan summary in view."),
+            metrics: metrics,
+            rooms: rooms,
+            suggestedRoomID: selectedRoomID,
+            planRooms: planRooms,
+            planWalls: planWalls,
+            pointsPerMeter: DrawingDocument.ptsPerMeter,
+            savedCalibration: document.arCalibration,
+            applyARCalibration: current.applyARCalibration
+        )
+    }
+
+    private func arMetrics(for roomData: RoomEnvironmentData) -> [ARDiagnosticsMetric] {
+        let sortedSensors = roomData.sensors.sorted { lhs, rhs in
+            lhs.urgency.rawValue > rhs.urgency.rawValue
+        }
+        let sensorMetrics = sortedSensors.prefix(3).map { sensor in
+            ARDiagnosticsMetric(title: sensor.serviceType.displayName,
+                                value: sensor.formattedValue,
+                                systemImage: sensor.serviceType.sfSymbol,
+                                tint: urgencyColour(sensor.urgency))
+        }
+        return [
+            ARDiagnosticsMetric(title: String(localized: "environment.quality",
+                                              defaultValue: "Quality"),
+                                value: "\(Int(roomData.qualityScore * 100))%",
+                                systemImage: "leaf.fill",
+                                tint: roomData.qualityColor)
+        ] + sensorMetrics
     }
 
     private func worstUrgency(in data: RoomEnvironmentData) -> SensorUrgency {

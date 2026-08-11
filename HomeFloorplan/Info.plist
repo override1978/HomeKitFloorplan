@@ -8,6 +8,8 @@
 		<string>com.homefloorplan.ruleEvaluation</string>
 		<string>com.homefloorplan.dataLifecycle</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>HomeFloorplan usa la fotocamera per mostrare la diagnostica della planimetria in realtà aumentata.</string>
 	<key>NSWeatherKitUsageDescription</key>
 	<string>HomeFloorplan usa WeatherKit per ottenere le previsioni meteo locali e adattare i suggerimenti ambientali alle condizioni climatiche esterne.</string>
 	<key>UIBackgroundModes</key>

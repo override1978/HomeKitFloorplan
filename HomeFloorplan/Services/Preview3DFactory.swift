@@ -98,6 +98,10 @@ enum Preview3DFactory {
                     to: NormalizedPoint(x: Double(position.x), y: Double(position.y))
                 )
             },
+            applyARCalibration: { [weak plan] calibration in
+                guard let plan else { return }
+                coordinator(plan).setARCalibration(calibration)
+            },
             exportRotation: plan.drawingExportRotation,
             background: background(for: plan)
         )

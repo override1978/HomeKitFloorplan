@@ -81,6 +81,8 @@ struct Preview3DFloorplan: Identifiable {
     /// Lo spostamento fine dal pannello: la posa resta mestiere del 2D, il
     /// ritocco col riscontro visivo e' mestiere di qui.
     let applyMarkerPosition: (UUID, CGPoint) -> Void
+    /// Calibrazione AR salvata dentro il JSON della planimetria.
+    let applyARCalibration: (ARFloorCalibration?) -> Void
     /// Rotazione con cui l'immagine è stata esportata: serve a rimettere i
     /// marker in coordinate del disegno.
     let exportRotation: DrawingExportRotation
