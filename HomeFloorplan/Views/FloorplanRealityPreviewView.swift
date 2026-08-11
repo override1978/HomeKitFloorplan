@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import Combine
 import RealityKit
 import HomeKit
 import UIKit
@@ -80,10 +79,6 @@ struct FloorplanRealityPreviewView: View {
     /// delle tre azioni, e il pannello di configurazione solo se scelto.
     private enum RoomPanelState { case actions, setup }
     @State private var roomPanelState: RoomPanelState = .actions
-    /// La stanza dove i sensori vedono vita ADESSO — la risposta della casa,
-    /// non della camera. Mostrata solo se esiste su questa planimetria.
-    @State private var presenceRoomName: String?
-    private let presenceTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var isCompact: Bool { horizontalSizeClass == .compact }
     /// Si e' dentro una stanza in prima persona: serve per il bottone d'uscita.
@@ -211,30 +206,6 @@ struct FloorplanRealityPreviewView: View {
                     // flottante resta il formato da iPad.
                     if !isCompact { roomSetupPanel }
                 }
-            } else if let presenceRoomName {
-                // La casa che dice dove sei: stesso segnale dei dischi che
-                // respirano, dichiarato a parole. Il tocco seleziona la
-                // stanza — il menu (Set up / Enter / Details) fa il resto.
-                Button {
-                    if let area = document.roomAreas.first(where: { $0.name == presenceRoomName }) {
-                        selectedRoomID = area.id
-                        selectedRoomName = area.name
-                        roomPanelState = .actions
-                        showsPlacementSwitches = false
-                    }
-                } label: {
-                    Label(String(localized: "room.presence.here",
-                                 defaultValue: "You are in: \(presenceRoomName)"),
-                          systemImage: "figure.walk.motion")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.primary)
-                        .padding(.horizontal, 18)
-                        .frame(minHeight: 44)
-                        .glassChromeSurface(in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .padding(.bottom, 104)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if isInsideRoom {
                 // L'uscita esplicita: il doppio tocco funziona, ma un bottone
                 // che dice «esci» non va scoperto.
@@ -310,16 +281,6 @@ struct FloorplanRealityPreviewView: View {
             observeCurrentFloorplan()
             rebuildScene()
             presentSetupIfFirstVisit()
-            homeKit.startObserving(accessoryUUIDs: RoomPresenceLocator.presenceAccessoryUUIDs(homeKit: homeKit))
-        }
-        .onReceive(presenceTick) { _ in
-            let detected = RoomPresenceLocator.activeDetections(homeKit: homeKit).first?.roomName
-            let known = detected.flatMap { name in
-                document.roomAreas.contains { $0.name == name } ? name : nil
-            }
-            if let known, known != presenceRoomName {
-                withAnimation(.easeOut(duration: 0.25)) { presenceRoomName = known }
-            }
         }
         // Lo stato non è più una fotografia: se apri una finestra mentre stai
         // guardando, l'anta si muove. `characteristicValues` è osservabile, e
