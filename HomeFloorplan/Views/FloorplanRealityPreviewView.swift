@@ -92,6 +92,10 @@ struct FloorplanRealityPreviewView: View {
         var sensors: [SensorData]
     }
     @State private var presenceIssueSheet: PresenceIssueSheetTarget?
+    /// Vero se l'escalation ha acceso lei il layer Ambiente: alla chiusura
+    /// del pannello si ripristina Off. Se i layer erano già una scelta
+    /// dell'utente (Security, o Ambiente con un filtro suo), non si toccano.
+    @State private var autoActivatedEnvironment = false
     /// Cooldown dell'auto-apertura: (stanza|tipo sensore) → ultima
     /// presentazione. Chiudere lo sheet vale come «ho visto»: lo stesso
     /// problema non torna a bussare prima di 15 minuti.
@@ -296,7 +300,14 @@ struct FloorplanRealityPreviewView: View {
                     sensors: target.sensors,
                     urgencyColour: urgencyColour,
                     onDismiss: {
-                        withAnimation(.easeOut(duration: 0.25)) { presenceIssueSheet = nil }
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            presenceIssueSheet = nil
+                            if autoActivatedEnvironment {
+                                mode = .off
+                                sensorFilter = nil
+                                autoActivatedEnvironment = false
+                            }
+                        }
                     },
                     onOpenRoom: {
                         presenceIssueSheet = nil
@@ -474,6 +485,15 @@ struct FloorplanRealityPreviewView: View {
             autoPresentedIssues[cooldownKey] = .now
             withAnimation(.easeOut(duration: 0.3)) {
                 presentIssueSheet(for: roomName)
+                // Il contesto dietro l'avviso: la casa si accende sul layer
+                // Ambiente, filtrata sul tipo peggiore — così vedi subito se
+                // è solo questa stanza o tutto il piano. SOLO da Off: una
+                // modalità scelta dall'utente non si ruba.
+                if mode == .off {
+                    mode = .environment
+                    sensorFilter = worst.serviceType
+                    autoActivatedEnvironment = true
+                }
             }
         }
     }
