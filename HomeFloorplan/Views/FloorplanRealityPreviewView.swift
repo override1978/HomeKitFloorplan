@@ -2547,12 +2547,28 @@ private struct PresenceIssuePanelView: View {
                     .tag(index)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .always : .never))
-            .indexViewStyle(.page(backgroundDisplayMode: .never))
-            .frame(height: items.count > 1 ? 106 : 82)
+            // Pallini nostri, non quelli di sistema: quelli finivano DENTRO
+            // la cornice delle pagine (sovrapposti) ed erano grigio su
+            // chiaro — invisibili. Qui stanno sotto, nel colore d'urgenza.
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: 82)
             .onChange(of: page) { _, newValue in
                 guard items.indices.contains(newValue) else { return }
                 onPageChange(items[newValue])
+            }
+
+            if items.count > 1 {
+                HStack(spacing: 7) {
+                    ForEach(items.indices, id: \.self) { index in
+                        Circle()
+                            .fill(index == page
+                                  ? urgencyColour(current.sensor.urgency)
+                                  : Color.primary.opacity(0.18))
+                            .frame(width: 7, height: 7)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .animation(.easeOut(duration: 0.2), value: page)
             }
         }
         .padding(.horizontal, 22)
