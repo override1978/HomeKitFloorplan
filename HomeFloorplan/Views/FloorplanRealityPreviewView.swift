@@ -299,6 +299,16 @@ struct FloorplanRealityPreviewView: View {
                     roomName: target.roomName,
                     sensors: target.sensors,
                     urgencyColour: urgencyColour,
+                    onPageChange: { sensor in
+                        // Lo swipe pilota il layer: la casa si ritinge sul
+                        // tipo che stai guardando — ma solo se i layer li ha
+                        // accesi l'escalation, mai sopra una scelta tua.
+                        if autoActivatedEnvironment {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                sensorFilter = sensor.serviceType
+                            }
+                        }
+                    },
                     onDismiss: {
                         withAnimation(.easeOut(duration: 0.25)) {
                             presenceIssueSheet = nil
@@ -2421,8 +2431,11 @@ private struct PresenceIssuePanelView: View {
     let roomName: String
     let sensors: [SensorData]
     let urgencyColour: (SensorUrgency) -> Color
+    let onPageChange: (SensorData) -> Void
     let onDismiss: () -> Void
     let onOpenRoom: () -> Void
+
+    @State private var page = 0
 
     private var worst: SensorUrgency {
         sensors.map(\.urgency).max() ?? .warning
@@ -2473,35 +2486,52 @@ private struct PresenceIssuePanelView: View {
                 .buttonStyle(.plain)
             }
 
-            // I sensori in riga, affiancati: il pannello resta basso anche
-            // con tre anomalie, e ogni valore è un cartello.
-            HStack(spacing: 12) {
-                ForEach(Array(sensors.prefix(4).enumerated()), id: \.offset) { _, sensor in
-                    HStack(spacing: 10) {
+            // Una pagina per anomalia, dal peggiore: valore gigante, spazio
+            // per il testo (le anomalie Intelligence ci staranno comode).
+            // Lo swipe ritinge la casa dietro; con una sola pagina il
+            // carosello scompare — niente pallini, niente cerimonia.
+            TabView(selection: $page) {
+                ForEach(Array(sensors.enumerated()), id: \.offset) { index, sensor in
+                    HStack(spacing: 14) {
                         Image(systemName: sensor.serviceType.sfSymbol)
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.system(size: 26, weight: .semibold))
                             .foregroundStyle(urgencyColour(sensor.urgency))
                         VStack(alignment: .leading, spacing: 1) {
                             Text(sensor.serviceType.displayName)
-                                .font(.caption.weight(.semibold))
+                                .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                             Text(sensor.formattedValue)
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
                                 .monospacedDigit()
                                 .foregroundStyle(urgencyColour(sensor.urgency))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.6)
                         }
+                        Spacer(minLength: 0)
+                        if sensors.count > 1 {
+                            Text(verbatim: "\(index + 1)/\(sensors.count)")
+                                .font(.caption.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
                     }
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(urgencyColour(sensor.urgency).opacity(0.10))
                     )
+                    .padding(.horizontal, 2)
+                    .tag(index)
                 }
+            }
+            .tabViewStyle(.page(indexDisplayMode: sensors.count > 1 ? .always : .never))
+            .indexViewStyle(.page(backgroundDisplayMode: .never))
+            .frame(height: sensors.count > 1 ? 106 : 82)
+            .onChange(of: page) { _, newValue in
+                guard sensors.indices.contains(newValue) else { return }
+                onPageChange(sensors[newValue])
             }
         }
         .padding(.horizontal, 22)
