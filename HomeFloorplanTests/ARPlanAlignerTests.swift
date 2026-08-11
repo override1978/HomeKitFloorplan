@@ -108,6 +108,32 @@ struct ARPlanAlignerTests {
         #expect(right.dx > 0.99 && abs(right.dy) < 0.01)
     }
 
+    /// La via a bussola (.gravityAndHeading): −z = nord. Con la pianta che
+    /// guarda a nord (β = 0), camminare verso nord è l'alto mappa.
+    @Test("Bussola, pianta verso nord: nord è l'alto mappa")
+    func headingAlignedNorth() {
+        let a = ARPlanAligner.headingAligned(originPlanPoint: origin,
+                                             originARPosition: .zero,
+                                             northBearingDegrees: 0,
+                                             pointsPerMetre: 100)
+        let p = a.planPoint(for: SIMD3(0, 0, -2))   // 2 m verso nord
+        #expect(abs(p.x - 1000) < 0.01 && abs(p.y - 800) < 0.01)
+    }
+
+    /// Pianta col lato alto verso EST (β = 90): camminare verso est (+x)
+    /// deve essere l'alto mappa, e il nord deve finire a sinistra.
+    @Test("Bussola, pianta verso est: est è l'alto mappa, nord la sinistra")
+    func headingAlignedEast() {
+        let a = ARPlanAligner.headingAligned(originPlanPoint: origin,
+                                             originARPosition: .zero,
+                                             northBearingDegrees: 90,
+                                             pointsPerMetre: 100)
+        let east = a.planPoint(for: SIMD3(2, 0, 0))
+        #expect(abs(east.x - 1000) < 0.01 && abs(east.y - 800) < 0.01)
+        let north = a.planPoint(for: SIMD3(0, 0, -2))
+        #expect(abs(north.x - 800) < 0.01 && abs(north.y - 1000) < 0.01)
+    }
+
     /// ⚠️ La trappola n°1 resa test: columns.2 è il DIETRO. Se qualcuno
     /// togliesse il segno meno, questo test lo becca (darebbe (0, 1)).
     @Test("Il forward è −z, non +z")

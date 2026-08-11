@@ -60,6 +60,27 @@ struct ARPlanAligner: Equatable {
         )
     }
 
+    /// La via SENZA cerimonia: sessione con `worldAlignment = .gravityAndHeading`
+    /// (assi geografici: −z = nord vero) + il nord che la pianta già conosce
+    /// (`northBearingDegrees`, lo stesso del sole nella 3D). Niente «guarda
+    /// verso l'alto della mappa» — che era circolare: per sapere dov'è l'alto
+    /// della mappa nel mondo servirebbe già l'allineamento che si sta creando.
+    /// Qui la direzione la dà la bussola e l'offset è semplicemente −nord.
+    ///
+    /// `northBearingDegrees` = rilevamento bussola verso cui GUARDA il lato
+    /// alto della pianta (0 = nord, 90 = est…).
+    static func headingAligned(originPlanPoint: CGPoint,
+                               originARPosition: SIMD3<Float>,
+                               northBearingDegrees: Double,
+                               pointsPerMetre: Double) -> ARPlanAligner {
+        ARPlanAligner(
+            originPlanPoint: originPlanPoint,
+            originARPosition: originARPosition,
+            angleOffset: -northBearingDegrees * .pi / 180,
+            pointsPerMetre: pointsPerMetre
+        )
+    }
+
     // MARK: Proiezioni
 
     /// La posizione AR → punto sulla pianta, in punti canvas.
