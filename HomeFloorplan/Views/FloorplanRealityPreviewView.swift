@@ -473,34 +473,33 @@ struct FloorplanRealityPreviewView: View {
 
     /// `SensorUrgency.color` dà `.primary` per lo stato normale, che su
     /// un'etichetta scura sopra un modello sparisce. Qui serve un verde.
-    /// L'escalation da pannello a muro: UN pannello con TUTTE le
-    /// segnalazioni attive come pagine — prima la stanza dove i sensori ti
-    /// vedono, poi le stanze cieche (senza sensori di presenza: balcone,
-    /// esterno) dalla peggiore. Difetto corretto: la seconda segnalazione
-    /// non resta più nascosta dietro la prima. Sempre: solo su problemi,
-    /// mai sopra qualcos'altro, col cooldown per (stanza, tipo).
+    /// L'escalation da pannello a muro: il BOLLETTINO della casa. Le pagine
+    /// sono i problemi di TUTTE le stanze, a prescindere — la presenza non
+    /// filtra più, decide solo la priorità: se i sensori ti riconoscono in
+    /// una stanza, i suoi problemi aprono il giornale; le altre seguono
+    /// dalla peggiore. Sempre: solo su problemi, mai sopra qualcos'altro,
+    /// col cooldown per (stanza, tipo).
     private func refreshPresenceIssue() {
         let isFreeOfModals = detailRoom == nil && detailAccessory == nil
             && selectedRoomID == nil && !isInsideRoom
             && presenceIssueSheet == nil
         guard isFreeOfModals else { return }
 
-        // Ordine delle stanze: dove sei, poi le cieche dalla peggiore.
+        // Ordine: dove sei (se riconosciuto), poi tutte le altre dalla peggiore.
         var orderedRooms: [String] = []
         if let local = RoomPresenceLocator.activeDetections(homeKit: homeKit).first?.roomName,
            document.roomAreas.contains(where: { $0.name == local }) {
             orderedRooms.append(local)
         }
-        let attendedRooms = RoomPresenceLocator.roomNamesWithPresenceSensors(homeKit: homeKit)
-        let blind = document.roomAreas
-            .filter { !attendedRooms.contains($0.name) && !orderedRooms.contains($0.name) }
+        let others = document.roomAreas
+            .filter { !orderedRooms.contains($0.name) }
             .compactMap { area -> (name: String, urgency: SensorUrgency)? in
                 guard let data = envVM.rooms.first(where: { $0.roomName == area.name }),
                       data.worstUrgency != .normal else { return nil }
                 return (area.name, data.worstUrgency)
             }
             .sorted { $0.urgency.rawValue > $1.urgency.rawValue }
-        orderedRooms.append(contentsOf: blind.map(\.name))
+        orderedRooms.append(contentsOf: others.map(\.name))
 
         // Le pagine: ogni sensore fuori norma, filtrato dal cooldown.
         let cooldown: TimeInterval = 15 * 60
@@ -2294,9 +2293,10 @@ struct FloorplanRealityPreviewView: View {
             .filter { $0.kind.rendersAsPhysicalWall }
             .map { wall in
                 ARDiagnosticsPlanWall(id: wall.id,
-                                      start: wall.start,
-                                      end: wall.end)
+                start: wall.start,
+                end: wall.end)
             }
+        let commissioningMarkers = makeARCommissioningMarkers(planRooms: planRooms)
         let rooms = FloorplanRoomEnvironment.anchors(in: document)
             .map { anchor in
                 let data = envVM.rooms.first { $0.roomName == anchor.roomName }
@@ -2323,8 +2323,11 @@ struct FloorplanRealityPreviewView: View {
                 planRooms: planRooms,
                 planWalls: planWalls,
                 pointsPerMeter: DrawingDocument.ptsPerMeter,
+                northBearingDegrees: northBearingDegrees,
                 savedCalibration: document.arCalibration,
-                applyARCalibration: current.applyARCalibration
+                applyARCalibration: current.applyARCalibration,
+                commissioningMarkers: commissioningMarkers,
+                performCommissioningAction: { toggleAccessory($0) }
             )
         }
 
@@ -2361,9 +2364,100 @@ struct FloorplanRealityPreviewView: View {
             planRooms: planRooms,
             planWalls: planWalls,
             pointsPerMeter: DrawingDocument.ptsPerMeter,
+            northBearingDegrees: northBearingDegrees,
             savedCalibration: document.arCalibration,
-            applyARCalibration: current.applyARCalibration
+            applyARCalibration: current.applyARCalibration,
+            commissioningMarkers: commissioningMarkers,
+            performCommissioningAction: { toggleAccessory($0) }
         )
+    }
+
+    private func makeARCommissioningMarkers(planRooms: [ARDiagnosticsPlanRoom]) -> [ARDiagnosticsCommissioningMarker] {
+        let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                          exportRotation: exportRotation)
+        return markers.map { marker in
+            let normalizedPoint = current.lampSettings(marker.uuid).position ?? marker.position
+            let point = arCommissioningDrawingPoint(from: normalizedPoint, using: transform)
+            let room = planRooms.first { $0.contains(point) }
+
+            guard let accessory = homeKit.accessory(for: marker.uuid) else {
+                return ARDiagnosticsCommissioningMarker(
+                    accessoryUUID: marker.uuid,
+                    name: String(localized: "ar.commissioning.unknownAccessory",
+                                 defaultValue: "Unlinked accessory"),
+                    category: "missing",
+                    systemImage: "questionmark.circle",
+                    point: point,
+                    roomID: room?.id,
+                    roomName: room?.name,
+                    isReachable: false,
+                    supportsQuickToggle: false,
+                    statusText: nil
+                )
+            }
+
+            let category = AccessoryCategorizer.categorize(accessory)
+            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+            return ARDiagnosticsCommissioningMarker(
+                accessoryUUID: marker.uuid,
+                name: accessory.name,
+                category: category,
+                systemImage: commissioningSystemImage(for: category),
+                point: point,
+                roomID: room?.id,
+                roomName: room?.name,
+                isReachable: homeKit.isReachable(accessory),
+                supportsQuickToggle: adapter.supportsQuickToggle,
+                statusText: adapter.primaryStatusText
+            )
+        }
+    }
+
+    private func arCommissioningDrawingPoint(from normalizedPoint: CGPoint,
+                                             using transform: FloorplanOpeningMatcher.Transform?) -> CGPoint {
+        guard let transform else { return normalizedPoint }
+        let metres = transform.metres(from: normalizedPoint)
+        return CGPoint(
+            x: metres.x * Double(DrawingDocument.ptsPerMeter),
+            y: metres.y * Double(DrawingDocument.ptsPerMeter)
+        )
+    }
+
+    private func commissioningSystemImage(for category: String) -> String {
+        switch category {
+        case "colorLight", "dimmableLight":
+            return "lightbulb.fill"
+        case "switch":
+            return "switch.2"
+        case "outlet":
+            return "powerplug.fill"
+        case "camera":
+            return "video.fill"
+        case "television":
+            return "tv.fill"
+        case "airPurifier":
+            return "wind"
+        case "humidifier":
+            return "humidity.fill"
+        case "thermostat", "airConditioner":
+            return "thermometer"
+        case "fan":
+            return "fan.fill"
+        case "windowCovering":
+            return "blinds.horizontal.closed"
+        case "doorLock":
+            return "lock.fill"
+        case "garageDoor":
+            return "door.garage.closed"
+        case "valve":
+            return "drop.fill"
+        case "sceneController":
+            return "button.programmable"
+        case "sensor":
+            return "sensor"
+        default:
+            return "sensor.tag.radiowaves.forward"
+        }
     }
 
     private func arMetrics(for roomData: RoomEnvironmentData) -> [ARDiagnosticsMetric] {
