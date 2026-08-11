@@ -91,6 +91,16 @@ struct FloorplanRealityPreviewView: View {
     }
     @State private var presenceIssue: PresenceIssue?
     private let presenceTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    /// Lo sheet di SEGNALAZIONE: solo i sensori fuori norma della stanza in
+    /// cui sei, grandi e colorati. La scheda stanza completa resta dietro il
+    /// bottone in fondo — prima il problema, poi il catalogo.
+    struct PresenceIssueSheetTarget: Identifiable {
+        let id = UUID()
+        var roomName: String
+        var sensors: [SensorData]
+    }
+    @State private var presenceIssueSheet: PresenceIssueSheetTarget?
     /// Cooldown dell'auto-apertura: (stanza|tipo sensore) → ultima
     /// presentazione. Chiudere lo sheet vale come «ho visto»: lo stesso
     /// problema non torna a bussare prima di 15 minuti.
@@ -224,7 +234,7 @@ struct FloorplanRealityPreviewView: View {
                 }
             } else if let presenceIssue {
                 Button {
-                    openRoomDetails(named: presenceIssue.roomName)
+                    presentIssueSheet(for: presenceIssue.roomName)
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.bubble.fill")
@@ -310,6 +320,19 @@ struct FloorplanRealityPreviewView: View {
         }
         .sheet(item: $detailRoom) { target in
             RoomDetailSheet(room: target.room)
+        }
+        .sheet(item: $presenceIssueSheet) { target in
+            PresenceIssueSheetView(
+                roomName: target.roomName,
+                sensors: target.sensors,
+                urgencyColour: urgencyColour,
+                onOpenRoom: {
+                    presenceIssueSheet = nil
+                    openRoomDetails(named: target.roomName)
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .fullScreenCover(item: $arDiagnosticsSnapshot) { snapshot in
             ARDiagnosticsView(snapshot: snapshot)
@@ -494,12 +517,23 @@ struct FloorplanRealityPreviewView: View {
         let cooldown: TimeInterval = 15 * 60
         let isFreeOfModals = detailRoom == nil && detailAccessory == nil
             && selectedRoomID == nil && !isInsideRoom
+            && presenceIssueSheet == nil
         let lastShown = autoPresentedIssues[cooldownKey]
         if isFreeOfModals,
            lastShown.map({ Date.now.timeIntervalSince($0) > cooldown }) ?? true {
             autoPresentedIssues[cooldownKey] = .now
-            openRoomDetails(named: roomName)
+            presentIssueSheet(for: roomName)
         }
+    }
+
+    /// I soli sensori fuori norma, dal peggiore: la segnalazione, non il catalogo.
+    private func presentIssueSheet(for roomName: String) {
+        guard let data = envVM.rooms.first(where: { $0.roomName == roomName }) else { return }
+        let anomalous = data.sensors
+            .filter { $0.urgency != .normal }
+            .sorted { $0.urgency.rawValue > $1.urgency.rawValue }
+        guard !anomalous.isEmpty else { return }
+        presenceIssueSheet = PresenceIssueSheetTarget(roomName: roomName, sensors: anomalous)
     }
 
     /// La stessa scheda stanza del menu Details, per nome.
@@ -2402,5 +2436,110 @@ struct FloorplanRealityPreviewView: View {
                                                      openOpeningIDs: openOpeningIDs,
                                                      closedShutters: closedShutters,
                                                      televisionSpots: televisions.map(\.position))
+    }
+}
+
+// MARK: - PresenceIssueSheetView
+
+/// La segnalazione da pannello a muro: chiara, forte, evidente. Header tinto
+/// dell'urgenza peggiore, valori giganti, etichette Attenzione/Critico. La
+/// scheda stanza completa sta dietro il bottone in fondo: prima il problema.
+private struct PresenceIssueSheetView: View {
+    let roomName: String
+    let sensors: [SensorData]
+    let urgencyColour: (SensorUrgency) -> Color
+    let onOpenRoom: () -> Void
+
+    private var worst: SensorUrgency {
+        sensors.map(\.urgency).max() ?? .warning
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // ── Header: l'urgenza si vede da tre metri ──
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(urgencyColour(worst).opacity(0.18))
+                        .frame(width: 58, height: 58)
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundStyle(urgencyColour(worst))
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(roomName)
+                        .font(.largeTitle.weight(.bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(sensors.count == 1
+                         ? String(localized: "presence.issue.subtitle.one",
+                                  defaultValue: "1 sensor out of range")
+                         : String(localized: "presence.issue.subtitle.other",
+                                  defaultValue: "\(sensors.count) sensors out of range"))
+                        .font(.headline)
+                        .foregroundStyle(urgencyColour(worst))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 26)
+            .padding(.bottom, 18)
+
+            // ── I sensori fuori norma: valore gigante, etichetta netta ──
+            VStack(spacing: 0) {
+                ForEach(Array(sensors.enumerated()), id: \.offset) { index, sensor in
+                    if index > 0 { Divider().padding(.leading, 24) }
+                    HStack(spacing: 14) {
+                        Image(systemName: sensor.serviceType.sfSymbol)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(urgencyColour(sensor.urgency))
+                            .frame(width: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(sensor.serviceType.displayName)
+                                .font(.headline)
+                            Text(sensor.urgency == .danger
+                                 ? String(localized: "presence.issue.critical", defaultValue: "Critical")
+                                 : String(localized: "presence.issue.warning", defaultValue: "Warning"))
+                                .font(.caption.weight(.bold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(urgencyColour(sensor.urgency))
+                        }
+                        Spacer(minLength: 8)
+                        Text(sensor.formattedValue)
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(urgencyColour(sensor.urgency))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 14)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Button(action: onOpenRoom) {
+                Label(String(localized: "presence.issue.openRoom",
+                             defaultValue: "Open room details"),
+                      systemImage: "square.split.bottomrightquarter.fill")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .tint(BrandColor.primary)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 22)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // La banda d'urgenza in alto: si legge anche con lo sheet a mezza vista.
+        .background(alignment: .top) {
+            LinearGradient(colors: [urgencyColour(worst).opacity(0.16), .clear],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: 150)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea()
+        }
     }
 }
