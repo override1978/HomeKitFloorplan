@@ -83,13 +83,17 @@ struct FloorplanRealityPreviewView: View {
 
     private let presenceTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
-    /// Lo sheet di SEGNALAZIONE: solo i sensori fuori norma della stanza in
-    /// cui sei, grandi e colorati. La scheda stanza completa resta dietro il
-    /// bottone in fondo — prima il problema, poi il catalogo.
-    struct PresenceIssueSheetTarget: Identifiable {
+    /// Una segnalazione = una stanza + un sensore fuori norma. Il pannello
+    /// le impila TUTTE come pagine — prima quelle di dove sei, poi le stanze
+    /// cieche — così la seconda non resta nascosta dietro la prima.
+    struct PresenceIssueItem: Identifiable {
         let id = UUID()
         var roomName: String
-        var sensors: [SensorData]
+        var sensor: SensorData
+    }
+    struct PresenceIssueSheetTarget: Identifiable {
+        let id = UUID()
+        var items: [PresenceIssueItem]
     }
     @State private var presenceIssueSheet: PresenceIssueSheetTarget?
     /// Vero se l'escalation ha acceso lei il layer Ambiente: alla chiusura
@@ -296,16 +300,15 @@ struct FloorplanRealityPreviewView: View {
         .overlay(alignment: .bottom) {
             if let target = presenceIssueSheet {
                 PresenceIssuePanelView(
-                    roomName: target.roomName,
-                    sensors: target.sensors,
+                    items: target.items,
                     urgencyColour: urgencyColour,
-                    onPageChange: { sensor in
+                    onPageChange: { item in
                         // Lo swipe pilota il layer: la casa si ritinge sul
                         // tipo che stai guardando — ma solo se i layer li ha
                         // accesi l'escalation, mai sopra una scelta tua.
                         if autoActivatedEnvironment {
                             withAnimation(.easeOut(duration: 0.25)) {
-                                sensorFilter = sensor.serviceType
+                                sensorFilter = item.sensor.serviceType
                             }
                         }
                     },
@@ -319,9 +322,9 @@ struct FloorplanRealityPreviewView: View {
                             }
                         }
                     },
-                    onOpenRoom: {
+                    onOpenRoom: { roomName in
                         presenceIssueSheet = nil
-                        openRoomDetails(named: target.roomName)
+                        openRoomDetails(named: roomName)
                     }
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -470,78 +473,66 @@ struct FloorplanRealityPreviewView: View {
 
     /// `SensorUrgency.color` dà `.primary` per lo stato normale, che su
     /// un'etichetta scura sopra un modello sparisce. Qui serve un verde.
-    /// L'escalation da pannello a muro, in due tempi: prima il problema
-    /// nella stanza DOVE SEI (presenza × anomalia); poi le stanze CIECHE —
-    /// quelle senza sensori di presenza, balcone in testa — dove nessuno
-    /// verrà mai «visto» e l'avviso deve arrivare a prescindere. Sempre:
-    /// solo su un problema, mai sopra qualcos'altro, col cooldown.
+    /// L'escalation da pannello a muro: UN pannello con TUTTE le
+    /// segnalazioni attive come pagine — prima la stanza dove i sensori ti
+    /// vedono, poi le stanze cieche (senza sensori di presenza: balcone,
+    /// esterno) dalla peggiore. Difetto corretto: la seconda segnalazione
+    /// non resta più nascosta dietro la prima. Sempre: solo su problemi,
+    /// mai sopra qualcos'altro, col cooldown per (stanza, tipo).
     private func refreshPresenceIssue() {
         let isFreeOfModals = detailRoom == nil && detailAccessory == nil
             && selectedRoomID == nil && !isInsideRoom
             && presenceIssueSheet == nil
         guard isFreeOfModals else { return }
 
-        // ── 1. Dove sei ──
-        if let roomName = RoomPresenceLocator.activeDetections(homeKit: homeKit).first?.roomName,
-           document.roomAreas.contains(where: { $0.name == roomName }),
-           escalate(roomName: roomName) {
-            return
+        // Ordine delle stanze: dove sei, poi le cieche dalla peggiore.
+        var orderedRooms: [String] = []
+        if let local = RoomPresenceLocator.activeDetections(homeKit: homeKit).first?.roomName,
+           document.roomAreas.contains(where: { $0.name == local }) {
+            orderedRooms.append(local)
         }
-
-        // ── 2. Le stanze cieche, dalla peggiore ──
         let attendedRooms = RoomPresenceLocator.roomNamesWithPresenceSensors(homeKit: homeKit)
-        let blindWithIssues = document.roomAreas
-            .filter { !attendedRooms.contains($0.name) }
+        let blind = document.roomAreas
+            .filter { !attendedRooms.contains($0.name) && !orderedRooms.contains($0.name) }
             .compactMap { area -> (name: String, urgency: SensorUrgency)? in
                 guard let data = envVM.rooms.first(where: { $0.roomName == area.name }),
                       data.worstUrgency != .normal else { return nil }
                 return (area.name, data.worstUrgency)
             }
             .sorted { $0.urgency.rawValue > $1.urgency.rawValue }
-        for candidate in blindWithIssues where escalate(roomName: candidate.name) {
-            return
-        }
-    }
+        orderedRooms.append(contentsOf: blind.map(\.name))
 
-    /// Presenta il pannello per la stanza, se il cooldown lo consente.
-    /// Ritorna `true` se ha presentato.
-    @discardableResult
-    private func escalate(roomName: String) -> Bool {
-        guard let data = envVM.rooms.first(where: { $0.roomName == roomName }),
-              let worst = data.sensors
-                  .filter({ $0.urgency != .normal })
-                  .max(by: { $0.urgency.rawValue < $1.urgency.rawValue })
-        else { return false }
-
-        let cooldownKey = "\(roomName)|\(worst.serviceType.rawValue)"
+        // Le pagine: ogni sensore fuori norma, filtrato dal cooldown.
         let cooldown: TimeInterval = 15 * 60
-        if let lastShown = autoPresentedIssues[cooldownKey],
-           Date.now.timeIntervalSince(lastShown) <= cooldown {
-            return false
+        var items: [PresenceIssueItem] = []
+        for roomName in orderedRooms {
+            guard let data = envVM.rooms.first(where: { $0.roomName == roomName }) else { continue }
+            let anomalous = data.sensors
+                .filter { $0.urgency != .normal }
+                .sorted { $0.urgency.rawValue > $1.urgency.rawValue }
+            for sensor in anomalous {
+                let key = "\(roomName)|\(sensor.serviceType.rawValue)"
+                if let lastShown = autoPresentedIssues[key],
+                   Date.now.timeIntervalSince(lastShown) <= cooldown { continue }
+                items.append(PresenceIssueItem(roomName: roomName, sensor: sensor))
+            }
         }
-        autoPresentedIssues[cooldownKey] = .now
+        guard let first = items.first else { return }
+
+        for item in items {
+            autoPresentedIssues["\(item.roomName)|\(item.sensor.serviceType.rawValue)"] = .now
+        }
         withAnimation(.easeOut(duration: 0.3)) {
-            presentIssueSheet(for: roomName)
+            presenceIssueSheet = PresenceIssueSheetTarget(items: items)
             // Il contesto dietro l'avviso: la casa si accende sul layer
-            // Ambiente, filtrata sul tipo peggiore. SOLO da Off: una
+            // Ambiente, filtrata sulla prima pagina. SOLO da Off: una
             // modalità scelta dall'utente non si ruba.
             if mode == .off {
                 mode = .environment
-                sensorFilter = worst.serviceType
+                sensorFilter = first.sensor.serviceType
                 autoActivatedEnvironment = true
             }
         }
-        return true
-    }
-
-    /// I soli sensori fuori norma, dal peggiore: la segnalazione, non il catalogo.
-    private func presentIssueSheet(for roomName: String) {
-        guard let data = envVM.rooms.first(where: { $0.roomName == roomName }) else { return }
-        let anomalous = data.sensors
-            .filter { $0.urgency != .normal }
-            .sorted { $0.urgency.rawValue > $1.urgency.rawValue }
-        guard !anomalous.isEmpty else { return }
-        presenceIssueSheet = PresenceIssueSheetTarget(roomName: roomName, sensors: anomalous)
     }
 
     /// La stessa scheda stanza del menu Details, per nome.
@@ -2449,22 +2440,22 @@ struct FloorplanRealityPreviewView: View {
 
 // MARK: - PresenceIssuePanelView
 
-/// La segnalazione da pannello a muro: ancorata in basso, larga quanto lo
-/// schermo, bassa — il formato di Habitat, col vetro di casa. Header tinto
-/// dell'urgenza peggiore, valori giganti leggibili a distanza, e la scheda
-/// stanza completa dietro il bottone: prima il problema, poi il catalogo.
+/// La segnalazione da pannello a muro: ancorata in basso, larga, bassa. Le
+/// pagine sono TUTTE le segnalazioni attive (stanza × sensore) — il titolo
+/// cambia stanza mentre scorri, il contatore dice subito quante sono, e la
+/// casa dietro si ritinge a ogni pagina. La scheda stanza completa sta
+/// dietro il bottone: prima il problema, poi il catalogo.
 private struct PresenceIssuePanelView: View {
-    let roomName: String
-    let sensors: [SensorData]
+    let items: [FloorplanRealityPreviewView.PresenceIssueItem]
     let urgencyColour: (SensorUrgency) -> Color
-    let onPageChange: (SensorData) -> Void
+    let onPageChange: (FloorplanRealityPreviewView.PresenceIssueItem) -> Void
     let onDismiss: () -> Void
-    let onOpenRoom: () -> Void
+    let onOpenRoom: (String) -> Void
 
     @State private var page = 0
 
-    private var worst: SensorUrgency {
-        sensors.map(\.urgency).max() ?? .warning
+    private var current: FloorplanRealityPreviewView.PresenceIssueItem {
+        items.indices.contains(page) ? items[page] : items[0]
     }
 
     var body: some View {
@@ -2472,29 +2463,33 @@ private struct PresenceIssuePanelView: View {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill(urgencyColour(worst).opacity(0.18))
+                        .fill(urgencyColour(current.sensor.urgency).opacity(0.18))
                         .frame(width: 48, height: 48)
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(urgencyColour(worst))
+                        .foregroundStyle(urgencyColour(current.sensor.urgency))
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(roomName)
+                    Text(current.roomName)
                         .font(.title.weight(.bold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                    Text(sensors.count == 1
+                        .contentTransition(.opacity)
+                    Text(items.count == 1
                          ? String(localized: "presence.issue.subtitle.one",
                                   defaultValue: "1 sensor out of range")
-                         : String(localized: "presence.issue.subtitle.other",
-                                  defaultValue: "\(sensors.count) sensors out of range"))
+                         : String(localized: "presence.issue.counter",
+                                  defaultValue: "Report \(page + 1) of \(items.count)"))
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(urgencyColour(worst))
+                        .foregroundStyle(urgencyColour(current.sensor.urgency))
+                        .monospacedDigit()
                 }
 
                 Spacer(minLength: 8)
 
-                Button(action: onOpenRoom) {
+                Button {
+                    onOpenRoom(current.roomName)
+                } label: {
                     Text(String(localized: "presence.issue.openRoom",
                                 defaultValue: "Open room details"))
                         .font(.subheadline.weight(.semibold))
@@ -2511,53 +2506,53 @@ private struct PresenceIssuePanelView: View {
                 }
                 .buttonStyle(.plain)
             }
+            .animation(.easeOut(duration: 0.2), value: page)
 
-            // Una pagina per anomalia, dal peggiore: valore gigante, spazio
-            // per il testo (le anomalie Intelligence ci staranno comode).
-            // Lo swipe ritinge la casa dietro; con una sola pagina il
-            // carosello scompare — niente pallini, niente cerimonia.
+            // Una pagina per segnalazione: valore gigante, spazio pronto per
+            // il testo delle anomalie Intelligence. Lo swipe ritinge la casa.
             TabView(selection: $page) {
-                ForEach(Array(sensors.enumerated()), id: \.offset) { index, sensor in
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     HStack(spacing: 14) {
-                        Image(systemName: sensor.serviceType.sfSymbol)
+                        Image(systemName: item.sensor.serviceType.sfSymbol)
                             .font(.system(size: 26, weight: .semibold))
-                            .foregroundStyle(urgencyColour(sensor.urgency))
+                            .foregroundStyle(urgencyColour(item.sensor.urgency))
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(sensor.serviceType.displayName)
+                            Text(item.sensor.serviceType.displayName)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
-                            Text(sensor.formattedValue)
+                            Text(item.sensor.formattedValue)
                                 .font(.system(size: 34, weight: .bold, design: .rounded))
                                 .monospacedDigit()
-                                .foregroundStyle(urgencyColour(sensor.urgency))
+                                .foregroundStyle(urgencyColour(item.sensor.urgency))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.6)
                         }
                         Spacer(minLength: 0)
-                        if sensors.count > 1 {
-                            Text(verbatim: "\(index + 1)/\(sensors.count)")
-                                .font(.caption.monospacedDigit().weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
+                        Text(item.sensor.urgency == .danger
+                             ? String(localized: "presence.issue.critical", defaultValue: "Critical")
+                             : String(localized: "presence.issue.warning", defaultValue: "Warning"))
+                            .font(.caption.weight(.bold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(urgencyColour(item.sensor.urgency))
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(urgencyColour(sensor.urgency).opacity(0.10))
+                            .fill(urgencyColour(item.sensor.urgency).opacity(0.10))
                     )
                     .padding(.horizontal, 2)
                     .tag(index)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: sensors.count > 1 ? .always : .never))
+            .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .always : .never))
             .indexViewStyle(.page(backgroundDisplayMode: .never))
-            .frame(height: sensors.count > 1 ? 106 : 82)
+            .frame(height: items.count > 1 ? 106 : 82)
             .onChange(of: page) { _, newValue in
-                guard sensors.indices.contains(newValue) else { return }
-                onPageChange(sensors[newValue])
+                guard items.indices.contains(newValue) else { return }
+                onPageChange(items[newValue])
             }
         }
         .padding(.horizontal, 22)
@@ -2568,10 +2563,10 @@ private struct PresenceIssuePanelView: View {
             legacyBorder: Color.primary.opacity(0.12),
             legacyShadow: GlassChromeShadow(color: .black.opacity(0.22), radius: 22, y: 10)
         )
-        // La banda d'urgenza: un DATO, sopra il vetro.
+        // La banda d'urgenza: un DATO, sopra il vetro — segue la pagina.
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(urgencyColour(worst).opacity(0.4), lineWidth: 1.5)
+                .strokeBorder(urgencyColour(current.sensor.urgency).opacity(0.4), lineWidth: 1.5)
         )
         .padding(.horizontal, 14)
         .padding(.bottom, 16)
