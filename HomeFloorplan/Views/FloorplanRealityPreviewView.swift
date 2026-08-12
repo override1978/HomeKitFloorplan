@@ -1117,6 +1117,13 @@ struct FloorplanRealityPreviewView: View {
 
                     Divider()
 
+                    // L'AR resta in casa ma fuori vetrina: l'esperimento ha
+                    // dato il suo verdetto (la localizzazione la fa la
+                    // presenza, il valore quotidiano dell'overlay è basso) e
+                    // la voce di menù vive solo nelle build di sviluppo. Il
+                    // codice sotto — aligner, calibrazione, vista — resta
+                    // pronto per il giorno del commissioning-puntando.
+                    #if DEBUG
                     Button {
                         presentARDiagnostics()
                     } label: {
@@ -1124,6 +1131,7 @@ struct FloorplanRealityPreviewView: View {
                                      defaultValue: "AR Diagnostics"),
                               systemImage: "arkit")
                     }
+                    #endif
 
                     // La trasparenza e' una **scelta**, non un default: la casa
                     // vera resta vera, e quando serve sbirciare dalle
