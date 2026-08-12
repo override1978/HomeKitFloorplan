@@ -49,7 +49,9 @@ enum Preview3DFactory {
             id: plan.id,
             name: plan.name,
             document: document,
-            northBearingDegrees: plan.northBearingDegrees,
+            readNorthBearing: { [weak plan, initial = plan.northBearingDegrees] in
+                plan?.northBearingDegrees ?? initial
+            },
             applyNorthBearing: { [weak plan] bearing in
                 guard let plan else { return }
                 coordinator(plan).setNorthBearing(bearing)

@@ -25,7 +25,7 @@ struct FloorplanRealityPreviewView: View {
 
     private var document: DrawingDocument { current.document }
     private var title: String { current.name }
-    private var northBearingDegrees: Double { current.northBearingDegrees }
+    private var northBearingDegrees: Double { current.readNorthBearing() }
     private var markers: [Preview3DMarker] { current.markers }
     private var exportRotation: DrawingExportRotation { current.exportRotation }
     private var background: UIColor { current.background }
@@ -1047,7 +1047,7 @@ struct FloorplanRealityPreviewView: View {
                             // L'esposizione è di quella planimetria, non della
                             // vista: senza questo il menu resterebbe a dire il
                             // punto cardinale del piano precedente.
-                            exposure = Exposure.nearest(to: plan.northBearingDegrees)
+                            exposure = Exposure.nearest(to: plan.readNorthBearing())
                             selectedRoomName = nil
                             rebuildScene()
                         } label: {

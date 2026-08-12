@@ -56,7 +56,12 @@ struct Preview3DFloorplan: Identifiable {
     let name: String
     let document: DrawingDocument
     /// Verso dove guarda il lato alto della pianta, in gradi da nord.
-    let northBearingDegrees: Double
+    ///
+    /// ⚠️ Chiusura e non valore, come `lampSettings` e per la stessa ragione:
+    /// una copia scattata all'apertura invecchia appena l'utente cambia
+    /// l'esposizione dal menù — e il sole e la bussola AR continuerebbero a
+    /// girare col nord vecchio finché non si riapre la vista.
+    let readNorthBearing: () -> Double
     /// La scrittura su SwiftData resta in `FloorplanListView`: l'anteprima
     /// riceve una chiusura e non conosce né il modello né il contesto.
     let applyNorthBearing: (Double) -> Void
