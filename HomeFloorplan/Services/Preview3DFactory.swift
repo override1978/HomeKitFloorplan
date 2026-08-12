@@ -49,7 +49,9 @@ enum Preview3DFactory {
             id: plan.id,
             name: plan.name,
             document: document,
-            northBearingDegrees: plan.northBearingDegrees,
+            readNorthBearing: { [weak plan, initial = plan.northBearingDegrees] in
+                plan?.northBearingDegrees ?? initial
+            },
             applyNorthBearing: { [weak plan] bearing in
                 guard let plan else { return }
                 coordinator(plan).setNorthBearing(bearing)
@@ -97,6 +99,10 @@ enum Preview3DFactory {
                     accessoryUUID: uuid,
                     to: NormalizedPoint(x: Double(position.x), y: Double(position.y))
                 )
+            },
+            applyARCalibration: { [weak plan] calibration in
+                guard let plan else { return }
+                coordinator(plan).setARCalibration(calibration)
             },
             exportRotation: plan.drawingExportRotation,
             background: background(for: plan)

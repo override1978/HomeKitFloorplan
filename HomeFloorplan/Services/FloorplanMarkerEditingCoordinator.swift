@@ -141,6 +141,14 @@ struct FloorplanMarkerEditingCoordinator {
         saveAndMarkForSync()
     }
 
+    func setARCalibration(_ calibration: ARFloorCalibration?) {
+        guard var document = floorplan.drawingDocument else { return }
+        guard document.arCalibration != calibration else { return }
+        document.arCalibration = calibration
+        floorplan.drawingDocument = document
+        saveAndMarkForSync()
+    }
+
     func applyRename(to markerID: UUID, newLabel: String) {
         guard let placed = marker(withID: markerID) else { return }
         let trimmed = newLabel.trimmingCharacters(in: .whitespaces)

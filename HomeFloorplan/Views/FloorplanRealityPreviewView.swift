@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Combine
 import RealityKit
 import HomeKit
 import UIKit
@@ -24,7 +25,7 @@ struct FloorplanRealityPreviewView: View {
 
     private var document: DrawingDocument { current.document }
     private var title: String { current.name }
-    private var northBearingDegrees: Double { current.northBearingDegrees }
+    private var northBearingDegrees: Double { current.readNorthBearing() }
     private var markers: [Preview3DMarker] { current.markers }
     private var exportRotation: DrawingExportRotation { current.exportRotation }
     private var background: UIColor { current.background }
@@ -79,6 +80,30 @@ struct FloorplanRealityPreviewView: View {
     /// delle tre azioni, e il pannello di configurazione solo se scelto.
     private enum RoomPanelState { case actions, setup }
     @State private var roomPanelState: RoomPanelState = .actions
+
+    private let presenceTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    /// Una segnalazione = una stanza + un sensore fuori norma. Il pannello
+    /// le impila TUTTE come pagine — prima quelle di dove sei, poi le stanze
+    /// cieche — così la seconda non resta nascosta dietro la prima.
+    struct PresenceIssueItem: Identifiable {
+        let id = UUID()
+        var roomName: String
+        var sensor: SensorData
+    }
+    struct PresenceIssueSheetTarget: Identifiable {
+        let id = UUID()
+        var items: [PresenceIssueItem]
+    }
+    @State private var presenceIssueSheet: PresenceIssueSheetTarget?
+    /// Vero se l'escalation ha acceso lei il layer Ambiente: alla chiusura
+    /// del pannello si ripristina Off. Se i layer erano già una scelta
+    /// dell'utente (Security, o Ambiente con un filtro suo), non si toccano.
+    @State private var autoActivatedEnvironment = false
+    /// Cooldown dell'auto-apertura: (stanza|tipo sensore) → ultima
+    /// presentazione. Chiudere lo sheet vale come «ho visto»: lo stesso
+    /// problema non torna a bussare prima di 15 minuti.
+    @State private var autoPresentedIssues: [String: Date] = [:]
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     private var isCompact: Bool { horizontalSizeClass == .compact }
     /// Si e' dentro una stanza in prima persona: serve per il bottone d'uscita.
@@ -116,6 +141,7 @@ struct FloorplanRealityPreviewView: View {
     /// volta nella vita di una planimetria — e una configurazione non merita
     /// una pillola permanente sul bordo piu' prezioso dello schermo.
     @State private var isSettingsOpen = false
+    @State private var arDiagnosticsSnapshot: ARDiagnosticsSnapshot?
 
     /// Al primo ingresso nel 3D di una planimetria il pannello si apre da
     /// solo: altezza dei muri ed esposizione **vanno chiesti, non scoperti** —
@@ -161,7 +187,13 @@ struct FloorplanRealityPreviewView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if let floorplanScene {
+            // Col cover AR aperto la casa NON deve continuare a renderizzare
+            // sotto: ARView non ha una pausa pubblica, e toglierla dalla
+            // gerarchia è l'unico stop garantito. Al ritorno la scena si
+            // ricostruisce con l'inquadratura d'apertura — prezzo accettato
+            // per non tenere tre motori accesi insieme (ARKit + fondale
+            // camera + una casa che nessuno vede).
+            if let floorplanScene, arDiagnosticsSnapshot == nil {
                 RealityFloorplanView(scene: floorplanScene,
                                      background: background,
                                      sun: sun,
@@ -268,6 +300,45 @@ struct FloorplanRealityPreviewView: View {
         .sheet(item: $detailRoom) { target in
             RoomDetailSheet(room: target.room)
         }
+        // Non uno .sheet: su iPad diventerebbe una card centrale. La
+        // segnalazione è un PANNELLO ancorato in basso, largo quanto lo
+        // schermo — il formato del tablet a muro.
+        .overlay(alignment: .bottom) {
+            if let target = presenceIssueSheet {
+                PresenceIssuePanelView(
+                    items: target.items,
+                    urgencyColour: urgencyColour,
+                    onPageChange: { item in
+                        // Lo swipe pilota il layer: la casa si ritinge sul
+                        // tipo che stai guardando — ma solo se i layer li ha
+                        // accesi l'escalation, mai sopra una scelta tua.
+                        if autoActivatedEnvironment {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                sensorFilter = item.sensor.serviceType
+                            }
+                        }
+                    },
+                    onDismiss: {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            presenceIssueSheet = nil
+                            if autoActivatedEnvironment {
+                                mode = .off
+                                sensorFilter = nil
+                                autoActivatedEnvironment = false
+                            }
+                        }
+                    },
+                    onOpenRoom: { roomName in
+                        presenceIssueSheet = nil
+                        openRoomDetails(named: roomName)
+                    }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .fullScreenCover(item: $arDiagnosticsSnapshot) { snapshot in
+            ARDiagnosticsView(snapshot: snapshot)
+        }
         .onAppear {
             exposure = Exposure.nearest(to: northBearingDegrees)
             ceilingHeight = current.ceilingHeight
@@ -277,6 +348,11 @@ struct FloorplanRealityPreviewView: View {
             observeCurrentFloorplan()
             rebuildScene()
             presentSetupIfFirstVisit()
+            loadEnvironmentIfNeeded()
+            homeKit.startObserving(accessoryUUIDs: RoomPresenceLocator.presenceAccessoryUUIDs(homeKit: homeKit))
+        }
+        .onReceive(presenceTick) { _ in
+            refreshPresenceIssue()
         }
         // Lo stato non è più una fotografia: se apri una finestra mentre stai
         // guardando, l'anta si muove. `characteristicValues` è osservabile, e
@@ -403,6 +479,76 @@ struct FloorplanRealityPreviewView: View {
 
     /// `SensorUrgency.color` dà `.primary` per lo stato normale, che su
     /// un'etichetta scura sopra un modello sparisce. Qui serve un verde.
+    /// L'escalation da pannello a muro: il BOLLETTINO della casa. Le pagine
+    /// sono i problemi di TUTTE le stanze, a prescindere — la presenza non
+    /// filtra più, decide solo la priorità: se i sensori ti riconoscono in
+    /// una stanza, i suoi problemi aprono il giornale; le altre seguono
+    /// dalla peggiore. Sempre: solo su problemi, mai sopra qualcos'altro,
+    /// col cooldown per (stanza, tipo).
+    private func refreshPresenceIssue() {
+        let isFreeOfModals = detailRoom == nil && detailAccessory == nil
+            && selectedRoomID == nil && !isInsideRoom
+            && presenceIssueSheet == nil
+        guard isFreeOfModals else { return }
+
+        // Ordine: dove sei (se riconosciuto), poi tutte le altre dalla peggiore.
+        var orderedRooms: [String] = []
+        if let local = RoomPresenceLocator.activeDetections(homeKit: homeKit).first?.roomName,
+           document.roomAreas.contains(where: { $0.name == local }) {
+            orderedRooms.append(local)
+        }
+        let others = document.roomAreas
+            .filter { !orderedRooms.contains($0.name) }
+            .compactMap { area -> (name: String, urgency: SensorUrgency)? in
+                guard let data = envVM.rooms.first(where: { $0.roomName == area.name }),
+                      data.worstUrgency != .normal else { return nil }
+                return (area.name, data.worstUrgency)
+            }
+            .sorted { $0.urgency.rawValue > $1.urgency.rawValue }
+        orderedRooms.append(contentsOf: others.map(\.name))
+
+        // Le pagine: ogni sensore fuori norma, filtrato dal cooldown.
+        let cooldown: TimeInterval = 15 * 60
+        var items: [PresenceIssueItem] = []
+        for roomName in orderedRooms {
+            guard let data = envVM.rooms.first(where: { $0.roomName == roomName }) else { continue }
+            let anomalous = data.sensors
+                .filter { $0.urgency != .normal }
+                .sorted { $0.urgency.rawValue > $1.urgency.rawValue }
+            for sensor in anomalous {
+                let key = "\(roomName)|\(sensor.serviceType.rawValue)"
+                if let lastShown = autoPresentedIssues[key],
+                   Date.now.timeIntervalSince(lastShown) <= cooldown { continue }
+                items.append(PresenceIssueItem(roomName: roomName, sensor: sensor))
+            }
+        }
+        guard let first = items.first else { return }
+
+        for item in items {
+            autoPresentedIssues["\(item.roomName)|\(item.sensor.serviceType.rawValue)"] = .now
+        }
+        withAnimation(.easeOut(duration: 0.3)) {
+            presenceIssueSheet = PresenceIssueSheetTarget(items: items)
+            // Il contesto dietro l'avviso: la casa si accende sul layer
+            // Ambiente, filtrata sulla prima pagina. SOLO da Off: una
+            // modalità scelta dall'utente non si ruba.
+            if mode == .off {
+                mode = .environment
+                sensorFilter = first.sensor.serviceType
+                autoActivatedEnvironment = true
+            }
+        }
+    }
+
+    /// La stessa scheda stanza del menu Details, per nome.
+    private func openRoomDetails(named name: String) {
+        guard let room = RoomSecurityEvaluator
+            .accessories(inRoomNamed: name, homeKit: homeKit)
+            .first?.room
+        else { return }
+        detailRoom = RoomSheetTarget(room: room)
+    }
+
     private func urgencyColour(_ urgency: SensorUrgency) -> Color {
         switch urgency {
         case .normal:  .green
@@ -907,7 +1053,7 @@ struct FloorplanRealityPreviewView: View {
                             // L'esposizione è di quella planimetria, non della
                             // vista: senza questo il menu resterebbe a dire il
                             // punto cardinale del piano precedente.
-                            exposure = Exposure.nearest(to: plan.northBearingDegrees)
+                            exposure = Exposure.nearest(to: plan.readNorthBearing())
                             selectedRoomName = nil
                             rebuildScene()
                         } label: {
@@ -970,6 +1116,22 @@ struct FloorplanRealityPreviewView: View {
                     }
 
                     Divider()
+
+                    // L'AR resta in casa ma fuori vetrina: l'esperimento ha
+                    // dato il suo verdetto (la localizzazione la fa la
+                    // presenza, il valore quotidiano dell'overlay è basso) e
+                    // la voce di menù vive solo nelle build di sviluppo. Il
+                    // codice sotto — aligner, calibrazione, vista — resta
+                    // pronto per il giorno del commissioning-puntando.
+                    #if DEBUG
+                    Button {
+                        presentARDiagnostics()
+                    } label: {
+                        Label(String(localized: "ar.diagnostics.title",
+                                     defaultValue: "AR Diagnostics"),
+                              systemImage: "arkit")
+                    }
+                    #endif
 
                     // La trasparenza e' una **scelta**, non un default: la casa
                     // vera resta vera, e quando serve sbirciare dalle
@@ -1062,12 +1224,24 @@ struct FloorplanRealityPreviewView: View {
                 }
                 .foregroundStyle(Color.primary)
 
-                HStack(spacing: 12) {
-                    Text(String(localized: "floorplan.exposure", defaultValue: "Top of the plan faces"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    exposureMenu
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 12) {
+                        Text(String(localized: "floorplan.exposure", defaultValue: "Top of the plan faces"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        exposureMenu
+                    }
+                    // Trappola provata sul campo: «casa mia guarda a sud-ovest»
+                    // parla del balcone, il menù parla del bordo alto del
+                    // DISEGNO — e i due possono differire di 90°. Da qui
+                    // dipendono il sole e la bussola AR: l'equivoco va
+                    // disinnescato nel punto esatto in cui nasce.
+                    Text(String(localized: "floorplan.exposure.hint",
+                                defaultValue: "The top edge of the drawing — not where the balcony or façade faces."))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 #if DEBUG
@@ -2128,6 +2302,217 @@ struct FloorplanRealityPreviewView: View {
         return "\(lowest.formattedValue)–\(highest.formattedValue)"
     }
 
+    private func presentARDiagnostics() {
+        loadEnvironmentIfNeeded()
+        arDiagnosticsSnapshot = makeARDiagnosticsSnapshot()
+    }
+
+    private func makeARDiagnosticsSnapshot() -> ARDiagnosticsSnapshot {
+        let roomName = selectedRoomName
+        let planRooms = document.roomAreas.map { area in
+            ARDiagnosticsPlanRoom(id: area.id,
+                                  name: area.name,
+                                  points: area.effectivePoints,
+                                  anchor: area.centroid)
+        }
+        let planWalls = document.walls
+            .filter { $0.kind.rendersAsPhysicalWall }
+            .map { wall in
+                ARDiagnosticsPlanWall(id: wall.id,
+                start: wall.start,
+                end: wall.end)
+            }
+        let commissioningMarkers = makeARCommissioningMarkers(planRooms: planRooms)
+        let rooms = FloorplanRoomEnvironment.anchors(in: document)
+            .map { anchor in
+                let data = envVM.rooms.first { $0.roomName == anchor.roomName }
+                return ARDiagnosticsRoom(
+                    id: anchor.roomID,
+                    name: anchor.roomName,
+                    subtitle: String(localized: "ar.diagnostics.room.explicit.subtitle",
+                                     defaultValue: "Room diagnostics from explicit AR calibration."),
+                    metrics: data.map(arMetrics) ?? []
+                )
+            }
+        let roomData = roomName.flatMap { name in
+            envVM.rooms.first { $0.roomName == name }
+        }
+
+        if let roomName, let roomData {
+            return ARDiagnosticsSnapshot(
+                title: roomName,
+                subtitle: String(localized: "ar.diagnostics.room.subtitle",
+                                 defaultValue: "Live room diagnostics over the camera feed."),
+                metrics: arMetrics(for: roomData),
+                rooms: rooms,
+                suggestedRoomID: selectedRoomID,
+                planRooms: planRooms,
+                planWalls: planWalls,
+                pointsPerMeter: DrawingDocument.ptsPerMeter,
+                northBearingDegrees: northBearingDegrees,
+                savedCalibration: document.arCalibration,
+                applyARCalibration: current.applyARCalibration,
+                applyNorthBearing: { bearing in
+                    current.applyNorthBearing(bearing)
+                    exposure = Exposure.nearest(to: bearing)
+                },
+                commissioningMarkers: commissioningMarkers,
+                performCommissioningAction: { toggleAccessory($0) }
+            )
+        }
+
+        let lightsOn = litLights.filter(\.isOn).count
+        let metrics = [
+            ARDiagnosticsMetric(title: String(localized: "environment.rooms",
+                                              defaultValue: "Rooms"),
+                                value: "\(document.roomAreas.count)",
+                                systemImage: "rectangle.3.group",
+                                tint: .green),
+            ARDiagnosticsMetric(title: "Marker",
+                                value: "\(markers.count)",
+                                systemImage: "sensor.tag.radiowaves.forward",
+                                tint: .blue),
+            ARDiagnosticsMetric(title: String(localized: "ar.diagnostics.lightsOn",
+                                              defaultValue: "Lights on"),
+                                value: "\(lightsOn)",
+                                systemImage: "lightbulb.fill",
+                                tint: lightsOn > 0 ? .yellow : .secondary),
+            ARDiagnosticsMetric(title: String(localized: "ar.diagnostics.sensors",
+                                              defaultValue: "Sensors"),
+                                value: "\(envVM.rooms.flatMap(\.sensors).count)",
+                                systemImage: "waveform.path.ecg",
+                                tint: .orange)
+        ]
+
+        return ARDiagnosticsSnapshot(
+            title: title,
+            subtitle: String(localized: "ar.diagnostics.floor.subtitle",
+                             defaultValue: "Point your iPhone or iPad around the room and keep the floorplan summary in view."),
+            metrics: metrics,
+            rooms: rooms,
+            suggestedRoomID: selectedRoomID,
+            planRooms: planRooms,
+            planWalls: planWalls,
+            pointsPerMeter: DrawingDocument.ptsPerMeter,
+            northBearingDegrees: northBearingDegrees,
+            savedCalibration: document.arCalibration,
+            applyARCalibration: current.applyARCalibration,
+            applyNorthBearing: { bearing in
+                current.applyNorthBearing(bearing)
+                exposure = Exposure.nearest(to: bearing)
+            },
+            commissioningMarkers: commissioningMarkers,
+            performCommissioningAction: { toggleAccessory($0) }
+        )
+    }
+
+    private func makeARCommissioningMarkers(planRooms: [ARDiagnosticsPlanRoom]) -> [ARDiagnosticsCommissioningMarker] {
+        let transform = FloorplanOpeningMatcher.transform(document: document,
+                                                          exportRotation: exportRotation)
+        return markers.map { marker in
+            let normalizedPoint = current.lampSettings(marker.uuid).position ?? marker.position
+            let point = arCommissioningDrawingPoint(from: normalizedPoint, using: transform)
+            let room = planRooms.first { $0.contains(point) }
+
+            guard let accessory = homeKit.accessory(for: marker.uuid) else {
+                return ARDiagnosticsCommissioningMarker(
+                    accessoryUUID: marker.uuid,
+                    name: String(localized: "ar.commissioning.unknownAccessory",
+                                 defaultValue: "Unlinked accessory"),
+                    category: "missing",
+                    systemImage: "questionmark.circle",
+                    point: point,
+                    roomID: room?.id,
+                    roomName: room?.name,
+                    isReachable: false,
+                    supportsQuickToggle: false,
+                    statusText: nil
+                )
+            }
+
+            let category = AccessoryCategorizer.categorize(accessory)
+            let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+            return ARDiagnosticsCommissioningMarker(
+                accessoryUUID: marker.uuid,
+                name: accessory.name,
+                category: category,
+                systemImage: commissioningSystemImage(for: category),
+                point: point,
+                roomID: room?.id,
+                roomName: room?.name,
+                isReachable: homeKit.isReachable(accessory),
+                supportsQuickToggle: adapter.supportsQuickToggle,
+                statusText: adapter.primaryStatusText
+            )
+        }
+    }
+
+    private func arCommissioningDrawingPoint(from normalizedPoint: CGPoint,
+                                             using transform: FloorplanOpeningMatcher.Transform?) -> CGPoint {
+        guard let transform else { return normalizedPoint }
+        let metres = transform.metres(from: normalizedPoint)
+        return CGPoint(
+            x: metres.x * Double(DrawingDocument.ptsPerMeter),
+            y: metres.y * Double(DrawingDocument.ptsPerMeter)
+        )
+    }
+
+    private func commissioningSystemImage(for category: String) -> String {
+        switch category {
+        case "colorLight", "dimmableLight":
+            return "lightbulb.fill"
+        case "switch":
+            return "switch.2"
+        case "outlet":
+            return "powerplug.fill"
+        case "camera":
+            return "video.fill"
+        case "television":
+            return "tv.fill"
+        case "airPurifier":
+            return "wind"
+        case "humidifier":
+            return "humidity.fill"
+        case "thermostat", "airConditioner":
+            return "thermometer"
+        case "fan":
+            return "fan.fill"
+        case "windowCovering":
+            return "blinds.horizontal.closed"
+        case "doorLock":
+            return "lock.fill"
+        case "garageDoor":
+            return "door.garage.closed"
+        case "valve":
+            return "drop.fill"
+        case "sceneController":
+            return "button.programmable"
+        case "sensor":
+            return "sensor"
+        default:
+            return "sensor.tag.radiowaves.forward"
+        }
+    }
+
+    private func arMetrics(for roomData: RoomEnvironmentData) -> [ARDiagnosticsMetric] {
+        let sortedSensors = roomData.sensors.sorted { lhs, rhs in
+            lhs.urgency.rawValue > rhs.urgency.rawValue
+        }
+        let sensorMetrics = sortedSensors.prefix(3).map { sensor in
+            ARDiagnosticsMetric(title: sensor.serviceType.displayName,
+                                value: sensor.formattedValue,
+                                systemImage: sensor.serviceType.sfSymbol,
+                                tint: urgencyColour(sensor.urgency))
+        }
+        return [
+            ARDiagnosticsMetric(title: String(localized: "environment.quality",
+                                              defaultValue: "Quality"),
+                                value: "\(Int(roomData.qualityScore * 100))%",
+                                systemImage: "leaf.fill",
+                                tint: roomData.qualityColor)
+        ] + sensorMetrics
+    }
+
     private func worstUrgency(in data: RoomEnvironmentData) -> SensorUrgency {
         let urgencies = data.sensors.map(\.urgency)
         if urgencies.contains(.danger) { return .danger }
@@ -2178,5 +2563,161 @@ struct FloorplanRealityPreviewView: View {
                                                      openOpeningIDs: openOpeningIDs,
                                                      closedShutters: closedShutters,
                                                      televisionSpots: televisions.map(\.position))
+    }
+}
+
+// MARK: - PresenceIssuePanelView
+
+/// La segnalazione da pannello a muro: ancorata in basso, larga, bassa. Le
+/// pagine sono TUTTE le segnalazioni attive (stanza × sensore) — il titolo
+/// cambia stanza mentre scorri, il contatore dice subito quante sono, e la
+/// casa dietro si ritinge a ogni pagina. La scheda stanza completa sta
+/// dietro il bottone: prima il problema, poi il catalogo.
+private struct PresenceIssuePanelView: View {
+    let items: [FloorplanRealityPreviewView.PresenceIssueItem]
+    let urgencyColour: (SensorUrgency) -> Color
+    let onPageChange: (FloorplanRealityPreviewView.PresenceIssueItem) -> Void
+    let onDismiss: () -> Void
+    let onOpenRoom: (String) -> Void
+
+    @State private var page = 0
+
+    private var current: FloorplanRealityPreviewView.PresenceIssueItem {
+        items.indices.contains(page) ? items[page] : items[0]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(urgencyColour(current.sensor.urgency).opacity(0.18))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(urgencyColour(current.sensor.urgency))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(current.roomName)
+                        .font(.title.weight(.bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .contentTransition(.opacity)
+                    Text(items.count == 1
+                         ? String(localized: "presence.issue.subtitle.one",
+                                  defaultValue: "1 sensor out of range")
+                         : String(localized: "presence.issue.counter",
+                                  defaultValue: "Report \(page + 1) of \(items.count)"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(urgencyColour(current.sensor.urgency))
+                        .monospacedDigit()
+                }
+
+                Spacer(minLength: 8)
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                        .frame(width: 34, height: 34)
+                        .background(Color.primary.opacity(0.08), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .animation(.easeOut(duration: 0.2), value: page)
+
+            // Una pagina per segnalazione: valore gigante, spazio pronto per
+            // il testo delle anomalie Intelligence. Lo swipe ritinge la casa.
+            TabView(selection: $page) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    // La pagina È il bottone: tocchi l'anomalia, si apre la
+                    // stanza. Il bottone a parte nel header su iPhone si
+                    // schiacciava male — e questo bersaglio è enorme.
+                    Button {
+                        onOpenRoom(item.roomName)
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: item.sensor.serviceType.sfSymbol)
+                                .font(.system(size: 26, weight: .semibold))
+                                .foregroundStyle(urgencyColour(item.sensor.urgency))
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.sensor.serviceType.displayName)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Text(item.sensor.formattedValue)
+                                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(urgencyColour(item.sensor.urgency))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.6)
+                            }
+                            Spacer(minLength: 0)
+                            VStack(alignment: .trailing, spacing: 6) {
+                                Text(item.sensor.urgency == .danger
+                                     ? String(localized: "presence.issue.critical", defaultValue: "Critical")
+                                     : String(localized: "presence.issue.warning", defaultValue: "Warning"))
+                                    .font(.caption.weight(.bold))
+                                    .textCase(.uppercase)
+                                    .foregroundStyle(urgencyColour(item.sensor.urgency))
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(urgencyColour(item.sensor.urgency).opacity(0.10))
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 2)
+                    .tag(index)
+                }
+            }
+            // Pallini nostri, non quelli di sistema: quelli finivano DENTRO
+            // la cornice delle pagine (sovrapposti) ed erano grigio su
+            // chiaro — invisibili. Qui stanno sotto, nel colore d'urgenza.
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: 82)
+            .onChange(of: page) { _, newValue in
+                guard items.indices.contains(newValue) else { return }
+                onPageChange(items[newValue])
+            }
+
+            if items.count > 1 {
+                HStack(spacing: 7) {
+                    ForEach(items.indices, id: \.self) { index in
+                        Circle()
+                            .fill(index == page
+                                  ? urgencyColour(current.sensor.urgency)
+                                  : Color.primary.opacity(0.18))
+                            .frame(width: 7, height: 7)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .animation(.easeOut(duration: 0.2), value: page)
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 28, style: .continuous),
+            legacyBorder: Color.primary.opacity(0.12),
+            legacyShadow: GlassChromeShadow(color: .black.opacity(0.22), radius: 22, y: 10)
+        )
+        // La banda d'urgenza: un DATO, sopra il vetro — segue la pagina.
+        .overlay(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .strokeBorder(urgencyColour(current.sensor.urgency).opacity(0.4), lineWidth: 1.5)
+        )
+        .padding(.horizontal, 14)
+        .padding(.bottom, 16)
+        .shieldsCanvasTouches()
     }
 }
