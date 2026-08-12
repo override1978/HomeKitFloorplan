@@ -187,7 +187,13 @@ struct FloorplanRealityPreviewView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if let floorplanScene {
+            // Col cover AR aperto la casa NON deve continuare a renderizzare
+            // sotto: ARView non ha una pausa pubblica, e toglierla dalla
+            // gerarchia è l'unico stop garantito. Al ritorno la scena si
+            // ricostruisce con l'inquadratura d'apertura — prezzo accettato
+            // per non tenere tre motori accesi insieme (ARKit + fondale
+            // camera + una casa che nessuno vede).
+            if let floorplanScene, arDiagnosticsSnapshot == nil {
                 RealityFloorplanView(scene: floorplanScene,
                                      background: background,
                                      sun: sun,

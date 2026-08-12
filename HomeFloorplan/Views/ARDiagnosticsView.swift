@@ -1662,8 +1662,11 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
 
             let configuration = ARWorldTrackingConfiguration()
             configuration.worldAlignment = .gravityAndHeading
-            configuration.planeDetection = [.horizontal, .vertical]
-            configuration.environmentTexturing = .automatic
+            // Niente planeDetection e niente environmentTexturing: qui serve
+            // solo la posa 6DOF, che il tracking base fornisce da solo. Piani
+            // su due assi e texture ambientali erano i due lavori più costosi
+            // di GPU/Neural Engine della sessione — calore puro, mai letto da
+            // nessuno (l'iPhone 17 Pro bollente dopo minuti di AR nasce qui).
             session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
             update(.starting)
         }
@@ -1704,11 +1707,22 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
 
         private func updateCameraImage(from frame: ARFrame) {
             let now = CFAbsoluteTimeGetCurrent()
-            guard now - lastImageTime > 1.0 / 15.0 else { return }
+            guard now - lastImageTime > 1.0 / 12.0 else { return }
             lastImageTime = now
 
             let pixelBuffer = frame.capturedImage
-            let image = CIImage(cvPixelBuffer: pixelBuffer)
+            var image = CIImage(cvPixelBuffer: pixelBuffer)
+            // Il frame arriva a piena risoluzione (~1920×1440) ma qui fa da
+            // FONDALE dietro i pannelli, non da mirino: 1280 di lato lungo
+            // bastano, e scalare PRIMA di createCGImage dimezza abbondante i
+            // pixel copiati a ogni frame — era la seconda fonte di calore
+            // della vista AR, dopo la configurazione della sessione.
+            let sourceLong = max(image.extent.width, image.extent.height)
+            let targetLong: CGFloat = 1280
+            if sourceLong > targetLong {
+                let factor = targetLong / sourceLong
+                image = image.transformed(by: CGAffineTransform(scaleX: factor, y: factor))
+            }
             guard let cgImage = ciContext.createCGImage(image, from: image.extent) else { return }
             let orientation = Self.imageOrientationForCurrentDevice()
             let uiImage = UIImage(cgImage: cgImage, scale: 1, orientation: orientation)
