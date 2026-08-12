@@ -25,8 +25,25 @@ struct ARDiagnosticsSnapshot: Identifiable {
     var planRooms: [ARDiagnosticsPlanRoom] = []
     var planWalls: [ARDiagnosticsPlanWall] = []
     var pointsPerMeter: CGFloat = DrawingDocument.ptsPerMeter
+    var northBearingDegrees: Double = 0
     var savedCalibration: ARFloorCalibration?
     var applyARCalibration: ((ARFloorCalibration?) -> Void)?
+    var commissioningMarkers: [ARDiagnosticsCommissioningMarker] = []
+    var performCommissioningAction: ((UUID) -> Void)?
+}
+
+struct ARDiagnosticsCommissioningMarker: Identifiable {
+    var id: UUID { accessoryUUID }
+    var accessoryUUID: UUID
+    var name: String
+    var category: String
+    var systemImage: String
+    var point: CGPoint
+    var roomID: UUID?
+    var roomName: String?
+    var isReachable: Bool
+    var supportsQuickToggle: Bool
+    var statusText: String?
 }
 
 struct ARDiagnosticsPlanRoom: Identifiable {
@@ -82,10 +99,15 @@ struct ARDiagnosticsView: View {
     @State private var scanState = ARDiagnosticsScanState()
     @State private var motionTracker = DiagnosticsMotionTracker()
     @State private var selectedCalibrationRoomID: UUID?
+    @State private var lockedRoomID: UUID?
     @State private var calibratedRoomID: UUID?
     @State private var calibrationOrigin: SIMD3<Float>?
     @State private var calibrationForwardXZ: SIMD2<Float>?
     @State private var calibrationMapOrigin: CGPoint?
+    @State private var pendingCalibrationMapOrigin: CGPoint?
+    @State private var pendingAlignmentMapPoint: CGPoint?
+    @State private var calibratedPointsPerMeter: CGFloat?
+    @State private var isCalibrationMirrored = false
     @State private var savedCalibration: ARFloorCalibration?
     @State private var arPose: ARPoseSample?
 
@@ -111,11 +133,13 @@ struct ARDiagnosticsView: View {
             VStack(spacing: 0) {
                 topBar
                 Spacer(minLength: 0)
-                scanPanel
-                    .padding(.bottom, 10)
-                if showsMiniFloorplan {
-                    miniFloorplanPanel
-                        .padding(.bottom, 10)
+                if calibratedRoomID == nil {
+                    scanPanel
+                        .padding(.bottom, 8)
+                    if showsMiniFloorplan {
+                        miniFloorplanPanel
+                            .padding(.bottom, 8)
+                    }
                 }
                 diagnosticsPanel
             }
@@ -123,10 +147,13 @@ struct ARDiagnosticsView: View {
             .padding(.top, 18)
             .padding(.bottom, 14)
 
-            VStack {
+            VStack(alignment: .trailing, spacing: 8) {
                 HStack {
                     Spacer()
                     cameraStatusPill
+                }
+                if calibratedRoomID != nil, showsMiniFloorplan {
+                    compactMapCard
                 }
                 Spacer()
             }
@@ -140,6 +167,11 @@ struct ARDiagnosticsView: View {
                 selectedCalibrationRoomID = savedCalibration?.originRoomID
                     ?? snapshot.suggestedRoomID
                     ?? snapshot.rooms.first?.id
+            }
+            if pendingCalibrationMapOrigin == nil,
+               let roomID = selectedCalibrationRoomID,
+               let planRoom = snapshot.planRooms.first(where: { $0.id == roomID }) {
+                pendingCalibrationMapOrigin = planRoom.anchor
             }
             motionTracker.start { state in
                 scanState = state
@@ -274,6 +306,7 @@ struct ARDiagnosticsView: View {
                         ForEach(snapshot.rooms) { room in
                             Button {
                                 selectedCalibrationRoomID = room.id
+                                pendingCalibrationMapOrigin = snapshot.planRooms.first { $0.id == room.id }?.anchor
                             } label: {
                                 Text(room.name)
                                     .font(.caption.weight(.semibold))
@@ -345,6 +378,7 @@ struct ARDiagnosticsView: View {
                     .disabled(selectedCalibrationRoomID == nil || arPose?.isNormal != true)
                 } else {
                     Button {
+                        pendingAlignmentMapPoint = nil
                         resetFloorCalibration()
                     } label: {
                         Label(String(localized: "ar.locator.resetFloor",
@@ -376,6 +410,11 @@ struct ARDiagnosticsView: View {
         snapshot.rooms.first { $0.id == calibratedRoomID }
     }
 
+    private var selectedCalibrationPlanRoom: ARDiagnosticsPlanRoom? {
+        guard let selectedCalibrationRoomID else { return nil }
+        return snapshot.planRooms.first { $0.id == selectedCalibrationRoomID }
+    }
+
     private var locatedPlanRoom: ARDiagnosticsPlanRoom? {
         guard calibratedRoomID != nil, let point = planPointerPoint else { return nil }
         return snapshot.planRooms.first { $0.contains(point) }
@@ -389,8 +428,25 @@ struct ARDiagnosticsView: View {
             }
     }
 
+    private var lockedPlanRoom: ARDiagnosticsPlanRoom? {
+        guard let lockedRoomID else { return nil }
+        return snapshot.planRooms.first { $0.id == lockedRoomID }
+    }
+
+    private var activePlanRoom: ARDiagnosticsPlanRoom? {
+        lockedPlanRoom ?? locatedPlanRoom
+    }
+
     private var activeDiagnosticsRoom: ARDiagnosticsRoom? {
-        locatedDiagnosticsRoom ?? calibratedRoom
+        if let lockedRoomID {
+            return snapshot.rooms.first { $0.id == lockedRoomID }
+                ?? lockedPlanRoom.flatMap { planRoom in
+                    snapshot.rooms.first {
+                        $0.name.localizedCaseInsensitiveCompare(planRoom.name) == .orderedSame
+                    }
+                }
+        }
+        return locatedDiagnosticsRoom ?? calibratedRoom
     }
 
     private var locatorTint: Color {
@@ -432,11 +488,12 @@ struct ARDiagnosticsView: View {
             return String(localized: "ar.locator.saved.detail",
                           defaultValue: "Stand at the saved origin and reuse it for this AR session.")
         }
-        return selectedCalibrationRoom.map {
-            String(localized: "ar.locator.calibrate.detail",
-                   defaultValue: "Stand in \($0.name), set the floor origin, then align the map once.")
-        } ?? String(localized: "ar.locator.noRooms",
-                    defaultValue: "No rooms are available for calibration.")
+        if selectedCalibrationRoom != nil {
+            return String(localized: "ar.locator.calibrate.detail",
+                          defaultValue: "Tap your real position on the map, then set the floor origin.")
+        }
+        return String(localized: "ar.locator.noRooms",
+                      defaultValue: "No rooms are available for calibration.")
     }
 
     private var locatorValue: String {
@@ -450,10 +507,14 @@ struct ARDiagnosticsView: View {
     }
 
     private var activeDiagnosticsTitle: String {
-        locatedPlanRoom?.name ?? activeDiagnosticsRoom?.name ?? snapshot.title
+        activePlanRoom?.name ?? activeDiagnosticsRoom?.name ?? snapshot.title
     }
 
     private var activeDiagnosticsSubtitle: String {
+        if lockedRoomID != nil {
+            return String(localized: "ar.diagnostics.locked.subtitle",
+                          defaultValue: "Room diagnostics from confirmed AR room.")
+        }
         if locatedPlanRoom != nil {
             return String(localized: "ar.diagnostics.estimated.subtitle",
                           defaultValue: "Room diagnostics from calibrated AR map position.")
@@ -482,7 +543,7 @@ struct ARDiagnosticsView: View {
     }
 
     private var showsMiniFloorplan: Bool {
-        calibratedRoomID != nil && !snapshot.planRooms.isEmpty
+        !snapshot.planRooms.isEmpty
     }
 
     private var miniFloorplanPanel: some View {
@@ -493,37 +554,131 @@ struct ARDiagnosticsView: View {
                     .font(.subheadline.weight(.semibold))
 
                 Spacer(minLength: 8)
-
-                Text(planRoomName)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(planRoomTint)
-                    .lineLimit(1)
-
-                Button {
-                    calibrationForwardXZ = arPose?.forwardXZ
-                } label: {
-                    Label(String(localized: "ar.plan.align", defaultValue: "Align"),
-                          systemImage: "location.north.line")
-                        .font(.caption.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(arPose?.isNormal != true)
             }
 
             ARDiagnosticsMiniFloorplanView(rooms: snapshot.planRooms,
                                            walls: snapshot.planWalls,
+                                           markers: snapshot.commissioningMarkers,
                                            calibratedRoomID: calibratedRoomID,
-                                           pointerPoint: planPointerPoint)
-                .frame(height: 118)
+                                           activeRoomID: activePlanRoom?.id ?? selectedCalibrationRoomID,
+                                           originPoint: calibrationMapOrigin ?? pendingCalibrationMapOrigin,
+                                           alignmentPoint: pendingAlignmentMapPoint,
+                                           pointerPoint: planPointerPoint,
+                                           cameraDirection: cameraPlanDirection,
+                                           allowsOriginSelection: calibratedRoomID == nil,
+                                           allowsAlignmentSelection: calibratedRoomID != nil,
+                                           onOriginSelected: { point in
+                                               pendingCalibrationMapOrigin = point
+                                           },
+                                           onAlignmentSelected: { point in
+                                               pendingAlignmentMapPoint = point
+                                           })
+                .frame(height: 88)
         }
         .foregroundStyle(Color.primary)
-        .padding(14)
+        .padding(12)
         .frame(maxWidth: 760)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+        }
+    }
+
+    /// La mappa in punta di piedi: fissata l'origine, il fondo dello schermo
+    /// è degli accessori e la pianta si ritira in alto a destra, solo disegno.
+    /// La cerimonia manuale (direzione, punto B, specchio, reset) vive dietro
+    /// i tre puntini: è il fallback per le case dove la bussola mente, non il
+    /// flusso — e in un Menu i titoli non collassano più a una lettera per
+    /// riga come facevano i bottoni in linea su iPhone.
+    private var compactMapCard: some View {
+        ARDiagnosticsMiniFloorplanView(rooms: snapshot.planRooms,
+                                       walls: snapshot.planWalls,
+                                       markers: snapshot.commissioningMarkers,
+                                       calibratedRoomID: calibratedRoomID,
+                                       activeRoomID: activePlanRoom?.id ?? selectedCalibrationRoomID,
+                                       originPoint: calibrationMapOrigin ?? pendingCalibrationMapOrigin,
+                                       alignmentPoint: pendingAlignmentMapPoint,
+                                       pointerPoint: planPointerPoint,
+                                       cameraDirection: cameraPlanDirection,
+                                       allowsAlignmentSelection: true,
+                                       onAlignmentSelected: { pendingAlignmentMapPoint = $0 },
+                                       isCompact: true)
+            .frame(width: 176, height: 124)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                compactMapMenu
+                    .padding(5)
+            }
+    }
+
+    private var compactMapMenu: some View {
+        Menu {
+            Section {
+                Button {
+                    lockedRoomID = nil
+                } label: {
+                    Label(String(localized: "ar.plan.room.auto",
+                                 defaultValue: "Auto estimate"),
+                          systemImage: "location.fill.viewfinder")
+                }
+                ForEach(snapshot.planRooms) { room in
+                    Button {
+                        lockedRoomID = room.id
+                    } label: {
+                        Label(room.name,
+                              systemImage: lockedRoomID == room.id ? "checkmark.circle.fill" : "circle")
+                    }
+                }
+            }
+
+            Divider()
+
+            Button {
+                applyCurrentViewAsMapTop()
+            } label: {
+                Label(String(localized: "ar.plan.direction.set",
+                             defaultValue: "Set direction"),
+                      systemImage: "scope")
+            }
+            .disabled(arPose?.isNormal != true)
+
+            Button {
+                setSecondCalibrationPoint()
+            } label: {
+                Label(String(localized: "ar.plan.direction.pointB",
+                             defaultValue: "Set point B"),
+                      systemImage: "point.3.connected.trianglepath.dotted")
+            }
+            .disabled(pendingAlignmentMapPoint == nil || arPose?.isNormal != true)
+
+            Button {
+                isCalibrationMirrored.toggle()
+            } label: {
+                Label(String(localized: "ar.plan.mirror",
+                             defaultValue: "Mirror map"),
+                      systemImage: "arrow.left.arrow.right")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                resetFloorCalibration()
+            } label: {
+                Label(String(localized: "ar.locator.resetFloor",
+                             defaultValue: "Reset floor"),
+                      systemImage: "arrow.counterclockwise")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.primary)
+                .frame(width: 26, height: 26)
+                .background(.thinMaterial, in: Circle())
         }
     }
 
@@ -537,14 +692,17 @@ struct ARDiagnosticsView: View {
         let projectedOffset = projectedPlanOffset(from: offset)
         let origin = calibrationMapOrigin ?? calibratedPlanRoom.anchor
         return CGPoint(
-            x: origin.x + projectedOffset.x * snapshot.pointsPerMeter,
-            y: origin.y + projectedOffset.y * snapshot.pointsPerMeter
+            x: origin.x + projectedOffset.x * activePointsPerMeter,
+            y: origin.y + projectedOffset.y * activePointsPerMeter
         )
     }
 
     private var planRoomName: String {
         guard let point = planPointerPoint else {
             return String(localized: "ar.plan.waiting", defaultValue: "Waiting")
+        }
+        if let lockedPlanRoom {
+            return lockedPlanRoom.name
         }
         if let room = snapshot.planRooms.first(where: { $0.contains(point) }) {
             return room.name
@@ -554,6 +712,7 @@ struct ARDiagnosticsView: View {
 
     private var planRoomTint: Color {
         guard let calibratedRoomID, let point = planPointerPoint else { return .secondary }
+        if lockedRoomID != nil { return .blue }
         if snapshot.planRooms.first(where: { $0.id == calibratedRoomID })?.contains(point) == true {
             return .green
         }
@@ -561,6 +720,80 @@ struct ARDiagnosticsView: View {
             return .orange
         }
         return .red
+    }
+
+    private var nearbyCommissioningMarkers: [CommissioningMarkerDistance] {
+        guard let point = planPointerPoint else { return [] }
+        let activeRoomID = activePlanRoom?.id
+        let ranked = snapshot.commissioningMarkers.map { marker in
+            CommissioningMarkerDistance(
+                marker: marker,
+                distance: distanceInMeters(from: point, to: marker.point),
+                isInEstimatedRoom: marker.roomID == activeRoomID,
+                targetScore: targetScore(for: marker.point, from: point)
+            )
+        }
+        // Solo la stanza attiva: la distanza non rispetta i muri, e al
+        // confine la lista pescava i dispositivi della stanza accanto. La
+        // vista risponde a «cosa c'è QUI», non a «cosa c'è vicino».
+        .filter(\.isInEstimatedRoom)
+        let sorted = ranked
+            .sorted { lhs, rhs in
+                if lhs.isTargetCandidate != rhs.isTargetCandidate {
+                    return lhs.isTargetCandidate && !rhs.isTargetCandidate
+                }
+                if let lhsScore = lhs.targetScore, let rhsScore = rhs.targetScore,
+                   abs(lhsScore - rhsScore) > 0.001 {
+                    return lhsScore > rhsScore
+                }
+                if lhs.isInEstimatedRoom != rhs.isInEstimatedRoom {
+                    return lhs.isInEstimatedRoom && !rhs.isInEstimatedRoom
+                }
+                return lhs.distance < rhs.distance
+            }
+
+        if var target = sorted.first(where: { $0.isTargetCandidate }) {
+            target.isTargeted = true
+            let alternatives = sorted
+                .filter { $0.id != target.id }
+                .prefix(1)
+            return [target] + alternatives
+        }
+
+        return sorted.prefix(2).map { $0 }
+    }
+
+    private func distanceInMeters(from lhs: CGPoint, to rhs: CGPoint) -> Double {
+        let dx = lhs.x - rhs.x
+        let dy = lhs.y - rhs.y
+        return Double(sqrt(dx * dx + dy * dy) / max(activePointsPerMeter, 1))
+    }
+
+    private var activePointsPerMeter: CGFloat {
+        calibratedPointsPerMeter ?? snapshot.pointsPerMeter
+    }
+
+    private var cameraPlanDirection: CGVector? {
+        guard let arPose else { return nil }
+        let projected = projectedPlanOffset(from: SIMD3<Float>(arPose.forwardXZ.x, 0, arPose.forwardXZ.y))
+        let length = sqrt(projected.x * projected.x + projected.y * projected.y)
+        guard length > 0.001 else { return nil }
+        return CGVector(dx: projected.x / length, dy: projected.y / length)
+    }
+
+    private func targetScore(for markerPoint: CGPoint, from origin: CGPoint) -> Double? {
+        guard let direction = cameraPlanDirection else { return nil }
+        let dx = markerPoint.x - origin.x
+        let dy = markerPoint.y - origin.y
+        let distancePoints = sqrt(dx * dx + dy * dy)
+        let distance = Double(distancePoints / max(snapshot.pointsPerMeter, 1))
+        guard distance >= 0.15, distance <= 4.0 else { return nil }
+
+        let targetX = dx / distancePoints
+        let targetY = dy / distancePoints
+        let dot = Double(targetX * direction.dx + targetY * direction.dy)
+        guard dot >= 0.86 else { return nil }
+        return dot - distance * 0.035
     }
 
     private func localDistance(from pose: ARPoseSample) -> Float {
@@ -582,7 +815,8 @@ struct ARDiagnosticsView: View {
         }
 
         let mapUp = simd_normalize(calibrationForwardXZ)
-        let mapRight = SIMD2<Float>(-mapUp.y, mapUp.x)
+        let lateralSign: Float = isCalibrationMirrored ? -1 : 1
+        let mapRight = SIMD2<Float>(-mapUp.y, mapUp.x) * lateralSign
         return CGPoint(
             x: CGFloat(simd_dot(worldOffset, mapRight)),
             y: CGFloat(-simd_dot(worldOffset, mapUp))
@@ -597,14 +831,18 @@ struct ARDiagnosticsView: View {
 
         calibratedRoomID = roomID
         calibrationOrigin = arPose.position
-        calibrationForwardXZ = arPose.forwardXZ
-        calibrationMapOrigin = planRoom.anchor
+        applyAutoHeadingDirection()
+        let originPoint = pendingCalibrationMapOrigin ?? planRoom.anchor
+        calibrationMapOrigin = originPoint
+        calibratedPointsPerMeter = nil
+        pendingAlignmentMapPoint = nil
+        isCalibrationMirrored = false
 
         let now = Date()
         let calibration = ARFloorCalibration(
             originRoomID: roomID,
             originRoomName: planRoom.name,
-            originPoint: planRoom.anchor,
+            originPoint: originPoint,
             mapForward: CGPoint(x: 0, y: -1),
             createdAt: savedCalibration?.createdAt ?? now,
             updatedAt: now
@@ -621,8 +859,60 @@ struct ARDiagnosticsView: View {
             }?.id
         selectedCalibrationRoomID = calibratedRoomID
         calibrationOrigin = arPose.position
-        calibrationForwardXZ = arPose.forwardXZ
+        applyAutoHeadingDirection()
         calibrationMapOrigin = savedCalibration.originPoint
+        pendingCalibrationMapOrigin = savedCalibration.originPoint
+        calibratedPointsPerMeter = nil
+        pendingAlignmentMapPoint = nil
+        isCalibrationMirrored = false
+    }
+
+    private func applyAutoHeadingDirection() {
+        calibrationForwardXZ = automaticMapForwardXZ()
+    }
+
+    private func applyCurrentViewAsMapTop() {
+        guard let forwardXZ = arPose?.forwardXZ else { return }
+        calibrationForwardXZ = forwardXZ
+    }
+
+    private func setSecondCalibrationPoint() {
+        guard let calibrationOrigin,
+              let calibrationMapOrigin,
+              let pendingAlignmentMapPoint,
+              let arPose
+        else { return }
+
+        let worldDelta = SIMD2<Float>(
+            arPose.position.x - calibrationOrigin.x,
+            arPose.position.z - calibrationOrigin.z
+        )
+        let worldDistance = simd_length(worldDelta)
+        let mapDelta = CGPoint(
+            x: pendingAlignmentMapPoint.x - calibrationMapOrigin.x,
+            y: pendingAlignmentMapPoint.y - calibrationMapOrigin.y
+        )
+        let mapDistance = sqrt(mapDelta.x * mapDelta.x + mapDelta.y * mapDelta.y)
+        guard worldDistance > 0.35, mapDistance > 6 else { return }
+
+        let worldAngle = atan2(worldDelta.y, worldDelta.x)
+        let mapAngle = atan2(Float(mapDelta.y), Float(mapDelta.x))
+        let mapUpWorldAngle = worldAngle - mapAngle - Float.pi / 2
+        calibrationForwardXZ = simd_normalize(SIMD2<Float>(
+            cos(mapUpWorldAngle),
+            sin(mapUpWorldAngle)
+        ))
+        calibratedPointsPerMeter = mapDistance / CGFloat(worldDistance)
+        isCalibrationMirrored = false
+        self.pendingAlignmentMapPoint = nil
+    }
+
+    private func automaticMapForwardXZ() -> SIMD2<Float> {
+        let bearing = snapshot.northBearingDegrees * .pi / 180
+        return simd_normalize(SIMD2<Float>(
+            Float(sin(bearing)),
+            Float(-cos(bearing))
+        ))
     }
 
     private func resetFloorCalibration() {
@@ -630,6 +920,11 @@ struct ARDiagnosticsView: View {
         calibrationOrigin = nil
         calibrationForwardXZ = nil
         calibrationMapOrigin = nil
+        pendingCalibrationMapOrigin = selectedCalibrationPlanRoom?.anchor
+        pendingAlignmentMapPoint = nil
+        calibratedPointsPerMeter = nil
+        isCalibrationMirrored = false
+        lockedRoomID = nil
         savedCalibration = nil
         snapshot.applyARCalibration?(nil)
     }
@@ -651,64 +946,215 @@ struct ARDiagnosticsView: View {
     }
 
     private var diagnosticsPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Label {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(activeDiagnosticsTitle)
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                         .lineLimit(1)
                     Text(activeDiagnosticsSubtitle)
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
             } icon: {
                 Image(systemName: "viewfinder.circle.fill")
-                    .font(.system(size: 25, weight: .semibold))
+                    .font(.system(size: 21, weight: .semibold))
                     .foregroundStyle(.blue)
             }
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(activeDiagnosticsMetrics) { metric in
-                    metricTile(metric)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(activeDiagnosticsMetrics.prefix(4)) { metric in
+                        metricPill(metric)
+                    }
                 }
+            }
+
+            if calibratedRoomID != nil && !snapshot.commissioningMarkers.isEmpty {
+                commissioningSection
             }
         }
         .foregroundStyle(Color.primary)
-        .padding(18)
+        .padding(14)
         .frame(maxWidth: 760)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
         }
     }
 
-    private func metricTile(_ metric: ARDiagnosticsMetric) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func metricPill(_ metric: ARDiagnosticsMetric) -> some View {
+        HStack(spacing: 8) {
             Image(systemName: metric.systemImage)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(metric.tint)
-            Text(metric.value)
-                .font(.title3.weight(.bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-            Text(metric.title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(metric.value)
+                    .font(.subheadline.weight(.bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(metric.title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(minWidth: 132, alignment: .leading)
+        .background(Color.primary.opacity(0.07), in: Capsule())
+    }
+
+    private var commissioningSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Label(nearbyCommissioningMarkers.contains(where: \.isTargeted)
+                      ? String(localized: "ar.commissioning.targetTitle", defaultValue: "Pointed device")
+                      : String(localized: "ar.commissioning.title", defaultValue: "Commissioning"),
+                      systemImage: nearbyCommissioningMarkers.contains(where: \.isTargeted)
+                        ? "scope"
+                        : "checklist.checked")
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 8)
+                Text(activeDiagnosticsTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(planRoomTint)
+                    .lineLimit(1)
+            }
+
+            if nearbyCommissioningMarkers.isEmpty {
+                Text(String(localized: "ar.commissioning.noNearby",
+                            defaultValue: "No mapped devices near this room."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(nearbyCommissioningMarkers) { item in
+                        commissioningRow(item)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func commissioningRow(_ item: CommissioningMarkerDistance) -> some View {
+        let marker = item.marker
+        return HStack(spacing: 8) {
+            Image(systemName: marker.systemImage)
+                .font(.system(size: item.isTargeted ? 17 : 15, weight: .semibold))
+                .foregroundStyle(commissioningTint(for: item))
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(marker.name)
+                    .font(item.isTargeted ? .subheadline.weight(.semibold) : .caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(commissioningSubtitle(for: item))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(String(format: "%.1f m", item.distance))
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if marker.supportsQuickToggle {
+                Button {
+                    snapshot.performCommissioningAction?(marker.accessoryUUID)
+                } label: {
+                    Image(systemName: "power")
+                        .font(.system(size: 13, weight: .bold))
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!marker.isReachable)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, item.isTargeted ? 8 : 6)
+        .background(commissioningBackground(for: item), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func commissioningSubtitle(for item: CommissioningMarkerDistance) -> String {
+        let marker = item.marker
+        if !marker.isReachable {
+            return String(localized: "ar.commissioning.missing",
+                          defaultValue: "Missing from HomeKit")
+        }
+        if item.isTargeted {
+            return marker.statusText.map {
+                String(localized: "ar.commissioning.target.status",
+                       defaultValue: "Pointed · \($0)")
+            } ?? String(localized: "ar.commissioning.target",
+                        defaultValue: "Pointed from camera")
+        }
+        if item.isInEstimatedRoom {
+            return marker.statusText.map {
+                String(localized: "ar.commissioning.inRoom.status",
+                       defaultValue: "In this room · \($0)")
+            } ?? String(localized: "ar.commissioning.inRoom",
+                        defaultValue: "In this room")
+        }
+        if let roomName = marker.roomName {
+            return String(localized: "ar.commissioning.mappedRoom",
+                          defaultValue: "Mapped in \(roomName)")
+        }
+        return String(localized: "ar.commissioning.unassigned",
+                      defaultValue: "Not inside a room")
+    }
+
+    private func commissioningTint(for item: CommissioningMarkerDistance) -> Color {
+        if item.isTargeted { return .blue }
+        if !item.marker.isReachable { return .red }
+        if item.isInEstimatedRoom { return .green }
+        if item.marker.roomID == nil { return .orange }
+        return .blue
+    }
+
+    private func commissioningBackground(for item: CommissioningMarkerDistance) -> Color {
+        item.isTargeted ? Color.blue.opacity(0.12) : Color.primary.opacity(0.055)
+    }
+}
+
+private struct CommissioningMarkerDistance: Identifiable {
+    var id: UUID { marker.accessoryUUID }
+    var marker: ARDiagnosticsCommissioningMarker
+    var distance: Double
+    var isInEstimatedRoom: Bool
+    var targetScore: Double?
+    var isTargeted = false
+
+    var isTargetCandidate: Bool {
+        targetScore != nil
     }
 }
 
 private struct ARDiagnosticsMiniFloorplanView: View {
     var rooms: [ARDiagnosticsPlanRoom]
     var walls: [ARDiagnosticsPlanWall]
+    var markers: [ARDiagnosticsCommissioningMarker]
     var calibratedRoomID: UUID?
+    var activeRoomID: UUID?
+    var originPoint: CGPoint?
+    var alignmentPoint: CGPoint?
     var pointerPoint: CGPoint?
+    var cameraDirection: CGVector?
+    var allowsOriginSelection = false
+    var allowsAlignmentSelection = false
+    var onOriginSelected: ((CGPoint) -> Void)?
+    var onAlignmentSelected: ((CGPoint) -> Void)?
+    /// Nel riquadro in alto a destra i chip di aiuto non entrano: la mappa
+    /// compatta mostra solo il disegno, le istruzioni restano al setup.
+    var isCompact = false
 
     var body: some View {
         Canvas { context, size in
@@ -730,10 +1176,11 @@ private struct ARDiagnosticsMiniFloorplanView: View {
             for room in rooms {
                 guard let path = path(for: room.points, map: map) else { continue }
                 let isCalibrated = room.id == calibratedRoomID
-                context.fill(path, with: .color(isCalibrated ? Color.green.opacity(0.26) : Color.white.opacity(0.22)))
+                let isActive = room.id == activeRoomID
+                context.fill(path, with: .color(isActive ? Color.blue.opacity(0.24) : (isCalibrated ? Color.green.opacity(0.20) : Color.white.opacity(0.22))))
                 context.stroke(path,
-                               with: .color(isCalibrated ? Color.green.opacity(0.85) : Color.primary.opacity(0.18)),
-                               lineWidth: isCalibrated ? 2.2 : 1)
+                               with: .color(isActive ? Color.blue.opacity(0.85) : (isCalibrated ? Color.green.opacity(0.65) : Color.primary.opacity(0.18))),
+                               lineWidth: isActive ? 2.4 : (isCalibrated ? 1.8 : 1))
             }
 
             for wall in walls {
@@ -743,8 +1190,96 @@ private struct ARDiagnosticsMiniFloorplanView: View {
                 context.stroke(path, with: .color(Color.primary.opacity(0.34)), lineWidth: 2)
             }
 
+            for marker in markers {
+                let point = map(marker.point)
+                let tint = marker.isReachable ? Color.primary.opacity(0.42) : Color.red.opacity(0.72)
+                context.fill(Path(ellipseIn: CGRect(x: point.x - 3,
+                                                    y: point.y - 3,
+                                                    width: 6,
+                                                    height: 6)),
+                             with: .color(tint))
+            }
+
+            if let originPoint {
+                let point = map(originPoint)
+                context.fill(Path(ellipseIn: CGRect(x: point.x - 5,
+                                                    y: point.y - 5,
+                                                    width: 10,
+                                                    height: 10)),
+                             with: .color(Color.green.opacity(0.95)))
+                context.stroke(Path(ellipseIn: CGRect(x: point.x - 13,
+                                                      y: point.y - 13,
+                                                      width: 26,
+                                                      height: 26)),
+                               with: .color(Color.green.opacity(0.55)),
+                               lineWidth: 3)
+            }
+
+            if let alignmentPoint {
+                let point = map(alignmentPoint)
+                context.fill(Path(ellipseIn: CGRect(x: point.x - 5,
+                                                    y: point.y - 5,
+                                                    width: 10,
+                                                    height: 10)),
+                             with: .color(Color.orange.opacity(0.95)))
+                context.stroke(Path(ellipseIn: CGRect(x: point.x - 13,
+                                                      y: point.y - 13,
+                                                      width: 26,
+                                                      height: 26)),
+                               with: .color(Color.orange.opacity(0.60)),
+                               lineWidth: 3)
+            }
+
             if let pointerPoint {
                 let mappedPointer = map(pointerPoint)
+                let guideLength: CGFloat = 34
+                let guideEnd = CGPoint(x: mappedPointer.x, y: mappedPointer.y - guideLength)
+                var guidePath = Path()
+                guidePath.move(to: mappedPointer)
+                guidePath.addLine(to: guideEnd)
+                context.stroke(guidePath,
+                               with: .color(Color.green.opacity(0.85)),
+                               style: StrokeStyle(lineWidth: 2.5,
+                                                  lineCap: .round,
+                                                  dash: [5, 4]))
+                context.stroke(Path(ellipseIn: CGRect(x: guideEnd.x - 9,
+                                                      y: guideEnd.y - 9,
+                                                      width: 18,
+                                                      height: 18)),
+                               with: .color(Color.green.opacity(0.85)),
+                               lineWidth: 2.5)
+                context.fill(Path(ellipseIn: CGRect(x: guideEnd.x - 3,
+                                                    y: guideEnd.y - 3,
+                                                    width: 6,
+                                                    height: 6)),
+                             with: .color(Color.green.opacity(0.85)))
+
+                if let cameraDirection {
+                    let length: CGFloat = 34
+                    let end = CGPoint(x: mappedPointer.x + cameraDirection.dx * length,
+                                      y: mappedPointer.y + cameraDirection.dy * length)
+                    var directionPath = Path()
+                    directionPath.move(to: mappedPointer)
+                    directionPath.addLine(to: end)
+                    context.stroke(directionPath,
+                                   with: .color(Color.blue.opacity(0.85)),
+                                   style: StrokeStyle(lineWidth: 3, lineCap: .round))
+
+                    let angle = atan2(cameraDirection.dy, cameraDirection.dx)
+                    let wing: CGFloat = 8
+                    let left = CGPoint(x: end.x - cos(angle - .pi / 6) * wing,
+                                       y: end.y - sin(angle - .pi / 6) * wing)
+                    let right = CGPoint(x: end.x - cos(angle + .pi / 6) * wing,
+                                        y: end.y - sin(angle + .pi / 6) * wing)
+                    var arrowHead = Path()
+                    arrowHead.move(to: end)
+                    arrowHead.addLine(to: left)
+                    arrowHead.move(to: end)
+                    arrowHead.addLine(to: right)
+                    context.stroke(arrowHead,
+                                   with: .color(Color.blue.opacity(0.85)),
+                                   style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                }
                 context.fill(Path(ellipseIn: CGRect(x: mappedPointer.x - 6,
                                                     y: mappedPointer.y - 6,
                                                     width: 12,
@@ -759,12 +1294,62 @@ private struct ARDiagnosticsMiniFloorplanView: View {
             }
         }
         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            if allowsOriginSelection || allowsAlignmentSelection {
+                GeometryReader { proxy in
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onEnded { value in
+                                    guard let point = unmap(value.location, in: proxy.size) else { return }
+                                    if allowsOriginSelection {
+                                        onOriginSelected?(point)
+                                    } else if allowsAlignmentSelection {
+                                        onAlignmentSelected?(point)
+                                    }
+                                }
+                        )
+                }
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
-            if pointerPoint != nil {
+            if pointerPoint != nil, !isCompact {
                 Label(String(localized: "ar.plan.pointer", defaultValue: "AR offset"),
                       systemImage: "location.fill")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(8)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if isCompact {
+            } else if allowsOriginSelection {
+                Label(String(localized: "ar.plan.origin.target", defaultValue: "Tap position"),
+                      systemImage: "mappin.circle")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(8)
+            } else if allowsAlignmentSelection {
+                Label(String(localized: "ar.plan.alignment.target", defaultValue: "Tap point B"),
+                      systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(8)
+            } else if pointerPoint != nil {
+                Label(String(localized: "ar.plan.direction.target", defaultValue: "Aim target"),
+                      systemImage: "scope")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.green)
                     .padding(.horizontal, 8)
                     .frame(height: 24)
                     .background(.thinMaterial, in: Capsule())
@@ -796,6 +1381,22 @@ private struct ARDiagnosticsMiniFloorplanView: View {
                       width: max(1, maxX - minX),
                       height: max(1, maxY - minY))
             .insetBy(dx: -24, dy: -24)
+    }
+
+    private func unmap(_ location: CGPoint, in size: CGSize) -> CGPoint? {
+        guard let bounds = drawingBounds, bounds.width > 1, bounds.height > 1 else { return nil }
+
+        let inset: CGFloat = 10
+        let available = CGSize(width: max(1, size.width - inset * 2),
+                               height: max(1, size.height - inset * 2))
+        let scale = min(available.width / bounds.width, available.height / bounds.height)
+        guard scale > 0.001 else { return nil }
+
+        let drawnSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        let origin = CGPoint(x: (size.width - drawnSize.width) / 2,
+                             y: (size.height - drawnSize.height) / 2)
+        return CGPoint(x: bounds.minX + (location.x - origin.x) / scale,
+                       y: bounds.minY + (location.y - origin.y) / scale)
     }
 
     private func path(for points: [CGPoint], map: (CGPoint) -> CGPoint) -> Path? {
@@ -1040,6 +1641,7 @@ private struct DiagnosticsCameraPreview: UIViewRepresentable {
             session.delegate = self
 
             let configuration = ARWorldTrackingConfiguration()
+            configuration.worldAlignment = .gravityAndHeading
             configuration.planeDetection = [.horizontal, .vertical]
             configuration.environmentTexturing = .automatic
             session.run(configuration, options: [.resetTracking, .removeExistingAnchors])

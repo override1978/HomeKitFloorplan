@@ -1,6 +1,40 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "ar.plan.mirror" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mirror map"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Specchia mappa"
+          }
+        }
+      }
+    },
+    "floorplan.exposure.hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The top edge of the drawing — not where the balcony or façade faces."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il bordo alto del disegno — non dove guarda il balcone o la facciata."
+          }
+        }
+      }
+    },
     "presence.issue.counter" : {
       "extractionState" : "manual",
       "localizations" : {

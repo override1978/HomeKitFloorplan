@@ -1210,12 +1210,24 @@ struct FloorplanRealityPreviewView: View {
                 }
                 .foregroundStyle(Color.primary)
 
-                HStack(spacing: 12) {
-                    Text(String(localized: "floorplan.exposure", defaultValue: "Top of the plan faces"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    exposureMenu
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 12) {
+                        Text(String(localized: "floorplan.exposure", defaultValue: "Top of the plan faces"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        exposureMenu
+                    }
+                    // Trappola provata sul campo: «casa mia guarda a sud-ovest»
+                    // parla del balcone, il menù parla del bordo alto del
+                    // DISEGNO — e i due possono differire di 90°. Da qui
+                    // dipendono il sole e la bussola AR: l'equivoco va
+                    // disinnescato nel punto esatto in cui nasce.
+                    Text(String(localized: "floorplan.exposure.hint",
+                                defaultValue: "The top edge of the drawing — not where the balcony or façade faces."))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 #if DEBUG
