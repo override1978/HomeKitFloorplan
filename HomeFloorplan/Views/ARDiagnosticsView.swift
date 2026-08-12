@@ -1475,7 +1475,7 @@ private struct ARDiagnosticsCameraStatus: Equatable {
     var systemImage: String {
         switch kind {
         case .starting: return "camera.viewfinder"
-        case .ready: return "checkmark.viewfinder"
+        case .ready: return "checkmark.circle.fill"
         case .denied: return "lock.slash"
         case .unavailable: return "video.slash"
         }
@@ -1521,7 +1521,7 @@ private struct ARDiagnosticsScanState: Equatable {
     }
 
     var systemImage: String {
-        progress >= 0.85 ? "checkmark.viewfinder" : "viewfinder"
+        progress >= 0.85 ? "checkmark.circle.fill" : "viewfinder"
     }
 
     var title: String {
