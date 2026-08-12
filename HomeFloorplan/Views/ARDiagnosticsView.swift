@@ -28,6 +28,9 @@ struct ARDiagnosticsSnapshot: Identifiable {
     var northBearingDegrees: Double = 0
     var savedCalibration: ARFloorCalibration?
     var applyARCalibration: ((ARFloorCalibration?) -> Void)?
+    /// Persiste il nord PRECISO della pianta (gradi continui, non gli scatti
+    /// da 45° del menù esposizione). Lo scrive «Set direction»: vedi là.
+    var applyNorthBearing: ((Double) -> Void)?
     var commissioningMarkers: [ARDiagnosticsCommissioningMarker] = []
     var performCommissioningAction: ((UUID) -> Void)?
 }
@@ -871,9 +874,26 @@ struct ARDiagnosticsView: View {
         calibrationForwardXZ = automaticMapForwardXZ()
     }
 
+    /// «Set direction»: l'utente guarda il lato alto reale della pianta e
+    /// tocca. Due effetti, non uno:
+    ///
+    /// 1. La sessione corrente si allinea ESATTA (il forward diventa il
+    ///    map-up in assi di sessione — qui la bussola non c'entra più).
+    /// 2. Con gli assi geografici (.gravityAndHeading) quel forward HA un
+    ///    rilevamento vero: atan2(x, −z), 0 = nord. Lo si persiste come nord
+    ///    preciso della pianta — 110° invece dello scatto a 135 del menù —
+    ///    così TUTTE le sessioni future partono giuste in automatico.
+    ///
+    /// È la calibrazione fine una-tantum: l'errore da quantizzazione (fino a
+    /// ±22°, che a 3 m sono già 1,2 m di scarto sui punti) muore qui; resta
+    /// solo il rumore di bussola fra una sessione e l'altra (~±10°).
     private func applyCurrentViewAsMapTop() {
         guard let forwardXZ = arPose?.forwardXZ else { return }
         calibrationForwardXZ = forwardXZ
+
+        let bearing = atan2(Double(forwardXZ.x), Double(-forwardXZ.y)) * 180 / .pi
+        snapshot.applyNorthBearing?((bearing + 360)
+            .truncatingRemainder(dividingBy: 360))
     }
 
     private func setSecondCalibrationPoint() {

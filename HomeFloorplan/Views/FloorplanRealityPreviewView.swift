@@ -2338,6 +2338,10 @@ struct FloorplanRealityPreviewView: View {
                 northBearingDegrees: northBearingDegrees,
                 savedCalibration: document.arCalibration,
                 applyARCalibration: current.applyARCalibration,
+                applyNorthBearing: { bearing in
+                    current.applyNorthBearing(bearing)
+                    exposure = Exposure.nearest(to: bearing)
+                },
                 commissioningMarkers: commissioningMarkers,
                 performCommissioningAction: { toggleAccessory($0) }
             )
@@ -2379,6 +2383,10 @@ struct FloorplanRealityPreviewView: View {
             northBearingDegrees: northBearingDegrees,
             savedCalibration: document.arCalibration,
             applyARCalibration: current.applyARCalibration,
+            applyNorthBearing: { bearing in
+                current.applyNorthBearing(bearing)
+                exposure = Exposure.nearest(to: bearing)
+            },
             commissioningMarkers: commissioningMarkers,
             performCommissioningAction: { toggleAccessory($0) }
         )
