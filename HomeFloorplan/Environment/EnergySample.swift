@@ -45,7 +45,12 @@ final class EnergySample {
     /// spingere; false = già sul server (spinta o arrivata da un altro
     /// device). È il flag che evita l'eco: le righe applicate da remoto non
     /// vengono mai ri-caricate.
-    var needsSync: Bool
+    ///
+    /// ⚠️ Il default sta QUI, sulla proprietà, non solo nell'init: è il valore
+    /// che la migrazione lightweight scrive nelle righe già esistenti. Senza,
+    /// l'attributo è «mandatory senza valore» e il container muore all'avvio
+    /// (Code=134110) — successo davvero, il 13/08, sulle righe v31.
+    var needsSync: Bool = true
 
     init(
         id: UUID = UUID(),
