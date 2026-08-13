@@ -4523,25 +4523,49 @@ private struct AutomationWizardEditDraft {
                $0.characteristic.uniqueIdentifier == thresholdEvent.characteristic.uniqueIdentifier
            }) {
             let range = thresholdEvent.thresholdRange
-            if let minimum = range.minValue, range.maxValue == nil {
+            // Molti ecosistemi scrivono «sotto il 58%» come [0, 58] e «sopra
+            // il 58%» come [58, 100]: chiuso sulla carta, ma un estremo
+            // coincide col LIMITE FISICO della caratteristica (metadata) —
+            // quella non è un intervallo, è una soglia travestita. Un estremo
+            // al limite (o oltre) si neutralizza, e resta la soglia vera.
+            let metadata = thresholdEvent.characteristic.metadata
+            let effectiveMinimum: Double? = {
+                guard let minimum = range.minValue?.doubleValue else { return nil }
+                if let floor = (metadata?.minimumValue)?.doubleValue, minimum <= floor { return nil }
+                return minimum
+            }()
+            let effectiveMaximum: Double? = {
+                guard let maximum = range.maxValue?.doubleValue else { return nil }
+                if let ceiling = (metadata?.maximumValue)?.doubleValue, maximum >= ceiling { return nil }
+                return maximum
+            }()
+
+            switch (effectiveMinimum, effectiveMaximum) {
+            case (let minimum?, nil):
                 return AutomationStartEventDraft(selection: AutomationCapabilitySelection(
                     capability: capability,
                     comparisonOperator: .greaterThan,
-                    targetValue: .number(minimum.doubleValue)
+                    targetValue: .number(minimum)
                 ))
-            }
-            if let maximum = range.maxValue, range.minValue == nil {
+            case (nil, let maximum?):
                 return AutomationStartEventDraft(selection: AutomationCapabilitySelection(
                     capability: capability,
                     comparisonOperator: .lessThan,
-                    targetValue: .number(maximum.doubleValue)
+                    targetValue: .number(maximum)
                 ))
+            case (nil, nil):
+                // L'intervallo copre tutto il campo: scatta a ogni variazione.
+                return AutomationStartEventDraft(selection: AutomationCapabilitySelection(
+                    capability: capability,
+                    targetValue: .any
+                ))
+            case (.some, .some):
+                // Intervallo GENUINAMENTE interno [min, max]: il nostro
+                // modello non ha «dentro l'intervallo» — meglio il cartello
+                // di sola lettura che riscrivere la semantica al salvataggio.
+                dprint("[EditDraft] ThresholdRange interno [\(range.minValue?.doubleValue ?? .nan), \(range.maxValue?.doubleValue ?? .nan)] su campo [\((metadata?.minimumValue)?.doubleValue ?? .nan), \((metadata?.maximumValue)?.doubleValue ?? .nan)]: non rappresentabile, draft nil")
+                return nil
             }
-            // Intervallo chiuso [min, max]: il nostro modello non ha un
-            // operatore «dentro l'intervallo» — meglio il cartello di sola
-            // lettura che riscrivere di nascosto la semantica al salvataggio.
-            dprint("[EditDraft] ThresholdRange con intervallo chiuso (min e max): non rappresentabile, draft nil")
-            return nil
         }
 
         if let calendarEvent = event as? HMCalendarEvent {
