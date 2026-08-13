@@ -172,60 +172,117 @@ struct AutomationItem: Identifiable {
             return characteristicEvent.characteristic.uniqueIdentifier.uuidString
         })
 
-        let summaries = describePredicate(predicate, triggerCharacteristicIDs: triggerCharacteristicIDs)
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        // Prima i parser VERI del wizard (testati sui dialetti di Apple Home,
+        // Controller ed Eve): orari e presenza escono come frasi pulite —
+        // «Tra le 20:00 e le 01:59», «A casa» — invece del dump grezzo di
+        // NSDateComponents e Presence-Event che usciva da qui.
+        var summaries: [String] = []
+        summaries += AutomationWizardEditDraft
+            .timeConditions(in: predicate, triggerPredicates: [])
+            .map(\.summary)
+        summaries += AutomationWizardEditDraft
+            .presenceConditions(in: predicate, triggerPredicates: [])
+            .map(\.summary)
+        summaries += characteristicConditionSummaries(
+            in: predicate,
+            triggerCharacteristicIDs: triggerCharacteristicIDs
+        )
 
-        if summaries.isEmpty {
+        let cleaned = summaries.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if cleaned.isEmpty {
             return [String(localized: "automation.conditions.configured", defaultValue: "HomeKit conditions configured")]
         }
-        return summaries
+        return cleaned
     }
 
-    private static func describePredicate(_ predicate: NSPredicate, triggerCharacteristicIDs: Set<String>) -> [String] {
+    /// Le condizioni su caratteristiche, con l'accoppiamento anche nell'AND
+    /// PIATTO di Controller: `characteristic == X` e `characteristicValue >
+    /// 29,6` arrivano FRATELLI, e descritti separati diventavano «is valore
+    /// attuale» più un numero orfano (le righe grezze di «Zappa Terra»).
+    nonisolated private static func characteristicConditionSummaries(
+        in predicate: NSPredicate,
+        triggerCharacteristicIDs: Set<String>
+    ) -> [String] {
         if let compound = predicate as? NSCompoundPredicate {
-            let parts = compound.subpredicates.flatMap { subpredicate -> [String] in
-                guard let predicate = subpredicate as? NSPredicate else { return [] }
-                return describePredicate(predicate, triggerCharacteristicIDs: triggerCharacteristicIDs)
+            let comparisons = compound.subpredicates.compactMap { $0 as? NSComparisonPredicate }
+            let characteristicComparisons = comparisons.filter { comparisonCharacteristic($0) != nil }
+            let valueComparisons = comparisons.filter { comparison in
+                comparisonCharacteristic(comparison) == nil && plainComparisonValue(comparison) != nil
             }
 
-            guard compound.compoundPredicateType == .or, parts.count > 1 else {
-                return parts
+            var summaries: [String] = []
+            if compound.compoundPredicateType == .and,
+               characteristicComparisons.count == 1,
+               let characteristic = comparisonCharacteristic(characteristicComparisons[0]),
+               let valueComparison = valueComparisons.first {
+                if !triggerCharacteristicIDs.contains(characteristic.uniqueIdentifier.uuidString) {
+                    summaries.append(characteristicSummary(
+                        characteristic,
+                        operatorType: valueComparison.predicateOperatorType,
+                        value: plainComparisonValue(valueComparison)
+                    ))
+                }
+            } else {
+                for comparison in characteristicComparisons {
+                    guard let characteristic = comparisonCharacteristic(comparison),
+                          !triggerCharacteristicIDs.contains(characteristic.uniqueIdentifier.uuidString) else { continue }
+                    summaries.append(characteristicSummary(
+                        characteristic,
+                        operatorType: comparison.predicateOperatorType,
+                        value: plainComparisonValue(comparison)
+                    ))
+                }
             }
 
-            return [parts.joined(separator: " OR ")]
+            summaries += compound.subpredicates
+                .compactMap { $0 as? NSCompoundPredicate }
+                .flatMap { characteristicConditionSummaries(in: $0, triggerCharacteristicIDs: triggerCharacteristicIDs) }
+            return summaries
         }
 
         if let comparison = predicate as? NSComparisonPredicate,
-           let summary = describeComparisonPredicate(comparison, triggerCharacteristicIDs: triggerCharacteristicIDs) {
-            return [summary]
+           let characteristic = comparisonCharacteristic(comparison),
+           !triggerCharacteristicIDs.contains(characteristic.uniqueIdentifier.uuidString) {
+            return [characteristicSummary(
+                characteristic,
+                operatorType: comparison.predicateOperatorType,
+                value: plainComparisonValue(comparison)
+            )]
         }
-
-        return [String(localized: "automation.conditions.configured", defaultValue: "HomeKit conditions configured")]
+        return []
     }
 
-    nonisolated private static func describeComparisonPredicate(
-        _ predicate: NSComparisonPredicate,
-        triggerCharacteristicIDs: Set<String>
-    ) -> String? {
-        let expressions = [predicate.leftExpression, predicate.rightExpression]
-        let constantValues = expressions.compactMap(constantExpressionValue)
-        let characteristic = constantValues.compactMap { $0 as? HMCharacteristic }.first
+    nonisolated private static func comparisonCharacteristic(_ comparison: NSComparisonPredicate) -> HMCharacteristic? {
+        [comparison.leftExpression, comparison.rightExpression]
+            .compactMap(constantExpressionValue)
+            .compactMap { $0 as? HMCharacteristic }
+            .first
+    }
 
-        if let characteristic,
-           triggerCharacteristicIDs.contains(characteristic.uniqueIdentifier.uuidString) {
-            return nil
-        }
+    /// Il valore «semplice» di un confronto: numero, bool o stringa — non
+    /// date, non presenza, non caratteristiche (quelle parlano altre lingue).
+    nonisolated private static func plainComparisonValue(_ comparison: NSComparisonPredicate) -> Any? {
+        [comparison.leftExpression, comparison.rightExpression]
+            .compactMap(constantExpressionValue)
+            .first { value in
+                !(value is HMCharacteristic) && !(value is DateComponents)
+                    && !(value is HMPresenceEvent) && !(value is HMSignificantTimeEvent)
+            }
+    }
 
-        let value = constantValues.first { !($0 is HMCharacteristic) }
-        let characteristicName = characteristic?.metadata?.manufacturerDescription ??
-            characteristic?.characteristicType.components(separatedBy: ".").last ??
+    nonisolated private static func characteristicSummary(
+        _ characteristic: HMCharacteristic,
+        operatorType: NSComparisonPredicate.Operator,
+        value: Any?
+    ) -> String {
+        let characteristicName = characteristic.metadata?.manufacturerDescription ??
+            characteristic.characteristicType.components(separatedBy: ".").last ??
             String(localized: "automation.condition.characteristic", defaultValue: "Characteristic")
-        let accessoryName = characteristic?.service?.accessory?.name
-        let operatorText = comparisonOperatorText(predicate.predicateOperatorType)
+        let operatorText = comparisonOperatorText(operatorType)
         let valueText = value.map(describePredicateValue) ??
             String(localized: "automation.condition.value.current", defaultValue: "current value")
 
-        if let accessoryName {
+        if let accessoryName = characteristic.service?.accessory?.name {
             return "\(accessoryName) - \(characteristicName) \(operatorText) \(valueText)"
         }
         return "\(characteristicName) \(operatorText) \(valueText)"
