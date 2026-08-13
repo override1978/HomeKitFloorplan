@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import HomeKit
+import UniformTypeIdentifiers
 
 // MARK: - EnergyMonitorView
 
@@ -16,7 +17,14 @@ struct EnergyMonitorView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(MatterEnergyLiveStore.self) private var matterEnergy
     @AppStorage("energy.tariffPerKWh") private var tariffPerKWh = 0.0
+    @Environment(\.modelContext) private var modelContext
     @Query private var samples: [EnergySample]
+    /// Lo storico del contatore generale, TUTTO: sono ~2 campioni al giorno
+    /// (l'import sottocampiona), un anno intero pesa meno di una settimana
+    /// di prese.
+    @Query private var houseSamples: [EnergySample]
+    @State private var isImporterPresented = false
+    @State private var importMessage: String?
 
     private static let windowDays = 7
 
@@ -32,12 +40,17 @@ struct EnergyMonitorView: View {
             filter: #Predicate<EnergySample> { $0.timestamp >= cutoff },
             sort: [SortDescriptor(\EnergySample.timestamp)]
         )
+        let houseID = EnergySample.houseMeterDeviceID
+        _houseSamples = Query(
+            filter: #Predicate<EnergySample> { $0.deviceID == houseID },
+            sort: [SortDescriptor(\EnergySample.timestamp)]
+        )
     }
 
     var body: some View {
         NavigationStack {
             Group {
-                if devices.isEmpty {
+                if devices.isEmpty && houseSamples.isEmpty {
                     emptyState
                 } else {
                     content
@@ -45,9 +58,177 @@ struct EnergyMonitorView: View {
             }
             .navigationTitle(String(localized: "energy.title", defaultValue: "Energy"))
             .background(Color(uiColor: .systemGroupedBackground))
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isImporterPresented = true
+                    } label: {
+                        Label(String(localized: "energy.import.button", defaultValue: "Import meter export"),
+                              systemImage: "square.and.arrow.down")
+                    }
+                }
+            }
+            .fileImporter(
+                isPresented: $isImporterPresented,
+                allowedContentTypes: [UTType(filenameExtension: "xlsx") ?? .data]
+            ) { result in
+                handleImport(result)
+            }
+            .alert(String(localized: "energy.import.title", defaultValue: "Meter import"),
+                   isPresented: Binding(
+                    get: { importMessage != nil },
+                    set: { if !$0 { importMessage = nil } }
+                   ),
+                   presenting: importMessage) { _ in
+                Button("OK") { importMessage = nil }
+            } message: { message in
+                Text(message)
+            }
         }
         .task { await refreshLive() }
         .refreshable { await refreshLive(force: true) }
+    }
+
+    private func handleImport(_ result: Result<URL, Error>) {
+        switch result {
+        case .failure(let error):
+            importMessage = error.localizedDescription
+        case .success(let url):
+            // Il file vive su iCloud Drive: fuori dal nostro container serve
+            // l'accesso security-scoped, e va rilasciato comunque vada.
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                let outcome = try HouseMeterImport.importArchive(data, modelContainer: modelContext.container)
+                importMessage = String(
+                    format: String(localized: "energy.import.result",
+                                   defaultValue: "%1$d new days imported, %2$d already present."),
+                    outcome.inserted, outcome.skipped
+                )
+            } catch {
+                importMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// La card del contatore: il totale VERO della casa — da qui in poi
+    /// «Solo prese misurate» vale solo per la sezione sotto.
+    private var houseCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(localized: "energy.total.today", defaultValue: "Today"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(formattedKilowattHours(houseTodayKilowattHours))
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                }
+                Spacer()
+                if let cost = formattedCost(houseTodayKilowattHours) {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(String(localized: "energy.total.cost", defaultValue: "Estimated cost"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(cost)
+                            .font(.title3.weight(.semibold))
+                            .monospacedDigit()
+                    }
+                }
+            }
+
+            HStack(alignment: .bottom, spacing: 14) {
+                measure(String(localized: "energy.day.yesterday", defaultValue: "Yesterday"),
+                        kilowattHours: houseYesterdayKilowattHours)
+                if let other = otherTodayKilowattHours {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(formattedKilowattHours(other))
+                            .font(.subheadline.weight(.bold))
+                            .monospacedDigit()
+                        Text(String(localized: "energy.house.other", defaultValue: "Beyond the outlets, today"))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                sparkline(houseDays)
+                    .frame(width: 108, height: 34)
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    /// Dodici mesi di casa in dodici barre: la forma dell'anno — inverno,
+    /// clima estivo, i mesi di vacanza — col mese corrente acceso.
+    private var monthlyCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(String(localized: "energy.monthly.title", defaultValue: "Last 12 months"))
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if let peak = houseMonths.map(\.kilowattHours).max(), peak > 0 {
+                    Text(formattedKilowattHours(peak))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Canvas { context, size in
+                let months = houseMonths
+                guard !months.isEmpty else { return }
+                let maximum = max(months.map(\.kilowattHours).max() ?? 0, 0.0001)
+                let gap: CGFloat = 5
+                let barWidth = (size.width - gap * CGFloat(months.count - 1)) / CGFloat(months.count)
+                for (index, month) in months.enumerated() {
+                    let height = max(2, (size.height - 14) * CGFloat(month.kilowattHours / maximum))
+                    let rect = CGRect(x: CGFloat(index) * (barWidth + gap),
+                                      y: size.height - 14 - height,
+                                      width: barWidth,
+                                      height: height)
+                    let isCurrent = index == months.count - 1
+                    context.fill(Path(roundedRect: rect, cornerRadius: 3),
+                                 with: .color(isCurrent ? .yellow : .yellow.opacity(0.35)))
+
+                    let label = month.day.formatted(.dateTime.month(.narrow))
+                    context.draw(
+                        Text(label).font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary),
+                        at: CGPoint(x: rect.midX, y: size.height - 6)
+                    )
+                }
+            }
+            .frame(height: 96)
+
+            if let annual = annualSummary {
+                Text(annual)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    private var annualSummary: String? {
+        let total = houseMonths.map(\.kilowattHours).reduce(0, +)
+        guard total > 0 else { return nil }
+        var summary = String(
+            format: String(localized: "energy.monthly.total", defaultValue: "Total: %@"),
+            formattedKilowattHours(total)
+        )
+        if let cost = formattedCost(total) {
+            summary += " · \(cost)"
+        }
+        return summary
     }
 
     // MARK: Dati
@@ -64,7 +245,8 @@ struct EnergyMonitorView: View {
     }
 
     private var devices: [DeviceEnergy] {
-        Dictionary(grouping: samples, by: \.deviceID)
+        Dictionary(grouping: samples.filter { $0.deviceID != EnergySample.houseMeterDeviceID },
+                   by: \.deviceID)
             .compactMap { deviceID, rows -> DeviceEnergy? in
                 guard let latest = rows.max(by: { $0.timestamp < $1.timestamp }) else { return nil }
                 let points = rows.map {
@@ -87,6 +269,31 @@ struct EnergyMonitorView: View {
         Array(Set(devices.map(\.roomName))).sorted {
             $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
         }
+    }
+
+    private var housePoints: [EnergyStatsPoint] {
+        houseSamples.map {
+            EnergyStatsPoint(timestamp: $0.timestamp, cumulativeKilowattHours: $0.cumulativeKilowattHours)
+        }
+    }
+
+    private var houseDays: [EnergyDayTotal] {
+        EnergyStatsBuilder.dailyTotals(points: housePoints, days: Self.windowDays)
+    }
+
+    private var houseMonths: [EnergyDayTotal] {
+        EnergyStatsBuilder.monthlyTotals(points: housePoints, months: 12)
+    }
+
+    private var houseTodayKilowattHours: Double { houseDays.last?.kilowattHours ?? 0 }
+    private var houseYesterdayKilowattHours: Double { houseDays.dropLast().last?.kilowattHours ?? 0 }
+
+    /// Ciò che il contatore vede e le prese no: luci, forno, induzione,
+    /// clima. È il numero che nessuna presa smart può dare.
+    private var otherTodayKilowattHours: Double? {
+        guard !houseSamples.isEmpty else { return nil }
+        let difference = houseTodayKilowattHours - totalTodayKilowattHours
+        return difference > 0.05 ? difference : nil
     }
 
     private var totalWattsNow: Double? {
@@ -112,6 +319,19 @@ struct EnergyMonitorView: View {
     private var content: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
+                if !houseSamples.isEmpty {
+                    Text(String(localized: "energy.house.section", defaultValue: "House"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                    houseCard
+                    monthlyCard
+                    Text(String(localized: "energy.plugs.section", defaultValue: "Measured outlets"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.top, 4)
+                }
                 totalCard
 
                 ForEach(roomNames, id: \.self) { roomName in

@@ -75,6 +75,39 @@ enum EnergyStatsBuilder {
         return result
     }
 
+    /// Totali mensili (primo del mese) per gli ultimi `months` mesi,
+    /// l'ultimo è il mese di `reference`. Stessa matematica dei giornalieri
+    /// — delta fra letture, smear, reset scartati — poi raggruppati per mese.
+    static func monthlyTotals(
+        points: [EnergyStatsPoint],
+        months: Int,
+        reference: Date = .now,
+        calendar: Calendar = .current
+    ) -> [EnergyDayTotal] {
+        guard months > 0,
+              let currentMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: reference)),
+              let windowStart = calendar.date(byAdding: .month, value: -(months - 1), to: currentMonth) else {
+            return []
+        }
+        let coveringDays = (calendar.dateComponents([.day], from: windowStart, to: reference).day ?? 0) + 1
+        let daily = dailyTotals(points: points, days: coveringDays, reference: reference, calendar: calendar)
+
+        var byMonth: [Date: Double] = [:]
+        for day in daily {
+            guard let month = calendar.date(from: calendar.dateComponents([.year, .month], from: day.day)) else { continue }
+            byMonth[month, default: 0] += day.kilowattHours
+        }
+
+        var result: [EnergyDayTotal] = []
+        var month = windowStart
+        while month <= currentMonth {
+            result.append(EnergyDayTotal(day: month, kilowattHours: byMonth[month] ?? 0))
+            guard let next = calendar.date(byAdding: .month, value: 1, to: month) else { break }
+            month = next
+        }
+        return result
+    }
+
     /// Attribuisce `delta` ai giorni toccati dall'intervallo, in proporzione
     /// al tempo trascorso in ciascuno.
     private static func smear(

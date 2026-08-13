@@ -19,6 +19,13 @@ import SwiftData
 /// contatore. Qui si salva il grezzo così com'è — è il lato lettura
 /// (EnergyStatsBuilder) a spezzare i segmenti sui decrementi, così una riga
 /// «sporca» non avvelena mai lo storico già scritto.
+extension EnergySample {
+    /// Il deviceID del contatore generale della casa: oggi lo alimenta
+    /// l'import Vimar, domani un meter Matter da quadro — stessa identità,
+    /// stessa sezione in vista, zero migrazioni quando arriva l'hardware.
+    static let houseMeterDeviceID = "house-meter"
+}
+
 @Model
 final class EnergySample {
     #Index<EnergySample>([\.timestamp], [\.deviceID], [\.deviceID, \.timestamp])

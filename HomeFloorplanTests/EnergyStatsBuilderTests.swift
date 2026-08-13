@@ -124,6 +124,25 @@ struct EnergyStatsBuilderTests {
         #expect(totals.last!.day == calendar.startOfDay(for: date(day: 13, hour: 0)))
     }
 
+    /// I mensili: stessa matematica dei giornalieri, raggruppata. Un delta
+    /// a cavallo di due mesi si divide fra i due in proporzione al tempo.
+    @Test("Mensili: finestra sempre piena e delta a cavallo del mese diviso")
+    func monthlyTotals() {
+        // 31/07 23:00 → 01/08 01:00: 0.4 kWh su 2 ore, metà per mese.
+        let july31 = calendar.date(from: DateComponents(year: 2026, month: 7, day: 31, hour: 23))!
+        let aug1 = calendar.date(from: DateComponents(year: 2026, month: 8, day: 1, hour: 1))!
+        let months = EnergyStatsBuilder.monthlyTotals(
+            points: [EnergyStatsPoint(timestamp: july31, cumulativeKilowattHours: 100.0),
+                     EnergyStatsPoint(timestamp: aug1, cumulativeKilowattHours: 100.4)],
+            months: 12, reference: reference, calendar: calendar)
+        #expect(months.count == 12)
+        let byMonth = Dictionary(uniqueKeysWithValues: months.map { ($0.day, $0.kilowattHours) })
+        let july = calendar.date(from: DateComponents(year: 2026, month: 7, day: 1))!
+        let august = calendar.date(from: DateComponents(year: 2026, month: 8, day: 1))!
+        #expect(abs(byMonth[july]! - 0.2) < 0.0001)
+        #expect(abs(byMonth[august]! - 0.2) < 0.0001)
+    }
+
     /// Un buco di più giorni: l'energia si distribuisce su TUTTI i giorni
     /// attraversati, non solo sul primo e l'ultimo.
     @Test("Buco di tre giorni: ogni giorno attraversato riceve la sua parte")
