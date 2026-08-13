@@ -252,6 +252,31 @@ enum AutomationCapabilityCatalog {
             append(capability)
         }
 
+        // Multi-canale (Aqara T2 raggruppato, multiprese): una capability di
+        // Accensione PER CANALE, titolata col nome del servizio. Senza, il
+        // trigger «quando si accende…» vedeva solo il canale 1, e un'automazione
+        // esistente sul canale 2 non trovava la sua capability in lettura —
+        // il draft moriva ed era questo il «builder che fallisce in lettura».
+        let powerChannels = MultiOutletAdapter.powerServices(in: accessory)
+        if powerChannels.count >= 2 {
+            for (index, service) in powerChannels.enumerated() {
+                guard let characteristic = service.characteristics.first(where: {
+                    $0.characteristicType == HMCharacteristicTypePowerState
+                }), characteristic.properties.contains(HMCharacteristicPropertyReadable) else { continue }
+                append(makeCapability(
+                    accessory: accessory,
+                    characteristic: characteristic,
+                    title: "\(String(localized: "automation.capability.power", defaultValue: "Power")) · \(MultiOutletAdapter.channelName(for: service, index: index))",
+                    iconName: "power",
+                    valueKind: .boolean(
+                        activeLabel: String(localized: "automation.capability.power.on", defaultValue: "On"),
+                        inactiveLabel: String(localized: "automation.capability.power.off", defaultValue: "Off")
+                    ),
+                    defaultOperator: .equals
+                ))
+            }
+        }
+
         append(booleanControlCapability(
             in: accessory,
             characteristicType: HMCharacteristicTypePowerState,
