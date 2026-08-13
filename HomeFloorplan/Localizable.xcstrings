@@ -1,6 +1,57 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "settings.energy.header" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Energy"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Energia"
+          }
+        }
+      }
+    },
+    "settings.energy.tariff.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Energy price"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prezzo dell'energia"
+          }
+        }
+      }
+    },
+    "settings.energy.tariff.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used to estimate costs from measured consumption. Leave 0 to show energy only, without costs."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usato per stimare i costi dai consumi misurati. Lascia 0 per mostrare solo l'energia, senza costi."
+          }
+        }
+      }
+    },
     "ar.plan.mirror" : {
       "extractionState" : "manual",
       "localizations" : {

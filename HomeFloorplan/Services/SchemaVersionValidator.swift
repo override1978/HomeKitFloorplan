@@ -48,6 +48,7 @@ import SwiftData
 //   14. PersistedHomeInsight (primary unified insight store)
 //   15. ProactiveNotification
 //   16. SyncableSettings
+//   17. EnergySample (storico contatore + potenza dei misuratori Matter/Eve)
 //
 // NOTE: Automated migration tests require a dedicated test target.
 // The project currently has no test target. When one is added, create a
@@ -61,7 +62,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 30   // v30: PlacedAccessory.lightRenderStyleRaw (additiva, opzionale)
+    static let currentVersion: Int = 31   // v31: EnergySample — storico energia Matter/Eve (nuovo modello, additiva)
 
     // MARK: - Persistence
 

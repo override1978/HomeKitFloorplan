@@ -13,6 +13,14 @@ final class MatterEnergyLiveStore {
     private(set) var isRefreshing: Bool = false
     private(set) var lastRefresh: Date?
 
+    /// Iniettato da AppServices: ogni lettura live diventa storico
+    /// (EnergySampleLogger), senza che lo store sappia niente di SwiftData.
+    /// Stesso principio di Preview3DFloorplan: la scrittura resta fuori.
+    /// (@ObservationIgnored: è plumbing, non stato osservabile — e il macro
+    /// @Observable non sa trattare le chiusure @MainActor nei suoi accessor.)
+    @ObservationIgnored
+    var onSnapshotsRead: (@MainActor ([MatterEnergyDeviceSnapshot], HMHome) -> Void)?
+
     func snapshot(for accessoryUUID: UUID) -> MatterEnergyDeviceSnapshot? {
         snapshotsByAccessoryUUID[accessoryUUID]
     }
@@ -40,6 +48,7 @@ final class MatterEnergyLiveStore {
         )
         diagnostics = report.diagnostics
         lastRefresh = Date()
+        onSnapshotsRead?(report.snapshots, home)
     }
 
     @MainActor

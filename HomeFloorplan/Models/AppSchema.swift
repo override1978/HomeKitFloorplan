@@ -25,5 +25,6 @@ enum AppSchema {
         PersistedHomeInsight.self,
         ProactiveNotification.self,
         SyncableSettings.self,
+        EnergySample.self,
     ]) }
 }

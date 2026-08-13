@@ -6,6 +6,9 @@ import UserNotifications
 
 struct SettingsView: View {
     @AppStorage("habits.sectionVisible") private var habitsSectionVisible = false
+    /// €/kWh per stimare i costi dai consumi misurati. 0 = niente costi in UI,
+    /// solo energia: meglio nessun numero che un numero inventato.
+    @AppStorage("energy.tariffPerKWh") private var energyTariffPerKWh = 0.0
     /// Rete di sicurezza rimasta accesa dopo una migrazione: finché è true
     /// nessuna potatura tocca letture ed eventi grezzi.
     @AppStorage(LocalDataProtection.preserveSwiftDataKey) private var preservesRawData = true
@@ -161,6 +164,34 @@ struct SettingsView: View {
                 }
             } header: {
                 Text(String(localized: "settings.notifications.center.header", defaultValue: "Notifications"))
+            }
+
+            // MARK: - Energia
+
+            Section {
+                HStack(spacing: 12) {
+                    Label {
+                        Text(String(localized: "settings.energy.tariff.title",
+                                    defaultValue: "Energy price"))
+                    } icon: {
+                        Image(systemName: "bolt.circle.fill")
+                            .foregroundStyle(.yellow)
+                    }
+                    Spacer()
+                    TextField("0",
+                              value: $energyTariffPerKWh,
+                              format: .number.precision(.fractionLength(0...4)))
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 90)
+                    Text(verbatim: "\(Locale.current.currencySymbol ?? "€")/kWh")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(String(localized: "settings.energy.header", defaultValue: "Energy"))
+            } footer: {
+                Text(String(localized: "settings.energy.tariff.footer",
+                            defaultValue: "Used to estimate costs from measured consumption. Leave 0 to show energy only, without costs."))
             }
 
             // MARK: - Dati

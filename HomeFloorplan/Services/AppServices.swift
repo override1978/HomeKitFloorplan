@@ -39,6 +39,14 @@ final class AppServices {
     init(container: ModelContainer) {
         self.sharedModelContainer = container
 
+        // Ogni lettura live di energia diventa una riga di storico: da qui
+        // nascono kWh giornalieri, costi e la futura vista di monitoring.
+        matterEnergyLiveStore.onSnapshotsRead = { snapshots, home in
+            EnergySampleLogger.shared.log(snapshots: snapshots,
+                                          home: home,
+                                          modelContainer: container)
+        }
+
         let kit = HomeKitService()
         self.homeKit = kit
         // Le azioni AI/CTA scrivono via HomeKitService (cache + eventi + log),

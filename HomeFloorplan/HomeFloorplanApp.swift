@@ -154,6 +154,13 @@ struct HomeFloorplanApp: App {
         let work = Task { @MainActor in
             if let home = homeKitService.currentHome {
                 await SensorLogger.shared.sampleAllSensors(home: home, modelContainer: container)
+                // Energia: la lettura passa dallo store live, e la persistenza
+                // scatta da sola via onSnapshotsRead. Da validare sul campo se
+                // le letture Matter (rete locale/XPC) riescono nel BGTask: la
+                // riga con l'emoji energia nel log e' la prova. Se non
+                // riescono, lo storico vive dei refresh in foreground e il
+                // contatore cumulativo assorbe comunque i buchi.
+                await services.matterEnergyLiveStore.refreshIfNeeded(home: home, minimumInterval: 15 * 60)
                 // La potatura delle letture è passata al ciclo dati: là gira
                 // DOPO l'aggregazione e solo se gli aggregati esistono. Qui
                 // viveva in un BGProcessingTask mai concesso su un pannello
