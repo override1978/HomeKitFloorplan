@@ -131,6 +131,9 @@ struct SidebarView: View {
                     NavigationLink(value: SidebarSelection.security) {
                         Label(String(localized: "sidebar.security", defaultValue: "Security"), systemImage: "shield.lefthalf.filled")
                     }
+                    NavigationLink(value: SidebarSelection.energy) {
+                        Label(String(localized: "sidebar.energy", defaultValue: "Energy"), systemImage: "bolt.fill")
+                    }
                     NavigationLink(value: SidebarSelection.homeIntelligence) {
                         Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligence"), systemImage: "sparkles.rectangle.stack")
                     }
@@ -379,6 +382,7 @@ enum SidebarSelection: Hashable {
     case activityLog
     case security
     case environment
+    case energy
     case habits
     case homeIntelligence
     case debugHomeKit

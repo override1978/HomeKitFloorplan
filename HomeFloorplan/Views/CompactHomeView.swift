@@ -113,6 +113,9 @@ struct CompactHomeView: View {
                     destinationRow(.security,
                                    title: String(localized: "sidebar.security", defaultValue: "Security"),
                                    icon: "shield.lefthalf.filled")
+                    destinationRow(.energy,
+                                   title: String(localized: "sidebar.energy", defaultValue: "Energy"),
+                                   icon: "bolt.fill")
                     destinationRow(.homeIntelligence,
                                    title: String(localized: "sidebar.intelligence", defaultValue: "Intelligence"),
                                    icon: "sparkles.rectangle.stack")
@@ -442,6 +445,8 @@ struct CompactHomeView: View {
             SecurityView()
         case .environment:
             EnvironmentDashboardView()
+        case .energy:
+            EnergyMonitorView()
         case .habits:
             HabitsView()
         case .homeIntelligence:

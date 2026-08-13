@@ -310,6 +310,8 @@ struct ContentView: View {
             SecurityView()
         case .environment:
             EnvironmentDashboardView()
+        case .energy:
+            EnergyMonitorView()
         case .habits:
             HabitsView()
         case .homeIntelligence:
