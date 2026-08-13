@@ -120,6 +120,30 @@ extension SensorAlertThreshold {
     }
 }
 
+// MARK: - EnergySample → CKRecord
+
+extension EnergySample {
+
+    /// `needsSync` resta fuori: è contabilità locale, non un fatto della casa.
+    func toCKRecord(recordID: CKRecord.ID) -> CKRecord {
+        let record = CKRecord(recordType: "EnergySample", recordID: recordID)
+        record["id"]            = id.uuidString
+        record["deviceID"]      = deviceID
+        record["accessoryUUID"] = accessoryUUID
+        record["accessoryName"] = accessoryName
+        record["roomName"]      = roomName
+        record["timestamp"]     = timestamp
+        record["sourceRaw"]     = sourceRaw
+        if let cumulativeKilowattHours {
+            record["cumulativeKilowattHours"] = cumulativeKilowattHours
+        }
+        if let activePowerWatts {
+            record["activePowerWatts"] = activePowerWatts
+        }
+        return record
+    }
+}
+
 // MARK: - SyncableSettings → CKRecord
 
 extension SyncableSettings {

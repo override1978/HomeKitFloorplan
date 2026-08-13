@@ -62,6 +62,7 @@ final class CloudKitSyncService {
     private static let settingsPrefix    = "settings:"
     private static let thresholdPrefix   = "threshold:"
     private static let insightPrefix     = "insight:"
+    private static let energySamplePrefix = "energySample:"
 
     private static func formatCoordinate(_ value: Double) -> String {
         String(format: "%.4f", value)
@@ -696,6 +697,10 @@ final class CloudKitSyncService {
         CKRecord.ID(recordName: "\(Self.insightPrefix)\(id.uuidString)", zoneID: Self.zoneID)
     }
 
+    private func energySampleRecordID(_ id: UUID) -> CKRecord.ID {
+        CKRecord.ID(recordName: "\(Self.energySamplePrefix)\(id.uuidString)", zoneID: Self.zoneID)
+    }
+
     private func addPendingRecordZoneChanges(_ changes: [CKSyncEngine.PendingRecordZoneChange]) {
         let existing = Set(syncEngine.state.pendingRecordZoneChanges)
         let uniqueChanges = changes.filter { !existing.contains($0) }
@@ -708,7 +713,8 @@ final class CloudKitSyncService {
         [
             floorplanDescriptor,
             settingsDescriptor,
-            thresholdDescriptor
+            thresholdDescriptor,
+            energySampleDescriptor
         ]
     }
 
@@ -847,6 +853,54 @@ private extension CloudKitSyncService {
                 var synced = syncedThresholdIDs
                 synced.insert(String(record.recordID.recordName.dropFirst(Self.thresholdPrefix.count)))
                 syncedThresholdIDs = synced
+            }
+        )
+    }
+
+    /// Lo storico energia: righe append-only e immutabili — il caso di sync
+    /// più docile che esista (niente conflitti possibili, mai update, mai
+    /// delete remoti). La contabilità sta nel flag `needsSync` sul modello:
+    /// il set di ID in UserDefaults dei threshold non scalerebbe sulle
+    /// migliaia di righe che lo storico accumula.
+    ///
+    /// Il caso d'uso è la casa multi-device: il tablet a muro raccoglie
+    /// quasi tutto lo storico, e senza sync l'iPhone vedrebbe una vista
+    /// Energia mezza vuota. Il gate di scrittura (EnergySampleLogger) lavora
+    /// sull'ultima riga LOCALE, quindi dopo il sync deduplica anche fra
+    /// device.
+    var energySampleDescriptor: CloudKitSyncDescriptor {
+        CloudKitSyncDescriptor(
+            recordType: "EnergySample",
+            recordPrefix: Self.energySamplePrefix,
+            pendingChanges: { [self] context, _ in
+                let pending = (try? context.fetch(
+                    FetchDescriptor<EnergySample>(predicate: #Predicate { $0.needsSync })
+                )) ?? []
+                return pending.map { .saveRecord(energySampleRecordID($0.id)) }
+            },
+            buildRecord: { [self] recordID, context in
+                guard let id = uuid(from: recordID, prefix: Self.energySamplePrefix) else { return nil }
+                let descriptor = FetchDescriptor<EnergySample>(predicate: #Predicate { $0.id == id })
+                guard let sample = (try? context.fetch(descriptor))?.first else { return nil }
+                return sample.toCKRecord(recordID: recordID)
+            },
+            applyRecord: { [self] record, context in
+                applyEnergySampleRecord(record, context: context)
+            },
+            deleteRecord: { _, _ in },
+            overlayLocalFields: { [self] serverRecord, context in
+                guard let id = uuid(from: serverRecord.recordID, prefix: Self.energySamplePrefix) else { return }
+                let descriptor = FetchDescriptor<EnergySample>(predicate: #Predicate { $0.id == id })
+                guard let sample = (try? context.fetch(descriptor))?.first else { return }
+                overlayFields(from: sample.toCKRecord(recordID: serverRecord.recordID), to: serverRecord)
+            },
+            markSavedRecord: { [self] record in
+                guard let id = uuid(from: record.recordID, prefix: Self.energySamplePrefix) else { return }
+                let context = ModelContext(modelContainer)
+                let descriptor = FetchDescriptor<EnergySample>(predicate: #Predicate { $0.id == id })
+                guard let sample = (try? context.fetch(descriptor))?.first, sample.needsSync else { return }
+                sample.needsSync = false
+                try? context.save()
             }
         )
     }
@@ -1607,6 +1661,33 @@ private extension CloudKitSyncService {
     }
 
     // MARK: - SensorAlertThreshold
+
+    /// Le righe sono immutabili: se l'id esiste già non c'è niente da
+    /// aggiornare; se manca, si inserisce con `needsSync = false` — è
+    /// arrivata dal server, ri-caricarla sarebbe solo eco.
+    func applyEnergySampleRecord(_ record: CKRecord, context: ModelContext) {
+        guard let uuidStr = record["id"] as? String,
+              let id = UUID(uuidString: uuidStr),
+              let deviceID = record["deviceID"] as? String,
+              let timestamp = record["timestamp"] as? Date
+        else { return }
+
+        let descriptor = FetchDescriptor<EnergySample>(predicate: #Predicate { $0.id == id })
+        guard (try? context.fetch(descriptor))?.first == nil else { return }
+
+        context.insert(EnergySample(
+            id: id,
+            deviceID: deviceID,
+            accessoryUUID: record["accessoryUUID"] as? String ?? "",
+            accessoryName: record["accessoryName"] as? String ?? "",
+            roomName: record["roomName"] as? String ?? "",
+            timestamp: timestamp,
+            cumulativeKilowattHours: record["cumulativeKilowattHours"] as? Double,
+            activePowerWatts: record["activePowerWatts"] as? Double,
+            sourceRaw: record["sourceRaw"] as? String ?? "",
+            needsSync: false
+        ))
+    }
 
     func applyThresholdRecord(_ record: CKRecord, context: ModelContext) {
         guard let uuidStr = record["id"] as? String,

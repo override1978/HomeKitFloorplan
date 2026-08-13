@@ -41,6 +41,11 @@ final class EnergySample {
     var activePowerWatts: Double?
     /// "Matter" o "Eve legacy" — da dove arriva il numero.
     var sourceRaw: String
+    /// Contabilità di sync, mai dentro il CKRecord: true = nata qui e da
+    /// spingere; false = già sul server (spinta o arrivata da un altro
+    /// device). È il flag che evita l'eco: le righe applicate da remoto non
+    /// vengono mai ri-caricate.
+    var needsSync: Bool
 
     init(
         id: UUID = UUID(),
@@ -51,7 +56,8 @@ final class EnergySample {
         timestamp: Date = Date(),
         cumulativeKilowattHours: Double?,
         activePowerWatts: Double?,
-        sourceRaw: String
+        sourceRaw: String,
+        needsSync: Bool = true
     ) {
         self.id = id
         self.deviceID = deviceID
@@ -62,5 +68,6 @@ final class EnergySample {
         self.cumulativeKilowattHours = cumulativeKilowattHours
         self.activePowerWatts = activePowerWatts
         self.sourceRaw = sourceRaw
+        self.needsSync = needsSync
     }
 }

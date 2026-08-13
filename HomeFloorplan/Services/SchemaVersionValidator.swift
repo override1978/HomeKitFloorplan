@@ -62,7 +62,7 @@ enum SchemaVersionValidator {
     // MARK: - Version constant
 
     /// Bump this whenever the SwiftData schema changes (models added / removed / breaking field change).
-    static let currentVersion: Int = 31   // v31: EnergySample — storico energia Matter/Eve (nuovo modello, additiva)
+    static let currentVersion: Int = 32   // v32: EnergySample += needsSync (additiva, default true) — contabilità sync CloudKit
 
     // MARK: - Persistence
 
