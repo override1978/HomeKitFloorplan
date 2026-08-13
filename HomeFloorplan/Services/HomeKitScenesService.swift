@@ -229,25 +229,51 @@ final class HomeKitScenesService {
     func switchActionDrafts(for scene: SceneItem? = nil) -> [SceneSwitchActionDraft] {
         let existingValues = existingSceneValues(for: scene)
 
-        return homeKit.allAccessories.compactMap { accessory in
+        return homeKit.allAccessories.flatMap { accessory -> [SceneSwitchActionDraft] in
+            // Multi-canale (Aqara T2 raggruppato: N servizi Switch, ognuno con
+            // la sua PowerState): un draft PER SERVIZIO, come già per le
+            // multiprese qui sopra. La vecchia prima-PowerState-dell'accessorio
+            // lasciava il canale 2 fuori sia dalla lettura sia dalla scrittura.
+            let switchServices = accessory.services.filter { service in
+                service.serviceType == HMServiceTypeSwitch
+                    && service.characteristics.contains { $0.characteristicType == MultiOutletAdapter.onCharType }
+            }
+            if switchServices.count >= 2 {
+                return switchServices.enumerated().compactMap { index, service in
+                    guard let power = service.characteristics.first(where: { $0.characteristicType == MultiOutletAdapter.onCharType }) else {
+                        return nil
+                    }
+                    let existingValue = existingValues[power.uniqueIdentifier].flatMap(Self.boolValue)
+                    let currentValue = Self.boolValue(homeKit.value(for: power) ?? power.value) ?? false
+                    return SceneSwitchActionDraft(
+                        id: service.uniqueIdentifier,
+                        accessoryName: "\(accessory.name) · \(MultiOutletAdapter.channelName(for: service, index: index))",
+                        roomName: accessory.room?.name ?? String(localized: "scene.action.noRoom", defaultValue: "No Room"),
+                        isIncluded: existingValue != nil,
+                        powerOn: existingValue ?? currentValue,
+                        powerCharacteristic: power
+                    )
+                }
+            }
+
             guard accessory.services.contains(where: { $0.serviceType == HMServiceTypeSwitch }) ||
                     accessory.category.categoryType == HMAccessoryCategoryTypeSwitch,
                   let power = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: HMCharacteristicTypePowerState)
                     ?? AccessoryAdapterFactory.findCharacteristic(in: accessory, type: HMCharacteristicTypeActive)
             else {
-                return nil
+                return []
             }
 
             let existingValue = existingValues[power.uniqueIdentifier].flatMap(Self.boolValue)
             let currentValue = Self.boolValue(homeKit.value(for: power) ?? power.value) ?? false
-            return SceneSwitchActionDraft(
+            return [SceneSwitchActionDraft(
                 id: accessory.uniqueIdentifier,
                 accessoryName: accessory.name,
                 roomName: accessory.room?.name ?? String(localized: "scene.action.noRoom", defaultValue: "No Room"),
                 isIncluded: existingValue != nil,
                 powerOn: existingValue ?? currentValue,
                 powerCharacteristic: power
-            )
+            )]
         }
         .sorted {
             if $0.roomName != $1.roomName {
@@ -920,14 +946,10 @@ final class HomeKitScenesService {
     }
 
     private func outletDisplayName(for service: HMService, fallbackIndex: Int) -> String {
-        if let nameCh = service.characteristics.first(where: { $0.characteristicType == MultiOutletAdapter.nameCharType }),
-           let value = homeKit.value(for: nameCh) as? String,
-           !value.isEmpty {
-            return value
-        }
-        return service.name.isEmpty
-            ? "\(String(localized: "outlet.name.fallback", defaultValue: "Presa")) \(fallbackIndex + 1)"
-            : service.name
+        // Delegato all'adapter: UNA definizione di «nome canale» per tutta
+        // l'app, col nome del servizio (dove Apple Home scrive le rinomine)
+        // davanti alla Name characteristic (spesso di fabbrica: «Switch2»).
+        MultiOutletAdapter.channelName(for: service, index: fallbackIndex)
     }
 
     private func makeHeaterCoolerDraft(for accessory: HMAccessory, existingValues: [UUID: Any?]) -> SceneThermostatActionDraft? {

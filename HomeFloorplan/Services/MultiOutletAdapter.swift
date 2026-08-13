@@ -2,11 +2,13 @@ import Foundation
 import HomeKit
 import SwiftUI
 
-/// Adapter per multiprese: accessori con N servizi Outlet (es. Eve Energy Strip,
-/// Meross Smart Power Strip).
-/// - 1 marker per multipresa sul floorplan
-/// - Marker acceso se almeno una presa è on
-/// - Dettaglio mostra N row con toggle individuale per ogni presa
+/// Adapter multi-canale: accessori con N servizi di potenza (Outlet o Switch),
+/// ognuno con la PROPRIA PowerState. Nato per le multiprese (Eve Energy Strip,
+/// Meross); allargato ai moduli relè dall'Aqara T2 raggruppato (2 servizi
+/// Switch), che con OnOffAdapter aveva il secondo canale INVISIBILE.
+/// - 1 marker per accessorio sul floorplan
+/// - Marker acceso se almeno un canale è on
+/// - Dettaglio mostra N row con toggle individuale per ogni canale
 @MainActor
 final class MultiOutletAdapter: AccessoryAdapter {
     let accessory: HMAccessory
@@ -18,31 +20,80 @@ final class MultiOutletAdapter: AccessoryAdapter {
     }
     
     static let outletServiceType = "00000047-0000-1000-8000-0026BB765291"
+    static let switchServiceType = "00000049-0000-1000-8000-0026BB765291"
     static let onCharType = "00000025-0000-1000-8000-0026BB765291"
     static let nameCharType = "00000023-0000-1000-8000-0026BB765291"
     static let outletInUseCharType = "00000026-0000-1000-8000-0026BB765291"
+
+    /// I servizi «di potenza» dell'accessorio: Outlet o Switch, ognuno con la
+    /// propria PowerState. È il criterio del multi-canale, condiviso con
+    /// factory, scene e wizard: se l'elenco è ≥2, l'ipotesi «un accessorio =
+    /// una potenza» è falsa e tutto deve ragionare per servizio.
+    static func powerServices(in accessory: HMAccessory) -> [HMService] {
+        accessory.services.filter { service in
+            (service.serviceType == outletServiceType || service.serviceType == switchServiceType)
+                && service.characteristics.contains { $0.characteristicType == onCharType }
+        }
+    }
+
+    /// Il nome del canale come lo conosce l'utente: PRIMA il nome del
+    /// SERVIZIO («Ventola Max» — è lì che Apple Home scrive le rinomine), poi
+    /// la Name characteristic (spesso di fabbrica: «Switch2»), poi il numero.
+    static func channelName(for service: HMService, index: Int) -> String {
+        let serviceName = service.name.trimmingCharacters(in: .whitespaces)
+        if !serviceName.isEmpty { return serviceName }
+        if let nameCh = service.characteristics.first(where: { $0.characteristicType == nameCharType }),
+           let value = nameCh.value as? String, !value.isEmpty {
+            return value
+        }
+        let noun = service.serviceType == switchServiceType
+            ? String(localized: "channel.name.fallback", defaultValue: "Canale")
+            : String(localized: "outlet.name.fallback", defaultValue: "Presa")
+        return "\(noun) \(index + 1)"
+    }
+
+    /// «Accessorio · Canale» per le liste di azioni (scene e automazioni),
+    /// solo quando l'accessorio ha davvero più canali — altrimenti nil e chi
+    /// chiama usa il nome dell'accessorio come sempre.
+    static func actionLabel(for characteristic: HMCharacteristic) -> String? {
+        guard let service = characteristic.service,
+              let accessory = service.accessory else { return nil }
+        let channels = powerServices(in: accessory)
+        guard channels.count >= 2,
+              let index = channels.firstIndex(of: service) else { return nil }
+        return "\(accessory.name) · \(channelName(for: service, index: index))"
+    }
     
     var markerStyle: MarkerStyle { .controllable }
     var supportsQuickToggle: Bool { false }  // No: ci sono N prese, scelta singola ambigua
     var supportsFloorplanPlacement: Bool { true }
     
     var iconName: String {
-        isOn ? "powerplug.fill" : "powerplug"
+        if usesSwitchWording {
+            return isOn ? "lightswitch.on.fill" : "lightswitch.off"
+        }
+        return isOn ? "powerplug.fill" : "powerplug"
     }
-    
-    /// Tutti i servizi Outlet dell'accessorio, ordinati come HomeKit li espone.
-    var outletServices: [HMService] {
-        accessory.services.filter { $0.serviceType == Self.outletServiceType }
+
+    /// Tutti i canali (Outlet o Switch), ordinati come HomeKit li espone.
+    var channelServices: [HMService] {
+        Self.powerServices(in: accessory)
     }
-    
-    /// True se ALMENO UNA presa è accesa.
+
+    /// Almeno un canale è uno Switch: cambia icona e vocabolario
+    /// («canali», non «prese»).
+    var usesSwitchWording: Bool {
+        channelServices.contains { $0.serviceType == Self.switchServiceType }
+    }
+
+    /// True se ALMENO UN canale è acceso.
     var isOn: Bool {
-        outletServices.contains { isOutletOn($0) }
+        channelServices.contains { isOutletOn($0) }
     }
     
-    /// Conta delle prese accese.
+    /// Conta dei canali accesi.
     var onCount: Int {
-        outletServices.filter { isOutletOn($0) }.count
+        channelServices.filter { isOutletOn($0) }.count
     }
     
     var visualUrgency: MarkerUrgency {
@@ -54,11 +105,22 @@ final class MultiOutletAdapter: AccessoryAdapter {
     }
     
     var primaryStatusText: String? {
-        let total = outletServices.count
+        let total = channelServices.count
         if total == 0 { return nil }
-        if onCount == 0 { return String(localized: "multioutlet.status.allOff", defaultValue: "Tutte spente") }
-        if onCount == total { return String(localized: "multioutlet.status.allOn", defaultValue: "Tutte accese") }
-        return "\(onCount) \(String(localized: "multioutlet.status.someOn.of", defaultValue: "di")) \(total) \(String(localized: "multioutlet.status.someOn.suffix", defaultValue: "accese"))"
+        if onCount == 0 {
+            return usesSwitchWording
+                ? String(localized: "multichannel.status.allOff", defaultValue: "Tutti spenti")
+                : String(localized: "multioutlet.status.allOff", defaultValue: "Tutte spente")
+        }
+        if onCount == total {
+            return usesSwitchWording
+                ? String(localized: "multichannel.status.allOn", defaultValue: "Tutti accesi")
+                : String(localized: "multioutlet.status.allOn", defaultValue: "Tutte accese")
+        }
+        let suffix = usesSwitchWording
+            ? String(localized: "multichannel.status.someOn.suffix", defaultValue: "accesi")
+            : String(localized: "multioutlet.status.someOn.suffix", defaultValue: "accese")
+        return "\(onCount) \(String(localized: "multioutlet.status.someOn.of", defaultValue: "di")) \(total) \(suffix)"
     }
     
     var batteryInfo: BatteryInfo? {
@@ -78,12 +140,7 @@ final class MultiOutletAdapter: AccessoryAdapter {
     }
     
     func outletName(_ service: HMService, index: Int) -> String {
-        // Prima cerca il Name characteristic, fallback su "Presa N"
-        if let nameCh = service.characteristics.first(where: { $0.characteristicType == Self.nameCharType }),
-           let value = homeKit.value(for: nameCh) as? String, !value.isEmpty {
-            return value
-        }
-        return "\(String(localized: "outlet.name.fallback", defaultValue: "Presa")) \(index + 1)"
+        Self.channelName(for: service, index: index)
     }
     
     /// Se l'OutletInUse characteristic esiste, ritorna se c'è qualcosa collegato.
@@ -150,7 +207,7 @@ private struct MultiOutletControl: View {
                 )
             
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(adapter.outletServices.count) \(String(localized: "outlet.count.suffix", defaultValue: "prese"))")
+                Text("\(adapter.channelServices.count) \(adapter.usesSwitchWording ? String(localized: "channel.count.suffix", defaultValue: "canali") : String(localized: "outlet.count.suffix", defaultValue: "prese"))")
                     .font(.subheadline.weight(.semibold))
                 Text(adapter.primaryStatusText ?? "")
                     .font(.caption)
@@ -184,7 +241,7 @@ private struct MultiOutletControl: View {
                         .background(Capsule().fill(tint))
                 }
                 .buttonStyle(.plain)
-                .disabled(adapter.onCount == adapter.outletServices.count)
+                .disabled(adapter.onCount == adapter.channelServices.count)
             }
         }
         .padding(14)
@@ -198,12 +255,14 @@ private struct MultiOutletControl: View {
     
     private var outletsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "outlet.section.title", defaultValue: "Prese"))
+            Text(adapter.usesSwitchWording
+                 ? String(localized: "channel.section.title", defaultValue: "Canali")
+                 : String(localized: "outlet.section.title", defaultValue: "Prese"))
                 .font(.headline)
                 .padding(.leading, 4)
             
             VStack(spacing: 6) {
-                ForEach(Array(adapter.outletServices.enumerated()), id: \.element.uniqueIdentifier) { index, service in
+                ForEach(Array(adapter.channelServices.enumerated()), id: \.element.uniqueIdentifier) { index, service in
                     outletRow(for: service, index: index)
                 }
             }
@@ -221,7 +280,8 @@ private struct MultiOutletControl: View {
                 Circle()
                     .fill(isOn ? AnyShapeStyle(tint) : AnyShapeStyle(.thinMaterial))
                     .frame(width: 36, height: 36)
-                Image(systemName: "powerplug.fill")
+                Image(systemName: service.serviceType == MultiOutletAdapter.switchServiceType
+                      ? "lightswitch.on.fill" : "powerplug.fill")
                     .font(.subheadline)
                     .foregroundStyle(isOn ? .white : .primary)
             }
@@ -282,7 +342,7 @@ private struct MultiOutletControl: View {
         haptic.impactOccurred()
         
         Task {
-            for service in adapter.outletServices {
+            for service in adapter.channelServices {
                 guard let ch = adapter.onCharacteristic(service) else { continue }
                 do {
                     try await homeKit.write(on as Any, to: ch)

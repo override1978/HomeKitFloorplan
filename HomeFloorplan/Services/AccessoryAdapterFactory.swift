@@ -110,9 +110,12 @@ enum AccessoryAdapterFactory {
             return valve
         }
         
-        // PRIMA di OnOffAdapter
-        let outletServices = accessory.services.filter { $0.serviceType == MultiOutletAdapter.outletServiceType }
-        if outletServices.count >= 2 {
+        // PRIMA di OnOffAdapter — multi-canale: N servizi di potenza (Outlet
+        // O Switch), ciascuno con la PROPRIA PowerState. Nato per le
+        // multiprese; il caso che l'ha allargato è l'Aqara T2 raggruppato
+        // (2 servizi Switch): con OnOffAdapter la «prima PowerState» governava
+        // un canale a caso e l'altro spariva da UI, scene e automazioni.
+        if MultiOutletAdapter.powerServices(in: accessory).count >= 2 {
             return MultiOutletAdapter(accessory: accessory, homeKit: homeKit)
         }
         

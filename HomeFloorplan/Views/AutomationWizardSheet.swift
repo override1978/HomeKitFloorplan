@@ -110,20 +110,42 @@ struct AutomationWizardSheet: View {
 
     private var inlinePowerActionCandidates: [AutomationInlinePowerAction] {
         let selectedIDs = Set(inlinePowerActions.map { $0.characteristic.uniqueIdentifier })
-        return homeKit.allAccessories.compactMap { accessory in
+        return homeKit.allAccessories.flatMap { accessory -> [AutomationInlinePowerAction] in
+            let roomName = accessory.room?.name ?? String(localized: "room.none", defaultValue: "No room")
+
+            // Multi-canale (Aqara T2 raggruppato, multiprese): un candidato
+            // PER SERVIZIO di potenza, etichettato col canale. La vecchia
+            // prima-PowerState-dell'accessorio rendeva il canale 2
+            // irraggiungibile dalle automazioni.
+            let channels = MultiOutletAdapter.powerServices(in: accessory)
+            if channels.count >= 2 {
+                return channels.enumerated().compactMap { index, service in
+                    guard let power = service.characteristics.first(where: {
+                        $0.characteristicType == HMCharacteristicTypePowerState
+                    }), !selectedIDs.contains(power.uniqueIdentifier) else { return nil }
+                    let current = AutomationWizardSheet.boolValue(homeKit.value(for: power) ?? power.value) ?? true
+                    return AutomationInlinePowerAction(
+                        accessoryName: "\(accessory.name) · \(MultiOutletAdapter.channelName(for: service, index: index))",
+                        roomName: roomName,
+                        characteristic: power,
+                        powerOn: current
+                    )
+                }
+            }
+
             guard let power = AccessoryAdapterFactory.findCharacteristic(in: accessory, type: HMCharacteristicTypePowerState)
                     ?? AccessoryAdapterFactory.findCharacteristic(in: accessory, type: HMCharacteristicTypeActive),
                   !selectedIDs.contains(power.uniqueIdentifier) else {
-                return nil
+                return []
             }
 
             let current = AutomationWizardSheet.boolValue(homeKit.value(for: power) ?? power.value) ?? true
-            return AutomationInlinePowerAction(
+            return [AutomationInlinePowerAction(
                 accessoryName: accessory.name,
-                roomName: accessory.room?.name ?? String(localized: "room.none", defaultValue: "No room"),
+                roomName: roomName,
                 characteristic: power,
                 powerOn: current
-            )
+            )]
         }
         .sorted {
             if $0.roomName != $1.roomName {
@@ -4119,7 +4141,9 @@ struct AutomationWizardSheet: View {
                 return nil
             }
             return AutomationInlinePowerAction(
-                accessoryName: accessory.name,
+                // Su un multi-canale il nome dell'accessorio non basta a dire
+                // QUALE relè scatta: l'etichetta porta il canale.
+                accessoryName: MultiOutletAdapter.actionLabel(for: write.characteristic) ?? accessory.name,
                 roomName: accessory.room?.name ?? String(localized: "room.none", defaultValue: "No room"),
                 characteristic: write.characteristic,
                 powerOn: powerOn
