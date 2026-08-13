@@ -788,7 +788,7 @@ final class HomeKitAutomationsService {
         timeConditions: [AutomationTimeCondition] = [],
         presenceConditions: [AutomationPresenceCondition] = [],
         conditionJoinMode: AutomationConditionJoinMode = .all,
-        scene: SceneItem? = nil,
+        scenes: [SceneItem] = [],
         inlinePowerActions: [AutomationInlinePowerAction] = [],
         inlineActions: [HMAction] = [],
         preservedConditionPredicate: NSPredicate? = nil,
@@ -813,7 +813,7 @@ final class HomeKitAutomationsService {
             throw NSError(domain: "HomeKitAutomationsService", code: 63,
                           userInfo: [NSLocalizedDescriptionKey: String(localized: "automation.editor.error.invalidTrigger", defaultValue: "Selected trigger is not valid for automations")])
         }
-        guard scene != nil || !inlinePowerActions.isEmpty || !inlineActions.isEmpty else {
+        guard !scenes.isEmpty || !inlinePowerActions.isEmpty || !inlineActions.isEmpty else {
             throw NSError(domain: "HomeKitAutomationsService", code: 64,
                           userInfo: [NSLocalizedDescriptionKey: String(localized: "automation.editor.error.emptyAction", defaultValue: "Choose a scene or at least one accessory action")])
         }
@@ -884,18 +884,20 @@ final class HomeKitAutomationsService {
         let currentSceneActionSets  = snapshotActionSets.filter { !isInlineActionSet($0) }
         dprint("[UpdateAuto] Step 4: actionSets snapshot — scene:\(currentSceneActionSets.count) inline:\(currentInlineActionSets.count)")
 
-        // Only swap the scene action set when it actually changed.
-        // If the same scene is selected, skip the remove+add to avoid "objectAlreadyExists".
-        let newSceneActionSet = scene?.actionSet
-        let sceneIsUnchanged: Bool = {
-            guard let new = newSceneActionSet, currentSceneActionSets.count == 1 else { return false }
-            return currentSceneActionSets[0].uniqueIdentifier == new.uniqueIdentifier
-        }()
+        // Diff per id: si stacca SOLO ciò che l'utente ha tolto e si attacca
+        // SOLO ciò che manca. Il vecchio scambia-tutto, davanti a più scene
+        // attaccate (HomeKit lo permette, Apple Home lo usa), le staccava
+        // tutte per rimetterne una: perdita silenziosa trovata dal vivo su
+        // «Night Mode» con tre scene. Il diff evita anche il remove+add
+        // della scena invariata ("objectAlreadyExists").
+        let desiredSceneActionSets = scenes.map(\.actionSet)
+        let desiredSceneIDs = Set(desiredSceneActionSets.map(\.uniqueIdentifier))
+        let currentSceneIDs = Set(currentSceneActionSets.map(\.uniqueIdentifier))
 
-        if sceneIsUnchanged {
-            dprint("[UpdateAuto] Step 4: scene action set unchanged — skipping remove+add")
+        if desiredSceneIDs == currentSceneIDs {
+            dprint("[UpdateAuto] Step 4: scene action sets unchanged — skipping")
         } else {
-            for actionSet in currentSceneActionSets {
+            for actionSet in currentSceneActionSets where !desiredSceneIDs.contains(actionSet.uniqueIdentifier) {
                 dprint("[UpdateAuto] Step 4: removing scene actionSet '\(actionSet.name)' from trigger")
                 if let err = await removeFromTriggerReturningError(actionSet, trigger: trigger) {
                     dprint("[UpdateAuto] Step 4: remove scene WARN (ignored) — \(err)")
@@ -903,10 +905,10 @@ final class HomeKitAutomationsService {
                     dprint("[UpdateAuto] Step 4: remove scene OK")
                 }
             }
-            if let newSceneActionSet {
-                dprint("[UpdateAuto] Step 4: adding scene actionSet '\(newSceneActionSet.name)' to trigger")
+            for actionSet in desiredSceneActionSets where !currentSceneIDs.contains(actionSet.uniqueIdentifier) {
+                dprint("[UpdateAuto] Step 4: adding scene actionSet '\(actionSet.name)' to trigger")
                 do {
-                    try await add(newSceneActionSet, to: trigger)
+                    try await add(actionSet, to: trigger)
                     dprint("[UpdateAuto] Step 4: add scene OK")
                 } catch {
                     dprint("[UpdateAuto] Step 4: add scene FAILED — \(error)")
@@ -1123,7 +1125,7 @@ final class HomeKitAutomationsService {
             timeConditions: timeConditions,
             presenceConditions: presenceConditions,
             conditionJoinMode: conditionJoinMode,
-            scene: scene,
+            scenes: [scene],
             inlinePowerActions: inlinePowerActions,
             inlineActions: inlineActions,
             preservedConditionPredicate: preservedConditionPredicate,
@@ -1139,7 +1141,7 @@ final class HomeKitAutomationsService {
         timeConditions: [AutomationTimeCondition] = [],
         presenceConditions: [AutomationPresenceCondition] = [],
         conditionJoinMode: AutomationConditionJoinMode = .all,
-        scene: SceneItem?,
+        scenes: [SceneItem],
         inlinePowerActions: [AutomationInlinePowerAction] = [],
         inlineActions: [HMAction] = [],
         preservedConditionPredicate: NSPredicate? = nil,
@@ -1161,7 +1163,7 @@ final class HomeKitAutomationsService {
                           userInfo: [NSLocalizedDescriptionKey: String(localized: "automation.editor.error.invalidTrigger", defaultValue: "Selected trigger is not valid for automations")])
         }
 
-        guard scene != nil || !inlinePowerActions.isEmpty || !inlineActions.isEmpty else {
+        guard !scenes.isEmpty || !inlinePowerActions.isEmpty || !inlineActions.isEmpty else {
             throw NSError(domain: "HomeKitAutomationsService", code: 19,
                           userInfo: [NSLocalizedDescriptionKey: String(localized: "automation.editor.error.emptyAction", defaultValue: "Choose a scene or at least one accessory action")])
         }
@@ -1229,7 +1231,7 @@ final class HomeKitAutomationsService {
         try await add(trigger, to: home)
         var createdInlineActionSet: HMActionSet?
         do {
-            if let scene {
+            for scene in scenes {
                 try await add(scene.actionSet, to: trigger)
             }
             let accessoryActions = inlineActions

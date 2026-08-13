@@ -48,8 +48,14 @@ struct AutomationWizardSheet: View {
     @State private var conditionRoomFilter: String?
     @State private var conditionCategoryFilter: AutomationCapabilityCategory = .all
 
-    @State private var selectedSceneID: UUID?
-    @State private var editingSceneFallback: SceneItem?
+    /// Le scene attaccate al trigger, in ordine. HomeKit ne permette PIÙ
+    /// D'UNA sullo stesso trigger (Apple Home lo fa): il modello singolare
+    /// qui dentro mostrava solo la prima e — peggio — il salvataggio
+    /// staccava le altre. Trovato dal vivo su un'automazione con tre scene.
+    @State private var selectedSceneIDs: [UUID] = []
+    /// Scene del trigger assenti dall'elenco del service (nomi generici,
+    /// scene di altre app): servono per mostrarle e ri-salvarle senza perderle.
+    @State private var sceneFallbacks: [SceneItem] = []
     @State private var showScenePicker = false
     @State private var showInlineActionPicker = false
     @State private var inlinePowerActions: [AutomationInlinePowerAction] = []
@@ -80,9 +86,11 @@ struct AutomationWizardSheet: View {
         _activateAutomation = State(initialValue: proposal.shouldEnableAutomation)
     }
 
-    private var selectedScene: SceneItem? {
-        editingSceneFallback.flatMap { $0.id == selectedSceneID ? $0 : nil } ??
-        scenesService.scenes.first { $0.id == selectedSceneID }
+    private var selectedScenes: [SceneItem] {
+        selectedSceneIDs.compactMap { id in
+            scenesService.scenes.first { $0.id == id }
+                ?? sceneFallbacks.first { $0.id == id }
+        }
     }
 
     private var canAdvance: Bool {
@@ -107,7 +115,7 @@ struct AutomationWizardSheet: View {
     }
 
     private var hasThenTarget: Bool {
-        selectedScene != nil || !inlinePowerActions.isEmpty || !inlineActionBundle.isEmpty
+        !selectedScenes.isEmpty || !inlinePowerActions.isEmpty || !inlineActionBundle.isEmpty
     }
 
     private var inlinePowerActionCandidates: [AutomationInlinePowerAction] {
@@ -1316,25 +1324,33 @@ struct AutomationWizardSheet: View {
 
             if let unmanagedActionNotice {
                 openAppleHomeCard(message: unmanagedActionNotice)
-            } else if let selectedScene {
-                selectedSceneCard(selectedScene)
-            } else if !inlineActionBundle.isEmpty {
-                inlineActionBundleCard
-            } else if !inlinePowerActions.isEmpty {
-                inlinePowerActionsCard
             } else {
-                emptyComposerCard(
-                    icon: "wand.and.sparkles",
-                    title: String(localized: "automation.composer.action.empty.title", defaultValue: "No action selected"),
-                    subtitle: String(localized: "automation.composer.action.empty.subtitle", defaultValue: "Choose a scene or add an accessory action.")
-                )
+                if selectedScenes.isEmpty && inlineActionBundle.isEmpty && inlinePowerActions.isEmpty {
+                    emptyComposerCard(
+                        icon: "wand.and.sparkles",
+                        title: String(localized: "automation.composer.action.empty.title", defaultValue: "No action selected"),
+                        subtitle: String(localized: "automation.composer.action.empty.subtitle", defaultValue: "Choose a scene or add an accessory action.")
+                    )
+                }
+                if !selectedScenes.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(selectedScenes, id: \.id) { scene in
+                            selectedSceneCard(scene)
+                        }
+                    }
+                }
+                if !inlineActionBundle.isEmpty {
+                    inlineActionBundleCard
+                } else if !inlinePowerActions.isEmpty {
+                    inlinePowerActionsCard
+                }
             }
 
             HStack(spacing: 10) {
                 composerInlineActionButton(
-                    title: selectedScene == nil
+                    title: selectedScenes.isEmpty
                     ? String(localized: "automation.composer.scene.add", defaultValue: "Choose Scene")
-                    : String(localized: "automation.composer.scene.change", defaultValue: "Change Scene"),
+                    : String(localized: "automation.composer.scene.addMore", defaultValue: "Add Scene"),
                     icon: "wand.and.sparkles"
                 ) {
                     showScenePicker = true
@@ -1344,8 +1360,6 @@ struct AutomationWizardSheet: View {
                     title: String(localized: "automation.composer.action.addAccessory", defaultValue: "Add Accessory"),
                     icon: inlineActionBundle.isEmpty ? "plus.circle.fill" : "slider.horizontal.3"
                 ) {
-                    selectedSceneID = nil
-                    editingSceneFallback = nil
                     inlinePowerActions = []
                     showInlineActionPicker = true
                 }
@@ -1815,8 +1829,9 @@ struct AutomationWizardSheet: View {
 
                 contextChip(
                     title: String(localized: "automation.wizard.context.scene", defaultValue: "Scene"),
-                    value: selectedScene?.name ??
-                    (!inlineActionBundle.isEmpty
+                    value: !selectedScenes.isEmpty
+                    ? selectedScenes.map(\.name).joined(separator: ", ")
+                    : (!inlineActionBundle.isEmpty
                      ? "\(inlineActionBundle.selectedCount) \(String(localized: "automation.wizard.summary.accessoryActions", defaultValue: "accessory actions"))"
                      : (!inlinePowerActions.isEmpty ? "\(inlinePowerActions.count) actions" : String(localized: "automation.wizard.context.missing", defaultValue: "Not set"))),
                     iconName: "wand.and.sparkles",
@@ -2013,8 +2028,9 @@ struct AutomationWizardSheet: View {
             summaryCard(
                 icon: "wand.and.sparkles",
                 title: String(localized: "automation.wizard.summary.scene", defaultValue: "Action"),
-                value: selectedScene?.name ??
-                (!inlineActionBundle.isEmpty
+                value: !selectedScenes.isEmpty
+                ? selectedScenes.map(\.name).joined(separator: ", ")
+                : (!inlineActionBundle.isEmpty
                  ? "\(inlineActionBundle.selectedCount) \(String(localized: "automation.wizard.summary.accessoryActions", defaultValue: "accessory actions"))\n\(inlineActionBundleSummary)"
                  : inlinePowerActions.map { "\($0.accessoryName) - \($0.powerOn ? "On" : "Off")" }.joined(separator: "\n"))
             )
@@ -2361,8 +2377,6 @@ struct AutomationWizardSheet: View {
 
     private func inlineActionPickerRow(_ action: AutomationInlinePowerAction) -> some View {
         Button {
-            selectedSceneID = nil
-            editingSceneFallback = nil
             inlinePowerActions.append(action)
             clearInlineActionBundleSelection()
             showInlineActionPicker = false
@@ -3672,19 +3686,16 @@ struct AutomationWizardSheet: View {
 
     private func sceneRow(_ scene: SceneItem) -> some View {
         Button {
-            selectedSceneID = scene.id
-            inlinePowerActions = []
-            clearInlineActionBundleSelection()
-            defaultNameIfNeeded()
+            toggleSceneSelection(scene)
         } label: {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(selectedSceneID == scene.id ? AnyShapeStyle(BrandColor.heroGradient) : AnyShapeStyle(Color(.tertiarySystemFill)))
+                        .fill(selectedSceneIDs.contains(scene.id) ? AnyShapeStyle(BrandColor.heroGradient) : AnyShapeStyle(Color(.tertiarySystemFill)))
                         .frame(width: 42, height: 42)
                     Image(systemName: scene.symbolName)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(selectedSceneID == scene.id ? .white : BrandColor.primary)
+                        .foregroundStyle(selectedSceneIDs.contains(scene.id) ? .white : BrandColor.primary)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -3698,14 +3709,14 @@ struct AutomationWizardSheet: View {
 
                 Spacer()
 
-                Image(systemName: selectedSceneID == scene.id ? "checkmark.circle.fill" : "chevron.right")
-                    .foregroundStyle(selectedSceneID == scene.id ? BrandColor.primary : Color.secondary.opacity(0.55))
+                Image(systemName: selectedSceneIDs.contains(scene.id) ? "checkmark.circle.fill" : "chevron.right")
+                    .foregroundStyle(selectedSceneIDs.contains(scene.id) ? BrandColor.primary : Color.secondary.opacity(0.55))
             }
             .padding(12)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(selectedSceneID == scene.id ? BrandColor.primary.opacity(0.5) : Color.secondary.opacity(0.10), lineWidth: 1)
+                    .strokeBorder(selectedSceneIDs.contains(scene.id) ? BrandColor.primary.opacity(0.5) : Color.secondary.opacity(0.10), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
@@ -3732,27 +3743,41 @@ struct AutomationWizardSheet: View {
             }
 
             Spacer()
+
+            Button {
+                selectedSceneIDs.removeAll { $0 == scene.id }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
+    private func toggleSceneSelection(_ scene: SceneItem) {
+        if selectedSceneIDs.contains(scene.id) {
+            selectedSceneIDs.removeAll { $0 == scene.id }
+        } else {
+            selectedSceneIDs.append(scene.id)
+        }
+        defaultNameIfNeeded()
+    }
+
     private func scenePickerRow(_ scene: SceneItem) -> some View {
         Button {
-            selectedSceneID = scene.id
-            inlinePowerActions = []
-            clearInlineActionBundleSelection()
-            defaultNameIfNeeded()
-            showScenePicker = false
+            toggleSceneSelection(scene)
         } label: {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(selectedSceneID == scene.id ? AnyShapeStyle(BrandColor.heroGradient) : AnyShapeStyle(Color(.tertiarySystemFill)))
+                        .fill(selectedSceneIDs.contains(scene.id) ? AnyShapeStyle(BrandColor.heroGradient) : AnyShapeStyle(Color(.tertiarySystemFill)))
                         .frame(width: 42, height: 42)
                     Image(systemName: scene.symbolName)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(selectedSceneID == scene.id ? .white : BrandColor.primary)
+                        .foregroundStyle(selectedSceneIDs.contains(scene.id) ? .white : BrandColor.primary)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -3766,14 +3791,14 @@ struct AutomationWizardSheet: View {
 
                 Spacer()
 
-                Image(systemName: selectedSceneID == scene.id ? "checkmark.circle.fill" : "chevron.right")
-                    .foregroundStyle(selectedSceneID == scene.id ? BrandColor.primary : Color.secondary.opacity(0.55))
+                Image(systemName: selectedSceneIDs.contains(scene.id) ? "checkmark.circle.fill" : "chevron.right")
+                    .foregroundStyle(selectedSceneIDs.contains(scene.id) ? BrandColor.primary : Color.secondary.opacity(0.55))
             }
             .padding(12)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(selectedSceneID == scene.id ? BrandColor.primary.opacity(0.5) : Color.secondary.opacity(0.10), lineWidth: 1)
+                    .strokeBorder(selectedSceneIDs.contains(scene.id) ? BrandColor.primary.opacity(0.5) : Color.secondary.opacity(0.10), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
@@ -3885,8 +3910,10 @@ struct AutomationWizardSheet: View {
                 let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines)
                 let startEventsList = startEvents.compactMap(\.startEvent)
                 let conditionsList = conditionDrafts.map(\.selection)
-                let powerActions = selectedScene == nil && inlineActionBundle.isEmpty ? inlinePowerActions : []
-                let accessoryActions = selectedScene == nil ? scenesService.makeActions(from: inlineActionBundle) : []
+                // Con le scene le azioni inline ora convivono: si inviano
+                // sempre, il salvataggio gestisce i due binari separati.
+                let powerActions = inlineActionBundle.isEmpty ? inlinePowerActions : []
+                let accessoryActions = scenesService.makeActions(from: inlineActionBundle)
 
                 let createdItem: AutomationItem
                 if let editingItem {
@@ -3900,7 +3927,7 @@ struct AutomationWizardSheet: View {
                         timeConditions: timeConditionDrafts,
                         presenceConditions: presenceConditionDrafts,
                         conditionJoinMode: conditionJoinMode,
-                        scene: selectedScene,
+                        scenes: selectedScenes,
                         inlinePowerActions: powerActions,
                         inlineActions: accessoryActions,
                         preservedConditionPredicate: preservedConditionPredicate,
@@ -3914,7 +3941,7 @@ struct AutomationWizardSheet: View {
                         timeConditions: timeConditionDrafts,
                         presenceConditions: presenceConditionDrafts,
                         conditionJoinMode: conditionJoinMode,
-                        scene: selectedScene,
+                        scenes: selectedScenes,
                         inlinePowerActions: powerActions,
                         inlineActions: accessoryActions,
                         preservedConditionPredicate: preservedConditionPredicate,
@@ -3981,8 +4008,8 @@ struct AutomationWizardSheet: View {
         }
         preservedConditionPredicate = nil
 
-        selectedSceneID = nil
-        editingSceneFallback = nil
+        selectedSceneIDs = []
+        sceneFallbacks = []
         inlinePowerActions = []
         clearInlineActionBundleSelection()
 
@@ -3994,12 +4021,12 @@ struct AutomationWizardSheet: View {
                     unresolved.append(String(localized: "automation.proposal.unresolved.scene", defaultValue: "The proposed scene is no longer available."))
                     continue
                 }
-                selectedSceneID = scene.id
+                selectedSceneIDs = [scene.id]
                 inlinePowerActions = []
                 clearInlineActionBundleSelection()
                 appliedAnyAction = true
             case .accessoryPower(let powerAction):
-                guard selectedSceneID == nil,
+                guard selectedSceneIDs.isEmpty,
                       let action = resolvePowerAction(powerAction, capabilities: capabilities)
                 else {
                     unresolved.append(String(localized: "automation.proposal.unresolved.action", defaultValue: "A proposed accessory action is no longer available."))
@@ -4008,7 +4035,7 @@ struct AutomationWizardSheet: View {
                 inlinePowerActions.append(action)
                 appliedAnyAction = true
             case .accessory(let accessoryAction):
-                guard selectedSceneID == nil,
+                guard selectedSceneIDs.isEmpty,
                       applyProposalAccessoryAction(accessoryAction)
                 else {
                     unresolved.append(String(localized: "automation.proposal.unresolved.action", defaultValue: "A proposed accessory action is no longer available."))
@@ -4428,13 +4455,18 @@ struct AutomationWizardSheet: View {
         presenceConditionDrafts = draft.presenceConditions
         conditionJoinMode = draft.conditionJoinMode
         preservedConditionPredicate = draft.preservedConditionPredicate
-        if let actionSet = item.trigger.actionSets.first {
+        // TUTTI gli action set del trigger, non solo il primo: HomeKit ne
+        // permette più d'uno e Apple Home li usa davvero. Le scene si
+        // accumulano; il primo set inline alimenta il bundle come prima.
+        selectedSceneIDs = []
+        sceneFallbacks = []
+        for actionSet in item.trigger.actionSets {
             let matchedScene = scenes.first { $0.actionSet.uniqueIdentifier == actionSet.uniqueIdentifier }
             if isInlineActionSet(actionSet, matchedScene: matchedScene) {
-                selectedSceneID = nil
-                editingSceneFallback = nil
-                inlineActionBundle = scenesService.actionDraftBundle(for: SceneItem(actionSet: actionSet))
-                inlinePowerActions = inlinePowerActions(from: actionSet)
+                if inlineActionBundle.isEmpty && inlinePowerActions.isEmpty {
+                    inlineActionBundle = scenesService.actionDraftBundle(for: SceneItem(actionSet: actionSet))
+                    inlinePowerActions = inlinePowerActions(from: actionSet)
+                }
                 if hasUnmanagedActions(in: actionSet) {
                     unmanagedActionNotice = String(
                         localized: "automation.editor.openHome.unmanagedActions",
@@ -4442,14 +4474,14 @@ struct AutomationWizardSheet: View {
                     )
                 }
             } else {
-                selectedSceneID = actionSet.uniqueIdentifier
-                editingSceneFallback = SceneItem(
+                selectedSceneIDs.append(actionSet.uniqueIdentifier)
+                sceneFallbacks.append(SceneItem(
                     actionSet: actionSet,
                     displayNameOverride: sceneDisplayName(
                         actionSet: actionSet,
                         matchedScene: matchedScene
                     )
-                )
+                ))
             }
         }
         isChoosingTrigger = false
@@ -4513,8 +4545,8 @@ struct AutomationWizardSheet: View {
 
     private func defaultNameIfNeeded() {
         guard name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        if let selectedScene {
-            name = String(localized: "automation.wizard.defaultName", defaultValue: "Run \(selectedScene.name)")
+        if let firstScene = selectedScenes.first {
+            name = String(localized: "automation.wizard.defaultName", defaultValue: "Run \(firstScene.name)")
         } else if let firstEvent = startEvents.first {
             switch firstEvent.kind {
             case .time:
