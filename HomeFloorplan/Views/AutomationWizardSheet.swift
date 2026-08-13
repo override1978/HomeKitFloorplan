@@ -1392,6 +1392,157 @@ struct AutomationWizardSheet: View {
         }
     }
 
+    private struct InlineActionRow: Identifiable {
+        let id: UUID
+        let iconName: String
+        let title: String
+        let subtitle: String
+        let powerBinding: Binding<Bool>?
+        let valueText: String?
+    }
+
+    /// Binding dentro una famiglia del bundle, risolto per id a ogni accesso:
+    /// le righe restano vere anche quando il picker rimescola gli array.
+    private func bundleToggleBinding<T: Identifiable>(
+        _ family: WritableKeyPath<SceneActionDraftBundle, [T]>,
+        id: T.ID,
+        field: WritableKeyPath<T, Bool>
+    ) -> Binding<Bool> {
+        Binding {
+            inlineActionBundle[keyPath: family].first(where: { $0.id == id })?[keyPath: field] ?? false
+        } set: { newValue in
+            guard let index = inlineActionBundle[keyPath: family].firstIndex(where: { $0.id == id }) else { return }
+            inlineActionBundle[keyPath: family][index][keyPath: field] = newValue
+        }
+    }
+
+    private var inlineActionRows: [InlineActionRow] {
+        var rows: [InlineActionRow] = []
+
+        for draft in inlineActionBundle.lightDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "lightbulb.fill", title: draft.accessoryName,
+                subtitle: draft.powerOn ? "\(draft.roomName) · \(draft.brightness)%" : draft.roomName,
+                powerBinding: bundleToggleBinding(\.lightDrafts, id: draft.id, field: \.powerOn),
+                valueText: nil))
+        }
+        for draft in inlineActionBundle.outletDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "powerplug.fill", title: draft.accessoryName,
+                subtitle: draft.parentName.map { "\($0) · \(draft.roomName)" } ?? draft.roomName,
+                powerBinding: bundleToggleBinding(\.outletDrafts, id: draft.id, field: \.powerOn),
+                valueText: nil))
+        }
+        for draft in inlineActionBundle.switchDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "lightswitch.on.fill", title: draft.accessoryName,
+                subtitle: draft.roomName,
+                powerBinding: bundleToggleBinding(\.switchDrafts, id: draft.id, field: \.powerOn),
+                valueText: nil))
+        }
+        for draft in inlineActionBundle.fanDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "fan.fill", title: draft.accessoryName,
+                subtitle: draft.powerOn ? "\(draft.roomName) · \(draft.speed)%" : draft.roomName,
+                powerBinding: bundleToggleBinding(\.fanDrafts, id: draft.id, field: \.powerOn),
+                valueText: nil))
+        }
+        for draft in inlineActionBundle.airPurifierDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "air.purifier.fill", title: draft.accessoryName,
+                subtitle: draft.roomName,
+                powerBinding: bundleToggleBinding(\.airPurifierDrafts, id: draft.id, field: \.powerOn),
+                valueText: nil))
+        }
+        for draft in inlineActionBundle.humidifierDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "humidifier.fill", title: draft.accessoryName,
+                subtitle: draft.roomName,
+                powerBinding: bundleToggleBinding(\.humidifierDrafts, id: draft.id, field: \.powerOn),
+                valueText: nil))
+        }
+        for draft in inlineActionBundle.valveDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "drop.fill", title: draft.accessoryName,
+                subtitle: draft.roomName,
+                powerBinding: bundleToggleBinding(\.valveDrafts, id: draft.id, field: \.open),
+                valueText: nil))
+        }
+        for draft in inlineActionBundle.doorLockDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "lock.fill", title: draft.accessoryName,
+                subtitle: draft.roomName,
+                powerBinding: bundleToggleBinding(\.doorLockDrafts, id: draft.id, field: \.locked),
+                valueText: nil))
+        }
+        for draft in inlineActionBundle.garageDoorDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "door.garage.closed", title: draft.accessoryName,
+                subtitle: draft.roomName,
+                powerBinding: bundleToggleBinding(\.garageDoorDrafts, id: draft.id, field: \.open),
+                valueText: nil))
+        }
+        for draft in inlineActionBundle.windowCoveringDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "blinds.horizontal.open", title: draft.accessoryName,
+                subtitle: draft.roomName,
+                powerBinding: nil,
+                valueText: "\(draft.position)%"))
+        }
+        for draft in inlineActionBundle.thermostatDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "thermometer.medium", title: draft.accessoryName,
+                subtitle: draft.roomName,
+                powerBinding: nil,
+                valueText: "\(Int(draft.targetTemperature.rounded()))°"))
+        }
+        for draft in inlineActionBundle.securitySystemDrafts where draft.isIncluded {
+            rows.append(InlineActionRow(
+                id: draft.id, iconName: "shield.lefthalf.filled", title: draft.accessoryName,
+                subtitle: draft.roomName,
+                powerBinding: nil,
+                valueText: nil))
+        }
+
+        return rows
+    }
+
+    private func inlineActionRowView(_ row: InlineActionRow) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: row.iconName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(BrandColor.primary)
+                .frame(width: 36, height: 36)
+                .background(BrandColor.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(row.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            if let valueText = row.valueText {
+                Text(valueText)
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(BrandColor.primary)
+            }
+            if let binding = row.powerBinding {
+                Toggle("", isOn: binding)
+                    .labelsHidden()
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
     private var inlineActionBundleCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
@@ -1436,10 +1587,15 @@ struct AutomationWizardSheet: View {
                 .buttonStyle(.plain)
             }
 
-            Text(inlineActionBundleSummary)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(3)
+            // Una riga per azione, stato incluso: il toggle cambia il target
+            // dell'azione (acceso/spento, aperto/chiuso…) senza riaprire il
+            // picker; i valori non booleani si leggono a destra e si
+            // modificano dall'editor (matita).
+            VStack(spacing: 6) {
+                ForEach(inlineActionRows) { row in
+                    inlineActionRowView(row)
+                }
+            }
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
