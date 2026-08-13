@@ -29,6 +29,7 @@ struct AutomationWizardSheet: View {
     @State private var locationTrigger = AutomationLocationTrigger()
     @State private var startEvents: [AutomationStartEventDraft] = []
     @State private var editingStartEvent: StartEventEditTarget?
+    @State private var editingCondition: ConditionEditTarget?
     @State private var locationRequestID = 0
     @State private var isChoosingTrigger = true
     @State private var showTriggerTargetPicker = false
@@ -291,6 +292,9 @@ struct AutomationWizardSheet: View {
             .sheet(item: $editingStartEvent) { target in
                 startEventEditorSheet(target)
             }
+            .sheet(item: $editingCondition) { target in
+                conditionEditorSheet(target)
+            }
             .alert(String(localized: "alert.error.title", defaultValue: "Error"),
                    isPresented: Binding(
                     get: { errorMessage != nil },
@@ -377,10 +381,10 @@ struct AutomationWizardSheet: View {
                                 selectedID: nil,
                                 emptyTitle: String(localized: "automation.wizard.conditions.emptyFiltered", defaultValue: "No condition matches these filters")
                             ) { capability in
-                                conditionDrafts.append(
-                                    AutomationConditionDraft(selection: AutomationCapabilitySelection(capability: capability))
-                                )
+                                let draft = AutomationConditionDraft(selection: AutomationCapabilitySelection(capability: capability))
+                                conditionDrafts.append(draft)
                                 showConditionTargetPicker = false
+                                editingCondition = ConditionEditTarget(id: draft.id)
                             }
                         },
                         timeContent: {
@@ -531,39 +535,41 @@ struct AutomationWizardSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 } else {
-                    ForEach($conditionDrafts) { $draft in
+                    // Righe compatte come per gli eventi di avvio: il
+                    // riassunto qui, l'editor nello sheet focalizzato al tap.
+                    ForEach(conditionDrafts) { draft in
                         VStack(alignment: .leading, spacing: 10) {
-                            conditionEditorCard($draft)
-                            if !isLastCondition(id: draft.id) {
-                                Text(conditionJoinMode.composerKeyword)
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(BrandColor.primary)
-                                    .padding(.leading, 8)
-                            }
+                            conditionSummaryRow(
+                                iconName: draft.selection.capability.iconName,
+                                title: draft.selection.capability.accessoryName,
+                                detail: "\(draft.selection.capability.roomName) · \(draft.selection.capability.title): \(draft.selection.valuePhrase)",
+                                id: draft.id
+                            )
+                            conditionJoinSeparator(after: draft.id)
                         }
                     }
 
-                    ForEach($timeConditionDrafts) { $draft in
+                    ForEach(timeConditionDrafts) { draft in
                         VStack(alignment: .leading, spacing: 10) {
-                            timeConditionEditorCard($draft)
-                            if !isLastCondition(id: draft.id) {
-                                Text(conditionJoinMode.composerKeyword)
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(BrandColor.primary)
-                                    .padding(.leading, 8)
-                            }
+                            conditionSummaryRow(
+                                iconName: "clock.fill",
+                                title: String(localized: "automation.source.time.title", defaultValue: "Time"),
+                                detail: draft.summary,
+                                id: draft.id
+                            )
+                            conditionJoinSeparator(after: draft.id)
                         }
                     }
 
-                    ForEach($presenceConditionDrafts) { $draft in
+                    ForEach(presenceConditionDrafts) { draft in
                         VStack(alignment: .leading, spacing: 10) {
-                            presenceConditionEditorCard($draft)
-                            if !isLastCondition(id: draft.id) {
-                                Text(conditionJoinMode.composerKeyword)
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(BrandColor.primary)
-                                    .padding(.leading, 8)
-                            }
+                            conditionSummaryRow(
+                                iconName: "person.2.fill",
+                                title: String(localized: "automation.source.people.title", defaultValue: "People"),
+                                detail: draft.summary,
+                                id: draft.id
+                            )
+                            conditionJoinSeparator(after: draft.id)
                         }
                     }
 
@@ -666,8 +672,10 @@ struct AutomationWizardSheet: View {
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             Button {
-                timeConditionDrafts.append(AutomationTimeCondition())
+                let draft = AutomationTimeCondition()
+                timeConditionDrafts.append(draft)
                 showConditionTargetPicker = false
+                editingCondition = ConditionEditTarget(id: draft.id)
             } label: {
                 Label(String(localized: "automation.timeCondition.add", defaultValue: "Add Time Condition"), systemImage: "plus.circle.fill")
                     .font(.headline)
@@ -721,8 +729,10 @@ struct AutomationWizardSheet: View {
             )
 
             Button {
-                presenceConditionDrafts.append(AutomationPresenceCondition())
+                let draft = AutomationPresenceCondition()
+                presenceConditionDrafts.append(draft)
                 showConditionTargetPicker = false
+                editingCondition = ConditionEditTarget(id: draft.id)
             } label: {
                 Label(String(localized: "automation.presence.condition.add", defaultValue: "Add People Condition"), systemImage: "plus.circle.fill")
                     .font(.headline)
@@ -2840,6 +2850,84 @@ struct AutomationWizardSheet: View {
             .padding(16)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
+    }
+
+    @ViewBuilder
+    private func conditionJoinSeparator(after id: UUID) -> some View {
+        if !isLastCondition(id: id) {
+            Text(conditionJoinMode.composerKeyword)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(BrandColor.primary)
+                .padding(.leading, 8)
+        }
+    }
+
+    private func conditionSummaryRow(iconName: String, title: String, detail: String, id: UUID) -> some View {
+        Button {
+            editingCondition = ConditionEditTarget(id: id)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: iconName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BrandColor.primary)
+                    .frame(width: 40, height: 40)
+                    .background(BrandColor.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func conditionEditorSheet(_ target: ConditionEditTarget) -> some View {
+        NavigationStack {
+            ScrollView {
+                Group {
+                    if let index = conditionDrafts.firstIndex(where: { $0.id == target.id }) {
+                        conditionEditorCard($conditionDrafts[index])
+                    } else if let index = timeConditionDrafts.firstIndex(where: { $0.id == target.id }) {
+                        timeConditionEditorCard($timeConditionDrafts[index])
+                    } else if let index = presenceConditionDrafts.firstIndex(where: { $0.id == target.id }) {
+                        presenceConditionEditorCard($presenceConditionDrafts[index])
+                    } else {
+                        // La condizione è stata rimossa dall'editor: si chiude.
+                        Color.clear.onAppear { editingCondition = nil }
+                    }
+                }
+                .padding(16)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle(String(localized: "automation.composer.condition.editor.title", defaultValue: "Condition"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "automation.composer.event.done", defaultValue: "Done")) {
+                        editingCondition = nil
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     private func conditionEditorCard(_ draft: Binding<AutomationConditionDraft>) -> some View {
@@ -6162,6 +6250,12 @@ private extension AutomationProposalLocationKind {
 /// Il token dello sheet di modifica evento: solo l'id, il contenuto si
 /// risolve al volo sull'array (così la rimozione dall'editor chiude da sé).
 private struct StartEventEditTarget: Identifiable {
+    let id: UUID
+}
+
+/// Come StartEventEditTarget, per le condizioni: l'id si risolve al volo su
+/// una delle tre famiglie (capability, orari, presenza).
+private struct ConditionEditTarget: Identifiable {
     let id: UUID
 }
 
