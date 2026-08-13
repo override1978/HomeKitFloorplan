@@ -4754,7 +4754,7 @@ private enum AutomationWizardStep: Int, CaseIterable, Identifiable {
     }
 }
 
-private enum AutomationTriggerSourceKind: String, CaseIterable, Identifiable {
+enum AutomationTriggerSourceKind: String, CaseIterable, Identifiable {
     case accessory
     case time
     case people
@@ -4802,7 +4802,9 @@ private enum AutomationTriggerSourceKind: String, CaseIterable, Identifiable {
     }
 }
 
-private struct AutomationWizardEditDraft {
+/// Interna (non private) per testare i parser dei predicati: i dialetti di
+/// Apple Home/Controller/Eve si inchiodano a tavolino, non a tentoni.
+struct AutomationWizardEditDraft {
     var startEvents: [AutomationStartEventDraft]
     var conditionSelections: [AutomationCapabilitySelection]
     var timeConditions: [AutomationTimeCondition]
@@ -5094,7 +5096,7 @@ private struct AutomationWizardEditDraft {
         return nil
     }
 
-    private static func selections(
+    static func selections(
         in predicate: NSPredicate?,
         capabilities: [AutomationCharacteristicCapability]
     ) -> [AutomationCapabilitySelection] {
@@ -5106,6 +5108,38 @@ private struct AutomationWizardEditDraft {
 
         guard let compound = predicate as? NSCompoundPredicate else {
             return []
+        }
+
+        // L'AND PIATTO di Controller: characteristic == X e characteristicValue
+        // > v arrivano come FRATELLI in mezzo a orari e presenza, non nel loro
+        // AND dedicato come li scriviamo noi. Senza questo accoppiamento la
+        // caratteristica da sola diventava «a ogni variazione» e il confronto
+        // col valore restava orfano (le righe grezze viste su Zappa Terra).
+        // Si accoppia solo con UNA caratteristica in campo: con più accessori
+        // nello stesso AND piatto l'attribuzione sarebbe un tiro a indovinare.
+        let directComparisons = compound.subpredicates.compactMap { $0 as? NSComparisonPredicate }
+        let characteristicComparisons = directComparisons.filter { characteristic(in: $0) != nil }
+        let valueComparisons = directComparisons.filter {
+            characteristic(in: $0) == nil && comparisonValue(in: $0) != nil
+        }
+        if compound.compoundPredicateType == .and,
+           characteristicComparisons.count == 1,
+           !valueComparisons.isEmpty,
+           let paired = selection(
+               fromGroupedPredicate: NSCompoundPredicate(
+                   andPredicateWithSubpredicates: [characteristicComparisons[0], valueComparisons[0]]
+               ),
+               capabilities: capabilities
+           ) {
+            let leftovers = compound.subpredicates.compactMap { subpredicate -> NSPredicate? in
+                guard let predicate = subpredicate as? NSPredicate else { return nil }
+                if let comparison = predicate as? NSComparisonPredicate,
+                   comparison === characteristicComparisons[0] || comparison === valueComparisons[0] {
+                    return nil
+                }
+                return predicate
+            }
+            return [paired] + leftovers.flatMap { selections(in: $0, capabilities: capabilities) }
         }
 
         return compound.subpredicates.flatMap { subpredicate -> [AutomationCapabilitySelection] in
@@ -5195,7 +5229,7 @@ private struct AutomationWizardEditDraft {
         return true
     }
 
-    private static func timeConditions(
+    static func timeConditions(
         in predicate: NSPredicate?,
         triggerPredicates: [NSPredicate]
     ) -> [AutomationTimeCondition] {
@@ -5508,7 +5542,7 @@ private struct AutomationWizardEditDraft {
         return false
     }
 
-    private static func presenceConditions(
+    static func presenceConditions(
         in predicate: NSPredicate?,
         triggerPredicates: [NSPredicate]
     ) -> [AutomationPresenceCondition] {
@@ -6141,7 +6175,7 @@ private enum AutomationCapabilityCategory: String, CaseIterable, Identifiable {
     }
 }
 
-private struct AutomationStartEventDraft: Identifiable {
+struct AutomationStartEventDraft: Identifiable {
     let id: UUID
     var kind: AutomationTriggerSourceKind
     var selection: AutomationCapabilitySelection?
