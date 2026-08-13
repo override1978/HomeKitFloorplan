@@ -108,6 +108,55 @@ enum EnergyStatsBuilder {
         return result
     }
 
+    /// Le 24 ore di UN giorno: stessa matematica dei giornalieri, con i
+    /// bucket orari e l'intervallo ritagliato sul giorno richiesto — la
+    /// parte di un delta che cade fuori dal giorno resta fuori, in
+    /// proporzione al tempo, come sempre.
+    static func hourlyTotals(
+        points: [EnergyStatsPoint],
+        day: Date,
+        calendar: Calendar = .current
+    ) -> [EnergyDayTotal] {
+        let dayStart = calendar.startOfDay(for: day)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
+
+        let sorted = points
+            .filter { $0.cumulativeKilowattHours != nil }
+            .sorted { $0.timestamp < $1.timestamp }
+
+        var byHour: [Date: Double] = [:]
+        for (previous, current) in zip(sorted, sorted.dropFirst()) {
+            guard let before = previous.cumulativeKilowattHours,
+                  let after = current.cumulativeKilowattHours else { continue }
+            let delta = after - before
+            guard delta > 0 else { continue }
+            let start = previous.timestamp
+            let end = current.timestamp
+            let duration = end.timeIntervalSince(start)
+            guard duration > 0, start < dayEnd, end > dayStart else { continue }
+
+            var cursor = max(start, dayStart)
+            let clippedEnd = min(end, dayEnd)
+            while cursor < clippedEnd {
+                guard let hour = calendar.dateInterval(of: .hour, for: cursor)?.start,
+                      let nextHour = calendar.date(byAdding: .hour, value: 1, to: hour) else { break }
+                let segmentEnd = min(nextHour, clippedEnd)
+                let fraction = segmentEnd.timeIntervalSince(cursor) / duration
+                byHour[hour, default: 0] += delta * fraction
+                cursor = segmentEnd
+            }
+        }
+
+        var result: [EnergyDayTotal] = []
+        var hour = dayStart
+        while hour < dayEnd {
+            result.append(EnergyDayTotal(day: hour, kilowattHours: byHour[hour] ?? 0))
+            guard let next = calendar.date(byAdding: .hour, value: 1, to: hour) else { break }
+            hour = next
+        }
+        return result
+    }
+
     /// Attribuisce `delta` ai giorni toccati dall'intervallo, in proporzione
     /// al tempo trascorso in ciascuno.
     private static func smear(

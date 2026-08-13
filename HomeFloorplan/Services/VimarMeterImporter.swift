@@ -52,8 +52,13 @@ enum VimarMeterImporter {
         }
     }
 
-    /// Il giro completo: xlsx → punti giornalieri di frontiera, ordinati.
-    static func dailyPoints(from data: Data, calendar: Calendar = .current) throws -> [EnergyStatsPoint] {
+    /// Quanti giorni recenti conservano la granularità ORARIA: è ciò che dà
+    /// forma al livello «giorno» dell'analisi. Prima di questa soglia bastano
+    /// le frontiere giornaliere.
+    static let hourlyWindowDays = 60
+
+    /// Il giro completo: xlsx → punti a due velocità, ordinati.
+    static func dailyPoints(from data: Data, calendar: Calendar = .current, now: Date = .now) throws -> [EnergyStatsPoint] {
         let sheetXML = try inflatedEntry(named: "xl/worksheets/sheet1.xml", in: data)
         // Le sharedStrings possono mancare in un foglio tutto-inline: qui i
         // timestamp sono stringhe condivise, ma il parser regge entrambi.
@@ -61,7 +66,38 @@ enum VimarMeterImporter {
         let shared = sharedData.map(sharedStrings(from:)) ?? []
         let points = points(sheetXML: sheetXML, sharedStrings: shared)
         guard !points.isEmpty else { throw ImportError.noSamples }
-        return dailyBoundarySamples(points, calendar: calendar)
+        return twoSpeedSamples(points, calendar: calendar, now: now)
+    }
+
+    /// Due velocità: frontiere ORARIE negli ultimi `hourlyWindowDays` giorni
+    /// (l'analisi del singolo giorno vuole la forma delle ore), frontiere
+    /// giornaliere prima (per i totali bastano). ~3.500 righe/anno invece
+    /// delle 33.000 del file.
+    static func twoSpeedSamples(_ points: [EnergyStatsPoint],
+                                calendar: Calendar = .current,
+                                now: Date = .now) -> [EnergyStatsPoint] {
+        let hourlyCutoff = calendar.date(byAdding: .day, value: -hourlyWindowDays,
+                                         to: calendar.startOfDay(for: now)) ?? .distantPast
+        let sorted = points.sorted { $0.timestamp < $1.timestamp }
+        var byBucket: [Date: (first: EnergyStatsPoint, last: EnergyStatsPoint)] = [:]
+        for point in sorted {
+            let bucket: Date
+            if point.timestamp >= hourlyCutoff {
+                bucket = calendar.dateInterval(of: .hour, for: point.timestamp)?.start
+                    ?? calendar.startOfDay(for: point.timestamp)
+            } else {
+                bucket = calendar.startOfDay(for: point.timestamp)
+            }
+            if var entry = byBucket[bucket] {
+                entry.last = point
+                byBucket[bucket] = entry
+            } else {
+                byBucket[bucket] = (point, point)
+            }
+        }
+        return byBucket.values
+            .flatMap { $0.first.timestamp == $0.last.timestamp ? [$0.first] : [$0.first, $0.last] }
+            .sorted { $0.timestamp < $1.timestamp }
     }
 
     // MARK: - Interpretazione del foglio

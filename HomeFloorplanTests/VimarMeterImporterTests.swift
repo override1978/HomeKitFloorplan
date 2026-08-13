@@ -82,6 +82,34 @@ struct VimarMeterImporterTests {
         #expect(VimarMeterImporter.dailyBoundarySamples(single, calendar: calendar).count == 1)
     }
 
+    /// Due velocità: dentro la finestra oraria restano le frontiere di ogni
+    /// ORA, prima solo quelle del giorno.
+    @Test("Due velocità: ore nei giorni recenti, frontiere nei vecchi")
+    func twoSpeed() {
+        let iso = ISO8601DateFormatter()
+        func p(_ text: String, _ kWh: Double) -> EnergyStatsPoint {
+            EnergyStatsPoint(timestamp: iso.date(from: text)!, cumulativeKilowattHours: kWh)
+        }
+        let now = iso.date(from: "2026-08-13T12:00:00+02:00")!
+        let points = [
+            // Giorno vecchio (fuori dai 60): 4 campioni → 2 frontiere.
+            p("2025-08-30T10:00:00+02:00", 100.0),
+            p("2025-08-30T10:15:00+02:00", 100.1),
+            p("2025-08-30T17:00:00+02:00", 101.0),
+            p("2025-08-30T23:45:00+02:00", 101.5),
+            // Giorno recente: 4 campioni in 2 ore → 2 frontiere per ora.
+            p("2026-08-13T09:00:00+02:00", 500.0),
+            p("2026-08-13T09:30:00+02:00", 500.2),
+            p("2026-08-13T10:00:00+02:00", 500.4),
+            p("2026-08-13T10:45:00+02:00", 500.7),
+        ]
+        let sampled = VimarMeterImporter.twoSpeedSamples(points, calendar: calendar, now: now)
+        let oldDay = sampled.filter { $0.timestamp < iso.date(from: "2026-01-01T00:00:00+02:00")! }
+        let recent = sampled.filter { $0.timestamp >= iso.date(from: "2026-08-13T00:00:00+02:00")! }
+        #expect(oldDay.count == 2)      // prima e ultima del giorno
+        #expect(recent.count == 4)      // prima+ultima per ciascuna delle 2 ore
+    }
+
     /// Un xlsx VERO in miniatura (stessa struttura dell'export, generato con
     /// openpyxl e incorporato in base64): collauda anche lo strato zip —
     /// EOCD, central directory, local header, deflate.

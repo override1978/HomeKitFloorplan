@@ -143,6 +143,23 @@ struct EnergyStatsBuilderTests {
         #expect(abs(byMonth[august]! - 0.2) < 0.0001)
     }
 
+    /// Le ore di un giorno: il delta si spalma sulle ore attraversate, e ciò
+    /// che cade fuori dal giorno richiesto resta fuori.
+    @Test("Orari: delta 10:30→12:30 diviso su tre ore, 24 bucket sempre")
+    func hourlyTotals() {
+        let hours = EnergyStatsBuilder.hourlyTotals(
+            points: [point(day: 13, hour: 10, minute: 30, kWh: 100.0),
+                     point(day: 13, hour: 12, minute: 30, kWh: 100.4)],
+            day: date(day: 13, hour: 0),
+            calendar: calendar)
+        #expect(hours.count == 24)
+        let byHour = Dictionary(uniqueKeysWithValues: hours.map { ($0.day, $0.kilowattHours) })
+        #expect(abs(byHour[date(day: 13, hour: 10)]! - 0.1) < 0.0001)
+        #expect(abs(byHour[date(day: 13, hour: 11)]! - 0.2) < 0.0001)
+        #expect(abs(byHour[date(day: 13, hour: 12)]! - 0.1) < 0.0001)
+        #expect(byHour[date(day: 13, hour: 9)]! == 0)
+    }
+
     /// Un buco di più giorni: l'energia si distribuisce su TUTTI i giorni
     /// attraversati, non solo sul primo e l'ultimo.
     @Test("Buco di tre giorni: ogni giorno attraversato riceve la sua parte")

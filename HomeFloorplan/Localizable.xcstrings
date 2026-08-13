@@ -1,6 +1,142 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "energy.analysis.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Consumption analysis"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analisi consumi"
+          }
+        }
+      }
+    },
+    "energy.analysis.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analysis"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analisi"
+          }
+        }
+      }
+    },
+    "energy.analysis.hint.year" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap a month to see its days."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocca un mese per vederne i giorni."
+          }
+        }
+      }
+    },
+    "energy.analysis.hint.month" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap a day to open it."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocca un giorno per aprirlo."
+          }
+        }
+      }
+    },
+    "energy.analysis.back.year" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "12 months"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "12 mesi"
+          }
+        }
+      }
+    },
+    "energy.analysis.sevenDaysAgo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7 days ago"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7 giorni fa"
+          }
+        }
+      }
+    },
+    "energy.analysis.vsMonthAverage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vs month average"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vs media del mese"
+          }
+        }
+      }
+    },
+    "energy.analysis.noHourly" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hourly detail is kept for the last 60 days — re-import a fresh export to fill recent days."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il dettaglio orario è conservato per gli ultimi 60 giorni — reimporta un export fresco per riempire i giorni recenti."
+          }
+        }
+      }
+    },
     "energy.month.vs" : {
       "extractionState" : "manual",
       "localizations" : {
