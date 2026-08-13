@@ -76,6 +76,11 @@ enum AutomationCapabilityOperator: Hashable {
     case equals
     case greaterThan
     case lessThan
+    /// «Tra X e Y»: l'operatore che mancava per leggere gli intervalli chiusi
+    /// di Apple Home/Aqara. Solo per i TRIGGER numerici: come condizione un
+    /// intervallo andrebbe spezzato in due predicati, e sotto il join «Una
+    /// qualsiasi» cambierebbe significato — la UI non lo offre lì.
+    case between
 }
 
 enum AutomationCapabilityValueKind {
@@ -111,14 +116,38 @@ struct AutomationCapabilitySelection {
     }
 
     var characteristicEvent: HMEvent {
-        HMCharacteristicEvent<NSNumber>(
+        // «Tra X e Y» usa l'evento threshold-range NATIVO di HomeKit — lo
+        // stesso che Apple Home scrive — così la rilettura lo ritrova
+        // identico invece di doverlo ricostruire da due predicati.
+        if comparisonOperator == .between, case .range(let lower, let upper) = targetValue {
+            return HMCharacteristicThresholdRangeEvent(
+                characteristic: capability.characteristic,
+                thresholdRange: HMNumberRange(minValue: NSNumber(value: lower),
+                                              maxValue: NSNumber(value: upper))
+            )
+        }
+        return HMCharacteristicEvent<NSNumber>(
             characteristic: capability.characteristic,
             triggerValue: usesEventTriggerValue ? targetValue.numberValue : nil
         )
     }
 
     var predicate: NSPredicate {
-        HMEventTrigger.predicateForEvaluatingTrigger(
+        if comparisonOperator == .between, case .range(let lower, let upper) = targetValue {
+            return NSCompoundPredicate(andPredicateWithSubpredicates: [
+                HMEventTrigger.predicateForEvaluatingTrigger(
+                    capability.characteristic,
+                    relatedBy: .greaterThanOrEqualTo,
+                    toValue: NSNumber(value: lower)
+                ),
+                HMEventTrigger.predicateForEvaluatingTrigger(
+                    capability.characteristic,
+                    relatedBy: .lessThanOrEqualTo,
+                    toValue: NSNumber(value: upper)
+                )
+            ])
+        }
+        return HMEventTrigger.predicateForEvaluatingTrigger(
             capability.characteristic,
             relatedBy: comparisonOperator.predicateOperator,
             toValue: targetValue.numberValue
@@ -127,6 +156,8 @@ struct AutomationCapabilitySelection {
 
     var triggerPredicate: NSPredicate? {
         if case .any = targetValue { return nil }
+        // La soglia di «between» vive già dentro l'evento threshold-range.
+        if comparisonOperator == .between { return nil }
         return usesEventTriggerValue ? nil : predicate
     }
 
@@ -139,6 +170,8 @@ enum AutomationCapabilityTargetValue: Hashable {
     case bool(Bool)
     case number(Double)
     case state(Int)
+    /// La coppia di «between»: (inferiore, superiore).
+    case range(Double, Double)
     /// Represents a trigger that fires on any value change (triggerValue = nil in HomeKit).
     case any
 
@@ -150,6 +183,8 @@ enum AutomationCapabilityTargetValue: Hashable {
             return NSNumber(value: value)
         case .state(let rawValue):
             return NSNumber(value: rawValue)
+        case .range(let lower, _):
+            return NSNumber(value: lower)
         case .any:
             return NSNumber(value: 0)
         }
@@ -174,6 +209,8 @@ enum AutomationCapabilityTargetValue: Hashable {
 }
 
 private extension AutomationCapabilityOperator {
+    /// ⚠️ Mai consultato per `.between`: quel caso costruisce il predicato
+    /// composto (o l'evento threshold nativo) per conto suo.
     var predicateOperator: NSComparisonPredicate.Operator {
         switch self {
         case .becomesActive, .equals:
@@ -184,7 +221,9 @@ private extension AutomationCapabilityOperator {
             return .greaterThan
         case .lessThan:
             return .lessThan
-        }
+            case .between:
+            return .greaterThanOrEqualTo
+    }
     }
 }
 

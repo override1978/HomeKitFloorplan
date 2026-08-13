@@ -28,6 +28,7 @@ struct AutomationWizardSheet: View {
     @State private var presenceTrigger = AutomationPresenceTrigger()
     @State private var locationTrigger = AutomationLocationTrigger()
     @State private var startEvents: [AutomationStartEventDraft] = []
+    @State private var editingStartEvent: StartEventEditTarget?
     @State private var locationRequestID = 0
     @State private var isChoosingTrigger = true
     @State private var showTriggerTargetPicker = false
@@ -287,6 +288,9 @@ struct AutomationWizardSheet: View {
                     }
                 }
             }
+            .sheet(item: $editingStartEvent) { target in
+                startEventEditorSheet(target)
+            }
             .alert(String(localized: "alert.error.title", defaultValue: "Error"),
                    isPresented: Binding(
                     get: { errorMessage != nil },
@@ -319,7 +323,9 @@ struct AutomationWizardSheet: View {
                                 emptyTitle: String(localized: "automation.wizard.trigger.emptyFiltered", defaultValue: "No trigger matches these filters")
                             ) { capability in
                                 let selection = AutomationCapabilitySelection(capability: capability)
-                                startEvents.append(AutomationStartEventDraft(selection: selection))
+                                let draft = AutomationStartEventDraft(selection: selection)
+                                startEvents.append(draft)
+                                editingStartEvent = StartEventEditTarget(id: draft.id)
                                 triggerSource = .accessory
                                 triggerSelection = selection
                                 isChoosingTrigger = false
@@ -476,9 +482,13 @@ struct AutomationWizardSheet: View {
                     subtitle: String(localized: "automation.composer.trigger.empty.subtitle", defaultValue: "Choose at least one event that can start this automation.")
                 )
             } else {
-                ForEach($startEvents) { $event in
+                // Righe compatte stile riassunto: la configurazione vive
+                // nell'editor focalizzato che si apre al tap. Prima ogni
+                // evento srotolava QUI il suo editor completo (la mappa della
+                // geofence inclusa, 260pt) e il foglio diventava un tunnel.
+                ForEach(startEvents) { event in
                     VStack(alignment: .leading, spacing: 10) {
-                        startEventEditorCard($event)
+                        startEventSummaryRow(event)
                         if event.id != startEvents.last?.id {
                             Text(String(localized: "automation.composer.trigger.or", defaultValue: "OR"))
                                 .font(.caption.weight(.bold))
@@ -970,7 +980,74 @@ struct AutomationWizardSheet: View {
     }
 
     @ViewBuilder
-    private func startEventEditorCard(_ event: Binding<AutomationStartEventDraft>) -> some View {
+    private func startEventSummaryRow(_ event: AutomationStartEventDraft) -> some View {
+        Button {
+            editingStartEvent = StartEventEditTarget(id: event.id)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: event.iconName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BrandColor.primary)
+                    .frame(width: 40, height: 40)
+                    .background(BrandColor.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(event.rowTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(event.rowDetail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 8)
+
+                if !event.isValid {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func startEventEditorSheet(_ target: StartEventEditTarget) -> some View {
+        NavigationStack {
+            ScrollView {
+                if let index = startEvents.firstIndex(where: { $0.id == target.id }) {
+                    startEventEditorCard($startEvents[index], allowsBetween: true)
+                        .padding(16)
+                } else {
+                    // L'evento è stato rimosso dall'editor stesso: si chiude.
+                    Color.clear.onAppear { editingStartEvent = nil }
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle(String(localized: "automation.composer.event.editor.title", defaultValue: "Start event"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "automation.composer.event.done", defaultValue: "Done")) {
+                        editingStartEvent = nil
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    @ViewBuilder
+    private func startEventEditorCard(_ event: Binding<AutomationStartEventDraft>, allowsBetween: Bool = false) -> some View {
         switch event.wrappedValue.kind {
         case .accessory:
             if let selection = Binding(event.selection) {
@@ -981,7 +1058,8 @@ struct AutomationWizardSheet: View {
                             selection: selection,
                             primaryTitle: nil,
                             primaryIcon: nil,
-                            primaryAction: nil
+                            primaryAction: nil,
+                            allowsBetween: allowsBetween
                         )
                     }
                     removeStartEventButton(id: event.wrappedValue.id)
@@ -2408,7 +2486,8 @@ struct AutomationWizardSheet: View {
         selection: Binding<AutomationCapabilitySelection>,
         primaryTitle: String?,
         primaryIcon: String?,
-        primaryAction: (() -> Void)?
+        primaryAction: (() -> Void)?,
+        allowsBetween: Bool = false
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title)
@@ -2434,7 +2513,7 @@ struct AutomationWizardSheet: View {
 
                 Divider()
 
-                capabilityValueEditor(selection: selection)
+                capabilityValueEditor(selection: selection, allowsBetween: allowsBetween)
 
                 if let primaryTitle, let primaryIcon, let primaryAction {
                     Button(action: primaryAction) {
@@ -3037,7 +3116,7 @@ struct AutomationWizardSheet: View {
         }
     }
 
-    private func capabilityValueEditor(selection: Binding<AutomationCapabilitySelection>) -> some View {
+    private func capabilityValueEditor(selection: Binding<AutomationCapabilitySelection>, allowsBetween: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if case .any = selection.wrappedValue.targetValue {
                 Label(
@@ -3052,7 +3131,7 @@ struct AutomationWizardSheet: View {
                     Text(String(localized: "automation.wizard.operator", defaultValue: "Operator"))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    operatorPicker(selection: selection)
+                    operatorPicker(selection: selection, allowsBetween: allowsBetween)
                 }
 
                 switch selection.wrappedValue.capability.valueKind {
@@ -3075,9 +3154,9 @@ struct AutomationWizardSheet: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private func operatorPicker(selection: Binding<AutomationCapabilitySelection>) -> some View {
+    private func operatorPicker(selection: Binding<AutomationCapabilitySelection>, allowsBetween: Bool = false) -> some View {
         Picker(String(localized: "automation.wizard.operator", defaultValue: "Operator"), selection: operatorBinding(selection)) {
-            ForEach(operators(for: selection.wrappedValue.capability), id: \.self) { op in
+            ForEach(operators(for: selection.wrappedValue.capability, includeBetween: allowsBetween), id: \.self) { op in
                 Text(op.displayName).tag(op)
             }
         }
@@ -3093,7 +3172,22 @@ struct AutomationWizardSheet: View {
         let allowedRange = range ?? 0...100
         let increment = step ?? 1
         return VStack(alignment: .leading, spacing: 8) {
-            if isBrightnessCapability(selection.wrappedValue.capability, unit: unit, range: allowedRange) {
+            if selection.wrappedValue.comparisonOperator == .between {
+                automationNumericSlider(
+                    title: String(localized: "automation.range.from", defaultValue: "From"),
+                    value: rangeLowerBinding(selection, bounds: allowedRange),
+                    range: allowedRange,
+                    step: increment,
+                    unit: unit
+                )
+                automationNumericSlider(
+                    title: String(localized: "automation.range.to", defaultValue: "To"),
+                    value: rangeUpperBinding(selection, bounds: allowedRange),
+                    range: allowedRange,
+                    step: increment,
+                    unit: unit
+                )
+            } else if isBrightnessCapability(selection.wrappedValue.capability, unit: unit, range: allowedRange) {
                 LightBrightnessSlider(
                     brightness: numericBinding(selection),
                     isEnabled: true,
@@ -4229,12 +4323,17 @@ struct AutomationWizardSheet: View {
         "\(selection.capability.accessoryName) - \(selection.capability.title) \(selection.comparisonOperator.displayName) \(selection.targetValue.displayText(for: selection.capability.valueKind))"
     }
 
-    private func operators(for capability: AutomationCharacteristicCapability) -> [AutomationCapabilityOperator] {
+    private func operators(for capability: AutomationCharacteristicCapability,
+                           includeBetween: Bool = false) -> [AutomationCapabilityOperator] {
         switch capability.valueKind {
         case .boolean:
             return [.equals]
         case .numeric:
-            return [.greaterThan, .lessThan, .equals]
+            // «Tra» solo dove richiesto (trigger): come condizione un
+            // intervallo sotto il join «Una qualsiasi» cambierebbe semantica.
+            return includeBetween
+                ? [.greaterThan, .lessThan, .between, .equals]
+                : [.greaterThan, .lessThan, .equals]
         case .state:
             return [.equals]
         }
@@ -4244,7 +4343,58 @@ struct AutomationWizardSheet: View {
         Binding {
             selection.wrappedValue.comparisonOperator
         } set: { newValue in
+            let previous = selection.wrappedValue.comparisonOperator
             selection.wrappedValue.comparisonOperator = newValue
+            // «Tra» usa una coppia, gli altri un valore solo: al cambio di
+            // operatore il target va coerciato o l'editor mostra il tipo
+            // sbagliato.
+            if newValue == .between, previous != .between {
+                let bounds = numericBounds(of: selection.wrappedValue.capability)
+                let current: Double = {
+                    if case .number(let value) = selection.wrappedValue.targetValue { return value }
+                    return bounds.lowerBound
+                }()
+                let span = max(1, (bounds.upperBound - bounds.lowerBound) * 0.1)
+                let upper = min(bounds.upperBound, current + span)
+                selection.wrappedValue.targetValue = .range(min(current, upper), upper)
+            } else if newValue != .between, previous == .between {
+                if case .range(let lower, _) = selection.wrappedValue.targetValue {
+                    selection.wrappedValue.targetValue = .number(lower)
+                }
+            }
+        }
+    }
+
+    private func numericBounds(of capability: AutomationCharacteristicCapability) -> ClosedRange<Double> {
+        if case .numeric(_, let range, _) = capability.valueKind, let range { return range }
+        return 0...100
+    }
+
+    private func rangeLowerBinding(_ selection: Binding<AutomationCapabilitySelection>,
+                                   bounds: ClosedRange<Double>) -> Binding<Double> {
+        Binding {
+            if case .range(let lower, _) = selection.wrappedValue.targetValue { return lower }
+            return bounds.lowerBound
+        } set: { newValue in
+            let upper: Double = {
+                if case .range(_, let upper) = selection.wrappedValue.targetValue { return upper }
+                return bounds.upperBound
+            }()
+            selection.wrappedValue.targetValue = .range(min(newValue, upper), upper)
+        }
+    }
+
+    private func rangeUpperBinding(_ selection: Binding<AutomationCapabilitySelection>,
+                                   bounds: ClosedRange<Double>) -> Binding<Double> {
+        Binding {
+            if case .range(_, let upper) = selection.wrappedValue.targetValue { return upper }
+            return bounds.upperBound
+        } set: { newValue in
+            let lower: Double = {
+                if case .range(let lower, _) = selection.wrappedValue.targetValue { return lower }
+                return bounds.lowerBound
+            }()
+            selection.wrappedValue.targetValue = .range(lower, max(newValue, lower))
         }
     }
 
@@ -4559,12 +4709,15 @@ private struct AutomationWizardEditDraft {
                     capability: capability,
                     targetValue: .any
                 ))
-            case (.some, .some):
-                // Intervallo GENUINAMENTE interno [min, max]: il nostro
-                // modello non ha «dentro l'intervallo» — meglio il cartello
-                // di sola lettura che riscrivere la semantica al salvataggio.
-                dprint("[EditDraft] ThresholdRange interno [\(range.minValue?.doubleValue ?? .nan), \(range.maxValue?.doubleValue ?? .nan)] su campo [\((metadata?.minimumValue)?.doubleValue ?? .nan), \((metadata?.maximumValue)?.doubleValue ?? .nan)]: non rappresentabile, draft nil")
-                return nil
+            case (let minimum?, let maximum?):
+                // L'intervallo genuinamente interno ora ha il suo operatore
+                // («tra») — e al salvataggio torna un threshold-range nativo,
+                // identico a come l'ha scritto Apple Home.
+                return AutomationStartEventDraft(selection: AutomationCapabilitySelection(
+                    capability: capability,
+                    comparisonOperator: .between,
+                    targetValue: .range(minimum, maximum)
+                ))
             }
         }
 
@@ -5792,6 +5945,33 @@ private struct AutomationStartEventDraft: Identifiable {
         }
     }
 
+    /// Titolo e dettaglio per la riga compatta della sezione SE.
+    var rowTitle: String {
+        switch kind {
+        case .accessory:
+            return selection?.capability.accessoryName
+                ?? String(localized: "automation.wizard.context.missing", defaultValue: "Not set")
+        case .time, .people, .location:
+            return kind.title
+        }
+    }
+
+    var rowDetail: String {
+        switch kind {
+        case .accessory:
+            guard let selection else {
+                return String(localized: "automation.wizard.context.missing", defaultValue: "Not set")
+            }
+            return "\(selection.capability.roomName) · \(selection.capability.title): \(selection.valuePhrase)"
+        case .time:
+            return schedule.summary
+        case .people:
+            return presence.summary
+        case .location:
+            return locationDisplaySummary
+        }
+    }
+
     var locationDisplaySummary: String {
         guard location.isValid else {
             return String(localized: "automation.location.needsMapPoint", defaultValue: "Tap the map to set the geofence.")
@@ -5979,6 +6159,12 @@ private extension AutomationProposalLocationKind {
     }
 }
 
+/// Il token dello sheet di modifica evento: solo l'id, il contenuto si
+/// risolve al volo sull'array (così la rimozione dall'editor chiude da sé).
+private struct StartEventEditTarget: Identifiable {
+    let id: UUID
+}
+
 private struct AutomationConditionDraft: Identifiable {
     let id = UUID()
     var selection: AutomationCapabilitySelection
@@ -5997,7 +6183,46 @@ private extension AutomationCapabilityOperator {
             return String(localized: "automation.operator.greaterThan", defaultValue: "Above")
         case .lessThan:
             return String(localized: "automation.operator.lessThan", defaultValue: "Below")
+        case .between:
+            return String(localized: "automation.operator.between", defaultValue: "Between")
         }
+    }
+}
+
+/// La frase compatta di un trigger accessorio per le righe riassuntive:
+/// «sopra 58 %», «Acceso», «tra 20–24 °C», «a ogni variazione».
+private extension AutomationCapabilitySelection {
+    var valuePhrase: String {
+        switch targetValue {
+        case .any:
+            return String(localized: "automation.phrase.anyChange", defaultValue: "any change")
+        case .bool(let value):
+            if case .boolean(let active, let inactive) = capability.valueKind {
+                return value ? active : inactive
+            }
+            return value ? "1" : "0"
+        case .state(let rawValue):
+            if case .state(let options) = capability.valueKind,
+               let option = options.first(where: { $0.rawValue == rawValue }) {
+                return option.title
+            }
+            return "\(rawValue)"
+        case .number(let value):
+            return "\(comparisonOperator.displayName.lowercased()) \(Self.trim(value))\(unitSuffix)"
+        case .range(let lower, let upper):
+            return "\(comparisonOperator.displayName.lowercased()) \(Self.trim(lower))–\(Self.trim(upper))\(unitSuffix)"
+        }
+    }
+
+    private var unitSuffix: String {
+        if case .numeric(let unit, _, _) = capability.valueKind, !unit.isEmpty {
+            return " \(unit)"
+        }
+        return ""
+    }
+
+    private static func trim(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...1)))
     }
 }
 
