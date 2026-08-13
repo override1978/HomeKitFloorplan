@@ -25,6 +25,8 @@ struct EnergyMonitorView: View {
     @Query private var houseSamples: [EnergySample]
     @State private var isImporterPresented = false
     @State private var importMessage: String?
+    /// Il mese selezionato nell'analisi (primo del mese). nil = vista anno.
+    @State private var selectedMonth: Date?
 
     private static let windowDays = 7
 
@@ -164,47 +166,33 @@ struct EnergyMonitorView: View {
         }
     }
 
-    /// Dodici mesi di casa in dodici barre: la forma dell'anno — inverno,
-    /// clima estivo, i mesi di vacanza — col mese corrente acceso.
+    /// Dodici mesi in dodici barre TOCCABILI: un tap seleziona il mese e
+    /// sotto compaiono kWh, costo, il confronto col mese precedente, la
+    /// media giornaliera e i giorni di quel mese. Ri-tap = vista anno.
     private var monthlyCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(String(localized: "energy.monthly.title", defaultValue: "Last 12 months"))
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                if let peak = houseMonths.map(\.kilowattHours).max(), peak > 0 {
-                    Text(formattedKilowattHours(peak))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.tertiary)
+                if selectedMonth != nil {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) { selectedMonth = nil }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
-            Canvas { context, size in
-                let months = houseMonths
-                guard !months.isEmpty else { return }
-                let maximum = max(months.map(\.kilowattHours).max() ?? 0, 0.0001)
-                let gap: CGFloat = 5
-                let barWidth = (size.width - gap * CGFloat(months.count - 1)) / CGFloat(months.count)
-                for (index, month) in months.enumerated() {
-                    let height = max(2, (size.height - 14) * CGFloat(month.kilowattHours / maximum))
-                    let rect = CGRect(x: CGFloat(index) * (barWidth + gap),
-                                      y: size.height - 14 - height,
-                                      width: barWidth,
-                                      height: height)
-                    let isCurrent = index == months.count - 1
-                    context.fill(Path(roundedRect: rect, cornerRadius: 3),
-                                 with: .color(isCurrent ? .yellow : .yellow.opacity(0.35)))
+            monthlyBars
 
-                    let label = month.day.formatted(.dateTime.month(.narrow))
-                    context.draw(
-                        Text(label).font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary),
-                        at: CGPoint(x: rect.midX, y: size.height - 6)
-                    )
-                }
-            }
-            .frame(height: 96)
-
-            if let annual = annualSummary {
+            if let detail = selectedMonthDetail {
+                monthDetailView(detail)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if let annual = annualSummary {
                 Text(annual)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -216,6 +204,145 @@ struct EnergyMonitorView: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
         }
+    }
+
+    private var monthlyBars: some View {
+        let months = houseMonths
+        let maximum = max(months.map(\.kilowattHours).max() ?? 0, 0.0001)
+        return HStack(alignment: .bottom, spacing: 5) {
+            ForEach(months) { month in
+                let isSelected = selectedMonth == month.day
+                let height = max(3, 76 * CGFloat(month.kilowattHours / maximum))
+                VStack(spacing: 3) {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(isSelected ? Color.yellow : Color.yellow.opacity(selectedMonth == nil ? 0.55 : 0.25))
+                        .frame(height: height)
+                        .frame(maxWidth: .infinity)
+                    Text(month.day.formatted(.dateTime.month(.narrow)))
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(isSelected ? .primary : .secondary)
+                }
+                .frame(height: 92, alignment: .bottom)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        selectedMonth = isSelected ? nil : month.day
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Dettaglio mese
+
+    private struct MonthDetail {
+        let month: Date
+        let kilowattHours: Double
+        let previousMonth: Date?
+        let deltaKilowattHours: Double?
+        let dailyAverage: Double
+        let days: [EnergyDayTotal]
+    }
+
+    private var selectedMonthDetail: MonthDetail? {
+        guard let selectedMonth,
+              let index = houseMonths.firstIndex(where: { $0.day == selectedMonth }) else { return nil }
+        let month = houseMonths[index]
+        let calendar = Calendar.current
+        let previous = index > 0 ? houseMonths[index - 1] : nil
+
+        // I giorni del mese: fino a oggi se è il corrente, tutto il mese se
+        // è passato. La media giornaliera usa gli stessi giorni.
+        let monthStart = month.day
+        let today = Date.now
+        let isCurrent = calendar.isDate(today, equalTo: monthStart, toGranularity: .month)
+        let reference: Date
+        let dayCount: Int
+        if isCurrent {
+            reference = today
+            dayCount = calendar.component(.day, from: today)
+        } else {
+            let range = calendar.range(of: .day, in: .month, for: monthStart) ?? 1..<31
+            dayCount = range.count
+            reference = calendar.date(byAdding: .day, value: dayCount - 1, to: monthStart) ?? monthStart
+        }
+        let days = EnergyStatsBuilder.dailyTotals(points: housePoints,
+                                                  days: dayCount,
+                                                  reference: reference)
+        // Il primo mese della finestra è quasi sempre parziale (l'export
+        // parte a metà mese): il confronto col nulla non è un confronto.
+        let delta: Double? = previous.flatMap { prev in
+            prev.kilowattHours > 0 ? month.kilowattHours - prev.kilowattHours : nil
+        }
+        return MonthDetail(
+            month: monthStart,
+            kilowattHours: month.kilowattHours,
+            previousMonth: previous?.day,
+            deltaKilowattHours: delta,
+            dailyAverage: dayCount > 0 ? month.kilowattHours / Double(dayCount) : 0,
+            days: days
+        )
+    }
+
+    private func monthDetailView(_ detail: MonthDetail) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(detail.month.formatted(.dateTime.month(.wide).year()))
+                    .font(.subheadline.weight(.semibold))
+                    .textCase(nil)
+                Spacer()
+                Text(formattedKilowattHours(detail.kilowattHours))
+                    .font(.subheadline.weight(.bold))
+                    .monospacedDigit()
+                if let cost = formattedCost(detail.kilowattHours) {
+                    Text(cost)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 12) {
+                if let delta = detail.deltaKilowattHours, let previousMonth = detail.previousMonth {
+                    // Più consumo = rosso, meno = verde: il colore dice il
+                    // verso senza leggere il segno.
+                    let rising = delta > 0
+                    Label {
+                        Text(verbatim: "\(rising ? "+" : "−")\(formattedKilowattHours(abs(delta))) \(String(localized: "energy.month.vs", defaultValue: "vs")) \(previousMonth.formatted(.dateTime.month(.abbreviated)))")
+                    } icon: {
+                        Image(systemName: rising ? "arrow.up.right" : "arrow.down.right")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(rising ? Color(.systemRed) : Color(.systemGreen))
+                }
+                Text(String(format: String(localized: "energy.month.avgPerDay", defaultValue: "%@ per day"),
+                            formattedKilowattHours(detail.dailyAverage)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            // I giorni del mese: la forma dentro la forma — weekend, ferie,
+            // il giorno del forno acceso tutto il pomeriggio.
+            Canvas { context, size in
+                let days = detail.days
+                guard !days.isEmpty else { return }
+                let maximum = max(days.map(\.kilowattHours).max() ?? 0, 0.0001)
+                let gap: CGFloat = 2
+                let barWidth = max(1, (size.width - gap * CGFloat(days.count - 1)) / CGFloat(days.count))
+                for (index, day) in days.enumerated() {
+                    let height = max(1.5, size.height * CGFloat(day.kilowattHours / maximum))
+                    let rect = CGRect(x: CGFloat(index) * (barWidth + gap),
+                                      y: size.height - height,
+                                      width: barWidth,
+                                      height: height)
+                    context.fill(Path(roundedRect: rect, cornerRadius: 1.5),
+                                 with: .color(.yellow.opacity(0.75)))
+                }
+            }
+            .frame(height: 36)
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var annualSummary: String? {
