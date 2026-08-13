@@ -4511,6 +4511,39 @@ private struct AutomationWizardEditDraft {
             ))
         }
 
+        // Le soglie numeriche di Apple Home/Aqara («quando l'umidità supera
+        // il 58%») NON sono HMCharacteristicEvent: arrivano come
+        // HMCharacteristicThresholdRangeEvent con un HMNumberRange. Il nostro
+        // vocabolario le esprime da sempre come evento+predicato >/<, quindi
+        // la lettura è una traduzione: min valorizzato = «supera min»,
+        // max valorizzato = «scende sotto max». Al salvataggio l'automazione
+        // migra alla nostra rappresentazione — semantica identica.
+        if let thresholdEvent = event as? HMCharacteristicThresholdRangeEvent,
+           let capability = capabilities.first(where: {
+               $0.characteristic.uniqueIdentifier == thresholdEvent.characteristic.uniqueIdentifier
+           }) {
+            let range = thresholdEvent.thresholdRange
+            if let minimum = range.minValue, range.maxValue == nil {
+                return AutomationStartEventDraft(selection: AutomationCapabilitySelection(
+                    capability: capability,
+                    comparisonOperator: .greaterThan,
+                    targetValue: .number(minimum.doubleValue)
+                ))
+            }
+            if let maximum = range.maxValue, range.minValue == nil {
+                return AutomationStartEventDraft(selection: AutomationCapabilitySelection(
+                    capability: capability,
+                    comparisonOperator: .lessThan,
+                    targetValue: .number(maximum.doubleValue)
+                ))
+            }
+            // Intervallo chiuso [min, max]: il nostro modello non ha un
+            // operatore «dentro l'intervallo» — meglio il cartello di sola
+            // lettura che riscrivere di nascosto la semantica al salvataggio.
+            dprint("[EditDraft] ThresholdRange con intervallo chiuso (min e max): non rappresentabile, draft nil")
+            return nil
+        }
+
         if let calendarEvent = event as? HMCalendarEvent {
             return AutomationStartEventDraft(schedule: scheduleTrigger(from: calendarEvent, recurrences: recurrences))
         }
