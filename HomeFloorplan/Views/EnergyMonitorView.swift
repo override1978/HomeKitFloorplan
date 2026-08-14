@@ -29,6 +29,9 @@ struct EnergyMonitorView: View {
     @State private var trendMonth: Date?
     /// Il drill-down verso l'analisi già puntata (mese o giorno preciso).
     @State private var analysisDestination: EnergyAnalysisDestination?
+    /// Il giorno scelto dal drill-down del Trend: riempie la card
+    /// «Distribuzione giornata» qui accanto, senza cambiare vista.
+    @State private var selectedTrendDay: Date?
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private static let windowDays = 7
@@ -264,31 +267,96 @@ struct EnergyMonitorView: View {
         }
     }
 
-    /// La forma dell'ultima giornata con le ore: notte piatta, sera piena.
-    /// La card c'è SEMPRE — senza granularità oraria spiega come ottenerla,
-    /// invece di sparire e lasciare il dubbio.
+    /// La forma di una giornata, ore per ore. Due modi: di default l'ultimo
+    /// giorno con granularità oraria; col drill-down del Trend, il giorno
+    /// scelto — con totale, costo, confronto e la ✕ per tornare. La card c'è
+    /// SEMPRE: senza ore spiega come ottenerle invece di sparire.
     private var dayProfileCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(String(localized: "energy.card.dayProfile", defaultValue: "Day distribution"))
+        let explicitDay = selectedTrendDay
+        let day = explicitDay ?? latestHourlyDay
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(explicitDay != nil
+                     ? (day?.formatted(.dateTime.weekday(.wide).day().month()) ?? "")
+                     : String(localized: "energy.card.dayProfile", defaultValue: "Day distribution"))
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                if let profile = latestDayProfile {
+                if explicitDay == nil, let profile = latestDayProfile {
                     Text(profile.day.formatted(.dateTime.weekday(.wide).day().month()))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
-            }
-            if let day = latestHourlyDay {
-                EnergyAxisBarChart(
-                    values: EnergyStatsBuilder.hourlyTotals(points: housePoints, day: day),
-                    height: 120,
-                    unitLabel: "kW",
-                    xLabel: { hour in
-                        let value = Calendar.current.component(.hour, from: hour)
-                        return value % 6 == 0 ? String(format: "%02d", value) : ""
+                if let explicitDay {
+                    Button {
+                        analysisDestination = EnergyAnalysisDestination(
+                            month: Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: explicitDay)) ?? explicitDay,
+                            day: explicitDay
+                        )
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 26, height: 26)
+                            .background(Color.primary.opacity(0.06), in: Circle())
                     }
-                )
+                    .buttonStyle(.plain)
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) { selectedTrendDay = nil }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if let day {
+                if let explicitDay {
+                    let total = trendDayTotal(explicitDay)
+                    let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: explicitDay).map(trendDayTotal) ?? 0
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(EnergyFormat.kilowattHours(total))
+                            .font(.title3.weight(.bold))
+                            .monospacedDigit()
+                        if let cost = formattedCost(total) {
+                            Text(cost)
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if weekAgo > 0 {
+                            let delta = total - weekAgo
+                            Label {
+                                Text(verbatim: "\(delta > 0 ? "+" : "−")\(EnergyFormat.kilowattHours(abs(delta))) \(String(localized: "energy.month.vs", defaultValue: "vs")) \(String(localized: "energy.analysis.sevenDaysAgo", defaultValue: "7 days ago"))")
+                            } icon: {
+                                Image(systemName: delta > 0 ? "arrow.up.right" : "arrow.down.right")
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(delta > 0 ? Color(.systemRed) : Color(.systemGreen))
+                        }
+                    }
+                }
+
+                let hours = EnergyStatsBuilder.hourlyTotals(points: housePoints, day: day)
+                if hours.filter({ $0.kilowattHours > 0 }).count >= 6 {
+                    EnergyAxisBarChart(
+                        values: hours,
+                        height: 120,
+                        unitLabel: "kW",
+                        xLabel: { hour in
+                            let value = Calendar.current.component(.hour, from: hour)
+                            return value % 6 == 0 ? String(format: "%02d", value) : ""
+                        }
+                    )
+                } else {
+                    Label(String(localized: "energy.analysis.noHourly",
+                                 defaultValue: "Hourly detail is kept for the last 60 days — re-import a fresh export to fill recent days."),
+                          systemImage: "clock.badge.questionmark")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 14)
+                }
             } else {
                 Label(String(localized: "energy.analysis.noHourly",
                              defaultValue: "Hourly detail is kept for the last 60 days — re-import a fresh export to fill recent days."),
@@ -302,8 +370,14 @@ struct EnergyMonitorView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                .strokeBorder(selectedTrendDay != nil ? Color.yellow.opacity(0.35) : Color.primary.opacity(0.08),
+                              lineWidth: 1)
         }
+    }
+
+    private func trendDayTotal(_ day: Date) -> Double {
+        EnergyStatsBuilder.dailyTotals(points: housePoints, days: 1, reference: day)
+            .first?.kilowattHours ?? 0
     }
 
     /// La classifica del giorno fra i device misurati.
@@ -622,9 +696,9 @@ struct EnergyMonitorView: View {
                         return number == 1 || number % 5 == 0 ? "\(number)" : ""
                     }
                 ) { day in
-                    analysisDestination = EnergyAnalysisDestination(month: selected, day: day)
+                    withAnimation(.easeOut(duration: 0.2)) { selectedTrendDay = day }
                 }
-                Text(String(localized: "energy.trend.days.hint", defaultValue: "Tap a day to open it in the analysis."))
+                Text(String(localized: "energy.trend.days.hint", defaultValue: "Tap a day to see it in the day card."))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

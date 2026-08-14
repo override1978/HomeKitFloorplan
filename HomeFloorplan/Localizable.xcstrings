@@ -58,7 +58,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tap a day to open it in the analysis."
+            "value" : "Tap a day to see it in the day card."
           }
         },
         "it" : {
