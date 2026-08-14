@@ -2,6 +2,40 @@ import SwiftUI
 import SwiftData
 import HomeKit
 
+/// La pillola discreta in basso durante la sync CloudKit massiva (primo
+/// travaso su un device nuovo, re-import corposi): compare solo coi lotti
+/// grossi e si spegne da sola. Il sync ordinario resta invisibile.
+private struct CloudKitBulkSyncPill: View {
+    let cloudKitSync: CloudKitSyncService
+
+    var body: some View {
+        ZStack {
+            if cloudKitSync.isBulkSyncActive {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(String(format: String(localized: "sync.bulk.pill",
+                                               defaultValue: "iCloud sync — %d items"),
+                                cloudKitSync.bulkSyncAppliedCount))
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.regularMaterial, in: Capsule())
+                .overlay {
+                    Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+                }
+                .padding(.bottom, 10)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: cloudKitSync.isBulkSyncActive)
+        .allowsHitTesting(false)
+    }
+}
+
 struct HomeFloorplanRootView: View {
     /// Grafo dei servizi dell'app: un solo riferimento al posto dei 23
     /// parametri che venivano prop-drillati qui e nei modifier.
@@ -25,6 +59,9 @@ struct HomeFloorplanRootView: View {
     var body: some View {
         ContentView()
             .modifier(environmentModifier)
+            .overlay(alignment: .bottom) {
+                CloudKitBulkSyncPill(cloudKitSync: services.cloudKitSync)
+            }
             .task {
                 await launchCoordinator.run()
             }

@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "sync.bulk.pill" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud sync \u2014 %d items"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync iCloud \u2014 %d elementi"
+          }
+        }
+      }
+    },
     "energy.trend.days.selectedHint" : {
       "localizations" : {
         "en" : {

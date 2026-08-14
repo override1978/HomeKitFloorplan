@@ -128,6 +128,17 @@ final class CloudKitSyncService {
     private var lastDeterministicFetchAt: Date?
     private var isDeterministicFetchInFlight = false
     private var appliedFloorplanMarkerSnapshots: [UUID: [PlacedAccessorySnapshot]] = [:]
+
+    /// La cache di dedup del lotto corrente di EnergySample: UNA fetch per
+    /// lotto al posto di una per record — erano i ~450ms di main bloccato
+    /// per ogni «Applied 200 modification(s)» del primo travaso.
+    var energySampleBatchKnownIDs: Set<UUID>?
+
+    /// Sync «grossa» in corso (lotti ≥ 50 record): la UI mostra una pillola
+    /// discreta. Il ticchettio ordinario da poche righe non la accende mai.
+    private(set) var isBulkSyncActive = false
+    private(set) var bulkSyncAppliedCount = 0
+    var bulkSyncDismissTask: Task<Void, Never>?
     /// Server records (with correct etag) cached after a serverRecordChanged conflict.
     /// Written by handleSentChanges; consumed once by buildCKRecord on the retry batch.
     private var conflictResolutionRecords: [CKRecord.ID: CKRecord] = [:]
@@ -1155,8 +1166,39 @@ private extension CloudKitSyncService {
         }
     }
 
+    // MARK: - Sync massiva (prima sincronizzazione, re-import)
+
+    private func noteBulkSyncProgress(applied: Int) {
+        guard applied >= 50 else { return }
+        isBulkSyncActive = true
+        bulkSyncAppliedCount += applied
+        bulkSyncDismissTask?.cancel()
+        // Si spegne da sola quando i lotti smettono di arrivare.
+        bulkSyncDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled, let self else { return }
+            self.isBulkSyncActive = false
+            self.bulkSyncAppliedCount = 0
+        }
+    }
+
+    private func prefetchEnergySampleIDs(in records: [CKRecord], context: ModelContext) {
+        let ids = records.compactMap { record -> UUID? in
+            guard record.recordType == "EnergySample" else { return nil }
+            return (record["id"] as? String).flatMap(UUID.init)
+        }
+        guard !ids.isEmpty else {
+            energySampleBatchKnownIDs = nil
+            return
+        }
+        let descriptor = FetchDescriptor<EnergySample>(predicate: #Predicate { ids.contains($0.id) })
+        energySampleBatchKnownIDs = Set(((try? context.fetch(descriptor)) ?? []).map(\.id))
+    }
+
     func applyFetchedChanges(_ e: CKSyncEngine.Event.FetchedRecordZoneChanges) {
         let ctx = modelContainer.mainContext
+        prefetchEnergySampleIDs(in: e.modifications.map(\.record), context: ctx)
+        defer { energySampleBatchKnownIDs = nil }
         appliedFloorplanMarkerSnapshots.removeAll()
         var didApplyFloorplanChange = false
         let modifiedTypes = Dictionary(grouping: e.modifications.map { $0.record.recordType }, by: { $0 })
@@ -1189,6 +1231,7 @@ private extension CloudKitSyncService {
         }
 
         try? ctx.save()
+        noteBulkSyncProgress(applied: e.modifications.count)
         if !e.modifications.isEmpty || !e.deletions.isEmpty {
             markSyncCompleted()
         }
@@ -1672,8 +1715,13 @@ private extension CloudKitSyncService {
               let timestamp = record["timestamp"] as? Date
         else { return }
 
-        let descriptor = FetchDescriptor<EnergySample>(predicate: #Predicate { $0.id == id })
-        guard (try? context.fetch(descriptor))?.first == nil else { return }
+        if energySampleBatchKnownIDs != nil {
+            guard energySampleBatchKnownIDs?.contains(id) == false else { return }
+            energySampleBatchKnownIDs?.insert(id)
+        } else {
+            let descriptor = FetchDescriptor<EnergySample>(predicate: #Predicate { $0.id == id })
+            guard (try? context.fetch(descriptor))?.first == nil else { return }
+        }
 
         context.insert(EnergySample(
             id: id,
