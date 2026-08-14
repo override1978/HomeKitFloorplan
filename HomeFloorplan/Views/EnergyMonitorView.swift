@@ -27,6 +27,8 @@ struct EnergyMonitorView: View {
     @State private var importMessage: String?
     /// Il mese mostrato nella card Trend (nil = l'ultimo).
     @State private var trendMonth: Date?
+    /// Il drill-down verso l'analisi già puntata (mese o giorno preciso).
+    @State private var analysisDestination: EnergyAnalysisDestination?
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private static let windowDays = 7
@@ -70,6 +72,9 @@ struct EnergyMonitorView: View {
                               systemImage: "square.and.arrow.down")
                     }
                 }
+            }
+            .navigationDestination(item: $analysisDestination) { destination in
+                EnergyAnalysisView(initialMonth: destination.month, initialDay: destination.day)
             }
             .fileImporter(
                 isPresented: $isImporterPresented,
@@ -572,15 +577,57 @@ struct EnergyMonitorView: View {
                 unitLabel: "kWh",
                 xLabel: { $0.formatted(.dateTime.month(.narrow)) },
                 barColor: { value in
-                    value.day == selected ? .yellow : .yellow.opacity(0.3)
-                }
+                    value.day == selected ? .yellow : .yellow.opacity(0.35)
+                },
+                // La serie spenta accanto: ogni mese col suo precedente.
+                secondaryValues: [0] + months.dropLast().map(\.kilowattHours)
             ) { month in
                 withAnimation(.easeOut(duration: 0.15)) { trendMonth = month }
             }
 
-            Text(String(localized: "energy.trend.footer", defaultValue: "Compared with the previous month"))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            HStack(spacing: 12) {
+                Label {
+                    Text(String(localized: "energy.trend.legend.current", defaultValue: "Selected month"))
+                } icon: {
+                    RoundedRectangle(cornerRadius: 2).fill(Color.yellow).frame(width: 8, height: 8)
+                }
+                Label {
+                    Text(String(localized: "energy.trend.legend.previous", defaultValue: "Previous month"))
+                } icon: {
+                    RoundedRectangle(cornerRadius: 2).fill(Color.primary.opacity(0.18)).frame(width: 8, height: 8)
+                }
+                Spacer()
+                Text(String(localized: "energy.trend.footer", defaultValue: "Compared with the previous month"))
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+
+            // Il drill-down che si era perso: i GIORNI del mese scelto, qui
+            // dentro — e ogni giorno apre l'analisi già puntata su di lui.
+            if let selected {
+                Divider()
+                HStack {
+                    Text(String(format: String(localized: "energy.trend.days", defaultValue: "Days of %@"),
+                                selected.formatted(.dateTime.month(.wide))))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                EnergyAxisBarChart(
+                    values: trendMonthDays(selected),
+                    height: 96,
+                    unitLabel: "kWh",
+                    xLabel: { day in
+                        let number = Calendar.current.component(.day, from: day)
+                        return number == 1 || number % 5 == 0 ? "\(number)" : ""
+                    }
+                ) { day in
+                    analysisDestination = EnergyAnalysisDestination(month: selected, day: day)
+                }
+                Text(String(localized: "energy.trend.days.hint", defaultValue: "Tap a day to open it in the analysis."))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -588,6 +635,21 @@ struct EnergyMonitorView: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
         }
+    }
+
+    private func trendMonthDays(_ month: Date) -> [EnergyDayTotal] {
+        let calendar = Calendar.current
+        let count: Int
+        let reference: Date
+        if calendar.isDate(.now, equalTo: month, toGranularity: .month) {
+            count = calendar.component(.day, from: .now)
+            reference = .now
+        } else {
+            count = calendar.range(of: .day, in: .month, for: month)?.count ?? 0
+            reference = calendar.date(byAdding: .day, value: max(0, count - 1), to: month) ?? month
+        }
+        guard count > 0 else { return [] }
+        return EnergyStatsBuilder.dailyTotals(points: housePoints, days: count, reference: reference)
     }
 
     private func canMoveTrendMonth(_ delta: Int) -> Bool {
@@ -896,4 +958,12 @@ struct EnergyMonitorView: View {
             .formatted(.currency(code: Locale.current.currency?.identifier ?? "EUR")
                 .precision(.fractionLength(2)))
     }
+}
+
+
+/// Il biglietto per l'analisi già aperta sul punto giusto.
+struct EnergyAnalysisDestination: Identifiable, Hashable {
+    var id: String { "\(month.timeIntervalSince1970)-\(day?.timeIntervalSince1970 ?? 0)" }
+    let month: Date
+    let day: Date?
 }

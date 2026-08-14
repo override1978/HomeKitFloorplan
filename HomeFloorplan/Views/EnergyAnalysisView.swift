@@ -24,7 +24,9 @@ struct EnergyAnalysisView: View {
     @State private var selectedMonth: Date?
     @State private var selectedDay: Date?
 
-    init() {
+    init(initialMonth: Date? = nil, initialDay: Date? = nil) {
+        _selectedMonth = State(initialValue: initialMonth)
+        _selectedDay = State(initialValue: initialDay)
         let houseID = EnergySample.houseMeterDeviceID
         _houseSamples = Query(
             filter: #Predicate<EnergySample> { $0.deviceID == houseID },

@@ -16,10 +16,14 @@ struct EnergyAxisBarChart: View {
     let unitLabel: String
     let xLabel: (Date) -> String
     var barColor: (EnergyDayTotal) -> Color = { _ in .yellow.opacity(0.8) }
+    /// Serie di confronto affiancata (stesso ordine): la barra spenta accanto
+    /// a quella accesa — «mese corrente vs precedente» del mockup.
+    var secondaryValues: [Double]? = nil
     var onTap: ((Date) -> Void)?
 
     private var niceMaximum: Double {
-        let raw = values.map(\.kilowattHours).max() ?? 0
+        let raw = max(values.map(\.kilowattHours).max() ?? 0,
+                      secondaryValues?.max() ?? 0)
         guard raw > 0 else { return 1 }
         let magnitude = pow(10, floor(log10(raw)))
         for multiplier in [1.0, 2.0, 2.5, 5.0, 10.0] {
@@ -56,13 +60,21 @@ struct EnergyAxisBarChart: View {
                         gridline
                     }
                     HStack(alignment: .bottom, spacing: values.count > 24 ? 2 : 4) {
-                        ForEach(values) { value in
-                            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                .fill(barColor(value))
-                                .frame(height: max(2, (height - 12) * CGFloat(value.kilowattHours / maximum)))
-                                .frame(maxWidth: .infinity)
-                                .contentShape(Rectangle())
-                                .onTapGesture { onTap?(value.day) }
+                        ForEach(Array(values.enumerated()), id: \.element.id) { index, value in
+                            HStack(alignment: .bottom, spacing: 1) {
+                                if let secondary = secondaryValues?[safe: index], secondary > 0 {
+                                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                        .fill(Color.primary.opacity(0.18))
+                                        .frame(height: max(2, (height - 12) * CGFloat(secondary / maximum)))
+                                        .frame(maxWidth: .infinity)
+                                }
+                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    .fill(barColor(value))
+                                    .frame(height: max(2, (height - 12) * CGFloat(value.kilowattHours / maximum)))
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture { onTap?(value.day) }
                         }
                     }
                     .frame(height: height - 12, alignment: .bottom)
@@ -299,5 +311,12 @@ struct EnergyInsightRow: View {
         }
         .padding(10)
         .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
