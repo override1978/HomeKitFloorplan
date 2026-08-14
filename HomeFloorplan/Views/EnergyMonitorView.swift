@@ -23,6 +23,9 @@ struct EnergyMonitorView: View {
     /// (l'import sottocampiona), un anno intero pesa meno di una settimana
     /// di prese.
     @Query private var houseSamples: [EnergySample]
+    /// Tutte le righe delle prese misurate, per la ripartizione del mese:
+    /// stessa scelta dell'analisi — storia breve, righe poche.
+    @Query private var allPlugSamples: [EnergySample]
     @State private var isImporterPresented = false
     @State private var importMessage: String?
     /// Il mese mostrato nella card Trend (nil = l'ultimo).
@@ -51,6 +54,10 @@ struct EnergyMonitorView: View {
         let houseID = EnergySample.houseMeterDeviceID
         _houseSamples = Query(
             filter: #Predicate<EnergySample> { $0.deviceID == houseID },
+            sort: [SortDescriptor(\EnergySample.timestamp)]
+        )
+        _allPlugSamples = Query(
+            filter: #Predicate<EnergySample> { $0.deviceID != houseID },
             sort: [SortDescriptor(\EnergySample.timestamp)]
         )
     }
@@ -432,6 +439,86 @@ struct EnergyMonitorView: View {
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
             }
         }
+    }
+
+    /// «Ripartizione consumi» del mese selezionato nel Trend: prese
+    /// misurate, standby stimato e resto casa — la stessa torta
+    /// dell'analisi, portata in dashboard come nel mockup.
+    @ViewBuilder
+    private var trendBreakdownCard: some View {
+        let months = houseMonths
+        if let month = trendMonth ?? months.last?.day,
+           let total = months.first(where: { $0.day == month })?.kilowattHours,
+           let segments = trendMonthBreakdown(month: month, total: total) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(String(localized: "energy.analysis.breakdown", defaultValue: "Consumption breakdown"))
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(month.formatted(.dateTime.month(.wide)))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                EnergyDonutChart(segments: segments)
+            }
+            .padding(16)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+        }
+    }
+
+    private func trendMonthBreakdown(month: Date, total: Double) -> [EnergyDonutSegment]? {
+        guard total > 0 else { return nil }
+        let calendar = Calendar.current
+        let count: Int
+        let reference: Date
+        if calendar.isDate(.now, equalTo: month, toGranularity: .month) {
+            count = calendar.component(.day, from: .now)
+            reference = .now
+        } else {
+            count = calendar.range(of: .day, in: .month, for: month)?.count ?? 0
+            reference = calendar.date(byAdding: .day, value: max(0, count - 1), to: month) ?? month
+        }
+        guard count > 0 else { return nil }
+
+        let plugsTotal = Dictionary(grouping: allPlugSamples, by: \.deviceID).values
+            .map { rows -> Double in
+                let points = rows.map { EnergyStatsPoint(timestamp: $0.timestamp,
+                                                          cumulativeKilowattHours: $0.cumulativeKilowattHours) }
+                return EnergyStatsBuilder.dailyTotals(points: points, days: count,
+                                                      reference: reference, calendar: calendar)
+                    .map(\.kilowattHours).reduce(0, +)
+            }
+            .reduce(0, +)
+
+        // Lo standby: la base notturna proiettata sulle 24 ore. È una STIMA
+        // e la legenda lo dice.
+        let standby = EnergyInsights.nightBaseWatts(points: housePoints, calendar: calendar)
+            .map { $0 / 1_000 * 24 * Double(count) } ?? 0
+
+        let measured = min(plugsTotal, total)
+        let estimatedStandby = min(standby, max(0, total - measured))
+        let rest = max(0, total - measured - estimatedStandby)
+        guard measured > 0 || estimatedStandby > 0 else { return nil }
+
+        var segments: [EnergyDonutSegment] = []
+        segments.append(EnergyDonutSegment(
+            label: String(localized: "energy.analysis.segment.rest", defaultValue: "House (rest)"),
+            kilowattHours: rest, color: .yellow))
+        if measured > 0 {
+            segments.append(EnergyDonutSegment(
+                label: String(localized: "energy.analysis.segment.plugs", defaultValue: "Measured outlets"),
+                kilowattHours: measured, color: .orange))
+        }
+        if estimatedStandby > 0 {
+            segments.append(EnergyDonutSegment(
+                label: String(localized: "energy.analysis.segment.standby", defaultValue: "Standby (estimated)"),
+                kilowattHours: estimatedStandby, color: .purple))
+        }
+        return segments
     }
 
     /// Gli insight del giorno, solo dove i numeri reggono.
@@ -852,18 +939,20 @@ struct EnergyMonitorView: View {
                         HStack(alignment: .top, spacing: 14) {
                             VStack(spacing: 14) {
                                 trendCard
-                                topConsumersCard
+                                insightsCard
                             }
                             .frame(maxWidth: .infinity)
                             VStack(spacing: 14) {
                                 dayProfileCard
-                                insightsCard
+                                trendBreakdownCard
+                                topConsumersCard
                             }
                             .frame(maxWidth: .infinity)
                         }
                     } else {
                         trendCard
                         dayProfileCard
+                        trendBreakdownCard
                         topConsumersCard
                         insightsCard
                     }
