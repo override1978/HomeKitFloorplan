@@ -230,8 +230,23 @@ struct EnergyMonitorView: View {
     }
 
     /// I quattro riquadri: ieri, trend 30 giorni, base notturna, picco.
+    /// Su iPad si dividono TUTTA la larghezza (niente buco a destra);
+    /// su iPhone si impilano a griglia.
     private var statTilesGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 10)], spacing: 10) {
+        Group {
+            if horizontalSizeClass == .regular {
+                HStack(spacing: 10) { statTiles }
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 10)], spacing: 10) {
+                    statTiles
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var statTiles: some View {
+        Group {
             if houseYesterdayKilowattHours > 0 {
                 let delta = houseTodayKilowattHours - houseYesterdayKilowattHours
                 let percent = EnergyInsights.percentChange(houseTodayKilowattHours,
@@ -272,6 +287,7 @@ struct EnergyMonitorView: View {
                 )
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     /// La forma di una giornata, ore per ore. Due modi: di default l'ultimo
@@ -844,42 +860,10 @@ struct EnergyMonitorView: View {
 
     // MARK: Dati
 
-    private struct DeviceEnergy: Identifiable {
-        let id: String
-        let name: String
-        let roomName: String
-        let liveWatts: Double?
-        let days: [EnergyDayTotal]
-
-        var todayKilowattHours: Double { days.last?.kilowattHours ?? 0 }
-        var yesterdayKilowattHours: Double { days.dropLast().last?.kilowattHours ?? 0 }
-    }
-
-    private var devices: [DeviceEnergy] {
-        Dictionary(grouping: samples.filter { $0.deviceID != EnergySample.houseMeterDeviceID },
-                   by: \.deviceID)
-            .compactMap { deviceID, rows -> DeviceEnergy? in
-                guard let latest = rows.max(by: { $0.timestamp < $1.timestamp }) else { return nil }
-                let points = rows.map {
-                    EnergyStatsPoint(timestamp: $0.timestamp,
-                                     cumulativeKilowattHours: $0.cumulativeKilowattHours)
-                }
-                let live = matterEnergy.snapshots.first { $0.id == deviceID }
-                return DeviceEnergy(
-                    id: deviceID,
-                    name: live?.accessoryName ?? latest.accessoryName,
-                    roomName: latest.roomName,
-                    liveWatts: live?.activePowerWatts,
-                    days: EnergyStatsBuilder.dailyTotals(points: points, days: Self.windowDays)
-                )
-            }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    private var roomNames: [String] {
-        Array(Set(devices.map(\.roomName))).sorted {
-            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-        }
+    private var devices: [EnergyDeviceSummary] {
+        EnergyDeviceSummary.build(samples: samples,
+                                  liveSnapshots: matterEnergy.snapshots,
+                                  windowDays: Self.windowDays)
     }
 
     private var housePoints: [EnergyStatsPoint] {
@@ -939,41 +923,29 @@ struct EnergyMonitorView: View {
                         HStack(alignment: .top, spacing: 14) {
                             VStack(spacing: 14) {
                                 trendCard
-                                insightsCard
                             }
                             .frame(maxWidth: .infinity)
                             VStack(spacing: 14) {
                                 dayProfileCard
+                                insightsCard
                                 trendBreakdownCard
                                 topConsumersCard
+                                plugsSummaryCard
                             }
                             .frame(maxWidth: .infinity)
                         }
                     } else {
                         trendCard
                         dayProfileCard
+                        insightsCard
                         trendBreakdownCard
                         topConsumersCard
-                        insightsCard
+                        plugsSummaryCard
                     }
-                    Text(String(localized: "energy.plugs.section", defaultValue: "Measured outlets"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.top, 4)
-                }
-                totalCard
-
-                ForEach(roomNames, id: \.self) { roomName in
-                    Text(roomName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.top, 4)
-
-                    ForEach(devices.filter { $0.roomName == roomName }) { device in
-                        deviceCard(device)
-                    }
+                } else {
+                    // Senza contatore generale la dashboard è solo prese:
+                    // resta il biglietto verso il dettaglio.
+                    plugsSummaryCard
                 }
             }
             .padding(.horizontal, 16)
@@ -981,116 +953,62 @@ struct EnergyMonitorView: View {
         }
     }
 
-    private var totalCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "energy.total.today", defaultValue: "Today"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(formattedKilowattHours(totalTodayKilowattHours))
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                }
-                Spacer()
-                if let cost = formattedCost(totalTodayKilowattHours) {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(String(localized: "energy.total.cost", defaultValue: "Estimated cost"))
-                            .font(.caption)
+    /// Il biglietto verso il dettaglio per accessorio: totale prese di oggi,
+    /// costo, W adesso — e il resto vive in `EnergyDevicesView`.
+    @ViewBuilder
+    private var plugsSummaryCard: some View {
+        if !devices.isEmpty {
+            NavigationLink {
+                EnergyDevicesView()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "powerplug.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.yellow)
+                        .frame(width: 34, height: 34)
+                        .background(Color.yellow.opacity(0.14), in: Circle())
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(String(localized: "energy.plugs.section", defaultValue: "Measured outlets"))
+                            .font(.subheadline.weight(.semibold))
+                        Text(String(format: String(localized: "energy.plugs.count", defaultValue: "%d outlets"),
+                                    devices.count))
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
-                        Text(cost)
-                            .font(.title3.weight(.semibold))
-                            .monospacedDigit()
                     }
-                }
-            }
 
-            HStack(spacing: 6) {
-                if let watts = totalWattsNow {
-                    Label(formattedWatts(watts), systemImage: "bolt.fill")
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(EnergyFormat.kilowattHours(totalTodayKilowattHours))
+                                .font(.subheadline.weight(.bold))
+                                .monospacedDigit()
+                            if let cost = formattedCost(totalTodayKilowattHours) {
+                                Text(cost)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if let watts = totalWattsNow {
+                            Label(EnergyFormat.watts(watts), systemImage: "bolt.fill")
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(.yellow)
+                        }
+                    }
+
+                    Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.yellow)
+                        .foregroundStyle(.tertiary)
                 }
-                Spacer()
-                Text(String(localized: "energy.measuredOnly", defaultValue: "Measured outlets only"))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        }
-    }
-
-    private func deviceCard(_ device: DeviceEnergy) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(device.name)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if let watts = device.liveWatts {
-                    Label(formattedWatts(watts), systemImage: "bolt.fill")
-                        .font(.caption.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.yellow)
+                .padding(14)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                 }
             }
-
-            HStack(alignment: .bottom, spacing: 14) {
-                measure(String(localized: "energy.day.today", defaultValue: "Today"),
-                        kilowattHours: device.todayKilowattHours)
-                measure(String(localized: "energy.day.yesterday", defaultValue: "Yesterday"),
-                        kilowattHours: device.yesterdayKilowattHours)
-                Spacer(minLength: 8)
-                sparkline(device.days)
-                    .frame(width: 108, height: 34)
-            }
-        }
-        .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        }
-    }
-
-    private func measure(_ title: String, kilowattHours: Double) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(formattedKilowattHours(kilowattHours))
-                .font(.subheadline.weight(.bold))
-                .monospacedDigit()
-            if let cost = formattedCost(kilowattHours) {
-                Text(cost)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    /// Sette barre, una per giorno, l'ultima (oggi) accesa. Scala sul massimo
-    /// della finestra: la forma della settimana, non i valori assoluti.
-    private func sparkline(_ days: [EnergyDayTotal]) -> some View {
-        Canvas { context, size in
-            guard !days.isEmpty else { return }
-            let maximum = max(days.map(\.kilowattHours).max() ?? 0, 0.0001)
-            let gap: CGFloat = 3
-            let barWidth = (size.width - gap * CGFloat(days.count - 1)) / CGFloat(days.count)
-            for (index, day) in days.enumerated() {
-                let height = max(2, size.height * CGFloat(day.kilowattHours / maximum))
-                let rect = CGRect(x: CGFloat(index) * (barWidth + gap),
-                                  y: size.height - height,
-                                  width: barWidth,
-                                  height: height)
-                let isToday = index == days.count - 1
-                context.fill(Path(roundedRect: rect, cornerRadius: 2),
-                             with: .color(isToday ? .yellow : .yellow.opacity(0.35)))
-            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -1105,10 +1023,6 @@ struct EnergyMonitorView: View {
     }
 
     // MARK: Formato
-
-    private func formattedWatts(_ watts: Double) -> String {
-        watts.formatted(.number.precision(.fractionLength(watts < 10 ? 1 : 0))) + " W"
-    }
 
     private func formattedKilowattHours(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(value < 10 ? 2 : 1))) + " kWh"

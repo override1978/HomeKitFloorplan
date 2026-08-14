@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "energy.plugs.count" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d outlets"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d prese"
+          }
+        }
+      }
+    },
     "energy.trend.legend.current" : {
       "extractionState" : "manual",
       "localizations" : {
