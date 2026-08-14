@@ -17,6 +17,8 @@ import SwiftData
 struct EnergyAnalysisView: View {
     @AppStorage("energy.tariffPerKWh") private var tariffPerKWh = 0.0
     @Query private var houseSamples: [EnergySample]
+    /// Le prese misurate, per la ripartizione: storia breve, righe poche.
+    @Query private var plugSamples: [EnergySample]
 
     @State private var selectedMonth: Date?
     @State private var selectedDay: Date?
@@ -25,6 +27,10 @@ struct EnergyAnalysisView: View {
         let houseID = EnergySample.houseMeterDeviceID
         _houseSamples = Query(
             filter: #Predicate<EnergySample> { $0.deviceID == houseID },
+            sort: [SortDescriptor(\EnergySample.timestamp)]
+        )
+        _plugSamples = Query(
+            filter: #Predicate<EnergySample> { $0.deviceID != houseID },
             sort: [SortDescriptor(\EnergySample.timestamp)]
         )
     }
@@ -37,8 +43,14 @@ struct EnergyAnalysisView: View {
         }
     }
 
+    /// 14 mesi di finestra: i 12 mostrati più il margine per «stesso mese
+    /// dell'anno scorso» quando l'export arriva così indietro.
+    private var allMonths: [EnergyDayTotal] {
+        EnergyStatsBuilder.monthlyTotals(points: housePoints, months: 14)
+    }
+
     private var months: [EnergyDayTotal] {
-        EnergyStatsBuilder.monthlyTotals(points: housePoints, months: 12)
+        Array(allMonths.suffix(12))
     }
 
     var body: some View {
@@ -81,11 +93,11 @@ struct EnergyAnalysisView: View {
                 }
             }
 
-            barsChart(
-                months,
-                height: 120,
-                label: { $0.formatted(.dateTime.month(.narrow)) },
-                labelEvery: 1
+            EnergyAxisBarChart(
+                values: months,
+                height: 130,
+                unitLabel: "kWh",
+                xLabel: { $0.formatted(.dateTime.month(.narrow)) }
             ) { month in
                 withAnimation(.easeOut(duration: 0.2)) { selectedMonth = month }
             }
@@ -105,6 +117,7 @@ struct EnergyAnalysisView: View {
         let previous = calendar.date(byAdding: .month, value: -1, to: month)
         let previousTotal = previous.map(monthTotal) ?? 0
         let dayCount = elapsedDayCount(of: month)
+        let peak = EnergyInsights.peakDay(days: days)
 
         return VStack(alignment: .leading, spacing: 14) {
             periodHeader(
@@ -119,21 +132,31 @@ struct EnergyAnalysisView: View {
                 summaryRow(total: total, comparison: previousTotal > 0 ? total - previousTotal : nil,
                            comparisonLabel: previous?.formatted(.dateTime.month(.abbreviated)) ?? "")
 
-                if dayCount > 0 {
-                    Text(String(format: String(localized: "energy.month.avgPerDay", defaultValue: "%@ per day"),
-                                EnergyFormat.kilowattHours(total / Double(dayCount))))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 14) {
+                    if dayCount > 0 {
+                        Text(String(format: String(localized: "energy.month.avgPerDay", defaultValue: "%@ per day"),
+                                    EnergyFormat.kilowattHours(total / Double(dayCount))))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let peak {
+                        Text(String(format: String(localized: "energy.analysis.peakDay", defaultValue: "Peak: %1$@ · %2$@"),
+                                    EnergyFormat.kilowattHours(peak.kilowattHours),
+                                    peak.day.formatted(.dateTime.day().month(.abbreviated))))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
                 }
 
-                barsChart(
-                    days,
-                    height: 110,
-                    label: { day in
+                EnergyAxisBarChart(
+                    values: days,
+                    height: 120,
+                    unitLabel: "kWh",
+                    xLabel: { day in
                         let number = calendar.component(.day, from: day)
                         return number == 1 || number % 5 == 0 ? "\(number)" : ""
-                    },
-                    labelEvery: 1
+                    }
                 ) { day in
                     withAnimation(.easeOut(duration: 0.2)) { selectedDay = day }
                 }
@@ -143,7 +166,181 @@ struct EnergyAnalysisView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
+
+            monthComparisonTiles(month: month, total: total)
+
+            if let profile = monthProfile(month) {
+                card {
+                    Text(String(localized: "energy.analysis.avgProfile", defaultValue: "Average time-of-day profile"))
+                        .font(.subheadline.weight(.semibold))
+                    EnergyProfileChart(hourlyKilowatts: profile, height: 86)
+                }
+            }
+
+            if let breakdown = monthBreakdown(month: month, total: total) {
+                card {
+                    Text(String(localized: "energy.analysis.breakdown", defaultValue: "Consumption breakdown"))
+                        .font(.subheadline.weight(.semibold))
+                    EnergyDonutChart(segments: breakdown)
+                }
+            }
+
+            monthInsightsCard(month: month, days: days)
         }
+    }
+
+    /// I tre confronti del mese: precedente, media 3 mesi, stesso mese di un
+    /// anno fa — ciascuno solo se il riferimento esiste davvero.
+    private func monthComparisonTiles(month: Date, total: Double) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 10)], spacing: 10) {
+            if let previous = calendar.date(byAdding: .month, value: -1, to: month) {
+                comparisonTile(total: total, reference: monthTotal(previous),
+                               title: String(localized: "energy.analysis.vsPrevious", defaultValue: "Vs previous month"))
+            }
+            let lastThree = (1...3).compactMap { offset -> Double? in
+                guard let target = calendar.date(byAdding: .month, value: -offset, to: month) else { return nil }
+                let value = monthTotal(target)
+                return value > 0 ? value : nil
+            }
+            if lastThree.count == 3 {
+                comparisonTile(total: total, reference: lastThree.reduce(0, +) / 3,
+                               title: String(localized: "energy.analysis.vs3Months", defaultValue: "Vs 3-month average"))
+            }
+            if let yearAgo = calendar.date(byAdding: .month, value: -12, to: month) {
+                comparisonTile(total: total, reference: monthTotal(yearAgo),
+                               title: String(format: String(localized: "energy.analysis.vsYearAgo", defaultValue: "Vs %@"),
+                                             yearAgo.formatted(.dateTime.month(.abbreviated).year())))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func comparisonTile(total: Double, reference: Double, title: String) -> some View {
+        if reference > 0, let percent = EnergyInsights.percentChange(total, versus: reference) {
+            let rising = percent > 0
+            EnergyStatTile(
+                iconName: rising ? "arrow.up.right" : "arrow.down.right",
+                tint: rising ? Color(.systemRed) : Color(.systemGreen),
+                title: title,
+                value: "\(rising ? "+" : "−")\(abs(percent).formatted(.number.precision(.fractionLength(1))))%",
+                subtitle: "\(rising ? "+" : "−")\(EnergyFormat.kilowattHours(abs(total - reference)))"
+            )
+        }
+    }
+
+    /// Il profilo medio delle ore sui giorni del mese coperti dalla
+    /// granularità oraria. nil dove le ore non ci sono.
+    private func monthProfile(_ month: Date) -> [Double]? {
+        let count = elapsedDayCount(of: month)
+        guard count > 0 else { return nil }
+        let days = (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: month) }
+        return EnergyInsights.averageDayProfile(points: housePoints, days: days, calendar: calendar)
+    }
+
+    /// Prese misurate, standby stimato e resto casa: la torta del mese.
+    private func monthBreakdown(month: Date, total: Double) -> [EnergyDonutSegment]? {
+        guard total > 0 else { return nil }
+        let count = elapsedDayCount(of: month)
+        guard count > 0 else { return nil }
+        let reference = calendar.isDate(.now, equalTo: month, toGranularity: .month)
+            ? Date.now
+            : (calendar.date(byAdding: .day, value: count - 1, to: month) ?? month)
+
+        // Le prese: la somma dei giornalieri di ogni device nel mese.
+        let plugsTotal = Dictionary(grouping: plugSamples, by: \.deviceID).values
+            .map { rows -> Double in
+                let points = rows.map { EnergyStatsPoint(timestamp: $0.timestamp,
+                                                          cumulativeKilowattHours: $0.cumulativeKilowattHours) }
+                return EnergyStatsBuilder.dailyTotals(points: points, days: count,
+                                                      reference: reference, calendar: calendar)
+                    .map(\.kilowattHours).reduce(0, +)
+            }
+            .reduce(0, +)
+
+        // Lo standby: la base notturna proiettata sulle 24 ore. È una STIMA
+        // e la legenda lo dice.
+        let standby = EnergyInsights.nightBaseWatts(points: housePoints, calendar: calendar)
+            .map { $0 / 1_000 * 24 * Double(count) } ?? 0
+
+        let measured = min(plugsTotal, total)
+        let estimatedStandby = min(standby, max(0, total - measured))
+        let rest = max(0, total - measured - estimatedStandby)
+        guard measured > 0 || estimatedStandby > 0 else { return nil }
+
+        var segments: [EnergyDonutSegment] = []
+        segments.append(EnergyDonutSegment(
+            label: String(localized: "energy.analysis.segment.rest", defaultValue: "House (rest)"),
+            kilowattHours: rest, color: .yellow))
+        if measured > 0 {
+            segments.append(EnergyDonutSegment(
+                label: String(localized: "energy.analysis.segment.plugs", defaultValue: "Measured outlets"),
+                kilowattHours: measured, color: .orange))
+        }
+        if estimatedStandby > 0 {
+            segments.append(EnergyDonutSegment(
+                label: String(localized: "energy.analysis.segment.standby", defaultValue: "Standby (estimated)"),
+                kilowattHours: estimatedStandby, color: .purple))
+        }
+        return segments
+    }
+
+    /// Giorni critici e fasce del mese, solo dove i numeri reggono.
+    @ViewBuilder
+    private func monthInsightsCard(month: Date, days: [EnergyDayTotal]) -> some View {
+        let rows = monthInsightRows(month: month, days: days)
+        if !rows.isEmpty {
+            card {
+                Text(String(localized: "energy.analysis.insights", defaultValue: "Critical days and insights"))
+                    .font(.subheadline.weight(.semibold))
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    EnergyInsightRow(iconName: row.icon, tint: row.tint, text: row.text)
+                }
+            }
+        }
+    }
+
+    private func monthInsightRows(month: Date, days: [EnergyDayTotal]) -> [(icon: String, tint: Color, text: String)] {
+        var rows: [(String, Color, String)] = []
+
+        if let stretch = EnergyInsights.criticalStretch(days: days) {
+            rows.append(("chart.line.uptrend.xyaxis", Color(.systemRed), String(
+                format: String(localized: "energy.analysis.insight.stretch",
+                               defaultValue: "Between %1$@ and %2$@ consumption ran %3$@%% above the month's average."),
+                stretch.start.formatted(.dateTime.day().month(.abbreviated)),
+                stretch.end.formatted(.dateTime.day().month(.abbreviated)),
+                abs(stretch.upliftPercent).formatted(.number.precision(.fractionLength(0)))
+            )))
+        }
+
+        // La fascia serale, mediata sui giorni con forma oraria.
+        let count = elapsedDayCount(of: month)
+        let monthDayDates = (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: month) }
+        var shares: [Double] = []
+        for day in monthDayDates {
+            let hours = EnergyStatsBuilder.hourlyTotals(points: housePoints, day: day, calendar: calendar)
+            if hours.filter({ $0.kilowattHours > 0 }).count >= 12,
+               let share = EnergyInsights.bandShare(hours: hours, from: 19, to: 22, calendar: calendar) {
+                shares.append(share)
+            }
+        }
+        if shares.count >= 3 {
+            let average = shares.reduce(0, +) / Double(shares.count)
+            rows.append(("clock.fill", .orange, String(
+                format: String(localized: "energy.analysis.insight.band",
+                               defaultValue: "The 19:00–22:00 band concentrates %@ of daily consumption."),
+                average.formatted(.percent.precision(.fractionLength(0)))
+            )))
+        }
+
+        if let nightBase = EnergyInsights.nightBaseWatts(points: housePoints, calendar: calendar) {
+            rows.append(("moon.fill", .indigo, String(
+                format: String(localized: "energy.analysis.insight.nightBase",
+                               defaultValue: "Estimated night base: %@ constant."),
+                EnergyFormat.watts(nightBase)
+            )))
+        }
+
+        return rows
     }
 
     // MARK: - Livello giorno
@@ -181,15 +378,15 @@ struct EnergyAnalysisView: View {
                 }
 
                 if hasHourly {
-                    barsChart(
-                        hours,
+                    EnergyAxisBarChart(
+                        values: hours,
                         height: 110,
-                        label: { hour in
+                        unitLabel: "kWh",
+                        xLabel: { hour in
                             let value = calendar.component(.hour, from: hour)
                             return value % 6 == 0 ? "\(value)" : ""
-                        },
-                        labelEvery: 1
-                    ) { _ in }
+                        }
+                    )
                 } else {
                     // Onestà sul limite: le ore esistono solo dove l'import le
                     // ha tenute. Il totale del giorno resta vero comunque.
@@ -281,36 +478,6 @@ struct EnergyAnalysisView: View {
                 }
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(rising ? Color(.systemRed) : Color(.systemGreen))
-            }
-        }
-    }
-
-    /// Le barre toccabili, uguali a tutti i livelli: valore massimo in
-    /// evidenza, etichette rade dove serve, tap sul periodo.
-    private func barsChart(
-        _ values: [EnergyDayTotal],
-        height: CGFloat,
-        label: @escaping (Date) -> String,
-        labelEvery: Int,
-        onTap: @escaping (Date) -> Void
-    ) -> some View {
-        let maximum = max(values.map(\.kilowattHours).max() ?? 0, 0.0001)
-        return HStack(alignment: .bottom, spacing: values.count > 24 ? 2 : 4) {
-            ForEach(values) { value in
-                let barHeight = max(2, (height - 16) * CGFloat(value.kilowattHours / maximum))
-                VStack(spacing: 2) {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(Color.yellow.opacity(value.kilowattHours > 0 ? 0.75 : 0.2))
-                        .frame(height: barHeight)
-                        .frame(maxWidth: .infinity)
-                    Text(label(value.day))
-                        .font(.system(size: 7, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(height: 9)
-                }
-                .frame(height: height, alignment: .bottom)
-                .contentShape(Rectangle())
-                .onTapGesture { onTap(value.day) }
             }
         }
     }

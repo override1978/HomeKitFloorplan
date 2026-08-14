@@ -112,48 +112,27 @@ struct EnergyMonitorView: View {
         }
     }
 
-    /// La card del contatore: il totale VERO della casa — da qui in poi
-    /// «Solo prese misurate» vale solo per la sezione sotto.
-    private var houseCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "energy.total.today", defaultValue: "Today"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(formattedKilowattHours(houseTodayKilowattHours))
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                }
-                Spacer()
-                if let cost = formattedCost(houseTodayKilowattHours) {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(String(localized: "energy.total.cost", defaultValue: "Estimated cost"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(cost)
-                            .font(.title3.weight(.semibold))
-                            .monospacedDigit()
-                    }
-                }
-            }
+    // MARK: - Hero e card della sezione Casa
 
-            HStack(alignment: .bottom, spacing: 14) {
-                measure(String(localized: "energy.day.yesterday", defaultValue: "Yesterday"),
-                        kilowattHours: houseYesterdayKilowattHours)
-                if let other = otherTodayKilowattHours {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(formattedKilowattHours(other))
-                            .font(.subheadline.weight(.bold))
-                            .monospacedDigit()
-                        Text(String(localized: "energy.house.other", defaultValue: "Beyond the outlets, today"))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+    /// L'hero del contatore, a tre zone: oggi + potenza live, costi con la
+    /// proiezione di fine mese, la settimana in barrette. Su spazi stretti
+    /// le zone si impilano da sole.
+    private var houseHeroCard: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 18) {
+                heroTodayColumn
+                Divider()
+                heroCostColumn
+                Divider()
+                heroWeekColumn.frame(maxWidth: 220)
+            }
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 18) {
+                    heroTodayColumn
+                    Divider()
+                    heroCostColumn
                 }
-                Spacer(minLength: 8)
-                sparkline(houseDays)
-                    .frame(width: 108, height: 34)
+                heroWeekColumn
             }
         }
         .padding(16)
@@ -162,6 +141,333 @@ struct EnergyMonitorView: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
         }
+    }
+
+    private var heroTodayColumn: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(String(localized: "energy.total.today", defaultValue: "Today"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(EnergyFormat.kilowattHours(houseTodayKilowattHours))
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .monospacedDigit()
+            if let watts = totalWattsNow {
+                Label(EnergyFormat.watts(watts), systemImage: "bolt.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.yellow)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var heroCostColumn: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(String(localized: "energy.hero.costToday", defaultValue: "Estimated cost today"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(formattedCost(houseTodayKilowattHours) ?? "—")
+                .font(.title2.weight(.bold))
+                .monospacedDigit()
+            if let projection = monthEndProjection {
+                Text(String(localized: "energy.hero.projection", defaultValue: "Month-end projection"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+                HStack(spacing: 6) {
+                    Text(EnergyFormat.kilowattHours(projection))
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                    if let cost = formattedCost(projection) {
+                        Text(verbatim: "· \(cost)")
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var heroWeekColumn: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            HStack(alignment: .bottom, spacing: 4) {
+                ForEach(houseDays) { day in
+                    let maximum = max(houseDays.map(\.kilowattHours).max() ?? 0, 0.0001)
+                    VStack(spacing: 2) {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(Color.yellow.opacity(day.id == houseDays.last?.id ? 0.95 : 0.5))
+                            .frame(height: max(3, 40 * CGFloat(day.kilowattHours / maximum)))
+                            .frame(maxWidth: .infinity)
+                        Text(day.day.formatted(.dateTime.weekday(.narrow)))
+                            .font(.system(size: 7, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(height: 52, alignment: .bottom)
+                }
+            }
+            Text(String(localized: "energy.hero.source", defaultValue: "house data from Vimar"))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    /// I quattro riquadri: ieri, trend 30 giorni, base notturna, picco.
+    private var statTilesGrid: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 10)], spacing: 10) {
+            if houseYesterdayKilowattHours > 0 {
+                let delta = houseTodayKilowattHours - houseYesterdayKilowattHours
+                let percent = EnergyInsights.percentChange(houseTodayKilowattHours,
+                                                           versus: houseYesterdayKilowattHours)
+                EnergyStatTile(
+                    iconName: delta > 0 ? "arrow.up.right" : "arrow.down.right",
+                    tint: delta > 0 ? Color(.systemRed) : Color(.systemGreen),
+                    title: String(localized: "energy.tile.vsYesterday", defaultValue: "Vs yesterday"),
+                    value: "\(delta > 0 ? "+" : "−")\(EnergyFormat.kilowattHours(abs(delta)))",
+                    subtitle: percent.map { "\($0 > 0 ? "+" : "−")\(abs($0).formatted(.number.precision(.fractionLength(0))))%" }
+                )
+            }
+            if let trend = thirtyDayTrendPercent {
+                EnergyStatTile(
+                    iconName: trend > 0 ? "arrow.up.right" : "arrow.down.right",
+                    tint: trend > 0 ? Color(.systemRed) : Color(.systemGreen),
+                    title: String(localized: "energy.tile.avg30", defaultValue: "30-day average"),
+                    value: "\(trend > 0 ? "+" : "−")\(abs(trend).formatted(.number.precision(.fractionLength(0))))%",
+                    subtitle: String(localized: "energy.tile.avg30.subtitle", defaultValue: "vs previous 30 days")
+                )
+            }
+            if let nightBase = nightBaseWatts {
+                EnergyStatTile(
+                    iconName: "moon.fill",
+                    tint: .indigo,
+                    title: String(localized: "energy.tile.nightBase", defaultValue: "Night base"),
+                    value: EnergyFormat.watts(nightBase),
+                    subtitle: String(localized: "energy.tile.nightBase.subtitle", defaultValue: "average 01:00–05:00")
+                )
+            }
+            if let peak = latestPeak {
+                EnergyStatTile(
+                    iconName: "flame.fill",
+                    tint: .orange,
+                    title: String(format: String(localized: "energy.tile.peak", defaultValue: "Peak %@"), peak.dayLabel),
+                    value: "\(peak.kilowatts.formatted(.number.precision(.fractionLength(1)))) kW",
+                    subtitle: String(format: String(localized: "energy.tile.peakAt", defaultValue: "at %@"), peak.hourLabel)
+                )
+            }
+        }
+    }
+
+    /// La forma dell'ultima giornata con le ore: notte piatta, sera piena.
+    @ViewBuilder
+    private var dayProfileCard: some View {
+        if let profile = latestDayProfile {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(String(localized: "energy.card.dayProfile", defaultValue: "Day distribution"))
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(profile.day.formatted(.dateTime.weekday(.wide).day().month()))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                EnergyProfileChart(hourlyKilowatts: profile.kilowatts, height: 90)
+            }
+            .padding(16)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+        }
+    }
+
+    /// La classifica del giorno fra i device misurati.
+    @ViewBuilder
+    private var topConsumersCard: some View {
+        let ranked = devices
+            .filter { $0.todayKilowattHours > 0 }
+            .sorted { $0.todayKilowattHours > $1.todayKilowattHours }
+            .prefix(4)
+        if !ranked.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(String(localized: "energy.card.topConsumers", defaultValue: "Top consumers today"))
+                    .font(.subheadline.weight(.semibold))
+                let maximum = ranked.first?.todayKilowattHours ?? 1
+                ForEach(Array(ranked.enumerated()), id: \.element.id) { index, device in
+                    HStack(spacing: 10) {
+                        Text(verbatim: "\(index + 1)")
+                            .font(.caption.weight(.bold).monospacedDigit())
+                            .frame(width: 22, height: 22)
+                            .background(Color.primary.opacity(0.08), in: Circle())
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(device.name)
+                                    .font(.caption.weight(.semibold))
+                                    .lineLimit(1)
+                                Text(device.roomName)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                Spacer()
+                                Text(EnergyFormat.kilowattHours(device.todayKilowattHours))
+                                    .font(.caption.weight(.semibold).monospacedDigit())
+                                if let watts = device.liveWatts {
+                                    Text(EnergyFormat.watts(watts))
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            GeometryReader { proxy in
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.yellow.opacity(0.75))
+                                    .frame(width: max(3, proxy.size.width * device.todayKilowattHours / maximum))
+                            }
+                            .frame(height: 4)
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+        }
+    }
+
+    /// Gli insight del giorno, solo dove i numeri reggono.
+    @ViewBuilder
+    private var insightsCard: some View {
+        let rows = insightRows
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(localized: "energy.card.insights", defaultValue: "Insights"))
+                    .font(.subheadline.weight(.semibold))
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    EnergyInsightRow(iconName: row.icon, tint: row.tint, text: row.text)
+                }
+            }
+            .padding(16)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+        }
+    }
+
+    // MARK: Calcoli della sezione Casa
+
+    private var monthEndProjection: Double? {
+        let calendar = Calendar.current
+        let dayOfMonth = calendar.component(.day, from: .now)
+        guard let daysInMonth = calendar.range(of: .day, in: .month, for: .now)?.count else { return nil }
+        let monthDays = EnergyStatsBuilder.dailyTotals(points: housePoints, days: dayOfMonth, reference: .now)
+        return EnergyInsights.monthEndProjection(
+            monthToDate: monthDays.map(\.kilowattHours).reduce(0, +),
+            dayOfMonth: dayOfMonth,
+            daysInMonth: daysInMonth
+        )
+    }
+
+    private var thirtyDayTrendPercent: Double? {
+        let days = EnergyStatsBuilder.dailyTotals(points: housePoints, days: 60)
+        let recent = days.suffix(30).map(\.kilowattHours).filter { $0 > 0 }
+        let previous = days.prefix(30).map(\.kilowattHours).filter { $0 > 0 }
+        guard recent.count >= 15, previous.count >= 15 else { return nil }
+        return EnergyInsights.percentChange(
+            recent.reduce(0, +) / Double(recent.count),
+            versus: previous.reduce(0, +) / Double(previous.count)
+        )
+    }
+
+    private var nightBaseWatts: Double? {
+        EnergyInsights.nightBaseWatts(points: housePoints)
+    }
+
+    /// L'ultimo giorno con forma oraria (oggi o indietro fino a 7 giorni).
+    private var latestHourlyDay: Date? {
+        let calendar = Calendar.current
+        for offset in 0...7 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: .now) else { continue }
+            let start = calendar.startOfDay(for: day)
+            guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { continue }
+            let count = houseSamples.filter { $0.timestamp >= start && $0.timestamp < end }.count
+            if count >= 12 { return start }
+        }
+        return nil
+    }
+
+    private struct PeakInfo {
+        let kilowatts: Double
+        let dayLabel: String
+        let hourLabel: String
+    }
+
+    private var latestPeak: PeakInfo? {
+        guard let day = latestHourlyDay else { return nil }
+        let hours = EnergyStatsBuilder.hourlyTotals(points: housePoints, day: day)
+        guard let peak = EnergyInsights.peakHour(hours: hours) else { return nil }
+        let calendar = Calendar.current
+        let dayLabel = calendar.isDateInToday(day)
+            ? String(localized: "energy.day.today", defaultValue: "Today").lowercased()
+            : (calendar.isDateInYesterday(day)
+               ? String(localized: "energy.day.yesterday", defaultValue: "Yesterday").lowercased()
+               : day.formatted(.dateTime.day().month(.abbreviated)))
+        return PeakInfo(
+            kilowatts: peak.kilowatts,
+            dayLabel: dayLabel,
+            hourLabel: peak.hour.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute())
+        )
+    }
+
+    private var latestDayProfile: (day: Date, kilowatts: [Double])? {
+        guard let day = latestHourlyDay else { return nil }
+        let hours = EnergyStatsBuilder.hourlyTotals(points: housePoints, day: day)
+        return (day, hours.map(\.kilowattHours))
+    }
+
+    private var insightRows: [(icon: String, tint: Color, text: String)] {
+        var rows: [(String, Color, String)] = []
+
+        if let nightBase = nightBaseWatts {
+            rows.append(("moon.fill", .indigo, String(
+                format: String(localized: "energy.insight.nightBase",
+                               defaultValue: "Night standby steady around %@ between 01:00 and 05:00."),
+                EnergyFormat.watts(nightBase)
+            )))
+        }
+
+        if houseTodayKilowattHours > 0,
+           let top = devices.filter({ $0.todayKilowattHours > 0 })
+               .max(by: { $0.todayKilowattHours < $1.todayKilowattHours }) {
+            let share = top.todayKilowattHours / houseTodayKilowattHours
+            if share > 0.05 {
+                rows.append(("powerplug.fill", .orange, String(
+                    format: String(localized: "energy.insight.topPlug",
+                                   defaultValue: "%1$@ accounts for %2$@ of the house consumption today."),
+                    top.name,
+                    share.formatted(.percent.precision(.fractionLength(0)))
+                )))
+            }
+        }
+
+        let months = houseMonths
+        if months.count >= 4 {
+            let current = months[months.count - 1].kilowattHours
+            let previous = months[(months.count - 4)...(months.count - 2)].map(\.kilowattHours)
+            let average = previous.reduce(0, +) / 3
+            if average > 0, current > 0 {
+                // Proiettato a fine mese per confrontare mele con mele.
+                let projected = monthEndProjection ?? current
+                rows.append((projected > average ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis",
+                             projected > average ? Color(.systemRed) : Color(.systemGreen),
+                             projected > average
+                             ? String(localized: "energy.insight.monthAbove", defaultValue: "The current month is tracking above the 3-month average.")
+                             : String(localized: "energy.insight.monthBelow", defaultValue: "The current month is tracking below the 3-month average.")))
+            }
+        }
+
+        return rows
     }
 
     /// La card mensile è la PORTA dell'analisi: qui il riassunto, lo
@@ -326,12 +632,12 @@ struct EnergyMonitorView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 if !houseSamples.isEmpty {
-                    Text(String(localized: "energy.house.section", defaultValue: "House"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                    houseCard
+                    houseHeroCard
+                    statTilesGrid
                     monthlyCard
+                    dayProfileCard
+                    topConsumersCard
+                    insightsCard
                     Text(String(localized: "energy.plugs.section", defaultValue: "Measured outlets"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
