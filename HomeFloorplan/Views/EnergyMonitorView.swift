@@ -959,25 +959,28 @@ struct EnergyMonitorView: View {
                     // Due colonne dove lo spazio c'è (iPad), una dove non c'è:
                     // il mockup usa TUTTA la larghezza, e aveva ragione.
                     if horizontalSizeClass == .regular {
+                        // La ripartizione sta SOTTO il Trend: segue lo stesso
+                        // mese selezionato, è figlia sua. A destra le card di
+                        // oggi; il biglietto prese chiude a tutta larghezza.
                         HStack(alignment: .top, spacing: 14) {
                             VStack(spacing: 14) {
                                 trendCard
+                                trendBreakdownCard
                             }
                             .frame(maxWidth: .infinity)
                             VStack(spacing: 14) {
                                 dayProfileCard
                                 insightsCard
-                                trendBreakdownCard
                                 topConsumersCard
-                                plugsSummaryCard
                             }
                             .frame(maxWidth: .infinity)
                         }
+                        plugsSummaryCard
                     } else {
                         trendCard
+                        trendBreakdownCard
                         dayProfileCard
                         insightsCard
-                        trendBreakdownCard
                         topConsumersCard
                         plugsSummaryCard
                     }
