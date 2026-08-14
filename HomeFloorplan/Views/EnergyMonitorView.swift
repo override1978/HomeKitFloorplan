@@ -299,10 +299,22 @@ struct EnergyMonitorView: View {
         let day = explicitDay ?? latestHourlyDay
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text(explicitDay != nil
-                     ? (day?.formatted(.dateTime.weekday(.wide).day().month()) ?? "")
-                     : String(localized: "energy.card.dayProfile", defaultValue: "Day distribution"))
-                    .font(.subheadline.weight(.semibold))
+                if explicitDay != nil {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.yellow)
+                        .frame(width: 8, height: 8)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(explicitDay != nil
+                         ? (day?.formatted(.dateTime.weekday(.wide).day().month()) ?? "")
+                         : String(localized: "energy.card.dayProfile", defaultValue: "Day distribution"))
+                        .font(.subheadline.weight(.semibold))
+                    if explicitDay != nil {
+                        Text(String(localized: "energy.dayCard.fromTrend", defaultValue: "Day selected in Trends"))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
                 Spacer()
                 if explicitDay == nil, let profile = latestDayProfile {
                     Text(profile.day.formatted(.dateTime.weekday(.wide).day().month()))
@@ -757,7 +769,8 @@ struct EnergyMonitorView: View {
                     value.day == selected ? .yellow : .yellow.opacity(0.35)
                 },
                 // La serie spenta accanto: ogni mese col suo precedente.
-                secondaryValues: [0] + months.dropLast().map(\.kilowattHours)
+                secondaryValues: [0] + months.dropLast().map(\.kilowattHours),
+                selectedDay: selected
             ) { month in
                 withAnimation(.easeOut(duration: 0.15)) { trendMonth = month }
             }
@@ -789,6 +802,25 @@ struct EnergyMonitorView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Spacer()
+                    if let day = selectedTrendDay {
+                        // Il ponte visivo verso la card della giornata: stesso
+                        // giallo, stesso giorno, con la ✕ per liberarlo.
+                        Button {
+                            withAnimation(.easeOut(duration: 0.2)) { selectedTrendDay = nil }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(day.formatted(.dateTime.weekday(.abbreviated).day()))
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 8, weight: .bold))
+                            }
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.yellow, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 EnergyAxisBarChart(
                     values: trendMonthDays(selected),
@@ -797,11 +829,18 @@ struct EnergyMonitorView: View {
                     xLabel: { day in
                         let number = Calendar.current.component(.day, from: day)
                         return number == 1 || number % 5 == 0 ? "\(number)" : ""
-                    }
+                    },
+                    barColor: { value in
+                        guard let day = selectedTrendDay else { return .yellow.opacity(0.8) }
+                        return value.day == day ? .yellow : .yellow.opacity(0.3)
+                    },
+                    selectedDay: selectedTrendDay
                 ) { day in
                     withAnimation(.easeOut(duration: 0.2)) { selectedTrendDay = day }
                 }
-                Text(String(localized: "energy.trend.days.hint", defaultValue: "Tap a day to see it in the day card."))
+                Text(selectedTrendDay != nil
+                     ? String(localized: "energy.trend.days.selectedHint", defaultValue: "The highlighted day is open in the day card.")
+                     : String(localized: "energy.trend.days.hint", defaultValue: "Tap a day to see it in the day card."))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

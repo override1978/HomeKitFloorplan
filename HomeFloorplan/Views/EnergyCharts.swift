@@ -19,6 +19,10 @@ struct EnergyAxisBarChart: View {
     /// Serie di confronto affiancata (stesso ordine): la barra spenta accanto
     /// a quella accesa — «mese corrente vs precedente» del mockup.
     var secondaryValues: [Double]? = nil
+    /// Il periodo selezionato: la sua colonna riceve un alone giallo a tutta
+    /// altezza e l'etichetta si accende — la selezione si vede a colpo
+    /// d'occhio, non si deduce dalla tinta della barra.
+    var selectedDay: Date? = nil
     var onTap: ((Date) -> Void)?
 
     private var niceMaximum: Double {
@@ -73,6 +77,19 @@ struct EnergyAxisBarChart: View {
                                     .frame(height: max(2, (height - 12) * CGFloat(value.kilowattHours / maximum)))
                                     .frame(maxWidth: .infinity)
                             }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: height - 12, alignment: .bottom)
+                            .background {
+                                if selectedDay == value.day {
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(Color.yellow.opacity(0.12))
+                                        .overlay {
+                                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                                .strokeBorder(Color.yellow.opacity(0.55), lineWidth: 1)
+                                        }
+                                        .padding(.horizontal, -1)
+                                }
+                            }
                             .contentShape(Rectangle())
                             .onTapGesture { onTap?(value.day) }
                         }
@@ -85,8 +102,8 @@ struct EnergyAxisBarChart: View {
                 HStack(spacing: values.count > 24 ? 2 : 4) {
                     ForEach(values) { value in
                         Text(xLabel(value.day))
-                            .font(.system(size: 7, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 7, weight: selectedDay == value.day ? .bold : .semibold))
+                            .foregroundStyle(selectedDay == value.day ? AnyShapeStyle(Color.yellow) : AnyShapeStyle(.secondary))
                             .frame(maxWidth: .infinity)
                             .lineLimit(1)
                     }

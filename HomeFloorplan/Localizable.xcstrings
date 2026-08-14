@@ -1,6 +1,38 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "energy.trend.days.selectedHint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The highlighted day is open in the day card."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il giorno evidenziato \u00e8 aperto nella card della giornata."
+          }
+        }
+      }
+    },
+    "energy.dayCard.fromTrend" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Day selected in Trends"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giorno selezionato nel Trend"
+          }
+        }
+      }
+    },
     "energy.plugs.count" : {
       "localizations" : {
         "en" : {
