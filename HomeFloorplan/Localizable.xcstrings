@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "energy.autoImport.toast" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vimar export updated: %d new samples"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Vimar aggiornato: %d campioni nuovi"
+          }
+        }
+      }
+    },
     "sync.bulk.pill" : {
       "localizations" : {
         "en" : {

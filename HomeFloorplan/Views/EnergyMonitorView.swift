@@ -35,6 +35,9 @@ struct EnergyMonitorView: View {
     /// Il giorno scelto dal drill-down del Trend: riempie la card
     /// «Distribuzione giornata» qui accanto, senza cambiare vista.
     @State private var selectedTrendDay: Date?
+    /// Esito dell'auto-import Vimar, mostrato come toast solo se ha
+    /// portato righe nuove.
+    @State private var autoImportToast: String?
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private static let windowDays = 7
@@ -92,6 +95,20 @@ struct EnergyMonitorView: View {
             ) { result in
                 handleImport(result)
             }
+            .overlay(alignment: .bottom) {
+                if let toast = autoImportToast {
+                    Label(toast, systemImage: "checkmark.icloud.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                        .overlay { Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 1) }
+                        .padding(.bottom, 10)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.25), value: autoImportToast)
             .alert(String(localized: "energy.import.title", defaultValue: "Meter import"),
                    isPresented: Binding(
                     get: { importMessage != nil },
@@ -103,7 +120,10 @@ struct EnergyMonitorView: View {
                 Text(message)
             }
         }
-        .task { await refreshLive() }
+        .task {
+            await refreshLive()
+            await autoImportVimarIfNeeded()
+        }
         .refreshable { await refreshLive(force: true) }
     }
 
@@ -119,6 +139,9 @@ struct EnergyMonitorView: View {
             do {
                 let data = try Data(contentsOf: url)
                 let outcome = try HouseMeterImport.importArchive(data, modelContainer: modelContext.container)
+                // Il primo import manuale arma l'aggiornamento automatico:
+                // da ora Energia controlla da sola se l'export è cambiato.
+                VimarAutoImport.rememberFile(at: url)
                 importMessage = String(
                     format: String(localized: "energy.import.result",
                                    defaultValue: "%1$d new days imported, %2$d already present."),
@@ -937,6 +960,21 @@ struct EnergyMonitorView: View {
 
     private var totalTodayKilowattHours: Double {
         devices.map(\.todayKilowattHours).reduce(0, +)
+    }
+
+    /// Controlla se l'export Vimar ricordato è cambiato e in quel caso lo
+    /// reimporta. Silenzioso quando non c'è nulla: il toast compare solo
+    /// con righe nuove.
+    private func autoImportVimarIfNeeded() async {
+        guard let outcome = await VimarAutoImport.importIfChanged(modelContainer: modelContext.container),
+              outcome.inserted > 0 else { return }
+        autoImportToast = String(
+            format: String(localized: "energy.autoImport.toast",
+                           defaultValue: "Vimar export updated: %d new samples"),
+            outcome.inserted
+        )
+        try? await Task.sleep(for: .seconds(4))
+        autoImportToast = nil
     }
 
     private func refreshLive(force: Bool = false) async {
