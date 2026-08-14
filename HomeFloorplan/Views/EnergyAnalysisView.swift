@@ -15,6 +15,7 @@ import SwiftData
 /// domani un meter Matter): il livello ore vive solo dove l'import ha tenuto
 /// la granularità oraria (ultimi 60 giorni), e dove non c'è lo dice.
 struct EnergyAnalysisView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("energy.tariffPerKWh") private var tariffPerKWh = 0.0
     @Query private var houseSamples: [EnergySample]
     /// Le prese misurate, per la ripartizione: storia breve, righe poche.
@@ -66,8 +67,6 @@ struct EnergyAnalysisView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .frame(maxWidth: 700)
-            .frame(maxWidth: .infinity)
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle(String(localized: "energy.analysis.title", defaultValue: "Consumption analysis"))
@@ -169,20 +168,15 @@ struct EnergyAnalysisView: View {
 
             monthComparisonTiles(month: month, total: total)
 
-            if let profile = monthProfile(month) {
-                card {
-                    Text(String(localized: "energy.analysis.avgProfile", defaultValue: "Average time-of-day profile"))
-                        .font(.subheadline.weight(.semibold))
-                    EnergyProfileChart(hourlyKilowatts: profile, height: 86)
+            // Fasce e ripartizione fianco a fianco dove lo spazio c'è.
+            if horizontalSizeClass == .regular {
+                HStack(alignment: .top, spacing: 14) {
+                    monthProfileCard(month).frame(maxWidth: .infinity)
+                    monthBreakdownCard(month: month, total: total).frame(maxWidth: .infinity)
                 }
-            }
-
-            if let breakdown = monthBreakdown(month: month, total: total) {
-                card {
-                    Text(String(localized: "energy.analysis.breakdown", defaultValue: "Consumption breakdown"))
-                        .font(.subheadline.weight(.semibold))
-                    EnergyDonutChart(segments: breakdown)
-                }
+            } else {
+                monthProfileCard(month)
+                monthBreakdownCard(month: month, total: total)
             }
 
             monthInsightsCard(month: month, days: days)
@@ -225,6 +219,28 @@ struct EnergyAnalysisView: View {
                 value: "\(rising ? "+" : "−")\(abs(percent).formatted(.number.precision(.fractionLength(1))))%",
                 subtitle: "\(rising ? "+" : "−")\(EnergyFormat.kilowattHours(abs(total - reference)))"
             )
+        }
+    }
+
+    @ViewBuilder
+    private func monthProfileCard(_ month: Date) -> some View {
+        if let profile = monthProfile(month) {
+            card {
+                Text(String(localized: "energy.analysis.avgProfile", defaultValue: "Average time-of-day profile"))
+                    .font(.subheadline.weight(.semibold))
+                EnergyProfileChart(hourlyKilowatts: profile, height: 86)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func monthBreakdownCard(month: Date, total: Double) -> some View {
+        if let breakdown = monthBreakdown(month: month, total: total) {
+            card {
+                Text(String(localized: "energy.analysis.breakdown", defaultValue: "Consumption breakdown"))
+                    .font(.subheadline.weight(.semibold))
+                EnergyDonutChart(segments: breakdown)
+            }
         }
     }
 

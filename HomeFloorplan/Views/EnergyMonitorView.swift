@@ -25,6 +25,9 @@ struct EnergyMonitorView: View {
     @Query private var houseSamples: [EnergySample]
     @State private var isImporterPresented = false
     @State private var importMessage: String?
+    /// Il mese mostrato nella card Trend (nil = l'ultimo).
+    @State private var trendMonth: Date?
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private static let windowDays = 7
 
@@ -257,26 +260,44 @@ struct EnergyMonitorView: View {
     }
 
     /// La forma dell'ultima giornata con le ore: notte piatta, sera piena.
-    @ViewBuilder
+    /// La card c'è SEMPRE — senza granularità oraria spiega come ottenerla,
+    /// invece di sparire e lasciare il dubbio.
     private var dayProfileCard: some View {
-        if let profile = latestDayProfile {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(String(localized: "energy.card.dayProfile", defaultValue: "Day distribution"))
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(String(localized: "energy.card.dayProfile", defaultValue: "Day distribution"))
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if let profile = latestDayProfile {
                     Text(profile.day.formatted(.dateTime.weekday(.wide).day().month()))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
-                EnergyProfileChart(hourlyKilowatts: profile.kilowatts, height: 90)
             }
-            .padding(16)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            if let day = latestHourlyDay {
+                EnergyAxisBarChart(
+                    values: EnergyStatsBuilder.hourlyTotals(points: housePoints, day: day),
+                    height: 120,
+                    unitLabel: "kW",
+                    xLabel: { hour in
+                        let value = Calendar.current.component(.hour, from: hour)
+                        return value % 6 == 0 ? String(format: "%02d", value) : ""
+                    }
+                )
+            } else {
+                Label(String(localized: "energy.analysis.noHourly",
+                             defaultValue: "Hourly detail is kept for the last 60 days — re-import a fresh export to fill recent days."),
+                      systemImage: "clock.badge.questionmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 14)
             }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
         }
     }
 
@@ -470,64 +491,119 @@ struct EnergyMonitorView: View {
         return rows
     }
 
-    /// La card mensile è la PORTA dell'analisi: qui il riassunto, lo
-    /// strumento vero — anno → mese → giorno, coi confronti — nella vista
-    /// dedicata che si apre al tap.
-    private var monthlyCard: some View {
-        NavigationLink {
-            EnergyAnalysisView()
-        } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(String(localized: "energy.monthly.title", defaultValue: "Last 12 months"))
+    /// «Trend e confronti»: il mese si sfoglia QUI, con ‹ › e barre
+    /// selezionabili — l'analisi completa resta a un tap (lente in alto).
+    private var trendCard: some View {
+        let months = houseMonths
+        let selected = trendMonth ?? months.last?.day
+        let selectedTotal = selected.flatMap { day in months.first { $0.day == day }?.kilowattHours } ?? 0
+        let previousTotal: Double = {
+            guard let selected,
+                  let index = months.firstIndex(where: { $0.day == selected }), index > 0 else { return 0 }
+            return months[index - 1].kilowattHours
+        }()
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(String(localized: "energy.card.trend", defaultValue: "Trends and comparisons"))
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                NavigationLink {
+                    EnergyAnalysisView()
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let selected {
+                HStack(spacing: 10) {
+                    Button { moveTrendMonth(-1) } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!canMoveTrendMonth(-1))
+
+                    Text(selected.formatted(.dateTime.month(.wide).year()))
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+
+                    Button { moveTrendMonth(1) } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!canMoveTrendMonth(1))
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(EnergyFormat.kilowattHours(selectedTotal))
+                        .font(.title3.weight(.bold))
+                        .monospacedDigit()
+                    if let cost = formattedCost(selectedTotal) {
+                        Text(cost)
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
-                    Text(String(localized: "energy.analysis.open", defaultValue: "Analysis"))
+                    if previousTotal > 0 {
+                        let delta = selectedTotal - previousTotal
+                        Label {
+                            Text(verbatim: "\(delta > 0 ? "+" : "−")\(EnergyFormat.kilowattHours(abs(delta)))")
+                        } icon: {
+                            Image(systemName: delta > 0 ? "arrow.up.right" : "arrow.down.right")
+                        }
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-
-                monthlyBars
-
-                if let annual = annualSummary {
-                    Text(annual)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(delta > 0 ? Color(.systemRed) : Color(.systemGreen))
+                    }
                 }
             }
-            .padding(16)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+
+            EnergyAxisBarChart(
+                values: months,
+                height: 120,
+                unitLabel: "kWh",
+                xLabel: { $0.formatted(.dateTime.month(.narrow)) },
+                barColor: { value in
+                    value.day == selected ? .yellow : .yellow.opacity(0.3)
+                }
+            ) { month in
+                withAnimation(.easeOut(duration: 0.15)) { trendMonth = month }
             }
-            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+            Text(String(localized: "energy.trend.footer", defaultValue: "Compared with the previous month"))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
-        .buttonStyle(.plain)
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        }
     }
 
-    private var monthlyBars: some View {
+    private func canMoveTrendMonth(_ delta: Int) -> Bool {
         let months = houseMonths
-        let maximum = max(months.map(\.kilowattHours).max() ?? 0, 0.0001)
-        return HStack(alignment: .bottom, spacing: 5) {
-            ForEach(months) { month in
-                let height = max(3, 76 * CGFloat(month.kilowattHours / maximum))
-                VStack(spacing: 3) {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color.yellow.opacity(0.55))
-                        .frame(height: height)
-                        .frame(maxWidth: .infinity)
-                    Text(month.day.formatted(.dateTime.month(.narrow)))
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(height: 92, alignment: .bottom)
-            }
-        }
+        guard let current = trendMonth ?? months.last?.day,
+              let index = months.firstIndex(where: { $0.day == current }) else { return false }
+        let target = index + delta
+        return months.indices.contains(target)
+    }
+
+    private func moveTrendMonth(_ delta: Int) {
+        let months = houseMonths
+        guard let current = trendMonth ?? months.last?.day,
+              let index = months.firstIndex(where: { $0.day == current }),
+              months.indices.contains(index + delta) else { return }
+        withAnimation(.easeOut(duration: 0.15)) { trendMonth = months[index + delta].day }
     }
 
     private var annualSummary: String? {
@@ -634,10 +710,27 @@ struct EnergyMonitorView: View {
                 if !houseSamples.isEmpty {
                     houseHeroCard
                     statTilesGrid
-                    monthlyCard
-                    dayProfileCard
-                    topConsumersCard
-                    insightsCard
+                    // Due colonne dove lo spazio c'è (iPad), una dove non c'è:
+                    // il mockup usa TUTTA la larghezza, e aveva ragione.
+                    if horizontalSizeClass == .regular {
+                        HStack(alignment: .top, spacing: 14) {
+                            VStack(spacing: 14) {
+                                trendCard
+                                topConsumersCard
+                            }
+                            .frame(maxWidth: .infinity)
+                            VStack(spacing: 14) {
+                                dayProfileCard
+                                insightsCard
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    } else {
+                        trendCard
+                        dayProfileCard
+                        topConsumersCard
+                        insightsCard
+                    }
                     Text(String(localized: "energy.plugs.section", defaultValue: "Measured outlets"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -660,8 +753,6 @@ struct EnergyMonitorView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .frame(maxWidth: 700)
-            .frame(maxWidth: .infinity)
         }
     }
 
