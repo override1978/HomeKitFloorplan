@@ -228,9 +228,11 @@ enum FloorplanExtruder {
     /// materiale che si riconosce anche da tre metri.
     private static let blackGlass = CGColor(red: 0.09, green: 0.09, blue: 0.10, alpha: 1)
     private static let stoneTop = CGColor(red: 0.46, green: 0.45, blue: 0.43, alpha: 1)
-    private static let bookRed = CGColor(red: 0.55, green: 0.18, blue: 0.16, alpha: 1)
-    private static let bookBlue = CGColor(red: 0.18, green: 0.30, blue: 0.52, alpha: 1)
-    private static let bookGreen = CGColor(red: 0.22, green: 0.42, blue: 0.28, alpha: 1)
+    private static let bookRed = CGColor(red: 0.52, green: 0.22, blue: 0.20, alpha: 1)
+    private static let bookBlue = CGColor(red: 0.24, green: 0.33, blue: 0.48, alpha: 1)
+    private static let bookGreen = CGColor(red: 0.28, green: 0.42, blue: 0.30, alpha: 1)
+    private static let bookParchment = CGColor(red: 0.84, green: 0.79, blue: 0.69, alpha: 1)
+    private static let bookBrown = CGColor(red: 0.44, green: 0.35, blue: 0.27, alpha: 1)
     private static let ceramicWhite = CGColor(red: 0.92, green: 0.92, blue: 0.88, alpha: 1)
     private static let applianceWhite = CGColor(red: 0.86, green: 0.88, blue: 0.88, alpha: 1)
     private static let chromeGrey = CGColor(red: 0.62, green: 0.64, blue: 0.65, alpha: 1)
@@ -262,10 +264,16 @@ enum FloorplanExtruder {
                                     televisionSpots: [SIMD2<Double>] = []) -> [Face] {
         let soft = tint ?? fabricSoft
         switch kind {
-        case .diningTable, .generic:
+        case .diningTable:
             let top = height(of: kind)
             return slab(item, from: top - 0.05, to: top, tint: woodTop, material: .wood)
                 + legs(item, to: top - 0.05, side: 0.055, inset: 0.06, tint: woodDark, material: .wood)
+        case .generic:
+            // Il tuttofare basso: corpo PIENO con top in legno — isola
+            // attrezzata, madia, mobile qualsiasi. Le gambe da tavolo erano
+            // una bugia: promettevano vuoto dove c'e' un mobile.
+            return boxFaces(item, from: 0, to: 0.70, tint: tint ?? cabinetCream)
+                + slab(item, from: 0.70, to: 0.75, tint: woodTop, material: .wood)
         case .chair:
             let seatFabric = tint ?? chairFabric
             let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
@@ -518,18 +526,42 @@ enum FloorplanExtruder {
                             tint: frame, material: .wood)
         }
 
-        let moduleCount = max(3, min(7, Int((half.x * 2 / 0.22).rounded())))
+        // I libri: NON a rotazione ciclica — quella produceva una scacchiera
+        // perfetta, e nessuna libreria vera e' una scacchiera. Un generatore
+        // deterministico (stesso mobile = stessa libreria, niente flicker fra
+        // ricostruzioni) decide buco/colore/altezza: dominano i dorsi neutri,
+        // gli accenti sono rari, e un quinto degli slot resta vuoto.
+        let moduleCount = max(3, min(8, Int((half.x * 2 / 0.19).rounded())))
         let bookWidth = (half.x * 1.72) / Double(moduleCount)
-        let bookColors = [bookRed, bookBlue, bookGreen, linenLight]
+        // Seme dai byte dell'UUID, NON da hashValue: quello e' randomizzato
+        // per processo e la libreria si rimescolerebbe a ogni avvio.
+        let uuid = item.id.uuid
+        var seed = UInt64(uuid.0) | UInt64(uuid.1) << 8 | UInt64(uuid.2) << 16
+            | UInt64(uuid.3) << 24 | UInt64(uuid.4) << 32 | UInt64(uuid.5) << 40
+            | UInt64(uuid.6) << 48 | UInt64(uuid.7) << 56
+        seed &+= 0x9E3779B97F4A7C15
+        func roll() -> Double {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return Double((seed >> 33) & 0xFFFFFF) / Double(0xFFFFFF)
+        }
+        let neutrals = [bookParchment, bookBrown, linenLight]
+        let accents = [bookRed, bookBlue, bookGreen]
         for row in 0..<shelfCount {
             let bottom = 0.12 + Double(row) * ((top - 0.25) / Double(shelfCount))
-            let bookHeight = min(0.28, (top / Double(shelfCount)) * 0.58)
+            let rowHeight = min(0.28, (top / Double(shelfCount)) * 0.58)
             for column in 0..<moduleCount {
+                let slot = roll()
+                if slot < 0.20 { continue }   // il respiro degli scaffali veri
+                let colorRoll = roll()
+                let color = colorRoll < 0.68
+                    ? neutrals[Int(roll() * 2.999)]
+                    : accents[Int(roll() * 2.999)]
+                let bookHeight = rowHeight * (0.72 + roll() * 0.28)
                 let x = -half.x * 0.86 + bookWidth / 2 + Double(column) * bookWidth
-                let color = bookColors[(row + column) % bookColors.count]
                 faces += subBox(item,
                                 centreOffset: SIMD2(x, -half.y + min(0.09, half.y * 0.55)),
-                                half: SIMD2(bookWidth * 0.34, min(0.025, half.y * 0.24)),
+                                half: SIMD2(bookWidth * (0.28 + roll() * 0.10),
+                                            min(0.025, half.y * 0.24)),
                                 from: bottom, to: bottom + bookHeight,
                                 tint: color, material: .plain)
             }
