@@ -390,6 +390,16 @@ enum FloorplanMaterialCatalog {
                                     options: .init(semantic: .color))
     }
 
+    /// Il terreno del palco secondo l'ora: di giorno il greige derivato dal
+    /// fondale, di notte un blu-grigio scuro nella famiglia del cielo
+    /// notturno — cosi' cupola e terreno si fondono all'orizzonte invece di
+    /// staccarsi in una banda buia.
+    static func stageGroundMaterial(isDay: Bool, background: UIColor) -> any RealityKit.Material {
+        isDay
+            ? groundMaterial(background: background)
+            : groundMaterial(background: UIColor(red: 0.155, green: 0.165, blue: 0.215, alpha: 1))
+    }
+
     static func groundMaterial(background: UIColor) -> any RealityKit.Material {
         guard let image = groundGradientImage(background),
               let texture = try? TextureResource(image: image, withName: nil,

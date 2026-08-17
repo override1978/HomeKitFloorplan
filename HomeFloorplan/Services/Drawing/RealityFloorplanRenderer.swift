@@ -45,6 +45,9 @@ enum RealityFloorplanRenderer {
         let groundSize = max(scene.bounds.radius, 1) * 12
         let ground = ModelEntity(mesh: .generatePlane(width: groundSize, depth: groundSize),
                                  materials: [FloorplanMaterialCatalog.groundMaterial(background: background)])
+        // Il coordinatore lo ritrova per nome quando il cielo cambia: di
+        // notte il terreno scurisce col cielo, o l'orizzonte stona.
+        ground.name = "stage-ground"
         ground.position = SIMD3(0, scene.bounds.min.y - center.y - 0.02, 0)
         root.addChild(ground)
 

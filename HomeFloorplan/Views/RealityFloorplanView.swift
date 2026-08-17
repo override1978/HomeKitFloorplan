@@ -1131,9 +1131,21 @@ struct RealityFloorplanView: UIViewRepresentable {
         }
 
         private func updateSkyDome() {
-            guard let skyDome, skyIsDay != sun.isAboveHorizon else { return }
-            skyIsDay = sun.isAboveHorizon
-            skyDome.model?.materials = [FloorplanMaterialCatalog.skyBackdropMaterial(isDay: sun.isAboveHorizon)]
+            guard skyIsDay != sun.isAboveHorizon else { return }
+            applyStageAtmosphere()
+        }
+
+        /// Cielo e terreno sono UN palco: cambiano insieme, o l'orizzonte
+        /// stona (il terreno chiaro sotto il cielo notturno era una banda
+        /// buia appoggiata su un prato da mezzogiorno).
+        private func applyStageAtmosphere() {
+            let isDay = sun.isAboveHorizon
+            skyIsDay = isDay
+            skyDome?.model?.materials = [FloorplanMaterialCatalog.skyBackdropMaterial(isDay: isDay)]
+            if let ground = contentRoot.findEntity(named: "stage-ground") as? ModelEntity {
+                ground.model?.materials = [FloorplanMaterialCatalog.stageGroundMaterial(isDay: isDay,
+                                                                                       background: background)]
+            }
         }
 
         /// Le luci sono **fisse rispetto al modello**, non alla telecamera.
@@ -1219,6 +1231,7 @@ struct RealityFloorplanView: UIViewRepresentable {
             applyWallGhosting()
             roomNames = rendered.roomNames
             contentRoot.addChild(rendered.root)
+            applyStageAtmosphere()
             configureLights()
             rebuildSunPatches()
             rebuildFlags()
