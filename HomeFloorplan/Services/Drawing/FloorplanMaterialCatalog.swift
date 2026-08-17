@@ -340,6 +340,56 @@ enum FloorplanMaterialCatalog {
         opaque(UIColor(red: 0.930, green: 0.915, blue: 0.885, alpha: 1), roughness: 0.9)
     }
 
+    /// Il cielo del diorama: gradiente verticale su una sfera unlit vista
+    /// da dentro. Di giorno zenit azzurro polvere appena accennato che scende
+    /// su un orizzonte crema (aggancia il terreno); di notte blu profondo.
+    /// Un fondale piatto non ha orizzonte: e' questo che lo faceva sterile.
+    static func skyBackdropMaterial(isDay: Bool) -> UnlitMaterial {
+        var material = UnlitMaterial(color: .white)
+        material.faceCulling = .front
+        guard let texture = isDay ? daySkyTexture : nightSkyTexture else {
+            material.color = .init(tint: isDay
+                ? UIColor(red: 0.87, green: 0.86, blue: 0.83, alpha: 1)
+                : UIColor(red: 0.10, green: 0.12, blue: 0.19, alpha: 1))
+            return material
+        }
+        material.color = .init(tint: .white, texture: .init(texture, sampler: clampSampler))
+        return material
+    }
+
+    private static let daySkyTexture: TextureResource? = skyGradientTexture(colors: [
+        UIColor(red: 0.74, green: 0.80, blue: 0.86, alpha: 1),   // zenit: azzurro polvere
+        UIColor(red: 0.86, green: 0.87, blue: 0.88, alpha: 1),
+        UIColor(red: 0.90, green: 0.87, blue: 0.82, alpha: 1),   // orizzonte: crema caldo
+        UIColor(red: 0.88, green: 0.85, blue: 0.80, alpha: 1)    // sotto l'orizzonte
+    ], locations: [0, 0.42, 0.55, 1])
+
+    private static let nightSkyTexture: TextureResource? = skyGradientTexture(colors: [
+        UIColor(red: 0.05, green: 0.07, blue: 0.14, alpha: 1),   // zenit notturno
+        UIColor(red: 0.10, green: 0.12, blue: 0.20, alpha: 1),
+        UIColor(red: 0.17, green: 0.18, blue: 0.24, alpha: 1),   // orizzonte
+        UIColor(red: 0.12, green: 0.13, blue: 0.17, alpha: 1)
+    ], locations: [0, 0.40, 0.55, 1])
+
+    private static func skyGradientTexture(colors: [UIColor], locations: [CGFloat]) -> TextureResource? {
+        let size = CGSize(width: 8, height: 512)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                            colors: colors.map(\.cgColor) as CFArray,
+                                            locations: locations) else { return }
+            context.cgContext.drawLinearGradient(gradient,
+                                                 start: .zero,
+                                                 end: CGPoint(x: 0, y: size.height),
+                                                 options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil,
+                                    options: .init(semantic: .color))
+    }
+
     static func groundMaterial(background: UIColor) -> any RealityKit.Material {
         guard let image = groundGradientImage(background),
               let texture = try? TextureResource(image: image, withName: nil,

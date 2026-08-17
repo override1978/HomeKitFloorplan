@@ -133,6 +133,10 @@ struct RealityFloorplanView: UIViewRepresentable {
         var elevation: Double = 1.2
         var distanceMultiplier: Float = 2.3
         private let anchor = AnchorEntity(world: .zero)
+        /// La cupola del cielo: sfera unlit vista da dentro, gradiente
+        /// verticale. Segue il giorno/notte del sole vero.
+        private var skyDome: ModelEntity?
+        private var skyIsDay: Bool?
         private let contentRoot = Entity()
         private let camera = PerspectiveCamera()
         /// Tre direzionali invece di una.
@@ -1030,6 +1034,7 @@ struct RealityFloorplanView: UIViewRepresentable {
         func updateSun(_ newSun: FloorplanSunLight) {
             guard sun != newSun else { return }
             sun = newSun
+            updateSkyDome()
             configureLights()
             rebuildSunPatches()
             // L'ombra della tenda dipende dal sole quanto dal telo.
@@ -1103,6 +1108,7 @@ struct RealityFloorplanView: UIViewRepresentable {
             anchor.addChild(presenceRoot)
             anchor.addChild(cameraRoot)
             anchor.addChild(awningRoot)
+            installSkyDome()
             view.scene.anchors.append(anchor)
 
             updateSceneIfNeeded(scene)
@@ -1113,6 +1119,21 @@ struct RealityFloorplanView: UIViewRepresentable {
             rebuildClimate()
             configureLights()
             updateCamera()
+        }
+
+        private func installSkyDome() {
+            let radius = max(scene.bounds.radius, 1) * 40
+            let dome = ModelEntity(mesh: .generateSphere(radius: radius),
+                                   materials: [FloorplanMaterialCatalog.skyBackdropMaterial(isDay: sun.isAboveHorizon)])
+            skyIsDay = sun.isAboveHorizon
+            skyDome = dome
+            anchor.addChild(dome)
+        }
+
+        private func updateSkyDome() {
+            guard let skyDome, skyIsDay != sun.isAboveHorizon else { return }
+            skyIsDay = sun.isAboveHorizon
+            skyDome.model?.materials = [FloorplanMaterialCatalog.skyBackdropMaterial(isDay: sun.isAboveHorizon)]
         }
 
         /// Le luci sono **fisse rispetto al modello**, non alla telecamera.
