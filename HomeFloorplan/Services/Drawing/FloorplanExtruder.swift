@@ -370,43 +370,45 @@ enum FloorplanExtruder {
         case .shower:
             return showerFaces(item)
         case .plant:
-            // Vaso in terracotta, fusto e chioma verde a due palchi: la pianta
-            // e' il colore che rompe il beige, e non e' mai stata una scatola.
+            // Vaso svasato in terracotta, fusto e chioma a palla low-poly:
+            // tamburi a otto lati, non scatole — le scatole verdi impilate
+            // erano Minecraft, parola dell'utente.
             let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
             let radius = min(half.x, half.y)
-            var faces = subBox(item, centreOffset: .zero,
-                               half: SIMD2(radius * 0.40, radius * 0.40),
-                               from: 0, to: 0.30, tint: terracotta, material: .stone)
-            faces += subBox(item, centreOffset: .zero, half: SIMD2(0.024, 0.024),
-                            from: 0.30, to: 0.55, tint: woodDark, material: .wood)
-            faces += subBox(item, centreOffset: .zero,
-                            half: SIMD2(radius * 0.85, radius * 0.85),
-                            from: 0.50, to: 0.98, tint: foliageDark, material: .fabric)
-            faces += subBox(item, centreOffset: .zero,
-                            half: SIMD2(radius * 0.55, radius * 0.55),
-                            from: 0.98, to: 1.26, tint: foliageLight, material: .fabric)
+            var faces = drum(item, from: 0, bottomRadius: radius * 0.26,
+                             to: 0.26, topRadius: radius * 0.36,
+                             tint: terracotta, material: .stone)
+            faces += drum(item, from: 0.26, bottomRadius: radius * 0.38,
+                          to: 0.32, topRadius: radius * 0.38,
+                          tint: terracotta, material: .stone)
+            faces += drum(item, sides: 6, from: 0.32, bottomRadius: 0.022,
+                          to: 0.58, topRadius: 0.018, tint: woodDark, material: .wood)
+            faces += drum(item, from: 0.52, bottomRadius: radius * 0.50,
+                          to: 0.78, topRadius: radius * 0.88, tint: foliageDark)
+            faces += drum(item, from: 0.78, bottomRadius: radius * 0.88,
+                          to: 1.06, topRadius: radius * 0.62, tint: foliageMid)
+            faces += drum(item, from: 1.06, bottomRadius: radius * 0.62,
+                          to: 1.26, topRadius: radius * 0.20, tint: foliageLight)
             return faces
         case .tree:
-            // Tronco e tre palchi di chioma che si stringono salendo: la
-            // sagoma dell'albero, coi volumi squadrati di tutto il resto.
+            // Tronco e chioma a fusi che si gonfiano e si stringono: la
+            // silhouette dell'albero in low-poly, non una pila di cubi.
             let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
             let radius = min(half.x, half.y)
-            var faces = subBox(item, centreOffset: .zero, half: SIMD2(0.09, 0.09),
-                               from: 0, to: 1.15, tint: woodDark, material: .wood)
-            faces += subBox(item, centreOffset: .zero,
-                            half: SIMD2(radius * 0.95, radius * 0.95),
-                            from: 1.0, to: 2.2, tint: foliageDark, material: .fabric)
-            faces += subBox(item, centreOffset: .zero,
-                            half: SIMD2(radius * 0.62, radius * 0.62),
-                            from: 2.2, to: 3.0, tint: foliageMid, material: .fabric)
-            faces += subBox(item, centreOffset: .zero,
-                            half: SIMD2(radius * 0.34, radius * 0.34),
-                            from: 3.0, to: 3.5, tint: foliageLight, material: .fabric)
+            var faces = drum(item, sides: 6, from: 0, bottomRadius: 0.11,
+                             to: 1.25, topRadius: 0.085, tint: woodDark, material: .wood)
+            faces += drum(item, from: 1.10, bottomRadius: radius * 0.52,
+                          to: 1.95, topRadius: radius * 0.95, tint: foliageDark)
+            faces += drum(item, from: 1.95, bottomRadius: radius * 0.95,
+                          to: 2.75, topRadius: radius * 0.66, tint: foliageMid)
+            faces += drum(item, from: 2.75, bottomRadius: radius * 0.66,
+                          to: 3.35, topRadius: radius * 0.22, tint: foliageLight)
             return faces
         case .hedge:
-            // La siepe squadrata e' davvero una scatola — ma verde.
+            // La siepe squadrata e' davvero una scatola — ma verde, e senza
+            // trame che facciano griglia.
             return boxFaces(item, from: 0, to: height(of: kind),
-                            tint: foliageMid, material: .fabric)
+                            tint: foliageMid)
         case .bed:
             // Giroletto scuro, materasso chiaro, cuscini alla testata: tre
             // membri che dicono «letto» meglio di qualunque cassa.
@@ -641,6 +643,44 @@ enum FloorplanExtruder {
                                 half: SIMD2(side / 2, side / 2),
                                 from: 0, to: top, tint: tint, material: material)
             }
+        }
+        return faces
+    }
+
+    /// Un tamburo a piu' lati fra due quote, con raggi diversi in basso e in
+    /// alto: il mattone delle forme tonde — vasi svasati, chiome, fusti —
+    /// senza uscire dalla geometria a facce. Otto lati bastano a dire
+    /// «rotondo» nel linguaggio low-poly della scena.
+    private static func drum(_ item: FurnitureItem, centreOffset: SIMD2<Double> = .zero,
+                             sides: Int = 8,
+                             from bottom: Double, bottomRadius: Double,
+                             to top: Double, topRadius: Double,
+                             tint: CGColor?, material: FurnitureMaterialStyle = .plain) -> [Face] {
+        guard top > bottom else { return [] }
+        let rect = item.rect
+        let centre = SIMD2(metres(rect.midX), metres(rect.midY))
+        let angle = item.rotationDegrees * .pi / 180
+        func ring(at z: Double, radius: Double) -> [SIMD3<Double>] {
+            (0..<sides).map { index in
+                let theta = (Double(index) + 0.5) / Double(sides) * 2 * .pi
+                let local = SIMD2(cos(theta) * radius + centreOffset.x,
+                                  sin(theta) * radius + centreOffset.y)
+                let x = local.x * cos(angle) - local.y * sin(angle)
+                let y = local.x * sin(angle) + local.y * cos(angle)
+                return SIMD3(centre.x + x, centre.y + y, z)
+            }
+        }
+        let low = ring(at: bottom, radius: bottomRadius)
+        let high = ring(at: top, radius: max(topRadius, 0.005))
+        var faces = [Face(points: high, kind: .furnitureTop,
+                          roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint,
+                          furnitureMaterial: material)]
+        for index in 0..<sides {
+            let next = (index + 1) % sides
+            faces.append(Face(points: [low[index], low[next], high[next], high[index]],
+                              kind: .furnitureSide,
+                              roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint,
+                              furnitureMaterial: material))
         }
         return faces
     }
