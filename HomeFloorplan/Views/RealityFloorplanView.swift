@@ -46,6 +46,9 @@ struct RealityFloorplanView: UIViewRepresentable {
         let view = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
         view.renderOptions.insert(.disableMotionBlur)
         view.renderOptions.insert(.disableDepthOfField)
+        // Un diorama di intonaci opachi non ha alte luci da preservare:
+        // l'HDR qui e' solo banda GPU che scalda l'iPad.
+        view.renderOptions.insert(.disableHDR)
         view.environment.background = .color(background)
         let pan = UIPanGestureRecognizer(target: context.coordinator,
                                          action: #selector(Coordinator.panned(_:)))
@@ -137,6 +140,12 @@ struct RealityFloorplanView: UIViewRepresentable {
         /// verticale. Segue il giorno/notte del sole vero.
         private var skyDome: ModelEntity?
         private var skyIsDay: Bool?
+        /// Governatore termico: quando iOS dichiara `serious` si spegne la
+        /// voce GPU piu' cara (l'ombra del sole, che ridisegna la scena a
+        /// ogni frame) e si riaccende col fresco. La vista dashboard resta
+        /// aperta per ore: meglio perdere l'ombra che cuocere l'iPad.
+        private var thermalConstrained = ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+        private var thermalObserver: NSObjectProtocol?
         private let contentRoot = Entity()
         private let camera = PerspectiveCamera()
         /// Tre direzionali invece di una.
@@ -1111,6 +1120,21 @@ struct RealityFloorplanView: UIViewRepresentable {
             installSkyDome()
             view.scene.anchors.append(anchor)
 
+            thermalObserver = NotificationCenter.default.addObserver(
+                forName: ProcessInfo.thermalStateDidChangeNotification,
+                object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let constrained = ProcessInfo.processInfo.thermalState.rawValue
+                        >= ProcessInfo.ThermalState.serious.rawValue
+                    guard constrained != self.thermalConstrained else { return }
+                    self.thermalConstrained = constrained
+                    self.configureLights()
+                    dprint("🌡️ 3D thermal governor: ombre \(constrained ? "OFF" : "ON") (stato \(ProcessInfo.processInfo.thermalState.rawValue))")
+                }
+            }
+
             updateSceneIfNeeded(scene)
             builtLitRooms = nil
             rebuildLitWindows()
@@ -1177,7 +1201,7 @@ struct RealityFloorplanView: UIViewRepresentable {
             keyLight.light.color = isDay
                 ? sunColour(atElevation: sun.elevationDegrees)
                 : UIColor(red: 0.66, green: 0.76, blue: 1.0, alpha: 1)
-            keyLight.shadow = DirectionalLightComponent.Shadow(
+            keyLight.shadow = thermalConstrained ? nil : DirectionalLightComponent.Shadow(
                 maximumDistance: radius * 6,
                 depthBias: 1.8
             )
