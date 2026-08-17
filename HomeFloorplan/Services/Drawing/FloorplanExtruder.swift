@@ -1039,6 +1039,24 @@ enum FloorplanExtruder {
                        bottom: span.bottom, top: span.top, isParapet: isParapet)
         }
 
+        // La gonna del basamento anche sotto il muro: i pavimenti si fermano
+        // alla mezzeria, quindi la facciata sporgeva sul vuoto e il bordo
+        // della soletta sembrava «rotto» sotto ogni muro esterno. Stessa
+        // logica delle code di giunzione, cosi' gli spigoli compenetrano.
+        let slabDepth = 0.12
+        let slabA = start - axis * headOverhang
+        let slabB = end + axis * tailOverhang
+        let slabRing = [slabA + normal, slabB + normal, slabB - normal, slabA - normal]
+        for index in 0..<slabRing.count {
+            let next = (index + 1) % slabRing.count
+            faces.append(Face(points: [SIMD3(slabRing[index].x, slabRing[index].y, 0),
+                                       SIMD3(slabRing[next].x, slabRing[next].y, 0),
+                                       SIMD3(slabRing[next].x, slabRing[next].y, -slabDepth),
+                                       SIMD3(slabRing[index].x, slabRing[index].y, -slabDepth)],
+                              kind: .baseSlab,
+                              roomColorIndex: nil, roomID: nil, roomName: nil))
+        }
+
         // Gli infissi non sono più adesivi sulla mezzeria: li costruisce un
         // builder dedicato come solidi dentro lo spessore del muro. Un parapetto
         // di balcone non ne ha, quindi non lo si disturba.

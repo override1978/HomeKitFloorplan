@@ -333,7 +333,7 @@ enum FloorplanMaterialCatalog {
     /// appena più chiaro — deve staccare, non brillare. Bianco pieno rubava
     /// luce alla casa (giudizio dell'utente sui primi screenshot).
     static func plinthMaterial() -> any RealityKit.Material {
-        opaque(UIColor(red: 0.928, green: 0.918, blue: 0.900, alpha: 1), roughness: 0.9)
+        opaque(UIColor(red: 0.930, green: 0.915, blue: 0.885, alpha: 1), roughness: 0.9)
     }
 
     static func groundMaterial(background: UIColor) -> any RealityKit.Material {

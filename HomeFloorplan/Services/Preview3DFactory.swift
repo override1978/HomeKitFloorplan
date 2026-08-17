@@ -118,6 +118,6 @@ enum Preview3DFactory {
         if floorplan.drawingVisualExportStyleRaw == DrawingVisualExportStyle.architecturalDark.rawValue {
             return UIColor(red: 0.108, green: 0.114, blue: 0.126, alpha: 1)
         }
-        return UIColor(red: 0.852, green: 0.842, blue: 0.822, alpha: 1)
+        return UIColor(red: 0.864, green: 0.846, blue: 0.812, alpha: 1)
     }
 }

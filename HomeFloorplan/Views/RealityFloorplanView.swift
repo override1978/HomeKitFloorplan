@@ -1159,14 +1159,17 @@ struct RealityFloorplanView: UIViewRepresentable {
             // vernici, non luce e ombra. Un residuo di freddo resta (l'ombra
             // vera e' piu' fredda della luce), ma la forbice si stringe.
             fillLight.light.intensity = isDay ? 420 : 110
-            fillLight.light.color = UIColor(red: 0.93, green: 0.95, blue: 1.0, alpha: 1)
+            // Spostato di un passo verso il caldo («la nostra sembra fredda
+            // e sterile» vs i diorami concorrenti): resta comunque piu'
+            // freddo del key, cosi' luce e ombra restano luce e ombra.
+            fillLight.light.color = UIColor(red: 0.965, green: 0.952, blue: 0.930, alpha: 1)
             fillLight.shadow = nil
             fillLight.look(at: .zero,
                            from: SIMD3(radius * 2.6, radius * 1.4, -radius * 2.2),
                            relativeTo: nil)
 
             rimLight.light.intensity = isDay ? 160 : 60
-            rimLight.light.color = UIColor(white: 1, alpha: 1)
+            rimLight.light.color = UIColor(red: 1.0, green: 0.97, blue: 0.93, alpha: 1)
             rimLight.shadow = nil
             rimLight.look(at: .zero,
                           from: SIMD3(radius * 0.4, radius * 0.5, radius * 3.0),
