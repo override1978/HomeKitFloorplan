@@ -189,7 +189,8 @@ enum FloorplanExtruder {
         // spigoli dove nella realtà non si inciampa.
         if kind == .rug {
             return [Face(points: corners(of: item, at: 0.002), kind: .furnitureTop,
-                         roomColorIndex: nil, roomID: nil, roomName: nil, tint: tint,
+                         roomColorIndex: nil, roomID: nil, roomName: nil,
+                         tint: tint ?? rugWeave,
                          furnitureMaterial: .fabric)]
         }
 
@@ -240,6 +241,17 @@ enum FloorplanExtruder {
     private static let foliageDark = CGColor(red: 0.23, green: 0.36, blue: 0.22, alpha: 1)
     private static let foliageMid = CGColor(red: 0.30, green: 0.44, blue: 0.25, alpha: 1)
     private static let foliageLight = CGColor(red: 0.41, green: 0.53, blue: 0.30, alpha: 1)
+    /// La tavolozza dei default per tipo, dove l'utente non ha scelto una
+    /// tinta: famiglie DIVERSE — salvia sugli imbottiti, tortora sulle sedie,
+    /// rovere e noce sui legni, cotto sui tappeti, ottanio sul plaid. Prima
+    /// tutto ricadeva su un unico beige e la casa convergeva sul monocolore.
+    private static let sofaFabric = CGColor(red: 0.55, green: 0.59, blue: 0.53, alpha: 1)
+    private static let chairFabric = CGColor(red: 0.60, green: 0.55, blue: 0.48, alpha: 1)
+    private static let wardrobeWood = CGColor(red: 0.76, green: 0.66, blue: 0.53, alpha: 1)
+    private static let walnutWood = CGColor(red: 0.45, green: 0.35, blue: 0.27, alpha: 1)
+    private static let cabinetCream = CGColor(red: 0.88, green: 0.86, blue: 0.81, alpha: 1)
+    private static let rugWeave = CGColor(red: 0.58, green: 0.38, blue: 0.32, alpha: 1)
+    private static let blanketAccent = CGColor(red: 0.38, green: 0.48, blue: 0.52, alpha: 1)
 
     /// Il mobile per **membra**, non per cassa: un tavolo è un piano più
     /// quattro gambe, un divano una seduta fra due braccioli. Sono i volumi che
@@ -255,6 +267,7 @@ enum FloorplanExtruder {
             return slab(item, from: top - 0.05, to: top, tint: woodTop, material: .wood)
                 + legs(item, to: top - 0.05, side: 0.055, inset: 0.06, tint: woodDark, material: .wood)
         case .chair:
+            let seatFabric = tint ?? chairFabric
             let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
             let seatHalf = SIMD2(max(0.12, half.x * 0.82), max(0.12, half.y * 0.78))
             let backDepth = min(0.09, half.y * 0.28)
@@ -262,15 +275,16 @@ enum FloorplanExtruder {
                              tint: woodDark, material: .wood)
             faces += subBox(item, centreOffset: SIMD2(0, half.y * 0.06),
                             half: seatHalf, from: 0.39, to: 0.49,
-                            tint: soft, material: .fabric)
+                            tint: seatFabric, material: .fabric)
             faces += subBox(item, centreOffset: SIMD2(0, -half.y + backDepth / 2),
                             half: SIMD2(max(0.10, half.x * 0.72), backDepth / 2),
-                            from: 0.48, to: 0.92, tint: soft, material: .fabric)
+                            from: 0.48, to: 0.92, tint: seatFabric, material: .fabric)
             faces += subBox(item, centreOffset: SIMD2(0, -half.y + backDepth / 2),
                             half: SIMD2(max(0.09, half.x * 0.64), backDepth / 2),
                             from: 0.92, to: 0.98, tint: linenLight, material: .fabric)
             return faces
         case .sofa, .armchair:
+            let upholstery = tint ?? sofaFabric
             let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
             let seatHalf = SIMD2(max(0.18, half.x * 0.84), max(0.16, half.y * 0.74))
             let backDepth = min(0.16, half.y * 0.30)
@@ -279,17 +293,17 @@ enum FloorplanExtruder {
                              tint: woodDark, material: .wood)
             faces += subBox(item, centreOffset: SIMD2(0, half.y * 0.06),
                             half: seatHalf, from: 0.16, to: 0.43,
-                            tint: soft, material: .fabric)
+                            tint: upholstery, material: .fabric)
             faces += subBox(item, centreOffset: SIMD2(0, -half.y + backDepth / 2),
                             half: SIMD2(max(0.16, half.x * 0.88), backDepth / 2),
-                            from: 0.34, to: 0.82, tint: soft, material: .fabric)
+                            from: 0.34, to: 0.82, tint: upholstery, material: .fabric)
             // Braccioli: piu' stretti e staccati dalla cassa, cosi' non sembrano
             // due muri pieni attaccati a un blocco.
             for side in [-1.0, 1.0] {
                 faces += subBox(item,
                                 centreOffset: SIMD2(side * (half.x - armWidth / 2), 0),
                                 half: SIMD2(armWidth / 2, max(0.14, half.y * 0.72)),
-                                from: 0.24, to: 0.62, tint: soft, material: .fabric)
+                                from: 0.24, to: 0.62, tint: upholstery, material: .fabric)
             }
             if kind == .sofa {
                 let cushionCount = max(2, min(3, Int((half.x * 2 / 0.65).rounded())))
@@ -309,13 +323,14 @@ enum FloorplanExtruder {
             // Le **colonne con le fughe** sono cio' che fa dire «armadio»
             // invece di «monolite»: le ante non serve disegnarle, bastano le
             // ombre nelle fessure.
-            return columns(item, to: height(of: kind), moduleWidth: 0.55, tint: soft)
+            return columns(item, to: height(of: kind), moduleWidth: 0.55,
+                           tint: tint ?? wardrobeWood, material: .wood)
         case .bookcase:
             return bookcaseFaces(item, tint: tint ?? woodTop)
         case .kitchenCounter:
             // Basi a moduli sotto un top in pietra che corre intero: e' la
             // grammatica di qualunque cucina componibile.
-            return columns(item, to: 0.85, moduleWidth: 0.60, tint: soft)
+            return columns(item, to: 0.85, moduleWidth: 0.60, tint: tint ?? cabinetCream)
                 + slab(item, from: 0.85, to: 0.90, tint: stoneTop, material: .stone)
         case .tvUnit:
             // Il mobile basso e **la TV nera sopra**, contro il lato muro: lo
@@ -337,7 +352,8 @@ enum FloorplanExtruder {
                 simd_distance($0, tvCentre) < 1.5
             }
             let tvHalf = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
-            let cabinet = boxFaces(item, from: 0, to: 0.45, tint: soft)
+            let cabinet = boxFaces(item, from: 0, to: 0.45,
+                                   tint: tint ?? walnutWood, material: .wood)
             guard !hasRealTV else { return cabinet }
             return cabinet
                 + subBox(item,
@@ -421,13 +437,19 @@ enum FloorplanExtruder {
                                   material: .wood)
             }
             let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+            // Il plaid ai piedi: la pennellata di colore che nei diorami fa
+            // dire «letto rifatto» — copre l'ultimo terzo del materasso.
+            faces += subBox(item, centreOffset: SIMD2(0, half.y * 0.56),
+                            half: SIMD2(half.x * 0.97, half.y * 0.36),
+                            from: 0.50, to: 0.535,
+                            tint: tint ?? blanketAccent, material: .fabric)
             let pillowHalf = SIMD2(min(0.24, half.x * 0.34), 0.15)
             for side in [-1.0, 1.0] {
                 faces += subBox(item,
                                 centreOffset: SIMD2(side * half.x * 0.45,
                                                     -half.y + 0.12 + pillowHalf.y),
                                 half: pillowHalf,
-                                from: 0.50, to: 0.61, tint: soft, material: .fabric)
+                                from: 0.50, to: 0.61, tint: linenLight, material: .fabric)
             }
             return faces
         default:
