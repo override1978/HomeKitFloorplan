@@ -1296,17 +1296,10 @@ private extension CloudKitSyncService {
             dprint("[CloudKitSync] ⚠️ \(conflictFailures.count) conflict(s) — re-queued with server etag")
         }
 
-        let otherFailures = e.failedRecordSaves.filter {
-            $0.error.code != .zoneNotFound && $0.error.code != .serverRecordChanged
-        }
-        if !otherFailures.isEmpty {
-            lastError = otherFailures.first?.error
-            for f in otherFailures {
-                dprint("[CloudKitSync] ❌ \(f.record.recordID.recordName): \(f.error)")
-            }
-            return
-        }
-        // Mark successfully uploaded threshold records as synced so they're not re-queued next launch.
+        // Prima i salvati, POI i falliti: un record rifiutato non deve
+        // impedire di marcare come sincronizzati i compagni di lotto andati
+        // a buon fine — era il difetto che ri-accodava all'infinito record
+        // già su CloudKit e nascondeva il rifiuto dal log esportabile.
         if !e.savedRecords.isEmpty {
             for record in e.savedRecords {
                 descriptor(for: record.recordID)?.markSavedRecord(record)
@@ -1314,6 +1307,38 @@ private extension CloudKitSyncService {
             let savedRecordNames = Set(e.savedRecords.map(\.recordID.recordName))
             serverEtagPreflightRecordNames.subtract(savedRecordNames)
         }
+
+        let otherFailures = e.failedRecordSaves.filter {
+            $0.error.code != .zoneNotFound && $0.error.code != .serverRecordChanged
+        }
+        if !otherFailures.isEmpty {
+            lastError = otherFailures.first?.error
+            // Un errore permanente non passa mai per ritentativi: il record
+            // esce dalla coda (resta needsSync in locale, un futuro scan può
+            // ri-accodarlo). Tutto il resto lo ritenta l'engine.
+            let permanentCodes: Set<CKError.Code> = [
+                .invalidArguments, .serverRejectedRequest, .permissionFailure,
+                .limitExceeded, .constraintViolation, .referenceViolation,
+                .incompatibleVersion
+            ]
+            var permanentlyFailed: [CKSyncEngine.PendingRecordZoneChange] = []
+            for f in otherFailures {
+                let isPermanent = permanentCodes.contains(f.error.code)
+                if isPermanent { permanentlyFailed.append(.saveRecord(f.record.recordID)) }
+                SyncDiagnosticsLogger.log("Record save FAILED name=\(f.record.recordID.recordName) type=\(f.record.recordType) code=\(f.error.code.rawValue) permanent=\(isPermanent) error=\(f.error.localizedDescription)")
+                dprint("[CloudKitSync] ❌ \(f.record.recordID.recordName): \(f.error)")
+            }
+            if !permanentlyFailed.isEmpty {
+                syncEngine.state.remove(pendingRecordZoneChanges: permanentlyFailed)
+                SyncDiagnosticsLogger.log("Dropped \(permanentlyFailed.count) permanently failed record(s) from the queue")
+                dprint("[CloudKitSync] ⚠️ \(permanentlyFailed.count) record(s) con errore permanente tolti dalla coda")
+            }
+        }
+
+        // «Completato» solo se qualcosa è davvero passato (o non c'era
+        // niente da contestare): un lotto interamente rifiutato non deve
+        // far avanzare lastSyncedAt.
+        guard !e.savedRecords.isEmpty || otherFailures.isEmpty else { return }
         markSyncCompleted()
         let savedTypes = Dictionary(grouping: e.savedRecords.map(\.recordType), by: { $0 })
             .mapValues(\.count)
