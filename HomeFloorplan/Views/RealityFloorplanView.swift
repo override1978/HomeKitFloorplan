@@ -139,7 +139,7 @@ struct RealityFloorplanView: UIViewRepresentable {
         /// La cupola del cielo: sfera unlit vista da dentro, gradiente
         /// verticale. Segue il giorno/notte del sole vero.
         private var skyDome: ModelEntity?
-        private var skyIsDay: Bool?
+        private var skyPhase: FloorplanMaterialCatalog.SkyPhase?
         /// Governatore termico: quando iOS dichiara `serious` si spegne la
         /// voce GPU piu' cara (l'ombra del sole, che ridisegna la scena a
         /// ogni frame) e si riaccende col fresco. La vista dashboard resta
@@ -1147,15 +1147,16 @@ struct RealityFloorplanView: UIViewRepresentable {
 
         private func installSkyDome() {
             let radius = max(scene.bounds.radius, 1) * 40
+            let phase = FloorplanMaterialCatalog.SkyPhase.forSunElevation(sun.elevationDegrees)
             let dome = ModelEntity(mesh: .generateSphere(radius: radius),
-                                   materials: [FloorplanMaterialCatalog.skyBackdropMaterial(isDay: sun.isAboveHorizon)])
-            skyIsDay = sun.isAboveHorizon
+                                   materials: [FloorplanMaterialCatalog.skyBackdropMaterial(phase: phase)])
+            skyPhase = phase
             skyDome = dome
             anchor.addChild(dome)
         }
 
         private func updateSkyDome() {
-            guard skyIsDay != sun.isAboveHorizon else { return }
+            guard skyPhase != FloorplanMaterialCatalog.SkyPhase.forSunElevation(sun.elevationDegrees) else { return }
             applyStageAtmosphere()
         }
 
@@ -1163,11 +1164,11 @@ struct RealityFloorplanView: UIViewRepresentable {
         /// stona (il terreno chiaro sotto il cielo notturno era una banda
         /// buia appoggiata su un prato da mezzogiorno).
         private func applyStageAtmosphere() {
-            let isDay = sun.isAboveHorizon
-            skyIsDay = isDay
-            skyDome?.model?.materials = [FloorplanMaterialCatalog.skyBackdropMaterial(isDay: isDay)]
+            let phase = FloorplanMaterialCatalog.SkyPhase.forSunElevation(sun.elevationDegrees)
+            skyPhase = phase
+            skyDome?.model?.materials = [FloorplanMaterialCatalog.skyBackdropMaterial(phase: phase)]
             if let ground = contentRoot.findEntity(named: "stage-ground") as? ModelEntity {
-                ground.model?.materials = [FloorplanMaterialCatalog.stageGroundMaterial(isDay: isDay,
+                ground.model?.materials = [FloorplanMaterialCatalog.stageGroundMaterial(phase: phase,
                                                                                        background: background)]
             }
         }

@@ -340,17 +340,32 @@ enum FloorplanMaterialCatalog {
         opaque(UIColor(red: 0.930, green: 0.915, blue: 0.885, alpha: 1), roughness: 0.9)
     }
 
-    /// Il cielo del diorama: gradiente verticale su una sfera unlit vista
-    /// da dentro. Di giorno zenit azzurro polvere appena accennato che scende
-    /// su un orizzonte crema (aggancia il terreno); di notte blu profondo.
-    /// Un fondale piatto non ha orizzonte: e' questo che lo faceva sterile.
-    static func skyBackdropMaterial(isDay: Bool) -> UnlitMaterial {
+    /// I tre atti del cielo, decisi dall'elevazione VERA del sole: giorno
+    /// azzurro, crepuscolo d'oro e malva (alba e tramonto), notte blu con le
+    /// stelle. Il fondale piatto era corretto ma non raccontava niente —
+    /// questo racconta l'ora di casa tua.
+    enum SkyPhase {
+        case day
+        case twilight
+        case night
+
+        static func forSunElevation(_ degrees: Double) -> SkyPhase {
+            if degrees < -8 { return .night }
+            if degrees < 10 { return .twilight }
+            return .day
+        }
+    }
+
+    static func skyBackdropMaterial(phase: SkyPhase) -> UnlitMaterial {
         var material = UnlitMaterial(color: .white)
         material.faceCulling = .front
-        guard let texture = isDay ? daySkyTexture : nightSkyTexture else {
-            material.color = .init(tint: isDay
-                ? UIColor(red: 0.87, green: 0.86, blue: 0.83, alpha: 1)
-                : UIColor(red: 0.10, green: 0.12, blue: 0.19, alpha: 1))
+        let texture: TextureResource? = switch phase {
+        case .day: daySkyTexture
+        case .twilight: twilightSkyTexture
+        case .night: nightSkyTexture
+        }
+        guard let texture else {
+            material.color = .init(tint: UIColor(red: 0.87, green: 0.86, blue: 0.83, alpha: 1))
             return material
         }
         material.color = .init(tint: .white, texture: .init(texture, sampler: clampSampler))
@@ -358,21 +373,32 @@ enum FloorplanMaterialCatalog {
     }
 
     private static let daySkyTexture: TextureResource? = skyGradientTexture(colors: [
-        UIColor(red: 0.74, green: 0.80, blue: 0.86, alpha: 1),   // zenit: azzurro polvere
-        UIColor(red: 0.86, green: 0.87, blue: 0.88, alpha: 1),
-        UIColor(red: 0.90, green: 0.87, blue: 0.82, alpha: 1),   // orizzonte: crema caldo
+        UIColor(red: 0.60, green: 0.72, blue: 0.85, alpha: 1),   // zenit: azzurro vero
+        UIColor(red: 0.78, green: 0.84, blue: 0.89, alpha: 1),
+        UIColor(red: 0.91, green: 0.89, blue: 0.84, alpha: 1),   // orizzonte: crema caldo
         UIColor(red: 0.88, green: 0.85, blue: 0.80, alpha: 1)    // sotto l'orizzonte
-    ], locations: [0, 0.42, 0.55, 1])
+    ], locations: [0, 0.38, 0.54, 1])
+
+    /// Alba e tramonto: zenit blu serale, malva, poi la fascia d'oro
+    /// sull'orizzonte — la mezz'ora piu' emotiva della giornata.
+    private static let twilightSkyTexture: TextureResource? = skyGradientTexture(colors: [
+        UIColor(red: 0.30, green: 0.34, blue: 0.52, alpha: 1),
+        UIColor(red: 0.55, green: 0.46, blue: 0.55, alpha: 1),
+        UIColor(red: 0.89, green: 0.64, blue: 0.44, alpha: 1),
+        UIColor(red: 0.96, green: 0.78, blue: 0.55, alpha: 1),   // oro all'orizzonte
+        UIColor(red: 0.52, green: 0.42, blue: 0.38, alpha: 1)
+    ], locations: [0, 0.30, 0.48, 0.54, 1])
 
     private static let nightSkyTexture: TextureResource? = skyGradientTexture(colors: [
-        UIColor(red: 0.05, green: 0.07, blue: 0.14, alpha: 1),   // zenit notturno
+        UIColor(red: 0.05, green: 0.07, blue: 0.14, alpha: 1),
         UIColor(red: 0.10, green: 0.12, blue: 0.20, alpha: 1),
-        UIColor(red: 0.17, green: 0.18, blue: 0.24, alpha: 1),   // orizzonte
+        UIColor(red: 0.17, green: 0.18, blue: 0.24, alpha: 1),
         UIColor(red: 0.12, green: 0.13, blue: 0.17, alpha: 1)
-    ], locations: [0, 0.40, 0.55, 1])
+    ], locations: [0, 0.40, 0.55, 1], stars: true)
 
-    private static func skyGradientTexture(colors: [UIColor], locations: [CGFloat]) -> TextureResource? {
-        let size = CGSize(width: 8, height: 512)
+    private static func skyGradientTexture(colors: [UIColor], locations: [CGFloat],
+                                           stars: Bool = false) -> TextureResource? {
+        let size = CGSize(width: 256, height: 512)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
@@ -384,20 +410,42 @@ enum FloorplanMaterialCatalog {
                                                  start: .zero,
                                                  end: CGPoint(x: 0, y: size.height),
                                                  options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+            guard stars else { return }
+            // Stelle deterministiche nel terzo alto del cielo: puntini,
+            // qualcuno appena piu' vivo. Un cielo notturno senza stelle e'
+            // solo un colore scuro.
+            var seed: UInt64 = 0x5DEECE66D
+            func roll() -> Double {
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                return Double((seed >> 33) & 0xFFFFFF) / Double(0xFFFFFF)
+            }
+            for _ in 0..<130 {
+                let x = roll() * size.width
+                let y = roll() * size.height * 0.42
+                let radius = 0.5 + roll() * 0.9
+                let alpha = 0.35 + roll() * 0.55
+                context.cgContext.setFillColor(UIColor(white: 1, alpha: alpha).cgColor)
+                context.cgContext.fillEllipse(in: CGRect(x: x, y: y,
+                                                         width: radius * 2, height: radius * 2))
+            }
         }
         guard let cgImage = image.cgImage else { return nil }
         return try? TextureResource(image: cgImage, withName: nil,
                                     options: .init(semantic: .color))
     }
 
-    /// Il terreno del palco secondo l'ora: di giorno il greige derivato dal
-    /// fondale, di notte un blu-grigio scuro nella famiglia del cielo
-    /// notturno — cosi' cupola e terreno si fondono all'orizzonte invece di
-    /// staccarsi in una banda buia.
-    static func stageGroundMaterial(isDay: Bool, background: UIColor) -> any RealityKit.Material {
-        isDay
-            ? groundMaterial(background: background)
-            : groundMaterial(background: UIColor(red: 0.155, green: 0.165, blue: 0.215, alpha: 1))
+    /// Il terreno del palco segue il cielo: greige di giorno, terra brunita
+    /// al crepuscolo, blu-grigio scuro di notte — cupola e terreno si
+    /// fondono all'orizzonte invece di staccarsi in una banda.
+    static func stageGroundMaterial(phase: SkyPhase, background: UIColor) -> any RealityKit.Material {
+        switch phase {
+        case .day:
+            return groundMaterial(background: background)
+        case .twilight:
+            return groundMaterial(background: UIColor(red: 0.48, green: 0.41, blue: 0.37, alpha: 1))
+        case .night:
+            return groundMaterial(background: UIColor(red: 0.155, green: 0.165, blue: 0.215, alpha: 1))
+        }
     }
 
     static func groundMaterial(background: UIColor) -> any RealityKit.Material {
