@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "drawing.furniture.lowCabinet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low cabinet"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mobile basso"
+          }
+        }
+      }
+    },
     "energy.autoImport.toast" : {
       "localizations" : {
         "en" : {

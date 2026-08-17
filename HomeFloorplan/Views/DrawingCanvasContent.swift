@@ -1044,7 +1044,7 @@ private func drawFurnitureShape(_ item: FurnitureItem, context: inout GraphicsCo
                                             width: poleR * 2, height: poleR * 2)),
                      with: .color(stroke.opacity(0.7)))
 
-    case .generic:
+    case .generic, .lowCabinet:
         context.fill(rounded(rect, radius: 4), with: .color(fill))
         context.stroke(rounded(rect, radius: 4), with: .color(stroke), style: style)
     }

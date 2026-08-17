@@ -640,7 +640,7 @@ private func furnitureShadowPath(_ item: FurnitureItem) -> UIBezierPath {
         let r = side * 0.48
         path = UIBezierPath(ovalIn: CGRect(x: rect.midX - r, y: rect.midY - r,
                                            width: r * 2, height: r * 2))
-    case .generic:
+    case .generic, .lowCabinet:
         path = rounded(rect, 4)
     }
     let rotation = CGAffineTransform(translationX: rect.midX, y: rect.midY)
@@ -760,7 +760,7 @@ private func darkFurnitureProminence(for kind: FurnitureKind) -> (fillAlpha: CGF
         return (0.30, 0.46, 0.20, 0.38, 0.26, 0.8, 0.06, false)
     case .toilet, .sink, .inductionCooktop, .washingMachine, .shower, .kitchenSink:
         return (0.36, 0.58, 0.24, 0.42, 0.30, 0.9, 0.10, false)
-    case .generic:
+    case .generic, .lowCabinet:
         return (0.38, 0.56, 0.24, 0.42, 0.30, 0.9, 0.10, false)
     }
 }
@@ -1739,7 +1739,7 @@ private func drawFurnitureBlueprintCG(_ item: FurnitureItem,
         UIBezierPath(ovalIn: CGRect(x: center.x - poleR, y: center.y - poleR,
                                     width: poleR * 2, height: poleR * 2)).fill()
 
-    case .generic:
+    case .generic, .lowCabinet:
         fillStroke(rounded(rect, radius: 4))
     }
 }

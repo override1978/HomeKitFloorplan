@@ -264,14 +264,14 @@ enum FloorplanExtruder {
                                     televisionSpots: [SIMD2<Double>] = []) -> [Face] {
         let soft = tint ?? fabricSoft
         switch kind {
-        case .diningTable:
+        case .diningTable, .generic:
             let top = height(of: kind)
             return slab(item, from: top - 0.05, to: top, tint: woodTop, material: .wood)
                 + legs(item, to: top - 0.05, side: 0.055, inset: 0.06, tint: woodDark, material: .wood)
-        case .generic:
-            // Il tuttofare basso: corpo PIENO con top in legno — isola
-            // attrezzata, madia, mobile qualsiasi. Le gambe da tavolo erano
-            // una bugia: promettevano vuoto dove c'e' un mobile.
+        case .lowCabinet:
+            // Il mobile basso a corpo pieno con top in legno: isola
+            // attrezzata, madia, credenza — un tipo suo, senza requisire il
+            // «generico» che resta un tavolo.
             return boxFaces(item, from: 0, to: 0.70, tint: tint ?? cabinetCream)
                 + slab(item, from: 0.70, to: 0.75, tint: woodTop, material: .wood)
         case .chair:
@@ -526,15 +526,12 @@ enum FloorplanExtruder {
                             tint: frame, material: .wood)
         }
 
-        // I libri: NON a rotazione ciclica — quella produceva una scacchiera
-        // perfetta, e nessuna libreria vera e' una scacchiera. Un generatore
-        // deterministico (stesso mobile = stessa libreria, niente flicker fra
-        // ricostruzioni) decide buco/colore/altezza: dominano i dorsi neutri,
-        // gli accenti sono rari, e un quinto degli slot resta vuoto.
-        let moduleCount = max(3, min(8, Int((half.x * 2 / 0.19).rounded())))
-        let bookWidth = (half.x * 1.72) / Double(moduleCount)
-        // Seme dai byte dell'UUID, NON da hashValue: quello e' randomizzato
-        // per processo e la libreria si rimescolerebbe a ogni avvio.
+        // I libri: dorsi SNELLI in gruppi contigui, appoggiati SUI ripiani —
+        // le quote di riga arbitrarie li lasciavano fluttuare a mezz'aria fra
+        // un ripiano e l'altro, ed era meta' della stranezza. Generatore
+        // deterministico dai byte dell'UUID (hashValue e' randomizzato per
+        // processo e rimescolerebbe la libreria a ogni avvio): neutri
+        // dominanti, accenti rari, vuoti fra i gruppi.
         let uuid = item.id.uuid
         var seed = UInt64(uuid.0) | UInt64(uuid.1) << 8 | UInt64(uuid.2) << 16
             | UInt64(uuid.3) << 24 | UInt64(uuid.4) << 32 | UInt64(uuid.5) << 40
@@ -546,24 +543,32 @@ enum FloorplanExtruder {
         }
         let neutrals = [bookParchment, bookBrown, linenLight]
         let accents = [bookRed, bookBlue, bookGreen]
+        let innerLeft = -half.x + side + 0.02
+        let innerRight = half.x - side - 0.02
+        let gapHeight = (top - shelfThickness) / Double(shelfCount) - shelfThickness
+        let bookDepth = min(0.025, half.y * 0.24)
+        let bookRow = -half.y + min(0.09, half.y * 0.55)
         for row in 0..<shelfCount {
-            let bottom = 0.12 + Double(row) * ((top - 0.25) / Double(shelfCount))
-            let rowHeight = min(0.28, (top / Double(shelfCount)) * 0.58)
-            for column in 0..<moduleCount {
-                let slot = roll()
-                if slot < 0.20 { continue }   // il respiro degli scaffali veri
-                let colorRoll = roll()
-                let color = colorRoll < 0.68
+            let shelfZ = Double(row) / Double(shelfCount) * (top - shelfThickness)
+            let bottom = shelfZ + shelfThickness
+            var x = innerLeft
+            while x < innerRight - 0.03 {
+                if roll() < 0.14 {
+                    x += 0.06 + roll() * 0.18   // il vuoto fra un gruppo e l'altro
+                    continue
+                }
+                let spine = 0.022 + roll() * 0.030
+                guard x + spine <= innerRight else { break }
+                let color = roll() < 0.72
                     ? neutrals[Int(roll() * 2.999)]
                     : accents[Int(roll() * 2.999)]
-                let bookHeight = rowHeight * (0.72 + roll() * 0.28)
-                let x = -half.x * 0.86 + bookWidth / 2 + Double(column) * bookWidth
+                let bookHeight = gapHeight * (0.52 + roll() * 0.30)
                 faces += subBox(item,
-                                centreOffset: SIMD2(x, -half.y + min(0.09, half.y * 0.55)),
-                                half: SIMD2(bookWidth * (0.28 + roll() * 0.10),
-                                            min(0.025, half.y * 0.24)),
+                                centreOffset: SIMD2(x + spine / 2, bookRow),
+                                half: SIMD2(spine / 2, bookDepth),
                                 from: bottom, to: bottom + bookHeight,
                                 tint: color, material: .plain)
+                x += spine + 0.004
             }
         }
 
@@ -793,6 +798,7 @@ enum FloorplanExtruder {
         case .kitchenCounter:       0.90
         case .tvUnit:               0.45
         case .plant:                0.70
+        case .lowCabinet:           0.75
         case .stairs:               0.60
         case .spiralStairs:         2.20
         case .tree:                 2.20

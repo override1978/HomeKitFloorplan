@@ -378,6 +378,9 @@ struct RoomArea: Identifiable, Equatable, Codable {
 
 enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     case generic
+    /// Mobile basso pieno: isola attrezzata, madia, credenza. Nato perche'
+    /// il «generico» resti un tavolo e i mobili a corpo abbiano il loro tipo.
+    case lowCabinet
     case sofa
     case armchair
     case diningTable
@@ -407,6 +410,8 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .generic:
             return String(localized: "drawing.furniture.generic", defaultValue: "Furniture")
+        case .lowCabinet:
+            return String(localized: "drawing.furniture.lowCabinet", defaultValue: "Low cabinet")
         case .sofa:
             return String(localized: "drawing.furniture.sofa", defaultValue: "Sofa")
         case .armchair:
@@ -457,6 +462,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .generic: return "square.grid.2x2"
+        case .lowCabinet: return "archivebox.fill"
         case .sofa: return "sofa.fill"
         case .armchair: return "chair.lounge.fill"
         case .diningTable: return "table.furniture.fill"
@@ -486,7 +492,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     /// Fixtures, appliances, stairs and plants stay neutral by design.
     var supportsTint: Bool {
         switch self {
-        case .generic, .sofa, .armchair, .diningTable, .chair, .bed,
+        case .generic, .lowCabinet, .sofa, .armchair, .diningTable, .chair, .bed,
              .wardrobe, .bookcase, .kitchenCounter, .tvUnit, .rug:
             return true
         case .toilet, .sink, .inductionCooktop, .washingMachine,
@@ -499,6 +505,7 @@ enum FurnitureKind: String, Codable, CaseIterable, Identifiable {
     var defaultSize: CGSize {
         switch self {
         case .generic: return CGSize(width: 80, height: 60)
+        case .lowCabinet: return CGSize(width: 120, height: 55)
         case .sofa: return CGSize(width: 140, height: 70)
         case .armchair: return CGSize(width: 70, height: 70)
         case .diningTable: return CGSize(width: 110, height: 80)
