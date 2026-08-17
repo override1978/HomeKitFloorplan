@@ -327,6 +327,13 @@ enum FloorplanMaterialCatalog {
     /// 2D, perche' e' una scelta dell'utente: cambia che ora ha un centro
     /// chiaro sotto la casa e si spegne verso il bordo, che e' esattamente cio'
     /// che fa un orizzonte.
+    /// Il plinto del diorama: bianco caldo opaco, come i basamenti dei
+    /// render di studio — abbastanza chiaro da staccare dal fondale,
+    /// abbastanza spento da non rubare luce alla casa.
+    static func plinthMaterial() -> any RealityKit.Material {
+        opaque(UIColor(red: 0.962, green: 0.955, blue: 0.942, alpha: 1), roughness: 0.88)
+    }
+
     static func groundMaterial(background: UIColor) -> any RealityKit.Material {
         guard let image = groundGradientImage(background),
               let texture = try? TextureResource(image: image, withName: nil,

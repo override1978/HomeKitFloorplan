@@ -109,17 +109,15 @@ enum Preview3DFactory {
         )
     }
 
-    /// Lo sfondo della 3D è quello scelto nell'editor 2D, con la stessa regola
-    /// dell'export: lo stile scuro vince, poi la tinta esterna, poi il bianco.
-    /// La stessa casa non può avere due fondali a seconda di come la guardi.
+    /// La 3D è un diorama su un palco da studio: fondale neutro caldo che fa
+    /// risaltare la casa invece di competerci (il prato saturo la faceva
+    /// giocattolo). La tinta esterna scelta nel 2D resta un fatto del disegno
+    /// e dell'export — il 3D ha la sua scenografia. Lo stile scuro resta un
+    /// palco scuro.
     static func background(for floorplan: Floorplan) -> UIColor {
         if floorplan.drawingVisualExportStyleRaw == DrawingVisualExportStyle.architecturalDark.rawValue {
-            return DrawingVisualExportStyle.architecturalDarkBackgroundUIColor
+            return UIColor(red: 0.108, green: 0.114, blue: 0.126, alpha: 1)
         }
-        if floorplan.exteriorFillColorIndex >= 0,
-           let palette = ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex) {
-            return UIColor(cgColor: palette.cgColor)
-        }
-        return .white
+        return UIColor(red: 0.906, green: 0.894, blue: 0.872, alpha: 1)
     }
 }
