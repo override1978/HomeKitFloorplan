@@ -76,6 +76,8 @@ enum FloorplanSceneBuilder {
         switch kind {
         case .floor:
             return .floor
+        case .baseSlab:
+            return .baseSlab
         case .wallSide:
             return .wall
         case .wallTop:

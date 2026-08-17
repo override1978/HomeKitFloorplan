@@ -8,6 +8,8 @@ enum FloorplanMaterialCatalog {
     static func material(for role: FloorplanScene.MeshFace.MaterialRole,
                          floorKind: FloorKind? = nil) -> any RealityKit.Material {
         switch role {
+        case .baseSlab:
+            return plinthMaterial()
         case .floor:
             return baseFloorMaterial(for: floorKind)
         case .wall:

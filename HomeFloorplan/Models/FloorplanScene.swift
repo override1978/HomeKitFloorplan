@@ -16,6 +16,9 @@ enum FurnitureMaterialStyle: Hashable {
 struct FloorplanScene {
     struct MeshFace {
         enum MaterialRole: Hashable {
+            /// La gonna del basamento: l'impronta VERA della casa estrusa in
+            /// giu' — il plinto ritagliato sulla forma, non il bounding box.
+            case baseSlab
             case floor
             case wall
             case wallTop

@@ -39,6 +39,8 @@ enum FloorplanExtruder {
     struct Face {
         enum Kind {
             case floor
+            /// La gonna del basamento sotto un pavimento.
+            case baseSlab
             /// Faccia verticale di un muro.
             case wallSide
             /// Faccia superiore: prende più luce, ed è ciò che dà il volume.
@@ -157,13 +159,31 @@ enum FloorplanExtruder {
         }()
         // Un poligono qualsiasi resta una faccia sola: il disegno lo riempie
         // come cammino chiuso, senza bisogno di triangolarlo.
-        return [Face(points: outline.map { SIMD3(metres($0.x), metres($0.y), 0) },
-                     kind: .floor,
-                     roomColorIndex: area.colorIndex,
-                     roomID: area.id,
-                     roomName: area.name,
-                     floorKind: area.floorKind,
-                     tint: nil)]
+        var faces = [Face(points: outline.map { SIMD3(metres($0.x), metres($0.y), 0) },
+                          kind: .floor,
+                          roomColorIndex: area.colorIndex,
+                          roomID: area.id,
+                          roomName: area.name,
+                          floorKind: area.floorKind,
+                          tint: nil)]
+        // La gonna del basamento: il perimetro del pavimento estruso in giu'.
+        // Sommata su tutte le stanze disegna il plinto ritagliato sull'impronta
+        // VERA della casa — il box rettangolare lasciava un vassoio vuoto
+        // davanti alle piante a L. Le pareti interne coincidenti restano
+        // sepolte dentro il volume: non si vedono mai.
+        let slabDepth = 0.12
+        for index in 0..<outline.count {
+            let next = (index + 1) % outline.count
+            let p0 = SIMD2(metres(outline[index].x), metres(outline[index].y))
+            let p1 = SIMD2(metres(outline[next].x), metres(outline[next].y))
+            faces.append(Face(points: [SIMD3(p0.x, p0.y, 0),
+                                       SIMD3(p1.x, p1.y, 0),
+                                       SIMD3(p1.x, p1.y, -slabDepth),
+                                       SIMD3(p0.x, p0.y, -slabDepth)],
+                              kind: .baseSlab,
+                              roomColorIndex: nil, roomID: nil, roomName: nil))
+        }
+        return faces
     }
 
     // MARK: - Arredi

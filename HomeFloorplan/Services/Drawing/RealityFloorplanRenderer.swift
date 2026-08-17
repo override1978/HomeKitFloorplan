@@ -39,28 +39,14 @@ enum RealityFloorplanRenderer {
         // Un piano sotto la casa. Un'ombra vera ha bisogno di qualcosa su cui
         // cadere, e lo sfondo è un colore, non geometria: senza questo la casa
         // proietterebbe l'ombra nel vuoto e resterebbe a galleggiare.
-        let plinthHeight: Float = 0.14
+        // Il basamento e' nella scena stessa (ruolo `baseSlab`): l'impronta
+        // vera della casa estrusa in giu' dall'estrusore. Il box rettangolare
+        // provato prima lasciava un vassoio vuoto davanti alle piante a L.
         let groundSize = max(scene.bounds.radius, 1) * 12
         let ground = ModelEntity(mesh: .generatePlane(width: groundSize, depth: groundSize),
                                  materials: [FloorplanMaterialCatalog.groundMaterial(background: background)])
-        ground.position = SIMD3(0, scene.bounds.min.y - center.y - plinthHeight - 0.02, 0)
+        ground.position = SIMD3(0, scene.bounds.min.y - center.y - 0.02, 0)
         root.addChild(ground)
-
-        // Il basamento a diorama: la casa appoggia su un plinto dai bordi
-        // arrotondati invece di galleggiare sul fondale — il trucco dei
-        // render di studio, al prezzo di una box. Sporge di quasi un metro
-        // per raccogliere l'ombra del sole attorno alla facciata.
-        let plinthSize = scene.bounds.horizontalSize
-        let plinthMargin: Float = 0.9
-        let plinth = ModelEntity(
-            mesh: .generateBox(width: plinthSize.x + plinthMargin * 2,
-                               height: plinthHeight,
-                               depth: plinthSize.y + plinthMargin * 2,
-                               cornerRadius: 0.04),
-            materials: [FloorplanMaterialCatalog.plinthMaterial()]
-        )
-        plinth.position = SIMD3(0, scene.bounds.min.y - center.y - plinthHeight / 2 - 0.004, 0)
-        root.addChild(plinth)
 
         for role in FloorplanScene.MeshFace.MaterialRole.renderOrder {
             guard let faces = grouped[role] else { continue }
@@ -1185,6 +1171,7 @@ enum RealityFloorplanRenderer {
 
 extension FloorplanScene.MeshFace.MaterialRole {
     static let renderOrder: [Self] = [
+        .baseSlab,
         .floor,
         .groundContact,
         .furniture,
