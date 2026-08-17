@@ -29,9 +29,13 @@ enum FloorplanMaterialCatalog {
             // si legge bianco — 0.81/0.83/0.87 sembrava cemento, questo sembra
             // intonaco, ed e' piu' scuro del bianco quanto basta perche' la
             // luce delle lampade abbia margine per staccare.
-            return opaque(UIColor(red: 0.86, green: 0.85, blue: 0.83, alpha: 1), roughness: 0.94)
+            // Rialzato di tre punti su richiesta esplicita («i muri sono
+            // molto grigi, la concorrenza e' piu' bianca»), accettando il
+            // baratto: meno margine per la pozza delle lampade. Se il glow
+            // smette di leggersi, il passo indietro e' qui.
+            return opaque(UIColor(red: 0.89, green: 0.88, blue: 0.86, alpha: 1), roughness: 0.94)
         case .wallTop:
-            return opaque(UIColor(red: 0.90, green: 0.89, blue: 0.87, alpha: 1), roughness: 0.94)
+            return opaque(UIColor(red: 0.93, green: 0.92, blue: 0.90, alpha: 1), roughness: 0.94)
         case .glass:
             return transparent(UIColor(red: 0.72, green: 0.84, blue: 0.88, alpha: 1),
                                opacity: 0.34, roughness: 0.06)

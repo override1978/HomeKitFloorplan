@@ -1158,7 +1158,9 @@ struct RealityFloorplanView: UIViewRepresentable {
             // faccia al sole diventava crema e le altre grigio-azzurre — due
             // vernici, non luce e ombra. Un residuo di freddo resta (l'ombra
             // vera e' piu' fredda della luce), ma la forbice si stringe.
-            fillLight.light.intensity = isDay ? 420 : 110
+            // Piu' generoso di giorno: le facciate in ombra sono la maggior
+            // parte della scena, ed erano loro a leggersi «grigie».
+            fillLight.light.intensity = isDay ? 560 : 110
             // Spostato di un passo verso il caldo («la nostra sembra fredda
             // e sterile» vs i diorami concorrenti): resta comunque piu'
             // freddo del key, cosi' luce e ombra restano luce e ombra.
