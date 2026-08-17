@@ -234,6 +234,12 @@ enum FloorplanExtruder {
     private static let applianceWhite = CGColor(red: 0.86, green: 0.88, blue: 0.88, alpha: 1)
     private static let chromeGrey = CGColor(red: 0.62, green: 0.64, blue: 0.65, alpha: 1)
     private static let showerGlass = CGColor(red: 0.70, green: 0.84, blue: 0.90, alpha: 0.65)
+    /// I verdi del vivaio: due palchi di chioma con toni diversi, perche' una
+    /// chioma monocolore torna a essere una scatola.
+    private static let terracotta = CGColor(red: 0.66, green: 0.42, blue: 0.31, alpha: 1)
+    private static let foliageDark = CGColor(red: 0.23, green: 0.36, blue: 0.22, alpha: 1)
+    private static let foliageMid = CGColor(red: 0.30, green: 0.44, blue: 0.25, alpha: 1)
+    private static let foliageLight = CGColor(red: 0.41, green: 0.53, blue: 0.30, alpha: 1)
 
     /// Il mobile per **membra**, non per cassa: un tavolo è un piano più
     /// quattro gambe, un divano una seduta fra due braccioli. Sono i volumi che
@@ -363,6 +369,44 @@ enum FloorplanExtruder {
             return washingMachineFaces(item)
         case .shower:
             return showerFaces(item)
+        case .plant:
+            // Vaso in terracotta, fusto e chioma verde a due palchi: la pianta
+            // e' il colore che rompe il beige, e non e' mai stata una scatola.
+            let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+            let radius = min(half.x, half.y)
+            var faces = subBox(item, centreOffset: .zero,
+                               half: SIMD2(radius * 0.40, radius * 0.40),
+                               from: 0, to: 0.30, tint: terracotta, material: .stone)
+            faces += subBox(item, centreOffset: .zero, half: SIMD2(0.024, 0.024),
+                            from: 0.30, to: 0.55, tint: woodDark, material: .wood)
+            faces += subBox(item, centreOffset: .zero,
+                            half: SIMD2(radius * 0.85, radius * 0.85),
+                            from: 0.50, to: 0.98, tint: foliageDark, material: .fabric)
+            faces += subBox(item, centreOffset: .zero,
+                            half: SIMD2(radius * 0.55, radius * 0.55),
+                            from: 0.98, to: 1.26, tint: foliageLight, material: .fabric)
+            return faces
+        case .tree:
+            // Tronco e tre palchi di chioma che si stringono salendo: la
+            // sagoma dell'albero, coi volumi squadrati di tutto il resto.
+            let half = SIMD2(metres(item.rect.width) / 2, metres(item.rect.height) / 2)
+            let radius = min(half.x, half.y)
+            var faces = subBox(item, centreOffset: .zero, half: SIMD2(0.09, 0.09),
+                               from: 0, to: 1.15, tint: woodDark, material: .wood)
+            faces += subBox(item, centreOffset: .zero,
+                            half: SIMD2(radius * 0.95, radius * 0.95),
+                            from: 1.0, to: 2.2, tint: foliageDark, material: .fabric)
+            faces += subBox(item, centreOffset: .zero,
+                            half: SIMD2(radius * 0.62, radius * 0.62),
+                            from: 2.2, to: 3.0, tint: foliageMid, material: .fabric)
+            faces += subBox(item, centreOffset: .zero,
+                            half: SIMD2(radius * 0.34, radius * 0.34),
+                            from: 3.0, to: 3.5, tint: foliageLight, material: .fabric)
+            return faces
+        case .hedge:
+            // La siepe squadrata e' davvero una scatola — ma verde.
+            return boxFaces(item, from: 0, to: height(of: kind),
+                            tint: foliageMid, material: .fabric)
         case .bed:
             // Giroletto scuro, materasso chiaro, cuscini alla testata: tre
             // membri che dicono «letto» meglio di qualunque cassa.
@@ -687,8 +731,6 @@ enum FloorplanExtruder {
         case .chair:           (0.45, 0.92, 0.22, .head)
         case .bed:             (0.50, 1.00, 0.10, .head)
         case .toilet:          (0.40, 0.78, 0.30, .head)
-        case .plant:           (0.70, 1.30, 0.60, .centred)
-        case .tree:            (2.20, 3.60, 0.95, .centred)
         case .shower:          (0.10, 2.00, 1.00, .centred)
         default:               nil
         }

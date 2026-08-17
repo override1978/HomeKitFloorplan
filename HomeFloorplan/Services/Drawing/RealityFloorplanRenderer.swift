@@ -39,7 +39,7 @@ enum RealityFloorplanRenderer {
         // Un piano sotto la casa. Un'ombra vera ha bisogno di qualcosa su cui
         // cadere, e lo sfondo è un colore, non geometria: senza questo la casa
         // proietterebbe l'ombra nel vuoto e resterebbe a galleggiare.
-        let plinthHeight: Float = 0.34
+        let plinthHeight: Float = 0.14
         let groundSize = max(scene.bounds.radius, 1) * 12
         let ground = ModelEntity(mesh: .generatePlane(width: groundSize, depth: groundSize),
                                  materials: [FloorplanMaterialCatalog.groundMaterial(background: background)])
@@ -56,7 +56,7 @@ enum RealityFloorplanRenderer {
             mesh: .generateBox(width: plinthSize.x + plinthMargin * 2,
                                height: plinthHeight,
                                depth: plinthSize.y + plinthMargin * 2,
-                               cornerRadius: 0.1),
+                               cornerRadius: 0.04),
             materials: [FloorplanMaterialCatalog.plinthMaterial()]
         )
         plinth.position = SIMD3(0, scene.bounds.min.y - center.y - plinthHeight / 2 - 0.004, 0)
