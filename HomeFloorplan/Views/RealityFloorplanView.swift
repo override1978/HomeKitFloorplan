@@ -1171,8 +1171,12 @@ struct RealityFloorplanView: UIViewRepresentable {
             skyGlow = glow
             anchor.addChild(glow)
 
-            let wash = ModelEntity(mesh: .generatePlane(width: glowRadius * 60,
-                                                        depth: glowRadius * 44))
+            // Dimensionato perche' la parte RIPIDA del radiale attraversi la
+            // zona inquadrata: troppo grande = alpha quasi costante = velatura
+            // uniforme che appiattisce (successo con 60×44: la notte era
+            // lavanda piatta invece di blu con la pozza di luna).
+            let wash = ModelEntity(mesh: .generatePlane(width: glowRadius * 36,
+                                                        depth: glowRadius * 28))
             wash.isEnabled = false
             skyGroundWash = wash
             anchor.addChild(wash)
@@ -1298,7 +1302,7 @@ struct RealityFloorplanView: UIViewRepresentable {
             case .dawn:
                 UIColor(red: 0.97, green: 0.79, blue: 0.88, alpha: 1)
             case .dusk:
-                UIColor(red: 1.0, green: 0.78, blue: 0.52, alpha: 1)
+                UIColor(red: 1.0, green: 0.74, blue: 0.46, alpha: 1)
             case .night:
                 UIColor(red: 0.82, green: 0.87, blue: 1.0, alpha: 1)
             }
