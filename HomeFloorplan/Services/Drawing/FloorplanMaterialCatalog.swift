@@ -350,13 +350,12 @@ enum FloorplanMaterialCatalog {
         case dusk
         case night
 
-        /// L'azimut distingue alba (est, < 180°) da tramonto (ovest): i due
-        /// crepuscoli hanno palette diverse — rosa che vira al giallo la
-        /// mattina, oro e ambra la sera.
+        /// ⏸ Crepuscoli SPENTI su decisione dell'utente (19/08: «teniamo
+        /// fissi Giorno e Notte») dopo i giri di taratura: il meccanismo
+        /// resta in sonno — per riattivarli basta ripristinare qui la fascia
+        /// alba/tramonto (elevazione -8..10, azimut < 180 = alba).
         static func forSun(elevation: Double, azimuth: Double) -> SkyPhase {
-            if elevation < -8 { return .night }
-            if elevation < 10 { return azimuth < 180 ? .dawn : .dusk }
-            return .day
+            elevation < 0 ? .night : .day
         }
     }
 
@@ -460,8 +459,9 @@ enum FloorplanMaterialCatalog {
         switch phase {
         case .dawn: dawnGlowTexture
         case .dusk: duskGlowTexture
-        case .night: moonGlowTexture
-        case .day: nil
+        // Luna spenta insieme ai crepuscoli (19/08): per riaccenderla,
+        // .night -> moonGlowTexture.
+        case .day, .night: nil
         }
     }
 
@@ -485,6 +485,7 @@ enum FloorplanMaterialCatalog {
         mid: UIColor(red: 0.70, green: 0.79, blue: 0.97, alpha: 0.52)
     )
 
+
     private static func radialGlowTexture(core: UIColor, mid: UIColor) -> TextureResource? {
         let side = 256
         let format = UIGraphicsImageRendererFormat()
@@ -505,6 +506,7 @@ enum FloorplanMaterialCatalog {
         return try? TextureResource(image: cgImage, withName: nil,
                                     options: .init(semantic: .color))
     }
+
 
     /// Il terreno del palco segue il cielo: greige di giorno, terra brunita
     /// al crepuscolo, blu-grigio scuro di notte — cupola e terreno si

@@ -1294,8 +1294,8 @@ struct RealityFloorplanView: UIViewRepresentable {
             // bianco, o i muri restano pallidi.
             fillLight.light.intensity = switch currentSkyPhase {
             case .day: 560
-            case .dawn, .dusk: 900
-            case .night: 130
+            case .dawn, .dusk: 900   // dormiente: le fasi non vengono prodotte
+            case .night: 110
             }
             // Il fill dipinge le facciate in ombra — cioe' quasi tutta la
             // casa vista dalla dashboard. E' QUI che alba, tramonto e luna
@@ -1310,7 +1310,8 @@ struct RealityFloorplanView: UIViewRepresentable {
             case .dusk:
                 UIColor(red: 1.0, green: 0.74, blue: 0.46, alpha: 1)
             case .night:
-                UIColor(red: 0.82, green: 0.87, blue: 1.0, alpha: 1)
+                // Col chiaro di luna spento, la notte torna al neutro caldo.
+                UIColor(red: 0.965, green: 0.952, blue: 0.930, alpha: 1)
             }
             fillLight.shadow = nil
             // Di giorno il fill viene da un angolo fisso di studio; nei
@@ -1321,15 +1322,17 @@ struct RealityFloorplanView: UIViewRepresentable {
             // il sole. Ora le facciate rivolte alla sorgente prendono il
             // colore, le altre restano in penombra neutra.
             let fillFrom: SIMD3<Float>
-            if currentSkyPhase == .day {
-                fillFrom = SIMD3(radius * 2.6, radius * 1.4, -radius * 2.2)
-            } else {
+            switch currentSkyPhase {
+            case .dawn, .dusk:
+                // Dormiente: nei crepuscoli il fill arriva dalla sorgente.
                 var towardSource = SIMD3(sun.direction.x, 0, sun.direction.z)
                 let sourceLength = simd_length(towardSource)
                 towardSource = sourceLength > 0.001
                     ? towardSource / sourceLength
                     : SIMD3(1, 0, 0)
                 fillFrom = towardSource * radius * 2.6 + SIMD3(0, radius * 1.1, 0)
+            case .day, .night:
+                fillFrom = SIMD3(radius * 2.6, radius * 1.4, -radius * 2.2)
             }
             fillLight.look(at: .zero, from: fillFrom, relativeTo: nil)
 
