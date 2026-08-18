@@ -1289,8 +1289,14 @@ struct RealityFloorplanView: UIViewRepresentable {
             // vernici, non luce e ombra. Un residuo di freddo resta (l'ombra
             // vera e' piu' fredda della luce), ma la forbice si stringe.
             // Piu' generoso di giorno: le facciate in ombra sono la maggior
-            // parte della scena, ed erano loro a leggersi «grigie».
-            fillLight.light.intensity = isDay ? 560 : 110
+            // parte della scena, ed erano loro a leggersi «grigie». Nei
+            // crepuscoli ancora di piu': la tinta deve vincere l'ambiente
+            // bianco, o i muri restano pallidi.
+            fillLight.light.intensity = switch currentSkyPhase {
+            case .day: 560
+            case .dawn, .dusk: 900
+            case .night: 130
+            }
             // Il fill dipinge le facciate in ombra — cioe' quasi tutta la
             // casa vista dalla dashboard. E' QUI che alba, tramonto e luna
             // si vedono senza bisogno dell'orizzonte in inquadratura
@@ -1307,9 +1313,25 @@ struct RealityFloorplanView: UIViewRepresentable {
                 UIColor(red: 0.82, green: 0.87, blue: 1.0, alpha: 1)
             }
             fillLight.shadow = nil
-            fillLight.look(at: .zero,
-                           from: SIMD3(radius * 2.6, radius * 1.4, -radius * 2.2),
-                           relativeTo: nil)
+            // Di giorno il fill viene da un angolo fisso di studio; nei
+            // crepuscoli e di notte viene DA DOVE STA il sole o la luna —
+            // «come e' possibile che i muri non siano ambrati dal lato in
+            // cui guardo il tramonto?»: era possibile perche' la tinta
+            // arrivava sempre dallo stesso angolo, qualunque cosa facesse
+            // il sole. Ora le facciate rivolte alla sorgente prendono il
+            // colore, le altre restano in penombra neutra.
+            let fillFrom: SIMD3<Float>
+            if currentSkyPhase == .day {
+                fillFrom = SIMD3(radius * 2.6, radius * 1.4, -radius * 2.2)
+            } else {
+                var towardSource = SIMD3(sun.direction.x, 0, sun.direction.z)
+                let sourceLength = simd_length(towardSource)
+                towardSource = sourceLength > 0.001
+                    ? towardSource / sourceLength
+                    : SIMD3(1, 0, 0)
+                fillFrom = towardSource * radius * 2.6 + SIMD3(0, radius * 1.1, 0)
+            }
+            fillLight.look(at: .zero, from: fillFrom, relativeTo: nil)
 
             rimLight.light.intensity = isDay ? 160 : 60
             rimLight.light.color = UIColor(red: 1.0, green: 0.97, blue: 0.93, alpha: 1)
