@@ -1027,6 +1027,7 @@ struct FloorplanRealityPreviewView: View {
         let bearing = (solar.azimuthDegrees - northBearingDegrees) * .pi / 180
 
         return FloorplanSunLight(
+            azimuthDegrees: solar.azimuthDegrees,
             direction: SIMD3(Float(cos(elevation) * sin(bearing)),
                              Float(sin(elevation)),
                              Float(-cos(elevation) * cos(bearing))),

@@ -139,6 +139,7 @@ struct RealityFloorplanView: UIViewRepresentable {
         /// La cupola del cielo: sfera unlit vista da dentro, gradiente
         /// verticale. Segue il giorno/notte del sole vero.
         private var skyDome: ModelEntity?
+        private var skyGlow: ModelEntity?
         private var skyPhase: FloorplanMaterialCatalog.SkyPhase?
         /// Governatore termico: quando iOS dichiara `serious` si spegne la
         /// voce GPU piu' cara (l'ombra del sole, che ridisegna la scena a
@@ -1145,32 +1146,72 @@ struct RealityFloorplanView: UIViewRepresentable {
             updateCamera()
         }
 
+        private var currentSkyPhase: FloorplanMaterialCatalog.SkyPhase {
+            .forSun(elevation: sun.elevationDegrees, azimuth: sun.azimuthDegrees)
+        }
+
         private func installSkyDome() {
             let radius = max(scene.bounds.radius, 1) * 40
-            let phase = FloorplanMaterialCatalog.SkyPhase.forSunElevation(sun.elevationDegrees)
+            let phase = currentSkyPhase
             let dome = ModelEntity(mesh: .generateSphere(radius: radius),
                                    materials: [FloorplanMaterialCatalog.skyBackdropMaterial(phase: phase)])
             skyPhase = phase
             skyDome = dome
             anchor.addChild(dome)
+
+            // Il pannello del bagliore: nasce spento, si accende e si
+            // posiziona sull'azimut del sole nei crepuscoli.
+            let glowRadius = max(scene.bounds.radius, 1)
+            let glow = ModelEntity(mesh: .generatePlane(width: glowRadius * 44,
+                                                        height: glowRadius * 18))
+            glow.isEnabled = false
+            skyGlow = glow
+            anchor.addChild(glow)
+            applyStageAtmosphere()
         }
 
         private func updateSkyDome() {
-            guard skyPhase != FloorplanMaterialCatalog.SkyPhase.forSunElevation(sun.elevationDegrees) else { return }
-            applyStageAtmosphere()
+            if skyPhase != currentSkyPhase {
+                applyStageAtmosphere()
+            } else if skyPhase == .dawn || skyPhase == .dusk {
+                // Dentro il crepuscolo il sole si sposta: il bagliore segue.
+                positionSkyGlow()
+            }
         }
 
         /// Cielo e terreno sono UN palco: cambiano insieme, o l'orizzonte
         /// stona (il terreno chiaro sotto il cielo notturno era una banda
         /// buia appoggiata su un prato da mezzogiorno).
         private func applyStageAtmosphere() {
-            let phase = FloorplanMaterialCatalog.SkyPhase.forSunElevation(sun.elevationDegrees)
+            let phase = currentSkyPhase
             skyPhase = phase
             skyDome?.model?.materials = [FloorplanMaterialCatalog.skyBackdropMaterial(phase: phase)]
             if let ground = contentRoot.findEntity(named: "stage-ground") as? ModelEntity {
                 ground.model?.materials = [FloorplanMaterialCatalog.stageGroundMaterial(phase: phase,
                                                                                        background: background)]
             }
+            if let glow = skyGlow,
+               let material = FloorplanMaterialCatalog.horizonGlowMaterial(phase: phase) {
+                glow.model?.materials = [material]
+                glow.isEnabled = true
+                positionSkyGlow()
+            } else {
+                skyGlow?.isEnabled = false
+            }
+        }
+
+        /// Il bagliore sta DOVE sta il sole: la direzione orizzontale del
+        /// sole in spazio modello, appena sopra l'orizzonte, davanti alla
+        /// cupola. Tramonto a ovest e alba a est per costruzione.
+        private func positionSkyGlow() {
+            guard let skyGlow else { return }
+            let radius = max(scene.bounds.radius, 1)
+            var horizontal = SIMD3(sun.direction.x, 0, sun.direction.z)
+            let length = simd_length(horizontal)
+            guard length > 0.001 else { return }
+            horizontal /= length
+            skyGlow.position = horizontal * radius * 36 + SIMD3(0, radius * 2.5, 0)
+            skyGlow.look(at: .zero, from: skyGlow.position, relativeTo: nil)
         }
 
         /// Le luci sono **fisse rispetto al modello**, non alla telecamera.

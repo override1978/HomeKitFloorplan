@@ -277,6 +277,10 @@ struct CameraCommand: Equatable {
 /// La vista fa l'astronomia una volta e passa al renderer un vettore: il
 /// Coordinator non deve sapere niente di latitudini e ore.
 struct FloorplanSunLight: Equatable {
+    /// Azimut solare in gradi da nord (0-360): < 180 = mattina (est),
+    /// > 180 = pomeriggio/sera (ovest). Serve al cielo per distinguere
+    /// l'alba rosa dal tramonto d'oro.
+    var azimuthDegrees: Double = 0
     /// Versore che punta **verso** il sole. y in alto, come in RealityKit.
     var direction: SIMD3<Float>
     var elevationDegrees: Double

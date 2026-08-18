@@ -346,12 +346,16 @@ enum FloorplanMaterialCatalog {
     /// questo racconta l'ora di casa tua.
     enum SkyPhase {
         case day
-        case twilight
+        case dawn
+        case dusk
         case night
 
-        static func forSunElevation(_ degrees: Double) -> SkyPhase {
-            if degrees < -8 { return .night }
-            if degrees < 10 { return .twilight }
+        /// L'azimut distingue alba (est, < 180°) da tramonto (ovest): i due
+        /// crepuscoli hanno palette diverse — rosa che vira al giallo la
+        /// mattina, oro e ambra la sera.
+        static func forSun(elevation: Double, azimuth: Double) -> SkyPhase {
+            if elevation < -8 { return .night }
+            if elevation < 10 { return azimuth < 180 ? .dawn : .dusk }
             return .day
         }
     }
@@ -361,7 +365,8 @@ enum FloorplanMaterialCatalog {
         material.faceCulling = .front
         let texture: TextureResource? = switch phase {
         case .day: daySkyTexture
-        case .twilight: twilightSkyTexture
+        case .dawn: dawnSkyTexture
+        case .dusk: duskSkyTexture
         case .night: nightSkyTexture
         }
         guard let texture else {
@@ -379,15 +384,22 @@ enum FloorplanMaterialCatalog {
         UIColor(red: 0.88, green: 0.85, blue: 0.80, alpha: 1)    // sotto l'orizzonte
     ], locations: [0, 0.38, 0.54, 1])
 
-    /// Alba e tramonto: zenit blu serale, malva, poi la fascia d'oro
-    /// sull'orizzonte — la mezz'ora piu' emotiva della giornata.
-    private static let twilightSkyTexture: TextureResource? = skyGradientTexture(colors: [
+    /// Le basi crepuscolari sono SOBRIE su tutto il giro d'orizzonte: il
+    /// colore acceso vive nel bagliore posizionato sull'azimut del sole —
+    /// prima la fascia d'oro avvolgeva anche il lato dove il sole non era.
+    private static let dawnSkyTexture: TextureResource? = skyGradientTexture(colors: [
+        UIColor(red: 0.36, green: 0.40, blue: 0.58, alpha: 1),   // zenit ancora notte
+        UIColor(red: 0.62, green: 0.55, blue: 0.62, alpha: 1),   // malva freddo
+        UIColor(red: 0.88, green: 0.76, blue: 0.72, alpha: 1),   // rosa pallido
+        UIColor(red: 0.55, green: 0.47, blue: 0.45, alpha: 1)
+    ], locations: [0, 0.34, 0.53, 1])
+
+    private static let duskSkyTexture: TextureResource? = skyGradientTexture(colors: [
         UIColor(red: 0.30, green: 0.34, blue: 0.52, alpha: 1),
-        UIColor(red: 0.55, green: 0.46, blue: 0.55, alpha: 1),
-        UIColor(red: 0.89, green: 0.64, blue: 0.44, alpha: 1),
-        UIColor(red: 0.96, green: 0.78, blue: 0.55, alpha: 1),   // oro all'orizzonte
+        UIColor(red: 0.55, green: 0.46, blue: 0.55, alpha: 1),   // malva
+        UIColor(red: 0.82, green: 0.66, blue: 0.55, alpha: 1),   // ambra tenue
         UIColor(red: 0.52, green: 0.42, blue: 0.38, alpha: 1)
-    ], locations: [0, 0.30, 0.48, 0.54, 1])
+    ], locations: [0, 0.32, 0.52, 1])
 
     private static let nightSkyTexture: TextureResource? = skyGradientTexture(colors: [
         UIColor(red: 0.05, green: 0.07, blue: 0.14, alpha: 1),
@@ -434,6 +446,57 @@ enum FloorplanMaterialCatalog {
                                     options: .init(semantic: .color))
     }
 
+    /// Il bagliore all'orizzonte, DOVE sta il sole: un pannello unlit con
+    /// gradiente radiale che il coordinatore posiziona sull'azimut solare
+    /// vero — cosi' il tramonto sta a ovest e l'alba a est per costruzione.
+    /// `nil` di giorno pieno e di notte.
+    static func horizonGlowMaterial(phase: SkyPhase) -> UnlitMaterial? {
+        let texture: TextureResource? = switch phase {
+        case .dawn: dawnGlowTexture
+        case .dusk: duskGlowTexture
+        case .day, .night: nil
+        }
+        guard let texture else { return nil }
+        var material = UnlitMaterial(color: .white)
+        material.color = .init(tint: .white, texture: .init(texture, sampler: clampSampler))
+        material.blending = .transparent(opacity: .init(scale: 1))
+        material.faceCulling = .none
+        return material
+    }
+
+    /// Alba: cuore rosa salmone che vira al giallo tenue.
+    private static let dawnGlowTexture: TextureResource? = radialGlowTexture(
+        core: UIColor(red: 0.99, green: 0.72, blue: 0.66, alpha: 0.88),
+        mid: UIColor(red: 0.99, green: 0.86, blue: 0.60, alpha: 0.45)
+    )
+
+    /// Tramonto: oro pieno che sfuma in ambra.
+    private static let duskGlowTexture: TextureResource? = radialGlowTexture(
+        core: UIColor(red: 0.99, green: 0.78, blue: 0.45, alpha: 0.90),
+        mid: UIColor(red: 0.90, green: 0.55, blue: 0.38, alpha: 0.42)
+    )
+
+    private static func radialGlowTexture(core: UIColor, mid: UIColor) -> TextureResource? {
+        let side = 256
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side),
+                                            format: format).image { context in
+            let colours = [core.cgColor, mid.cgColor, mid.withAlphaComponent(0).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                            colors: colours, locations: [0, 0.45, 1]) else { return }
+            let centre = CGPoint(x: CGFloat(side) / 2, y: CGFloat(side) / 2)
+            context.cgContext.drawRadialGradient(gradient,
+                                                 startCenter: centre, startRadius: 0,
+                                                 endCenter: centre, endRadius: CGFloat(side) / 2,
+                                                 options: [])
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil,
+                                    options: .init(semantic: .color))
+    }
+
     /// Il terreno del palco segue il cielo: greige di giorno, terra brunita
     /// al crepuscolo, blu-grigio scuro di notte — cupola e terreno si
     /// fondono all'orizzonte invece di staccarsi in una banda.
@@ -441,7 +504,7 @@ enum FloorplanMaterialCatalog {
         switch phase {
         case .day:
             return groundMaterial(background: background)
-        case .twilight:
+        case .dawn, .dusk:
             return groundMaterial(background: UIColor(red: 0.48, green: 0.41, blue: 0.37, alpha: 1))
         case .night:
             return groundMaterial(background: UIColor(red: 0.155, green: 0.165, blue: 0.215, alpha: 1))
