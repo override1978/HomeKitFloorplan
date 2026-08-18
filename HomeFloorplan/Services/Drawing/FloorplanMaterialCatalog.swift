@@ -464,16 +464,18 @@ enum FloorplanMaterialCatalog {
         return material
     }
 
-    /// Alba: cuore rosa salmone che vira al giallo tenue.
+    /// Alba: cuore rosa salmone che vira al giallo tenue. Dose TEATRALE
+    /// in prova su richiesta dell'utente — se brucia, i vecchi alpha erano
+    /// 0.88/0.45 (alba) e 0.90/0.42 (tramonto).
     private static let dawnGlowTexture: TextureResource? = radialGlowTexture(
-        core: UIColor(red: 0.99, green: 0.72, blue: 0.66, alpha: 0.88),
-        mid: UIColor(red: 0.99, green: 0.86, blue: 0.60, alpha: 0.45)
+        core: UIColor(red: 1.0, green: 0.68, blue: 0.60, alpha: 1.0),
+        mid: UIColor(red: 1.0, green: 0.84, blue: 0.52, alpha: 0.68)
     )
 
     /// Tramonto: oro pieno che sfuma in ambra.
     private static let duskGlowTexture: TextureResource? = radialGlowTexture(
-        core: UIColor(red: 0.99, green: 0.78, blue: 0.45, alpha: 0.90),
-        mid: UIColor(red: 0.90, green: 0.55, blue: 0.38, alpha: 0.42)
+        core: UIColor(red: 1.0, green: 0.74, blue: 0.36, alpha: 1.0),
+        mid: UIColor(red: 0.92, green: 0.50, blue: 0.32, alpha: 0.65)
     )
 
     private static func radialGlowTexture(core: UIColor, mid: UIColor) -> TextureResource? {

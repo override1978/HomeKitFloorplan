@@ -1162,8 +1162,8 @@ struct RealityFloorplanView: UIViewRepresentable {
             // Il pannello del bagliore: nasce spento, si accende e si
             // posiziona sull'azimut del sole nei crepuscoli.
             let glowRadius = max(scene.bounds.radius, 1)
-            let glow = ModelEntity(mesh: .generatePlane(width: glowRadius * 44,
-                                                        height: glowRadius * 18))
+            let glow = ModelEntity(mesh: .generatePlane(width: glowRadius * 58,
+                                                        height: glowRadius * 26))
             glow.isEnabled = false
             skyGlow = glow
             anchor.addChild(glow)
