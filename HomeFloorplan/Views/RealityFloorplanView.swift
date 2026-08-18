@@ -1171,8 +1171,8 @@ struct RealityFloorplanView: UIViewRepresentable {
             skyGlow = glow
             anchor.addChild(glow)
 
-            let wash = ModelEntity(mesh: .generatePlane(width: glowRadius * 30,
-                                                        depth: glowRadius * 22))
+            let wash = ModelEntity(mesh: .generatePlane(width: glowRadius * 60,
+                                                        depth: glowRadius * 44))
             wash.isEnabled = false
             skyGroundWash = wash
             anchor.addChild(wash)
@@ -1230,11 +1230,13 @@ struct RealityFloorplanView: UIViewRepresentable {
                 skyGlow.look(at: .zero, from: skyGlow.position, relativeTo: nil)
             }
             if let skyGroundWash {
-                // ACCANTO alla casa, non all'orizzonte: la dashboard inquadra
-                // pochi raggi di terreno attorno al modello, e la sfumatura
-                // deve vivere li' — sbilanciata verso il sole o la luna.
+                // Il centro del radiale sta verso la sorgente e la coda
+                // attraversa tutto il palco: il lato esposto e' saturo e la
+                // tinta SFUMA passando sopra la scena verso il lato opposto
+                // — «piu' ambrato a ovest, sfuma verso est», e all'alba il
+                // contrario, per costruzione.
                 let groundY = scene.bounds.min.y - scene.bounds.center.y + 0.04
-                skyGroundWash.position = horizontal * radius * 2.2 + SIMD3(0, groundY, 0)
+                skyGroundWash.position = horizontal * radius * 10 + SIMD3(0, groundY, 0)
                 skyGroundWash.orientation = simd_quatf(angle: 0, axis: SIMD3(0, 1, 0))
             }
         }
@@ -1294,9 +1296,9 @@ struct RealityFloorplanView: UIViewRepresentable {
             case .day:
                 UIColor(red: 0.965, green: 0.952, blue: 0.930, alpha: 1)
             case .dawn:
-                UIColor(red: 1.0, green: 0.82, blue: 0.76, alpha: 1)
+                UIColor(red: 0.97, green: 0.79, blue: 0.88, alpha: 1)
             case .dusk:
-                UIColor(red: 1.0, green: 0.83, blue: 0.62, alpha: 1)
+                UIColor(red: 1.0, green: 0.78, blue: 0.52, alpha: 1)
             case .night:
                 UIColor(red: 0.82, green: 0.87, blue: 1.0, alpha: 1)
             }

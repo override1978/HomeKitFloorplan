@@ -450,7 +450,8 @@ enum FloorplanMaterialCatalog {
         guard let texture = glowTexture(for: phase) else { return nil }
         var material = UnlitMaterial(color: .white)
         material.color = .init(tint: .white, texture: .init(texture, sampler: clampSampler))
-        material.blending = .transparent(opacity: .init(scale: 0.5))
+        // Di notte serve un FASCIO leggibile, non una velatura.
+        material.blending = .transparent(opacity: .init(scale: phase == .night ? 0.78 : 0.62))
         material.faceCulling = .none
         return material
     }
@@ -464,25 +465,24 @@ enum FloorplanMaterialCatalog {
         }
     }
 
-    /// Alba: cuore rosa salmone che vira al giallo tenue. Dose TEATRALE
-    /// in prova su richiesta dell'utente — se brucia, i vecchi alpha erano
-    /// 0.88/0.45 (alba) e 0.90/0.42 (tramonto).
+    /// Alba: ROSA che sfuma nel lilla — l'utente la vuole distinta dal
+    /// tramonto, che invece e' ambra. Niente giallo al mattino.
     private static let dawnGlowTexture: TextureResource? = radialGlowTexture(
-        core: UIColor(red: 1.0, green: 0.68, blue: 0.60, alpha: 1.0),
-        mid: UIColor(red: 1.0, green: 0.84, blue: 0.52, alpha: 0.68)
+        core: UIColor(red: 1.0, green: 0.73, blue: 0.80, alpha: 1.0),
+        mid: UIColor(red: 0.79, green: 0.66, blue: 0.87, alpha: 0.62)
     )
 
-    /// Tramonto: oro pieno che sfuma in ambra.
+    /// Tramonto: ambra piena che scurisce verso il bruciato.
     private static let duskGlowTexture: TextureResource? = radialGlowTexture(
-        core: UIColor(red: 1.0, green: 0.74, blue: 0.36, alpha: 1.0),
-        mid: UIColor(red: 0.92, green: 0.50, blue: 0.32, alpha: 0.65)
+        core: UIColor(red: 1.0, green: 0.68, blue: 0.32, alpha: 1.0),
+        mid: UIColor(red: 0.88, green: 0.46, blue: 0.28, alpha: 0.62)
     )
 
     /// La luna: un riflesso «bianco» di luce sul blu — stesso concetto di
     /// alba e tramonto, punto (3) del disegno dell'utente.
     private static let moonGlowTexture: TextureResource? = radialGlowTexture(
-        core: UIColor(red: 0.93, green: 0.96, blue: 1.0, alpha: 0.85),
-        mid: UIColor(red: 0.72, green: 0.80, blue: 0.95, alpha: 0.38)
+        core: UIColor(red: 0.95, green: 0.97, blue: 1.0, alpha: 0.95),
+        mid: UIColor(red: 0.70, green: 0.79, blue: 0.97, alpha: 0.52)
     )
 
     private static func radialGlowTexture(core: UIColor, mid: UIColor) -> TextureResource? {
