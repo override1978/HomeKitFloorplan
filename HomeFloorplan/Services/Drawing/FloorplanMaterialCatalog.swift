@@ -363,10 +363,11 @@ enum FloorplanMaterialCatalog {
     static func skyBackdropMaterial(phase: SkyPhase) -> UnlitMaterial {
         var material = UnlitMaterial(color: .white)
         material.faceCulling = .front
+        // Disegno dell'utente: la base colori, notte esclusa, e' SEMPRE
+        // quella del giorno — nei crepuscoli cambia la luce (bagliore +
+        // riflesso a terra), non il cielo intero.
         let texture: TextureResource? = switch phase {
-        case .day: daySkyTexture
-        case .dawn: dawnSkyTexture
-        case .dusk: duskSkyTexture
+        case .day, .dawn, .dusk: daySkyTexture
         case .night: nightSkyTexture
         }
         guard let texture else {
@@ -383,23 +384,6 @@ enum FloorplanMaterialCatalog {
         UIColor(red: 0.91, green: 0.89, blue: 0.84, alpha: 1),   // orizzonte: crema caldo
         UIColor(red: 0.88, green: 0.85, blue: 0.80, alpha: 1)    // sotto l'orizzonte
     ], locations: [0, 0.38, 0.54, 1])
-
-    /// Le basi crepuscolari sono SOBRIE su tutto il giro d'orizzonte: il
-    /// colore acceso vive nel bagliore posizionato sull'azimut del sole —
-    /// prima la fascia d'oro avvolgeva anche il lato dove il sole non era.
-    private static let dawnSkyTexture: TextureResource? = skyGradientTexture(colors: [
-        UIColor(red: 0.36, green: 0.40, blue: 0.58, alpha: 1),   // zenit ancora notte
-        UIColor(red: 0.62, green: 0.55, blue: 0.62, alpha: 1),   // malva freddo
-        UIColor(red: 0.88, green: 0.76, blue: 0.72, alpha: 1),   // rosa pallido
-        UIColor(red: 0.55, green: 0.47, blue: 0.45, alpha: 1)
-    ], locations: [0, 0.34, 0.53, 1])
-
-    private static let duskSkyTexture: TextureResource? = skyGradientTexture(colors: [
-        UIColor(red: 0.30, green: 0.34, blue: 0.52, alpha: 1),
-        UIColor(red: 0.55, green: 0.46, blue: 0.55, alpha: 1),   // malva
-        UIColor(red: 0.82, green: 0.66, blue: 0.55, alpha: 1),   // ambra tenue
-        UIColor(red: 0.52, green: 0.42, blue: 0.38, alpha: 1)
-    ], locations: [0, 0.32, 0.52, 1])
 
     private static let nightSkyTexture: TextureResource? = skyGradientTexture(colors: [
         UIColor(red: 0.05, green: 0.07, blue: 0.14, alpha: 1),
@@ -451,17 +435,33 @@ enum FloorplanMaterialCatalog {
     /// vero — cosi' il tramonto sta a ovest e l'alba a est per costruzione.
     /// `nil` di giorno pieno e di notte.
     static func horizonGlowMaterial(phase: SkyPhase) -> UnlitMaterial? {
-        let texture: TextureResource? = switch phase {
-        case .dawn: dawnGlowTexture
-        case .dusk: duskGlowTexture
-        case .day, .night: nil
-        }
-        guard let texture else { return nil }
+        guard let texture = glowTexture(for: phase) else { return nil }
         var material = UnlitMaterial(color: .white)
         material.color = .init(tint: .white, texture: .init(texture, sampler: clampSampler))
         material.blending = .transparent(opacity: .init(scale: 1))
         material.faceCulling = .none
         return material
+    }
+
+    /// Il riflesso della stessa luce sul terreno: si vede anche quando
+    /// l'inclinazione della mappa non mostra l'orizzonte — e' il punto (2)
+    /// del disegno dell'utente. Stessa texture del bagliore, piu' tenue.
+    static func groundWashMaterial(phase: SkyPhase) -> UnlitMaterial? {
+        guard let texture = glowTexture(for: phase) else { return nil }
+        var material = UnlitMaterial(color: .white)
+        material.color = .init(tint: .white, texture: .init(texture, sampler: clampSampler))
+        material.blending = .transparent(opacity: .init(scale: 0.5))
+        material.faceCulling = .none
+        return material
+    }
+
+    private static func glowTexture(for phase: SkyPhase) -> TextureResource? {
+        switch phase {
+        case .dawn: dawnGlowTexture
+        case .dusk: duskGlowTexture
+        case .night: moonGlowTexture
+        case .day: nil
+        }
     }
 
     /// Alba: cuore rosa salmone che vira al giallo tenue. Dose TEATRALE
@@ -476,6 +476,13 @@ enum FloorplanMaterialCatalog {
     private static let duskGlowTexture: TextureResource? = radialGlowTexture(
         core: UIColor(red: 1.0, green: 0.74, blue: 0.36, alpha: 1.0),
         mid: UIColor(red: 0.92, green: 0.50, blue: 0.32, alpha: 0.65)
+    )
+
+    /// La luna: un riflesso «bianco» di luce sul blu — stesso concetto di
+    /// alba e tramonto, punto (3) del disegno dell'utente.
+    private static let moonGlowTexture: TextureResource? = radialGlowTexture(
+        core: UIColor(red: 0.93, green: 0.96, blue: 1.0, alpha: 0.85),
+        mid: UIColor(red: 0.72, green: 0.80, blue: 0.95, alpha: 0.38)
     )
 
     private static func radialGlowTexture(core: UIColor, mid: UIColor) -> TextureResource? {
@@ -504,10 +511,8 @@ enum FloorplanMaterialCatalog {
     /// fondono all'orizzonte invece di staccarsi in una banda.
     static func stageGroundMaterial(phase: SkyPhase, background: UIColor) -> any RealityKit.Material {
         switch phase {
-        case .day:
+        case .day, .dawn, .dusk:
             return groundMaterial(background: background)
-        case .dawn, .dusk:
-            return groundMaterial(background: UIColor(red: 0.48, green: 0.41, blue: 0.37, alpha: 1))
         case .night:
             return groundMaterial(background: UIColor(red: 0.155, green: 0.165, blue: 0.215, alpha: 1))
         }

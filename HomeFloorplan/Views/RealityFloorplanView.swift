@@ -140,6 +140,9 @@ struct RealityFloorplanView: UIViewRepresentable {
         /// verticale. Segue il giorno/notte del sole vero.
         private var skyDome: ModelEntity?
         private var skyGlow: ModelEntity?
+        /// Il riflesso della luce crepuscolare (o lunare) sul terreno:
+        /// visibile anche dall'alto, quando l'orizzonte non e' in scena.
+        private var skyGroundWash: ModelEntity?
         private var skyPhase: FloorplanMaterialCatalog.SkyPhase?
         /// Governatore termico: quando iOS dichiara `serious` si spegne la
         /// voce GPU piu' cara (l'ombra del sole, che ridisegna la scena a
@@ -1167,6 +1170,12 @@ struct RealityFloorplanView: UIViewRepresentable {
             glow.isEnabled = false
             skyGlow = glow
             anchor.addChild(glow)
+
+            let wash = ModelEntity(mesh: .generatePlane(width: glowRadius * 30,
+                                                        depth: glowRadius * 22))
+            wash.isEnabled = false
+            skyGroundWash = wash
+            anchor.addChild(wash)
             applyStageAtmosphere()
         }
 
@@ -1198,20 +1207,35 @@ struct RealityFloorplanView: UIViewRepresentable {
             } else {
                 skyGlow?.isEnabled = false
             }
+            if let wash = skyGroundWash,
+               let material = FloorplanMaterialCatalog.groundWashMaterial(phase: phase) {
+                wash.model?.materials = [material]
+                wash.isEnabled = true
+            } else {
+                skyGroundWash?.isEnabled = false
+            }
         }
 
         /// Il bagliore sta DOVE sta il sole: la direzione orizzontale del
         /// sole in spazio modello, appena sopra l'orizzonte, davanti alla
         /// cupola. Tramonto a ovest e alba a est per costruzione.
         private func positionSkyGlow() {
-            guard let skyGlow else { return }
             let radius = max(scene.bounds.radius, 1)
             var horizontal = SIMD3(sun.direction.x, 0, sun.direction.z)
             let length = simd_length(horizontal)
             guard length > 0.001 else { return }
             horizontal /= length
-            skyGlow.position = horizontal * radius * 36 + SIMD3(0, radius * 2.5, 0)
-            skyGlow.look(at: .zero, from: skyGlow.position, relativeTo: nil)
+            if let skyGlow {
+                skyGlow.position = horizontal * radius * 36 + SIMD3(0, radius * 2.5, 0)
+                skyGlow.look(at: .zero, from: skyGlow.position, relativeTo: nil)
+            }
+            if let skyGroundWash {
+                // Sul terreno, sbilanciato verso il sole (o la luna): parte
+                // dal bordo della casa e si allunga verso la sorgente.
+                let groundY = scene.bounds.min.y - scene.bounds.center.y + 0.04
+                skyGroundWash.position = horizontal * radius * 9 + SIMD3(0, groundY, 0)
+                skyGroundWash.orientation = simd_quatf(angle: 0, axis: SIMD3(0, 1, 0))
+            }
         }
 
         /// Le luci sono **fisse rispetto al modello**, non alla telecamera.
