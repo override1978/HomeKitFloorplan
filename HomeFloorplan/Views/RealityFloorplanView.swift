@@ -1230,10 +1230,11 @@ struct RealityFloorplanView: UIViewRepresentable {
                 skyGlow.look(at: .zero, from: skyGlow.position, relativeTo: nil)
             }
             if let skyGroundWash {
-                // Sul terreno, sbilanciato verso il sole (o la luna): parte
-                // dal bordo della casa e si allunga verso la sorgente.
+                // ACCANTO alla casa, non all'orizzonte: la dashboard inquadra
+                // pochi raggi di terreno attorno al modello, e la sfumatura
+                // deve vivere li' — sbilanciata verso il sole o la luna.
                 let groundY = scene.bounds.min.y - scene.bounds.center.y + 0.04
-                skyGroundWash.position = horizontal * radius * 9 + SIMD3(0, groundY, 0)
+                skyGroundWash.position = horizontal * radius * 2.2 + SIMD3(0, groundY, 0)
                 skyGroundWash.orientation = simd_quatf(angle: 0, axis: SIMD3(0, 1, 0))
             }
         }
@@ -1284,10 +1285,21 @@ struct RealityFloorplanView: UIViewRepresentable {
             // Piu' generoso di giorno: le facciate in ombra sono la maggior
             // parte della scena, ed erano loro a leggersi «grigie».
             fillLight.light.intensity = isDay ? 560 : 110
-            // Spostato di un passo verso il caldo («la nostra sembra fredda
-            // e sterile» vs i diorami concorrenti): resta comunque piu'
-            // freddo del key, cosi' luce e ombra restano luce e ombra.
-            fillLight.light.color = UIColor(red: 0.965, green: 0.952, blue: 0.930, alpha: 1)
+            // Il fill dipinge le facciate in ombra — cioe' quasi tutta la
+            // casa vista dalla dashboard. E' QUI che alba, tramonto e luna
+            // si vedono senza bisogno dell'orizzonte in inquadratura
+            // (disegno dell'utente): rosa all'alba, oro al tramonto,
+            // azzurro-luna la notte, il neutro caldo di giorno.
+            fillLight.light.color = switch currentSkyPhase {
+            case .day:
+                UIColor(red: 0.965, green: 0.952, blue: 0.930, alpha: 1)
+            case .dawn:
+                UIColor(red: 1.0, green: 0.82, blue: 0.76, alpha: 1)
+            case .dusk:
+                UIColor(red: 1.0, green: 0.83, blue: 0.62, alpha: 1)
+            case .night:
+                UIColor(red: 0.82, green: 0.87, blue: 1.0, alpha: 1)
+            }
             fillLight.shadow = nil
             fillLight.look(at: .zero,
                            from: SIMD3(radius * 2.6, radius * 1.4, -radius * 2.2),
