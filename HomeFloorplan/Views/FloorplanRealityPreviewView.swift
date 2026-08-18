@@ -134,7 +134,26 @@ struct FloorplanRealityPreviewView: View {
     /// Anteprima notte, **solo in debug**: il sole resta reale in produzione,
     /// ma di giorno non c'è modo di verificare le luci — e una funzione che si
     /// può provare solo dopo cena non si sviluppa.
-    @State private var forcesNight = false
+    #if DEBUG
+    /// La macchina del tempo di debug: anteprima dei tre atti del cielo
+    /// senza aspettare l'ora vera (e senza tenere il 3D acceso a scaldare
+    /// l'iPad fino al tramonto). Alba e sera CERCANO l'istante di oggi con
+    /// l'elevazione giusta, cosi' l'anteprima e' fedele in ogni stagione.
+    private enum SkyPreview: String, CaseIterable, Identifiable {
+        case auto, dawn, noon, dusk, night
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .auto: "Auto"
+            case .dawn: "Alba"
+            case .noon: "Giorno"
+            case .dusk: "Sera"
+            case .night: "Notte"
+            }
+        }
+    }
+    @State private var skyPreview: SkyPreview = .auto
+    #endif
     #endif
     /// Il pannello delle impostazioni della planimetria: altezza soffitto,
     /// esposizione, anteprima notte. Sono configurazioni — si toccano una
@@ -994,9 +1013,7 @@ struct FloorplanRealityPreviewView: View {
     private var sun: FloorplanSunLight {
         let coordinate = SolarClock.homeCoordinate()
         #if DEBUG
-        let instant = forcesNight
-            ? Calendar.current.startOfDay(for: now).addingTimeInterval(23 * 3_600)
-            : now
+        let instant = skyPreviewInstant(coordinate: coordinate) ?? now
         #else
         let instant = now
         #endif
@@ -1017,6 +1034,39 @@ struct FloorplanRealityPreviewView: View {
             isAboveHorizon: solar.isAboveHorizon
         )
     }
+
+    #if DEBUG
+    private func skyPreviewInstant(coordinate: (latitude: Double, longitude: Double)) -> Date? {
+        guard skyPreview != .auto else { return nil }
+        let start = Calendar.current.startOfDay(for: now)
+        switch skyPreview {
+        case .noon:
+            return start.addingTimeInterval(13 * 3_600)
+        case .night:
+            return start.addingTimeInterval(1 * 3_600)
+        case .dawn, .dusk:
+            // Il minuto di oggi con il sole a ~+2°: dentro la fascia del
+            // crepuscolo qualunque sia la stagione.
+            let window = skyPreview == .dawn
+                ? stride(from: 0.0, to: 12 * 3_600, by: 300)
+                : stride(from: 12 * 3_600, to: 24 * 3_600, by: 300)
+            var best: (date: Date, distance: Double)?
+            for offset in window {
+                let candidate = start.addingTimeInterval(offset)
+                let elevation = SolarPosition.position(at: candidate,
+                                                       latitude: coordinate.latitude,
+                                                       longitude: coordinate.longitude).elevationDegrees
+                let distance = abs(elevation - 2)
+                if best == nil || distance < best!.distance {
+                    best = (candidate, distance)
+                }
+            }
+            return best?.date
+        case .auto:
+            return nil
+        }
+    }
+    #endif
 
     /// Titolo a sinistra, selettore al centro, ripristino a destra.
     ///
@@ -1245,12 +1295,17 @@ struct FloorplanRealityPreviewView: View {
                 }
 
                 #if DEBUG
-                Toggle(isOn: $forcesNight) {
-                    Text(String(localized: "floorplan.nightPreview", defaultValue: "Night preview"))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(verbatim: "Anteprima cielo (debug)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Picker(selection: $skyPreview) {
+                        ForEach(SkyPreview.allCases) { preview in
+                            Text(verbatim: preview.label).tag(preview)
+                        }
+                    } label: { EmptyView() }
+                    .pickerStyle(.segmented)
                 }
-                .tint(.indigo)
                 #endif
             }
             .padding(.horizontal, 20)
