@@ -204,6 +204,12 @@ struct DrawingFloorplanSheet: View {
             .max() ?? 0
     }
 
+    /// Larghezza sotto la quale la toolbar estesa non ci sta in modalità Muro.
+    /// Misurata sul simulatore, non stimata: su iPad 11" verticale (834 pt) la
+    /// fila sfondava di circa 220 pt, cioè quanto il gruppo dei quattro tipi
+    /// di muro. Sopra questa soglia la fila resta espansa.
+    private static let expandedToolbarMinWidth: CGFloat = 1120
+
     private static var windowSafeAreaBottom: CGFloat {
         UIApplication.shared.connectedScenes
             .compactMap { ($0 as? UIWindowScene)?.keyWindow?.safeAreaInsets.bottom }
@@ -371,7 +377,13 @@ struct DrawingFloorplanSheet: View {
                     furnitureKind: $furnitureKind,
                     showDimensions: $showDimensions,
                     hasSelection: selection != .none,
-                    onDelete: deleteSelected
+                    onDelete: deleteSelected,
+                    // La fila estesa in modalità Muro chiede più larghezza di
+                    // quanta ne abbia un iPad 11" in verticale (834 pt) o un
+                    // 13" in verticale (1032). Sotto la soglia i tipi di muro
+                    // vanno dietro un solo slot-menu; sopra restano espansi,
+                    // che su schermo largo è la disposizione voluta.
+                    collapsesWallKinds: geo.size.width < Self.expandedToolbarMinWidth
                 )
                 }
                 .shieldsCanvasTouches()
@@ -439,6 +451,15 @@ struct DrawingFloorplanSheet: View {
                 .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
             }
         }
+        // ⚠️ La larghezza è quella del GeometryReader, e non è pignoleria: il
+        // GeometryReader NON costringe il proprio contenuto e lo allinea in
+        // alto a sinistra. Senza questo, una toolbar più larga dello schermo
+        // (in modalità Muro la fila guadagna i quattro tipi di muro) allargava
+        // l'INTERA ZStack, e tutti i fratelli scivolavano a destra: su iPad 11"
+        // «Fatto» finiva tagliato dal bordo e l'ultimo slot della toolbar fuori
+        // schermo — mentre in Seleziona, dove la fila ci sta, era tutto a posto.
+        // L'altezza si lascia stare: il canvas la governa con ignoresSafeArea.
+        .frame(width: geo.size.width)
         .ignoresSafeArea()
         // Re-apply bottom safe area so the bottom toolbar isn't clipped.
         .ignoresSafeArea(edges: .bottom)

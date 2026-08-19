@@ -192,16 +192,18 @@ struct DrawingCanvasView: UIViewRepresentable {
     func updateUIView(_ sv: UIScrollView, context: Context) {
         context.coordinator.parent = self
 
-        let panDisabled: Bool
-        if case .draw = mode { panDisabled = true }
-        else if case .drawRoomArea = mode { panDisabled = true }
-        else { panDisabled = false }
-
-        // In disegno il pan non sparisce: passa a due dita. Un dito disegna,
-        // due spostano — è la grammatica di qualunque app di disegno, e su
-        // iPhone è l'unica alternativa al cambiare modalità per ogni pan.
+        // I4, in TUTTE le modalità: un dito è lo strumento, due dita sono la
+        // navigazione. Il pan non sparisce, sale a due dita — è la grammatica
+        // di qualunque app di disegno, ed è già lo scroll naturale del trackpad
+        // su iPad.
+        //
+        // Valeva solo in disegno e in area-stanza. Nelle altre modalità un dito
+        // panava, e correva contro il long-press che deve raccogliere il tap:
+        // vinceva il movimento, e su iPad il risultato era «il disegno si muove
+        // e il tap su oggetti e muri non funziona». In Selezione era continuo,
+        // perché lì ogni interazione comincia con un dito appoggiato.
         sv.panGestureRecognizer.isEnabled = true
-        sv.panGestureRecognizer.minimumNumberOfTouches = panDisabled ? 2 : 1
+        sv.panGestureRecognizer.minimumNumberOfTouches = 2
         context.coordinator.enforceZoomFloor(sv)
         let gestureEnabled: Bool
         switch mode {
@@ -582,6 +584,40 @@ struct DrawingCanvasView: UIViewRepresentable {
                                      with view: UIView?, atScale scale: CGFloat) {
             enforceZoomFloor(scrollView)
             centerContent(scrollView)
+            // L'ordine conta: prima gli inset nuovi, poi l'offset dentro quelli.
+            clampContentOffset(scrollView)
+        }
+
+        /// I limiti che `contentInset` e `contentSize` consentono all'offset.
+        /// Uno solo, così l'auto-pan e il clamp di fine pinch non possono
+        /// divergere.
+        private func contentOffsetBounds(_ scrollView: UIScrollView) -> (min: CGPoint, max: CGPoint) {
+            let minX = -scrollView.contentInset.left
+            let minY = -scrollView.contentInset.top
+            let maxX = max(minX, scrollView.contentSize.width - scrollView.bounds.width + scrollView.contentInset.right)
+            let maxY = max(minY, scrollView.contentSize.height - scrollView.bounds.height + scrollView.contentInset.bottom)
+            return (CGPoint(x: minX, y: minY), CGPoint(x: maxX, y: maxY))
+        }
+
+        /// Riporta l'offset dentro i limiti.
+        ///
+        /// Serve a fine pinch: `enforceZoomFloor` rimette a posto lo zoom e
+        /// `centerContent` gli inset, ma **nessuno dei due tocca l'offset**. Un
+        /// pinch violento lo lasciava parcheggiato fuori dai limiti nuovi e il
+        /// canvas restava bianco — disegno e griglia fuori dal viewport —
+        /// finché un gesto qualsiasi non rifaceva il layout. I6 lo copriva,
+        /// ma lo schermo vuoto restava suo.
+        ///
+        /// ⚠️ Scrive solo se serve: `setContentOffset` rifà layout, e il
+        /// layout richiama `centerContent`. Stessa famiglia dell'anello
+        /// `topBarHeight`, stessa precauzione.
+        private func clampContentOffset(_ scrollView: UIScrollView) {
+            let bounds = contentOffsetBounds(scrollView)
+            let current = scrollView.contentOffset
+            let target = CGPoint(x: min(max(current.x, bounds.min.x), bounds.max.x),
+                                 y: min(max(current.y, bounds.min.y), bounds.max.y))
+            guard abs(target.x - current.x) > 0.5 || abs(target.y - current.y) > 0.5 else { return }
+            scrollView.setContentOffset(target, animated: false)
         }
 
         private func updateAutoPan(for gesture: UILongPressGestureRecognizer) {
@@ -646,13 +682,10 @@ struct DrawingCanvasView: UIViewRepresentable {
                 return
             }
 
-            let minX = -scrollView.contentInset.left
-            let minY = -scrollView.contentInset.top
-            let maxX = max(minX, scrollView.contentSize.width - scrollView.bounds.width + scrollView.contentInset.right)
-            let maxY = max(minY, scrollView.contentSize.height - scrollView.bounds.height + scrollView.contentInset.bottom)
+            let bounds = contentOffsetBounds(scrollView)
             var next = scrollView.contentOffset
-            next.x = min(max(next.x + autoPanVelocity.x, minX), maxX)
-            next.y = min(max(next.y + autoPanVelocity.y, minY), maxY)
+            next.x = min(max(next.x + autoPanVelocity.x, bounds.min.x), bounds.max.x)
+            next.y = min(max(next.y + autoPanVelocity.y, bounds.min.y), bounds.max.y)
             scrollView.setContentOffset(next, animated: false)
             refreshActiveGestureAfterAutoPan()
         }
@@ -689,7 +722,7 @@ struct DrawingCanvasView: UIViewRepresentable {
             }
             let rawPoint = gr.location(in: hostedView)
             if let hostedView,
-               parent.chromeInsets.contains(rawPoint, in: hostedView.bounds),
+               parent.chromeInsets.containsUnshieldedChrome(rawPoint, in: hostedView.bounds),
                gr.state == .began || gr.state == .changed {
                 stopAutoPan()
                 cancelMainGesture()
@@ -1469,7 +1502,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                                shouldReceive touch: UITouch) -> Bool {
             if let view = gr.view {
                 let point = touch.location(in: view)
-                if parent.chromeInsets.contains(point, in: view.bounds) {
+                if parent.chromeInsets.containsUnshieldedChrome(point, in: view.bounds) {
                     return false
                 }
             }
@@ -1486,11 +1519,28 @@ struct DrawingCanvasView: UIViewRepresentable {
 }
 
 private extension UIEdgeInsets {
-    func contains(_ point: CGPoint, in bounds: CGRect) -> Bool {
+    /// La fascia di chrome che il canvas deve rifiutare **da sé** — cioè quella
+    /// che nessuno scudo copre.
+    ///
+    /// ⚠️ Il bordo inferiore è escluso di proposito. La chrome bassa (inspector,
+    /// banner contestuali, toolbar) sta tutta dentro il VStack che porta
+    /// `shieldsCanvasTouches()`: lo scudo è una UIView vera, dimensionata sul
+    /// contenuto, e vince l'hit-test sul suo ingombro **esatto**. Il numero qui
+    /// sotto invece è una stima, ed era tarata sul dock compatto: su iPad
+    /// rifiutava fino a 89 pt di canvas visibile dove chrome non ce n'era. E
+    /// siccome il `panGestureRecognizer` della scrollview NON passa da questo
+    /// delegate mentre tap e long-press sì, in quella fascia il disegno si
+    /// muoveva ma non si selezionava né si disegnava.
+    ///
+    /// Il bordo superiore resta perché lì lo scudo non si può mettere: quel
+    /// VStack contiene lo `Spacer()` che riempie lo schermo, e lo scudo
+    /// diventerebbe una UIView a tutto schermo che uccide ogni tocco UIKit
+    /// («tutto bloccato» su iPad, `e97f110`). Vedi il commento-sentinella in
+    /// `DrawingFloorplanSheet`.
+    func containsUnshieldedChrome(_ point: CGPoint, in bounds: CGRect) -> Bool {
         point.x < bounds.minX + left ||
         point.x > bounds.maxX - right ||
-        point.y < bounds.minY + top ||
-        point.y > bounds.maxY - bottom
+        point.y < bounds.minY + top
     }
 }
 

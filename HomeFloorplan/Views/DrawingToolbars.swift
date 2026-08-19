@@ -674,6 +674,12 @@ struct OpeningInspectorPanel: View {
                         .frame(width: 36, height: 36)
                         .background(BrandColor.primary.opacity(0.12),
                                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        // Pillola da 36 per l'occhio, bersaglio da 44 per il
+                        // dito: sotto i 44 pt il tocco cade fuori (HIG), ed era
+                        // l'unico controllo della chrome di disegno a starci
+                        // sotto. Il frame esterno non cambia il disegno.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -771,6 +777,13 @@ struct DrawingToolbar: View {
     var hasSelection: Bool
     var onDelete: () -> Void
 
+    /// Vero quando la fila estesa non ci sta in larghezza e i tipi di muro
+    /// vanno dietro un solo slot-menu. Il caso che l'ha imposto è iPad 11" in
+    /// verticale (834 pt): in modalità Muro i quattro tipi sfondavano il bordo,
+    /// e prima del vincolo di larghezza sul foglio si portavano dietro anche
+    /// «Fatto». La soglia la decide chi conosce la geometria — il foglio.
+    var collapsesWallKinds: Bool = false
+
     var body: some View {
         if isCompact {
             compactToolbar
@@ -826,6 +839,17 @@ struct DrawingToolbar: View {
 
             // ── Wall kind toggle (visible only in draw mode) ────────────────
             if mode == .draw {
+                // Stretto: un solo slot-menu, che tiene la propria superficie
+                // (un Menu va sempre sollevato da solo nel popover).
+                if collapsesWallKinds {
+                    regularWallKindMenu
+                        .glassChromeSurface(
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+                            legacyFill: AnyShapeStyle(.ultraThinMaterial),
+                            legacyBorder: Color.white.opacity(0.2)
+                        )
+                        .transition(.opacity)
+                } else {
                 HStack(spacing: 0) {
                     wallKindButton(kind: .exterior, icon: "square.on.square",
                                    label: String(localized: "drawing.toolbar.wall.exterior", defaultValue: "Perim."))
@@ -845,6 +869,7 @@ struct DrawingToolbar: View {
                 // cambia la geometria a ogni fotogramma e la costringe a
                 // rivalutarsi altrettante volte.
                 .transition(.opacity)
+                }
             }
 
             // ── Snap toggle (draw + select modes) ────────────────────────────
@@ -862,6 +887,7 @@ struct DrawingToolbar: View {
                     .frame(width: 52, height: 48)
                     .background(vertexSnapEnabled ? BrandColor.primary.opacity(0.12) : Color.clear,
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 // Sola opacità: questi elementi entrano ed escono DENTRO la
@@ -885,6 +911,7 @@ struct DrawingToolbar: View {
                 .frame(width: 52, height: 48)
                 .background(showDimensions ? BrandColor.primary.opacity(0.12) : Color.clear,
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -1024,6 +1051,50 @@ struct DrawingToolbar: View {
         }
     }
 
+    private var wallKindLabelText: String {
+        switch wallKind {
+        case .exterior: return String(localized: "drawing.toolbar.wall.exterior", defaultValue: "Perim.")
+        case .interior: return String(localized: "drawing.toolbar.wall.interior", defaultValue: "Interior")
+        case .balcony:  return String(localized: "drawing.toolbar.wall.balcony",  defaultValue: "Balcony")
+        case .logical:  return String(localized: "drawing.toolbar.wall.logical",  defaultValue: "Logical")
+        }
+    }
+
+    /// I quattro tipi di muro dietro un solo slot, per le larghezze regular
+    /// strette. Stessa scelta già presa su compact e stessi item
+    /// (`compactWallKindEntry`): cambia solo il bersaglio che li apre, che qui
+    /// resta nello stile della fila estesa e mostra il tipo attivo.
+    private var regularWallKindMenu: some View {
+        Menu {
+            compactWallKindEntry(kind: .exterior,
+                                 icon: "square.on.square",
+                                 label: String(localized: "drawing.toolbar.wall.exterior", defaultValue: "Perim."))
+            compactWallKindEntry(kind: .interior,
+                                 icon: "square.dashed",
+                                 label: String(localized: "drawing.toolbar.wall.interior", defaultValue: "Interior"))
+            compactWallKindEntry(kind: .balcony,
+                                 icon: "line.diagonal",
+                                 label: String(localized: "drawing.toolbar.wall.balcony", defaultValue: "Balcony"))
+            compactWallKindEntry(kind: .logical,
+                                 icon: "divide",
+                                 label: String(localized: "drawing.toolbar.wall.logical", defaultValue: "Logical"))
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: wallKindIconName)
+                    .font(.system(size: 15, weight: .semibold))
+                Text(wallKindLabelText)
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(BrandColor.primary)
+            .frame(width: 72, height: 48)
+            .background(BrandColor.primary.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     /// Le quattro aperture dietro un solo slot: su 390 punti quattro bottoni
     /// da 68 sarebbero la barra intera.
     private var compactOpeningMenu: some View {
@@ -1149,6 +1220,7 @@ struct DrawingToolbar: View {
             .frame(width: 60, height: 48)
             .background(active ? BrandColor.primary.opacity(0.12) : Color.clear,
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -1165,6 +1237,9 @@ struct DrawingToolbar: View {
             .frame(width: 72, height: 48)
             .background(active ? BrandColor.primary.opacity(0.12) : Color.clear,
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            // Da spento lo sfondo è `Color.clear`: il bersaglio va dichiarato,
+            // o dipende da quanto inchiostro c'è sotto il dito.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
