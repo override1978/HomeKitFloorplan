@@ -20,7 +20,7 @@ enum RoomShapeTracer {
     /// vista sembra ok» — e deve esserlo anche per il tracciatore, o il tap
     /// non fa nulla senza spiegarsi. La griglia è a 25 pt: vertici distinti
     /// restano lontani il quadruplo.
-    private static let epsilon: CGFloat = 6.0
+    private static let epsilon: CGFloat = DrawingDocument.jointTolerance
 
     /// Sotto quest'area una faccia è un artefatto di spezzatura, non una
     /// stanza (20×20 pt ≈ mezzo modulo di griglia).

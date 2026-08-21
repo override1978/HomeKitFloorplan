@@ -918,6 +918,32 @@ struct DrawingDocument: Equatable, nonisolated Codable {
 
     // MARK: Vertex snapping
 
+    /// La tolleranza con cui due estremi contano come UNA giunzione: la
+    /// stessa ε con cui il RoomShapeTracer fonde i vertici (che la eredita
+    /// da qui — unica fonte). Se divergono, «ciò che si muove insieme» e
+    /// «ciò che chiude una stanza» smettono di essere la stessa cosa.
+    static let jointTolerance: CGFloat = 6.0
+
+    /// Gli estremi degli ALTRI muri coincidenti con `point`: il «ginocchio».
+    /// Chi trascina un endpoint muove anche questi, così l'angolo resta
+    /// saldato invece di aprirsi. Include ogni tipo di muro, logici compresi:
+    /// un confine che condivide il vertice deve seguire la piega.
+    /// `endpointIndex`: 0 = start, 1 = end — la stessa convenzione del drag.
+    func jointEndpoints(at point: CGPoint,
+                        excluding wallID: UUID?,
+                        tolerance: CGFloat = DrawingDocument.jointTolerance) -> [(wallID: UUID, endpointIndex: Int)] {
+        var joints: [(wallID: UUID, endpointIndex: Int)] = []
+        for wall in walls where wall.id != wallID {
+            if hypot(wall.start.x - point.x, wall.start.y - point.y) <= tolerance {
+                joints.append((wall.id, 0))
+            }
+            if hypot(wall.end.x - point.x, wall.end.y - point.y) <= tolerance {
+                joints.append((wall.id, 1))
+            }
+        }
+        return joints
+    }
+
     /// Returns the closest existing wall endpoint within `maxDistance` canvas points, or nil.
     func nearestEndpoint(to point: CGPoint, maxDistance: CGFloat = 30) -> CGPoint? {
         var bestPoint: CGPoint?

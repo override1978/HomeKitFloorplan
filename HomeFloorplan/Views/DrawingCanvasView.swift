@@ -270,6 +270,9 @@ struct DrawingCanvasView: UIViewRepresentable {
         // Drag wall endpoint state
         private var draggingWallEndpointID: UUID?
         private var draggingEndpointIndex: Int?   // 0 = start, 1 = end
+        /// Il resto del «ginocchio»: gli estremi coincidenti degli altri muri,
+        /// raccolti al began e trascinati insieme perché l'angolo resti chiuso.
+        private var draggingJointCompanions: [(wallID: UUID, endpointIndex: Int)] = []
 
         // Drag whole-wall state
         private var draggingWallID: UUID?
@@ -323,8 +326,13 @@ struct DrawingCanvasView: UIViewRepresentable {
             return .grid(DrawingDocument.snap(point))
         }
 
+        /// `movingWallIDs`: il muro trascinato E i compagni di giunzione. I
+        /// compagni inseguono il dito fotogramma per fotogramma: lasciarli fra
+        /// i bersagli di snap significa magnetizzare il ginocchio a se stesso
+        /// (l'estremo si aggancia alla propria posizione del frame prima e il
+        /// drag si incolla).
         private func performEndpointSnap(_ point: CGPoint,
-                                         movingWallID: UUID) -> SnapResult {
+                                         movingWallIDs: Set<UUID>) -> SnapResult {
             guard vertexSnapEnabled else {
                 return .grid(DrawingDocument.snap(point))
             }
@@ -332,14 +340,14 @@ struct DrawingCanvasView: UIViewRepresentable {
             if let vertex = nearestEndpoint(
                 to: point,
                 maxDistance: canvasThreshold(precisionModeEnabled ? 44 : 34),
-                excludingWallID: movingWallID
+                excludingWallIDs: movingWallIDs
             ) {
                 return .vertex(vertex)
             }
             if let wallPoint = nearestWallPoint(
                 to: point,
                 maxDistance: canvasThreshold(parent.showsMagnifier ? 5 : 10),
-                excludingWallID: movingWallID
+                excludingWallIDs: movingWallIDs
             ) {
                 return .wall(wallPoint)
             }
@@ -348,11 +356,11 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         private func nearestWallPoint(to point: CGPoint,
                                       maxDistance: CGFloat,
-                                      excludingWallID: UUID) -> CGPoint? {
+                                      excludingWallIDs: Set<UUID>) -> CGPoint? {
             var bestPoint: CGPoint?
             var bestDistance: CGFloat = .greatestFiniteMagnitude
 
-            for wall in parent.document.walls where wall.id != excludingWallID && wall.kind.rendersAsPhysicalWall {
+            for wall in parent.document.walls where !excludingWallIDs.contains(wall.id) && wall.kind.rendersAsPhysicalWall {
                 let projection = wall.project(point)
                 guard projection.t > 0, projection.t < 1 else { continue }
                 if projection.distance < bestDistance {
@@ -367,11 +375,11 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         private func nearestEndpoint(to point: CGPoint,
                                      maxDistance: CGFloat,
-                                     excludingWallID: UUID) -> CGPoint? {
+                                     excludingWallIDs: Set<UUID>) -> CGPoint? {
             var bestPoint: CGPoint?
             var bestDistance: CGFloat = .greatestFiniteMagnitude
 
-            for wall in parent.document.walls where wall.id != excludingWallID {
+            for wall in parent.document.walls where !excludingWallIDs.contains(wall.id) {
                 for endpoint in [wall.start, wall.end] {
                     let distance = hypot(endpoint.x - point.x, endpoint.y - point.y)
                     if distance < bestDistance {
@@ -387,11 +395,11 @@ struct DrawingCanvasView: UIViewRepresentable {
 
         private func axisSnap(_ point: CGPoint,
                               maxDistance: CGFloat,
-                              excludingWallID: UUID) -> AxisSnapResult? {
+                              excludingWallIDs: Set<UUID>) -> AxisSnapResult? {
             var bestX: (dist: CGFloat, vertex: CGPoint)?
             var bestY: (dist: CGFloat, vertex: CGPoint)?
 
-            for wall in parent.document.walls where wall.id != excludingWallID {
+            for wall in parent.document.walls where !excludingWallIDs.contains(wall.id) {
                 for endpoint in [wall.start, wall.end] {
                     let dx = abs(endpoint.x - point.x)
                     let dy = abs(endpoint.y - point.y)
@@ -754,7 +762,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                                                                   rawPoint: rawPoint,
                                                                   directionVector: CGPoint(x: rawPoint.x - start.x,
                                                                                            y: rawPoint.y - start.y),
-                                                                  excludingWallID: nil) {
+                                                                  excludingWallIDs: []) {
                 snapResult = .wall(intersection)
                 snapped = intersection
             }
@@ -835,7 +843,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                                                                       rawPoint: point,
                                                                       directionVector: CGPoint(x: point.x - start.x,
                                                                                                y: point.y - start.y),
-                                                                      excludingWallID: nil) {
+                                                                      excludingWallIDs: []) {
                     finalPoint = intersection
                     finalSnap = .wall(intersection)
                 }
@@ -989,10 +997,12 @@ struct DrawingCanvasView: UIViewRepresentable {
                     if distToStart < endpointHitRadius {
                         draggingWallEndpointID = id
                         draggingEndpointIndex  = 0
+                        draggingJointCompanions = parent.document.jointEndpoints(at: wall.start, excluding: id)
                         parent.onBeginMoveWallEndpoint?(id)
                     } else if distToEnd < endpointHitRadius {
                         draggingWallEndpointID = id
                         draggingEndpointIndex  = 1
+                        draggingJointCompanions = parent.document.jointEndpoints(at: wall.end, excluding: id)
                         parent.onBeginMoveWallEndpoint?(id)
                     } else if parent.showsMagnifier {
                         let mid = CGPoint(x: (wall.start.x + wall.end.x) / 2,
@@ -1069,12 +1079,13 @@ struct DrawingCanvasView: UIViewRepresentable {
                 }
                 // Move wall endpoint
                 if let id = draggingWallEndpointID, let epIdx = draggingEndpointIndex {
-                    let snapResult = performEndpointSnap(rawPoint, movingWallID: id)
+                    let movingIDs = Set([id] + draggingJointCompanions.map(\.wallID))
+                    let snapResult = performEndpointSnap(rawPoint, movingWallIDs: movingIDs)
                     var snapped = snapResult.point
                     var axisGuide: (from: CGPoint, to: CGPoint)? = nil
                     let alignmentAxis = axisSnap(rawPoint,
                                                  maxDistance: canvasThreshold(parent.showsMagnifier ? 38 : 22),
-                                                 excludingWallID: id)
+                                                 excludingWallIDs: movingIDs)
                     if case .grid = snapResult,
                        let axisResult = alignmentAxis {
                         // Axis snap fires: lock one coordinate, grid-snap the free axis.
@@ -1082,11 +1093,24 @@ struct DrawingCanvasView: UIViewRepresentable {
                         axisGuide = (from: axisResult.referenceVertex, to: snapped)
                     } else if let wall = parent.document.wall(for: id) {
                         let anchor = epIdx == 0 ? wall.end : wall.start
-                        if let intersection = axisPreservingWallIntersection(from: anchor,
+                        // ⚠️ Il VERTICE vince su ogni magnete d'asse. In modalità
+                        // disegno è sempre stato così (l'intersezione è cintata su
+                        // .wall e angleSnappedEnd si ritira sui geometry-snap);
+                        // qui invece l'intersezione scattava anche sopra un
+                        // vertice già trovato: vicino a una giunzione un corpo-
+                        // muro c'è sempre, l'asse bloccato ai 45° lo interseca, e
+                        // il punto atterrava VICINO ma non SUL vertice. Su una
+                        // pianta non ortogonale significava giunzioni mai saldate
+                        // (i V aperti del balcone), drag che combattono il
+                        // magnete, e il tracer che scavalca il buco e fonde due
+                        // stanze in una.
+                        if case .vertex = snapResult {
+                            // saldatura esatta: niente asse, niente angolo
+                        } else if let intersection = axisPreservingWallIntersection(from: anchor,
                                                                              rawPoint: rawPoint,
                                                                              directionVector: CGPoint(x: wall.end.x - wall.start.x,
                                                                                                       y: wall.end.y - wall.start.y),
-                                                                             excludingWallID: id) {
+                                                                             excludingWallIDs: movingIDs) {
                             snapped = intersection
                             axisGuide = (from: anchor, to: intersection)
                         } else {
@@ -1102,6 +1126,12 @@ struct DrawingCanvasView: UIViewRepresentable {
                     contentState.magnifierPoint = parent.showsMagnifier ? snapped : nil
                     contentState.snapPreview = currentSnapPreview
                     parent.onMoveWallEndpoint?(id, epIdx, snapped)
+                    // Il ginocchio si piega intero: i compagni ricevono lo
+                    // stesso punto snappato, così la coincidenza resta esatta
+                    // (ε del tracer inclusa) a ogni fotogramma.
+                    for companion in draggingJointCompanions {
+                        parent.onMoveWallEndpoint?(companion.wallID, companion.endpointIndex, snapped)
+                    }
                 }
                 // Move whole wall
                 if let id = draggingWallID, let touchStart = dragWallTouchStart {
@@ -1126,6 +1156,7 @@ struct DrawingCanvasView: UIViewRepresentable {
                 resizeFurnitureRotationDegrees = 0
                 draggingWallEndpointID       = nil
                 draggingEndpointIndex        = nil
+                draggingJointCompanions      = []
                 draggingWallID               = nil
                 dragWallTouchStart           = nil
                 contentState.axisSnapGuide   = nil
@@ -1179,7 +1210,7 @@ struct DrawingCanvasView: UIViewRepresentable {
         private func axisPreservingWallIntersection(from anchor: CGPoint,
                                                     rawPoint: CGPoint,
                                                     directionVector: CGPoint,
-                                                    excludingWallID: UUID?) -> CGPoint? {
+                                                    excludingWallIDs: Set<UUID>) -> CGPoint? {
             let length = hypot(directionVector.x, directionVector.y)
             guard length > 0 else { return nil }
 
@@ -1188,7 +1219,7 @@ struct DrawingCanvasView: UIViewRepresentable {
             let wallSearchDistance: CGFloat = parent.showsMagnifier ? 22 : 14
             let intersectionTolerance: CGFloat = parent.showsMagnifier ? 72 : 44
             guard let targetWall = nearestPhysicalWall(to: rawPoint,
-                                                       excludingWallID: excludingWallID,
+                                                       excludingWallIDs: excludingWallIDs,
                                                        maxDistance: canvasThreshold(wallSearchDistance)) else {
                 return nil
             }
@@ -1211,12 +1242,12 @@ struct DrawingCanvasView: UIViewRepresentable {
         }
 
         private func nearestPhysicalWall(to point: CGPoint,
-                                         excludingWallID: UUID?,
+                                         excludingWallIDs: Set<UUID>,
                                          maxDistance: CGFloat) -> WallSegment? {
             var bestWall: WallSegment?
             var bestDistance: CGFloat = .greatestFiniteMagnitude
 
-            for wall in parent.document.walls where wall.id != excludingWallID && wall.kind.rendersAsPhysicalWall {
+            for wall in parent.document.walls where !excludingWallIDs.contains(wall.id) && wall.kind.rendersAsPhysicalWall {
                 let projection = wall.project(point)
                 guard projection.t >= 0, projection.t <= 1 else { continue }
                 if projection.distance < bestDistance {

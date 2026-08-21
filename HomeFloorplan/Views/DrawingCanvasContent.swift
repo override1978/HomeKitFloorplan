@@ -422,8 +422,13 @@ struct DrawingCanvasContent: View {
         switch selection {
         case .wall(let id):
             guard let wall = document.wall(for: id) else { return }
-            drawEndpointHandle(at: wall.start, context: &context)
-            drawEndpointHandle(at: wall.end, context: &context)
+            // Dove altri estremi coincidono, la maniglia è un «ginocchio»:
+            // il puntino interno dice che afferrandola si piega l'angolo
+            // intero, non un muro solo.
+            drawEndpointHandle(at: wall.start, context: &context,
+                               joint: !document.jointEndpoints(at: wall.start, excluding: id).isEmpty)
+            drawEndpointHandle(at: wall.end, context: &context,
+                               joint: !document.jointEndpoints(at: wall.end, excluding: id).isEmpty)
             // Filled midpoint handle: indicates the wall body is draggable
             let mid = CGPoint(x: (wall.start.x + wall.end.x) / 2,
                               y: (wall.start.y + wall.end.y) / 2)
@@ -1075,7 +1080,8 @@ func drawEdgeMidpointIndicator(at point: CGPoint, context: inout GraphicsContext
 
 func drawEndpointHandle(at point: CGPoint,
                         context: inout GraphicsContext,
-                        filled: Bool = false) {
+                        filled: Bool = false,
+                        joint: Bool = false) {
     let r: CGFloat = 7
     let rect = CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)
     let circlePath = Path(ellipseIn: rect)
@@ -1087,6 +1093,11 @@ func drawEndpointHandle(at point: CGPoint,
         context.stroke(circlePath,
                        with: .color(DrawingStyle.selectionColor),
                        lineWidth: 2.5)
+    }
+    if joint {
+        let dot: CGFloat = 3
+        let dotRect = CGRect(x: point.x - dot, y: point.y - dot, width: dot * 2, height: dot * 2)
+        context.fill(Path(ellipseIn: dotRect), with: .color(DrawingStyle.selectionColor))
     }
 }
 

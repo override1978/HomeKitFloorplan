@@ -813,7 +813,10 @@ struct DrawingToolbar: View {
     }
 
     private var toolbarItems: some View {
-        HStack(spacing: 16) {
+        // Sotto soglia la fila vive senza margini: 6 varchi × 4 pt recuperano
+        // il respiro che a 16 mancava — con lo spacing pieno certi stati
+        // sbordavano e «Muro» finiva mezzo fuori dallo schermo.
+        HStack(spacing: collapsesWallKinds ? 12 : 16) {
 
             // ── Left: mode toggle (Muro / Seleziona) ──────────────────────────
             HStack(spacing: 0) {
