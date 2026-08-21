@@ -30,6 +30,10 @@ struct AutomationWizardSheet: View {
     @State private var startEvents: [AutomationStartEventDraft] = []
     @State private var editingStartEvent: StartEventEditTarget?
     @State private var editingCondition: ConditionEditTarget?
+    /// Come si inserisce la soglia numerica: barra o tastiera. Voce scelta
+    /// dal piccolo picker sopra l'editor del valore; vale per tutte le barre
+    /// del foglio (Da/A comprese), che è anche il comportamento atteso.
+    @State private var thresholdManualEntry = false
     @State private var locationRequestID = 0
     @State private var isChoosingTrigger = true
     @State private var showTriggerTargetPicker = false
@@ -3375,8 +3379,28 @@ struct AutomationWizardSheet: View {
     }
 
     private func capabilityValueEditor(selection: Binding<AutomationCapabilitySelection>, allowsBetween: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if case .any = selection.wrappedValue.targetValue {
+        // `allowsBetween` marca il contesto TRIGGER (come per «Tra»): solo lì
+        // «a ogni variazione» ha senso, una condizione è sempre un confronto.
+        // E dev'essere una modalità del picker, non uno stato terminale: prima
+        // un trigger arrivato come .any (decodifica threshold-range piena)
+        // mostrava solo l'etichetta, senza via per passare a una soglia — e
+        // viceversa nessuna soglia poteva tornare «a ogni variazione».
+        let isAny: Bool = { if case .any = selection.wrappedValue.targetValue { return true }; return false }()
+        return VStack(alignment: .leading, spacing: 12) {
+            if allowsBetween || !isAny {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(String(localized: "automation.wizard.operator", defaultValue: "Operator"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    if allowsBetween {
+                        triggerModePicker(selection: selection)
+                    } else {
+                        operatorPicker(selection: selection, allowsBetween: allowsBetween)
+                    }
+                }
+            }
+
+            if isAny {
                 Label(
                     String(localized: "automation.trigger.anyValue.description",
                            defaultValue: "Triggers on any value change"),
@@ -3385,13 +3409,6 @@ struct AutomationWizardSheet: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(String(localized: "automation.wizard.operator", defaultValue: "Operator"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    operatorPicker(selection: selection, allowsBetween: allowsBetween)
-                }
-
                 switch selection.wrappedValue.capability.valueKind {
                 case .boolean(let activeLabel, let inactiveLabel):
                     booleanValueEditor(
@@ -3412,13 +3429,61 @@ struct AutomationWizardSheet: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    /// Il picker dei trigger: «Varia» più gli operatori di confronto.
+    private func triggerModePicker(selection: Binding<AutomationCapabilitySelection>) -> some View {
+        Picker(String(localized: "automation.wizard.operator", defaultValue: "Operator"),
+               selection: triggerModeBinding(selection)) {
+            Text(String(localized: "automation.operator.anyChange", defaultValue: "Any change"))
+                .tag(AutomationTriggerValueMode.anyChange)
+            ForEach(operators(for: selection.wrappedValue.capability, includeBetween: true), id: \.self) { op in
+                Text(op.displayName).tag(AutomationTriggerValueMode.compare(op))
+            }
+        }
+        // Menu, non segmented: con le frasi piene («maggiore o uguale a»)
+        // cinque segmenti non hanno fisicamente lo spazio.
+        .pickerStyle(.menu)
+        .tint(BrandColor.primary)
+    }
+
+    private func triggerModeBinding(_ selection: Binding<AutomationCapabilitySelection>) -> Binding<AutomationTriggerValueMode> {
+        Binding {
+            if case .any = selection.wrappedValue.targetValue { return .anyChange }
+            return .compare(selection.wrappedValue.comparisonOperator)
+        } set: { newMode in
+            switch newMode {
+            case .anyChange:
+                selection.wrappedValue.targetValue = .any
+            case .compare(let op):
+                if case .any = selection.wrappedValue.targetValue {
+                    // Si esce da «Varia»: il target rinasce dal default del
+                    // valueKind, e «Tra» pretende la sua coppia.
+                    selection.wrappedValue.comparisonOperator = op
+                    selection.wrappedValue.targetValue = AutomationCapabilityTargetValue.defaultValue(
+                        for: selection.wrappedValue.capability.valueKind,
+                        operator: op
+                    )
+                    if op == .between, case .number(let value) = selection.wrappedValue.targetValue {
+                        let bounds = numericBounds(of: selection.wrappedValue.capability)
+                        let span = max(1, (bounds.upperBound - bounds.lowerBound) * 0.1)
+                        selection.wrappedValue.targetValue = .range(value, min(bounds.upperBound, value + span))
+                    }
+                } else {
+                    // Fra operatori di confronto vale la coercizione già
+                    // esistente (numero singolo ↔ coppia di «Tra»).
+                    operatorBinding(selection).wrappedValue = op
+                }
+            }
+        }
+    }
+
     private func operatorPicker(selection: Binding<AutomationCapabilitySelection>, allowsBetween: Bool = false) -> some View {
         Picker(String(localized: "automation.wizard.operator", defaultValue: "Operator"), selection: operatorBinding(selection)) {
             ForEach(operators(for: selection.wrappedValue.capability, includeBetween: allowsBetween), id: \.self) { op in
                 Text(op.displayName).tag(op)
             }
         }
-        .pickerStyle(.segmented)
+        .pickerStyle(.menu)
+        .tint(BrandColor.primary)
     }
 
     private func numericEditor(
@@ -3430,7 +3495,38 @@ struct AutomationWizardSheet: View {
         let allowedRange = range ?? 0...100
         let increment = step ?? 1
         return VStack(alignment: .leading, spacing: 8) {
-            if selection.wrappedValue.comparisonOperator == .between {
+            Picker(String(localized: "automation.input.mode", defaultValue: "Input"),
+                   selection: $thresholdManualEntry) {
+                Text(String(localized: "automation.input.mode.slider", defaultValue: "Slider"))
+                    .tag(false)
+                Text(String(localized: "automation.input.mode.manual", defaultValue: "Manual input"))
+                    .tag(true)
+            }
+            .pickerStyle(.segmented)
+
+            if thresholdManualEntry {
+                if selection.wrappedValue.comparisonOperator == .between {
+                    prominentThresholdRow(
+                        title: String(localized: "automation.range.from", defaultValue: "From"),
+                        value: rangeLowerBinding(selection, bounds: allowedRange),
+                        range: allowedRange,
+                        unit: unit
+                    )
+                    prominentThresholdRow(
+                        title: String(localized: "automation.range.to", defaultValue: "To"),
+                        value: rangeUpperBinding(selection, bounds: allowedRange),
+                        range: allowedRange,
+                        unit: unit
+                    )
+                } else {
+                    prominentThresholdRow(
+                        title: String(localized: "automation.wizard.threshold", defaultValue: "Threshold"),
+                        value: numericBinding(selection),
+                        range: allowedRange,
+                        unit: unit
+                    )
+                }
+            } else if selection.wrappedValue.comparisonOperator == .between {
                 automationNumericSlider(
                     title: String(localized: "automation.range.from", defaultValue: "From"),
                     value: rangeLowerBinding(selection, bounds: allowedRange),
@@ -3589,6 +3685,26 @@ struct AutomationWizardSheet: View {
         .buttonStyle(.plain)
     }
 
+    private func prominentThresholdRow(
+        title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        unit: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(formattedNumericValue(range.lowerBound, unit: unit)) – \(formattedNumericValue(range.upperBound, unit: unit))")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+            }
+            AutomationThresholdField(value: value, range: range, unit: unit, prominent: true)
+        }
+    }
+
     private func automationNumericSlider(
         title: String,
         value: Binding<Double>,
@@ -3602,8 +3718,7 @@ struct AutomationWizardSheet: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text(formattedNumericValue(value.wrappedValue, unit: unit))
-                    .font(.caption.weight(.semibold).monospacedDigit())
+                AutomationThresholdField(value: value, range: range, unit: unit)
             }
 
             GeometryReader { geo in
@@ -3632,7 +3747,12 @@ struct AutomationWizardSheet: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { drag in
-                            let raw = range.lowerBound + (drag.location.x / geo.size.width) * (range.upperBound - range.lowerBound)
+                            let fraction = drag.location.x / geo.size.width
+                            if AutomationSliderScale.usesLogScale(range) {
+                                value.wrappedValue = AutomationSliderScale.value(fraction: fraction, in: range)
+                                return
+                            }
+                            let raw = range.lowerBound + fraction * (range.upperBound - range.lowerBound)
                             let stepped = (raw / step).rounded() * step
                             value.wrappedValue = min(range.upperBound, max(range.lowerBound, stepped))
                         }
@@ -3664,6 +3784,9 @@ struct AutomationWizardSheet: View {
     private func normalizedValue(_ value: Double, in range: ClosedRange<Double>) -> CGFloat {
         guard range.upperBound > range.lowerBound else { return 0 }
         let clamped = min(range.upperBound, max(range.lowerBound, value))
+        if AutomationSliderScale.usesLogScale(range) {
+            return CGFloat(AutomationSliderScale.normalized(clamped, in: range))
+        }
         return CGFloat((clamped - range.lowerBound) / (range.upperBound - range.lowerBound))
     }
 
@@ -4924,11 +5047,24 @@ struct AutomationWizardEditDraft {
         if let characteristicEvent = event as? HMCharacteristicEvent<NSCopying>,
            let capability = capabilities.first(where: { $0.characteristic.uniqueIdentifier == characteristicEvent.characteristic.uniqueIdentifier }) {
             if let triggerValue = characteristicEvent.triggerValue as? NSNumber {
+                // Il target deve avere il TIPO del valueKind, come fa già il
+                // parser dei predicati: un .state(1) su una capability
+                // booleana bucava valuePhrase (riga «Contatto: 1» invece di
+                // «Aperto») e presentava all'editor il controllo sbagliato.
+                let target: AutomationCapabilityTargetValue
+                switch capability.valueKind {
+                case .boolean:
+                    target = .bool(triggerValue.doubleValue != 0)
+                case .numeric:
+                    target = .number(triggerValue.doubleValue)
+                case .state:
+                    target = .state(triggerValue.intValue)
+                }
                 return AutomationStartEventDraft(
                     selection: AutomationCapabilitySelection(
                         capability: capability,
                         comparisonOperator: .equals,
-                        targetValue: .state(triggerValue.intValue)
+                        targetValue: target
                     )
                 )
             }
@@ -6481,6 +6617,139 @@ private struct ConditionEditTarget: Identifiable {
     let id: UUID
 }
 
+/// La modalità di un trigger a caratteristica: «a ogni variazione» oppure un
+/// confronto. Vive solo nella UI — nel modello restano `targetValue == .any`
+/// e `comparisonOperator`, già capiti da scrittura e rilettura.
+private enum AutomationTriggerValueMode: Hashable {
+    case anyChange
+    case compare(AutomationCapabilityOperator)
+}
+
+/// La scala della barra numerica del wizard. Sui campi ampi la barra lineare
+/// rende intoccabile la zona che conta: 150 lux erano il primo pixel già su
+/// 0–5000. Sopra i 1.500 di ampiezza la corsa lavora
+/// in scala logaritmica — metà barra ≈ centinaia, non cinquantamila — e i
+/// valori atterrano su due cifre significative: 150, 200, 1.200, 46.000,
+/// perché sulla scala log lo step fisso non ha senso (vicino al fondo scala
+/// un pixel vale migliaia). Internal, non private: la matematica è testata.
+/// Il valore della soglia scritto a mano: la barra serve l'occhio, la
+/// tastiera serve il «203 esatto». Commit a ogni tasto (la barra si riempie
+/// mentre digiti), clamp sul range, riformattazione quando il campo perde
+/// il fuoco. Virgola e punto valgono entrambi: il tastierino italiano dà
+/// la virgola.
+private struct AutomationThresholdField: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let unit: String
+    /// La variante grande della modalità «Inserimento manuale».
+    var prominent: Bool = false
+
+    @State private var text: String = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: prominent ? 10 : 3) {
+            field
+            if prominent, isFocused {
+                Button {
+                    isFocused = false
+                } label: {
+                    Text(String(localized: "common.ok", defaultValue: "OK"))
+                        .font(.headline)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandColor.primary)
+            }
+        }
+        .onAppear {
+            text = Self.plainText(for: value)
+            if prominent { isFocused = true }
+        }
+        .onChange(of: value) { _, newValue in
+            guard !isFocused else { return }
+            text = Self.plainText(for: newValue)
+        }
+        .onChange(of: text) { _, newText in
+            guard isFocused else { return }
+            guard let parsed = Double(newText.replacingOccurrences(of: ",", with: ".")) else { return }
+            value = min(range.upperBound, max(range.lowerBound, parsed))
+        }
+        .onChange(of: isFocused) { _, focused in
+            // Al fuoco il campo si SVUOTA e il valore resta come placeholder:
+            // si digita e si sovrascrive, senza piazzare il cursore né
+            // combattere col seleziona-tutto. Uscendo, un campo lasciato
+            // vuoto ripristina l'ultimo valore valido.
+            if focused {
+                text = ""
+            } else {
+                text = Self.plainText(for: value)
+            }
+        }
+    }
+
+    private var field: some View {
+        HStack(spacing: prominent ? 8 : 3) {
+            TextField(Self.plainText(for: value), text: $text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(prominent ? .center : .trailing)
+                .focused($isFocused)
+                .font(prominent
+                      ? .system(size: 30, weight: .semibold, design: .rounded).monospacedDigit()
+                      : .caption.weight(.semibold).monospacedDigit())
+                .frame(minWidth: prominent ? 0 : 44,
+                       maxWidth: prominent ? .infinity : 76)
+            if !unit.isEmpty {
+                Text(unit)
+                    .font(prominent ? .headline : .caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, prominent ? 16 : 8)
+        .padding(.vertical, prominent ? 16 : 4)
+        .background(Color(.tertiarySystemFill),
+                    in: RoundedRectangle(cornerRadius: prominent ? 14 : 8, style: .continuous))
+        .overlay {
+            if prominent {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(isFocused ? BrandColor.primary.opacity(0.7) : Color.clear, lineWidth: 1.5)
+            }
+        }
+        // Tutto il riquadro è bersaglio: il tap in qualunque punto apre il
+        // tastierino, non serve centrare le cifre.
+        .contentShape(RoundedRectangle(cornerRadius: prominent ? 14 : 8, style: .continuous))
+        .onTapGesture { isFocused = true }
+    }
+
+    private static func plainText(for value: Double) -> String {
+        value.rounded() == value
+            ? String(Int(value))
+            : String(format: "%.1f", value)
+    }
+}
+
+enum AutomationSliderScale {
+    static func usesLogScale(_ range: ClosedRange<Double>) -> Bool {
+        range.upperBound - range.lowerBound > 1500
+    }
+
+    static func normalized(_ value: Double, in range: ClosedRange<Double>) -> Double {
+        guard range.upperBound > range.lowerBound else { return 0 }
+        let clamped = min(range.upperBound, max(range.lowerBound, value))
+        let span = range.upperBound - range.lowerBound
+        return log10(1 + clamped - range.lowerBound) / log10(1 + span)
+    }
+
+    static func value(fraction: Double, in range: ClosedRange<Double>) -> Double {
+        let span = range.upperBound - range.lowerBound
+        let clamped = min(1, max(0, fraction))
+        let raw = range.lowerBound + pow(10, clamped * log10(1 + span)) - 1
+        guard raw > range.lowerBound else { return range.lowerBound }
+        let magnitude = pow(10, floor(log10(max(raw - range.lowerBound, 1))) - 1)
+        let rounded = range.lowerBound + ((raw - range.lowerBound) / magnitude).rounded() * magnitude
+        return min(range.upperBound, max(range.lowerBound, rounded))
+    }
+}
+
 private struct AutomationConditionDraft: Identifiable {
     let id = UUID()
     var selection: AutomationCapabilitySelection
@@ -6494,39 +6763,69 @@ private extension AutomationCapabilityOperator {
         case .becomesInactive:
             return String(localized: "automation.operator.becomesInactive", defaultValue: "Becomes inactive")
         case .equals:
-            return String(localized: "automation.operator.equals", defaultValue: "Is")
+            return String(localized: "automation.operator.equals", defaultValue: "Equal to")
         case .greaterThan:
-            return String(localized: "automation.operator.greaterThan", defaultValue: "Above")
+            // Frasi piene e inclusive («maggiore o uguale a»): il picker è un
+            // menu, lo spazio c'è. La versione compatta per le preview è
+            // `phraseSymbol`.
+            return String(localized: "automation.operator.greaterThan", defaultValue: "Greater than or equal to")
         case .lessThan:
-            return String(localized: "automation.operator.lessThan", defaultValue: "Below")
+            return String(localized: "automation.operator.lessThan", defaultValue: "Less than or equal to")
         case .between:
             return String(localized: "automation.operator.between", defaultValue: "Between")
         }
     }
 }
 
+private extension AutomationCapabilityOperator {
+    /// La forma compatta per le righe riassuntive: lì «maggiore o uguale a»
+    /// non sta, il simbolo dice lo stesso in un carattere.
+    var phraseSymbol: String {
+        switch self {
+        case .greaterThan: return "≥"
+        case .lessThan: return "≤"
+        case .equals, .becomesActive, .becomesInactive: return "="
+        case .between: return String(localized: "automation.phrase.between", defaultValue: "between")
+        }
+    }
+}
+
 /// La frase compatta di un trigger accessorio per le righe riassuntive:
-/// «sopra 58 %», «Acceso», «tra 20–24 °C», «a ogni variazione».
+/// «≥ 58 %», «Acceso», «tra 20–24 °C», «a ogni variazione».
 private extension AutomationCapabilitySelection {
     var valuePhrase: String {
         switch targetValue {
         case .any:
             return String(localized: "automation.phrase.anyChange", defaultValue: "any change")
         case .bool(let value):
-            if case .boolean(let active, let inactive) = capability.valueKind {
-                return value ? active : inactive
-            }
-            return value ? "1" : "0"
+            // Il tipo del target e il valueKind possono divergere nei dati
+            // già salvati (o scritti da altre app): la frase consulta sempre
+            // il valueKind, così un intero su capability discreta esce come
+            // etichetta e mai come numero crudo.
+            return discretePhrase(rawValue: value ? 1 : 0) ?? (value ? "1" : "0")
         case .state(let rawValue):
-            if case .state(let options) = capability.valueKind,
-               let option = options.first(where: { $0.rawValue == rawValue }) {
-                return option.title
-            }
-            return "\(rawValue)"
+            return discretePhrase(rawValue: rawValue) ?? "\(rawValue)"
         case .number(let value):
-            return "\(comparisonOperator.displayName.lowercased()) \(Self.trim(value))\(unitSuffix)"
+            if case .numeric = capability.valueKind {
+                return "\(comparisonOperator.phraseSymbol) \(Self.trim(value))\(unitSuffix)"
+            }
+            return discretePhrase(rawValue: Int(value)) ?? Self.trim(value)
         case .range(let lower, let upper):
-            return "\(comparisonOperator.displayName.lowercased()) \(Self.trim(lower))–\(Self.trim(upper))\(unitSuffix)"
+            return "\(comparisonOperator.phraseSymbol) \(Self.trim(lower))–\(Self.trim(upper))\(unitSuffix)"
+        }
+    }
+
+    /// L'etichetta parlante di un valore discreto secondo il valueKind della
+    /// capability — «Aperto», «Occupato», «Acceso» — o nil se la capability
+    /// è numerica e la frase spetta al ramo con operatore e unità.
+    private func discretePhrase(rawValue: Int) -> String? {
+        switch capability.valueKind {
+        case .boolean(let active, let inactive):
+            return rawValue != 0 ? active : inactive
+        case .state(let options):
+            return options.first(where: { $0.rawValue == rawValue })?.title
+        case .numeric:
+            return nil
         }
     }
 

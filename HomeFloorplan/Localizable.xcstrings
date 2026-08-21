@@ -1151,6 +1151,74 @@
         }
       }
     },
+    "automation.input.mode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Input"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inserimento"
+          }
+        }
+      }
+    },
+    "automation.input.mode.manual" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manual input"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inserimento manuale"
+          }
+        }
+      }
+    },
+    "automation.input.mode.slider" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slider"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cursore"
+          }
+        }
+      }
+    },
+    "automation.operator.anyChange" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Any change"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ogni cambiamento"
+          }
+        }
+      }
+    },
     "automation.operator.between" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1163,7 +1231,24 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tra"
+            "value" : "Compreso tra"
+          }
+        }
+      }
+    },
+    "automation.phrase.between" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "between"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tra"
           }
         }
       }
@@ -11089,13 +11174,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Is"
+            "value" : "Equal to"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "È"
+            "value" : "Uguale a"
           }
         }
       }
@@ -11108,13 +11193,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Above"
+            "value" : "Greater than or equal to"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sopra"
+            "value" : "Maggiore o uguale a"
           }
         }
       }
@@ -11146,13 +11231,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Below"
+            "value" : "Less than or equal to"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto"
+            "value" : "Minore o uguale a"
           }
         }
       }

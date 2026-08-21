@@ -218,9 +218,13 @@ private extension AutomationCapabilityOperator {
         case .becomesInactive:
             return .equalTo
         case .greaterThan:
-            return .greaterThan
+            // Inclusivi, come i threshold-range di Apple Home/Aqara e come il
+            // nostro «Tra»: alla rilettura ≥ e > collassano nello stesso
+            // operatore, quindi scrivere lo stretto faceva DERIVARE le
+            // automazioni altrui a ogni risalvataggio (≥58 diventava >58).
+            return .greaterThanOrEqualTo
         case .lessThan:
-            return .lessThan
+            return .lessThanOrEqualTo
             case .between:
             return .greaterThanOrEqualTo
     }
@@ -650,6 +654,16 @@ enum AutomationCapabilityCatalog {
             defaultOperator = .becomesActive
         } else if kind == .airQuality {
             valueKind = .state(options: airQualityOptions)
+            defaultOperator = .greaterThan
+        } else if kind == .lightLevel {
+            // I metadata HomeKit dichiarano il campo FISICO (0–100.000 lux):
+            // su quella barra 150 lux non esiste. Le soglie di casa vivono
+            // sotto i cinquemila — sopra è pieno sole, non un'automazione.
+            valueKind = .numeric(
+                unit: sensorUnit(for: kind),
+                range: 0...5000,
+                step: 5
+            )
             defaultOperator = .greaterThan
         } else {
             valueKind = .numeric(
