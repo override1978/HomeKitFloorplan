@@ -49,39 +49,8 @@ struct DrawingCanvasContent: View {
 
     var body: some View {
         let size = DrawingDocument.canvasSize
-        // ⚠️ Il foglio è disegnato in TILE da mezzo canvas, non in una Canvas
-        // unica: su iPhone (3x) una Canvas 2000×2000 inquadrata per intero al
-        // minimo zoom supera il limite di texture del rasterizzatore e tutto
-        // ciò che sta oltre — griglia E muri — semplicemente non si disegna:
-        // i tratti committati sotto metà schermo sparivano (dati sani, undo
-        // attivo, pixel assenti). Quattro tile da 1000 pt restano ciascuno
-        // sotto il limite a ogni zoom; ogni tile disegna l'intero documento
-        // traslato, e il clip fa il resto. Su iPad il risultato è identico
-        // a prima, cambia solo il numero di layer.
-        let tile = size / 2
 
-        VStack(spacing: 0) {
-            ForEach(0..<2, id: \.self) { row in
-                HStack(spacing: 0) {
-                    ForEach(0..<2, id: \.self) { col in
-                        Canvas { ctx, _ in
-                            ctx.translateBy(x: -CGFloat(col) * tile, y: -CGFloat(row) * tile)
-                            drawEditorContent(&ctx)
-                        }
-                        .frame(width: tile, height: tile)
-                        .clipped()
-                    }
-                }
-            }
-        }
-        .frame(width: size, height: size)
-        .background(Color(.systemBackground))
-    }
-
-    /// L'intero contenuto dell'editor in coordinate canvas assolute: il corpo
-    /// unico che ogni tile disegna con la propria traslazione.
-    private func drawEditorContent(_ ctx: inout GraphicsContext) {
-        let size = DrawingDocument.canvasSize
+        Canvas { ctx, _ in
             // 0. Room areas (drawn first, behind everything)
             for area in document.roomAreas {
                 let isSelected: Bool
@@ -239,6 +208,9 @@ struct DrawingCanvasContent: View {
                               zoomScale: magnifierZoomScale,
                               context: &ctx)
             }
+        }
+        .frame(width: size, height: size)
+        .background(Color(.systemBackground))
     }
 
     // MARK: - Private helpers (editor-only)
