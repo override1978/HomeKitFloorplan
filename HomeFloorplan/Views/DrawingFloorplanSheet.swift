@@ -109,8 +109,17 @@ struct DrawingFloorplanSheet: View {
          initialExportRotation: DrawingExportRotation = .asDrawn,
          onComplete: @escaping (UIImage, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle, DrawingExportRotation) -> Void) {
         self.onComplete = onComplete
-        self.initialDocumentSnapshot = initialDocument ?? DrawingDocument()
-        _document = State(initialValue: initialDocument ?? DrawingDocument())
+        // La risanatura silenziosa: le giunzioni «quasi giuste» (fessure sotto
+        // i 12 pt, invisibili a occhio) si saldano QUI, prima dello snapshot —
+        // così un documento sano non risulta mai «modificato» per la sola
+        // apertura, e l'utente non deve mai chiedere una riparazione per un
+        // disegno che ai suoi occhi è già corretto. Erano queste fessure a
+        // far fallire il tap-associazione (stanza «non chiusa») o a fondere
+        // due stanze in una.
+        var healed = initialDocument ?? DrawingDocument()
+        healed.healJoints()
+        self.initialDocumentSnapshot = healed
+        _document = State(initialValue: healed)
         _exteriorFillColorIndex = State(initialValue: initialExteriorFillColorIndex)
         _exportRotation = State(initialValue: initialExportRotation)
         _visualExportStyleRaw = AppStorage(wrappedValue: initialVisualExportStyle.rawValue,

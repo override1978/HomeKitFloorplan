@@ -944,6 +944,74 @@ struct DrawingDocument: Equatable, nonisolated Codable {
         return joints
     }
 
+    /// La tolleranza della RISANATURA automatica: fessure fino a questa
+    /// distanza (12 pt = 12 cm) sono errori di mano, non scelte — sotto la
+    /// larghezza di un muro, invisibili a qualunque zoom. Più larga della
+    /// `jointTolerance` (6) apposta: quella definisce cosa È già saldato,
+    /// questa cosa VA saldato.
+    static let jointHealTolerance: CGFloat = 12.0
+
+    /// Salda in silenzio le giunzioni «quasi giuste»: gli estremi a meno di
+    /// `tolerance` collassano sul loro baricentro (angoli), e gli estremi
+    /// rimasti a meno di `tolerance` dal CORPO di un altro muro atterrano
+    /// sulla proiezione (giunzioni a T — il muro diagonale che muore su una
+    /// parete). Idempotente: su un documento sano non muove nulla. Gira a
+    /// ogni apertura dell'editor, perché l'utente non deve mai chiedere di
+    /// riparare un disegno che ai suoi occhi è già giusto: un disegno che
+    /// sembra chiuso DEVE esserlo anche per il tracciatore e per il 3D.
+    mutating func healJoints(tolerance: CGFloat = DrawingDocument.jointHealTolerance) {
+        guard walls.count > 1 else { return }
+
+        // 1. Angoli: cluster di estremi vicini → baricentro condiviso.
+        //    Union-find piatto: n è piccolo (decine), il quadratico è gratis.
+        var points: [CGPoint] = []
+        for wall in walls { points.append(wall.start); points.append(wall.end) }
+        var cluster = Array(points.indices)
+        func root(_ i: Int) -> Int {
+            var i = i
+            while cluster[i] != i { i = cluster[i] }
+            return i
+        }
+        for i in points.indices {
+            for j in (i + 1)..<points.count
+            where hypot(points[i].x - points[j].x, points[i].y - points[j].y) <= tolerance {
+                cluster[root(j)] = root(i)
+            }
+        }
+        var sum: [Int: (x: CGFloat, y: CGFloat, n: Int)] = [:]
+        for i in points.indices {
+            let r = root(i)
+            var acc = sum[r] ?? (0, 0, 0)
+            acc.x += points[i].x; acc.y += points[i].y; acc.n += 1
+            sum[r] = acc
+        }
+        for i in points.indices {
+            let acc = sum[root(i)]!
+            guard acc.n > 1 else { continue }
+            let merged = CGPoint(x: acc.x / CGFloat(acc.n), y: acc.y / CGFloat(acc.n))
+            if i % 2 == 0 { walls[i / 2].start = merged } else { walls[i / 2].end = merged }
+        }
+
+        // 2. Giunzioni a T: l'estremo ancora solitario che muore a un soffio
+        //    dal corpo di un altro muro si aggancia alla proiezione.
+        for idx in walls.indices {
+            for which in 0...1 {
+                let endpoint = which == 0 ? walls[idx].start : walls[idx].end
+                var best: (point: CGPoint, distance: CGFloat)?
+                for (otherIdx, other) in walls.enumerated() where otherIdx != idx {
+                    let proj = other.project(endpoint)
+                    guard proj.t > 0, proj.t < 1,
+                          proj.distance > 0.001, proj.distance <= tolerance,
+                          proj.distance < (best?.distance ?? .greatestFiniteMagnitude) else { continue }
+                    best = (proj.closest, proj.distance)
+                }
+                if let best {
+                    if which == 0 { walls[idx].start = best.point } else { walls[idx].end = best.point }
+                }
+            }
+        }
+    }
+
     /// Returns the closest existing wall endpoint within `maxDistance` canvas points, or nil.
     func nearestEndpoint(to point: CGPoint, maxDistance: CGFloat = 30) -> CGPoint? {
         var bestPoint: CGPoint?
