@@ -515,15 +515,33 @@ struct DrawingCanvasView: UIViewRepresentable {
         /// d'insieme dell'intero canvas ha senso e lo schermo la regge.
         /// In più, se lo zoom è rimasto incastrato SOTTO il minimo (rimbalzo
         /// interrotto), qui si riaggancia.
+        /// Sui display 3x il rasterizzatore della Canvas tronca quando la
+        /// finestra visibile supera ~980 pt di canvas: griglia e muri oltre
+        /// quella linea non si disegnano affatto (misurato sul sim iPhone:
+        /// dati sani, pixel assenti — e il tentativo di aggirarlo spezzando
+        /// il foglio in tile ha reso l'editor inusabile sul device, 4 layer
+        /// ri-rasterizzati per intero a ogni frame, revert `88e3287`).
+        /// La guardia sta dal lato opposto: il minimo zoom non lascia MAI
+        /// inquadrare più di `textureSafeWindow` punti di canvas, così la
+        /// finestra resta sempre sotto la soglia e il troncamento non ha
+        /// dove manifestarsi. Costo onesto: su iPhone niente vista d'insieme
+        /// oltre ~9,5 m — il resto si raggiunge scorrendo.
+        private static let textureSafeWindow: CGFloat = 950
+
         func enforceZoomFloor(_ scrollView: UIScrollView) {
             guard scrollView.bounds.width > 0 else { return }
-            let floor: CGFloat
+            var floor: CGFloat
             if parent.coversViewportAtMinimumZoom {
                 let cover = max(scrollView.bounds.width, scrollView.bounds.height)
                     / DrawingDocument.canvasSize
                 floor = max(0.3, cover)
             } else {
                 floor = 0.3
+            }
+            if scrollView.traitCollection.displayScale >= 3 {
+                let textureSafe = max(scrollView.bounds.width, scrollView.bounds.height)
+                    / Self.textureSafeWindow
+                floor = max(floor, textureSafe)
             }
             // Stessa regola di centerContent: si scrive solo se cambia.
             if abs(scrollView.minimumZoomScale - floor) > 0.001 {
