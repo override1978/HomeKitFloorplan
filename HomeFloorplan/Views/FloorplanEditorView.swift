@@ -213,9 +213,41 @@ struct FloorplanEditorView: View {
         return luminance < 0.5 ? .dark : .light
     }
 
-    /// Contenuto canvas separato dalla catena di lifecycle: un'unica espressione
-    /// col GeometryReader + 15 modifier superava il limite del type-checker.
+    /// Pannello docked (novità E): su larghezza regular il pannello contestuale
+    /// sta AFFIANCATO alla mappa, non sopra — la colonna mappa si restringe e
+    /// nessuna stanza viene coperta. Su compact resta l'overlay di sempre
+    /// (diventerà bottom sheet in fase 4).
+    private var isDockedPanelVisible: Bool {
+        !isCompactScreen && !ui.isEditing && (overlayVM?.isPanelVisible ?? false)
+    }
+
+    /// Contenuto canvas: colonna mappa + eventuale pannello docked. La mappa
+    /// vive nel proprio GeometryReader, quindi quando il pannello entra la
+    /// geometria (imageRect, marker, tap, collisioni) si ricalcola da sola
+    /// dalla larghezza ridotta — nessun caso speciale.
     private var canvasContent: some View {
+        HStack(spacing: 0) {
+            mapColumn
+
+            if isDockedPanelVisible, let vm = overlayVM {
+                FloorplanDockedContextPanel(
+                    overlayVM: vm,
+                    floorplan: floorplan,
+                    environmentViewModel: overlayEnvVM,
+                    background: floorplanBackgroundColor
+                )
+                .frame(width: FloorplanDockedContextPanel.width)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .environment(\.colorScheme, chromeColorScheme)
+            }
+        }
+        .animation(.easeInOut(duration: 0.35), value: isDockedPanelVisible)
+    }
+
+    /// Colonna mappa (l'intero canvas pre-redesign). Separata dalla catena di
+    /// lifecycle: un'unica espressione col GeometryReader + 15 modifier
+    /// superava il limite del type-checker.
+    private var mapColumn: some View {
         GeometryReader { proxy in
             ZStack {
                 floorplanBackgroundColor
@@ -291,8 +323,10 @@ struct FloorplanEditorView: View {
                     .environment(\.colorScheme, chromeColorScheme)
                 }
 
-                // Z+4: overlay context panel
-                if let vm = overlayVM {
+                // Z+4: overlay context panel — SOLO su compact. Su regular il
+                // pannello è docked accanto alla mappa (vedi canvasContent):
+                // qui resterebbe un secondo pannello sovrapposto.
+                if isCompactScreen, let vm = overlayVM {
                     FloorplanOverlayContextContent(
                         overlayVM: vm,
                         containerWidth: proxy.size.width,
@@ -653,10 +687,12 @@ struct FloorplanEditorView: View {
     // MARK: - Pulsante apri pannello (sempre visibile, non soggetto ad auto-hide)
 
     /// Bottone bottom-right che apre il pannello contestuale.
-    /// Vive in un proprio layer ZStack così non scompare con l'auto-hide dei controlli secondari.
+    /// Vive in un proprio layer ZStack così non scompare con l'auto-hide dei
+    /// controlli secondari. SOLO su compact: su regular il pannello docked si
+    /// apre dal bottone "Dettagli" nella barra superiore.
     @ViewBuilder
     private var openPanelButton: some View {
-        if !ui.isEditing, let vm = overlayVM,
+        if isCompactScreen, !ui.isEditing, let vm = overlayVM,
            vm.activeMode != .controls, !vm.isPanelVisible {
             VStack {
                 Spacer()

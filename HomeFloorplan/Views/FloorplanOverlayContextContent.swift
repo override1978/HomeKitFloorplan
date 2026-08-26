@@ -1,6 +1,42 @@
 import SwiftUI
 import HomeKit
 
+/// Router dei contenuti del pannello per modalità: unico per l'overlay
+/// compact e per il pannello docked su regular, così i due contenitori non
+/// possono divergere nei contenuti.
+struct FloorplanContextDashboardRouter: View {
+    @Bindable var overlayVM: FloorplanOverlayViewModel
+    let floorplan: Floorplan
+    let environmentViewModel: EnvironmentViewModel
+
+    var body: some View {
+        VStack(spacing: 14) {
+            switch overlayVM.activeMode {
+            case .controls:
+                EmptyView()
+            case .environment:
+                EnvironmentContextDashboard(
+                    envVM: environmentViewModel,
+                    overlayVM: overlayVM,
+                    highlightedRoomID: overlayVM.highlightedRoomID,
+                    linkedRooms: floorplan.linkedRooms
+                )
+            case .security:
+                SecurityContextDashboard(
+                    highlightedRoomID: overlayVM.highlightedRoomID,
+                    linkedRooms: floorplan.linkedRooms
+                )
+            case .intelligence:
+                IntelligenceContextDashboard(
+                    highlightedRoomID: overlayVM.highlightedRoomID,
+                    linkedRooms: floorplan.linkedRooms
+                )
+            }
+        }
+        .padding(.top, overlayVM.activeMode == .intelligence ? 36 : 0)
+    }
+}
+
 struct FloorplanOverlayContextContent: View {
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let containerWidth: CGFloat
@@ -19,31 +55,11 @@ struct FloorplanOverlayContextContent: View {
             title: panelTitle(for: mode),
             accentColor: mode.accentColor
         ) {
-            VStack(spacing: 14) {
-
-                switch mode {
-                case .controls:
-                    EmptyView()
-                case .environment:
-                    EnvironmentContextDashboard(
-                        envVM: environmentViewModel,
-                        overlayVM: overlayVM,
-                        highlightedRoomID: overlayVM.highlightedRoomID,
-                        linkedRooms: floorplan.linkedRooms
-                    )
-                case .security:
-                    SecurityContextDashboard(
-                        highlightedRoomID: overlayVM.highlightedRoomID,
-                        linkedRooms: floorplan.linkedRooms
-                    )
-                case .intelligence:
-                    IntelligenceContextDashboard(
-                        highlightedRoomID: overlayVM.highlightedRoomID,
-                        linkedRooms: floorplan.linkedRooms
-                    )
-                }
-            }
-            .padding(.top, mode == .intelligence ? 36 : 0)
+            FloorplanContextDashboardRouter(
+                overlayVM: overlayVM,
+                floorplan: floorplan,
+                environmentViewModel: environmentViewModel
+            )
         }
     }
 

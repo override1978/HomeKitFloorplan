@@ -108,3 +108,79 @@ struct FloorplanContextPanelContainer<Content: View>: View {
         .zIndex(100)
     }
 }
+
+// MARK: - FloorplanDockedContextPanel
+
+/// Pannello contestuale AFFIANCATO alla mappa (redesign, novità E) —
+/// larghezza regular. Non è un overlay: vive come colonna nell'HStack del
+/// canvas, così la mappa si riscala e nessuna stanza resta coperta.
+///
+/// Ha un header proprio (titolo modalità + ✕) invece del bottone di chiusura
+/// in fondo dell'overlay compact: da docked il pannello è una colonna
+/// persistente, e la chiusura sta dove stanno le chiusure delle colonne.
+struct FloorplanDockedContextPanel: View {
+
+    static let width: CGFloat = 340
+
+    @Bindable var overlayVM: FloorplanOverlayViewModel
+    let floorplan: Floorplan
+    let environmentViewModel: EnvironmentViewModel
+    /// Sfondo del canvas (dipende dalla planimetria): la colonna lo prosegue,
+    /// separata solo da un filo, così il pannello appartiene alla stessa
+    /// superficie e non sembra una sheet appoggiata sopra.
+    let background: Color
+
+    private var mode: FloorplanOverlayMode { overlayVM.activeMode }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, 16)
+                .padding(.top, 18)
+                .padding(.bottom, 6)
+
+            ScrollView {
+                FloorplanContextDashboardRouter(
+                    overlayVM: overlayVM,
+                    floorplan: floorplan,
+                    environmentViewModel: environmentViewModel
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 16)
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .background(background.ignoresSafeArea(edges: .vertical))
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(width: 1)
+                .ignoresSafeArea(edges: .vertical)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(mode.accentColor)
+                .frame(width: 8, height: 8)
+            Text(mode.label)
+                .font(.headline)
+                .foregroundStyle(Color.primary)
+
+            Spacer()
+
+            Button(action: overlayVM.dismissPanel) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.primary.opacity(0.65))
+                    .frame(width: 30, height: 30)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .glassChromeSurface(in: Circle())
+            .accessibilityLabel(String(localized: "floorplan.panel.close",
+                                       defaultValue: "Close panel"))
+        }
+    }
+}

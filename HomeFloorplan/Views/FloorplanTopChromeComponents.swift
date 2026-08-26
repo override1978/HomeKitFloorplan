@@ -98,13 +98,15 @@ struct FloorplanTopBarView: View {
                                 isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
                                 collapsesActions: collapsesActions,
                                 isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
+                                isPanelVisible: overlayVM?.isPanelVisible ?? false,
                                 onAddAccessory: onAddAccessory,
                                 onShowHelp: onShowHelp,
                                 onShowDiagnostics: onShowDiagnostics,
                                 onEditDrawing: onEditDrawing,
                                 onView3D: onView3D,
                                 onShowScenes: onShowScenes,
-                                onToggleEditing: onToggleEditing
+                                onToggleEditing: onToggleEditing,
+                                onTogglePanel: toggleDockedPanel
                             )
                         } else {
                             // Su iPhone la planimetria resta solo controllo,
@@ -174,6 +176,18 @@ struct FloorplanTopBarView: View {
         // dell'immagine → rilayout → rimisura, con tutta la meccanica di soglie
         // che serviva a smorzarlo.
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Toggle del pannello docked dal bottone "Dettagli / Chiudi" in barra.
+    private func toggleDockedPanel() {
+        guard let overlayVM else { return }
+        if overlayVM.isPanelVisible {
+            overlayVM.dismissPanel()
+        } else {
+            withAnimation(.easeInOut(duration: 0.35)) {
+                overlayVM.isPanelVisible = true
+            }
+        }
     }
 
     /// Tap su una pill di stato: apre il tab corrispondente CON il pannello
@@ -469,6 +483,9 @@ struct FloorplanTopRightActions: View {
     /// Vero quando la barra è stretta: Scene e Modifica passano nel menu.
     let collapsesActions: Bool
     let isDrawingAvailable: Bool
+    /// Stato del pannello docked, per il bottone "Dettagli ☰ / Chiudi ✕"
+    /// che prende il posto delle azioni nelle modalità overlay.
+    let isPanelVisible: Bool
     let onAddAccessory: () -> Void
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
@@ -476,12 +493,48 @@ struct FloorplanTopRightActions: View {
     let onView3D: () -> Void
     let onShowScenes: () -> Void
     let onToggleEditing: () -> Void
+    let onTogglePanel: () -> Void
 
     private var hidesActions: Bool {
         isOverlayMode && !isEditing
     }
 
     var body: some View {
+        // Nelle modalità overlay le azioni di editing non hanno senso e prima
+        // sparivano del tutto; al loro posto ora sta il toggle del pannello
+        // docked (novità E), che è l'unica azione utile in quel contesto.
+        if hidesActions {
+            panelToggle
+                .transition(.opacity)
+        } else {
+            actionsPill
+                .transition(.opacity)
+        }
+    }
+
+    private var panelToggle: some View {
+        Button(action: onTogglePanel) {
+            HStack(spacing: 6) {
+                Image(systemName: isPanelVisible ? "xmark" : "sidebar.trailing")
+                Text(isPanelVisible
+                     ? String(localized: "floorplan.panel.close.short", defaultValue: "Close")
+                     : String(localized: "floorplan.panel.details", defaultValue: "Details"))
+            }
+            .font(.subheadline)
+            .fontWeight(.medium)
+            .foregroundStyle(Color.primary.opacity(0.75))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .glassChromeSurface(in: Capsule())
+        .accessibilityLabel(isPanelVisible
+            ? String(localized: "floorplan.panel.close", defaultValue: "Close panel")
+            : String(localized: "floorplan.panel.details", defaultValue: "Details"))
+    }
+
+    private var actionsPill: some View {
         GlassTitlePill {
             HStack(spacing: 0) {
                 if isEditing {
@@ -568,9 +621,6 @@ struct FloorplanTopRightActions: View {
                 }
             }
         }
-        .opacity(hidesActions ? 0 : 1)
-        .allowsHitTesting(!hidesActions)
-        .animation(.easeInOut(duration: 0.2), value: hidesActions)
     }
 }
 
