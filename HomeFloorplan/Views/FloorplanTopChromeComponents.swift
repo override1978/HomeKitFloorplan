@@ -151,6 +151,19 @@ struct FloorplanTopBarView: View {
             .padding(.horizontal, 20)
             .padding(.top, 12)
 
+            // Tab switcher compatto (fase 4): su iPhone la pill non sta nella
+            // barra — è una riga a sé, piena larghezza, con gli stessi badge.
+            // Il margine è dichiarato in FloorplanChromeLayout.hasCompactModeRow.
+            if !isEditing, isCompact, let overlayVM {
+                FloorplanModePill(overlayVM: overlayVM,
+                                  context: overlayContext,
+                                  badgeCounts: statusStrip?.modeBadgeCounts ?? [:],
+                                  availableWidth: size.width,
+                                  sideChromeWidth: size.width)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             // Barra di stato unificata (novità B): visibile in TUTTI i tab,
             // sparisce solo in editing dove il banner di modifica prende il
             // suo posto. Il margine per questa riga è già dichiarato in
@@ -235,12 +248,16 @@ struct FloorplanTopBarView: View {
 
     @ViewBuilder
     private var statusBanners: some View {
-        // Chips filtro categoria (novità C): solo tab Controlli su regular,
-        // nello stesso slot per-modo dove Ambiente mette i suoi filtri.
-        if !isEditing, !isCompact,
+        // Chips filtro categoria (novità C): tab Controlli, anche su iPhone
+        // (decisione 26/08), nello stesso slot per-modo dove Ambiente mette i
+        // suoi filtri. Su compact il toggle vista-esplosa non c'è: lì il modo
+        // di "vedere tutto" è lo zoom semantico.
+        if !isEditing,
            let overlayVM, overlayVM.activeMode == .controls,
            categoryCounts.count > 1 {
-            FloorplanCategoryFilterBar(overlayVM: overlayVM, counts: categoryCounts)
+            FloorplanCategoryFilterBar(overlayVM: overlayVM,
+                                       counts: categoryCounts,
+                                       showsExpandToggle: !isCompact)
                 .padding(.top, 4)
                 .transition(.move(edge: .top).combined(with: .opacity))
         }

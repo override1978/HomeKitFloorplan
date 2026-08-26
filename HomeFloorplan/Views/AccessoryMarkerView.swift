@@ -147,13 +147,16 @@ struct AccessoryMarkerView: View {
     }
 
     private var shouldShowLabel: Bool {
+        // L'override del redesign vince su tutto, ANCHE sul blocco iPhone:
+        // la stanza espansa (iPad) e quella zoomata (iPhone) mostrano le
+        // etichette, il filtro categoria solo quelle attive. Con lo zoom
+        // semantico la stanza riempie lo schermo, quindi lo spazio per le
+        // etichette — la ragione del blocco — stavolta c'è.
+        if let labelOverride { return labelOverride }
+
         // Le etichette sono ~112 punti l'una: su iPhone si sovrappongono fra
         // loro prima ancora di dire qualcosa. Il nome si legge toccando.
         if isCompactScreen { return false }
-
-        // L'override del redesign vince sulla preferenza: la stanza espansa
-        // mostra tutte le etichette, il filtro categoria solo quelle attive.
-        if let labelOverride { return labelOverride }
 
         switch labelVisibility {
         case .always:

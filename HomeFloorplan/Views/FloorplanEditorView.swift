@@ -296,10 +296,16 @@ struct FloorplanEditorView: View {
                 bulkOffButton
                     .environment(\.colorScheme, chromeColorScheme)
 
-                if hidesMarkersInPortrait(container: proxy.size) {
+                // L'invito a ruotare resta solo in modifica: fuori, il posto
+                // del grumo di marker l'ha preso lo zoom semantico (fase 4).
+                if ui.isEditing, hidesMarkersInPortrait(container: proxy.size) {
                     rotateForMarkersHint
                         .environment(\.colorScheme, chromeColorScheme)
                 }
+
+                // "‹ nome piano" per uscire dallo zoom semantico (iPhone)
+                zoomedRoomBackButton
+                    .environment(\.colorScheme, chromeColorScheme)
 
                 // Right-side scenes panel overlay
                 if ui.showScenesPanel {
@@ -329,27 +335,9 @@ struct FloorplanEditorView: View {
                     .environment(\.colorScheme, chromeColorScheme)
                 }
 
-                // Z+4: overlay context panel — SOLO su compact. Su regular il
-                // pannello è docked accanto alla mappa (vedi canvasContent):
-                // qui resterebbe un secondo pannello sovrapposto.
-                if isCompactScreen, let vm = overlayVM {
-                    FloorplanOverlayContextContent(
-                        overlayVM: vm,
-                        containerWidth: proxy.size.width,
-                        floorplan: floorplan,
-                        homeKit: homeKit,
-                        environmentViewModel: overlayEnvVM,
-                        adapterMap: currentAdapterMap()
-                    )
-                    // Il pannello segue la planimetria come il resto della
-                    // chrome: era l'ultimo pezzo flottante rimasto appeso al
-                    // tema di sistema. Con iOS scuro e planimetria chiara la
-                    // differenza si vedeva a occhio, perché il vetro si adatta a
-                    // ciò che ha dietro mentre un materiale obbedisce a iOS —
-                    // così una card non ancora convertita restava scura in mezzo
-                    // a card chiare.
-                    .environment(\.colorScheme, chromeColorScheme)
-                }
+                // Il pannello su compact non è più un overlay laterale: è il
+                // bottom sheet a 2 detent presentato da `observedCanvas`
+                // (fase 4). Su regular resta il docked in canvasContent.
             }
             .contentShape(Rectangle())
             .onTapGesture { location in
@@ -358,9 +346,48 @@ struct FloorplanEditorView: View {
         }
     }
 
+    /// Presentazione del bottom sheet iPhone: due detent, mappa interattiva
+    /// sotto. Il binding si spegne quando un'altra presentazione modale deve
+    /// salire (scheda accessorio, editor 2D, 3D): due sheet contemporanei
+    /// dalla stessa gerarchia si contendono la presentazione — e riappare da
+    /// solo quando quella si chiude, perché `isPanelVisible` resta vero.
+    private var compactPanelBinding: Binding<Bool> {
+        Binding(
+            get: {
+                isCompactScreen && !ui.isEditing
+                    && (overlayVM?.isPanelVisible ?? false)
+                    && !ui.hasBlockingModalPresentation
+                    && preview3D == nil
+            },
+            set: { isPresented in
+                if !isPresented, !ui.hasBlockingModalPresentation, preview3D == nil {
+                    overlayVM?.dismissPanel()
+                }
+            }
+        )
+    }
+
     private var observedCanvas: some View {
         canvasContent
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: compactPanelBinding) {
+            if let vm = overlayVM {
+                FloorplanCompactPanelSheet(
+                    overlayVM: vm,
+                    floorplan: floorplan,
+                    environmentViewModel: overlayEnvVM,
+                    adapterMap: currentAdapterMap()
+                )
+                .presentationDetents([FloorplanCompactPanelSheet.collapsedDetent,
+                                      FloorplanCompactPanelSheet.expandedDetent])
+                .presentationBackgroundInteraction(
+                    .enabled(upThrough: FloorplanCompactPanelSheet.expandedDetent)
+                )
+                .presentationDragIndicator(.visible)
+                .presentationBackground(floorplanBackgroundColor)
+                .environment(\.colorScheme, chromeColorScheme)
+            }
+        }
         .modifier(editorPresentationModifier)
         .suppressesIdleScreensaver(.floorplanInteraction, when: ui.shouldSuppressIdleScreensaver)
         .onAppear(perform: handleAppear)
@@ -415,6 +442,14 @@ struct FloorplanEditorView: View {
             trackSecurityModeChange()
         }
         .task(id: overlayVM?.activeMode, refreshEnvironmentOverlayWhileActive)
+        // Su iPhone il cambio tab azzera lo zoom semantico anche nel
+        // viewport: lo stato (`zoomedRoomID`) lo pulisce già il didSet del
+        // modo, ma la mappa resterebbe inquadrata sulla stanza.
+        .onChange(of: overlayVM?.activeMode) { _, _ in
+            if isCompactScreen, viewport.zoomScale > 1.01 {
+                viewportController.reset()
+            }
+        }
         // Meteo per la pill temperatura: si auto-limita a un refresh ogni 30'.
         .task { await weatherKit.refreshIfNeeded() }
         // La salute casa dipende dalla raggiungibilità: ricalcolo su evento
@@ -721,7 +756,7 @@ struct FloorplanEditorView: View {
 
     @ViewBuilder
     private var bulkOffButton: some View {
-        if !isCompactScreen, !ui.isEditing,
+        if !ui.isEditing,
            let vm = overlayVM, vm.activeMode == .controls,
            let filter = vm.categoryFilter,
            Self.bulkTogglableCategories.contains(filter) {
@@ -834,9 +869,20 @@ struct FloorplanEditorView: View {
             return
         }
 
-        // 2. Not editing: show controls
+        // 2. Not editing: show controls. Su iPhone in vista intera (Controlli)
+        //    il tap su una stanza fa anche zoom semantico — il design lo
+        //    prevede sia sul badge che sulla stanza stessa.
         if !ui.isEditing {
             chromeController.showControlsAndScheduleAutoHide(isEditing: ui.isEditing)
+            if isCompactScreen, controlsClusterModeActive,
+               let image = imageCache.image,
+               let resolution = resolveRoomTap(at: tapLocation,
+                                               imageSize: image.size,
+                                               containerSize: containerSize),
+               let roomID = resolution.roomID,
+               let room = floorplan.linkedRooms.first(where: { $0.hmRoomUUID == roomID }) {
+                zoomToRoom(room, container: containerSize)
+            }
             return
         }
 
@@ -907,7 +953,8 @@ struct FloorplanEditorView: View {
     /// valore resta costante per tutta la sessione (mai per-modo, mai misurato)
     /// e canvas + tap resolver lo ereditano da qui senza poter divergere.
     private var chromeLayout: FloorplanChromeLayout {
-        FloorplanChromeLayout(hasUnifiedStatusStrip: true)
+        FloorplanChromeLayout(hasUnifiedStatusStrip: true,
+                              hasCompactModeRow: isCompactScreen)
     }
 
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
@@ -932,17 +979,21 @@ struct FloorplanEditorView: View {
 
     // MARK: - Cluster (tab Controlli, novità C)
 
-    /// Vero quando il tab Controlli su regular mostra i cluster al posto dei
-    /// marker: niente filtro, niente stanza espansa, e servono stanze con
-    /// marker. Senza stanze collegate si resta ai marker classici.
+    /// Vero quando il tab Controlli mostra il riassunto per stanza al posto
+    /// dei marker: card cluster su iPad, badge su iPhone. Niente filtro,
+    /// niente stanza espansa/zoomata, e servono stanze con marker — senza
+    /// stanze collegate si resta ai marker classici.
     private var controlsClusterModeActive: Bool {
-        guard !isCompactScreen, !ui.isEditing,
+        guard !ui.isEditing,
               let vm = overlayVM, vm.activeMode == .controls,
-              vm.categoryFilter == nil, vm.expandedRoomID == nil,
+              vm.categoryFilter == nil,
               !vm.areAllRoomsExpanded,
               !floorplan.linkedRooms.isEmpty, !floorplan.accessories.isEmpty
         else { return false }
-        return true
+        if isCompactScreen {
+            return vm.zoomedRoomID == nil
+        }
+        return vm.expandedRoomID == nil
     }
 
     private func currentClusters() -> [FloorplanRoomCluster] {
@@ -952,9 +1003,12 @@ struct FloorplanEditorView: View {
 
     private func imageWithMarkers(image: UIImage, container: CGSize) -> some View {
         let rect = imageRect(imageSize: image.size, container: container)
-        let showMarkers = !hidesMarkersInPortrait(container: container)
-            && (ui.isEditing || (overlayVM?.activeMode == .controls))
-            && !controlsClusterModeActive
+        // In modifica vale ancora il vecchio riparo del portrait iPhone; fuori
+        // dalla modifica ci pensa la vista a riassunto (cluster/badge + zoom
+        // semantico) a non ammucchiare marker sullo schermo stretto.
+        let showMarkers = ui.isEditing
+            ? !hidesMarkersInPortrait(container: container)
+            : (overlayVM?.activeMode == .controls && !controlsClusterModeActive)
         return FloorplanCanvasView(
             image: image,
             containerSize: container,
@@ -1024,14 +1078,18 @@ struct FloorplanEditorView: View {
     private func overlayLayer(vm: FloorplanOverlayViewModel, container: CGSize, imageRect: CGRect) -> some View {
         switch vm.activeMode {
         case .controls:
-            if !isCompactScreen, !floorplan.linkedRooms.isEmpty, !floorplan.accessories.isEmpty {
+            if !floorplan.linkedRooms.isEmpty, !floorplan.accessories.isEmpty {
                 ControlsClusterOverlayView(
                     floorplan: floorplan,
                     overlayVM: vm,
                     containerSize: container,
                     imageRect: imageRect,
                     effectiveScale: effectiveScale,
-                    clusters: currentClusters()
+                    clusters: currentClusters(),
+                    isCompact: isCompactScreen,
+                    onZoomRoom: { cluster in
+                        zoomToRoom(cluster.room, container: container)
+                    }
                 )
                 // Le card seguono la luminanza della PLANIMETRIA, non il tema
                 // iOS: i token si risolvono sul trait iniettato, e senza
@@ -1146,7 +1204,7 @@ struct FloorplanEditorView: View {
     /// col filtro categoria restano solo i marker della categoria su tutto il
     /// piano; con la stanza espansa solo i suoi. Altrove la lista passa intera.
     private func filteredControlsItems(_ items: [FloorplanMarkerRenderItem]) -> [FloorplanMarkerRenderItem] {
-        guard !isCompactScreen, !ui.isEditing,
+        guard !ui.isEditing,
               let vm = overlayVM, vm.activeMode == .controls else { return items }
 
         // Vista esplosa: tutti i marker, regola etichette storica.
@@ -1155,29 +1213,92 @@ struct FloorplanEditorView: View {
         if let filter = vm.categoryFilter {
             return items.filter { FloorplanControlsClusterBuilder.classify($0.adapter) == filter }
         }
-        if let expandedID = vm.expandedRoomID {
+        let focusedRoomID = isCompactScreen ? vm.zoomedRoomID : vm.expandedRoomID
+        if let focusedRoomID {
             return items.filter { item in
                 FloorplanControlsClusterBuilder.roomID(
                     adapter: item.adapter,
                     linkedRoomUUID: item.linkedRoomUUID,
                     rooms: floorplan.linkedRooms
-                ) == expandedID
+                ) == focusedRoomID
             }
         }
         return items
     }
 
-    /// Regola etichette del redesign (novità C): stanza espansa → tutte
-    /// visibili; filtro categoria → solo i dispositivi attivi o in allarme.
+    /// Regola etichette del redesign (novità C): stanza espansa/zoomata →
+    /// tutte visibili; filtro categoria → solo attivi o in allarme.
     private func controlsLabelOverride(for item: FloorplanMarkerRenderItem) -> Bool? {
-        guard !isCompactScreen, !ui.isEditing,
+        guard !ui.isEditing,
               let vm = overlayVM, vm.activeMode == .controls else { return nil }
+        if vm.areAllRoomsExpanded { return nil }
         if vm.categoryFilter != nil {
             let urgency = item.adapter?.visualUrgency
             return item.adapter?.isOn == true || urgency == .alarm || urgency == .warning
         }
+        if isCompactScreen {
+            return vm.zoomedRoomID != nil ? true : nil
+        }
         if vm.expandedRoomID != nil { return true }
         return nil
+    }
+
+    // MARK: - Zoom semantico (iPhone, fase 4)
+
+    /// Inquadra la stanza col viewport (molla 0.45s) e marca lo stato: da lì
+    /// si vedono solo i suoi marker, con etichette.
+    private func zoomToRoom(_ room: LinkedRoom, container: CGSize) {
+        guard let image = imageCache.image else { return }
+        let rect = imageRect(imageSize: image.size, container: container)
+        let roomRect = FloorplanCoordinateHelper(imageRect: rect)
+            .screenRect(from: room.normalizedRect)
+        viewportController.focus(on: roomRect, in: container)
+        overlayVM?.zoomedRoomID = room.hmRoomUUID
+    }
+
+    private func zoomOutToFullPlan() {
+        viewportController.reset()
+        overlayVM?.zoomedRoomID = nil
+    }
+
+    /// Bottone "‹ nome piano" per uscire dallo zoom semantico. Fisso in alto
+    /// a sinistra sotto la chrome, fuori dal subtree scalato.
+    @ViewBuilder
+    private var zoomedRoomBackButton: some View {
+        if isCompactScreen, !ui.isEditing,
+           overlayVM?.activeMode == .controls,
+           overlayVM?.zoomedRoomID != nil {
+            VStack {
+                HStack {
+                    Button(action: zoomOutToFullPlan) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 12, weight: .bold))
+                            Text(floorplan.name)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(FloorplanTokens.Surface.filterChipActiveText)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule()
+                                .fill(FloorplanTokens.Surface.filterChipActive)
+                                .shadow(color: .black.opacity(0.18), radius: 5, y: 1)
+                        )
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(String(localized: "floorplan.zoom.back",
+                                               defaultValue: "Back to \(floorplan.name)"))
+                    Spacer()
+                }
+                Spacer()
+            }
+            .padding(.leading, 16)
+            .padding(.top, chromeLayout.topInset + 6)
+            .transition(.opacity)
+        }
     }
 
     private var markerAuditService: FloorplanMarkerAuditService {

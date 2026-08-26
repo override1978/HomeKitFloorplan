@@ -185,3 +185,51 @@ struct FloorplanDockedContextPanel: View {
         }
     }
 }
+
+// MARK: - FloorplanCompactPanelSheet
+
+/// Contenuto del bottom sheet iPhone (redesign, fase 4): sostituisce il
+/// pannello overlay laterale su compact. Due detent — compresso (maniglia +
+/// titolo) ed esteso — con la mappa che resta interattiva sotto. Stesso
+/// router dei contenuti del pannello docked; stessa regola delle superfici:
+/// sfondo = planimetria, card piene che galleggiano.
+struct FloorplanCompactPanelSheet: View {
+
+    /// Altezze dei due detent, da design (~92pt compresso, ~46% esteso).
+    static let collapsedDetent: PresentationDetent = .height(92)
+    static let expandedDetent: PresentationDetent = .fraction(0.46)
+
+    @Bindable var overlayVM: FloorplanOverlayViewModel
+    let floorplan: Floorplan
+    let environmentViewModel: EnvironmentViewModel
+    var adapterMap: [UUID: any AccessoryAdapter] = [:]
+
+    private var mode: FloorplanOverlayMode { overlayVM.activeMode }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(mode.accentColor)
+                    .frame(width: 8, height: 8)
+                Text(mode.label)
+                    .font(.headline)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 6)
+
+            ScrollView {
+                FloorplanContextDashboardRouter(
+                    overlayVM: overlayVM,
+                    floorplan: floorplan,
+                    environmentViewModel: environmentViewModel,
+                    adapterMap: adapterMap
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 16)
+            }
+        }
+    }
+}

@@ -52,6 +52,28 @@ struct FloorplanViewportState {
         save(floorplanID: floorplanID)
     }
 
+    /// Zoom semantico (redesign iPhone): inquadra `rect` — coordinate schermo
+    /// a scala 1 — dentro il contenitore, con un filo d'aria attorno.
+    ///
+    /// L'offset NON passa dal clamp del pan libero: una stanza d'angolo può
+    /// legittimamente chiedere più offset di quanto il pan conceda; sarà il
+    /// prossimo drag dell'utente a rientrare nei limiti, con la sua molla.
+    mutating func focus(on rect: CGRect, in container: CGSize, floorplanID: UUID) {
+        let padding: CGFloat = 0.82
+        let fitScale = min(container.width / max(rect.width, 1),
+                           container.height / max(rect.height, 1)) * padding
+        let target = clampedScale(fitScale)
+        let center = CGPoint(x: container.width / 2, y: container.height / 2)
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+            zoomScale = target
+            zoomOffset = CGSize(width: (center.x - rect.midX) * target,
+                                height: (center.y - rect.midY) * target)
+            liveScale = 1.0
+            liveOffset = .zero
+        }
+        save(floorplanID: floorplanID)
+    }
+
     mutating func reset(floorplanID: UUID) {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
             zoomScale = 1.0

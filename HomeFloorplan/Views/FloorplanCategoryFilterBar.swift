@@ -14,6 +14,9 @@ struct FloorplanCategoryFilterBar: View {
 
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let counts: [FloorplanRoomCluster.CategoryCount]
+    /// Su iPhone il toggle della vista esplosa non c'è (lo zoom semantico è
+    /// il modo compatto di vedere tutto).
+    var showsExpandToggle: Bool = true
 
     private var totalCount: Int { counts.reduce(0) { $0 + $1.total } }
 
@@ -61,9 +64,11 @@ struct FloorplanCategoryFilterBar: View {
             // Il toggle della vista esplosa NON è un filtro: sta oltre un
             // divisorio, solo icona, così non si legge come doppione della
             // chip "Tutti" (feedback utente 26/08).
-            Divider().frame(height: 18)
+            if showsExpandToggle {
+                Divider().frame(height: 18)
 
-            expandAllToggle
+                expandAllToggle
+            }
         }
         .padding(.vertical, 4)
     }

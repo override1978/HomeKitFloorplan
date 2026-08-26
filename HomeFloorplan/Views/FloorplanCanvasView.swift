@@ -111,6 +111,11 @@ struct FloorplanChromeLayout: Equatable {
     /// Presente in tutti i tab, quindi legittimamente parte del margine.
     var hasUnifiedStatusStrip = false
 
+    /// Riga della mode pill su iPhone (redesign, fase 4): su compact la pill
+    /// non sta nella barra — è una riga a sé sotto di essa. Dipende dalla
+    /// size class, un fatto stabile per la sessione, non dal tab attivo.
+    var hasCompactModeRow = false
+
     /// Layout dell'app com'è oggi: solo top bar + superfici per-modo già
     /// coperte dal margine base.
     static let legacy = FloorplanChromeLayout()
@@ -119,9 +124,13 @@ struct FloorplanChromeLayout: Equatable {
     /// + respiro). Costante nominata, mai misurata.
     static let statusStripHeight: CGFloat = 48
 
+    /// Altezza riservata alla riga mode pill compatta.
+    static let compactModeRowHeight: CGFloat = 46
+
     var topInset: CGFloat {
         var inset = FloorplanCanvasGeometry.chromeTopInset
         if hasUnifiedStatusStrip { inset += Self.statusStripHeight }
+        if hasCompactModeRow { inset += Self.compactModeRowHeight }
         return inset
     }
 }

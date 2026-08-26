@@ -20,6 +20,11 @@ struct FloorplanViewportController {
         viewport.reset(floorplanID: floorplanID)
     }
 
+    /// Zoom semantico su una stanza (redesign iPhone).
+    func focus(on rect: CGRect, in container: CGSize) {
+        viewport.focus(on: rect, in: container, floorplanID: floorplanID)
+    }
+
     func zoomPanGesture(in container: CGSize) -> some Gesture {
         let magnify = MagnificationGesture()
             .onChanged { value in

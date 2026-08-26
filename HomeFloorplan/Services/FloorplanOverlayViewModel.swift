@@ -28,6 +28,7 @@ final class FloorplanOverlayViewModel {
             expandedRoomID = nil
             categoryFilter = nil
             areAllRoomsExpanded = false
+            zoomedRoomID = nil
             panelContent = .dashboard
         }
     }
@@ -79,6 +80,11 @@ final class FloorplanOverlayViewModel {
     /// stanze visibili insieme, con la regola etichette storica — in pratica
     /// la vista classica pre-redesign, raggiungibile e richiudibile con un tap.
     var areAllRoomsExpanded: Bool = false
+
+    /// Stanza inquadrata dallo zoom semantico su iPhone (redesign fase 4).
+    /// Analogo compatto di `expandedRoomID`: da zoomata si vedono i suoi
+    /// marker con etichetta; "‹ nome piano" riporta alla vista intera.
+    var zoomedRoomID: UUID?
 
     /// Espande tutte le stanze insieme (vista esplosa).
     func expandAllRooms() {

@@ -23,6 +23,10 @@ struct ControlsClusterOverlayView: View {
     let imageRect: CGRect
     let effectiveScale: CGFloat
     let clusters: [FloorplanRoomCluster]
+    /// iPhone (redesign fase 4): badge riassuntivi al posto delle card, e il
+    /// tap fa zoom semantico sulla stanza invece di espanderla in place.
+    var isCompact: Bool = false
+    var onZoomRoom: ((FloorplanRoomCluster) -> Void)? = nil
 
     private var helper: FloorplanCoordinateHelper {
         FloorplanCoordinateHelper(imageRect: imageRect)
@@ -33,7 +37,13 @@ struct ControlsClusterOverlayView: View {
 
         ZStack(alignment: .topLeading) {
             if overlayVM.categoryFilter == nil, !overlayVM.areAllRoomsExpanded {
-                if let expandedID = overlayVM.expandedRoomID {
+                if isCompact {
+                    // Vista intera iPhone: un badge per stanza, finché non si
+                    // è zoomati dentro una.
+                    if overlayVM.zoomedRoomID == nil {
+                        compactBadgesLayer(inverseScale: inverseScale)
+                    }
+                } else if let expandedID = overlayVM.expandedRoomID {
                     expandedRoomLayer(expandedID: expandedID, inverseScale: inverseScale)
                 } else {
                     clusterCardsLayer(inverseScale: inverseScale)
@@ -42,6 +52,44 @@ struct ControlsClusterOverlayView: View {
         }
         .frame(width: containerSize.width, height: containerSize.height)
         .animation(.easeInOut(duration: 0.35), value: overlayVM.expandedRoomID)
+        .animation(.easeInOut(duration: 0.35), value: overlayVM.zoomedRoomID)
+    }
+
+    // MARK: iPhone — badge riassuntivi
+
+    @ViewBuilder
+    private func compactBadgesLayer(inverseScale: CGFloat) -> some View {
+        ForEach(clusters) { cluster in
+            Button {
+                onZoomRoom?(cluster)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(cluster.room.name)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(FloorplanTokens.Text.primary)
+                    Text("· \(cluster.activeCount)/\(cluster.totalCount)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(cluster.activeCount > 0
+                                         ? FloorplanTokens.Semantic.warning
+                                         : FloorplanTokens.Text.secondary)
+                }
+                .lineLimit(1)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(FloorplanTokens.Surface.card)
+                        .shadow(color: .black.opacity(0.10), radius: 5, y: 1)
+                )
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "floorplan.cluster.compactBadge",
+                                       defaultValue: "\(cluster.room.name), \(cluster.activeCount) of \(cluster.totalCount) on"))
+            .scaleEffect(inverseScale)
+            .position(helper.centroid(for: cluster.room))
+            .transition(.opacity)
+        }
     }
 
     // MARK: Stato default — card cluster
