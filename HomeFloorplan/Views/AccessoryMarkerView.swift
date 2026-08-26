@@ -39,6 +39,10 @@ struct AccessoryMarkerView: View {
     let label: String
     let hasCustomLabel: Bool
     let allowsCameraSnapshot: Bool
+    /// Regola etichette del redesign (novità C): il chiamante può forzare
+    /// l'etichetta visibile (stanza espansa) o nascosta (filtro categoria su
+    /// dispositivo spento). `nil` = comportamento storico dalla preferenza.
+    let labelOverride: Bool?
 
     @AppStorage(MarkerSize.appStorageKey)
     private var markerSizeRaw: String = MarkerSize.regular.rawValue
@@ -63,7 +67,8 @@ struct AccessoryMarkerView: View {
          editIssue: AccessoryMarkerEditIssue? = nil,
          label: String,
          hasCustomLabel: Bool,
-         allowsCameraSnapshot: Bool = false) {
+         allowsCameraSnapshot: Bool = false,
+         labelOverride: Bool? = nil) {
         self.adapter = adapter
         self.isEditing = isEditing
         self.isSelected = isSelected
@@ -72,6 +77,7 @@ struct AccessoryMarkerView: View {
         self.label = label
         self.hasCustomLabel = hasCustomLabel
         self.allowsCameraSnapshot = allowsCameraSnapshot
+        self.labelOverride = labelOverride
     }
     
     /// Su iPhone i marker sono **sempre** `.compact` e **senza etichetta**, a
@@ -144,6 +150,10 @@ struct AccessoryMarkerView: View {
         // Le etichette sono ~112 punti l'una: su iPhone si sovrappongono fra
         // loro prima ancora di dire qualcosa. Il nome si legge toccando.
         if isCompactScreen { return false }
+
+        // L'override del redesign vince sulla preferenza: la stanza espansa
+        // mostra tutte le etichette, il filtro categoria solo quelle attive.
+        if let labelOverride { return labelOverride }
 
         switch labelVisibility {
         case .always:

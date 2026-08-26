@@ -16,6 +16,9 @@ struct FloorplanTopBarView: View {
     let overlayContext: FloorplanOverlayContext
     /// Segnali della barra di stato unificata; nil finché l'editor non ha dati.
     let statusStrip: FloorplanStatusStripState?
+    /// Conteggi per la riga chips del filtro categoria (tab Controlli);
+    /// vuota = riga assente.
+    let categoryCounts: [FloorplanRoomCluster.CategoryCount]
     let environmentSensorTypes: [SensorServiceType]
     let isCloudKitMaster: Bool
     let smartLightingStatus: SmartLightingFloorplanStatus?
@@ -231,6 +234,16 @@ struct FloorplanTopBarView: View {
 
     @ViewBuilder
     private var statusBanners: some View {
+        // Chips filtro categoria (novità C): solo tab Controlli su regular,
+        // nello stesso slot per-modo dove Ambiente mette i suoi filtri.
+        if !isEditing, !isCompact,
+           let overlayVM, overlayVM.activeMode == .controls,
+           categoryCounts.count > 1 {
+            FloorplanCategoryFilterBar(overlayVM: overlayVM, counts: categoryCounts)
+                .padding(.top, 4)
+                .transition(.move(edge: .top).combined(with: .opacity))
+        }
+
         if !isEditing,
            overlayVM?.activeMode == .controls,
            isCloudKitMaster,

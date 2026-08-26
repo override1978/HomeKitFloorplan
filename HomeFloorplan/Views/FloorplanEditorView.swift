@@ -234,7 +234,8 @@ struct FloorplanEditorView: View {
                     overlayVM: vm,
                     floorplan: floorplan,
                     environmentViewModel: overlayEnvVM,
-                    background: floorplanBackgroundColor
+                    background: floorplanBackgroundColor,
+                    adapterMap: currentAdapterMap()
                 )
                 .frame(width: FloorplanDockedContextPanel.width)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -290,6 +291,11 @@ struct FloorplanEditorView: View {
                 openPanelButton
                     .environment(\.colorScheme, chromeColorScheme)
 
+                // Azione bulk del filtro categoria (novità C): capsule scura
+                // in basso al centro, solo con filtro attivo e dispositivi accesi.
+                bulkOffButton
+                    .environment(\.colorScheme, chromeColorScheme)
+
                 if hidesMarkersInPortrait(container: proxy.size) {
                     rotateForMarkersHint
                         .environment(\.colorScheme, chromeColorScheme)
@@ -332,7 +338,8 @@ struct FloorplanEditorView: View {
                         containerWidth: proxy.size.width,
                         floorplan: floorplan,
                         homeKit: homeKit,
-                        environmentViewModel: overlayEnvVM
+                        environmentViewModel: overlayEnvVM,
+                        adapterMap: currentAdapterMap()
                     )
                     // Il pannello segue la planimetria come il resto della
                     // chrome: era l'ultimo pezzo flottante rimasto appeso al
@@ -599,6 +606,10 @@ struct FloorplanEditorView: View {
             overlayVM: overlayVM,
             overlayContext: cachedOverlayContext,
             statusStrip: statusStripState,
+            categoryCounts: (!isCompactScreen && !ui.isEditing && overlayVM?.activeMode == .controls)
+                ? FloorplanControlsClusterBuilder.floorCategoryCounts(floorplan: floorplan,
+                                                                      adapterMap: currentAdapterMap())
+                : [],
             environmentSensorTypes: overlayEnvVM.availableSensorTypes,
             isCloudKitMaster: cloudKitSync.isMaster,
             smartLightingStatus: smartLightingEngine.floorplanStatus,
@@ -682,6 +693,74 @@ struct FloorplanEditorView: View {
             .padding(.bottom, 28)
         }
         .transition(.opacity)
+    }
+
+    // MARK: - Azione bulk (filtro categoria, novità C)
+
+    /// Categorie per cui il "Spegni tutto" ha senso (da design: luci, prese,
+    /// media, clima). Le altre — sensori, camere — non si "spengono".
+    private static let bulkTogglableCategories: Set<AccessoryCategory> =
+        [.lights, .outlets, .television, .climate]
+
+    /// Adapter attivi della categoria fra i marker posati (un accessorio con
+    /// più marker conta una volta).
+    private func activeBulkAdapters(for category: AccessoryCategory) -> [any AccessoryAdapter] {
+        var seen = Set<UUID>()
+        var result: [any AccessoryAdapter] = []
+        let map = currentAdapterMap()
+        for placed in floorplan.accessories {
+            guard !seen.contains(placed.homeKitAccessoryUUID) else { continue }
+            seen.insert(placed.homeKitAccessoryUUID)
+            guard let adapter = map[placed.homeKitAccessoryUUID],
+                  AccessoryCategory.classify(adapter: adapter) == category,
+                  adapter.isOn else { continue }
+            result.append(adapter)
+        }
+        return result
+    }
+
+    @ViewBuilder
+    private var bulkOffButton: some View {
+        if !isCompactScreen, !ui.isEditing,
+           let vm = overlayVM, vm.activeMode == .controls,
+           let filter = vm.categoryFilter,
+           Self.bulkTogglableCategories.contains(filter) {
+            let active = activeBulkAdapters(for: filter)
+            if !active.isEmpty {
+                VStack {
+                    Spacer()
+                    Button {
+                        performBulkOff(category: filter)
+                    } label: {
+                        Text(String(localized: "floorplan.bulk.off",
+                                    defaultValue: "Turn off all: \(filter.displayName) (\(active.count) on)"))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(FloorplanTokens.Surface.filterChipActiveText)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 11)
+                            .background(FloorplanTokens.Surface.filterChipActive, in: Capsule())
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 28)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    /// Spegne tutti gli attivi della categoria. `performQuickToggle` è un
+    /// toggle, ma la lista contiene solo `isOn == true`: l'esito è "off".
+    /// Sequenziale di proposito, per non inondare HomeKit di scritture.
+    private func performBulkOff(category: AccessoryCategory) {
+        let haptic = UIImpactFeedbackGenerator(style: .medium)
+        haptic.impactOccurred()
+        let adapters = activeBulkAdapters(for: category)
+        Task {
+            for adapter in adapters {
+                try? await adapter.performQuickToggle(via: homeKit)
+            }
+        }
     }
 
     // MARK: - Pulsante apri pannello (sempre visibile, non soggetto ad auto-hide)
@@ -851,10 +930,30 @@ struct FloorplanEditorView: View {
 
     private var isCompactScreen: Bool { horizontalSizeClass == .compact }
 
+    // MARK: - Cluster (tab Controlli, novità C)
+
+    /// Vero quando il tab Controlli su regular mostra i cluster al posto dei
+    /// marker: niente filtro, niente stanza espansa, e servono stanze con
+    /// marker. Senza stanze collegate si resta ai marker classici.
+    private var controlsClusterModeActive: Bool {
+        guard !isCompactScreen, !ui.isEditing,
+              let vm = overlayVM, vm.activeMode == .controls,
+              vm.categoryFilter == nil, vm.expandedRoomID == nil,
+              !floorplan.linkedRooms.isEmpty, !floorplan.accessories.isEmpty
+        else { return false }
+        return true
+    }
+
+    private func currentClusters() -> [FloorplanRoomCluster] {
+        FloorplanControlsClusterBuilder.clusters(floorplan: floorplan,
+                                                 adapterMap: currentAdapterMap())
+    }
+
     private func imageWithMarkers(image: UIImage, container: CGSize) -> some View {
         let rect = imageRect(imageSize: image.size, container: container)
         let showMarkers = !hidesMarkersInPortrait(container: container)
             && (ui.isEditing || (overlayVM?.activeMode == .controls))
+            && !controlsClusterModeActive
         return FloorplanCanvasView(
             image: image,
             containerSize: container,
@@ -903,7 +1002,18 @@ struct FloorplanEditorView: View {
     private func overlayLayer(vm: FloorplanOverlayViewModel, container: CGSize, imageRect: CGRect) -> some View {
         switch vm.activeMode {
         case .controls:
-            EmptyView()
+            if !isCompactScreen, !floorplan.linkedRooms.isEmpty, !floorplan.accessories.isEmpty {
+                ControlsClusterOverlayView(
+                    floorplan: floorplan,
+                    overlayVM: vm,
+                    containerSize: container,
+                    imageRect: imageRect,
+                    effectiveScale: effectiveScale,
+                    clusters: currentClusters()
+                )
+            } else {
+                EmptyView()
+            }
         case .environment:
             EnvironmentOverlayView(
                 floorplan: floorplan,
@@ -963,7 +1073,8 @@ struct FloorplanEditorView: View {
             editIssue: item.editIssue,
             label: item.displayLabel,
             hasCustomLabel: item.hasCustomLabel,
-            allowsCameraSnapshot: item.allowsCameraSnapshot
+            allowsCameraSnapshot: item.allowsCameraSnapshot,
+            labelOverride: controlsLabelOverride(for: item)
         )
         .scaleEffect(inverseScale)
         .position(displayPoint)
@@ -992,7 +1103,7 @@ struct FloorplanEditorView: View {
     }
 
     private func markerRenderItems() -> [FloorplanMarkerRenderItem] {
-        FloorplanMarkerRenderItemBuilder(
+        let items = FloorplanMarkerRenderItemBuilder(
             adaptersByUUID: currentAdapterMap(),
             isEditing: ui.isEditing,
             allowsCameraSnapshot: !ui.isEditing && overlayVM?.activeMode == .security,
@@ -1002,6 +1113,42 @@ struct FloorplanEditorView: View {
             duplicatedMarkerAccessoryIDs: duplicatedMarkerAccessoryIDs,
             linkedRooms: floorplan.linkedRooms
         ).makeItems(from: floorplan.accessories)
+        return filteredControlsItems(items)
+    }
+
+    /// Filtro del redesign sul tab Controlli (regular, fuori dalla modifica):
+    /// col filtro categoria restano solo i marker della categoria su tutto il
+    /// piano; con la stanza espansa solo i suoi. Altrove la lista passa intera.
+    private func filteredControlsItems(_ items: [FloorplanMarkerRenderItem]) -> [FloorplanMarkerRenderItem] {
+        guard !isCompactScreen, !ui.isEditing,
+              let vm = overlayVM, vm.activeMode == .controls else { return items }
+
+        if let filter = vm.categoryFilter {
+            return items.filter { AccessoryCategory.classify(adapter: $0.adapter) == filter }
+        }
+        if let expandedID = vm.expandedRoomID {
+            return items.filter { item in
+                FloorplanControlsClusterBuilder.roomID(
+                    adapter: item.adapter,
+                    linkedRoomUUID: item.linkedRoomUUID,
+                    rooms: floorplan.linkedRooms
+                ) == expandedID
+            }
+        }
+        return items
+    }
+
+    /// Regola etichette del redesign (novità C): stanza espansa → tutte
+    /// visibili; filtro categoria → solo i dispositivi attivi o in allarme.
+    private func controlsLabelOverride(for item: FloorplanMarkerRenderItem) -> Bool? {
+        guard !isCompactScreen, !ui.isEditing,
+              let vm = overlayVM, vm.activeMode == .controls else { return nil }
+        if vm.categoryFilter != nil {
+            let urgency = item.adapter?.visualUrgency
+            return item.adapter?.isOn == true || urgency == .alarm || urgency == .warning
+        }
+        if vm.expandedRoomID != nil { return true }
+        return nil
     }
 
     private var markerAuditService: FloorplanMarkerAuditService {
@@ -1153,9 +1300,15 @@ struct FloorplanEditorView: View {
 
         chromeController.scheduleAutoHide(isEditing: ui.isEditing)
 
-        // Tap: toggle diretto se supportato, altrimenti apre il pannello dettaglio.
+        // Tap: toggle diretto se supportato; per il clima (novità D) la vista
+        // parametri si apre nel pannello docked; per il resto lo sheet storico.
         if let adapter, adapter.supportsQuickToggle {
             performQuickToggle(adapter: adapter, markerID: markerID)
+        } else if !isCompactScreen,
+                  overlayVM?.activeMode == .controls,
+                  adapter is (any ThermostatControlling),
+                  let vm = overlayVM {
+            vm.showClimateDetail(for: accessory.uniqueIdentifier)
         } else {
             ui.controllingAccessory = accessory
         }

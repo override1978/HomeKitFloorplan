@@ -119,8 +119,11 @@ enum FloorplanTokens {
         /// Etichetta capsule scura sotto i marker (fissa, non dinamica: deve
         /// staccare dal disegno in entrambi gli schemi).
         static let markerLabel = Color(light: 0x4A443D, dark: 0x4A443D).opacity(0.88)
-        /// Chip filtro attivo (fill scuro, testo bianco).
+        /// Chip filtro attivo: fill scuro con testo bianco in chiaro; in dark
+        /// il fill si inverte (crema) e il testo con lui — i due token vanno
+        /// sempre usati in coppia.
         static let filterChipActive = Color(light: 0x4A443D, dark: 0xD6CFC3)
+        static let filterChipActiveText = Color(light: 0xFFFFFF, dark: 0x2E2A24)
     }
 
     // MARK: Testo

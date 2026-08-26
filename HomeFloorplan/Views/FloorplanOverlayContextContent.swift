@@ -8,10 +8,32 @@ struct FloorplanContextDashboardRouter: View {
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let floorplan: Floorplan
     let environmentViewModel: EnvironmentViewModel
+    /// Per risolvere l'adapter del dettaglio clima (novità D).
+    var adapterMap: [UUID: any AccessoryAdapter] = [:]
 
     var body: some View {
         VStack(spacing: 14) {
-            switch overlayVM.activeMode {
+            // Il dettaglio clima vince su qualunque dashboard: è stato aperto
+            // da un tap esplicito su un marker termostato.
+            if case .climate(let accessoryID) = overlayVM.panelContent,
+               let adapter = adapterMap[accessoryID],
+               let thermostat = adapter as? (any ThermostatControlling) {
+                FloorplanClimatePanelContent(
+                    overlayVM: overlayVM,
+                    thermostat: thermostat,
+                    name: adapter.name,
+                    roomName: adapter.accessory.room?.name
+                )
+            } else {
+                dashboard
+            }
+        }
+        .padding(.top, overlayVM.activeMode == .intelligence ? 36 : 0)
+    }
+
+    @ViewBuilder
+    private var dashboard: some View {
+        switch overlayVM.activeMode {
             case .controls:
                 EmptyView()
             case .environment:
@@ -32,8 +54,50 @@ struct FloorplanContextDashboardRouter: View {
                     linkedRooms: floorplan.linkedRooms
                 )
             }
+    }
+}
+
+// MARK: - FloorplanClimatePanelContent
+
+/// Vista parametri clima nel pannello (novità D): nome e stanza, controllo
+/// termostato completo (riusa `ThermostatControl`, con le sue scritture
+/// ottimistiche già collaudate) e link per tornare al contenuto standard.
+struct FloorplanClimatePanelContent: View {
+    @Bindable var overlayVM: FloorplanOverlayViewModel
+    let thermostat: any ThermostatControlling
+    let name: String
+    let roomName: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                overlayVM.closeDetailContent()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(String(localized: "common.back", defaultValue: "Back"))
+                        .font(.subheadline.weight(.medium))
+                }
+                .foregroundStyle(FloorplanTokens.Semantic.warning)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.headline)
+                if let roomName {
+                    Text(roomName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ThermostatControl(adapter: thermostat)
         }
-        .padding(.top, overlayVM.activeMode == .intelligence ? 36 : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 8)
     }
 }
 
@@ -43,6 +107,7 @@ struct FloorplanOverlayContextContent: View {
     let floorplan: Floorplan
     let homeKit: HomeKitService
     let environmentViewModel: EnvironmentViewModel
+    var adapterMap: [UUID: any AccessoryAdapter] = [:]
 
     private var mode: FloorplanOverlayMode {
         overlayVM.activeMode
@@ -58,7 +123,8 @@ struct FloorplanOverlayContextContent: View {
             FloorplanContextDashboardRouter(
                 overlayVM: overlayVM,
                 floorplan: floorplan,
-                environmentViewModel: environmentViewModel
+                environmentViewModel: environmentViewModel,
+                adapterMap: adapterMap
             )
         }
     }

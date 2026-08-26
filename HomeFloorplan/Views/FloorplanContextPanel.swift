@@ -129,6 +129,8 @@ struct FloorplanDockedContextPanel: View {
     /// separata solo da un filo, così il pannello appartiene alla stessa
     /// superficie e non sembra una sheet appoggiata sopra.
     let background: Color
+    /// Per il dettaglio clima (novità D).
+    var adapterMap: [UUID: any AccessoryAdapter] = [:]
 
     private var mode: FloorplanOverlayMode { overlayVM.activeMode }
 
@@ -143,7 +145,8 @@ struct FloorplanDockedContextPanel: View {
                 FloorplanContextDashboardRouter(
                     overlayVM: overlayVM,
                     floorplan: floorplan,
-                    environmentViewModel: environmentViewModel
+                    environmentViewModel: environmentViewModel,
+                    adapterMap: adapterMap
                 )
                 .padding(.horizontal, 12)
                 .padding(.bottom, 16)

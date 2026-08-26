@@ -25,6 +25,9 @@ final class FloorplanOverlayViewModel {
             // Clear transient state whenever the mode changes.
             highlightedRoomID = nil
             selectedSensorFilter = nil
+            expandedRoomID = nil
+            categoryFilter = nil
+            panelContent = .dashboard
         }
     }
 
@@ -43,6 +46,73 @@ final class FloorplanOverlayViewModel {
     /// `nil` = aggregate worst urgency across all sensor types.
     /// Non-nil = show only this sensor type in heatmap, badges, and panel cards.
     var selectedSensorFilter: SensorServiceType? = nil
+
+    // MARK: Cluster / filtri (tab Controlli, redesign novità C+D)
+
+    /// Stanza espansa nel tab Controlli (solo larghezza regular): i suoi
+    /// marker si mostrano con etichetta, le altre stanze restano a cluster.
+    var expandedRoomID: UUID? {
+        didSet {
+            // Espandere una stanza esce dal filtro categoria: le due viste
+            // sono alternative per design.
+            if expandedRoomID != nil { categoryFilter = nil }
+        }
+    }
+
+    /// Filtro categoria attivo nel tab Controlli. `nil` = "Tutti" (vista a
+    /// cluster). Con filtro attivo si mostrano SOLO i marker della categoria,
+    /// su tutto il piano, e i cluster spariscono.
+    var categoryFilter: AccessoryCategory? {
+        didSet {
+            if categoryFilter != nil { expandedRoomID = nil }
+        }
+    }
+
+    /// Contenuto del pannello contestuale. `.dashboard` = router per modalità
+    /// (comportamento storico); `.climate` = vista parametri clima aperta dal
+    /// tap su un marker termostato (novità D).
+    var panelContent: PanelContent = .dashboard
+
+    enum PanelContent: Equatable {
+        case dashboard
+        /// UUID dell'accessorio HomeKit del termostato mostrato.
+        case climate(UUID)
+    }
+
+    /// Espande una stanza (tab Controlli) e comprime l'eventuale precedente.
+    func expandRoom(_ id: UUID) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            expandedRoomID = id
+        }
+    }
+
+    /// Comprime la stanza espansa.
+    func collapseRoom() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            expandedRoomID = nil
+        }
+    }
+
+    /// Apre la vista parametri clima nel pannello per l'accessorio dato.
+    func showClimateDetail(for accessoryID: UUID) {
+        panelContent = .climate(accessoryID)
+        if !isPanelVisible {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+                isPanelVisible = true
+            }
+        }
+    }
+
+    /// Torna dal dettaglio clima al contenuto standard del pannello. Nel tab
+    /// Controlli il contenuto standard non esiste: lì chiudere il dettaglio
+    /// chiude il pannello.
+    func closeDetailContent() {
+        if activeMode == .controls {
+            dismissPanel()
+        } else {
+            panelContent = .dashboard
+        }
+    }
 
     // MARK: Private
 
@@ -105,6 +175,7 @@ final class FloorplanOverlayViewModel {
             isPanelVisible = false
         }
         highlightedRoomID = nil
+        panelContent = .dashboard
     }
 
     // MARK: Persistence
