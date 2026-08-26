@@ -131,6 +131,10 @@ struct FloorplanEditorView: View {
     @AppStorage("floorplan.compactEditorVisible")
     private var compactEditorVisible = false
 
+    /// Per lo sfondo dello sheet compatto: vetro di sistema o materiale legacy.
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
+
     private func marker(withID markerID: UUID) -> PlacedAccessory? {
         floorplan.accessories.first { $0.id == markerID }
     }
@@ -801,7 +805,7 @@ struct FloorplanEditorView: View {
 
     /// Spazio verticale occupato dall'isola dei tab (pill due righe + margini).
     private static let compactIslandClearance: CGFloat = 72
-    private static let compactSheetPeekHeight: CGFloat = 110
+    private static let compactSheetPeekHeight: CGFloat = 92
     private static var compactSheetPeekDetent: PresentationDetent {
         .height(compactSheetPeekHeight)
     }
@@ -853,18 +857,23 @@ struct FloorplanEditorView: View {
                     .padding(.bottom, 18)
                 }
                 compactModeBar(vm: vm)
-                    .padding(.vertical, 12)
+                    .padding(.top, 6)
+                    .padding(.bottom, 10)
             } else {
                 Spacer(minLength: 0)
                 compactModeBar(vm: vm)
-                    .padding(.vertical, 12)
+                    .padding(.top, 6)
+                    .padding(.bottom, 10)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .presentationDetents([Self.compactSheetPeekDetent, .medium, .large],
                              selection: $compactSheetDetent)
         .presentationDragIndicator(.visible)
-        .presentationBackground(.clear)
+        // Il platter dello sheet è L'UNICA superficie (i tab ci poggiano
+        // sopra nudi): col vetro attivo il default di sistema è già Liquid
+        // Glass, nel legacy il materiale.
+        .modifier(CompactSheetBackground(usesGlass: isLiquidGlassEnabled))
         .presentationBackgroundInteraction(.enabled)
         .interactiveDismissDisabled(true)
         .onAppear {
@@ -889,7 +898,22 @@ struct FloorplanEditorView: View {
                           context: cachedOverlayContext,
                           status: statusStripState,
                           isCompact: true)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 16)
+    }
+
+    /// Sfondo dello sheet compatto: default di sistema (Liquid Glass su
+    /// iOS 26) quando il vetro è attivo, materiale nel ramo legacy.
+    private struct CompactSheetBackground: ViewModifier {
+        let usesGlass: Bool
+
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            if usesGlass, #available(iOS 26.0, *) {
+                content
+            } else {
+                content.presentationBackground(.regularMaterial)
+            }
+        }
     }
 
     private func compactSheetHeader(vm: FloorplanOverlayViewModel) -> some View {

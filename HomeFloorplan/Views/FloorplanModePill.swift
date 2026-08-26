@@ -68,9 +68,9 @@ struct FloorplanModePill: View {
                         modeButton(mode, index: index)
                     }
                 }
-                // Un filo d'aria interna: i segmenti non toccano il bordo
-                // della capsula (feedback 26/08, "ossigeno" — dosato due volte).
-                .padding(isCompact ? 9 : 4)
+                // Su compact niente padding: non c'è più una capsula interna,
+                // l'aria la danno i margini sul platter dello sheet.
+                .padding(isCompact ? 0 : 4)
                 .modifier(ModeBarSurface(usesGlass: usesGlass,
                                          isCompact: isCompact))
             }
@@ -301,17 +301,12 @@ private struct ModeBarSurface: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if isCompact {
-            // Lo sheet ora è trasparente (.clear): l'isola È la superficie
-            // visibile, quindi la porta con sé in entrambi i rami — vetro
-            // .clear (sottile, non lastra) o materiale nel legacy. Il colore
-            // resta tutto sulle selezioni.
-            if usesGlass, #available(iOS 26.0, *) {
-                content.glassEffect(.clear, in: Capsule())
-            } else {
-                content
-                    .background(.regularMaterial, in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
-            }
+            // UNA superficie sola, come Dov'è: i tab poggiano direttamente
+            // sul platter dello sheet, che è l'unico sfondo. Mezz'ora di
+            // oscillazioni (feedback 26/08) è nata dal contendersi il ruolo
+            // fra la capsula dell'isola e il platter: la capsula non esiste
+            // più, in NESSUN ramo.
+            content
         } else if usesGlass, #available(iOS 26.0, *) {
             content.glassEffect(.regular, in: Capsule())
         } else {
