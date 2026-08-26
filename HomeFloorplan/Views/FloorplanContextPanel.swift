@@ -203,106 +203,33 @@ struct FloorplanCompactPanelSheet: View {
     let floorplan: Floorplan
     let environmentViewModel: EnvironmentViewModel
     var adapterMap: [UUID: any AccessoryAdapter] = [:]
-    /// Drawer del tab Controlli (v3-B): riassunti stanza + filtri.
-    var clusters: [FloorplanRoomCluster] = []
-    var categoryCounts: [FloorplanRoomCluster.CategoryCount] = []
-    var onOpenRoom: ((FloorplanRoomCluster) -> Void)? = nil
 
     private var mode: FloorplanOverlayMode { overlayVM.activeMode }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 6)
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(mode.accentColor)
+                    .frame(width: 8, height: 8)
+                Text(mode.label)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 6)
 
             ScrollView {
-                if mode == .controls {
-                    controlsDrawer
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 16)
-                } else {
-                    FloorplanContextDashboardRouter(
-                        overlayVM: overlayVM,
-                        floorplan: floorplan,
-                        environmentViewModel: environmentViewModel,
-                        adapterMap: adapterMap
-                    )
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 16)
-                }
-            }
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(mode.accentColor)
-                .frame(width: 8, height: 8)
-            Text(mode == .controls ? floorplan.name : mode.label)
-                .font(.headline)
-                .lineLimit(1)
-            Spacer()
-        }
-    }
-
-    // MARK: Drawer Controlli (v3-B, wireframe 3a/3b)
-
-    /// Filtri sotto il titolo (regola mobile 5) + una riga per stanza con
-    /// stato e "Apri" che fa zoom semantico sulla stanza.
-    private var controlsDrawer: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if categoryCounts.count > 1 {
-                FloorplanCategoryFilterBar(overlayVM: overlayVM,
-                                           counts: categoryCounts,
-                                           showsExpandToggle: false)
-            }
-
-            ForEach(clusters) { cluster in
-                Button {
-                    onOpenRoom?(cluster)
-                } label: {
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(cluster.activeCount > 0
-                                  ? FloorplanTokens.Semantic.warning
-                                  : FloorplanTokens.Text.tertiary)
-                            .frame(width: 8, height: 8)
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(cluster.room.name)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Color.primary)
-                            Text(String(localized: "floorplan.drawer.roomStatus",
-                                        defaultValue: "\(cluster.activeCount) on of \(cluster.totalCount)"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        Text(String(localized: "floorplan.drawer.open",
-                                    defaultValue: "Open"))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.primary.opacity(0.75))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .glassChromeSurface(in: Capsule())
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(FloorplanTokens.Surface.card)
-                        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+                FloorplanContextDashboardRouter(
+                    overlayVM: overlayVM,
+                    floorplan: floorplan,
+                    environmentViewModel: environmentViewModel,
+                    adapterMap: adapterMap
                 )
-                .accessibilityLabel(String(localized: "floorplan.drawer.roomRow",
-                                           defaultValue: "\(cluster.room.name), \(cluster.activeCount) of \(cluster.totalCount) on"))
+                .padding(.horizontal, 12)
+                .padding(.bottom, 16)
             }
         }
     }

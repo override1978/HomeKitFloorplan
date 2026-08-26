@@ -281,9 +281,15 @@ struct FloorplanEditorView: View {
                     )
                 }
 
-                // Top bar: sempre visibile
-                topBar(in: proxy.size)
-                    .environment(\.colorScheme, chromeColorScheme)
+                // Top bar: sempre visibile — TRANNE con una stanza zoomata su
+                // iPhone: lì restano solo planimetria e "‹ indietro", perché
+                // la mappa zoomata finiva sotto le trasparenze della chrome e
+                // generava solo rumore (feedback 26/08).
+                if !(isCompactScreen && !ui.isEditing && overlayVM?.zoomedRoomID != nil) {
+                    topBar(in: proxy.size)
+                        .environment(\.colorScheme, chromeColorScheme)
+                        .transition(.opacity)
+                }
 
                 // Controlli secondari (zoom, toolbar marker): soggetti ad auto-hide
                 secondaryControls(in: proxy.size)
@@ -291,8 +297,10 @@ struct FloorplanEditorView: View {
                     .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
                     .environment(\.colorScheme, chromeColorScheme)
 
-                // Il pulsante apri-pannello non esiste più: su regular c'è
-                // "Dettagli" in barra, su compact lo sheet è permanente (v3-B).
+                // Pulsante apri-pannello: solo compact, tab overlay, sheet
+                // chiuso. Su regular c'è "Dettagli" in barra.
+                openPanelButton
+                    .environment(\.colorScheme, chromeColorScheme)
 
                 // Azione bulk del filtro categoria (novità C): capsule scura
                 // in basso al centro, solo con filtro attivo e dispositivi accesi.
@@ -354,21 +362,29 @@ struct FloorplanEditorView: View {
         }
     }
 
-    /// Presentazione del bottom sheet iPhone (v3-B): PERMANENTE, non più
-    /// legata a `isPanelVisible` — in Controlli è il drawer delle stanze coi
-    /// filtri, negli altri tab le dashboard. Il binding si spegne solo quando
-    /// un'altra presentazione modale deve salire (scheda accessorio, editor
-    /// 2D, 3D) e riappare da solo alla sua chiusura.
+    /// Presentazione del bottom sheet iPhone: SU RICHIESTA, mai permanente —
+    /// il tentativo permanente (v3-B) lottava con la gesture dell'app switcher,
+    /// non si lasciava chiudere e copriva l'esito delle azioni (feedback
+    /// 26/08). Si apre nei tab overlay via FAB o tap su una stanza; si chiude
+    /// con lo swipe; si fa da parte quando salgono altre presentazioni o
+    /// quando una stanza è zoomata (lì si vede solo la planimetria).
     private var compactPanelBinding: Binding<Bool> {
         Binding(
             get: {
                 isCompactScreen && !ui.isEditing
+                    && (overlayVM?.isPanelVisible ?? false)
+                    && overlayVM?.activeMode != .controls
+                    && overlayVM?.zoomedRoomID == nil
                     && !ui.hasBlockingModalPresentation
                     && preview3D == nil
             },
-            set: { _ in
-                // Permanente: il gesto di dismissione è disabilitato e le
-                // chiusure di sistema (conflitti modali) passano dal get.
+            set: { isPresented in
+                if !isPresented,
+                   !ui.hasBlockingModalPresentation,
+                   preview3D == nil,
+                   overlayVM?.zoomedRoomID == nil {
+                    overlayVM?.dismissPanel()
+                }
             }
         )
     }
@@ -382,15 +398,7 @@ struct FloorplanEditorView: View {
                     overlayVM: vm,
                     floorplan: floorplan,
                     environmentViewModel: overlayEnvVM,
-                    adapterMap: currentAdapterMap(),
-                    clusters: currentClusters(rooms: floorplan.linkedRooms),
-                    categoryCounts: FloorplanControlsClusterBuilder.floorCategoryCounts(
-                        floorplan: floorplan,
-                        adapterMap: currentAdapterMap()
-                    ),
-                    onOpenRoom: { cluster in
-                        overlayVM?.zoomedRoomID = cluster.room.hmRoomUUID
-                    }
+                    adapterMap: currentAdapterMap()
                 )
                 .presentationDetents([FloorplanCompactPanelSheet.collapsedDetent,
                                       FloorplanCompactPanelSheet.expandedDetent])
@@ -399,7 +407,6 @@ struct FloorplanEditorView: View {
                 )
                 .presentationDragIndicator(.visible)
                 .presentationBackground(floorplanBackgroundColor)
-                .interactiveDismissDisabled(true)
                 .environment(\.colorScheme, chromeColorScheme)
             }
         }
@@ -812,6 +819,32 @@ struct FloorplanEditorView: View {
             for adapter in adapters {
                 try? await adapter.performQuickToggle(via: homeKit)
             }
+        }
+    }
+
+    /// Bottone bottom-right che apre il bottom sheet contestuale.
+    /// Vive in un proprio layer ZStack così non scompare con l'auto-hide dei
+    /// controlli secondari. Solo compact, tab overlay, niente stanza zoomata.
+    @ViewBuilder
+    private var openPanelButton: some View {
+        if isCompactScreen, !ui.isEditing, let vm = overlayVM,
+           vm.activeMode != .controls, !vm.isPanelVisible,
+           vm.zoomedRoomID == nil {
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    OverlayPanelMarkerButton(mode: vm.activeMode) {
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+                            vm.isPanelVisible = true
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+            .transition(.scale(scale: 0.7).combined(with: .opacity))
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: vm.isPanelVisible)
         }
     }
 
@@ -1349,7 +1382,9 @@ struct FloorplanEditorView: View {
                 Spacer()
             }
             .padding(.leading, 16)
-            .padding(.top, chromeLayout(for: container).topInset + 6)
+            // Con la stanza zoomata la chrome è nascosta: il bottone sale
+            // in alto, unico elemento sopra la planimetria.
+            .padding(.top, 12)
             .transition(.opacity)
         }
     }
