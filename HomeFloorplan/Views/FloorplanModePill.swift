@@ -69,8 +69,8 @@ struct FloorplanModePill: View {
                     }
                 }
                 // Un filo d'aria interna: i segmenti non toccano il bordo
-                // della capsula (feedback 26/08, "ossigeno").
-                .padding(isCompact ? 6 : 4)
+                // della capsula (feedback 26/08, "ossigeno" — dosato due volte).
+                .padding(isCompact ? 9 : 4)
                 .modifier(ModeBarSurface(usesGlass: usesGlass,
                                          isCompact: isCompact))
             }
