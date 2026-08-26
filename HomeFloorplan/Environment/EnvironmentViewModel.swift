@@ -181,11 +181,12 @@ struct RoomEnvironmentData: Identifiable {
         return totalWeight > 0 ? weightedScore / totalWeight : 1.0
     }
 
+    /// Stesse bande delle soglie colore uniche (v3): l'etichetta non può dire
+    /// "Attenzione" dove il colore dice critico — un 40% È critico.
     var qualityLabel: String {
         switch qualityScore {
         case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Excellent")
         case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Fair")
-        case 0.35..<0.60: return String(localized: "quality.warning",   defaultValue: "Attention")
         default:          return String(localized: "quality.critical",  defaultValue: "Critical")
         }
     }

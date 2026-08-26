@@ -287,7 +287,9 @@ struct FloorplanTopBarView: View {
             .transition(.move(edge: .top).combined(with: .opacity))
         }
 
-        if !isEditing, let overlayVM, overlayVM.activeMode == .environment {
+        // Filtri sensore Ambiente: riga fissa SOLO su regular. Su iPhone
+        // vivono nel pannello Dov'è, sotto il titolo (regola mobile 5).
+        if !isEditing, !isCompact, let overlayVM, overlayVM.activeMode == .environment {
             EnvironmentFilterBar(
                 overlayVM: overlayVM,
                 availableTypes: environmentSensorTypes

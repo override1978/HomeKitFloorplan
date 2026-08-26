@@ -24,6 +24,10 @@ struct CompactHomeView: View {
 
     @Environment(HomeKitService.self) private var homeKit
     @Environment(AISettings.self) private var aiSettings
+
+    /// Scritto dall'editor planimetria quando è aperto su iPhone.
+    @AppStorage("floorplan.compactEditorVisible")
+    private var compactFloorplanEditorVisible = false
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var allFloorplans: [Floorplan]
 
     @AppStorage("primaryFloorplanID")    private var primaryFloorplanID:    String = ""
@@ -183,7 +187,11 @@ struct CompactHomeView: View {
         // Sulla schermata iniziale invece non compete con niente, e un foglio
         // si chiude col gesto che tutti conoscono.
         .overlay(alignment: .bottomTrailing) {
-            if aiSettings.isAIEnabled {
+            // Mai sopra l'editor planimetria: lì il bordo basso è di isola e
+            // pannello (feedback 26/08 — "il FAB in mezzo alle scatole").
+            // L'overlay copre l'intero NavigationStack, editor pushato incluso,
+            // quindi il gate serve QUI, non basta quello di ContentView.
+            if aiSettings.isAIEnabled, !compactFloorplanEditorVisible {
                 ChatFABButtonView(showChat: $showChat)
                     .padding(.trailing, 20)
                     .padding(.bottom, 20)

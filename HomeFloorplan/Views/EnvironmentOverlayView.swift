@@ -164,7 +164,12 @@ struct EnvironmentOverlayView: View {
         let roomData   = envVM.rooms.first { $0.roomName == room.name }
         let filter     = overlayVM.selectedSensorFilter
         let filtSensor = filter.flatMap { f in roomData?.sensors.first { $0.serviceType == f } }
-        let borderColor = urgencyBorderColor(urgency)
+        // Col filtro attivo l'accento è l'urgenza del sensore; mostrando lo
+        // SCORE l'accento segue le soglie uniche (v3): un 40% arancio accanto
+        // al rosso di forScore era esattamente l'incoerenza da eliminare.
+        let borderColor = (filtSensor != nil || roomData == nil)
+            ? urgencyBorderColor(urgency)
+            : roomData!.qualityColor
         let valueText = filtSensor?.formattedValue
             ?? roomData.map { "\(Int($0.qualityScore * 100))%" }
         let level = FloorplanRoomBadgeCollapse.level(

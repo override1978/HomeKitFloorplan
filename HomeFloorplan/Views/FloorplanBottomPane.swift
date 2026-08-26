@@ -165,17 +165,28 @@ struct FloorplanCompactPaneContent: View {
     var adapterMap: [UUID: any AccessoryAdapter] = [:]
     var clusters: [FloorplanRoomCluster] = []
     var categoryCounts: [FloorplanRoomCluster.CategoryCount] = []
+    /// Filtri sensore per il tab Ambiente (su iPhone vivono qui, non in una
+    /// riga fissa in alto — regola mobile 5).
+    var environmentSensorTypes: [SensorServiceType] = []
 
     var body: some View {
         if overlayVM.activeMode == .controls {
             controlsList
         } else {
-            FloorplanContextDashboardRouter(
-                overlayVM: overlayVM,
-                floorplan: floorplan,
-                environmentViewModel: environmentViewModel,
-                adapterMap: adapterMap
-            )
+            VStack(alignment: .leading, spacing: 10) {
+                if overlayVM.activeMode == .environment, !environmentSensorTypes.isEmpty {
+                    EnvironmentFilterBar(
+                        overlayVM: overlayVM,
+                        availableTypes: environmentSensorTypes
+                    )
+                }
+                FloorplanContextDashboardRouter(
+                    overlayVM: overlayVM,
+                    floorplan: floorplan,
+                    environmentViewModel: environmentViewModel,
+                    adapterMap: adapterMap
+                )
+            }
         }
     }
 

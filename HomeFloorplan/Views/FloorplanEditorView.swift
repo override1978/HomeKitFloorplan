@@ -834,7 +834,8 @@ struct FloorplanEditorView: View {
                         categoryCounts: FloorplanControlsClusterBuilder.floorCategoryCounts(
                             floorplan: floorplan,
                             adapterMap: currentAdapterMap()
-                        )
+                        ),
+                        environmentSensorTypes: overlayEnvVM.availableSensorTypes
                     )
                 }
             }
