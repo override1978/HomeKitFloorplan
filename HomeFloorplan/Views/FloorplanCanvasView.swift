@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: View, EmptyContent: View>: View {
+struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: View, EmptyContent: View, OverMarkerLayer: View>: View {
     let image: UIImage
     let containerSize: CGSize
     let chrome: FloorplanChromeLayout
@@ -13,6 +13,10 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
     let editLayer: (CGSize, CGRect) -> EditLayer
     let markerContent: (FloorplanMarkerRenderItem, CGRect, CGSize) -> MarkerContent
     let emptyContent: () -> EmptyContent
+    /// Layer disegnato SOPRA i marker: per la chrome ancorata alla planimetria
+    /// che deve restare tappabile anche dove i marker si addensano (la pill di
+    /// compressione della stanza espansa; in futuro le azioni in-place).
+    let overMarkerLayer: (CGSize, CGRect) -> OverMarkerLayer
 
     init(
         image: UIImage,
@@ -26,7 +30,8 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         @ViewBuilder overlayLayer: @escaping (CGSize, CGRect) -> OverlayLayer,
         @ViewBuilder editLayer: @escaping (CGSize, CGRect) -> EditLayer,
         @ViewBuilder markerContent: @escaping (FloorplanMarkerRenderItem, CGRect, CGSize) -> MarkerContent,
-        @ViewBuilder emptyContent: @escaping () -> EmptyContent
+        @ViewBuilder emptyContent: @escaping () -> EmptyContent,
+        @ViewBuilder overMarkerLayer: @escaping (CGSize, CGRect) -> OverMarkerLayer = { _, _ in EmptyView() }
     ) {
         self.image = image
         self.containerSize = containerSize
@@ -40,6 +45,7 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         self.editLayer = editLayer
         self.markerContent = markerContent
         self.emptyContent = emptyContent
+        self.overMarkerLayer = overMarkerLayer
     }
 
     var body: some View {
@@ -80,6 +86,8 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: showMarkers)
+
+            overMarkerLayer(containerSize, rect)
         }
         .frame(width: containerSize.width, height: containerSize.height)
     }

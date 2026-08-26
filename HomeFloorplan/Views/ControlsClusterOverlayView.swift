@@ -77,28 +77,11 @@ struct ControlsClusterOverlayView: View {
             .frame(width: containerSize.width, height: containerSize.height)
             .allowsHitTesting(false)
             .transition(.opacity)
-
-            // Pill "NomeStanza ✕" in alto alla stanza per comprimere.
-            Button(action: overlayVM.collapseRoom) {
-                HStack(spacing: 6) {
-                    Text(room.name)
-                        .font(.caption.weight(.semibold))
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundStyle(FloorplanTokens.Surface.filterChipActiveText)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(FloorplanTokens.Surface.filterChipActive, in: Capsule())
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(String(localized: "floorplan.cluster.collapse",
-                                       defaultValue: "Collapse \(room.name)"))
-            .scaleEffect(inverseScale)
-            .position(collapsePillPosition(for: room))
-            .transition(.opacity)
         }
+        // La pill "NomeStanza ✕" NON vive qui: questo layer sta sotto i
+        // marker, e coi dispositivi addensati in alto nella stanza finiva
+        // coperta e intoccabile. Sta in `ExpandedRoomCollapsePill`, montata
+        // dall'editor nel layer sopra i marker.
 
         // Le altre stanze restano a cluster.
         ForEach(clusters.filter { $0.id != expandedID }) { cluster in
@@ -114,11 +97,51 @@ struct ControlsClusterOverlayView: View {
         }
     }
 
-    /// Ancora della pill di compressione: centro-alto del rettangolo stanza,
-    /// rientrato quel tanto da non cadere sul bordo.
-    private func collapsePillPosition(for room: LinkedRoom) -> CGPoint {
-        let rect = helper.screenRect(from: room.normalizedRect)
-        return CGPoint(x: rect.midX, y: rect.minY + 18)
+}
+
+// MARK: - ExpandedRoomCollapsePill
+
+/// Pill "NomeStanza ✕" della stanza espansa. Vive nel layer SOPRA i marker
+/// (`overMarkerLayer` del canvas): deve restare tappabile anche quando i
+/// dispositivi si addensano nella parte alta della stanza.
+struct ExpandedRoomCollapsePill: View {
+    let room: LinkedRoom
+    let imageRect: CGRect
+    let effectiveScale: CGFloat
+    let onCollapse: () -> Void
+
+    var body: some View {
+        Button(action: onCollapse) {
+            HStack(spacing: 6) {
+                Text(room.name)
+                    .font(.caption.weight(.semibold))
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundStyle(FloorplanTokens.Surface.filterChipActiveText)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(FloorplanTokens.Surface.filterChipActive)
+                    .shadow(color: .black.opacity(0.18), radius: 5, y: 1)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "floorplan.cluster.collapse",
+                                   defaultValue: "Collapse \(room.name)"))
+        .scaleEffect(1.0 / effectiveScale)
+        .position(anchorPosition)
+        .transition(.opacity)
+    }
+
+    /// Ancora: centro del BORDO alto della stanza, leggermente sopra il
+    /// perimetro — fuori dalla zona dove i marker si dispongono.
+    private var anchorPosition: CGPoint {
+        let rect = FloorplanCoordinateHelper(imageRect: imageRect)
+            .screenRect(from: room.normalizedRect)
+        return CGPoint(x: rect.midX, y: rect.minY - 2)
     }
 }
 

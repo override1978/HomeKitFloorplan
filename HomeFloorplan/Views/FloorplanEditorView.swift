@@ -986,6 +986,27 @@ struct FloorplanEditorView: View {
                     ui.showingPicker = true
                 }
             )
+        } overMarkerLayer: { _, imageRect in
+            expandedRoomChrome(imageRect: imageRect)
+        }
+    }
+
+    /// Chrome della stanza espansa (pill di compressione), SOPRA i marker
+    /// così resta tappabile anche dove i dispositivi si addensano. Segue lo
+    /// schema colori della planimetria come il resto della chrome.
+    @ViewBuilder
+    private func expandedRoomChrome(imageRect: CGRect) -> some View {
+        if !isCompactScreen, !ui.isEditing,
+           let vm = overlayVM, vm.activeMode == .controls,
+           let expandedID = vm.expandedRoomID,
+           let room = floorplan.linkedRooms.first(where: { $0.hmRoomUUID == expandedID }) {
+            ExpandedRoomCollapsePill(
+                room: room,
+                imageRect: imageRect,
+                effectiveScale: effectiveScale,
+                onCollapse: { vm.collapseRoom() }
+            )
+            .environment(\.colorScheme, chromeColorScheme)
         }
     }
 
@@ -1011,6 +1032,10 @@ struct FloorplanEditorView: View {
                     effectiveScale: effectiveScale,
                     clusters: currentClusters()
                 )
+                // Le card seguono la luminanza della PLANIMETRIA, non il tema
+                // iOS: i token si risolvono sul trait iniettato, e senza
+                // questo un iPad in dark metteva card scure su disegno chiaro.
+                .environment(\.colorScheme, chromeColorScheme)
             } else {
                 EmptyView()
             }
