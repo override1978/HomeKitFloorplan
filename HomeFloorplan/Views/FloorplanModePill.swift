@@ -68,9 +68,9 @@ struct FloorplanModePill: View {
                         modeButton(mode, index: index)
                     }
                 }
-                .padding(isCompact ? 4 : 4)
+                .padding(isCompact ? 0 : 4)
                 .modifier(ModeBarSurface(usesGlass: usesGlass,
-                                         tint: isCompact ? overlayVM.activeMode.accentColor : nil))
+                                         isCompact: isCompact))
             }
             .coordinateSpace(name: Self.barSpace)
             // Scorrere il dito lungo la barra trascina la selezione. La
@@ -170,7 +170,9 @@ struct FloorplanModePill: View {
             // Il bordo d'allarme veste il colore DEL TAB (rosa Sicurezza,
             // viola Intelligenza — feedback 26/08): l'urgenza la dice già il
             // sottotitolo col suo semantico; il bordo dice solo "guarda qui".
-            alarmBorder: (isActive || alarmColor == nil) ? nil : mode.accentColor
+            // SOLO su regular: su un segmento a tutta larghezza diventava un
+            // anellone — nella tab bar compatta parla il sottotitolo colorato.
+            alarmBorder: (isActive || alarmColor == nil || isCompact) ? nil : mode.accentColor
         ))
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .named(Self.barSpace))
@@ -272,7 +274,7 @@ private struct ModeSelectionHighlight: ViewModifier {
         if isActive {
             if usesGlass, #available(iOS 26.0, *) {
                 content
-                    .glassEffect(.regular.tint(tint.opacity(isCompact ? 0.34 : 0.28)).interactive(), in: Capsule())
+                    .glassEffect(.regular.tint(tint.opacity(isCompact ? 0.22 : 0.28)).interactive(), in: Capsule())
             } else {
                 content.background(Capsule().fill(fill))
             }
@@ -288,20 +290,26 @@ private struct ModeSelectionHighlight: ViewModifier {
 
 /// Sfondo della barra.
 ///
-/// Usa `.regular` e NON `.clear`: la planimetria è un'immagine dell'utente, di
-/// luminosità sconosciuta, e il tema di sistema può essere l'opposto del suo
-/// (iOS scuro su planimetria chiara). `.clear` non stabilisce alcun fondo,
-/// quindi `Color.primary` diventava bianco su bianco. `.regular` porta con sé
-/// una superficie adattiva e rende le voci leggibili su qualunque sfondo —
-/// costa un po' di trasparenza, ma l'alternativa è testo invisibile.
+/// In compatto usa `Glass.clear`: la barra vive già dentro uno sheet native e
+/// non deve trasformarsi in una lastra grigia. Il colore resta sulle selezioni.
 private struct ModeBarSurface: ViewModifier {
     let usesGlass: Bool
-    var tint: Color?
+    let isCompact: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if usesGlass, #available(iOS 26.0, *) {
-            content.glassEffect(tint.map { .regular.tint($0.opacity(0.08)) } ?? .regular, in: Capsule())
+        if isCompact {
+            // Dentro lo sheet la barra NON ha superficie propria, in nessuno
+            // dei due rami: lo sfondo lo dà già lo sheet, e la lastra grigia
+            // del materiale sopra il vetro era il "pillolone" (feedback
+            // 26/08). Il colore resta tutto sulle selezioni.
+            if usesGlass, #available(iOS 26.0, *) {
+                content.glassEffect(.clear, in: Capsule())
+            } else {
+                content
+            }
+        } else if usesGlass, #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: Capsule())
         } else {
             content
                 .background(.regularMaterial, in: Capsule())
