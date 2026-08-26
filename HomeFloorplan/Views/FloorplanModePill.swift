@@ -2,44 +2,30 @@ import SwiftUI
 
 // MARK: - FloorplanModePill
 
-/// Bottom-centre floating pill that lets the user switch overlay modes.
-/// Only visible when 2+ modes are available; hidden (not removed) otherwise
-/// so the layout doesn't shift.
+/// Tab switcher delle modalità col modello "2d" del design v3: ogni tab è
+/// una pill a DUE righe — etichetta stabile sopra, stato vivo sotto — e non
+/// esiste una barra di stato separata. Tre stati per tab:
+/// - selezionata: fill nel colore del modo (activeBackground/Foreground);
+/// - non selezionata ma in allarme: bordo 1.5pt e sottotitolo nel colore
+///   d'allarme (arancio Sicurezza, rosso Intelligenza);
+/// - quieta: trasparente, sottotitolo #a99f8c.
+/// NIENTE badge numerici: lo stato è nel sottotitolo.
 struct FloorplanModePill: View {
 
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let context: FloorplanOverlayContext
 
-    /// Conteggi da mostrare come badge rosso sulla voce (redesign, novità A):
-    /// Sicurezza = aperture attive, Intelligenza = situazioni attive.
-    /// Il badge compare SOLO quando il conteggio è > 0.
-    var badgeCounts: [String: Int] = [:]
+    /// Segnali vivi per i sottotitoli (v3). `nil` = tab senza sottotitolo.
+    var status: FloorplanStatusStripState? = nil
+
+    /// iPhone: font ridotti (11.5/9.5) e segmenti che dividono la larghezza.
+    var isCompact: Bool = false
 
     /// Larghezza della barra in cui questa pill deve convivere con il titolo a
-    /// sinistra e le azioni a destra.
-    ///
-    /// Serve perché la pill vive in uno `ZStack`: è centrata in assoluto e non
-    /// partecipa al flusso orizzontale, quindi né lei né l'HStack accanto sanno
-    /// dell'altro. Finché c'è spazio non si vede; ruotando l'iPad in verticale
-    /// la somma supera la larghezza e le pill si sovrappongono. Senza questo
-    /// numero la pill non ha modo di accorgersene — `ViewThatFits` qui non
-    /// servirebbe, perché dentro uno ZStack vede sempre tutta la larghezza.
-    let availableWidth: CGFloat
-
-    /// Spazio occupato attorno alla pill: bottone sidebar più menu del titolo a
-    /// sinistra, azioni a destra, margini esterni. Lo passa la barra, perché
-    /// dipende da quanto le azioni si sono già compattate.
-    let sideChromeWidth: CGFloat
-
-    /// Larghezza di una voce con la sua etichetta ("Intelligenza" è la più lunga).
-    private static let modeWidthWithLabel: CGFloat = 120
-
-    /// Con quattro modalità servono circa 480 punti solo per la pill: sotto
-    /// quella soglia le etichette cadono e restano le icone, tranne sulla voce
-    /// attiva — che è l'unica che serve leggere, le altre sono bersagli.
-    private var showsLabels: Bool {
-        availableWidth - sideChromeWidth >= CGFloat(modes.count) * Self.modeWidthWithLabel
-    }
+    /// sinistra e le azioni a destra (solo regular: la pill è centrata in uno
+    /// ZStack e non partecipa al flusso orizzontale).
+    var availableWidth: CGFloat = .infinity
+    var sideChromeWidth: CGFloat = 0
 
     @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
     private var isLiquidGlassEnabled = false
@@ -73,28 +59,13 @@ struct FloorplanModePill: View {
     var body: some View {
         // Collapse when only one mode is available.
         if modes.count > 1 {
-            // ⛔️ NIENTE `GlassEffectContainer` attorno a questa barra, e stavolta
-            // è una conclusione, non un rinvio.
-            //
-            // Il container non si limita a disegnare: **riposiziona i propri
-            // figli** per far combaciare le forme che fonde. Attorno a questa
-            // barra vedeva la superficie e la capsula di selezione come due
-            // superfici da unire, tirava insieme le voci, il layout si
-            // riaffermava e lui ci riprovava — le due voci centrali si
-            // sovrapponevano e tornavano a posto in ciclo continuo. È la stessa
-            // proprietà che a luglio faceva sparire quattro badge su sei
-            // nell'overlay Ambiente.
-            //
-            // Era stato rimesso qui per ottenere il morph a goccia della
-            // selezione, e in una sola giornata ha prodotto tre difetti: il
-            // warning `glassEffect() tried to update multiple times per frame`
-            // (che ne aveva già causato la rimozione), il vetro dilatato sopra
-            // le azioni della toolbar, e questa oscillazione. Il morph è un
-            // dettaglio estetico che non si è mai visto funzionare: non vale il
-            // prezzo. La barra e la capsula tinta restano, e stanno bene.
+            // ⛔️ NIENTE `GlassEffectContainer` attorno a questa barra — il
+            // container riposiziona i figli per fondere le forme e qui ha già
+            // prodotto oscillazioni e il warning `glassEffect() tried to
+            // update multiple times per frame`. Storia completa nel log.
             HStack(spacing: 4) {
-                ForEach(modes) { mode in
-                    modeButton(mode)
+                ForEach(Array(modes.enumerated()), id: \.element.id) { index, mode in
+                    modeButton(mode, index: index)
                 }
             }
             .padding(4)
@@ -109,18 +80,9 @@ struct FloorplanModePill: View {
             )
             .sensoryFeedback(.selection, trigger: overlayVM.activeMode)
             // Solo opacità, niente scala: scalare una superficie di vetro ne
-            // cambia la geometria a ogni fotogramma della transizione, e il
-            // glassEffect deve rivalutarsi altrettante volte — mentre la
-            // capsula di selezione sta già facendo il proprio morph. Verifica
-            // dell'ipotesi sul warning `tried to update multiple times per
-            // frame`.
+            // cambia la geometria a ogni fotogramma della transizione.
             .transition(.opacity)
         }
-    }
-
-    private func accessibilityLabel(for mode: FloorplanOverlayMode) -> String {
-        guard let count = badgeCounts[mode.id], count > 0 else { return mode.label }
-        return "\(mode.label), \(count)"
     }
 
     /// Attiva la modalità sotto il dito, se diversa da quella corrente.
@@ -136,48 +98,57 @@ struct FloorplanModePill: View {
     }
 
     @ViewBuilder
-    private func modeButton(_ mode: FloorplanOverlayMode) -> some View {
+    private func modeButton(_ mode: FloorplanOverlayMode, index: Int) -> some View {
         let isActive = overlayVM.activeMode == mode
+        let alarmColor = status?.alarmColor(for: mode)
+        let subtitle = status?.subtitle(for: mode, compact: isCompact)
+
         Button {
             withAnimation(Self.selectionAnimation) {
                 overlayVM.activeMode = mode
             }
         } label: {
-            VStack(spacing: 3) {
-                Image(systemName: mode.pillIcon)
-                    .font(.system(size: 15, weight: .semibold))
-                if showsLabels || isActive {
+            VStack(spacing: 2) {
+                HStack(spacing: 5) {
+                    ModeDot(color: mode.accentColor,
+                            pulses: status?.pulses(for: mode) == true && !isActive)
                     Text(mode.label)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
+                        .font(.system(size: isCompact ? 11.5 : 14, weight: .semibold))
                         .lineLimit(1)
-                        .fixedSize()
+                }
+                .foregroundStyle(isActive
+                                 ? mode.activeForegroundColor
+                                 : Color.primary.opacity(0.75))
+
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: isCompact ? 9.5 : 11, weight: .medium))
+                        .lineLimit(1)
+                        .foregroundStyle(subtitleColor(isActive: isActive,
+                                                       mode: mode,
+                                                       alarmColor: alarmColor))
                 }
             }
-            .foregroundStyle(isActive ? mode.accentColor : Color.primary.opacity(0.55))
-            // Badge sull'angolo della voce, dentro il padding del bottone:
-            // qui non tocca né la misura dei frame (letta sul frame esterno)
-            // né la capsula di selezione.
-            .overlay(alignment: .topTrailing) {
-                if let count = badgeCounts[mode.id], count > 0 {
-                    ModeBadge(count: count)
-                        .offset(x: 10, y: -6)
-                }
-            }
-            .padding(.horizontal, showsLabels ? 15 : 12)
-            .padding(.vertical, 7)
+            .fixedSize(horizontal: !isCompact, vertical: false)
+            .padding(.horizontal, isCompact ? 6 : 13)
+            .padding(.vertical, 6)
             .frame(minWidth: 44)
+            .frame(maxWidth: isCompact ? .infinity : nil)
             .contentShape(Rectangle())
-            // L'etichetta accessibile resta anche quando il testo cade, come per
-            // le modalità dell'antifurto; il badge (visivamente nascosto a
-            // VoiceOver) entra qui come conteggio parlato.
-            .accessibilityLabel(accessibilityLabel(for: mode))
+            // VoiceOver (v3): "Etichetta, stato, scheda N di 4".
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityText(mode: mode,
+                                                  subtitle: subtitle,
+                                                  index: index))
+            .accessibilityAddTraits(isActive ? [.isSelected] : [])
         }
         .buttonStyle(.plain)
         .modifier(ModeSelectionHighlight(
             isActive: isActive,
             usesGlass: usesGlass,
-            tint: mode.accentColor
+            fill: mode.activeBackgroundColor,
+            tint: mode.accentColor,
+            alarmBorder: isActive ? nil : alarmColor
         ))
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .named(Self.barSpace))
@@ -186,24 +157,53 @@ struct FloorplanModePill: View {
         }
     }
 
+    private func subtitleColor(isActive: Bool,
+                               mode: FloorplanOverlayMode,
+                               alarmColor: Color?) -> Color {
+        if isActive { return mode.activeForegroundColor.opacity(0.85) }
+        if let alarmColor { return alarmColor }
+        return FloorplanTokens.Text.tabSubtitleQuiet
+    }
+
+    private func accessibilityText(mode: FloorplanOverlayMode,
+                                   subtitle: String?,
+                                   index: Int) -> String {
+        var parts = [mode.label]
+        if let subtitle { parts.append(subtitle) }
+        parts.append(String(localized: "floorplan.tab.position",
+                            defaultValue: "tab \(index + 1) of \(modes.count)"))
+        return parts.joined(separator: ", ")
+    }
 }
 
-// MARK: - ModeBadge
+// MARK: - ModeDot
 
-/// Cerchietto rosso col conteggio, stile badge di sistema. Superficie piena,
-/// non vetro: deve restare leggibile a 10pt su qualunque planimetria.
-private struct ModeBadge: View {
-    let count: Int
+/// Pallino del colore del modo; pulsa (scale 1→1.15, ciclo 2s) sulla tab
+/// Intelligenza quando c'è una situazione critica. Scala SOLO il pallino,
+/// mai superfici.
+private struct ModeDot: View {
+    let color: Color
+    let pulses: Bool
+
+    @State private var isPulsing = false
 
     var body: some View {
-        Text("\(min(count, 99))")
-            .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, count > 9 ? 4 : 0)
-            .frame(minWidth: 16, minHeight: 16)
-            .background(FloorplanTokens.Semantic.critical, in: Capsule())
-            .transition(.opacity)
-            .accessibilityHidden(true)
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .scaleEffect(isPulsing ? 1.15 : 1.0)
+            .onAppear { startIfNeeded() }
+            .onChange(of: pulses) { _, _ in startIfNeeded() }
+    }
+
+    private func startIfNeeded() {
+        guard pulses else {
+            isPulsing = false
+            return
+        }
+        withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) {
+            isPulsing = true
+        }
     }
 }
 
@@ -217,32 +217,29 @@ private final class ModeFrameStore {
 
 // MARK: - ModeSelectionHighlight
 
-/// Vetro tinto sulla sola voce attiva.
-///
-/// Aveva anche `glassEffectID` + `glassEffectTransition(.matchedGeometry)` per
-/// far morphare la capsula da una voce all'altra. Sono spariti insieme al
-/// container: senza un `GlassEffectContainer` attorno non c'è nulla che possa
-/// fondere due forme, quindi restavano configurazione morta che suggeriva un
-/// comportamento inesistente.
+/// Superficie della singola tab 2d: fill pieno nel colore del modo da
+/// selezionata, bordo d'allarme da non selezionata, nulla da quieta.
 private struct ModeSelectionHighlight: ViewModifier {
     let isActive: Bool
     let usesGlass: Bool
-    /// Colore della modalità. Su fondo piatto il vetro non ha nulla da
-    /// rifrangere e degrada a una macchia grigia: la tinta gli restituisce
-    /// identità senza dipendere dal contenuto sottostante.
+    /// Fill della tab selezionata (activeBackground del modo).
+    let fill: Color
+    /// Tinta per il ramo vetro.
     let tint: Color
+    /// Bordo 1.5pt della tab non selezionata in allarme; nil = quieta.
+    let alarmBorder: Color?
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if usesGlass, #available(iOS 26.0, *) {
-            if isActive {
+        if isActive {
+            if usesGlass, #available(iOS 26.0, *) {
                 content
-                    .glassEffect(.regular.tint(tint.opacity(0.22)).interactive(), in: Capsule())
+                    .glassEffect(.regular.tint(tint.opacity(0.28)).interactive(), in: Capsule())
             } else {
-                content
+                content.background(Capsule().fill(fill))
             }
-        } else if isActive {
-            content.background(Capsule().fill(Color.primary.opacity(0.10)))
+        } else if let alarmBorder {
+            content.overlay(Capsule().strokeBorder(alarmBorder, lineWidth: 1.5))
         } else {
             content
         }
@@ -281,10 +278,18 @@ private struct ModeBarSurface: ViewModifier {
     struct PreviewWrapper: View {
         @State private var vm = FloorplanOverlayViewModel(floorplanID: UUID())
         var body: some View {
-            ZStack {
-                Color.gray.ignoresSafeArea()
-                VStack {
-                    Spacer()
+            var status = FloorplanStatusStripState()
+            status.controlsActiveCount = 13
+            status.healthScore = 91
+            status.healthLabel = "Ottima"
+            status.openingsCount = 2
+            status.alarmShortText = "Disins."
+            status.situationsCount = 4
+            status.criticalCount = 1
+
+            return ZStack {
+                Color(red: 0.98, green: 0.94, blue: 0.87).ignoresSafeArea()
+                VStack(spacing: 30) {
                     FloorplanModePill(
                         overlayVM: vm,
                         context: FloorplanOverlayContext(
@@ -293,13 +298,21 @@ private struct ModeBarSurface: ViewModifier {
                             hasAIService: true,
                             hasIntelligenceSuggestions: true
                         ),
-                        // Larghezza da iPad in orizzontale: la preview mostra la
-                        // forma estesa. Abbassandola sotto i ~1040 si vede quella
-                        // compatta, che è ciò che compare ruotando in verticale.
-                        availableWidth: 1366,
-                        sideChromeWidth: 560
+                        status: status
                     )
-                    .padding(.bottom, 40)
+
+                    FloorplanModePill(
+                        overlayVM: vm,
+                        context: FloorplanOverlayContext(
+                            hasEnvironmentData: true,
+                            hasSecurityDevices: true,
+                            hasAIService: true,
+                            hasIntelligenceSuggestions: true
+                        ),
+                        status: status,
+                        isCompact: true
+                    )
+                    .padding(.horizontal, 16)
                 }
             }
         }

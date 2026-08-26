@@ -74,7 +74,7 @@ struct FloorplanTopBarView: View {
                 if !isEditing, !isCompact, let overlayVM {
                     FloorplanModePill(overlayVM: overlayVM,
                                       context: overlayContext,
-                                      badgeCounts: statusStrip?.modeBadgeCounts ?? [:],
+                                      status: statusStrip,
                                       availableWidth: size.width,
                                       sideChromeWidth: collapsesActions ? 360 : 560)
                 }
@@ -95,6 +95,24 @@ struct FloorplanTopBarView: View {
 
                         Spacer()
 
+                        // Pill temperatura neutra nell'header (design v3):
+                        // l'unico segnale che non vive nelle tab.
+                        if !isCompact, !isEditing,
+                           let temperature = statusStrip?.temperaturePillText {
+                            Text(temperature)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(Color.primary.opacity(0.7))
+                                .lineLimit(1)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .glassChromeSurface(in: Capsule())
+                                .accessibilityLabel(String(
+                                    localized: "floorplan.header.temperature",
+                                    defaultValue: "Temperature indoor/outdoor \(temperature)"
+                                ))
+                                .transition(.opacity)
+                        }
+
                         if !isCompact {
                             FloorplanTopRightActions(
                                 isEditing: isEditing,
@@ -112,12 +130,19 @@ struct FloorplanTopBarView: View {
                                 onTogglePanel: toggleDockedPanel
                             )
                         } else {
-                            // Su iPhone la planimetria resta solo controllo,
-                            // ma le due porte verso le altre facce della
-                            // stessa casa — l'editor 2D e la 3D — ci devono
-                            // essere: entrambe ormai vivono bene sul telefono.
-                            // UN solo Menu con la propria superficie: la
-                            // regola «mai due Menu su una superficie» regge.
+                            // Filtro categoria su iPhone: dietro un bottone
+                            // singolo (design v3, regola mobile 5 — mai una
+                            // riga fissa). Ogni Menu ha la PROPRIA superficie.
+                            if !isEditing,
+                               let overlayVM, overlayVM.activeMode == .controls,
+                               categoryCounts.count > 1 {
+                                compactFilterMenu(overlayVM: overlayVM)
+                            }
+
+                            // Le due porte verso le altre facce della stessa
+                            // casa — l'editor 2D e la 3D — vivono bene sul
+                            // telefono. UN solo Menu con la propria superficie:
+                            // la regola «mai due Menu su una superficie» regge.
                             Menu {
                                 Button {
                                     onEditDrawing()
@@ -151,34 +176,18 @@ struct FloorplanTopBarView: View {
             .padding(.horizontal, 20)
             .padding(.top, 12)
 
-            // Tab switcher compatto (fase 4): su iPhone la pill non sta nella
-            // barra — è una riga a sé, piena larghezza, con gli stessi badge.
+            // Tab switcher compatto: su iPhone le stesse pill 2d a due righe,
+            // piena larghezza, etichette sempre visibili (design v3). Nessuna
+            // barra di stato aggiuntiva: lo stato vive nei sottotitoli.
             // Il margine è dichiarato in FloorplanChromeLayout.hasCompactModeRow.
             if !isEditing, isCompact, let overlayVM {
                 FloorplanModePill(overlayVM: overlayVM,
                                   context: overlayContext,
-                                  badgeCounts: statusStrip?.modeBadgeCounts ?? [:],
-                                  availableWidth: size.width,
-                                  sideChromeWidth: size.width)
+                                  status: statusStrip,
+                                  isCompact: true)
+                    .padding(.horizontal, 16)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            // Barra di stato unificata (novità B): visibile in TUTTI i tab,
-            // sparisce solo in editing dove il banner di modifica prende il
-            // suo posto. Il margine per questa riga è già dichiarato in
-            // FloorplanChromeLayout — qui si disegna soltanto.
-            if !isEditing, let overlayVM, let statusStrip, statusStrip.hasAnyContent {
-                FloorplanStatusStrip(
-                    state: statusStrip,
-                    context: overlayContext,
-                    activeMode: overlayVM.activeMode,
-                    isCompact: isCompact
-                ) { mode in
-                    selectFromStrip(mode, overlayVM: overlayVM)
-                }
-                .padding(.top, 8)
-                .transition(.move(edge: .top).combined(with: .opacity))
             }
 
             statusBanners
@@ -195,6 +204,49 @@ struct FloorplanTopBarView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
+    /// Menu filtro categoria per iPhone: una voce per categoria presente sul
+    /// piano, spunta sull'attiva, "Tutti" per azzerare. L'icona si riempie
+    /// quando un filtro è attivo, così lo stato resta visibile a menu chiuso.
+    @ViewBuilder
+    private func compactFilterMenu(overlayVM: FloorplanOverlayViewModel) -> some View {
+        let isFiltering = overlayVM.categoryFilter != nil
+        Menu {
+            Button {
+                overlayVM.categoryFilter = nil
+            } label: {
+                if overlayVM.categoryFilter == nil {
+                    Label(String(localized: "floorplan.filter.all.plain", defaultValue: "All"),
+                          systemImage: "checkmark")
+                } else {
+                    Text(String(localized: "floorplan.filter.all.plain", defaultValue: "All"))
+                }
+            }
+            ForEach(categoryCounts) { count in
+                Button {
+                    overlayVM.categoryFilter =
+                        overlayVM.categoryFilter == count.category ? nil : count.category
+                } label: {
+                    if overlayVM.categoryFilter == count.category {
+                        Label("\(count.category.displayName) · \(count.total)",
+                              systemImage: "checkmark")
+                    } else {
+                        Text("\(count.category.displayName) · \(count.total)")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: isFiltering
+                  ? "line.3.horizontal.decrease.circle.fill"
+                  : "line.3.horizontal.decrease.circle")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.primary)
+                .frame(width: 36, height: 36)
+                .glassChromeSurface(in: Circle())
+        }
+        .accessibilityLabel(String(localized: "floorplan.filter.menu",
+                                   defaultValue: "Filter by category"))
+    }
+
     /// Toggle del pannello docked dal bottone "Dettagli / Chiudi" in barra.
     private func toggleDockedPanel() {
         guard let overlayVM else { return }
@@ -202,21 +254,6 @@ struct FloorplanTopBarView: View {
             overlayVM.dismissPanel()
         } else {
             withAnimation(.easeInOut(duration: 0.35)) {
-                overlayVM.isPanelVisible = true
-            }
-        }
-    }
-
-    /// Tap su una pill di stato: apre il tab corrispondente CON il pannello
-    /// già aperto (comportamento da design). Il didSet di `activeMode` chiude
-    /// il pannello tornando a Controlli, quindi l'apertura va dopo il cambio.
-    private func selectFromStrip(_ mode: FloorplanOverlayMode,
-                                 overlayVM: FloorplanOverlayViewModel) {
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.7)) {
-            overlayVM.activeMode = mode
-        }
-        if mode != .controls {
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
                 overlayVM.isPanelVisible = true
             }
         }
@@ -248,16 +285,14 @@ struct FloorplanTopBarView: View {
 
     @ViewBuilder
     private var statusBanners: some View {
-        // Chips filtro categoria (novità C): tab Controlli, anche su iPhone
-        // (decisione 26/08), nello stesso slot per-modo dove Ambiente mette i
-        // suoi filtri. Su compact il toggle vista-esplosa non c'è: lì il modo
-        // di "vedere tutto" è lo zoom semantico.
-        if !isEditing,
+        // Chips filtro categoria (novità C): tab Controlli, SOLO regular.
+        // Su iPhone niente riga fissa (design v3, regola mobile 5): il filtro
+        // sta dietro il bottone singolo accanto al menu della barra.
+        if !isEditing, !isCompact,
            let overlayVM, overlayVM.activeMode == .controls,
            categoryCounts.count > 1 {
             FloorplanCategoryFilterBar(overlayVM: overlayVM,
-                                       counts: categoryCounts,
-                                       showsExpandToggle: !isCompact)
+                                       counts: categoryCounts)
                 .padding(.top, 4)
                 .transition(.move(edge: .top).combined(with: .opacity))
         }
@@ -284,17 +319,9 @@ struct FloorplanTopBarView: View {
             .transition(.move(edge: .top).combined(with: .opacity))
         }
 
-        if !isEditing,
-           let overlayVM,
-           overlayVM.activeMode == .security,
-           let securityAdapter {
-            AlarmStatusPill(
-                adapter: securityAdapter,
-                activationDate: securityActivationDate
-            )
-            .padding(.top, 6)
-            .transition(.move(edge: .top).combined(with: .opacity))
-        }
+        // La riga AlarmStatusPill non c'è più (design v3): lo stato antifurto
+        // vive nel sottotitolo della tab Sicurezza e nella card del pannello —
+        // ogni informazione appare UNA volta per schermata.
 
         if isEditing {
             FloorplanEditModeBanner(onOpenDiagnostics: onShowDiagnostics)

@@ -3,19 +3,23 @@ import HomeKit
 
 // MARK: - FloorplanStatusStripState
 
-/// Fotografia dei quattro segnali della barra di stato unificata (redesign,
-/// novità B): salute casa, aperture+antifurto, situazioni, temperature.
-/// Struct pura: la costruisce l'editor dai propri dati cache-ati/osservabili,
-/// la vista la disegna e basta.
+/// Fotografia dei segnali vivi della planimetria. Nata per la barra di stato
+/// separata della v1 del design; dalla v3 (modello "2d", decisione finale)
+/// NON esiste più una barra: questi stessi segnali diventano i sottotitoli
+/// delle quattro tab e la pill temperatura nell'header. La struct resta la
+/// fonte unica; è la resa che è cambiata.
 struct FloorplanStatusStripState: Equatable {
+    /// Dispositivi accesi sul piano (sottotitolo tab Controlli).
+    var controlsActiveCount: Int?
+
     /// Media pesata per stanza (0–100); nil se non ci sono accessori.
     var healthScore: Int?
     var healthLabel: String?
 
     /// Aperture (sensori contatto monitorati risultati aperti) sul piano.
     var openingsCount: Int?
-    /// Stato antifurto leggibile ("Antifurto disinserito"); nil senza impianto.
-    var alarmModeText: String?
+    /// Stato antifurto breve ("Disins.", "Totale"…); nil senza impianto.
+    var alarmShortText: String?
 
     /// Situazioni attive rilevanti per questo piano.
     var situationsCount: Int?
@@ -27,28 +31,74 @@ struct FloorplanStatusStripState: Equatable {
     var indoorText: String?
     var outdoorText: String?
 
-    var hasAnyContent: Bool {
-        healthScore != nil || openingsCount != nil
-            || situationsCount != nil || indoorText != nil
+    // MARK: Rese per le tab 2d (design v3)
+
+    /// Sottotitolo di stato per la tab. `compact` usa le forme brevi da
+    /// iPhone ("91%", "2 aperte", "6 · 1 crit").
+    func subtitle(for mode: FloorplanOverlayMode, compact: Bool) -> String? {
+        switch mode {
+        case .controls:
+            guard let active = controlsActiveCount else { return nil }
+            return String(localized: "floorplan.tab.sub.controls",
+                          defaultValue: "\(active) on")
+        case .environment:
+            guard let score = healthScore else { return nil }
+            if compact { return "\(score)%" }
+            if let label = healthLabel { return "\(score)% \(label)" }
+            return "\(score)%"
+        case .security:
+            guard let openings = openingsCount else { return nil }
+            let base = String(localized: "floorplan.tab.sub.security",
+                              defaultValue: "\(openings) open")
+            if compact { return base }
+            // Lo stato antifurto vive QUI, mai in una riga dedicata (v3:
+            // ogni informazione appare una sola volta per schermata).
+            if let alarm = alarmShortText { return "\(base) · \(alarm)" }
+            return base
+        case .intelligence:
+            guard let situations = situationsCount else { return nil }
+            guard criticalCount > 0 else { return "\(situations)" }
+            return compact
+                ? "\(situations) · \(criticalCount) crit"
+                : String(localized: "floorplan.tab.sub.intelligence",
+                         defaultValue: "\(situations) · \(criticalCount) critical")
+        }
     }
 
-    /// Badge per la mode pill: Sicurezza = aperture, Intelligenza = situazioni.
-    var modeBadgeCounts: [String: Int] {
-        var counts: [String: Int] = [:]
-        if let openings = openingsCount, openings > 0 {
-            counts[FloorplanOverlayMode.security.id] = openings
+    /// Colore d'allarme della tab NON selezionata (bordo 1.5pt + sottotitolo):
+    /// arancio per Sicurezza con aperture, rosso per Intelligenza con
+    /// critiche (arancio se solo anomalie). `nil` = tab quieta.
+    func alarmColor(for mode: FloorplanOverlayMode) -> Color? {
+        switch mode {
+        case .security:
+            guard let openings = openingsCount, openings > 0 else { return nil }
+            return FloorplanTokens.Semantic.warning
+        case .intelligence:
+            guard let situations = situationsCount, situations > 0 else { return nil }
+            return criticalCount > 0
+                ? FloorplanTokens.Semantic.critical
+                : FloorplanTokens.Semantic.warning
+        case .controls, .environment:
+            return nil
         }
-        if let situations = situationsCount, situations > 0 {
-            counts[FloorplanOverlayMode.intelligence.id] = situations
-        }
-        return counts
+    }
+
+    /// Pulse sul pallino della tab Intelligenza quando ci sono situazioni.
+    func pulses(for mode: FloorplanOverlayMode) -> Bool {
+        mode == .intelligence && criticalCount > 0
+    }
+
+    /// Pill temperatura nell'header ("25.5°/25.4°"); nil senza sensori.
+    var temperaturePillText: String? {
+        guard let indoor = indoorText else { return nil }
+        guard let outdoor = outdoorText else { return indoor }
+        return "\(indoor)/\(outdoor)"
     }
 }
 
 // MARK: - FloorplanStatusStripBuilder
 
-/// Calcoli dei quattro segnali. Stateless come gli altri controller del
-/// floorplan: l'editor lo invoca con i propri riferimenti, niente stato globale.
+/// Calcoli dei segnali. Stateless come gli altri controller del floorplan.
 @MainActor
 enum FloorplanStatusStripBuilder {
 
@@ -74,6 +124,20 @@ enum FloorplanStatusStripBuilder {
         }
         guard total > 0 else { return nil }
         return Int((weighted / Double(total)).rounded())
+    }
+
+    /// Dispositivi accesi sul piano (un accessorio con più marker conta una
+    /// volta) — sottotitolo della tab Controlli.
+    static func activeDeviceCount(floorplan: Floorplan,
+                                  adapterMap: [UUID: any AccessoryAdapter]) -> Int {
+        var seen = Set<UUID>()
+        var count = 0
+        for placed in floorplan.accessories {
+            guard !seen.contains(placed.homeKitAccessoryUUID) else { continue }
+            seen.insert(placed.homeKitAccessoryUUID)
+            if adapterMap[placed.homeKitAccessoryUUID]?.isOn == true { count += 1 }
+        }
+        return count
     }
 
     /// Aperture sul piano: sensori contatto MONITORATI (stessa semantica di
@@ -143,185 +207,5 @@ enum FloorplanStatusStripBuilder {
             .map(\.currentValue)
         guard !values.isEmpty else { return nil }
         return unit.format(values.reduce(0, +) / Double(values.count))
-    }
-}
-
-// MARK: - FloorplanStatusStrip
-
-/// La riga di pill sotto la barra superiore, visibile in tutti i tab.
-/// Su larghezza regular: pill centrate con titolo+sottotitolo; su compact:
-/// chip scorrevoli col solo titolo. Il tap apre il tab corrispondente col
-/// pannello già aperto (gestito dal chiamante via `onSelect`).
-struct FloorplanStatusStrip: View {
-    let state: FloorplanStatusStripState
-    let context: FloorplanOverlayContext
-    /// Tab attivo: la pill che vi punta si evidenzia col colore del modo,
-    /// così si vede sempre da dove si è arrivati (feedback utente 26/08).
-    let activeMode: FloorplanOverlayMode
-    let isCompact: Bool
-    let onSelect: (FloorplanOverlayMode) -> Void
-
-    var body: some View {
-        if isCompact {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) { pills(compact: true) }
-                    .padding(.horizontal, 16)
-            }
-        } else {
-            HStack(spacing: 10) { pills(compact: false) }
-                .frame(maxWidth: .infinity)
-        }
-    }
-
-    @ViewBuilder
-    private func pills(compact: Bool) -> some View {
-        if let score = state.healthScore {
-            StatusStripPill(
-                dotColor: FloorplanTokens.Semantic.ok,
-                title: String(localized: "floorplan.strip.health",
-                              defaultValue: "Health \(score)%"),
-                subtitle: state.healthLabel,
-                pulses: false,
-                compact: compact,
-                targetMode: .environment,
-                isSelected: activeMode == .environment,
-                isEnabled: FloorplanOverlayMode.environment.isAvailable(in: context)
-            ) { onSelect(.environment) }
-        }
-
-        if let openings = state.openingsCount {
-            StatusStripPill(
-                dotColor: openings > 0
-                    ? FloorplanTokens.Semantic.warning
-                    : FloorplanTokens.Semantic.ok,
-                title: String(localized: "floorplan.strip.openings",
-                              defaultValue: "\(openings) open"),
-                subtitle: state.alarmModeText,
-                pulses: false,
-                compact: compact,
-                targetMode: .security,
-                isSelected: activeMode == .security,
-                isEnabled: FloorplanOverlayMode.security.isAvailable(in: context)
-            ) { onSelect(.security) }
-        }
-
-        if let situations = state.situationsCount {
-            StatusStripPill(
-                dotColor: situations > 0
-                    ? (state.criticalCount > 0
-                        ? FloorplanTokens.Semantic.critical
-                        : FloorplanTokens.Semantic.warning)
-                    : FloorplanTokens.Semantic.ok,
-                title: String(localized: "floorplan.strip.situations",
-                              defaultValue: "\(situations) situations"),
-                subtitle: situationsSubtitle,
-                pulses: state.criticalCount > 0,
-                compact: compact,
-                targetMode: .intelligence,
-                isSelected: activeMode == .intelligence,
-                isEnabled: true
-            ) { onSelect(.intelligence) }
-        }
-
-        if let indoor = state.indoorText {
-            StatusStripPill(
-                dotColor: FloorplanTokens.Text.tertiary,
-                title: state.outdoorText.map { "\(indoor) / \($0)" } ?? indoor,
-                subtitle: String(localized: "floorplan.strip.tempSubtitle",
-                                 defaultValue: "Indoor / Outdoor"),
-                pulses: false,
-                compact: compact,
-                targetMode: .environment,
-                isSelected: activeMode == .environment,
-                isEnabled: FloorplanOverlayMode.environment.isAvailable(in: context)
-            ) { onSelect(.environment) }
-        }
-    }
-
-    private var situationsSubtitle: String? {
-        guard state.criticalCount > 0 else { return nil }
-        if let room = state.criticalRoomName {
-            return String(localized: "floorplan.strip.critical.room",
-                          defaultValue: "\(state.criticalCount) critical · \(room)")
-        }
-        return String(localized: "floorplan.strip.critical",
-                      defaultValue: "\(state.criticalCount) critical")
-    }
-}
-
-// MARK: - StatusStripPill
-
-private struct StatusStripPill: View {
-    let dotColor: Color
-    let title: String
-    let subtitle: String?
-    let pulses: Bool
-    let compact: Bool
-    /// Modo a cui la pill porta: da selezionata veste i suoi colori attivi
-    /// (stessa coppia bg/fg della mode pill), così barra di stato e tab
-    /// raccontano la stessa selezione.
-    let targetMode: FloorplanOverlayMode
-    let isSelected: Bool
-    let isEnabled: Bool
-    let action: () -> Void
-
-    @State private var isPulsing = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(dotColor)
-                    .frame(width: 8, height: 8)
-                    // Il pulse scala SOLO il pallino pieno, mai la superficie:
-                    // scalare il vetro ne forza il ricampionamento per frame.
-                    .scaleEffect(isPulsing ? 1.15 : 1.0)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isSelected
-                                         ? targetMode.activeForegroundColor
-                                         : Color.primary)
-                    if !compact, let subtitle {
-                        Text(subtitle)
-                            .font(.system(size: 11))
-                            .foregroundStyle(isSelected
-                                             ? targetMode.activeForegroundColor.opacity(0.75)
-                                             : Color.secondary)
-                    }
-                }
-                .lineLimit(1)
-                .fixedSize()
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, compact ? 7 : 6)
-            // Il vetro non offre area di hit-test affidabile: la forma
-            // esplicita garantisce il tap su tutta la pill.
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .glassChromeSurface(
-            in: Capsule(),
-            tint: isSelected ? targetMode.accentColor.opacity(0.22) : nil,
-            legacyFill: isSelected
-                ? AnyShapeStyle(targetMode.activeBackgroundColor)
-                : AnyShapeStyle(.regularMaterial)
-        )
-        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isSelected)
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.55)
-        .onAppear { startPulseIfNeeded() }
-        .onChange(of: pulses) { _, _ in startPulseIfNeeded() }
-    }
-
-    private func startPulseIfNeeded() {
-        guard pulses else {
-            isPulsing = false
-            return
-        }
-        withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) {
-            isPulsing = true
-        }
     }
 }

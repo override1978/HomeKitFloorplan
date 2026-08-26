@@ -116,21 +116,31 @@ struct FloorplanChromeLayout: Equatable {
     /// size class, un fatto stabile per la sessione, non dal tab attivo.
     var hasCompactModeRow = false
 
+    /// Tab 2d nella barra su regular (design v3): le pill a due righe alzano
+    /// la barra rispetto al margine base tarato su quelle a riga singola.
+    var hasTwoRowTabBar = false
+
     /// Layout dell'app com'è oggi: solo top bar + superfici per-modo già
     /// coperte dal margine base.
     static let legacy = FloorplanChromeLayout()
 
     /// Altezza riservata alla barra di stato unificata (pill 8×16 di padding
-    /// + respiro). Costante nominata, mai misurata.
+    /// + respiro). Costante nominata, mai misurata. (Non più usata dal v3 —
+    /// resta per il contratto del tipo e i suoi test.)
     static let statusStripHeight: CGFloat = 48
 
-    /// Altezza riservata alla riga mode pill compatta.
-    static let compactModeRowHeight: CGFloat = 46
+    /// Altezza riservata alla riga mode pill compatta (due righe, v3).
+    static let compactModeRowHeight: CGFloat = 56
+
+    /// Extra per la barra con tab 2d su regular: la pill cresce di ~una riga
+    /// e sotto di lei scorre la fila per-modo (chips, banner).
+    static let twoRowTabBarExtraHeight: CGFloat = 32
 
     var topInset: CGFloat {
         var inset = FloorplanCanvasGeometry.chromeTopInset
         if hasUnifiedStatusStrip { inset += Self.statusStripHeight }
         if hasCompactModeRow { inset += Self.compactModeRowHeight }
+        if hasTwoRowTabBar { inset += Self.twoRowTabBarExtraHeight }
         return inset
     }
 }

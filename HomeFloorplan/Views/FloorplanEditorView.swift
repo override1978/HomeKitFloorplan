@@ -565,6 +565,11 @@ struct FloorplanEditorView: View {
     private var statusStripState: FloorplanStatusStripState {
         var state = FloorplanStatusStripState()
 
+        state.controlsActiveCount = FloorplanStatusStripBuilder.activeDeviceCount(
+            floorplan: floorplan,
+            adapterMap: currentAdapterMap()
+        )
+
         if let score = cachedHealthScore {
             state.healthScore = score
             state.healthLabel = AccessoryHealthLevel.from(score: score).label
@@ -577,10 +582,7 @@ struct FloorplanEditorView: View {
                 monitoredIDs: RoomSecurityEvaluator.monitoredIDs(from: securityMonitoredUUIDsRaw)
             )
             if let adapter = findSecurityAdapter() {
-                state.alarmModeText = String(
-                    localized: "floorplan.strip.alarm",
-                    defaultValue: "Alarm: \(adapter.currentMode.displayName)"
-                )
+                state.alarmShortText = adapter.currentMode.displayName
             }
         }
 
@@ -953,8 +955,10 @@ struct FloorplanEditorView: View {
     /// valore resta costante per tutta la sessione (mai per-modo, mai misurato)
     /// e canvas + tap resolver lo ereditano da qui senza poter divergere.
     private var chromeLayout: FloorplanChromeLayout {
-        FloorplanChromeLayout(hasUnifiedStatusStrip: true,
-                              hasCompactModeRow: isCompactScreen)
+        // v3: niente barra di stato separata — lo stato vive nelle tab 2d,
+        // che alzano la barra su regular e la riga dedicata su compact.
+        FloorplanChromeLayout(hasCompactModeRow: isCompactScreen,
+                              hasTwoRowTabBar: !isCompactScreen)
     }
 
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {

@@ -190,13 +190,11 @@ struct RoomEnvironmentData: Identifiable {
         }
     }
 
+    /// Soglie colore uniche del design v3: verde ≥85, arancio 60–84,
+    /// rosso <60 — le stesse ovunque, mai un 66% rosso e un 70% arancio
+    /// nella stessa schermata.
     var qualityColor: Color {
-        switch qualityScore {
-        case 0.85...1.0:  return .green
-        case 0.60..<0.85: return .yellow
-        case 0.35..<0.60: return .orange
-        default:          return .red
-        }
+        FloorplanTokens.Semantic.forScore(Int((qualityScore * 100).rounded()))
     }
 
     /// Classifica la stanza usando RoomClassifier.
@@ -285,13 +283,9 @@ final class EnvironmentViewModel {
         }
     }
 
+    /// Stesse soglie uniche di `qualityColor` (design v3).
     var globalColor: Color {
-        switch globalScore {
-        case 0.85...1.0:  return .green
-        case 0.60..<0.85: return .yellow
-        case 0.35..<0.60: return .orange
-        default:          return .red
-        }
+        FloorplanTokens.Semantic.forScore(Int((globalScore * 100).rounded()))
     }
 
     // MARK: - Caricamento da SwiftData

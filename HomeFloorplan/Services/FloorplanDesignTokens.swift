@@ -24,7 +24,7 @@ enum FloorplanTokens {
 
     // MARK: Semantici
 
-    /// Stati semantici condivisi da barra di stato, chip in-place e pannelli.
+    /// Stati semantici condivisi da tab, chip in-place e pannelli.
     enum Semantic {
         /// Verde "ok" per pallini e fill leggeri.
         static let ok = Color(light: 0x4CAF6D, dark: 0x6FC48F)
@@ -32,8 +32,17 @@ enum FloorplanTokens {
         static let okDeep = Color(light: 0x3D9A5F, dark: 0x5CB27E)
         /// Arancio "attenzione": aperture, stanze da arieggiare.
         static let warning = Color(light: 0xE0762F, dark: 0xF0894A)
-        /// Rosso "critico": allarmi, situazioni critiche, badge tab.
+        /// Rosso "critico": allarmi, situazioni critiche.
         static let critical = Color(light: 0xC23B3B, dark: 0xE06565)
+
+        /// Soglie colore uniche per gli score 0–100 (design v3): verde ≥85,
+        /// arancio 60–84, rosso <60 — le stesse OVUNQUE sulla planimetria,
+        /// mai un 66% rosso accanto a un 70% arancio.
+        static func forScore(_ score: Int) -> Color {
+            if score >= 85 { return ok }
+            if score >= 60 { return warning }
+            return critical
+        }
     }
 
     // MARK: Modi (tab)
@@ -136,6 +145,8 @@ enum FloorplanTokens {
         static let secondary = Color(light: 0x5A5348, dark: 0xC4B9A8)
         static let tertiary = Color(light: 0x8A8275, dark: 0x948A7A)
         static let disabled = Color(light: 0xB3A992, dark: 0x5F574A)
+        /// Sottotitolo "quieto" delle tab con stato vivo (design v3, #a99f8c).
+        static let tabSubtitleQuiet = Color(light: 0xA99F8C, dark: 0x8A8275)
     }
 }
 
