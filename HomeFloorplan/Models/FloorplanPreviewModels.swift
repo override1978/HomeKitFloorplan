@@ -240,7 +240,7 @@ enum PreviewMode: String, CaseIterable, Identifiable {
         switch self {
         case .off:         nil
         case .environment: Color(red: 0.24, green: 0.66, blue: 0.44)
-        case .security:    Color(UIColor.systemPurple)
+        case .security:    FloorplanTokens.Mode.accent(.security)
         }
     }
 }

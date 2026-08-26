@@ -261,24 +261,24 @@ struct SecurityOverlayView: View {
 
     private func fillColor(_ status: RoomSecurityStatus) -> Color {
         switch status {
-        case .none:      return Color(.systemPurple).opacity(0.05)
+        case .none:      return FloorplanTokens.Mode.accent(.security).opacity(0.05)
         case .protected: return Color.green.opacity(0.16)
-        case .locked:    return Color(.systemPurple).opacity(0.14)
+        case .locked:    return FloorplanTokens.Mode.accent(.security).opacity(0.14)
         case .unlocked:  return Color.orange.opacity(0.18)
-        case .disarmed:  return Color(.systemPurple).opacity(0.09)
-        case .armed:     return Color(.systemPurple).opacity(0.25)
+        case .disarmed:  return FloorplanTokens.Mode.accent(.security).opacity(0.09)
+        case .armed:     return FloorplanTokens.Mode.accent(.security).opacity(0.25)
         case .alarmed:   return Color.red.opacity(0.38)
         }
     }
 
     private func borderColor(_ status: RoomSecurityStatus) -> Color {
         switch status {
-        case .none:      return Color(.systemPurple).opacity(0.20)
+        case .none:      return FloorplanTokens.Mode.accent(.security).opacity(0.20)
         case .protected: return Color.green
-        case .locked:    return Color(.systemPurple)
+        case .locked:    return FloorplanTokens.Mode.accent(.security)
         case .unlocked:  return Color.orange
-        case .disarmed:  return Color(.systemPurple).opacity(0.35)
-        case .armed:     return Color(.systemPurple)
+        case .disarmed:  return FloorplanTokens.Mode.accent(.security).opacity(0.35)
+        case .armed:     return FloorplanTokens.Mode.accent(.security)
         case .alarmed:   return Color.red
         }
     }
@@ -377,7 +377,7 @@ struct SecurityContextDashboard: View {
     /// Cached adapter list — rebuilt only when accessory count changes, not on every render.
     @State private var cachedAdapters: [(accessory: HMAccessory, adapter: any AccessoryAdapter)] = []
 
-    private var accent: Color { Color(.systemPurple) }
+    private var accent: Color { FloorplanTokens.Mode.accent(.security) }
 
     // MARK: Derived data helpers (called once per render in body)
 

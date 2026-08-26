@@ -671,7 +671,8 @@ struct FloorplanEditorView: View {
             imageSize: imageSize,
             containerSize: containerSize,
             effectiveScale: effectiveScale,
-            effectiveOffset: effectiveOffset
+            effectiveOffset: effectiveOffset,
+            topInset: chromeLayout.topInset
         ).resolve(tapLocation: tapLocation)
     }
     
@@ -700,9 +701,19 @@ struct FloorplanEditorView: View {
     }
 
     // MARK: - Image rect
-    
+
+    /// Layout della chrome per questa sessione. Oggi coincide col legacy;
+    /// dalla fase 1 del redesign dichiarerà `hasUnifiedStatusStrip = true` e
+    /// tutta la geometria (canvas, tap resolver, collisioni) lo erediterà da
+    /// qui senza poter divergere.
+    private var chromeLayout: FloorplanChromeLayout { .legacy }
+
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
-        FloorplanCanvasGeometry.imageRect(imageSize: imageSize, container: container)
+        FloorplanCanvasGeometry.imageRect(
+            imageSize: imageSize,
+            container: container,
+            topInset: chromeLayout.topInset
+        )
     }
     
     /// Su iPhone in verticale la planimetria si riduce a una fascia larga ~354
@@ -724,6 +735,7 @@ struct FloorplanEditorView: View {
         return FloorplanCanvasView(
             image: image,
             containerSize: container,
+            chrome: chromeLayout,
             showOverlayLayer: overlayVM != nil && !ui.isEditing,
             showEditLayer: ui.isEditing && !floorplan.linkedRooms.isEmpty,
             showMarkers: showMarkers,

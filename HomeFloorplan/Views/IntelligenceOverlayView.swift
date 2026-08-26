@@ -323,7 +323,7 @@ struct IntelligenceOverlayView: View {
         switch state {
         case .situation(let summary):
             return summary.color.opacity(summary.severity >= .high ? 0.30 : 0.22)
-        case .learning: return Color(.systemIndigo).opacity(0.08)
+        case .learning: return FloorplanTokens.Mode.accent(.intelligence).opacity(0.08)
         case .needsSetup: return Color.gray.opacity(0.05)
         }
     }
@@ -331,7 +331,7 @@ struct IntelligenceOverlayView: View {
     private func borderColor(for state: RoomIntelligenceState) -> Color {
         switch state {
         case .situation(let summary): return summary.color
-        case .learning: return Color(.systemIndigo).opacity(0.26)
+        case .learning: return FloorplanTokens.Mode.accent(.intelligence).opacity(0.26)
         case .needsSetup: return Color.gray.opacity(0.22)
         }
     }
@@ -388,8 +388,8 @@ private struct FloorplanRoomSituationSummary {
         case .critical, .high: return .red
         case .medium: return .orange
         case .low:
-            return domain == .routine ? Color(.systemIndigo) : .yellow
-        case .info: return Color(.systemIndigo)
+            return domain == .routine ? FloorplanTokens.Mode.accent(.intelligence) : .yellow
+        case .info: return FloorplanTokens.Mode.accent(.intelligence)
         }
     }
 
@@ -434,7 +434,7 @@ struct IntelligenceContextDashboard: View {
     /// Linked rooms list — used to resolve the highlighted room name.
     let linkedRooms: [LinkedRoom]
 
-    private var accent: Color { Color(.systemIndigo) }
+    private var accent: Color { FloorplanTokens.Mode.accent(.intelligence) }
 
     private var highlightedRoomName: String? {
         guard let id = highlightedRoomID else { return nil }

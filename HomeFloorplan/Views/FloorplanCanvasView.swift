@@ -3,6 +3,7 @@ import SwiftUI
 struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: View, EmptyContent: View>: View {
     let image: UIImage
     let containerSize: CGSize
+    let chrome: FloorplanChromeLayout
     let showOverlayLayer: Bool
     let showEditLayer: Bool
     let showMarkers: Bool
@@ -16,6 +17,7 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
     init(
         image: UIImage,
         containerSize: CGSize,
+        chrome: FloorplanChromeLayout = .legacy,
         showOverlayLayer: Bool,
         showEditLayer: Bool,
         showMarkers: Bool,
@@ -28,6 +30,7 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
     ) {
         self.image = image
         self.containerSize = containerSize
+        self.chrome = chrome
         self.showOverlayLayer = showOverlayLayer
         self.showEditLayer = showEditLayer
         self.showMarkers = showMarkers
@@ -42,7 +45,8 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
     var body: some View {
         let rect = FloorplanCanvasGeometry.imageRect(
             imageSize: image.size,
-            container: containerSize
+            container: containerSize,
+            topInset: chrome.topInset
         )
 
         ZStack(alignment: .topLeading) {
@@ -81,9 +85,44 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
     }
 }
 
+// MARK: - FloorplanChromeLayout
+
+/// Descrive quali file di chrome flottante esistono sopra la planimetria in
+/// questa sessione, e da lì calcola il margine superiore da riservare.
+///
+/// È il compromesso fra due esigenze che si erano scontrate: il margine deve
+/// restare una **costante composta di costanti** (mai una misura a runtime —
+/// il loop misura→stato→layout→rimisura è già stato smontato una volta), ma
+/// il redesign aggiunge file di chrome che esistono solo in certe
+/// configurazioni. La regola resta quella del vecchio commento: il layout non
+/// dipende MAI dal modo attivo — cambierebbe la dimensione della planimetria
+/// a ogni cambio tab — ma solo da fatti stabili per la sessione (la barra di
+/// stato unificata, quando arriverà, è visibile in TUTTI i tab).
+struct FloorplanChromeLayout: Equatable {
+    /// Barra di stato unificata sotto la top bar (redesign, dalla fase 1).
+    /// Presente in tutti i tab, quindi legittimamente parte del margine.
+    var hasUnifiedStatusStrip = false
+
+    /// Layout dell'app com'è oggi: solo top bar + superfici per-modo già
+    /// coperte dal margine base.
+    static let legacy = FloorplanChromeLayout()
+
+    /// Altezza riservata alla barra di stato unificata (pill 8×16 di padding
+    /// + respiro). Costante nominata, mai misurata.
+    static let statusStripHeight: CGFloat = 48
+
+    var topInset: CGFloat {
+        var inset = FloorplanCanvasGeometry.chromeTopInset
+        if hasUnifiedStatusStrip { inset += Self.statusStripHeight }
+        return inset
+    }
+}
+
 enum FloorplanCanvasGeometry {
 
-    /// Spazio riservato in alto alla chrome flottante.
+    /// Spazio base riservato in alto alla chrome flottante (top bar + le
+    /// superfici per-modo che già esistevano: chip filtro Ambiente, pill
+    /// antifurto).
     ///
     /// Serve perché in Ambiente e Sicurezza sotto la barra compaiono altre
     /// superfici — chip filtro, pill antifurto — che finivano sopra il disegno.
@@ -94,9 +133,13 @@ enum FloorplanCanvasGeometry {
     /// cambiare dimensione alla planimetria a ogni cambio, un movimento in più
     /// da guardare per un guadagno nullo.
     ///
-    /// Unico numero da ritoccare se il margine risulta troppo o troppo poco:
-    /// la barra da sola misura una sessantina di punti, un banner ne aggiunge
-    /// una quarantina.
+    /// Le file di chrome aggiuntive del redesign non si sommano qui: si
+    /// dichiarano in `FloorplanChromeLayout`, che compone il margine totale
+    /// sempre e solo da costanti.
+    ///
+    /// Unico numero da ritoccare se il margine base risulta troppo o troppo
+    /// poco: la barra da sola misura una sessantina di punti, un banner ne
+    /// aggiunge una quarantina.
     static let chromeTopInset: CGFloat = 88
 
     /// Inscrive l'immagine nel contenitore, riservando `topInset` in alto.

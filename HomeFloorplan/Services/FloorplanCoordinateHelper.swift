@@ -89,9 +89,15 @@ struct FloorplanCoordinateHelper {
     /// Computes `imageRect` from an image size and container size.
     /// Delega a `FloorplanCanvasGeometry.imageRect` — unica sorgente di verità
     /// per l'algoritmo di aspect-fit condiviso con `FloorplanCanvasView`.
-    static func make(imageSize: CGSize, container: CGSize) -> FloorplanCoordinateHelper {
+    static func make(imageSize: CGSize,
+                     container: CGSize,
+                     topInset: CGFloat = FloorplanCanvasGeometry.chromeTopInset) -> FloorplanCoordinateHelper {
         FloorplanCoordinateHelper(
-            imageRect: FloorplanCanvasGeometry.imageRect(imageSize: imageSize, container: container)
+            imageRect: FloorplanCanvasGeometry.imageRect(
+                imageSize: imageSize,
+                container: container,
+                topInset: topInset
+            )
         )
     }
 }
@@ -107,6 +113,10 @@ struct FloorplanRoomTapResolver {
     let containerSize: CGSize
     let effectiveScale: CGFloat
     let effectiveOffset: CGSize
+    /// Deve combaciare col margine usato dal renderer, o i tap "scivolano"
+    /// verticalmente rispetto al disegno: il chiamante passa
+    /// `chromeLayout.topInset`, lo stesso valore che dà al canvas.
+    var topInset: CGFloat = FloorplanCanvasGeometry.chromeTopInset
 
     func resolve(tapLocation: CGPoint) -> FloorplanRoomTapResolution? {
         let centerX = containerSize.width / 2
@@ -114,7 +124,11 @@ struct FloorplanRoomTapResolver {
         let adjustedX = (tapLocation.x - centerX - effectiveOffset.width) / effectiveScale + centerX
         let adjustedY = (tapLocation.y - centerY - effectiveOffset.height) / effectiveScale + centerY
 
-        let imageRect = FloorplanCanvasGeometry.imageRect(imageSize: imageSize, container: containerSize)
+        let imageRect = FloorplanCanvasGeometry.imageRect(
+            imageSize: imageSize,
+            container: containerSize,
+            topInset: topInset
+        )
         let normX = (adjustedX - imageRect.origin.x) / imageRect.width
         let normY = (adjustedY - imageRect.origin.y) / imageRect.height
         guard normX >= 0, normX <= 1, normY >= 0, normY <= 1 else { return nil }

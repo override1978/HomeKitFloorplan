@@ -47,14 +47,21 @@ struct FloorplanOverlayContext {
 // MARK: - Theme extensions
 
 extension FloorplanOverlayMode {
-    /// Brand accent colour for this mode.
+    /// Accento del modo, dal registro token del redesign
+    /// (`FloorplanTokens.Mode`) — colori del design handoff, non più quelli
+    /// di sistema.
     var accentColor: Color {
-        switch self {
-        case .controls:     return BrandColor.primary
-        case .environment:  return Color(.systemGreen)
-        case .security:     return Color(.systemPurple)
-        case .intelligence: return Color(.systemIndigo)
-        }
+        FloorplanTokens.Mode.accent(self)
+    }
+
+    /// Sfondo del segmento attivo nella pill dei modi.
+    var activeBackgroundColor: Color {
+        FloorplanTokens.Mode.activeBackground(self)
+    }
+
+    /// Testo/glifo del segmento attivo, a contrasto con `activeBackgroundColor`.
+    var activeForegroundColor: Color {
+        FloorplanTokens.Mode.activeForeground(self)
     }
 
     /// SF Symbol used in the mode pill.
