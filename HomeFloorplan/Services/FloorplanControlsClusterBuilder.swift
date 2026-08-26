@@ -58,10 +58,13 @@ enum FloorplanControlsClusterBuilder {
         return linkedRoomUUID
     }
 
-    /// Un cluster per ogni stanza che ha almeno un marker.
+    /// Un cluster per ogni stanza che ha almeno un marker. `rooms` permette di
+    /// passare le stanze già trasposte per la rotazione planimetria (v3-B):
+    /// identità e nomi non cambiano, solo la geometria.
     static func clusters(floorplan: Floorplan,
+                         rooms roomsOverride: [LinkedRoom]? = nil,
                          adapterMap: [UUID: any AccessoryAdapter]) -> [FloorplanRoomCluster] {
-        let rooms = floorplan.linkedRooms
+        let rooms = roomsOverride ?? floorplan.linkedRooms
         guard !rooms.isEmpty else { return [] }
 
         var markersByRoom: [UUID: [PlacedAccessory]] = [:]

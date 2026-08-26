@@ -4,7 +4,9 @@ import HomeKit
 struct FloorplanMarkerRenderItem: Identifiable {
     let id: UUID
     let homeKitAccessoryUUID: UUID
-    let position: NormalizedPoint
+    /// `var` (non `let`) per la sola rotazione planimetria (v3-B): l'editor
+    /// traspone la posizione degli item quando mostra il piano ruotato.
+    var position: NormalizedPoint
     let linkedRoomUUID: UUID?
     let customLabel: String?
     let accessory: HMAccessory?

@@ -31,6 +31,13 @@ struct SecurityOverlayView: View {
         Set(monitoredUUIDsRaw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
     }
 
+    /// Stanze nello spazio di visualizzazione: trasposte quando la planimetria
+    /// è ruotata (v3-B). Nomi e UUID invariati — la logica di stato per stanza
+    /// resta valida, cambia solo dove si disegna.
+    var displayRooms: [LinkedRoom]? = nil
+
+    private var geometryRooms: [LinkedRoom] { displayRooms ?? floorplan.linkedRooms }
+
     var body: some View {
         let h = FloorplanCoordinateHelper(imageRect: imageRect)
         let statusByRoom: [UUID: RoomSecurityStatus] = {
@@ -45,7 +52,7 @@ struct SecurityOverlayView: View {
         return ZStack(alignment: .topLeading) {
             // Fill canvas
             Canvas { ctx, _ in
-                for room in floorplan.linkedRooms {
+                for room in geometryRooms {
                     let path = h.overlayPath(for: room)
                     let status = statusByRoom[room.hmRoomUUID] ?? .none
                     ctx.fill(path, with: .color(fillColor(status)))
@@ -57,15 +64,20 @@ struct SecurityOverlayView: View {
             .allowsHitTesting(false)
 
             // Tap targets + badges
-            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+            ForEach(geometryRooms, id: \.hmRoomUUID) { room in
                 let status = statusByRoom[room.hmRoomUUID] ?? .none
                 let center = h.centroid(for: room)
                 let contactSensors = contactSensorsPerRoom[room.hmRoomUUID] ?? []
+                // Collasso a 3 livelli (v3).
+                let roomScreenWidth = h.screenRect(from: room.normalizedRect).width * effectiveScale
 
                 Button {
                     overlayVM.selectRoom(room.hmRoomUUID)
                 } label: {
-                    securityBadge(room: room, status: status, contactSensorCount: contactSensors.count)
+                    securityBadge(room: room,
+                                  status: status,
+                                  contactSensorCount: contactSensors.count,
+                                  roomScreenWidth: roomScreenWidth)
                         .scaleEffect(inverseScale)
                 }
                 .buttonStyle(.plain)
@@ -73,7 +85,7 @@ struct SecurityOverlayView: View {
             }
 
             // Camera markers — auto-positioned near the room centroid.
-            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+            ForEach(geometryRooms, id: \.hmRoomUUID) { room in
                 let cameras = camerasPerRoom[room.hmRoomUUID] ?? []
                 let center  = h.centroid(for: room)
                 ForEach(Array(cameras.enumerated()), id: \.element.accessory.uniqueIdentifier) { idx, adapter in
@@ -101,7 +113,7 @@ struct SecurityOverlayView: View {
             }
 
             // Contact sensor markers — compact coverage chips near the room badge.
-            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+            ForEach(geometryRooms, id: \.hmRoomUUID) { room in
                 let sensors = contactSensorsPerRoom[room.hmRoomUUID] ?? []
                 let center = h.centroid(for: room)
                 if !sensors.isEmpty {
@@ -168,18 +180,32 @@ struct SecurityOverlayView: View {
     // MARK: Badge
 
     @ViewBuilder
-    private func securityBadge(room: LinkedRoom, status: RoomSecurityStatus, contactSensorCount: Int) -> some View {
+    private func securityBadge(room: LinkedRoom,
+                               status: RoomSecurityStatus,
+                               contactSensorCount: Int,
+                               roomScreenWidth: CGFloat) -> some View {
         let accent = badgeAccentColor(status)
         let bg = badgeBackgroundColor(status)
+        // Collasso v3: L1 icona+nome+stato → L2 icona+stato → L3 pallino.
+        let level = FloorplanRoomBadgeCollapse.level(
+            roomScreenWidth: roomScreenWidth,
+            fullText: room.name + " " + status.label,
+            valueText: status.label
+        )
 
+        if level == .dot {
+            RoomBadgeDot(color: status == .none ? Color.secondary : accent)
+        } else {
         VStack(spacing: 3) {
-            // Icon row
+            // Icon row (il nome solo al livello L1)
             HStack(spacing: 4) {
                 Image(systemName: status.icon)
                     .font(.system(size: 11, weight: .bold))
-                Text(room.name)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1)
+                if level == .full {
+                    Text(room.name)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                }
             }
             .foregroundStyle(status == .none ? Color.secondary : .white)
 
@@ -190,7 +216,7 @@ struct SecurityOverlayView: View {
                     .foregroundStyle(.white.opacity(0.85))
             }
 
-            if contactSensorCount > 0 {
+            if contactSensorCount > 0, level == .full {
                 HStack(spacing: 3) {
                     Image(systemName: "sensor.tag.radiowaves.forward.fill")
                         .font(.system(size: 8, weight: .bold))
@@ -215,6 +241,7 @@ struct SecurityOverlayView: View {
         )
         .shadow(color: accent.opacity(0.35), radius: 6, y: 2)
         .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+        }
     }
 
     /// Solid fill color behind the badge text — strong enough to ensure contrast.

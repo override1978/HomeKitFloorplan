@@ -19,7 +19,14 @@ struct EnvironmentOverlayView: View {
     /// Shared instance managed by the parent (FloorplanEditorView).
     var envVM: EnvironmentViewModel
 
+    /// Stanze nello spazio di visualizzazione: trasposte quando la planimetria
+    /// è ruotata (v3-B). Nomi e UUID identici alle originali — cambia solo la
+    /// geometria, quindi le mappe per-nome restano valide.
+    var displayRooms: [LinkedRoom]? = nil
+
     // MARK: Derived
+
+    private var geometryRooms: [LinkedRoom] { displayRooms ?? floorplan.linkedRooms }
 
     private var helper: FloorplanCoordinateHelper {
         FloorplanCoordinateHelper(imageRect: imageRect)
@@ -64,7 +71,7 @@ struct EnvironmentOverlayView: View {
         return ZStack(alignment: .topLeading) {
             // Canvas: fill colour transitions smoothly via parent animation
             Canvas { ctx, _ in
-                for room in floorplan.linkedRooms {
+                for room in geometryRooms {
                     let path = h.overlayPath(for: room)
                     let u = urgencyByRoom[room.name] ?? .normal
                     let fill = isLoading
@@ -91,9 +98,12 @@ struct EnvironmentOverlayView: View {
             // Il raggruppamento era un'ottimizzazione, non un requisito: ogni
             // badge porta la propria superficie, che oggi non è più di vetro
             // (vedi EnvironmentBadgeSurface).
-            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+            ForEach(geometryRooms, id: \.hmRoomUUID) { room in
                 let center  = h.centroid(for: room)
                 let urgency = urgencyByRoom[room.name] ?? .normal
+                // Collasso a 3 livelli (v3): l'etichetta non supera il 60%
+                // della larghezza della stanza a schermo.
+                let roomScreenWidth = h.screenRect(from: room.normalizedRect).width * effectiveScale
 
                 Group {
                     if isLoading {
@@ -111,7 +121,9 @@ struct EnvironmentOverlayView: View {
                         Button {
                             overlayVM.selectRoom(room.hmRoomUUID)
                         } label: {
-                            environmentBadge(room: room, urgency: urgency)
+                            environmentBadge(room: room,
+                                             urgency: urgency,
+                                             roomScreenWidth: roomScreenWidth)
                         }
                         .buttonStyle(.plain)
                     }
@@ -145,17 +157,47 @@ struct EnvironmentOverlayView: View {
         }
     }
 
-    private func environmentBadge(room: LinkedRoom, urgency: SensorUrgency) -> some View {
+    @ViewBuilder
+    private func environmentBadge(room: LinkedRoom,
+                                  urgency: SensorUrgency,
+                                  roomScreenWidth: CGFloat) -> some View {
         let roomData   = envVM.rooms.first { $0.roomName == room.name }
         let filter     = overlayVM.selectedSensorFilter
         let filtSensor = filter.flatMap { f in roomData?.sensors.first { $0.serviceType == f } }
         let borderColor = urgencyBorderColor(urgency)
+        let valueText = filtSensor?.formattedValue
+            ?? roomData.map { "\(Int($0.qualityScore * 100))%" }
+        let level = FloorplanRoomBadgeCollapse.level(
+            roomScreenWidth: roomScreenWidth,
+            fullText: room.name + " " + (valueText ?? ""),
+            valueText: valueText
+        )
 
-        return VStack(spacing: 3) {
-            // Room name — always shown
-            Text(room.name)
-                .font(.caption2.weight(.semibold))
-                .lineLimit(1)
+        if level == .dot {
+            RoomBadgeDot(color: borderColor)
+        } else {
+            environmentBadgeBody(room: room,
+                                 roomData: roomData,
+                                 filter: filter,
+                                 filtSensor: filtSensor,
+                                 borderColor: borderColor,
+                                 showsName: level == .full)
+        }
+    }
+
+    private func environmentBadgeBody(room: LinkedRoom,
+                                      roomData: RoomEnvironmentData?,
+                                      filter: SensorServiceType?,
+                                      filtSensor: SensorData?,
+                                      borderColor: Color,
+                                      showsName: Bool) -> some View {
+        VStack(spacing: 3) {
+            // Nome stanza: solo al livello L1 (collasso v3).
+            if showsName {
+                Text(room.name)
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+            }
 
             if let sensor = filtSensor {
                 // Filtered mode: show the specific sensor's value (+ trend)
@@ -170,13 +212,15 @@ struct EnvironmentOverlayView: View {
                 }
                 .foregroundStyle(urgencyBorderColor(sensor.urgency))
             } else if let data = roomData {
-                // All-types mode: score % + label
+                // All-types mode: score % (+ label solo al livello L1)
                 HStack(spacing: 3) {
                     Text("\(Int(data.qualityScore * 100))%")
                         .font(.caption.weight(.bold))
                         .monospacedDigit()
-                    Text(data.qualityLabel)
-                        .font(.system(size: 9, weight: .medium))
+                    if showsName {
+                        Text(data.qualityLabel)
+                            .font(.system(size: 9, weight: .medium))
+                    }
                 }
             } else if filter != nil {
                 // Filter active but no data for this room/type

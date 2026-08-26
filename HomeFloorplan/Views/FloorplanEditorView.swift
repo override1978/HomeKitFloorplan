@@ -93,6 +93,10 @@ struct FloorplanEditorView: View {
     /// la view; il ricalcolo avviene solo quando cambiano gli input effettivi.
     @State private var collisionOffsetCache = FloorplanMarkerCollisionOffsetCache()
 
+    /// Bitmap ruotata di 90° per la rotazione planimetria (v3-B), memoizzata
+    /// sull'immagine corrente.
+    @State private var rotatedImageCache = FloorplanRotatedImageCache()
+
     // MARK: Barra di stato unificata (redesign, novità A+B)
 
     /// Meteo per la temperatura esterna della barra di stato. @Observable:
@@ -287,9 +291,8 @@ struct FloorplanEditorView: View {
                     .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
                     .environment(\.colorScheme, chromeColorScheme)
 
-                // Pulsante apri-pannello — sempre visibile (non soggetto ad auto-hide)
-                openPanelButton
-                    .environment(\.colorScheme, chromeColorScheme)
+                // Il pulsante apri-pannello non esiste più: su regular c'è
+                // "Dettagli" in barra, su compact lo sheet è permanente (v3-B).
 
                 // Azione bulk del filtro categoria (novità C): capsule scura
                 // in basso al centro, solo con filtro attivo e dispositivi accesi.
@@ -343,26 +346,29 @@ struct FloorplanEditorView: View {
             .onTapGesture { location in
                 handleBackgroundTap(at: location, in: proxy.size)
             }
+            // Zoom semantico: la messa a fuoco segue lo stato, qualunque sia
+            // la sorgente del cambio (badge, stanza, drawer, cambio tab).
+            .onChange(of: overlayVM?.zoomedRoomID) { _, newID in
+                handleZoomedRoomChange(newID, container: proxy.size)
+            }
         }
     }
 
-    /// Presentazione del bottom sheet iPhone: due detent, mappa interattiva
-    /// sotto. Il binding si spegne quando un'altra presentazione modale deve
-    /// salire (scheda accessorio, editor 2D, 3D): due sheet contemporanei
-    /// dalla stessa gerarchia si contendono la presentazione — e riappare da
-    /// solo quando quella si chiude, perché `isPanelVisible` resta vero.
+    /// Presentazione del bottom sheet iPhone (v3-B): PERMANENTE, non più
+    /// legata a `isPanelVisible` — in Controlli è il drawer delle stanze coi
+    /// filtri, negli altri tab le dashboard. Il binding si spegne solo quando
+    /// un'altra presentazione modale deve salire (scheda accessorio, editor
+    /// 2D, 3D) e riappare da solo alla sua chiusura.
     private var compactPanelBinding: Binding<Bool> {
         Binding(
             get: {
                 isCompactScreen && !ui.isEditing
-                    && (overlayVM?.isPanelVisible ?? false)
                     && !ui.hasBlockingModalPresentation
                     && preview3D == nil
             },
-            set: { isPresented in
-                if !isPresented, !ui.hasBlockingModalPresentation, preview3D == nil {
-                    overlayVM?.dismissPanel()
-                }
+            set: { _ in
+                // Permanente: il gesto di dismissione è disabilitato e le
+                // chiusure di sistema (conflitti modali) passano dal get.
             }
         )
     }
@@ -376,7 +382,15 @@ struct FloorplanEditorView: View {
                     overlayVM: vm,
                     floorplan: floorplan,
                     environmentViewModel: overlayEnvVM,
-                    adapterMap: currentAdapterMap()
+                    adapterMap: currentAdapterMap(),
+                    clusters: currentClusters(rooms: floorplan.linkedRooms),
+                    categoryCounts: FloorplanControlsClusterBuilder.floorCategoryCounts(
+                        floorplan: floorplan,
+                        adapterMap: currentAdapterMap()
+                    ),
+                    onOpenRoom: { cluster in
+                        overlayVM?.zoomedRoomID = cluster.room.hmRoomUUID
+                    }
                 )
                 .presentationDetents([FloorplanCompactPanelSheet.collapsedDetent,
                                       FloorplanCompactPanelSheet.expandedDetent])
@@ -385,6 +399,7 @@ struct FloorplanEditorView: View {
                 )
                 .presentationDragIndicator(.visible)
                 .presentationBackground(floorplanBackgroundColor)
+                .interactiveDismissDisabled(true)
                 .environment(\.colorScheme, chromeColorScheme)
             }
         }
@@ -800,34 +815,6 @@ struct FloorplanEditorView: View {
         }
     }
 
-    // MARK: - Pulsante apri pannello (sempre visibile, non soggetto ad auto-hide)
-
-    /// Bottone bottom-right che apre il pannello contestuale.
-    /// Vive in un proprio layer ZStack così non scompare con l'auto-hide dei
-    /// controlli secondari. SOLO su compact: su regular il pannello docked si
-    /// apre dal bottone "Dettagli" nella barra superiore.
-    @ViewBuilder
-    private var openPanelButton: some View {
-        if isCompactScreen, !ui.isEditing, let vm = overlayVM,
-           vm.activeMode != .controls, !vm.isPanelVisible {
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    OverlayPanelMarkerButton(mode: vm.activeMode) {
-                        withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
-                            vm.isPanelVisible = true
-                        }
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
-            }
-            .transition(.scale(scale: 0.7).combined(with: .opacity))
-            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: vm.isPanelVisible)
-        }
-    }
-
     private func drawingEditor(for floorplan: Floorplan) -> some View {
         DrawingFloorplanSheet(
             initialDocument: floorplan.drawingDocument,
@@ -876,14 +863,21 @@ struct FloorplanEditorView: View {
         //    prevede sia sul badge che sulla stanza stessa.
         if !ui.isEditing {
             chromeController.showControlsAndScheduleAutoHide(isEditing: ui.isEditing)
-            if isCompactScreen, controlsClusterModeActive,
-               let image = imageCache.image,
-               let resolution = resolveRoomTap(at: tapLocation,
-                                               imageSize: image.size,
-                                               containerSize: containerSize),
-               let roomID = resolution.roomID,
-               let room = floorplan.linkedRooms.first(where: { $0.hmRoomUUID == roomID }) {
-                zoomToRoom(room, container: containerSize)
+            if isCompactScreen, controlsClusterModeActive, let image = imageCache.image {
+                // Con la rotazione attiva il tap va risolto nello spazio di
+                // visualizzazione: immagine e stanze già trasposte.
+                let isRotated = displayRotationActive(image: image, container: containerSize)
+                let displaySize = isRotated
+                    ? rotatedImageCache.rotated(for: image).size
+                    : image.size
+                let rooms = displayRooms(rotated: isRotated)
+                if let resolution = resolveRoomTap(at: tapLocation,
+                                                   imageSize: displaySize,
+                                                   containerSize: containerSize,
+                                                   rooms: rooms),
+                   let roomID = resolution.roomID {
+                    overlayVM?.zoomedRoomID = roomID
+                }
             }
             return
         }
@@ -912,9 +906,10 @@ struct FloorplanEditorView: View {
 
     private func resolveRoomTap(at tapLocation: CGPoint,
                                 imageSize: CGSize,
-                                containerSize: CGSize) -> FloorplanRoomTapResolution? {
+                                containerSize: CGSize,
+                                rooms: [LinkedRoom]? = nil) -> FloorplanRoomTapResolution? {
         FloorplanRoomTapResolver(
-            linkedRooms: floorplan.linkedRooms,
+            linkedRooms: rooms ?? floorplan.linkedRooms,
             imageSize: imageSize,
             containerSize: containerSize,
             effectiveScale: effectiveScale,
@@ -1005,13 +1000,36 @@ struct FloorplanEditorView: View {
         return vm.expandedRoomID == nil
     }
 
-    private func currentClusters() -> [FloorplanRoomCluster] {
+    private func currentClusters(rooms: [LinkedRoom]) -> [FloorplanRoomCluster] {
         FloorplanControlsClusterBuilder.clusters(floorplan: floorplan,
+                                                 rooms: rooms,
                                                  adapterMap: currentAdapterMap())
     }
 
+    // MARK: - Rotazione planimetria (v3-B, regola mobile 3)
+
+    /// Vero quando la planimetria si mostra ruotata di 90°: solo in
+    /// visualizzazione, solo compact, solo se la sproporzione supera 1.5× e
+    /// girarla aiuta. In modifica MAI: le scritture restano nell'orientamento
+    /// originale e non serve alcuna trasformazione inversa.
+    private func displayRotationActive(image: UIImage, container: CGSize) -> Bool {
+        !ui.isEditing && isCompactScreen
+            && FloorplanRotation.shouldRotate(imageSize: image.size, container: container)
+    }
+
+    /// Stanze nell'orientamento di visualizzazione corrente.
+    private func displayRooms(rotated: Bool) -> [LinkedRoom] {
+        rotated ? FloorplanRotation.rooms(floorplan.linkedRooms) : floorplan.linkedRooms
+    }
+
     private func imageWithMarkers(image: UIImage, container: CGSize) -> some View {
-        let rect = imageRect(imageSize: image.size, container: container)
+        // Rotazione (v3-B): da qui in giù lavora TUTTO su immagine e
+        // coordinate già trasposte — geometria, marker, tap, overlay.
+        let isRotated = displayRotationActive(image: image, container: container)
+        let displayImage = isRotated ? rotatedImageCache.rotated(for: image) : image
+        let rooms = displayRooms(rotated: isRotated)
+
+        let rect = imageRect(imageSize: displayImage.size, container: container)
         // In modifica vale ancora il vecchio riparo del portrait iPhone; fuori
         // dalla modifica ci pensa la vista a riassunto (cluster/badge + zoom
         // semantico) a non ammucchiare marker sullo schermo stretto.
@@ -1019,17 +1037,18 @@ struct FloorplanEditorView: View {
             ? !hidesMarkersInPortrait(container: container)
             : (overlayVM?.activeMode == .controls && !controlsClusterModeActive)
         return FloorplanCanvasView(
-            image: image,
+            image: displayImage,
             containerSize: container,
             chrome: chromeLayout(for: container),
             showOverlayLayer: overlayVM != nil && !ui.isEditing,
             showEditLayer: ui.isEditing && !floorplan.linkedRooms.isEmpty,
             showMarkers: showMarkers,
-            markerItems: showMarkers ? markerRenderItems() : [],
+            markerItems: showMarkers ? markerRenderItems(rotated: isRotated) : [],
             collisionOffsets: showMarkers ? markerCollisionOffsets(in: rect) : [:]
         ) { container, imageRect in
             if let vm = overlayVM, !ui.isEditing {
-                overlayLayer(vm: vm, container: container, imageRect: imageRect)
+                overlayLayer(vm: vm, container: container, imageRect: imageRect,
+                             rooms: rooms, isRotated: isRotated)
             } else {
                 EmptyView()
             }
@@ -1084,20 +1103,24 @@ struct FloorplanEditorView: View {
     }
 
     @ViewBuilder
-    private func overlayLayer(vm: FloorplanOverlayViewModel, container: CGSize, imageRect: CGRect) -> some View {
+    private func overlayLayer(vm: FloorplanOverlayViewModel,
+                              container: CGSize,
+                              imageRect: CGRect,
+                              rooms: [LinkedRoom],
+                              isRotated: Bool) -> some View {
         switch vm.activeMode {
         case .controls:
-            if !floorplan.linkedRooms.isEmpty, !floorplan.accessories.isEmpty {
+            if !rooms.isEmpty, !floorplan.accessories.isEmpty {
                 ControlsClusterOverlayView(
                     floorplan: floorplan,
                     overlayVM: vm,
                     containerSize: container,
                     imageRect: imageRect,
                     effectiveScale: effectiveScale,
-                    clusters: currentClusters(),
+                    clusters: currentClusters(rooms: rooms),
                     isCompact: isCompactScreen,
                     onZoomRoom: { cluster in
-                        zoomToRoom(cluster.room, container: container)
+                        vm.zoomedRoomID = cluster.room.hmRoomUUID
                     }
                 )
                 // Le card seguono la luminanza della PLANIMETRIA, non il tema
@@ -1115,7 +1138,8 @@ struct FloorplanEditorView: View {
                 imageRect: imageRect,
                 effectiveScale: effectiveScale,
                 effectiveOffset: effectiveOffset,
-                envVM: overlayEnvVM
+                envVM: overlayEnvVM,
+                displayRooms: isRotated ? rooms : nil
             )
         case .security:
             SecurityOverlayView(
@@ -1124,7 +1148,8 @@ struct FloorplanEditorView: View {
                 containerSize: container,
                 imageRect: imageRect,
                 effectiveScale: effectiveScale,
-                effectiveOffset: effectiveOffset
+                effectiveOffset: effectiveOffset,
+                displayRooms: isRotated ? rooms : nil
             )
         case .intelligence:
             IntelligenceOverlayView(
@@ -1133,7 +1158,8 @@ struct FloorplanEditorView: View {
                 containerSize: container,
                 imageRect: imageRect,
                 effectiveScale: effectiveScale,
-                effectiveOffset: effectiveOffset
+                effectiveOffset: effectiveOffset,
+                displayRooms: isRotated ? rooms : nil
             )
         }
     }
@@ -1195,8 +1221,8 @@ struct FloorplanEditorView: View {
         )
     }
 
-    private func markerRenderItems() -> [FloorplanMarkerRenderItem] {
-        let items = FloorplanMarkerRenderItemBuilder(
+    private func markerRenderItems(rotated: Bool = false) -> [FloorplanMarkerRenderItem] {
+        var items = FloorplanMarkerRenderItemBuilder(
             adaptersByUUID: currentAdapterMap(),
             isEditing: ui.isEditing,
             allowsCameraSnapshot: !ui.isEditing && overlayVM?.activeMode == .security,
@@ -1206,6 +1232,13 @@ struct FloorplanEditorView: View {
             duplicatedMarkerAccessoryIDs: duplicatedMarkerAccessoryIDs,
             linkedRooms: floorplan.linkedRooms
         ).makeItems(from: floorplan.accessories)
+        if rotated {
+            items = items.map { item in
+                var transposed = item
+                transposed.position = FloorplanRotation.point(item.position)
+                return transposed
+            }
+        }
         return filteredControlsItems(items)
     }
 
@@ -1254,19 +1287,30 @@ struct FloorplanEditorView: View {
 
     // MARK: - Zoom semantico (iPhone, fase 4)
 
-    /// Inquadra la stanza col viewport (molla 0.45s) e marca lo stato: da lì
-    /// si vedono solo i suoi marker, con etichette.
-    private func zoomToRoom(_ room: LinkedRoom, container: CGSize) {
+    /// Reazione al cambio di stanza zoomata (v3-B): la messa a fuoco del
+    /// viewport vive QUI, agganciata al cambio di stato, così qualunque
+    /// sorgente — badge sulla mappa, tap sulla stanza, riga del drawer —
+    /// deve solo scrivere `zoomedRoomID` e non ha bisogno del contenitore.
+    private func handleZoomedRoomChange(_ roomID: UUID?, container: CGSize) {
+        guard isCompactScreen else { return }
+        guard let roomID else {
+            if viewport.zoomScale > 1.01 { viewportController.reset() }
+            return
+        }
         guard let image = imageCache.image else { return }
-        let rect = imageRect(imageSize: image.size, container: container)
+        let isRotated = displayRotationActive(image: image, container: container)
+        let displaySize = isRotated
+            ? rotatedImageCache.rotated(for: image).size
+            : image.size
+        let rooms = displayRooms(rotated: isRotated)
+        guard let room = rooms.first(where: { $0.hmRoomUUID == roomID }) else { return }
+        let rect = imageRect(imageSize: displaySize, container: container)
         let roomRect = FloorplanCoordinateHelper(imageRect: rect)
             .screenRect(from: room.normalizedRect)
         viewportController.focus(on: roomRect, in: container)
-        overlayVM?.zoomedRoomID = room.hmRoomUUID
     }
 
     private func zoomOutToFullPlan() {
-        viewportController.reset()
         overlayVM?.zoomedRoomID = nil
     }
 

@@ -77,11 +77,19 @@ struct IntelligenceOverlayView: View {
         calloutTourSummaries.map(\.calloutKey).joined(separator: "|")
     }
 
+    /// Stanze nello spazio di visualizzazione: trasposte quando la planimetria
+    /// è ruotata (v3-B). La logica per-stanza usa nomi/UUID, che non cambiano;
+    /// SOLO `hasPlacedMarker` confronta geometria con le posizioni marker
+    /// originali e risale all'originale via UUID.
+    var displayRooms: [LinkedRoom]? = nil
+
+    private var geometryRooms: [LinkedRoom] { displayRooms ?? floorplan.linkedRooms }
+
     var body: some View {
         let h = helper
         ZStack(alignment: .topLeading) {
             Canvas { ctx, _ in
-                for room in floorplan.linkedRooms {
+                for room in geometryRooms {
                     let path = h.overlayPath(for: room)
                     let state = intelligenceState(for: room)
                     ctx.fill(path, with: .color(fillColor(for: state)))
@@ -92,15 +100,16 @@ struct IntelligenceOverlayView: View {
             .frame(width: containerSize.width, height: containerSize.height)
             .allowsHitTesting(false)
 
-            ForEach(floorplan.linkedRooms, id: \.hmRoomUUID) { room in
+            ForEach(geometryRooms, id: \.hmRoomUUID) { room in
                 let state = intelligenceState(for: room)
                 let center = h.centroid(for: room)
                 let inverseScale = 1.0 / effectiveScale
+                let roomScreenWidth = h.screenRect(from: room.normalizedRect).width * effectiveScale
 
                 Button {
                     overlayVM.selectRoom(room.hmRoomUUID)
                 } label: {
-                    intelligenceBadge(room: room, state: state)
+                    intelligenceBadge(room: room, state: state, roomScreenWidth: roomScreenWidth)
                         .scaleEffect(inverseScale)
                 }
                 .buttonStyle(.plain)
@@ -108,7 +117,7 @@ struct IntelligenceOverlayView: View {
             }
 
             if let summary = activeCalloutSummary,
-               let room = floorplan.linkedRooms.first(where: { $0.hmRoomUUID == summary.roomID }) {
+               let room = geometryRooms.first(where: { $0.hmRoomUUID == summary.roomID }) {
                 let center = h.centroid(for: room)
                 let inverseScale = 1.0 / effectiveScale
 
@@ -134,26 +143,44 @@ struct IntelligenceOverlayView: View {
 
     // MARK: Badge
 
-    private func intelligenceBadge(room: LinkedRoom, state: RoomIntelligenceState) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: badgeIcon(for: state))
-                .font(.caption.weight(.bold))
-            Text(badgeText(room: room, state: state))
-                .font(.caption2)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            Capsule()
-                .fill(badgeBackground(for: state))
-                .overlay(
-                    Capsule()
-                        .strokeBorder(borderColor(for: state).opacity(0.7), lineWidth: 1)
-                )
+    @ViewBuilder
+    private func intelligenceBadge(room: LinkedRoom,
+                                   state: RoomIntelligenceState,
+                                   roomScreenWidth: CGFloat) -> some View {
+        // Collasso v3: il badge situazione è già solo-valore ("✦N");
+        // per learning/needsSetup L2 è la sola icona, L3 il pallino.
+        let text = badgeText(room: room, state: state)
+        let level = FloorplanRoomBadgeCollapse.level(
+            roomScreenWidth: roomScreenWidth,
+            fullText: text,
+            valueText: ""
         )
-        .foregroundStyle(isReady(state) ? .white : Color.secondary)
-        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+
+        if level == .dot {
+            RoomBadgeDot(color: borderColor(for: state))
+        } else {
+            HStack(spacing: 4) {
+                Image(systemName: badgeIcon(for: state))
+                    .font(.caption.weight(.bold))
+                if level == .full {
+                    Text(text)
+                        .font(.caption2)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(badgeBackground(for: state))
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(borderColor(for: state).opacity(0.7), lineWidth: 1)
+                    )
+            )
+            .foregroundStyle(isReady(state) ? .white : Color.secondary)
+            .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+        }
     }
 
     private func intelligenceCallout(_ summary: FloorplanRoomSituationSummary) -> some View {
@@ -315,11 +342,16 @@ struct IntelligenceOverlayView: View {
     }
 
     private func hasPlacedMarker(in room: LinkedRoom) -> Bool {
-        floorplan.accessories.contains { accessory in
-            if accessory.linkedRoomUUID == room.hmRoomUUID {
+        // Il confronto geometrico avviene nello spazio ORIGINALE: le posizioni
+        // marker non sono trasposte, quindi con la planimetria ruotata si
+        // risale alla stanza originale via UUID.
+        let originalRoom = floorplan.linkedRooms
+            .first { $0.hmRoomUUID == room.hmRoomUUID } ?? room
+        return floorplan.accessories.contains { accessory in
+            if accessory.linkedRoomUUID == originalRoom.hmRoomUUID {
                 return true
             }
-            return FloorplanRoomMatcher.contains(accessory.position, in: room)
+            return FloorplanRoomMatcher.contains(accessory.position, in: originalRoom)
         }
     }
 
