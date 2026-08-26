@@ -801,7 +801,7 @@ struct FloorplanEditorView: View {
 
     /// Spazio verticale occupato dall'isola dei tab (pill due righe + margini).
     private static let compactIslandClearance: CGFloat = 72
-    private static let compactSheetPeekHeight: CGFloat = 92
+    private static let compactSheetPeekHeight: CGFloat = 108
     private static var compactSheetPeekDetent: PresentationDetent {
         .height(compactSheetPeekHeight)
     }
@@ -853,11 +853,13 @@ struct FloorplanEditorView: View {
                     .padding(.bottom, 18)
                 }
                 compactModeBar(vm: vm)
-                    .padding(.bottom, 8)
+                    .padding(.top, 6)
+                    .padding(.bottom, 12)
             } else {
                 Spacer(minLength: 0)
                 compactModeBar(vm: vm)
-                    .padding(.bottom, 6)
+                    .padding(.top, 6)
+                    .padding(.bottom, 12)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -889,7 +891,7 @@ struct FloorplanEditorView: View {
                           context: cachedOverlayContext,
                           status: statusStripState,
                           isCompact: true)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 20)
     }
 
     private func compactSheetHeader(vm: FloorplanOverlayViewModel) -> some View {

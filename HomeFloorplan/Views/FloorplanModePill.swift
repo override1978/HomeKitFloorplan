@@ -68,7 +68,9 @@ struct FloorplanModePill: View {
                         modeButton(mode, index: index)
                     }
                 }
-                .padding(isCompact ? 0 : 4)
+                // Un filo d'aria interna: i segmenti non toccano il bordo
+                // della capsula (feedback 26/08, "ossigeno").
+                .padding(isCompact ? 6 : 4)
                 .modifier(ModeBarSurface(usesGlass: usesGlass,
                                          isCompact: isCompact))
             }
@@ -299,14 +301,16 @@ private struct ModeBarSurface: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if isCompact {
-            // Dentro lo sheet la barra NON ha superficie propria, in nessuno
-            // dei due rami: lo sfondo lo dà già lo sheet, e la lastra grigia
-            // del materiale sopra il vetro era il "pillolone" (feedback
-            // 26/08). Il colore resta tutto sulle selezioni.
+            // Lo sheet ora è trasparente (.clear): l'isola È la superficie
+            // visibile, quindi la porta con sé in entrambi i rami — vetro
+            // .clear (sottile, non lastra) o materiale nel legacy. Il colore
+            // resta tutto sulle selezioni.
             if usesGlass, #available(iOS 26.0, *) {
                 content.glassEffect(.clear, in: Capsule())
             } else {
                 content
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
             }
         } else if usesGlass, #available(iOS 26.0, *) {
             content.glassEffect(.regular, in: Capsule())
