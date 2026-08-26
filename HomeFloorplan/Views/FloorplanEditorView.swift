@@ -939,6 +939,7 @@ struct FloorplanEditorView: View {
         guard !isCompactScreen, !ui.isEditing,
               let vm = overlayVM, vm.activeMode == .controls,
               vm.categoryFilter == nil, vm.expandedRoomID == nil,
+              !vm.areAllRoomsExpanded,
               !floorplan.linkedRooms.isEmpty, !floorplan.accessories.isEmpty
         else { return false }
         return true
@@ -1147,6 +1148,9 @@ struct FloorplanEditorView: View {
     private func filteredControlsItems(_ items: [FloorplanMarkerRenderItem]) -> [FloorplanMarkerRenderItem] {
         guard !isCompactScreen, !ui.isEditing,
               let vm = overlayVM, vm.activeMode == .controls else { return items }
+
+        // Vista esplosa: tutti i marker, regola etichette storica.
+        if vm.areAllRoomsExpanded { return items }
 
         if let filter = vm.categoryFilter {
             return items.filter { FloorplanControlsClusterBuilder.classify($0.adapter) == filter }

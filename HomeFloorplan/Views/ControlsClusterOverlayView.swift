@@ -32,7 +32,7 @@ struct ControlsClusterOverlayView: View {
         let inverseScale = 1.0 / effectiveScale
 
         ZStack(alignment: .topLeading) {
-            if overlayVM.categoryFilter == nil {
+            if overlayVM.categoryFilter == nil, !overlayVM.areAllRoomsExpanded {
                 if let expandedID = overlayVM.expandedRoomID {
                     expandedRoomLayer(expandedID: expandedID, inverseScale: inverseScale)
                 } else {

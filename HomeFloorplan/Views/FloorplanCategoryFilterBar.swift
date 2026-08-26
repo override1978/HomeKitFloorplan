@@ -30,13 +30,19 @@ struct FloorplanCategoryFilterBar: View {
         }
     }
 
+    /// Vero quando qualcosa è aperto (vista esplosa o singola stanza): il
+    /// toggle in coda diventa "Chiudi tutto".
+    private var isAnythingExpanded: Bool {
+        overlayVM.areAllRoomsExpanded || overlayVM.expandedRoomID != nil
+    }
+
     private var chipRow: some View {
         HStack(spacing: 8) {
             categoryChip(
                 label: String(localized: "floorplan.filter.all",
                               defaultValue: "All · \(totalCount)"),
                 dotColor: nil,
-                isSelected: overlayVM.categoryFilter == nil
+                isSelected: overlayVM.categoryFilter == nil && !overlayVM.areAllRoomsExpanded
             ) {
                 setFilter(nil)
             }
@@ -51,8 +57,47 @@ struct FloorplanCategoryFilterBar: View {
                     setFilter(overlayVM.categoryFilter == count.category ? nil : count.category)
                 }
             }
+
+            // Vista esplosa (richiesta utente 26/08): tutti i marker insieme,
+            // e un solo tap per richiudere tutto — inclusa la singola stanza.
+            expandAllChip
         }
         .padding(.vertical, 4)
+    }
+
+    private var expandAllChip: some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                if isAnythingExpanded {
+                    overlayVM.collapseAllRooms()
+                } else {
+                    overlayVM.expandAllRooms()
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isAnythingExpanded
+                      ? "arrow.down.right.and.arrow.up.left"
+                      : "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(isAnythingExpanded
+                     ? String(localized: "floorplan.filter.collapseAll",
+                              defaultValue: "Close all")
+                     : String(localized: "floorplan.filter.expandAll",
+                              defaultValue: "Expand all"))
+                    .font(.caption.weight(.medium))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .foregroundStyle(overlayVM.areAllRoomsExpanded
+                             ? FloorplanTokens.Surface.filterChipActiveText
+                             : Color.primary.opacity(0.7))
+            .modifier(CategoryChipSurface(isSelected: overlayVM.areAllRoomsExpanded))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.25, dampingFraction: 0.8),
+                   value: overlayVM.areAllRoomsExpanded)
     }
 
     private func setFilter(_ category: AccessoryCategory?) {

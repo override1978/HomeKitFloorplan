@@ -27,6 +27,7 @@ final class FloorplanOverlayViewModel {
             selectedSensorFilter = nil
             expandedRoomID = nil
             categoryFilter = nil
+            areAllRoomsExpanded = false
             panelContent = .dashboard
         }
     }
@@ -53,9 +54,12 @@ final class FloorplanOverlayViewModel {
     /// marker si mostrano con etichetta, le altre stanze restano a cluster.
     var expandedRoomID: UUID? {
         didSet {
-            // Espandere una stanza esce dal filtro categoria: le due viste
-            // sono alternative per design.
-            if expandedRoomID != nil { categoryFilter = nil }
+            // Espandere una stanza esce dal filtro categoria e dalla vista
+            // esplosa: le tre viste sono alternative per design.
+            if expandedRoomID != nil {
+                categoryFilter = nil
+                areAllRoomsExpanded = false
+            }
         }
     }
 
@@ -64,7 +68,32 @@ final class FloorplanOverlayViewModel {
     /// su tutto il piano, e i cluster spariscono.
     var categoryFilter: AccessoryCategory? {
         didSet {
-            if categoryFilter != nil { expandedRoomID = nil }
+            if categoryFilter != nil {
+                expandedRoomID = nil
+                areAllRoomsExpanded = false
+            }
+        }
+    }
+
+    /// Vista "esplosa" (richiesta utente 26/08): tutti i marker di tutte le
+    /// stanze visibili insieme, con la regola etichette storica — in pratica
+    /// la vista classica pre-redesign, raggiungibile e richiudibile con un tap.
+    var areAllRoomsExpanded: Bool = false
+
+    /// Espande tutte le stanze insieme (vista esplosa).
+    func expandAllRooms() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            areAllRoomsExpanded = true
+            expandedRoomID = nil
+            categoryFilter = nil
+        }
+    }
+
+    /// Richiude tutto: vista esplosa E singola stanza espansa.
+    func collapseAllRooms() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            areAllRoomsExpanded = false
+            expandedRoomID = nil
         }
     }
 
