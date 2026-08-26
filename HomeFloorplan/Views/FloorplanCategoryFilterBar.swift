@@ -58,14 +58,19 @@ struct FloorplanCategoryFilterBar: View {
                 }
             }
 
-            // Vista esplosa (richiesta utente 26/08): tutti i marker insieme,
-            // e un solo tap per richiudere tutto — inclusa la singola stanza.
-            expandAllChip
+            // Il toggle della vista esplosa NON è un filtro: sta oltre un
+            // divisorio, solo icona, così non si legge come doppione della
+            // chip "Tutti" (feedback utente 26/08).
+            Divider().frame(height: 18)
+
+            expandAllToggle
         }
         .padding(.vertical, 4)
     }
 
-    private var expandAllChip: some View {
+    /// Vista esplosa (richiesta utente 26/08): tutti i marker insieme, e un
+    /// solo tap per richiudere tutto — inclusa la singola stanza espansa.
+    private var expandAllToggle: some View {
         Button {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 if isAnythingExpanded {
@@ -75,27 +80,21 @@ struct FloorplanCategoryFilterBar: View {
                 }
             }
         } label: {
-            HStack(spacing: 5) {
-                Image(systemName: isAnythingExpanded
-                      ? "arrow.down.right.and.arrow.up.left"
-                      : "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(isAnythingExpanded
-                     ? String(localized: "floorplan.filter.collapseAll",
-                              defaultValue: "Close all")
-                     : String(localized: "floorplan.filter.expandAll",
-                              defaultValue: "Expand all"))
-                    .font(.caption.weight(.medium))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .foregroundStyle(overlayVM.areAllRoomsExpanded
-                             ? FloorplanTokens.Surface.filterChipActiveText
-                             : Color.primary.opacity(0.7))
-            .modifier(CategoryChipSurface(isSelected: overlayVM.areAllRoomsExpanded))
-            .contentShape(Capsule())
+            Image(systemName: isAnythingExpanded
+                  ? "arrow.down.right.and.arrow.up.left"
+                  : "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(overlayVM.areAllRoomsExpanded
+                                 ? FloorplanTokens.Surface.filterChipActiveText
+                                 : Color.primary.opacity(0.7))
+                .frame(width: 30, height: 30)
+                .modifier(CategoryChipSurface(isSelected: overlayVM.areAllRoomsExpanded))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isAnythingExpanded
+            ? String(localized: "floorplan.filter.collapseAll", defaultValue: "Close all rooms")
+            : String(localized: "floorplan.filter.expandAll", defaultValue: "Show all devices"))
         .animation(.spring(response: 0.25, dampingFraction: 0.8),
                    value: overlayVM.areAllRoomsExpanded)
     }
