@@ -805,7 +805,7 @@ struct FloorplanEditorView: View {
 
     /// Spazio verticale occupato dall'isola dei tab (pill due righe + margini).
     private static let compactIslandClearance: CGFloat = 72
-    private static let compactSheetPeekHeight: CGFloat = 92
+    private static let compactSheetPeekHeight: CGFloat = 98
     private static var compactSheetPeekDetent: PresentationDetent {
         .height(compactSheetPeekHeight)
     }
@@ -857,12 +857,14 @@ struct FloorplanEditorView: View {
                     .padding(.bottom, 18)
                 }
                 compactModeBar(vm: vm)
-                    .padding(.top, 6)
+                    .padding(.top, 12)
                     .padding(.bottom, 10)
             } else {
                 Spacer(minLength: 0)
                 compactModeBar(vm: vm)
-                    .padding(.top, 6)
+                    // La maniglia dello sheet ha bisogno della sua corsia:
+                    // a 6pt finiva addosso alle capsule di selezione.
+                    .padding(.top, 12)
                     .padding(.bottom, 10)
             }
         }
