@@ -76,10 +76,12 @@ struct ControlsClusterOverlayView: View {
                 .lineLimit(1)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
-                .background(
-                    Capsule()
-                        .fill(FloorplanTokens.Surface.card)
-                        .shadow(color: .black.opacity(0.10), radius: 5, y: 1)
+                // Vetro quando attivo, card piena altrimenti — mai dentro un
+                // GlassEffectContainer: questi badge usano .position().
+                .glassChromeSurface(
+                    in: Capsule(),
+                    legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
+                    legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 5, y: 1)
                 )
                 .contentShape(Capsule())
             }
@@ -169,10 +171,11 @@ struct ExpandedRoomCollapsePill: View {
             .foregroundStyle(FloorplanTokens.Surface.filterChipActiveText)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(
-                Capsule()
-                    .fill(FloorplanTokens.Surface.filterChipActive)
-                    .shadow(color: .black.opacity(0.18), radius: 5, y: 1)
+            .glassChromeSurface(
+                in: Capsule(),
+                tint: FloorplanTokens.Surface.filterChipActive.opacity(0.75),
+                legacyFill: AnyShapeStyle(FloorplanTokens.Surface.filterChipActive),
+                legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 5, y: 1)
             )
             .contentShape(Capsule())
         }
@@ -225,10 +228,12 @@ private struct ClusterCard: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(FloorplanTokens.Surface.card)
-                .shadow(color: .black.opacity(0.10), radius: 8, y: 2)
+        // Vetro quando attivo, card piena altrimenti — mai dentro un
+        // GlassEffectContainer: le card usano .position().
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+            legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
+            legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 8, y: 2)
         )
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)

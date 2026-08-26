@@ -59,17 +59,19 @@ struct FloorplanModePill: View {
     var body: some View {
         // Collapse when only one mode is available.
         if modes.count > 1 {
-            // ⛔️ NIENTE `GlassEffectContainer` attorno a questa barra — il
-            // container riposiziona i figli per fondere le forme e qui ha già
-            // prodotto oscillazioni e il warning `glassEffect() tried to
-            // update multiple times per frame`. Storia completa nel log.
-            HStack(spacing: 4) {
-                ForEach(Array(modes.enumerated()), id: \.element.id) { index, mode in
-                    modeButton(mode, index: index)
+            // Stesso principio della chrome alta: un container coordina le
+            // superfici vetro, ma i frame per il drag restano fuori dallo stato
+            // osservabile per evitare update multipli per frame.
+            LiquidGlassContainer(spacing: isCompact ? 16 : 36) {
+                HStack(spacing: isCompact ? 4 : 4) {
+                    ForEach(Array(modes.enumerated()), id: \.element.id) { index, mode in
+                        modeButton(mode, index: index)
+                    }
                 }
+                .padding(isCompact ? 4 : 4)
+                .modifier(ModeBarSurface(usesGlass: usesGlass,
+                                         tint: isCompact ? overlayVM.activeMode.accentColor : nil))
             }
-            .padding(4)
-            .modifier(ModeBarSurface(usesGlass: usesGlass))
             .coordinateSpace(name: Self.barSpace)
             // Scorrere il dito lungo la barra trascina la selezione. La
             // soglia lascia passare i tap ai bottoni: sotto gli 8 punti è
@@ -108,16 +110,28 @@ struct FloorplanModePill: View {
                 overlayVM.activeMode = mode
             }
         } label: {
-            VStack(spacing: 2) {
-                HStack(spacing: 5) {
-                    ModeDot(color: mode.accentColor,
-                            pulses: status?.pulses(for: mode) == true && !isActive)
-                    Text(mode.label)
-                        .font(.system(size: isCompact ? 11.5 : 14, weight: .semibold))
-                        .lineLimit(1)
-                        // "Intelligenza" non deve mai diventare "Intelligen…":
-                        // meglio un filo più piccola che tagliata.
-                        .minimumScaleFactor(0.8)
+            VStack(spacing: isCompact ? 3 : 2) {
+                VStack(spacing: isCompact ? 4 : 2) {
+                    if isCompact {
+                        Image(systemName: mode.pillIcon)
+                            .font(.system(size: 19, weight: .semibold))
+                            .symbolRenderingMode(.hierarchical)
+                        Text(mode.compactTabLabel)
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                    } else {
+                        HStack(spacing: 5) {
+                            ModeDot(color: mode.accentColor,
+                                    pulses: status?.pulses(for: mode) == true && !isActive)
+                            Text(mode.label)
+                                .font(.system(size: 14, weight: .semibold))
+                                .lineLimit(1)
+                                // "Intelligenza" non deve mai diventare "Intelligen…":
+                                // meglio un filo più piccola che tagliata.
+                                .minimumScaleFactor(0.8)
+                        }
+                    }
                 }
                 .foregroundStyle(isActive
                                  ? mode.activeForegroundColor
@@ -125,8 +139,9 @@ struct FloorplanModePill: View {
 
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: isCompact ? 9.5 : 11, weight: .medium))
+                        .font(.system(size: isCompact ? 10.5 : 11, weight: .medium))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                         .foregroundStyle(subtitleColor(isActive: isActive,
                                                        mode: mode,
                                                        alarmColor: alarmColor))
@@ -134,8 +149,8 @@ struct FloorplanModePill: View {
             }
             .fixedSize(horizontal: !isCompact, vertical: false)
             .padding(.horizontal, isCompact ? 6 : 13)
-            .padding(.vertical, 6)
-            .frame(minWidth: 44)
+            .padding(.vertical, isCompact ? 8 : 6)
+            .frame(minWidth: isCompact ? 70 : 44)
             .frame(maxWidth: isCompact ? .infinity : nil)
             .contentShape(Rectangle())
             // VoiceOver (v3): "Etichetta, stato, scheda N di 4".
@@ -151,6 +166,7 @@ struct FloorplanModePill: View {
             usesGlass: usesGlass,
             fill: mode.activeBackgroundColor,
             tint: mode.accentColor,
+            isCompact: isCompact,
             // Il bordo d'allarme veste il colore DEL TAB (rosa Sicurezza,
             // viola Intelligenza — feedback 26/08): l'urgenza la dice già il
             // sottotitolo col suo semantico; il bordo dice solo "guarda qui".
@@ -179,6 +195,21 @@ struct FloorplanModePill: View {
         parts.append(String(localized: "floorplan.tab.position",
                             defaultValue: "tab \(index + 1) of \(modes.count)"))
         return parts.joined(separator: ", ")
+    }
+}
+
+private extension FloorplanOverlayMode {
+    var compactTabLabel: String {
+        switch self {
+        case .controls:
+            return String(localized: "overlay.mode.controls.compact", defaultValue: "Ctrl")
+        case .environment:
+            return String(localized: "overlay.mode.environment.compact", defaultValue: "Amb.")
+        case .security:
+            return String(localized: "overlay.mode.security.compact", defaultValue: "Sic.")
+        case .intelligence:
+            return String(localized: "overlay.mode.intelligence.compact", defaultValue: "AI")
+        }
     }
 }
 
@@ -232,6 +263,7 @@ private struct ModeSelectionHighlight: ViewModifier {
     let fill: Color
     /// Tinta per il ramo vetro.
     let tint: Color
+    let isCompact: Bool
     /// Bordo 1.5pt della tab non selezionata in allarme; nil = quieta.
     let alarmBorder: Color?
 
@@ -240,7 +272,7 @@ private struct ModeSelectionHighlight: ViewModifier {
         if isActive {
             if usesGlass, #available(iOS 26.0, *) {
                 content
-                    .glassEffect(.regular.tint(tint.opacity(0.28)).interactive(), in: Capsule())
+                    .glassEffect(.regular.tint(tint.opacity(isCompact ? 0.34 : 0.28)).interactive(), in: Capsule())
             } else {
                 content.background(Capsule().fill(fill))
             }
@@ -264,11 +296,12 @@ private struct ModeSelectionHighlight: ViewModifier {
 /// costa un po' di trasparenza, ma l'alternativa è testo invisibile.
 private struct ModeBarSurface: ViewModifier {
     let usesGlass: Bool
+    var tint: Color?
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if usesGlass, #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: Capsule())
+            content.glassEffect(tint.map { .regular.tint($0.opacity(0.08)) } ?? .regular, in: Capsule())
         } else {
             content
                 .background(.regularMaterial, in: Capsule())

@@ -61,6 +61,7 @@ struct FloorplanEditorView: View {
 
     /// Overlay layer view model — scoped to this editor instance, keyed to the floorplan UUID.
     @State private var overlayVM: FloorplanOverlayViewModel?
+    @State private var compactSheetDetent: PresentationDetent = .height(112)
     /// Shared environment view model used by both the overlay layer and the context panel.
     @State private var overlayEnvVM = EnvironmentViewModel()
 
@@ -129,6 +130,10 @@ struct FloorplanEditorView: View {
     /// finiva in mezzo all'isola dei tab (feedback 26/08) e lì non deve stare.
     @AppStorage("floorplan.compactEditorVisible")
     private var compactEditorVisible = false
+
+    /// Per lo sfondo dello sheet compatto: vetro di sistema o materiale legacy.
+    @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
+    private var isLiquidGlassEnabled = false
 
     private func marker(withID markerID: UUID) -> PlacedAccessory? {
         floorplan.accessories.first { $0.id == markerID }
@@ -302,15 +307,6 @@ struct FloorplanEditorView: View {
                     .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
                     .environment(\.colorScheme, chromeColorScheme)
 
-                // iPhone stile Dov'è: pannello a trascinamento dal basso e
-                // isola dei tab che gli flotta sopra. Spariscono con una
-                // stanza zoomata (lì solo planimetria + indietro) e in editing.
-                compactBottomPane(container: proxy.size)
-                    .environment(\.colorScheme, chromeColorScheme)
-
-                compactTabIsland
-                    .environment(\.colorScheme, chromeColorScheme)
-
                 // Azione bulk del filtro categoria (novità C): capsule scura
                 // in basso al centro, solo con filtro attivo e dispositivi accesi.
                 bulkOffButton
@@ -374,6 +370,12 @@ struct FloorplanEditorView: View {
         // attraverso il subtree scalato dallo zoom e riempie la console di
         // "Conversion error!" a ogni fotogramma dell'animazione.
         .ignoresSafeArea(.keyboard)
+        .sheet(isPresented: compactFindMySheetBinding) {
+            if let vm = overlayVM {
+                compactFindMySheet(vm: vm)
+                    .environment(\.colorScheme, chromeColorScheme)
+            }
+        }
     }
 
     private var observedCanvas: some View {
@@ -767,7 +769,11 @@ struct FloorplanEditorView: View {
                             .foregroundStyle(FloorplanTokens.Surface.filterChipActiveText)
                             .padding(.horizontal, 18)
                             .padding(.vertical, 11)
-                            .background(FloorplanTokens.Surface.filterChipActive, in: Capsule())
+                            .glassChromeSurface(
+                                in: Capsule(),
+                                tint: FloorplanTokens.Surface.filterChipActive.opacity(0.75),
+                                legacyFill: AnyShapeStyle(FloorplanTokens.Surface.filterChipActive)
+                            )
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -799,6 +805,10 @@ struct FloorplanEditorView: View {
 
     /// Spazio verticale occupato dall'isola dei tab (pill due righe + margini).
     private static let compactIslandClearance: CGFloat = 72
+    private static let compactSheetPeekHeight: CGFloat = 112
+    private static var compactSheetPeekDetent: PresentationDetent {
+        .height(compactSheetPeekHeight)
+    }
 
     private var showsCompactPaneAndIsland: Bool {
         isCompactScreen && !ui.isEditing
@@ -806,37 +816,34 @@ struct FloorplanEditorView: View {
             && overlayVM?.zoomedRoomID == nil
     }
 
-    @ViewBuilder
-    private func compactBottomPane(container: CGSize) -> some View {
-        if showsCompactPaneAndIsland, let vm = overlayVM {
-            // I dati del contenuto si calcolano QUI, una volta per passata
-            // dell'editor — non dentro la closure del pannello, che viene
-            // rivalutata a OGNI fotogramma del drag: ricalcolare cluster e
-            // conteggi per frame era la fluidità "Minecraft" (feedback 26/08).
-            let adapterMap = currentAdapterMap()
-            let clusters = currentClusters(rooms: floorplan.linkedRooms)
-            let categoryCounts = FloorplanControlsClusterBuilder.floorCategoryCounts(
-                floorplan: floorplan,
-                adapterMap: adapterMap
-            )
-            let sensorTypes = overlayEnvVM.availableSensorTypes
+    private var compactFindMySheetBinding: Binding<Bool> {
+        Binding(
+            get: { showsCompactPaneAndIsland },
+            set: { isPresented in
+                if !isPresented, showsCompactPaneAndIsland {
+                    compactSheetDetent = Self.compactSheetPeekDetent
+                    overlayVM?.dismissPanel()
+                }
+            }
+        )
+    }
 
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                FloorplanBottomPane(
-                    isExpanded: Binding(
-                        get: { vm.isPanelVisible },
-                        set: { expanded in
-                            vm.isPanelVisible = expanded
-                            if !expanded { vm.highlightedRoomID = nil }
-                        }
-                    ),
-                    container: container,
-                    islandClearance: Self.compactIslandClearance,
-                    background: floorplanBackgroundColor,
-                    title: vm.activeMode == .controls ? floorplan.name : vm.activeMode.label,
-                    accent: vm.activeMode.accentColor
-                ) {
+    @ViewBuilder
+    private func compactFindMySheet(vm: FloorplanOverlayViewModel) -> some View {
+        let adapterMap = currentAdapterMap()
+        let clusters = currentClusters(rooms: floorplan.linkedRooms)
+        let categoryCounts = FloorplanControlsClusterBuilder.floorCategoryCounts(
+            floorplan: floorplan,
+            adapterMap: adapterMap
+        )
+        let sensorTypes = overlayEnvVM.availableSensorTypes
+        let isExpanded = compactSheetDetent != Self.compactSheetPeekDetent
+
+        VStack(spacing: 0) {
+            if isExpanded {
+                compactSheetHeader(vm: vm)
+
+                ScrollView {
                     FloorplanCompactPaneContent(
                         overlayVM: vm,
                         floorplan: floorplan,
@@ -846,27 +853,86 @@ struct FloorplanEditorView: View {
                         categoryCounts: categoryCounts,
                         environmentSensorTypes: sensorTypes
                     )
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 18)
                 }
+            } else {
+                Spacer(minLength: 0)
             }
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .zIndex(50)
+
+            FloorplanModePill(overlayVM: vm,
+                              context: cachedOverlayContext,
+                              status: statusStripState,
+                              isCompact: true)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 8)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .presentationDetents([Self.compactSheetPeekDetent, .medium, .large],
+                             selection: $compactSheetDetent)
+        .presentationDragIndicator(.visible)
+        // Col vetro attivo NIENTE override dello sfondo: il default degli
+        // sheet su iOS 26 È Liquid Glass, e sovrascriverlo con un materiale
+        // era ciò che lo spegneva. Il materiale resta per il ramo legacy.
+        .modifier(CompactSheetBackground(usesGlass: isLiquidGlassEnabled))
+        .presentationBackgroundInteraction(.enabled)
+        .interactiveDismissDisabled(true)
+        .onAppear {
+            compactSheetDetent = vm.isPanelVisible ? .medium : Self.compactSheetPeekDetent
+        }
+        .onChange(of: compactSheetDetent) { _, newDetent in
+            let shouldBeVisible = newDetent != Self.compactSheetPeekDetent
+            if vm.isPanelVisible != shouldBeVisible {
+                vm.isPanelVisible = shouldBeVisible
+            }
+        }
+        .onChange(of: vm.isPanelVisible) { _, isVisible in
+            let target = isVisible ? PresentationDetent.medium : Self.compactSheetPeekDetent
+            if compactSheetDetent != target {
+                compactSheetDetent = target
+            }
         }
     }
 
-    @ViewBuilder
-    private var compactTabIsland: some View {
-        if showsCompactPaneAndIsland, let vm = overlayVM {
-            VStack {
-                Spacer()
-                FloorplanModePill(overlayVM: vm,
-                                  context: cachedOverlayContext,
-                                  status: statusStripState,
-                                  isCompact: true)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 6)
+    private func compactSheetHeader(vm: FloorplanOverlayViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: vm.activeMode.pillIcon)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(vm.activeMode.accentColor)
+                    .frame(width: 24, height: 24)
+
+                Text(vm.activeMode == .controls ? floorplan.name : vm.activeMode.label)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                Spacer(minLength: 0)
             }
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .zIndex(60)
+
+            Capsule()
+                .fill(vm.activeMode.accentColor.opacity(0.55))
+                .frame(width: 52, height: 4)
+                .padding(.leading, 34)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 22)
+        .padding(.bottom, 16)
+    }
+
+    /// Sfondo dello sheet compatto: default di sistema (Liquid Glass su
+    /// iOS 26) quando il vetro è attivo, materiale nel ramo legacy.
+    private struct CompactSheetBackground: ViewModifier {
+        let usesGlass: Bool
+
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            if usesGlass, #available(iOS 26.0, *) {
+                content
+            } else {
+                content.presentationBackground(.regularMaterial)
+            }
         }
     }
 
@@ -1394,10 +1460,11 @@ struct FloorplanEditorView: View {
                         .foregroundStyle(FloorplanTokens.Surface.filterChipActiveText)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(FloorplanTokens.Surface.filterChipActive)
-                                .shadow(color: .black.opacity(0.18), radius: 5, y: 1)
+                        .glassChromeSurface(
+                            in: Capsule(),
+                            tint: FloorplanTokens.Surface.filterChipActive.opacity(0.75),
+                            legacyFill: AnyShapeStyle(FloorplanTokens.Surface.filterChipActive),
+                            legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 5, y: 1)
                         )
                         .contentShape(Capsule())
                     }
