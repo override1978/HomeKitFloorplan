@@ -369,6 +369,11 @@ struct FloorplanEditorView: View {
                 handleZoomedRoomChange(newID, container: proxy.size)
             }
         }
+        // La planimetria non si sposta MAI per la tastiera. Senza questo, il
+        // keyboard-avoidance di SwiftUI prova a convertire il rect tastiera
+        // attraverso il subtree scalato dallo zoom e riempie la console di
+        // "Conversion error!" a ogni fotogramma dell'animazione.
+        .ignoresSafeArea(.keyboard)
     }
 
     private var observedCanvas: some View {
