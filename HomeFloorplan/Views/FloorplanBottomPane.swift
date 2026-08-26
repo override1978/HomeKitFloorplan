@@ -26,31 +26,40 @@ struct FloorplanBottomPane<Content: View>: View {
     let accent: Color
     @ViewBuilder let content: () -> Content
 
-    @GestureState private var dragTranslation: CGFloat = 0
+    /// Traslazione live del drag. @State esplicito (non @GestureState): al
+    /// rilascio l'azzeramento avviene DENTRO la stessa withAnimation dello
+    /// snap, così non c'è il saltello dell'auto-reset a metà corsa che
+    /// lasciava il pannello "un po' aperto".
+    @State private var dragTranslation: CGFloat = 0
 
     private var peekHeight: CGFloat { islandClearance + 48 }
     private var expandedHeight: CGFloat {
         min(max(container.height * 0.52, 320), container.height - 120)
     }
-    private var baseHeight: CGFloat { isExpanded ? expandedHeight : peekHeight }
+    /// Offset del pannello da chiuso (il frame è FISSO a expandedHeight e si
+    /// muove solo l'offset: niente re-layout del contenuto a ogni fotogramma,
+    /// che era ciò che rendeva il drag legnoso).
+    private var collapsedOffset: CGFloat { expandedHeight - peekHeight }
+    private var baseOffset: CGFloat { isExpanded ? 0 : collapsedOffset }
 
-    /// Altezza viva durante il drag, con effetto gomma oltre i limiti.
-    private var liveHeight: CGFloat {
-        let proposed = baseHeight - dragTranslation
-        if proposed > expandedHeight {
-            return expandedHeight + (proposed - expandedHeight) * 0.2
-        }
-        if proposed < peekHeight {
-            return peekHeight + (proposed - peekHeight) * 0.2
+    /// Offset vivo, con gomma oltre i limiti.
+    private var liveOffset: CGFloat {
+        let proposed = baseOffset + dragTranslation
+        if proposed < 0 { return proposed * 0.2 }
+        if proposed > collapsedOffset {
+            return collapsedOffset + (proposed - collapsedOffset) * 0.2
         }
         return proposed
     }
 
     /// Il contenuto entra in dissolvenza man mano che il pannello sale.
     private var contentOpacity: CGFloat {
-        let range = expandedHeight - peekHeight
-        guard range > 0 else { return 1 }
-        return min(max((liveHeight - peekHeight) / (range * 0.6), 0), 1)
+        guard collapsedOffset > 0 else { return 1 }
+        return min(max(1 - liveOffset / (collapsedOffset * 0.6), 0), 1)
+    }
+
+    private var snapAnimation: Animation {
+        .spring(response: 0.4, dampingFraction: 0.85)
     }
 
     var body: some View {
@@ -66,7 +75,7 @@ struct FloorplanBottomPane<Content: View>: View {
             .opacity(contentOpacity)
             .allowsHitTesting(isExpanded)
         }
-        .frame(height: liveHeight, alignment: .top)
+        .frame(height: expandedHeight, alignment: .top)
         .frame(maxWidth: .infinity)
         .background(
             UnevenRoundedRectangle(topLeadingRadius: 22,
@@ -78,10 +87,34 @@ struct FloorplanBottomPane<Content: View>: View {
                 .shadow(color: .black.opacity(0.16), radius: 12, y: -4)
                 .ignoresSafeArea(edges: .bottom)
         )
-        .animation(.spring(response: 0.38, dampingFraction: 0.86), value: isExpanded)
+        .offset(y: liveOffset)
+        // Da chiuso TUTTO il pannello visibile è maniglia: si trascina e si
+        // tocca ovunque, come in Dov'è. Da esteso il drag resta sulla sola
+        // testata, perché il contenuto deve poter scorrere.
+        .gesture(isExpanded ? nil : paneDrag)
+        .onTapGesture {
+            if !isExpanded {
+                withAnimation(snapAnimation) { isExpanded = true }
+            }
+        }
+        .animation(nil, value: dragTranslation)
     }
 
-    /// Pillola + titolo: l'unica zona che possiede il drag. Il tap alterna.
+    private var paneDrag: some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                dragTranslation = value.translation.height
+            }
+            .onEnded { value in
+                let predicted = baseOffset + value.predictedEndTranslation.height
+                withAnimation(snapAnimation) {
+                    isExpanded = predicted < collapsedOffset / 2
+                    dragTranslation = 0
+                }
+            }
+    }
+
+    /// Pillola + titolo: possiede il drag anche da esteso. Il tap alterna.
     private var grabHeader: some View {
         VStack(spacing: 6) {
             Capsule()
@@ -108,18 +141,9 @@ struct FloorplanBottomPane<Content: View>: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            isExpanded.toggle()
+            withAnimation(snapAnimation) { isExpanded.toggle() }
         }
-        .gesture(
-            DragGesture(minimumDistance: 4)
-                .updating($dragTranslation) { value, state, _ in
-                    state = value.translation.height
-                }
-                .onEnded { value in
-                    let predicted = baseHeight - value.predictedEndTranslation.height
-                    isExpanded = predicted > (peekHeight + expandedHeight) / 2
-                }
-        )
+        .gesture(paneDrag)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
         .accessibilityValue(isExpanded

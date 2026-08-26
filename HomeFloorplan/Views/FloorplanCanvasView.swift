@@ -52,7 +52,8 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         let rect = FloorplanCanvasGeometry.imageRect(
             imageSize: image.size,
             container: containerSize,
-            topInset: chrome.topInset
+            topInset: chrome.topInset,
+            bottomInset: chrome.bottomInset
         )
 
         ZStack(alignment: .topLeading) {
@@ -120,6 +121,10 @@ struct FloorplanChromeLayout: Equatable {
     /// la barra rispetto al margine base tarato su quelle a riga singola.
     var hasTwoRowTabBar = false
 
+    /// Pannello Dov'è + isola in basso (iPhone): la planimetria deve stare
+    /// SOPRA il peek del pannello, non finirci sotto (feedback 26/08).
+    var hasBottomPane = false
+
     /// Layout dell'app com'è oggi: solo top bar + superfici per-modo già
     /// coperte dal margine base.
     static let legacy = FloorplanChromeLayout()
@@ -136,12 +141,19 @@ struct FloorplanChromeLayout: Equatable {
     /// e sotto di lei scorre la fila per-modo (chips, banner).
     static let twoRowTabBarExtraHeight: CGFloat = 32
 
+    /// Spazio riservato in basso a peek del pannello + isola (iPhone).
+    static let bottomPaneInset: CGFloat = 132
+
     var topInset: CGFloat {
         var inset = FloorplanCanvasGeometry.chromeTopInset
         if hasUnifiedStatusStrip { inset += Self.statusStripHeight }
         if hasCompactModeRow { inset += Self.compactModeRowHeight }
         if hasTwoRowTabBar { inset += Self.twoRowTabBarExtraHeight }
         return inset
+    }
+
+    var bottomInset: CGFloat {
+        hasBottomPane ? Self.bottomPaneInset : 0
     }
 }
 
@@ -179,9 +191,10 @@ enum FloorplanCanvasGeometry {
     /// pura, che è come i test la verificano.
     static func imageRect(imageSize: CGSize,
                           container: CGSize,
-                          topInset: CGFloat = chromeTopInset) -> CGRect {
+                          topInset: CGFloat = chromeTopInset,
+                          bottomInset: CGFloat = 0) -> CGRect {
         let available = CGSize(width: container.width,
-                               height: max(container.height - topInset, 1))
+                               height: max(container.height - topInset - bottomInset, 1))
         let imageAspect = imageSize.width / imageSize.height
         let containerAspect = available.width / available.height
         var size = available

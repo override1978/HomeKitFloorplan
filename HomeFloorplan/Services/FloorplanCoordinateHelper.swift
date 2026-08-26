@@ -113,10 +113,11 @@ struct FloorplanRoomTapResolver {
     let containerSize: CGSize
     let effectiveScale: CGFloat
     let effectiveOffset: CGSize
-    /// Deve combaciare col margine usato dal renderer, o i tap "scivolano"
-    /// verticalmente rispetto al disegno: il chiamante passa
-    /// `chromeLayout.topInset`, lo stesso valore che dà al canvas.
+    /// Devono combaciare coi margini usati dal renderer, o i tap "scivolano"
+    /// verticalmente rispetto al disegno: il chiamante passa gli stessi
+    /// valori di `chromeLayout` che dà al canvas.
     var topInset: CGFloat = FloorplanCanvasGeometry.chromeTopInset
+    var bottomInset: CGFloat = 0
 
     func resolve(tapLocation: CGPoint) -> FloorplanRoomTapResolution? {
         let centerX = containerSize.width / 2
@@ -127,7 +128,8 @@ struct FloorplanRoomTapResolver {
         let imageRect = FloorplanCanvasGeometry.imageRect(
             imageSize: imageSize,
             container: containerSize,
-            topInset: topInset
+            topInset: topInset,
+            bottomInset: bottomInset
         )
         let normX = (adjustedX - imageRect.origin.x) / imageRect.width
         let normY = (adjustedY - imageRect.origin.y) / imageRect.height

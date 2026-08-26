@@ -125,6 +125,11 @@ struct FloorplanEditorView: View {
     /// degli altri cache (appear, HomeKit pronto, accessori, reachability).
     @State private var cachedHealthScore: Int?
 
+    /// Segnala a ContentView che l'editor è aperto su iPhone: il FAB Home AI
+    /// finiva in mezzo all'isola dei tab (feedback 26/08) e lì non deve stare.
+    @AppStorage("floorplan.compactEditorVisible")
+    private var compactEditorVisible = false
+
     private func marker(withID markerID: UUID) -> PlacedAccessory? {
         floorplan.accessories.first { $0.id == markerID }
     }
@@ -473,6 +478,7 @@ struct FloorplanEditorView: View {
 
     private func handleAppear() {
         measureMain("appear.total") {
+            compactEditorVisible = isCompactScreen
             if overlayVM == nil {
                 overlayVM = FloorplanOverlayViewModel(floorplanID: floorplan.id)
             }
@@ -948,7 +954,8 @@ struct FloorplanEditorView: View {
             containerSize: containerSize,
             effectiveScale: effectiveScale,
             effectiveOffset: effectiveOffset,
-            topInset: chromeLayout(for: containerSize).topInset
+            topInset: chromeLayout(for: containerSize).topInset,
+            bottomInset: chromeLayout(for: containerSize).bottomInset
         ).resolve(tapLocation: tapLocation)
     }
     
@@ -968,6 +975,7 @@ struct FloorplanEditorView: View {
     private func handleDisappear() {
         accessoryObservationCoordinator.unsubscribe(from: floorplan)
         chromeController.cancelAutoHide()
+        compactEditorVisible = false
     }
 
     private func handleDrawingDismiss() {
@@ -990,15 +998,19 @@ struct FloorplanEditorView: View {
     /// costanti, mai da misure.
     private func chromeLayout(for container: CGSize) -> FloorplanChromeLayout {
         // Su compact i tab vivono nell'isola in basso (stile Dov'è): in alto
-        // resta la barra minima, quindi basta il margine base.
-        FloorplanChromeLayout(hasTwoRowTabBar: !isCompactScreen)
+        // resta la barra minima, e in basso la planimetria riserva lo spazio
+        // del peek del pannello — mai finirci sotto.
+        FloorplanChromeLayout(hasTwoRowTabBar: !isCompactScreen,
+                              hasBottomPane: isCompactScreen && !ui.isEditing)
     }
 
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
-        FloorplanCanvasGeometry.imageRect(
+        let chrome = chromeLayout(for: container)
+        return FloorplanCanvasGeometry.imageRect(
             imageSize: imageSize,
             container: container,
-            topInset: chromeLayout(for: container).topInset
+            topInset: chrome.topInset,
+            bottomInset: chrome.bottomInset
         )
     }
     

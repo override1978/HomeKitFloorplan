@@ -75,10 +75,17 @@ struct ContentView: View {
     /// True after the 8-second iCloud wait on fresh install has expired.
     @State private var initialSyncTimedOut = false
 
+    /// L'editor planimetria su iPhone occupa il bordo basso con isola dei tab
+    /// e pannello: lì il FAB non ha posto (feedback 26/08). Il flag lo scrive
+    /// l'editor su appear/disappear; azzerato al lancio contro stati stantii.
+    @AppStorage("floorplan.compactEditorVisible")
+    private var compactFloorplanEditorVisible = false
+
     /// FAB is allowed only when NOT inside a non-controls floorplan overlay.
     /// (Environment and Security overlays already have their own panel buttons.)
     private var floorplanFabAllowed: Bool {
         guard aiSettings.isAIEnabled else { return false }
+        if compactFloorplanEditorVisible { return false }
         guard case .floorplan = selection else { return true }
         return (FloorplanOverlayMode(rawValue: floorplanActiveModeRaw) ?? .controls) == .controls
     }
@@ -105,6 +112,9 @@ struct ContentView: View {
         }
         .animation(.easeInOut(duration: 0.4), value: onboarding.shouldShowOnboarding)
         .animation(.easeInOut(duration: 0.4), value: cloudKitSync.hasCompletedInitialSync)
+        // Contro gli stati stantii (app terminata con l'editor aperto): al
+        // lancio nessun editor è visibile per definizione.
+        .onAppear { compactFloorplanEditorVisible = false }
         // Overlay passthrough UIKit: osserva i tocchi senza catturarli,
         // resetta il timer screensaver su ogni interazione.
         .overlay {
