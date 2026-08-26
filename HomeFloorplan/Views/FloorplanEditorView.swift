@@ -809,6 +809,18 @@ struct FloorplanEditorView: View {
     @ViewBuilder
     private func compactBottomPane(container: CGSize) -> some View {
         if showsCompactPaneAndIsland, let vm = overlayVM {
+            // I dati del contenuto si calcolano QUI, una volta per passata
+            // dell'editor — non dentro la closure del pannello, che viene
+            // rivalutata a OGNI fotogramma del drag: ricalcolare cluster e
+            // conteggi per frame era la fluidità "Minecraft" (feedback 26/08).
+            let adapterMap = currentAdapterMap()
+            let clusters = currentClusters(rooms: floorplan.linkedRooms)
+            let categoryCounts = FloorplanControlsClusterBuilder.floorCategoryCounts(
+                floorplan: floorplan,
+                adapterMap: adapterMap
+            )
+            let sensorTypes = overlayEnvVM.availableSensorTypes
+
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 FloorplanBottomPane(
@@ -829,13 +841,10 @@ struct FloorplanEditorView: View {
                         overlayVM: vm,
                         floorplan: floorplan,
                         environmentViewModel: overlayEnvVM,
-                        adapterMap: currentAdapterMap(),
-                        clusters: currentClusters(rooms: floorplan.linkedRooms),
-                        categoryCounts: FloorplanControlsClusterBuilder.floorCategoryCounts(
-                            floorplan: floorplan,
-                            adapterMap: currentAdapterMap()
-                        ),
-                        environmentSensorTypes: overlayEnvVM.availableSensorTypes
+                        adapterMap: adapterMap,
+                        clusters: clusters,
+                        categoryCounts: categoryCounts,
+                        environmentSensorTypes: sensorTypes
                     )
                 }
             }

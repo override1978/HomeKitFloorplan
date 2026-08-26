@@ -91,13 +91,19 @@ struct FloorplanBottomPane<Content: View>: View {
         // Da chiuso TUTTO il pannello visibile è maniglia: si trascina e si
         // tocca ovunque, come in Dov'è. Da esteso il drag resta sulla sola
         // testata, perché il contenuto deve poter scorrere.
+        //
+        // NIENTE `.animation(nil, value: dragTranslation)`: sembrava il modo
+        // di tenere il drag "diretto", ma spegneva anche l'azzeramento del
+        // drag DENTRO la withAnimation dello snap — metà del movimento
+        // scattava secca e il pannello restava a mezz'aria. Il drag è già
+        // diretto di suo (nessuna animazione implicita è agganciata), lo
+        // snap anima tutto insieme.
         .gesture(isExpanded ? nil : paneDrag)
         .onTapGesture {
             if !isExpanded {
                 withAnimation(snapAnimation) { isExpanded = true }
             }
         }
-        .animation(nil, value: dragTranslation)
     }
 
     private var paneDrag: some Gesture {
