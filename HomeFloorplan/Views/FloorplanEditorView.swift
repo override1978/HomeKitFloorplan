@@ -297,9 +297,13 @@ struct FloorplanEditorView: View {
                     .animation(.easeInOut(duration: 0.3), value: shouldShowControls)
                     .environment(\.colorScheme, chromeColorScheme)
 
-                // Pulsante apri-pannello: solo compact, tab overlay, sheet
-                // chiuso. Su regular c'è "Dettagli" in barra.
-                openPanelButton
+                // iPhone stile Dov'è: pannello a trascinamento dal basso e
+                // isola dei tab che gli flotta sopra. Spariscono con una
+                // stanza zoomata (lì solo planimetria + indietro) e in editing.
+                compactBottomPane(container: proxy.size)
+                    .environment(\.colorScheme, chromeColorScheme)
+
+                compactTabIsland
                     .environment(\.colorScheme, chromeColorScheme)
 
                 // Azione bulk del filtro categoria (novità C): capsule scura
@@ -362,54 +366,9 @@ struct FloorplanEditorView: View {
         }
     }
 
-    /// Presentazione del bottom sheet iPhone: SU RICHIESTA, mai permanente —
-    /// il tentativo permanente (v3-B) lottava con la gesture dell'app switcher,
-    /// non si lasciava chiudere e copriva l'esito delle azioni (feedback
-    /// 26/08). Si apre nei tab overlay via FAB o tap su una stanza; si chiude
-    /// con lo swipe; si fa da parte quando salgono altre presentazioni o
-    /// quando una stanza è zoomata (lì si vede solo la planimetria).
-    private var compactPanelBinding: Binding<Bool> {
-        Binding(
-            get: {
-                isCompactScreen && !ui.isEditing
-                    && (overlayVM?.isPanelVisible ?? false)
-                    && overlayVM?.activeMode != .controls
-                    && overlayVM?.zoomedRoomID == nil
-                    && !ui.hasBlockingModalPresentation
-                    && preview3D == nil
-            },
-            set: { isPresented in
-                if !isPresented,
-                   !ui.hasBlockingModalPresentation,
-                   preview3D == nil,
-                   overlayVM?.zoomedRoomID == nil {
-                    overlayVM?.dismissPanel()
-                }
-            }
-        )
-    }
-
     private var observedCanvas: some View {
         canvasContent
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: compactPanelBinding) {
-            if let vm = overlayVM {
-                FloorplanCompactPanelSheet(
-                    overlayVM: vm,
-                    floorplan: floorplan,
-                    environmentViewModel: overlayEnvVM,
-                    adapterMap: currentAdapterMap()
-                )
-                .presentationDetents([FloorplanCompactPanelSheet.collapsedDetent,
-                                      FloorplanCompactPanelSheet.expandedDetent])
-                .presentationBackgroundInteraction(
-                    .enabled(upThrough: FloorplanCompactPanelSheet.expandedDetent)
-                )
-                .presentationDragIndicator(.visible)
-                .presentationBackground(floorplanBackgroundColor)
-                .environment(\.colorScheme, chromeColorScheme)
-            }
-        }
         .modifier(editorPresentationModifier)
         .suppressesIdleScreensaver(.floorplanInteraction, when: ui.shouldSuppressIdleScreensaver)
         .onAppear(perform: handleAppear)
@@ -801,7 +760,10 @@ struct FloorplanEditorView: View {
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .padding(.bottom, 28)
+                    // Su iPhone sale sopra pannello (peek) e isola.
+                    .padding(.bottom, isCompactScreen
+                             ? Self.compactIslandClearance + 68
+                             : 28)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -822,29 +784,68 @@ struct FloorplanEditorView: View {
         }
     }
 
-    /// Bottone bottom-right che apre il bottom sheet contestuale.
-    /// Vive in un proprio layer ZStack così non scompare con l'auto-hide dei
-    /// controlli secondari. Solo compact, tab overlay, niente stanza zoomata.
+    // MARK: - iPhone stile Dov'è (pannello + isola)
+
+    /// Spazio verticale occupato dall'isola dei tab (pill due righe + margini).
+    private static let compactIslandClearance: CGFloat = 72
+
+    private var showsCompactPaneAndIsland: Bool {
+        isCompactScreen && !ui.isEditing
+            && overlayVM != nil
+            && overlayVM?.zoomedRoomID == nil
+    }
+
     @ViewBuilder
-    private var openPanelButton: some View {
-        if isCompactScreen, !ui.isEditing, let vm = overlayVM,
-           vm.activeMode != .controls, !vm.isPanelVisible,
-           vm.zoomedRoomID == nil {
+    private func compactBottomPane(container: CGSize) -> some View {
+        if showsCompactPaneAndIsland, let vm = overlayVM {
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                FloorplanBottomPane(
+                    isExpanded: Binding(
+                        get: { vm.isPanelVisible },
+                        set: { expanded in
+                            vm.isPanelVisible = expanded
+                            if !expanded { vm.highlightedRoomID = nil }
+                        }
+                    ),
+                    container: container,
+                    islandClearance: Self.compactIslandClearance,
+                    background: floorplanBackgroundColor,
+                    title: vm.activeMode == .controls ? floorplan.name : vm.activeMode.label,
+                    accent: vm.activeMode.accentColor
+                ) {
+                    FloorplanCompactPaneContent(
+                        overlayVM: vm,
+                        floorplan: floorplan,
+                        environmentViewModel: overlayEnvVM,
+                        adapterMap: currentAdapterMap(),
+                        clusters: currentClusters(rooms: floorplan.linkedRooms),
+                        categoryCounts: FloorplanControlsClusterBuilder.floorCategoryCounts(
+                            floorplan: floorplan,
+                            adapterMap: currentAdapterMap()
+                        )
+                    )
+                }
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .zIndex(50)
+        }
+    }
+
+    @ViewBuilder
+    private var compactTabIsland: some View {
+        if showsCompactPaneAndIsland, let vm = overlayVM {
             VStack {
                 Spacer()
-                HStack {
-                    Spacer()
-                    OverlayPanelMarkerButton(mode: vm.activeMode) {
-                        withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
-                            vm.isPanelVisible = true
-                        }
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
+                FloorplanModePill(overlayVM: vm,
+                                  context: cachedOverlayContext,
+                                  status: statusStripState,
+                                  isCompact: true)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
             }
-            .transition(.scale(scale: 0.7).combined(with: .opacity))
-            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: vm.isPanelVisible)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .zIndex(60)
         }
     }
 
@@ -988,10 +989,9 @@ struct FloorplanEditorView: View {
     /// contenitore, quindi il layout si calcola per-contenitore, sempre da
     /// costanti, mai da misure.
     private func chromeLayout(for container: CGSize) -> FloorplanChromeLayout {
-        FloorplanChromeLayout(
-            hasCompactModeRow: isCompactScreen && container.height > container.width,
-            hasTwoRowTabBar: !isCompactScreen
-        )
+        // Su compact i tab vivono nell'isola in basso (stile Dov'è): in alto
+        // resta la barra minima, quindi basta il margine base.
+        FloorplanChromeLayout(hasTwoRowTabBar: !isCompactScreen)
     }
 
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {

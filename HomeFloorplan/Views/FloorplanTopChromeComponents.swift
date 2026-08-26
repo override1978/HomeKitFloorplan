@@ -163,22 +163,9 @@ struct FloorplanTopBarView: View {
             .padding(.horizontal, 20)
             .padding(.top, 12)
 
-            // Tab switcher compatto: su iPhone le stesse pill 2d a due righe,
-            // piena larghezza, etichette sempre visibili (design v3). SOLO in
-            // verticale: in landscape la riga mangiava la poca altezza e
-            // rendeva la mappa inusabile (feedback 26/08) — lì si naviga in
-            // verticale e il landscape resta vista-mappa, in attesa della
-            // rotazione planimetria della v3-B.
-            // Il margine è dichiarato in FloorplanChromeLayout.hasCompactModeRow.
-            if !isEditing, isCompact, size.height > size.width, let overlayVM {
-                FloorplanModePill(overlayVM: overlayVM,
-                                  context: overlayContext,
-                                  status: statusStrip,
-                                  isCompact: true)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
+            // Su iPhone i tab NON stanno più qui: sono l'isola in basso
+            // (stile Dov'è), montata dall'editor sopra il pannello a
+            // trascinamento. In alto resta solo la barra minima.
 
             statusBanners
 
