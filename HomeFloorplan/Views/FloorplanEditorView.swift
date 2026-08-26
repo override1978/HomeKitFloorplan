@@ -372,8 +372,14 @@ struct FloorplanEditorView: View {
         .ignoresSafeArea(.keyboard)
         .sheet(isPresented: compactFindMySheetBinding) {
             if let vm = overlayVM {
+                // NIENTE chromeColorScheme qui: quello segue la luminanza
+                // della PLANIMETRIA e vale per la chrome appoggiata sulla
+                // mappa. Il platter dello sheet lo disegna il sistema e segue
+                // il tema di iOS — iniettare lo schema del disegno produceva
+                // testo da tema scuro su platter bianco con iOS chiaro
+                // (feedback 27/08). Contenuto e platter devono leggere lo
+                // stesso tema: quello di sistema.
                 compactFindMySheet(vm: vm)
-                    .environment(\.colorScheme, chromeColorScheme)
             }
         }
     }
