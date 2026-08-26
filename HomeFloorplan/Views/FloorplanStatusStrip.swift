@@ -155,6 +155,9 @@ enum FloorplanStatusStripBuilder {
 struct FloorplanStatusStrip: View {
     let state: FloorplanStatusStripState
     let context: FloorplanOverlayContext
+    /// Tab attivo: la pill che vi punta si evidenzia col colore del modo,
+    /// così si vede sempre da dove si è arrivati (feedback utente 26/08).
+    let activeMode: FloorplanOverlayMode
     let isCompact: Bool
     let onSelect: (FloorplanOverlayMode) -> Void
 
@@ -180,6 +183,8 @@ struct FloorplanStatusStrip: View {
                 subtitle: state.healthLabel,
                 pulses: false,
                 compact: compact,
+                targetMode: .environment,
+                isSelected: activeMode == .environment,
                 isEnabled: FloorplanOverlayMode.environment.isAvailable(in: context)
             ) { onSelect(.environment) }
         }
@@ -194,6 +199,8 @@ struct FloorplanStatusStrip: View {
                 subtitle: state.alarmModeText,
                 pulses: false,
                 compact: compact,
+                targetMode: .security,
+                isSelected: activeMode == .security,
                 isEnabled: FloorplanOverlayMode.security.isAvailable(in: context)
             ) { onSelect(.security) }
         }
@@ -210,6 +217,8 @@ struct FloorplanStatusStrip: View {
                 subtitle: situationsSubtitle,
                 pulses: state.criticalCount > 0,
                 compact: compact,
+                targetMode: .intelligence,
+                isSelected: activeMode == .intelligence,
                 isEnabled: true
             ) { onSelect(.intelligence) }
         }
@@ -222,6 +231,8 @@ struct FloorplanStatusStrip: View {
                                  defaultValue: "Indoor / Outdoor"),
                 pulses: false,
                 compact: compact,
+                targetMode: .environment,
+                isSelected: activeMode == .environment,
                 isEnabled: FloorplanOverlayMode.environment.isAvailable(in: context)
             ) { onSelect(.environment) }
         }
@@ -246,6 +257,11 @@ private struct StatusStripPill: View {
     let subtitle: String?
     let pulses: Bool
     let compact: Bool
+    /// Modo a cui la pill porta: da selezionata veste i suoi colori attivi
+    /// (stessa coppia bg/fg della mode pill), così barra di stato e tab
+    /// raccontano la stessa selezione.
+    let targetMode: FloorplanOverlayMode
+    let isSelected: Bool
     let isEnabled: Bool
     let action: () -> Void
 
@@ -264,11 +280,15 @@ private struct StatusStripPill: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(isSelected
+                                         ? targetMode.activeForegroundColor
+                                         : Color.primary)
                     if !compact, let subtitle {
                         Text(subtitle)
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(isSelected
+                                             ? targetMode.activeForegroundColor.opacity(0.75)
+                                             : Color.secondary)
                     }
                 }
                 .lineLimit(1)
@@ -281,7 +301,14 @@ private struct StatusStripPill: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .glassChromeSurface(in: Capsule())
+        .glassChromeSurface(
+            in: Capsule(),
+            tint: isSelected ? targetMode.accentColor.opacity(0.22) : nil,
+            legacyFill: isSelected
+                ? AnyShapeStyle(targetMode.activeBackgroundColor)
+                : AnyShapeStyle(.regularMaterial)
+        )
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isSelected)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.55)
         .onAppear { startPulseIfNeeded() }

@@ -79,7 +79,7 @@ enum FloorplanControlsClusterBuilder {
             var byCategory: [AccessoryCategory: (total: Int, active: Int)] = [:]
             for placed in markers {
                 let adapter = adapterMap[placed.homeKitAccessoryUUID]
-                let category = AccessoryCategory.classify(adapter: adapter)
+                let category = classify(adapter)
                 var entry = byCategory[category] ?? (0, 0)
                 entry.total += 1
                 if adapter?.isOn == true { entry.active += 1 }
@@ -110,7 +110,7 @@ enum FloorplanControlsClusterBuilder {
             guard !seen.contains(placed.homeKitAccessoryUUID) else { continue }
             seen.insert(placed.homeKitAccessoryUUID)
             let adapter = adapterMap[placed.homeKitAccessoryUUID]
-            let category = AccessoryCategory.classify(adapter: adapter)
+            let category = classify(adapter)
             var entry = byCategory[category] ?? (0, 0)
             entry.total += 1
             if adapter?.isOn == true { entry.active += 1 }
@@ -129,6 +129,18 @@ enum FloorplanControlsClusterBuilder {
     /// Categoria di un marker, per il filtro.
     static func category(of placed: PlacedAccessory,
                          adapterMap: [UUID: any AccessoryAdapter]) -> AccessoryCategory {
-        AccessoryCategory.classify(adapter: adapterMap[placed.homeKitAccessoryUUID])
+        classify(adapterMap[placed.homeKitAccessoryUUID])
+    }
+
+    /// Classificazione nel contesto planimetria: come `AccessoryCategory.classify`,
+    /// MA i sensori contatto (porte/finestre) contano come Sicurezza, non come
+    /// Sensori generici — sono ciò che l'antifurto sorveglia, e l'utente li
+    /// cerca lì (feedback 26/08). La classificazione globale dell'app resta
+    /// intatta per le altre viste.
+    static func classify(_ adapter: (any AccessoryAdapter)?) -> AccessoryCategory {
+        if let sensor = adapter as? SensorAdapter, sensor.primarySensorKind == .contact {
+            return .security
+        }
+        return AccessoryCategory.classify(adapter: adapter)
     }
 }

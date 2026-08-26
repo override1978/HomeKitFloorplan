@@ -159,6 +159,7 @@ struct FloorplanTopBarView: View {
                 FloorplanStatusStrip(
                     state: statusStrip,
                     context: overlayContext,
+                    activeMode: overlayVM.activeMode,
                     isCompact: isCompact
                 ) { mode in
                     selectFromStrip(mode, overlayVM: overlayVM)

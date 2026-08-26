@@ -712,7 +712,7 @@ struct FloorplanEditorView: View {
             guard !seen.contains(placed.homeKitAccessoryUUID) else { continue }
             seen.insert(placed.homeKitAccessoryUUID)
             guard let adapter = map[placed.homeKitAccessoryUUID],
-                  AccessoryCategory.classify(adapter: adapter) == category,
+                  FloorplanControlsClusterBuilder.classify(adapter) == category,
                   adapter.isOn else { continue }
             result.append(adapter)
         }
@@ -1149,7 +1149,7 @@ struct FloorplanEditorView: View {
               let vm = overlayVM, vm.activeMode == .controls else { return items }
 
         if let filter = vm.categoryFilter {
-            return items.filter { AccessoryCategory.classify(adapter: $0.adapter) == filter }
+            return items.filter { FloorplanControlsClusterBuilder.classify($0.adapter) == filter }
         }
         if let expandedID = vm.expandedRoomID {
             return items.filter { item in
