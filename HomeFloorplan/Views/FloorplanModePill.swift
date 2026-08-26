@@ -10,6 +10,11 @@ struct FloorplanModePill: View {
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let context: FloorplanOverlayContext
 
+    /// Conteggi da mostrare come badge rosso sulla voce (redesign, novità A):
+    /// Sicurezza = aperture attive, Intelligenza = situazioni attive.
+    /// Il badge compare SOLO quando il conteggio è > 0.
+    var badgeCounts: [String: Int] = [:]
+
     /// Larghezza della barra in cui questa pill deve convivere con il titolo a
     /// sinistra e le azioni a destra.
     ///
@@ -113,6 +118,11 @@ struct FloorplanModePill: View {
         }
     }
 
+    private func accessibilityLabel(for mode: FloorplanOverlayMode) -> String {
+        guard let count = badgeCounts[mode.id], count > 0 else { return mode.label }
+        return "\(mode.label), \(count)"
+    }
+
     /// Attiva la modalità sotto il dito, se diversa da quella corrente.
     private func select(at point: CGPoint) {
         guard let hit = modes.first(where: { mode in
@@ -145,13 +155,23 @@ struct FloorplanModePill: View {
                 }
             }
             .foregroundStyle(isActive ? mode.accentColor : Color.primary.opacity(0.55))
+            // Badge sull'angolo della voce, dentro il padding del bottone:
+            // qui non tocca né la misura dei frame (letta sul frame esterno)
+            // né la capsula di selezione.
+            .overlay(alignment: .topTrailing) {
+                if let count = badgeCounts[mode.id], count > 0 {
+                    ModeBadge(count: count)
+                        .offset(x: 10, y: -6)
+                }
+            }
             .padding(.horizontal, showsLabels ? 15 : 12)
             .padding(.vertical, 7)
             .frame(minWidth: 44)
             .contentShape(Rectangle())
             // L'etichetta accessibile resta anche quando il testo cade, come per
-            // le modalità dell'antifurto.
-            .accessibilityLabel(mode.label)
+            // le modalità dell'antifurto; il badge (visivamente nascosto a
+            // VoiceOver) entra qui come conteggio parlato.
+            .accessibilityLabel(accessibilityLabel(for: mode))
         }
         .buttonStyle(.plain)
         .modifier(ModeSelectionHighlight(
@@ -166,6 +186,25 @@ struct FloorplanModePill: View {
         }
     }
 
+}
+
+// MARK: - ModeBadge
+
+/// Cerchietto rosso col conteggio, stile badge di sistema. Superficie piena,
+/// non vetro: deve restare leggibile a 10pt su qualunque planimetria.
+private struct ModeBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text("\(min(count, 99))")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, count > 9 ? 4 : 0)
+            .frame(minWidth: 16, minHeight: 16)
+            .background(FloorplanTokens.Semantic.critical, in: Capsule())
+            .transition(.opacity)
+            .accessibilityHidden(true)
+    }
 }
 
 // MARK: - ModeFrameStore

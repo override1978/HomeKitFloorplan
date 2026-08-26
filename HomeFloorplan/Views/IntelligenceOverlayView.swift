@@ -265,13 +265,15 @@ struct IntelligenceOverlayView: View {
 
     private func situationSummary(for room: LinkedRoom) -> FloorplanRoomSituationSummary? {
         let roomSituations = activeSituations.filter { situation in
-            matchesRoom(situation.primary, room: room)
+            Self.matchesRoom(situation.primary, room: room)
         }
         guard !roomSituations.isEmpty else { return nil }
         return FloorplanRoomSituationSummary(room: room, situations: roomSituations)
     }
 
-    nonisolated fileprivate static func isFloorplanRelevant(_ insight: HomeInsight) -> Bool {
+    /// Internal (non più fileprivate): la barra di stato unificata riusa la
+    /// stessa regola di rilevanza per contare le situazioni del piano.
+    nonisolated static func isFloorplanRelevant(_ insight: HomeInsight) -> Bool {
         switch insight.kind {
         case .incoherence:
             return true
@@ -300,7 +302,9 @@ struct IntelligenceOverlayView: View {
         }
     }
 
-    private func matchesRoom(_ insight: HomeInsight, room: LinkedRoom) -> Bool {
+    /// Static e internal: condivisa con la barra di stato unificata, che
+    /// aggancia le situazioni alle stanze del piano con la stessa regola.
+    nonisolated static func matchesRoom(_ insight: HomeInsight, room: LinkedRoom) -> Bool {
         if FloorplanRoomMatcher.matches(roomName: insight.roomName, linkedRoom: room) {
             return true
         }
@@ -385,8 +389,8 @@ private struct FloorplanRoomSituationSummary {
 
     var color: Color {
         switch severity {
-        case .critical, .high: return .red
-        case .medium: return .orange
+        case .critical, .high: return FloorplanTokens.Semantic.critical
+        case .medium: return FloorplanTokens.Semantic.warning
         case .low:
             return domain == .routine ? FloorplanTokens.Mode.accent(.intelligence) : .yellow
         case .info: return FloorplanTokens.Mode.accent(.intelligence)
@@ -691,8 +695,8 @@ struct IntelligenceContextDashboard: View {
 
     private func color(for severity: HomeInsightSeverity, domain: HomeSituationDomain) -> Color {
         switch severity {
-        case .critical, .high: return .red
-        case .medium: return .orange
+        case .critical, .high: return FloorplanTokens.Semantic.critical
+        case .medium: return FloorplanTokens.Semantic.warning
         case .low:
             return domain == .routine ? accent : .yellow
         case .info: return accent
@@ -715,8 +719,8 @@ struct IntelligenceContextDashboard: View {
     /// domini diversi — quindi per le severità basse usa l'accento del pannello.
     private func groupColor(_ severity: HomeInsightSeverity) -> Color {
         switch severity {
-        case .critical, .high: return .red
-        case .medium: return .orange
+        case .critical, .high: return FloorplanTokens.Semantic.critical
+        case .medium: return FloorplanTokens.Semantic.warning
         case .low: return .yellow
         case .info: return accent
         }

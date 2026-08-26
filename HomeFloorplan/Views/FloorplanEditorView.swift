@@ -93,6 +93,34 @@ struct FloorplanEditorView: View {
     /// la view; il ricalcolo avviene solo quando cambiano gli input effettivi.
     @State private var collisionOffsetCache = FloorplanMarkerCollisionOffsetCache()
 
+    // MARK: Barra di stato unificata (redesign, novità A+B)
+
+    /// Meteo per la temperatura esterna della barra di stato. @Observable:
+    /// la pill si aggiorna da sola quando arriva un refresh.
+    @Environment(WeatherKitService.self) private var weatherKit
+
+    /// Stessa sorgente e semantica di SecurityOverlayView: solo i sensori
+    /// contatto monitorati contano come "aperture".
+    @AppStorage("securityMonitoredUUIDs") private var securityMonitoredUUIDsRaw: String = ""
+
+    @AppStorage(TemperatureUnit.appStorageKey)
+    private var temperatureUnitRaw: String = TemperatureUnit.celsius.rawValue
+
+    /// Situazioni attive, stessa query dell'overlay Intelligenza: reattiva via
+    /// SwiftData, il conteggio della barra si aggiorna quando un'azione risolve
+    /// un insight.
+    @Query(
+        filter: #Predicate<PersistedHomeInsight> { $0.statusRaw == "active" },
+        sort: \PersistedHomeInsight.updatedAt,
+        order: .reverse
+    )
+    private var activeStripInsights: [PersistedHomeInsight]
+
+    /// Salute casa (media pesata per stanza): costa una scansione con adapter
+    /// per accessorio, quindi si ricalcola solo sugli stessi eventi discreti
+    /// degli altri cache (appear, HomeKit pronto, accessori, reachability).
+    @State private var cachedHealthScore: Int?
+
     private func marker(withID markerID: UUID) -> PlacedAccessory? {
         floorplan.accessories.first { $0.id == markerID }
     }
@@ -346,6 +374,13 @@ struct FloorplanEditorView: View {
             trackSecurityModeChange()
         }
         .task(id: overlayVM?.activeMode, refreshEnvironmentOverlayWhileActive)
+        // Meteo per la pill temperatura: si auto-limita a un refresh ogni 30'.
+        .task { await weatherKit.refreshIfNeeded() }
+        // La salute casa dipende dalla raggiungibilità: ricalcolo su evento
+        // discreto, come per gli adapter.
+        .onChange(of: homeKit.reachabilityVersion) { _, _ in
+            refreshAdapterCaches()
+        }
         .fullScreenCover(item: $preview3D) { request in
             FloorplanRealityPreviewView(floorplans: request.floorplans,
                                         initialID: request.initialID)
@@ -366,12 +401,13 @@ struct FloorplanEditorView: View {
 
     /// Installazioni "a muro": il loop foreground campiona ogni ~5 min, ma
     /// `overlayEnvVM` veniva caricato solo all'appear dell'editor e l'overlay
-    /// Ambiente restava congelato per ore. Finché la modalità Ambiente è
-    /// attiva, ricarica subito e poi a cadenza allineata al campionamento;
-    /// il task si cancella da solo al cambio modalità o all'uscita.
+    /// Ambiente restava congelato per ore. Il loop gira in TUTTI i tab, non
+    /// più solo in Ambiente: la barra di stato unificata mostra la temperatura
+    /// interna ovunque, e senza ricarica resterebbe alla fotografia
+    /// dell'appear. L'id sul task lo riavvia al cambio modalità, così
+    /// entrare in Ambiente ricarica subito.
     @Sendable
     private func refreshEnvironmentOverlayWhileActive() async {
-        guard overlayVM?.activeMode == .environment else { return }
         while !Task.isCancelled {
             await overlayEnvVM.reloadFromCoreData()
             try? await Task.sleep(for: .seconds(5 * 60))
@@ -438,12 +474,59 @@ struct FloorplanEditorView: View {
         cachedSecurityAdapter
     }
 
-    /// Ricalcola gli adapter cache-ati (sicurezza + mappa marker). Chiamato solo
-    /// su eventi discreti (appear, HomeKit pronto, cambio elenco accessori),
-    /// mai per-frame.
+    /// Ricalcola gli adapter cache-ati (sicurezza + mappa marker) e la salute
+    /// casa. Chiamato solo su eventi discreti (appear, HomeKit pronto, cambio
+    /// elenco accessori, reachability), mai per-frame.
     private func refreshAdapterCaches() {
         cachedSecurityAdapter = runtimeContextController.securityAdapter()
         cachedAdapterMap = AccessoryAdapterFactory.adapterMap(homeKit: homeKit)
+        cachedHealthScore = FloorplanStatusStripBuilder.weightedHealthScore(homeKit: homeKit)
+    }
+
+    /// Stato corrente dei quattro segnali della barra. I pezzi reattivi
+    /// (contatti via adapter, situazioni via @Query, meteo) si leggono qui in
+    /// body e invalidano da soli; la salute è cache-ata perché costosa.
+    private var statusStripState: FloorplanStatusStripState {
+        var state = FloorplanStatusStripState()
+
+        if let score = cachedHealthScore {
+            state.healthScore = score
+            state.healthLabel = AccessoryHealthLevel.from(score: score).label
+        }
+
+        if cachedOverlayContext.hasSecurityDevices {
+            state.openingsCount = FloorplanStatusStripBuilder.openOpeningsCount(
+                floorplan: floorplan,
+                adapterMap: currentAdapterMap(),
+                monitoredIDs: RoomSecurityEvaluator.monitoredIDs(from: securityMonitoredUUIDsRaw)
+            )
+            if let adapter = findSecurityAdapter() {
+                state.alarmModeText = String(
+                    localized: "floorplan.strip.alarm",
+                    defaultValue: "Alarm: \(adapter.currentMode.displayName)"
+                )
+            }
+        }
+
+        if !floorplan.linkedRooms.isEmpty {
+            let counts = FloorplanStatusStripBuilder.situationCounts(
+                insights: activeStripInsights,
+                rooms: floorplan.linkedRooms
+            )
+            state.situationsCount = counts.total
+            state.criticalCount = counts.critical
+            state.criticalRoomName = counts.criticalRoomName
+        }
+
+        let unit = TemperatureUnit(rawValue: temperatureUnitRaw) ?? .celsius
+        state.indoorText = FloorplanStatusStripBuilder.indoorTemperatureText(
+            envVM: overlayEnvVM, unit: unit
+        )
+        if let outdoor = weatherKit.currentWeather?.outdoorTemperature {
+            state.outdoorText = unit.format(outdoor)
+        }
+
+        return state
     }
 
     /// Mappa adapter corrente, con fallback di costruzione inline per la
@@ -481,6 +564,7 @@ struct FloorplanEditorView: View {
             isEditing: ui.isEditing,
             overlayVM: overlayVM,
             overlayContext: cachedOverlayContext,
+            statusStrip: statusStripState,
             environmentSensorTypes: overlayEnvVM.availableSensorTypes,
             isCloudKitMaster: cloudKitSync.isMaster,
             smartLightingStatus: smartLightingEngine.floorplanStatus,
@@ -702,11 +786,14 @@ struct FloorplanEditorView: View {
 
     // MARK: - Image rect
 
-    /// Layout della chrome per questa sessione. Oggi coincide col legacy;
-    /// dalla fase 1 del redesign dichiarerà `hasUnifiedStatusStrip = true` e
-    /// tutta la geometria (canvas, tap resolver, collisioni) lo erediterà da
-    /// qui senza poter divergere.
-    private var chromeLayout: FloorplanChromeLayout { .legacy }
+    /// Layout della chrome per questa sessione: dalla fase 1 la barra di stato
+    /// unificata esiste sempre, quindi il margine la include sempre — anche in
+    /// editing, dove il banner di modifica ne prende visivamente il posto. Il
+    /// valore resta costante per tutta la sessione (mai per-modo, mai misurato)
+    /// e canvas + tap resolver lo ereditano da qui senza poter divergere.
+    private var chromeLayout: FloorplanChromeLayout {
+        FloorplanChromeLayout(hasUnifiedStatusStrip: true)
+    }
 
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
         FloorplanCanvasGeometry.imageRect(

@@ -36,16 +36,16 @@ enum SensorUrgency: Int, Comparable {
     var color: Color {
         switch self {
         case .normal:  return .primary
-        case .warning: return .orange
-        case .danger:  return .red
+        case .warning: return FloorplanTokens.Semantic.warning
+        case .danger:  return FloorplanTokens.Semantic.critical
         }
     }
 
     var cardBackground: Color {
         switch self {
         case .normal:  return Color(.secondarySystemGroupedBackground)
-        case .warning: return .orange.opacity(0.12)
-        case .danger:  return .red.opacity(0.15)
+        case .warning: return FloorplanTokens.Semantic.warning.opacity(0.12)
+        case .danger:  return FloorplanTokens.Semantic.critical.opacity(0.15)
         }
     }
 

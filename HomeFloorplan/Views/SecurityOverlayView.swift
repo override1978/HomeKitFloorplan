@@ -221,12 +221,12 @@ struct SecurityOverlayView: View {
     private func badgeBackgroundColor(_ status: RoomSecurityStatus) -> Color {
         switch status {
         case .none:     return Color(.systemBackground).opacity(0.80)
-        case .protected: return Color.green.opacity(0.86)
-        case .locked:   return Color.purple.opacity(0.85)
-        case .unlocked: return Color.orange.opacity(0.90)
+        case .protected: return FloorplanTokens.Semantic.ok.opacity(0.86)
+        case .locked:   return FloorplanTokens.Mode.accent(.security).opacity(0.85)
+        case .unlocked: return FloorplanTokens.Semantic.warning.opacity(0.90)
         case .disarmed: return Color.gray.opacity(0.75)
-        case .armed:    return Color.purple.opacity(0.92)
-        case .alarmed:  return Color.red.opacity(0.95)
+        case .armed:    return FloorplanTokens.Mode.accent(.security).opacity(0.92)
+        case .alarmed:  return FloorplanTokens.Semantic.critical.opacity(0.95)
         }
     }
 
@@ -234,12 +234,12 @@ struct SecurityOverlayView: View {
     private func badgeAccentColor(_ status: RoomSecurityStatus) -> Color {
         switch status {
         case .none:     return Color.secondary
-        case .protected: return Color.green
-        case .locked:   return Color.purple
-        case .unlocked: return Color.orange
-        case .disarmed: return Color.purple.opacity(0.5)
-        case .armed:    return Color.purple
-        case .alarmed:  return Color.red
+        case .protected: return FloorplanTokens.Semantic.ok
+        case .locked:   return FloorplanTokens.Mode.accent(.security)
+        case .unlocked: return FloorplanTokens.Semantic.warning
+        case .disarmed: return FloorplanTokens.Mode.accent(.security).opacity(0.5)
+        case .armed:    return FloorplanTokens.Mode.accent(.security)
+        case .alarmed:  return FloorplanTokens.Semantic.critical
         }
     }
 
@@ -262,24 +262,24 @@ struct SecurityOverlayView: View {
     private func fillColor(_ status: RoomSecurityStatus) -> Color {
         switch status {
         case .none:      return FloorplanTokens.Mode.accent(.security).opacity(0.05)
-        case .protected: return Color.green.opacity(0.16)
+        case .protected: return FloorplanTokens.Semantic.ok.opacity(0.16)
         case .locked:    return FloorplanTokens.Mode.accent(.security).opacity(0.14)
-        case .unlocked:  return Color.orange.opacity(0.18)
+        case .unlocked:  return FloorplanTokens.Semantic.warning.opacity(0.18)
         case .disarmed:  return FloorplanTokens.Mode.accent(.security).opacity(0.09)
         case .armed:     return FloorplanTokens.Mode.accent(.security).opacity(0.25)
-        case .alarmed:   return Color.red.opacity(0.38)
+        case .alarmed:   return FloorplanTokens.Semantic.critical.opacity(0.38)
         }
     }
 
     private func borderColor(_ status: RoomSecurityStatus) -> Color {
         switch status {
         case .none:      return FloorplanTokens.Mode.accent(.security).opacity(0.20)
-        case .protected: return Color.green
+        case .protected: return FloorplanTokens.Semantic.ok
         case .locked:    return FloorplanTokens.Mode.accent(.security)
-        case .unlocked:  return Color.orange
+        case .unlocked:  return FloorplanTokens.Semantic.warning
         case .disarmed:  return FloorplanTokens.Mode.accent(.security).opacity(0.35)
         case .armed:     return FloorplanTokens.Mode.accent(.security)
-        case .alarmed:   return Color.red
+        case .alarmed:   return FloorplanTokens.Semantic.critical
         }
     }
 }
@@ -327,7 +327,7 @@ private struct ContactSensorCoverageChip: View {
     let hasOpenContact: Bool
 
     private var color: Color {
-        hasOpenContact ? .orange : .green
+        hasOpenContact ? FloorplanTokens.Semantic.warning : FloorplanTokens.Semantic.ok
     }
 
     private var label: String {
@@ -713,7 +713,7 @@ struct SecurityContextDashboard: View {
             HStack(spacing: 6) {
                 Image(systemName: "bell.badge.fill")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(criticals.isEmpty ? Color.orange : Color.red)
+                    .foregroundStyle(criticals.isEmpty ? FloorplanTokens.Semantic.warning : FloorplanTokens.Semantic.critical)
                 Text(String(localized: "security.panel.activeAlerts", defaultValue: "ACTIVE ALERTS"))
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
@@ -726,7 +726,7 @@ struct SecurityContextDashboard: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(
-                        Capsule().fill(criticals.isEmpty ? Color.orange : Color.red)
+                        Capsule().fill(criticals.isEmpty ? FloorplanTokens.Semantic.warning : FloorplanTokens.Semantic.critical)
                     )
             }
 

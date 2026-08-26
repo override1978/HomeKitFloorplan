@@ -14,6 +14,8 @@ struct FloorplanTopBarView: View {
     let isEditing: Bool
     let overlayVM: FloorplanOverlayViewModel?
     let overlayContext: FloorplanOverlayContext
+    /// Segnali della barra di stato unificata; nil finché l'editor non ha dati.
+    let statusStrip: FloorplanStatusStripState?
     let environmentSensorTypes: [SensorServiceType]
     let isCloudKitMaster: Bool
     let smartLightingStatus: SmartLightingFloorplanStatus?
@@ -69,6 +71,7 @@ struct FloorplanTopBarView: View {
                 if !isEditing, !isCompact, let overlayVM {
                     FloorplanModePill(overlayVM: overlayVM,
                                       context: overlayContext,
+                                      badgeCounts: statusStrip?.modeBadgeCounts ?? [:],
                                       availableWidth: size.width,
                                       sideChromeWidth: collapsesActions ? 360 : 560)
                 }
@@ -143,6 +146,22 @@ struct FloorplanTopBarView: View {
             .padding(.horizontal, 20)
             .padding(.top, 12)
 
+            // Barra di stato unificata (novità B): visibile in TUTTI i tab,
+            // sparisce solo in editing dove il banner di modifica prende il
+            // suo posto. Il margine per questa riga è già dichiarato in
+            // FloorplanChromeLayout — qui si disegna soltanto.
+            if !isEditing, let overlayVM, let statusStrip, statusStrip.hasAnyContent {
+                FloorplanStatusStrip(
+                    state: statusStrip,
+                    context: overlayContext,
+                    isCompact: isCompact
+                ) { mode in
+                    selectFromStrip(mode, overlayVM: overlayVM)
+                }
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             statusBanners
 
             Spacer().frame(height: 8)
@@ -155,6 +174,21 @@ struct FloorplanTopBarView: View {
         // dell'immagine → rilayout → rimisura, con tutta la meccanica di soglie
         // che serviva a smorzarlo.
         .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Tap su una pill di stato: apre il tab corrispondente CON il pannello
+    /// già aperto (comportamento da design). Il didSet di `activeMode` chiude
+    /// il pannello tornando a Controlli, quindi l'apertura va dopo il cambio.
+    private func selectFromStrip(_ mode: FloorplanOverlayMode,
+                                 overlayVM: FloorplanOverlayViewModel) {
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.7)) {
+            overlayVM.activeMode = mode
+        }
+        if mode != .controls {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+                overlayVM.isPanelVisible = true
+            }
+        }
     }
 
     @ViewBuilder

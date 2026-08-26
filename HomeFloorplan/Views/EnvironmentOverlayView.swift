@@ -68,7 +68,7 @@ struct EnvironmentOverlayView: View {
                     let path = h.overlayPath(for: room)
                     let u = urgencyByRoom[room.name] ?? .normal
                     let fill = isLoading
-                        ? Color(.systemGreen).opacity(0.08)
+                        ? FloorplanTokens.Semantic.ok.opacity(0.08)
                         : gradedFillColor(urgency: u, deviation: deviationByRoom[room.name] ?? 0)
                     ctx.fill(path, with: .color(fill))
                     ctx.stroke(path, with: .color(fill.opacity(0.6)), lineWidth: 1.5 / effectiveScale)
@@ -207,9 +207,9 @@ struct EnvironmentOverlayView: View {
 
     private func urgencyFillColor(_ urgency: SensorUrgency) -> Color {
         switch urgency {
-        case .normal:  return Color(.systemGreen).opacity(0.15)
-        case .warning: return Color.orange.opacity(0.28)
-        case .danger:  return Color.red.opacity(0.38)
+        case .normal:  return FloorplanTokens.Semantic.ok.opacity(0.16)
+        case .warning: return FloorplanTokens.Semantic.warning.opacity(0.28)
+        case .danger:  return FloorplanTokens.Semantic.critical.opacity(0.38)
         }
     }
 
@@ -222,24 +222,26 @@ struct EnvironmentOverlayView: View {
     }
 
     /// Tinta per urgency, intensità proporzionale allo scostamento dalla soglia.
+    /// Base .16 verde come da design; la gradazione resta perché più ricca del
+    /// fill piatto dell'handoff (dice a colpo d'occhio QUANTO si è oltre soglia).
     private func gradedFillColor(urgency: SensorUrgency, deviation: Double) -> Color {
         switch urgency {
         case .normal:
-            return Color(.systemGreen).opacity(0.15)
+            return FloorplanTokens.Semantic.ok.opacity(0.16)
         case .warning:
             // 0.18 → 0.38 man mano che ci si avvicina alla soglia danger
-            return Color.orange.opacity(0.18 + 0.20 * min(max(deviation, 0), 1))
+            return FloorplanTokens.Semantic.warning.opacity(0.18 + 0.20 * min(max(deviation, 0), 1))
         case .danger:
             // 0.28 → 0.55 con lo sforamento oltre danger (cap a 2 bande)
-            return Color.red.opacity(min(0.28 + 0.12 * min(max(deviation - 1, 0), 2), 0.55))
+            return FloorplanTokens.Semantic.critical.opacity(min(0.28 + 0.12 * min(max(deviation - 1, 0), 2), 0.55))
         }
     }
 
     private func urgencyBorderColor(_ urgency: SensorUrgency) -> Color {
         switch urgency {
-        case .normal:  return Color(.systemGreen)
-        case .warning: return Color.orange
-        case .danger:  return Color.red
+        case .normal:  return FloorplanTokens.Semantic.ok
+        case .warning: return FloorplanTokens.Semantic.warning
+        case .danger:  return FloorplanTokens.Semantic.critical
         }
     }
 }
