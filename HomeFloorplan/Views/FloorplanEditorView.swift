@@ -33,6 +33,7 @@ struct FloorplanEditorView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(SmartLightingEngine.self) private var smartLightingEngine
     @Environment(CloudKitSyncService.self) private var cloudKitSync
     
@@ -783,8 +784,9 @@ struct FloorplanEditorView: View {
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    // Su iPhone sale sopra pannello (peek) e isola.
-                    .padding(.bottom, isCompactScreen
+                    // Su iPhone in verticale sale sopra pannello (peek) e
+                    // isola; in landscape non ci sono e basta il margine.
+                    .padding(.bottom, showsCompactPaneAndIsland
                              ? Self.compactIslandClearance + 68
                              : 28)
                 }
@@ -816,8 +818,14 @@ struct FloorplanEditorView: View {
         .height(compactSheetPeekHeight)
     }
 
+    /// Sheet e isola esistono SOLO in verticale: in landscape iPhone gli
+    /// sheet di sistema divorano lo schermo (l'altezza compatta non ha
+    /// detents parziali) e la mappa spariva. In orizzontale la planimetria
+    /// si prende tutto — badge, zoom e filtro dal menu in barra; i tab si
+    /// cambiano in verticale (decisione 27/08).
     private var showsCompactPaneAndIsland: Bool {
-        isCompactScreen && !ui.isEditing
+        isCompactScreen && verticalSizeClass == .regular
+            && !ui.isEditing
             && overlayVM != nil
             && overlayVM?.zoomedRoomID == nil
     }
@@ -1095,9 +1103,11 @@ struct FloorplanEditorView: View {
     private func chromeLayout(for container: CGSize) -> FloorplanChromeLayout {
         // Su compact i tab vivono nell'isola in basso (stile Dov'è): in alto
         // resta la barra minima, e in basso la planimetria riserva lo spazio
-        // del peek del pannello — mai finirci sotto.
+        // del peek del pannello — mai finirci sotto. In LANDSCAPE lo sheet
+        // non esiste e la mappa riprende tutta l'altezza.
         FloorplanChromeLayout(hasTwoRowTabBar: !isCompactScreen,
-                              hasBottomPane: isCompactScreen && !ui.isEditing)
+                              hasBottomPane: isCompactScreen && !ui.isEditing
+                                  && container.height > container.width)
     }
 
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
