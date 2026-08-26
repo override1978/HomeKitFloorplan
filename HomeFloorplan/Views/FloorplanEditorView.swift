@@ -304,7 +304,7 @@ struct FloorplanEditorView: View {
                 }
 
                 // "‹ nome piano" per uscire dallo zoom semantico (iPhone)
-                zoomedRoomBackButton
+                zoomedRoomBackButton(container: proxy.size)
                     .environment(\.colorScheme, chromeColorScheme)
 
                 // Right-side scenes panel overlay
@@ -919,7 +919,7 @@ struct FloorplanEditorView: View {
             containerSize: containerSize,
             effectiveScale: effectiveScale,
             effectiveOffset: effectiveOffset,
-            topInset: chromeLayout.topInset
+            topInset: chromeLayout(for: containerSize).topInset
         ).resolve(tapLocation: tapLocation)
     }
     
@@ -954,18 +954,23 @@ struct FloorplanEditorView: View {
     /// editing, dove il banner di modifica ne prende visivamente il posto. Il
     /// valore resta costante per tutta la sessione (mai per-modo, mai misurato)
     /// e canvas + tap resolver lo ereditano da qui senza poter divergere.
-    private var chromeLayout: FloorplanChromeLayout {
-        // v3: niente barra di stato separata — lo stato vive nelle tab 2d,
-        // che alzano la barra su regular e la riga dedicata su compact.
-        FloorplanChromeLayout(hasCompactModeRow: isCompactScreen,
-                              hasTwoRowTabBar: !isCompactScreen)
+    /// Layout chrome per il contenitore dato. Dipende dalla size class E
+    /// dall'orientamento (la riga tab compatta esiste solo in verticale —
+    /// in landscape la mappa si prende tutto): l'orientamento arriva dal
+    /// contenitore, quindi il layout si calcola per-contenitore, sempre da
+    /// costanti, mai da misure.
+    private func chromeLayout(for container: CGSize) -> FloorplanChromeLayout {
+        FloorplanChromeLayout(
+            hasCompactModeRow: isCompactScreen && container.height > container.width,
+            hasTwoRowTabBar: !isCompactScreen
+        )
     }
 
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
         FloorplanCanvasGeometry.imageRect(
             imageSize: imageSize,
             container: container,
-            topInset: chromeLayout.topInset
+            topInset: chromeLayout(for: container).topInset
         )
     }
     
@@ -1016,7 +1021,7 @@ struct FloorplanEditorView: View {
         return FloorplanCanvasView(
             image: image,
             containerSize: container,
-            chrome: chromeLayout,
+            chrome: chromeLayout(for: container),
             showOverlayLayer: overlayVM != nil && !ui.isEditing,
             showEditLayer: ui.isEditing && !floorplan.linkedRooms.isEmpty,
             showMarkers: showMarkers,
@@ -1268,7 +1273,7 @@ struct FloorplanEditorView: View {
     /// Bottone "‹ nome piano" per uscire dallo zoom semantico. Fisso in alto
     /// a sinistra sotto la chrome, fuori dal subtree scalato.
     @ViewBuilder
-    private var zoomedRoomBackButton: some View {
+    private func zoomedRoomBackButton(container: CGSize) -> some View {
         if isCompactScreen, !ui.isEditing,
            overlayVM?.activeMode == .controls,
            overlayVM?.zoomedRoomID != nil {
@@ -1300,7 +1305,7 @@ struct FloorplanEditorView: View {
                 Spacer()
             }
             .padding(.leading, 16)
-            .padding(.top, chromeLayout.topInset + 6)
+            .padding(.top, chromeLayout(for: container).topInset + 6)
             .transition(.opacity)
         }
     }

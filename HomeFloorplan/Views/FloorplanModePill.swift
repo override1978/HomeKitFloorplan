@@ -115,6 +115,9 @@ struct FloorplanModePill: View {
                     Text(mode.label)
                         .font(.system(size: isCompact ? 11.5 : 14, weight: .semibold))
                         .lineLimit(1)
+                        // "Intelligenza" non deve mai diventare "Intelligen…":
+                        // meglio un filo più piccola che tagliata.
+                        .minimumScaleFactor(0.8)
                 }
                 .foregroundStyle(isActive
                                  ? mode.activeForegroundColor
@@ -148,7 +151,10 @@ struct FloorplanModePill: View {
             usesGlass: usesGlass,
             fill: mode.activeBackgroundColor,
             tint: mode.accentColor,
-            alarmBorder: isActive ? nil : alarmColor
+            // Il bordo d'allarme veste il colore DEL TAB (rosa Sicurezza,
+            // viola Intelligenza — feedback 26/08): l'urgenza la dice già il
+            // sottotitolo col suo semantico; il bordo dice solo "guarda qui".
+            alarmBorder: (isActive || alarmColor == nil) ? nil : mode.accentColor
         ))
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .named(Self.barSpace))

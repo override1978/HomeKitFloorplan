@@ -95,23 +95,10 @@ struct FloorplanTopBarView: View {
 
                         Spacer()
 
-                        // Pill temperatura neutra nell'header (design v3):
-                        // l'unico segnale che non vive nelle tab.
-                        if !isCompact, !isEditing,
-                           let temperature = statusStrip?.temperaturePillText {
-                            Text(temperature)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(Color.primary.opacity(0.7))
-                                .lineLimit(1)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .glassChromeSurface(in: Capsule())
-                                .accessibilityLabel(String(
-                                    localized: "floorplan.header.temperature",
-                                    defaultValue: "Temperature indoor/outdoor \(temperature)"
-                                ))
-                                .transition(.opacity)
-                        }
+                        // Niente pill temperatura nell'header: la voleva il
+                        // design v3, ma sull'iPad reale collideva con la tab
+                        // Intelligenza — non c'è spazio (feedback 26/08). Le
+                        // temperature restano nel pannello Ambiente.
 
                         if !isCompact {
                             FloorplanTopRightActions(
@@ -177,10 +164,13 @@ struct FloorplanTopBarView: View {
             .padding(.top, 12)
 
             // Tab switcher compatto: su iPhone le stesse pill 2d a due righe,
-            // piena larghezza, etichette sempre visibili (design v3). Nessuna
-            // barra di stato aggiuntiva: lo stato vive nei sottotitoli.
+            // piena larghezza, etichette sempre visibili (design v3). SOLO in
+            // verticale: in landscape la riga mangiava la poca altezza e
+            // rendeva la mappa inusabile (feedback 26/08) — lì si naviga in
+            // verticale e il landscape resta vista-mappa, in attesa della
+            // rotazione planimetria della v3-B.
             // Il margine è dichiarato in FloorplanChromeLayout.hasCompactModeRow.
-            if !isEditing, isCompact, let overlayVM {
+            if !isEditing, isCompact, size.height > size.width, let overlayVM {
                 FloorplanModePill(overlayVM: overlayVM,
                                   context: overlayContext,
                                   status: statusStrip,
