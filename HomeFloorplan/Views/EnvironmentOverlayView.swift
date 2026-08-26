@@ -965,10 +965,15 @@ private struct PanelCardModifier: ViewModifier {
             // Modifier CONDIVISO: lo usano quasi tutte le card dei pannelli
             // overlay. Convertire il solo contenitore della dashboard lasciava
             // indietro tutte queste — da qui il "solo alcune per overlay".
+            // Fill legacy pieno dal registro token, non materiale traslucido:
+            // sul fondo crema condiviso col canvas il materiale si impastava
+            // in grigio; la card piena con ombra invece galleggia (feedback
+            // utente 26/08). Il ramo vetro resta vetro.
             .glassChromeSurface(
                 in: RoundedRectangle(cornerRadius: 20, style: .continuous),
                 tint: accentColor.opacity(0.12),
-                legacyShadow: GlassChromeShadow(color: accentColor.opacity(0.12), radius: 12, y: 4)
+                legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
+                legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 10, y: 3)
             )
     }
 }

@@ -1125,12 +1125,15 @@ private struct PanelCardModifier: ViewModifier {
                     .frame(height: 3)
             }
             // Stessa conversione del pannello Ambiente: barretta d'accento
-            // conservata, ombra colorata sostituita dalla tinta del vetro.
+            // conservata; fill legacy pieno dal registro token così la card
+            // galleggia sul fondo condiviso col canvas invece di impastarsi
+            // in materiale traslucido.
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .glassChromeSurface(
                 in: RoundedRectangle(cornerRadius: 20, style: .continuous),
                 tint: accentColor.opacity(0.12),
-                legacyShadow: GlassChromeShadow(color: accentColor.opacity(0.12), radius: 12, y: 4)
+                legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
+                legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 10, y: 3)
             )
     }
 }

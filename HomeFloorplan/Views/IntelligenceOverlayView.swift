@@ -531,10 +531,9 @@ struct IntelligenceContextDashboard: View {
             .glassChromeSurface(
                 in: RoundedRectangle(cornerRadius: 20, style: .continuous),
                 tint: accent.opacity(0.12),
-                legacyBorder: accent.opacity(0.14),
-                legacyShadow: GlassChromeShadow(color: accent.opacity(0.08), radius: 10, y: 3)
+                legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
+                legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 10, y: 3)
             )
-            .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 1)
     }
 
     private var situationsSection: some View {

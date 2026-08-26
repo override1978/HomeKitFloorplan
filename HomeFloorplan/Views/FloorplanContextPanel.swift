@@ -153,13 +153,11 @@ struct FloorplanDockedContextPanel: View {
             }
         }
         .frame(maxHeight: .infinity)
+        // Nessun filo di separazione: la colonna prosegue lo sfondo della
+        // planimetria senza confini, e sono le card — superfici piene con
+        // ombra — a galleggiare sopra. (Feedback utente del 26/08: il pannello
+        // non deve leggersi come una sheet laterale.)
         .background(background.ignoresSafeArea(edges: .vertical))
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.08))
-                .frame(width: 1)
-                .ignoresSafeArea(edges: .vertical)
-        }
     }
 
     private var header: some View {
