@@ -203,14 +203,14 @@ struct FloorplanModePill: View {
 }
 
 private extension FloorplanOverlayMode {
+    /// Etichette estese anche su iPhone — tranne Intelligenza, dove "AI"
+    /// batte la parola intera (scelta utente 27/08). La scala minima 0.82
+    /// assorbe le larghezze diverse.
     var compactTabLabel: String {
         switch self {
-        case .controls:
-            return String(localized: "overlay.mode.controls.compact", defaultValue: "Ctrl")
-        case .environment:
-            return String(localized: "overlay.mode.environment.compact", defaultValue: "Amb.")
-        case .security:
-            return String(localized: "overlay.mode.security.compact", defaultValue: "Sic.")
+        case .controls:     return label
+        case .environment:  return label
+        case .security:     return label
         case .intelligence:
             return String(localized: "overlay.mode.intelligence.compact", defaultValue: "AI")
         }
