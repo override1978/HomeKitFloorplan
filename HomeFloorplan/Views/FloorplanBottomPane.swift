@@ -23,7 +23,17 @@ struct FloorplanCompactPaneContent: View {
     var environmentSensorTypes: [SensorServiceType] = []
 
     var body: some View {
-        if overlayVM.activeMode == .controls {
+        // Il dettaglio dispositivo vince anche qui: su iPhone il tap su un
+        // marker non-toggleabile espande lo sheet sul dettaglio, non sulla
+        // lista stanze (matrice gesti 28/08).
+        if case .device = overlayVM.panelContent {
+            FloorplanContextDashboardRouter(
+                overlayVM: overlayVM,
+                floorplan: floorplan,
+                environmentViewModel: environmentViewModel,
+                adapterMap: adapterMap
+            )
+        } else if overlayVM.activeMode == .controls {
             controlsList
         } else {
             VStack(alignment: .leading, spacing: 10) {

@@ -104,14 +104,15 @@ final class FloorplanOverlayViewModel {
     }
 
     /// Contenuto del pannello contestuale. `.dashboard` = router per modalità
-    /// (comportamento storico); `.climate` = vista parametri clima aperta dal
-    /// tap su un marker termostato (novità D).
+    /// (comportamento storico); `.device` = dettaglio del dispositivo aperto
+    /// dal tap su un marker non-toggleabile (matrice gesti 28/08: il tap fa
+    /// l'azione più probabile — toggle sui binari, pannello per tutto il resto).
     var panelContent: PanelContent = .dashboard
 
     enum PanelContent: Equatable {
         case dashboard
-        /// UUID dell'accessorio HomeKit del termostato mostrato.
-        case climate(UUID)
+        /// UUID dell'accessorio HomeKit mostrato nel dettaglio.
+        case device(UUID)
     }
 
     /// Espande una stanza (tab Controlli) e comprime l'eventuale precedente.
@@ -128,9 +129,9 @@ final class FloorplanOverlayViewModel {
         }
     }
 
-    /// Apre la vista parametri clima nel pannello per l'accessorio dato.
-    func showClimateDetail(for accessoryID: UUID) {
-        panelContent = .climate(accessoryID)
+    /// Apre il dettaglio dispositivo nel pannello per l'accessorio dato.
+    func showDeviceDetail(for accessoryID: UUID) {
+        panelContent = .device(accessoryID)
         if !isPanelVisible {
             withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
                 isPanelVisible = true

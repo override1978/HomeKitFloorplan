@@ -13,17 +13,25 @@ struct FloorplanContextDashboardRouter: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            // Il dettaglio clima vince su qualunque dashboard: è stato aperto
-            // da un tap esplicito su un marker termostato.
-            if case .climate(let accessoryID) = overlayVM.panelContent,
-               let adapter = adapterMap[accessoryID],
-               let thermostat = adapter as? (any ThermostatControlling) {
-                FloorplanClimatePanelContent(
-                    overlayVM: overlayVM,
-                    thermostat: thermostat,
-                    name: adapter.name,
-                    roomName: adapter.accessory.room?.name
-                )
+            // Il dettaglio dispositivo vince su qualunque dashboard: è stato
+            // aperto da un tap esplicito su un marker. Clima ha la sua vista
+            // dedicata; le altre categorie usano la sezione controlli che
+            // ogni adapter già espone, con le letture come ripiego.
+            if case .device(let accessoryID) = overlayVM.panelContent,
+               let adapter = adapterMap[accessoryID] {
+                if let thermostat = adapter as? (any ThermostatControlling) {
+                    FloorplanClimatePanelContent(
+                        overlayVM: overlayVM,
+                        thermostat: thermostat,
+                        name: adapter.name,
+                        roomName: adapter.accessory.room?.name
+                    )
+                } else {
+                    FloorplanDevicePanelContent(
+                        overlayVM: overlayVM,
+                        adapter: adapter
+                    )
+                }
             } else {
                 dashboard
             }
@@ -95,6 +103,81 @@ struct FloorplanClimatePanelContent: View {
             }
 
             ThermostatControl(adapter: thermostat, isCompact: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 8)
+    }
+}
+
+// MARK: - FloorplanDevicePanelContent
+
+/// Dettaglio nel pannello per i dispositivi non-toggleabili che non sono
+/// clima (matrice gesti 28/08): tende, serrature, sensori, camere. Riusa la
+/// sezione controlli che l'adapter già espone per la scheda completa; se non
+/// ne ha (sensori puri), mostra stato e batteria.
+struct FloorplanDevicePanelContent: View {
+    @Bindable var overlayVM: FloorplanOverlayViewModel
+    let adapter: any AccessoryAdapter
+
+    @Environment(HomeKitService.self) private var homeKit
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                overlayVM.closeDetailContent()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(String(localized: "common.back", defaultValue: "Back"))
+                        .font(.subheadline.weight(.medium))
+                }
+                .foregroundStyle(overlayVM.activeMode.accentColor)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(adapter.name)
+                    .font(.headline)
+                if let roomName = adapter.accessory.room?.name {
+                    Text(roomName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let controls = adapter.makeControlSection(homeKit: homeKit) {
+                controls
+            }
+
+            // Stato e batteria: per i sensori puri sono il contenuto vero.
+            VStack(alignment: .leading, spacing: 8) {
+                if let status = adapter.primaryStatusText {
+                    HStack(spacing: 8) {
+                        Image(systemName: adapter.iconName)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(status)
+                            .font(.subheadline)
+                            .foregroundStyle(Color.primary)
+                    }
+                }
+                if let battery = adapter.batteryInfo, let level = battery.level {
+                    HStack(spacing: 8) {
+                        Image(systemName: battery.isLow ? "battery.25percent" : "battery.75percent")
+                            .font(.subheadline)
+                            .foregroundStyle(battery.isLow
+                                             ? FloorplanTokens.Semantic.warning
+                                             : Color.secondary)
+                        Text("\(level)%")
+                            .font(.subheadline)
+                            .foregroundStyle(battery.isLow
+                                             ? FloorplanTokens.Semantic.warning
+                                             : Color.primary)
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 8)

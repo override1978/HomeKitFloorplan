@@ -1721,17 +1721,14 @@ struct FloorplanEditorView: View {
 
         chromeController.scheduleAutoHide(isEditing: ui.isEditing)
 
-        // Tap: toggle diretto se supportato; per il clima (novità D) la vista
-        // parametri si apre nel pannello docked; per il resto lo sheet storico.
+        // Matrice gesti (28/08): il tap fa l'azione più probabile — toggle
+        // immediato sui binari sicuri (luci, prese, media), pannello per
+        // tutto il resto (clima, tende, serrature, sensori, camere), su
+        // ENTRAMBE le piattaforme. La scheda completa resta al long-press.
         if let adapter, adapter.supportsQuickToggle {
             performQuickToggle(adapter: adapter, markerID: markerID)
-        } else if !isCompactScreen,
-                  overlayVM?.activeMode == .controls,
-                  adapter is (any ThermostatControlling),
-                  let vm = overlayVM {
-            vm.showClimateDetail(for: accessory.uniqueIdentifier)
         } else {
-            ui.controllingAccessory = accessory
+            overlayVM?.showDeviceDetail(for: accessory.uniqueIdentifier)
         }
     }
     
