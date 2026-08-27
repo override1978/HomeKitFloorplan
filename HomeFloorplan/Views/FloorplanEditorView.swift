@@ -473,9 +473,16 @@ struct FloorplanEditorView: View {
         // Su iPhone il cambio tab azzera lo zoom semantico anche nel
         // viewport: lo stato (`zoomedRoomID`) lo pulisce già il didSet del
         // modo, ma la mappa resterebbe inquadrata sulla stanza.
-        .onChange(of: overlayVM?.activeMode) { _, _ in
-            if isCompactScreen, viewport.zoomScale > 1.01 {
-                viewportController.reset()
+        // Su iPad, entrare in un tab overlay APRE subito il pannello
+        // (richiesta 28/08: meno tap — il tab apre, la mappa chiude).
+        .onChange(of: overlayVM?.activeMode) { _, newMode in
+            if isCompactScreen {
+                if viewport.zoomScale > 1.01 { viewportController.reset() }
+            } else if let mode = newMode, mode != .controls,
+                      overlayVM?.isPanelVisible == false {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+                    overlayVM?.isPanelVisible = true
+                }
             }
         }
         // Meteo per la pill temperatura: si auto-limita a un refresh ogni 30'.
@@ -1057,6 +1064,13 @@ struct FloorplanEditorView: View {
         //    prevede sia sul badge che sulla stanza stessa.
         if !ui.isEditing {
             chromeController.showControlsAndScheduleAutoHide(isEditing: ui.isEditing)
+            // iPad: il tap sulla planimetria congeda il pannello — il gesto
+            // naturale di "torno alla mappa" (richiesta 28/08). I badge
+            // stanza sono Button e non passano di qui.
+            if !isCompactScreen, overlayVM?.isPanelVisible == true {
+                overlayVM?.dismissPanel()
+                return
+            }
             if isCompactScreen, controlsClusterModeActive, let image = imageCache.image {
                 // Con la rotazione attiva il tap va risolto nello spazio di
                 // visualizzazione: immagine e stanze già trasposte.

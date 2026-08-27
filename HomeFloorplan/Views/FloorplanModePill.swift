@@ -118,7 +118,7 @@ struct FloorplanModePill: View {
                         Image(systemName: mode.pillIcon)
                             .font(.system(size: 19, weight: .semibold))
                             .symbolRenderingMode(.hierarchical)
-                        Text(mode.compactTabLabel)
+                        Text(mode.tabLabel)
                             .font(.system(size: 11.5, weight: .semibold))
                             .lineLimit(1)
                             .minimumScaleFactor(0.82)
@@ -126,7 +126,7 @@ struct FloorplanModePill: View {
                         HStack(spacing: 5) {
                             ModeDot(color: mode.accentColor,
                                     pulses: status?.pulses(for: mode) == true && !isActive)
-                            Text(mode.label)
+                            Text(mode.tabLabel)
                                 .font(.system(size: 14, weight: .semibold))
                                 .lineLimit(1)
                                 // "Intelligenza" non deve mai diventare "Intelligen…":
@@ -203,10 +203,10 @@ struct FloorplanModePill: View {
 }
 
 private extension FloorplanOverlayMode {
-    /// Etichette estese anche su iPhone — tranne Intelligenza, dove "AI"
-    /// batte la parola intera (scelta utente 27/08). La scala minima 0.82
-    /// assorbe le larghezze diverse.
-    var compactTabLabel: String {
+    /// Etichette dei TAB, su entrambe le piattaforme: estese tranne
+    /// Intelligenza, dove "AI" batte la parola intera (scelta utente
+    /// 27-28/08). VoiceOver e pannelli continuano a dire "Intelligenza".
+    var tabLabel: String {
         switch self {
         case .controls:     return label
         case .environment:  return label
