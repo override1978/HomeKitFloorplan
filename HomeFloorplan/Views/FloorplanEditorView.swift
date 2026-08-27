@@ -1725,7 +1725,13 @@ struct FloorplanEditorView: View {
         // immediato sui binari sicuri (luci, prese, media), pannello per
         // tutto il resto (clima, tende, serrature, sensori, camere), su
         // ENTRAMBE le piattaforme. La scheda completa resta al long-press.
-        if let adapter, adapter.supportsQuickToggle {
+        //
+        // Le tende sono l'eccezione dichiarata: sanno fare il toggle
+        // (tutto aperto/tutto chiuso) ma sono POSIZIONALI — il tap cieco
+        // spalancava la tenda invece di aprire il pannello con lo slider
+        // (feedback 28/08). Il loro toggle resta disponibile nel pannello.
+        if let adapter, adapter.supportsQuickToggle,
+           !(adapter is WindowCoveringAdapter) {
             performQuickToggle(adapter: adapter, markerID: markerID)
         } else {
             overlayVM?.showDeviceDetail(for: accessory.uniqueIdentifier)
