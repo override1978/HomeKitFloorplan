@@ -47,6 +47,24 @@ struct SecurityOverlayView: View {
             }
             return dict
         }()
+        // Fase 5 — azioni in-place: l'unica azione eseguibile per stanza
+        // (serratura da bloccare, garage da chiudere), solo dove lo stato
+        // la giustifica. I sensori contatto non producono chip: si chiudono
+        // con le mani, non da app.
+        let actionByRoom: [UUID: SecurityInPlaceAction] = {
+            var dict: [UUID: SecurityInPlaceAction] = [:]
+            for room in floorplan.linkedRooms {
+                let status = statusByRoom[room.hmRoomUUID] ?? .none
+                guard status == .unlocked || status == .alarmed else { continue }
+                if let action = SecurityInPlaceActionResolver.action(
+                    for: accessories(in: room),
+                    homeKit: homeKit
+                ) {
+                    dict[room.hmRoomUUID] = action
+                }
+            }
+            return dict
+        }()
         let inverseScale = 1.0 / effectiveScale
 
         return ZStack(alignment: .topLeading) {
@@ -88,6 +106,9 @@ struct SecurityOverlayView: View {
             ForEach(geometryRooms, id: \.hmRoomUUID) { room in
                 let cameras = camerasPerRoom[room.hmRoomUUID] ?? []
                 let center  = h.centroid(for: room)
+                // Quando la stanza ha una chip-azione a +44, le camere
+                // scendono per non finirci sotto.
+                let cameraYOffset: CGFloat = actionByRoom[room.hmRoomUUID] != nil ? 100 : 60
                 ForEach(Array(cameras.enumerated()), id: \.element.accessory.uniqueIdentifier) { idx, adapter in
                     let xOffset = CGFloat(idx) * (120 * inverseScale + 8 * inverseScale)
                     Button {
@@ -107,7 +128,7 @@ struct SecurityOverlayView: View {
                     .buttonStyle(.plain)
                     .position(CGPoint(
                         x: center.x + xOffset,
-                        y: center.y + 60 * inverseScale
+                        y: center.y + cameraYOffset * inverseScale
                     ))
                 }
             }
@@ -127,6 +148,42 @@ struct SecurityOverlayView: View {
                         y: center.y - 42 * inverseScale
                     ))
                     .allowsHitTesting(false)
+                }
+            }
+
+            // Chip-azione in-place (fase 5): sotto il badge della stanza,
+            // solo dove c'è spazio per il badge pieno — a zoom stretti
+            // aggiungerebbe rumore su un'etichetta già collassata.
+            ForEach(geometryRooms, id: \.hmRoomUUID) { room in
+                if let action = actionByRoom[room.hmRoomUUID] {
+                    let status = statusByRoom[room.hmRoomUUID] ?? .none
+                    let center = h.centroid(for: room)
+                    let roomScreenWidth = h.screenRect(from: room.normalizedRect).width * effectiveScale
+                    let level = FloorplanRoomBadgeCollapse.level(
+                        roomScreenWidth: roomScreenWidth,
+                        fullText: room.name + " " + status.label,
+                        valueText: status.label
+                    )
+                    if level == .full {
+                        FloorplanInlineActionButton(
+                            label: "\(action.label) · \(action.deviceName)",
+                            symbol: action.symbol,
+                            color: FloorplanTokens.Semantic.warning,
+                            isProminent: true
+                        ) {
+                            do {
+                                try await action.run()
+                                return true
+                            } catch {
+                                return false
+                            }
+                        }
+                        .scaleEffect(inverseScale)
+                        .position(CGPoint(
+                            x: center.x,
+                            y: center.y + 44 * inverseScale
+                        ))
+                    }
                 }
             }
         }
@@ -782,6 +839,15 @@ struct SecurityContextDashboard: View {
         .modifier(PanelCardModifier(accentColor: criticals.isEmpty ? .orange : .red))
     }
 
+    /// L'azione eseguibile per l'accessorio dell'avviso, se esiste (fase 5).
+    private func inPlaceAction(for insight: SecurityInsight) -> SecurityInPlaceAction? {
+        guard let id = insight.accessoryID,
+              let match = cachedAdapters.first(where: { $0.accessory.uniqueIdentifier == id }) else {
+            return nil
+        }
+        return SecurityInPlaceActionResolver.action(for: [match.accessory], homeKit: homeKit)
+    }
+
     private func alertRow(insight: SecurityInsight, highlightName: String?) -> some View {
         let isHighlighted = insight.room == highlightName && highlightName != nil
         return HStack(alignment: .top, spacing: 8) {
@@ -809,6 +875,24 @@ struct SecurityContextDashboard: View {
                     .font(.caption.weight(isHighlighted ? .semibold : .regular))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                // CTA solo dove l'azione è reale (serratura/garage): la stessa
+                // che la mappa mostra come chip sulla stanza.
+                if let action = inPlaceAction(for: insight) {
+                    FloorplanInlineActionButton(
+                        label: "\(action.label) · \(action.deviceName)",
+                        symbol: action.symbol,
+                        color: insight.priority.color
+                    ) {
+                        do {
+                            try await action.run()
+                            return true
+                        } catch {
+                            return false
+                        }
+                    }
+                    .padding(.top, 3)
+                }
             }
         }
         .padding(6)

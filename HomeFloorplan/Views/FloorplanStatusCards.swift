@@ -6,12 +6,32 @@ struct FloorplanStatusMetric: Identifiable {
     let label: String
 }
 
-struct FloorplanStatusSummaryCard: View {
+struct FloorplanStatusSummaryCard<Footer: View>: View {
     let title: String
     let message: String
     let icon: String
     let color: Color
     let metrics: [FloorplanStatusMetric]
+    /// Riga finale opzionale (fase 5): le CTA della situazione promossa in
+    /// card, che altrimenti resterebbe l'unica senza azioni — l'elenco sotto
+    /// parte dalla seconda.
+    let footer: Footer
+
+    init(
+        title: String,
+        message: String,
+        icon: String,
+        color: Color,
+        metrics: [FloorplanStatusMetric],
+        @ViewBuilder footer: () -> Footer
+    ) {
+        self.title = title
+        self.message = message
+        self.icon = icon
+        self.color = color
+        self.metrics = metrics
+        self.footer = footer()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -52,6 +72,8 @@ struct FloorplanStatusSummaryCard: View {
                     }
                 }
             }
+
+            footer
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -71,6 +93,26 @@ struct FloorplanStatusSummaryCard: View {
             in: RoundedRectangle(cornerRadius: 20, style: .continuous),
             tint: color.opacity(0.12),
             legacyShadow: GlassChromeShadow(color: color.opacity(0.12), radius: 12, y: 4)
+        )
+    }
+}
+
+extension FloorplanStatusSummaryCard where Footer == EmptyView {
+    /// Firma storica senza footer: i call site esistenti restano intatti.
+    init(
+        title: String,
+        message: String,
+        icon: String,
+        color: Color,
+        metrics: [FloorplanStatusMetric]
+    ) {
+        self.init(
+            title: title,
+            message: message,
+            icon: icon,
+            color: color,
+            metrics: metrics,
+            footer: { EmptyView() }
         )
     }
 }

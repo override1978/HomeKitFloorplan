@@ -22,6 +22,11 @@ struct IntelligenceOverlayView: View {
     )
     private var activeHomeInsights: [PersistedHomeInsight]
 
+    // Fase 5 — le azioni in-place sul callout eseguono davvero.
+    @Environment(HomeKitService.self) private var homeKit
+    @Environment(ActionExecutionService.self) private var executionService
+    @Environment(\.modelContext) private var modelContext
+
     @State private var activeCalloutRoomID: UUID?
     @State private var dismissedCalloutKeys: Set<String> = []
     @State private var isCalloutTourInterrupted = false
@@ -185,56 +190,93 @@ struct IntelligenceOverlayView: View {
 
     private func intelligenceCallout(_ summary: FloorplanRoomSituationSummary) -> some View {
         let insight = summary.primary.primary
-        return Button {
-            isCalloutTourInterrupted = true
-            dismissedCalloutKeys.insert(summary.calloutKey)
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                activeCalloutRoomID = nil
-            }
-            overlayVM.selectRoom(summary.roomID)
-        } label: {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: summary.iconName)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 24, height: 24)
-                    .background(Circle().fill(summary.color))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(summary.roomName)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(insight.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                    Text(summary.count == 1
-                         ? String(localized: "intelligence.floorplan.callout.single", defaultValue: "1 active signal")
-                         : String(format: String(localized: "intelligence.floorplan.callout.count", defaultValue: "%d active signals"), summary.count))
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(summary.color)
+        let corrective = FloorplanInsightActions.correctiveAction(for: summary.primary)
+        // Non più un Button unico: dentro un label i bottoni-azione sarebbero
+        // inerti. Il contenuto resta tappabile (apre il pannello), le azioni
+        // sono bottoni veri (fase 5).
+        return VStack(alignment: .leading, spacing: 8) {
+            Button {
+                isCalloutTourInterrupted = true
+                dismissedCalloutKeys.insert(summary.calloutKey)
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                    activeCalloutRoomID = nil
                 }
+                overlayVM.selectRoom(summary.roomID)
+            } label: {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: summary.iconName)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(summary.color))
 
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(summary.roomName)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(insight.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                        Text(summary.count == 1
+                             ? String(localized: "intelligence.floorplan.callout.single", defaultValue: "1 active signal")
+                             : String(format: String(localized: "intelligence.floorplan.callout.count", defaultValue: "%d active signals"), summary.count))
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(summary.color)
+                    }
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 9)
-            .frame(maxWidth: 270, alignment: .leading)
-            // Il callout fluttua sopra la planimetria, quindi va nel vetro. Il
-            // bordo colorato disegnato a mano diventa tinta: sul vetro un bordo
-            // a mano è ciò che fa sembrare una superficie quasi-vetro.
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .glassChromeSurface(
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous),
-                tint: summary.color.opacity(0.16),
-                legacyBorder: summary.color.opacity(0.24),
-                legacyShadow: GlassChromeShadow(color: summary.color.opacity(0.16), radius: 12, y: 4)
-            )
-            .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
+            .buttonStyle(.plain)
+
+            HStack(spacing: 6) {
+                if let corrective {
+                    FloorplanInlineActionButton(
+                        label: corrective.label,
+                        symbol: "bolt.fill",
+                        color: summary.color,
+                        isProminent: true
+                    ) {
+                        await FloorplanInsightActions.execute(
+                            corrective,
+                            homeKit: homeKit,
+                            executionService: executionService,
+                            records: activeHomeInsights,
+                            modelContext: modelContext
+                        )
+                    }
+                }
+                FloorplanInlineActionButton(
+                    label: String(localized: "intelligence.menu.snooze", defaultValue: "Snooze 24h"),
+                    symbol: "moon.zzz.fill",
+                    color: .secondary
+                ) {
+                    FloorplanInsightActions.snooze(
+                        summary.primary,
+                        records: activeHomeInsights,
+                        modelContext: modelContext
+                    )
+                    return true
+                }
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 9)
+        .frame(maxWidth: 270, alignment: .leading)
+        // Il callout fluttua sopra la planimetria, quindi va nel vetro. Il
+        // bordo colorato disegnato a mano diventa tinta: sul vetro un bordo
+        // a mano è ciò che fa sembrare una superficie quasi-vetro.
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+            tint: summary.color.opacity(0.16),
+            legacyBorder: summary.color.opacity(0.24),
+            legacyShadow: GlassChromeShadow(color: summary.color.opacity(0.16), radius: 12, y: 4)
+        )
+        .shadow(color: .black.opacity(0.10), radius: 6, y: 2)
         .accessibilityLabel(
             String(format: String(localized: "intelligence.floorplan.callout.accessibility",
                                   defaultValue: "Open intelligence details for %@"),
@@ -265,7 +307,10 @@ struct IntelligenceOverlayView: View {
                 }
             }
 
-            try? await Task.sleep(nanoseconds: 3_600_000_000)
+            // Con una CTA a bordo il callout resta di più: il tempo di leggere
+            // E decidere se tappare, non solo di leggere.
+            let hasCorrective = FloorplanInsightActions.correctiveAction(for: summary.primary) != nil
+            try? await Task.sleep(nanoseconds: hasCorrective ? 6_500_000_000 : 3_600_000_000)
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
@@ -465,6 +510,12 @@ struct IntelligenceContextDashboard: View {
         order: .reverse
     )
     private var activeHomeInsights: [PersistedHomeInsight]
+
+    // Fase 5 — le righe del pannello eseguono la correttiva e ignorano.
+    @Environment(HomeKitService.self) private var homeKit
+    @Environment(ActionExecutionService.self) private var executionService
+    @Environment(\.modelContext) private var modelContext
+
     /// UUID of the room the user last tapped on the floorplan (highlight only).
     let highlightedRoomID: UUID?
     /// Linked rooms list — used to resolve the highlighted room name.
@@ -676,7 +727,55 @@ struct IntelligenceContextDashboard: View {
                 FloorplanStatusMetric(value: "\(count)", label: String(localized: "intelligence.active", defaultValue: "Active")),
                 FloorplanStatusMetric(value: "\(situation.sourceCount)", label: String(localized: "intelligence.sources", defaultValue: "Sources"))
             ]
-        )
+        ) {
+            // La situazione promossa in card è l'UNICA fuori dall'elenco
+            // (che parte dalla seconda): senza footer resterebbe la sola
+            // senza azioni.
+            situationActionButtons(for: situation)
+        }
+    }
+
+    /// CTA correttiva (quando l'insight ne trasporta una eseguibile) + snooze.
+    /// Sulla card promossa compaiono entrambe; nelle righe dell'elenco una
+    /// sola (la correttiva se c'è, altrimenti lo snooze) — un'azione per riga,
+    /// come da design, o sei righe diventano una pulsantiera.
+    private func situationActionButtons(
+        for situation: HomeSituation,
+        singleAction: Bool = false
+    ) -> some View {
+        let corrective = FloorplanInsightActions.correctiveAction(for: situation)
+        let showsSnooze = !singleAction || corrective == nil
+        return HStack(spacing: 6) {
+            if let corrective {
+                FloorplanInlineActionButton(
+                    label: corrective.label,
+                    symbol: "bolt.fill",
+                    color: accent
+                ) {
+                    await FloorplanInsightActions.execute(
+                        corrective,
+                        homeKit: homeKit,
+                        executionService: executionService,
+                        records: activeHomeInsights,
+                        modelContext: modelContext
+                    )
+                }
+            }
+            if showsSnooze {
+                FloorplanInlineActionButton(
+                    label: String(localized: "intelligence.menu.snooze", defaultValue: "Snooze 24h"),
+                    symbol: "moon.zzz.fill",
+                    color: .secondary
+                ) {
+                    FloorplanInsightActions.snooze(
+                        situation,
+                        records: activeHomeInsights,
+                        modelContext: modelContext
+                    )
+                    return true
+                }
+            }
+        }
     }
 
     private func situationRow(_ situation: HomeSituation) -> some View {
@@ -713,6 +812,9 @@ struct IntelligenceContextDashboard: View {
                         .foregroundStyle(color)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                situationActionButtons(for: situation, singleAction: true)
+                    .padding(.top, 3)
             }
 
             // Niente chip di severità qui: lo dice l'intestazione del gruppo.
