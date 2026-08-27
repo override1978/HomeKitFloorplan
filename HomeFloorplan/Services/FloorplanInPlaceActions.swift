@@ -82,14 +82,16 @@ enum FloorplanInsightActions {
 /// Sulla planimetria non compaiono azioni finte: un sensore contatto aperto si
 /// risolve chiudendo la porta fisica, quindi non produce nessuna azione — la
 /// stanza mostra solo lo stato e si spegne da sola quando il sensore riporta
-/// chiuso. Le azioni reali sono due: bloccare una serratura sbloccata e
-/// chiudere un garage aperto. Regola del design: al massimo UNA per stanza,
-/// la più urgente.
+/// chiuso. Le azioni reali: disattivare un allarme scattato, bloccare una
+/// serratura sbloccata, chiudere un garage aperto, armare in Notte l'allarme
+/// disarmato nelle ore notturne (le stesse quattro che gli insight già
+/// suggerivano a parole — le etichette sono le loro). Regola del design: al
+/// massimo UNA per stanza, la più urgente.
 struct SecurityInPlaceAction: Identifiable {
     let id: UUID
     let label: String
     let symbol: String
-    let deviceName: String
+    let color: Color
     let run: @MainActor () async throws -> Void
 }
 
@@ -97,25 +99,56 @@ struct SecurityInPlaceAction: Identifiable {
 enum SecurityInPlaceActionResolver {
 
     /// L'azione più urgente per gli accessori di una stanza, o nil.
-    /// Serrature prima dei garage (una porta d'ingresso sbloccata pesa di più);
-    /// gli accessori in transizione sono esclusi — l'azione è già in volo.
+    /// Allarme scattato prima di tutto, poi serrature, garage e infine
+    /// l'armamento notturno; gli accessori in transizione sono esclusi —
+    /// l'azione è già in volo.
     static func action(
         for accessories: [HMAccessory],
         homeKit: HomeKitService
     ) -> SecurityInPlaceAction? {
+        var lockAction: SecurityInPlaceAction? = nil
         var garageAction: SecurityInPlaceAction? = nil
+        var armNightAction: SecurityInPlaceAction? = nil
 
         for accessory in accessories {
             let adapter = AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
 
-            if let lock = adapter as? DoorLockAdapter,
+            if let system = adapter as? SecuritySystemAdapter {
+                if system.isTriggered {
+                    return SecurityInPlaceAction(
+                        id: accessory.uniqueIdentifier,
+                        label: String(localized: "security.insight.action.disarm", defaultValue: "Disarm the system"),
+                        symbol: "shield.slash.fill",
+                        color: FloorplanTokens.Semantic.critical,
+                        run: { try await system.setMode(.disarm) }
+                    )
+                }
+                // Stessa finestra dell'insight "disarmato di notte" (22–06,
+                // SecurityScoreService): fuori da lì un allarme disarmato è
+                // normale vita in casa, non un'azione da suggerire.
+                if armNightAction == nil, system.currentMode == .disarm {
+                    let hour = Calendar.current.component(.hour, from: Date())
+                    if hour >= 22 || hour < 6 {
+                        armNightAction = SecurityInPlaceAction(
+                            id: accessory.uniqueIdentifier,
+                            label: String(localized: "security.insight.action.armNight", defaultValue: "Enable Night Mode"),
+                            symbol: "moon.stars.fill",
+                            color: FloorplanTokens.Mode.accent(.security),
+                            run: { try await system.setMode(.night) }
+                        )
+                    }
+                }
+            }
+
+            if lockAction == nil,
+               let lock = adapter as? DoorLockAdapter,
                lock.currentState == .unsecured,
                !lock.isTransitioning {
-                return SecurityInPlaceAction(
+                lockAction = SecurityInPlaceAction(
                     id: accessory.uniqueIdentifier,
-                    label: String(localized: "security.inPlace.lock", defaultValue: "Lock"),
+                    label: String(localized: "security.insight.action.lockDoor", defaultValue: "Lock the door"),
                     symbol: "lock.fill",
-                    deviceName: accessory.name,
+                    color: FloorplanTokens.Semantic.warning,
                     run: { try await lock.setLocked(true) }
                 )
             }
@@ -126,14 +159,14 @@ enum SecurityInPlaceActionResolver {
                !garage.isTransitioning {
                 garageAction = SecurityInPlaceAction(
                     id: accessory.uniqueIdentifier,
-                    label: String(localized: "security.inPlace.close", defaultValue: "Close"),
+                    label: String(localized: "security.insight.action.closeGarage", defaultValue: "Close the garage"),
                     symbol: "door.garage.closed",
-                    deviceName: accessory.name,
+                    color: FloorplanTokens.Semantic.warning,
                     run: { try await garage.setOpen(false) }
                 )
             }
         }
 
-        return garageAction
+        return lockAction ?? garageAction ?? armNightAction
     }
 }

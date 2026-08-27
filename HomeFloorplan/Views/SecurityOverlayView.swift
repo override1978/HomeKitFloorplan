@@ -55,7 +55,7 @@ struct SecurityOverlayView: View {
             var dict: [UUID: SecurityInPlaceAction] = [:]
             for room in floorplan.linkedRooms {
                 let status = statusByRoom[room.hmRoomUUID] ?? .none
-                guard status == .unlocked || status == .alarmed else { continue }
+                guard status == .unlocked || status == .alarmed || status == .disarmed else { continue }
                 if let action = SecurityInPlaceActionResolver.action(
                     for: accessories(in: room),
                     homeKit: homeKit
@@ -166,9 +166,9 @@ struct SecurityOverlayView: View {
                     )
                     if level == .full {
                         FloorplanInlineActionButton(
-                            label: "\(action.label) · \(action.deviceName)",
+                            label: action.label,
                             symbol: action.symbol,
-                            color: FloorplanTokens.Semantic.warning,
+                            color: action.color,
                             isProminent: true
                         ) {
                             do {
@@ -840,12 +840,14 @@ struct SecurityContextDashboard: View {
     }
 
     /// L'azione eseguibile per l'accessorio dell'avviso, se esiste (fase 5).
+    /// Cerca in tutta la casa, non in cachedAdapters: quella cache tiene solo
+    /// sensori e serrature, e lascerebbe antifurto e garage senza CTA.
     private func inPlaceAction(for insight: SecurityInsight) -> SecurityInPlaceAction? {
         guard let id = insight.accessoryID,
-              let match = cachedAdapters.first(where: { $0.accessory.uniqueIdentifier == id }) else {
+              let accessory = homeKit.allAccessories.first(where: { $0.uniqueIdentifier == id }) else {
             return nil
         }
-        return SecurityInPlaceActionResolver.action(for: [match.accessory], homeKit: homeKit)
+        return SecurityInPlaceActionResolver.action(for: [accessory], homeKit: homeKit)
     }
 
     private func alertRow(insight: SecurityInsight, highlightName: String?) -> some View {
@@ -880,7 +882,7 @@ struct SecurityContextDashboard: View {
                 // che la mappa mostra come chip sulla stanza.
                 if let action = inPlaceAction(for: insight) {
                     FloorplanInlineActionButton(
-                        label: "\(action.label) · \(action.deviceName)",
+                        label: action.label,
                         symbol: action.symbol,
                         color: insight.priority.color
                     ) {
