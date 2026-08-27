@@ -365,13 +365,16 @@ struct FloorplanEditorView: View {
                 // apribile (il bottone Scene non c'è) e da chiuso restava
                 // comunque nella gerarchia, spinto fuori da un `offset` — e un
                 // bordo continuava a sporgere. Ciò che non esiste non sporge.
-                if !isCompactScreen {
+                // Scene: da chiuso NON esiste — l'offset che lo parcheggiava
+                // "fuori" dalla colonna mappa lo faceva atterrare esattamente
+                // sopra il pannello docked accanto (feedback 28/08). Stessa
+                // lezione già pagata su iPhone: ciò che non esiste non sporge.
+                if !isCompactScreen, ui.showScenesPanel {
                     HStack(spacing: 0) {
                         Spacer()
                         ScenesSidePanel(isPresented: $ui.showScenesPanel)
                             .frame(width: min(proxy.size.width * 0.72, 320))
-                            .offset(x: ui.showScenesPanel ? 0 : min(proxy.size.width * 0.72, 320) + 20)
-                            .animation(.spring(response: 0.38, dampingFraction: 0.88), value: ui.showScenesPanel)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                     .ignoresSafeArea(edges: .vertical)
                     .environment(\.colorScheme, chromeColorScheme)
@@ -701,7 +704,11 @@ struct FloorplanEditorView: View {
             onShowDiagnostics: { ui.showFloorplanDiagnostics = true },
             onEditDrawing: { ui.drawingEditFloorplan = floorplan },
             onView3D: openPreview3D,
-            onShowScenes: { ui.showScenesPanel = true },
+            onShowScenes: {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+                    ui.showScenesPanel = true
+                }
+            },
             onToggleEditing: ui.toggleEditing,
             onPauseSmartLighting: smartLightingEngine.pauseFromFloorplan,
             onResumeSmartLighting: smartLightingEngine.resumeFromFloorplan
