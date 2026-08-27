@@ -538,27 +538,28 @@ struct EnvironmentContextDashboard: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
 
-            // Score + label row
+            // Score + label row — dieta 27/08: la card vive in una colonna da
+            // 340pt, i corpi da hero non ci stanno.
             HStack(alignment: .bottom) {
                 HStack(alignment: .lastTextBaseline, spacing: 1) {
                     Text("\(globalScoreInt)")
-                        .font(.system(size: 52, weight: .bold, design: .rounded))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
                         .foregroundStyle(envVM.globalColor)
                         .monospacedDigit()
                         .contentTransition(.numericText())
                     Text("%")
-                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundStyle(envVM.globalColor.opacity(0.65))
-                        .padding(.bottom, 5)
+                        .padding(.bottom, 3)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 6) {
+                VStack(alignment: .trailing, spacing: 5) {
                     Text(envVM.globalLabel)
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
                     let alertCount = envVM.rooms.filter { $0.worstUrgency != .normal }.count
                     if alertCount > 0 {
@@ -581,8 +582,8 @@ struct EnvironmentContextDashboard: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 10)
 
             // Progress bar
             GeometryReader { geo in
@@ -598,8 +599,8 @@ struct EnvironmentContextDashboard: View {
                 }
             }
             .frame(height: 5)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 18)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 12)
 
             // Il confronto dentro/fuori vive DENTRO questa card, non in una
             // striscia sua. Da solo non valeva una card: una riga di due
@@ -619,9 +620,9 @@ struct EnvironmentContextDashboard: View {
                     outdoorSymbol: weather.symbolName,
                     indoorAvgTemp: indoorAverageTemperature
                 )
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 16)
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -930,14 +931,14 @@ struct EnvironmentContextDashboard: View {
             }
         }()
 
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 8) {
             cardSectionLabel(String(localized: "environment.panel.sensorSummary", defaultValue: "SENSOR SUMMARY"), icon: "sensor.fill")
 
             HStack(spacing: 0) {
-                summaryCount(dangerCount,  color: .red,    label: String(localized: "environment.summary.label.critical",  defaultValue: "critical"))
-                Divider().frame(height: 36)
-                summaryCount(warningCount, color: .orange, label: String(localized: "environment.summary.label.warning",   defaultValue: "warning"))
-                Divider().frame(height: 36)
+                summaryCount(dangerCount,  color: FloorplanTokens.Semantic.critical, label: String(localized: "environment.summary.label.critical",  defaultValue: "critical"))
+                Divider().frame(height: 28)
+                summaryCount(warningCount, color: FloorplanTokens.Semantic.warning,  label: String(localized: "environment.summary.label.warning",   defaultValue: "warning"))
+                Divider().frame(height: 28)
                 summaryCount(normalCount,  color: accent,  label: String(localized: "environment.summary.label.normal",    defaultValue: "normal"))
             }
 
@@ -972,7 +973,7 @@ struct EnvironmentContextDashboard: View {
     private func summaryCount(_ count: Int, color: Color, label: String) -> some View {
         VStack(spacing: 2) {
             Text("\(count)")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(.system(size: 17, weight: .bold, design: .rounded))
                 .foregroundStyle(count == 0 ? Color.secondary : color)
                 .monospacedDigit()
             Text(label)

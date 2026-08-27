@@ -11,7 +11,11 @@ import HomeKit
 /// - Indicatore batteria scarica (se rilevato)
 struct ThermostatControl: View {
     let adapter: ThermostatControlling
-    
+
+    /// Variante da pannello laterale (colonna 340pt, dieta 27/08): stessi
+    /// controlli e stesse scritture ottimistiche, corpi e bersagli ridotti.
+    var isCompact: Bool = false
+
     @Environment(HomeKitService.self) private var homeKit
     
     /// Target ottimistico durante l'interazione (per UI reattiva), in Celsius (come l'adapter).
@@ -30,7 +34,7 @@ struct ThermostatControl: View {
     private var canEditTemperature: Bool { isReachable && mode != .off }
     
     var body: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: isCompact ? 14 : 22) {
             targetDisplay
             stepperRow
             modePillsRow
@@ -73,13 +77,13 @@ struct ThermostatControl: View {
     private var targetDisplay: some View {
         VStack(spacing: 4) {
             Text(formatted(displayTarget))
-                .font(.system(size: 72, weight: .light, design: .rounded))
+                .font(.system(size: isCompact ? 42 : 72, weight: .light, design: .rounded))
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .foregroundStyle(targetColor)
-            
+
             Text("\(String(localized: "thermostat.now", defaultValue: "Now")) \(formatted(adapter.celsiusToDisplay(adapter.currentTemperature)))")
-                .font(.subheadline)
+                .font(isCompact ? .caption : .subheadline)
                 .foregroundStyle(.secondary)
                 .contentTransition(.numericText())
         }
@@ -97,12 +101,12 @@ struct ThermostatControl: View {
     // MARK: - Stepper ± 0.5°C
     
     private var stepperRow: some View {
-        HStack(spacing: 36) {
+        HStack(spacing: isCompact ? 24 : 36) {
             stepperButton(systemImage: "minus", delta: -1)
             stepperButton(systemImage: "plus", delta: +1)
         }
     }
-    
+
     private func stepperButton(systemImage: String, delta: Double) -> some View {
         Button {
             adjustTarget(by: delta)
@@ -110,9 +114,9 @@ struct ThermostatControl: View {
             ZStack {
                 Circle()
                     .fill(.thinMaterial)
-                    .frame(width: 56, height: 56)
+                    .frame(width: isCompact ? 44 : 56, height: isCompact ? 44 : 56)
                 Image(systemName: systemImage)
-                    .font(.title2.weight(.medium))
+                    .font(isCompact ? .body.weight(.medium) : .title2.weight(.medium))
                     .foregroundStyle(.primary)
             }
         }
@@ -223,7 +227,7 @@ struct ThermostatControl: View {
             VStack(spacing: 4) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(tickFill(isActive: isActive, isSelected: isSelected))
-                    .frame(height: 28)
+                    .frame(height: isCompact ? 20 : 28)
                 
                 Text(fanShortLabel(for: level))
                     .font(.caption2.weight(isSelected ? .semibold : .regular))
@@ -292,15 +296,17 @@ struct ThermostatControl: View {
         return Button {
             selectMode(m)
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: isCompact ? 3 : 4) {
                 Image(systemName: m.symbolName)
-                    .font(.title3)
+                    .font(isCompact ? .subheadline : .title3)
                 Text(m.displayName)
                     .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundStyle(isSelected ? .white : m.tintColor)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, isCompact ? 8 : 12)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(isSelected

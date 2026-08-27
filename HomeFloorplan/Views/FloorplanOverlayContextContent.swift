@@ -94,7 +94,7 @@ struct FloorplanClimatePanelContent: View {
                 }
             }
 
-            ThermostatControl(adapter: thermostat)
+            ThermostatControl(adapter: thermostat, isCompact: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 8)

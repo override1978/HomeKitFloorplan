@@ -463,7 +463,11 @@ struct SecurityContextDashboard: View {
         let okSensors        = monitored.filter { $0.adapter.visualUrgency != .alarm && $0.adapter.visualUrgency != .warning }
         let system           = buildSecuritySystem()
         let score            = SecurityScoreService.computeScore(monitoredSensors: monitored, securitySystem: system)
-        let scoreColor: Color = score >= 80 ? accent : score >= 50 ? .orange : .red
+        // Soglie uniche v3 (85/60), con l'accento del modo per il "verde":
+        // lo score di sicurezza in salute veste il rosa del tab.
+        let scoreColor: Color = score >= 85 ? accent
+            : score >= 60 ? FloorplanTokens.Semantic.warning
+            : FloorplanTokens.Semantic.critical
         let insights         = SecurityScoreService.buildInsights(sensors: monitored, system: system)
         let criticals        = insights.filter { $0.priority == .critical }
         let warnings         = insights.filter { $0.priority == .warning }
@@ -638,7 +642,7 @@ struct SecurityContextDashboard: View {
                             SecurityPanelStat(
                                 value: criticals.count,
                                 label: String(localized: "security.stat.critical", defaultValue: "critical"),
-                                color: .red,
+                                color: FloorplanTokens.Semantic.critical,
                                 symbol: "exclamationmark.shield.fill"
                             )
                         }
@@ -646,7 +650,7 @@ struct SecurityContextDashboard: View {
                             SecurityPanelStat(
                                 value: warnings.count,
                                 label: String(localized: "security.stat.warnings", defaultValue: "warnings"),
-                                color: .orange,
+                                color: FloorplanTokens.Semantic.warning,
                                 symbol: "exclamationmark.triangle.fill"
                             )
                         }
