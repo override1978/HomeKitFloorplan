@@ -482,6 +482,19 @@ struct FloorplanEditorView: View {
         .onChange(of: homeKit.reachabilityVersion) { _, _ in
             refreshAdapterCaches()
         }
+        // Scene e pannello contestuale si escludono a vicenda: sono entrambi
+        // sul lato destro e aperti insieme si incastrano uno sull'altro
+        // (feedback 28/08 — "ora ne abbiamo una di troppo").
+        .onChange(of: ui.showScenesPanel) { _, isShowing in
+            if isShowing { overlayVM?.dismissPanel() }
+        }
+        .onChange(of: overlayVM?.isPanelVisible) { _, isVisible in
+            if isVisible == true, ui.showScenesPanel {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    ui.showScenesPanel = false
+                }
+            }
+        }
         .fullScreenCover(item: $preview3D) { request in
             FloorplanRealityPreviewView(floorplans: request.floorplans,
                                         initialID: request.initialID)
