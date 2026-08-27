@@ -131,58 +131,32 @@ struct FloorplanDockedContextPanel: View {
     let background: Color
     /// Per il dettaglio clima (novità D).
     var adapterMap: [UUID: any AccessoryAdapter] = [:]
-
-    private var mode: FloorplanOverlayMode { overlayVM.activeMode }
+    /// Fascia riservata alla chrome a piena larghezza (opzione A, 27/08): il
+    /// contenuto parte sotto di lei, come la mappa. Il vetro della barra
+    /// scorre anche su questa colonna.
+    var topInset: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-                .padding(.horizontal, 16)
-                .padding(.top, 18)
-                .padding(.bottom, 6)
-
-            ScrollView {
-                FloorplanContextDashboardRouter(
-                    overlayVM: overlayVM,
-                    floorplan: floorplan,
-                    environmentViewModel: environmentViewModel,
-                    adapterMap: adapterMap
-                )
-                .padding(.horizontal, 12)
-                .padding(.bottom, 16)
-            }
+        // Niente header: il titolo lo dice già il tab attivo e la chiusura
+        // sta nel bottone "Chiudi" della barra — ogni cosa una volta sola.
+        ScrollView {
+            FloorplanContextDashboardRouter(
+                overlayVM: overlayVM,
+                floorplan: floorplan,
+                environmentViewModel: environmentViewModel,
+                adapterMap: adapterMap
+            )
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
         }
+        .contentMargins(.top, topInset, for: .scrollContent)
         .frame(maxHeight: .infinity)
         // Nessun filo di separazione: la colonna prosegue lo sfondo della
         // planimetria senza confini, e sono le card — superfici piene con
         // ombra — a galleggiare sopra. (Feedback utente del 26/08: il pannello
         // non deve leggersi come una sheet laterale.)
         .background(background.ignoresSafeArea(edges: .vertical))
-    }
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(mode.accentColor)
-                .frame(width: 8, height: 8)
-            Text(mode.label)
-                .font(.headline)
-                .foregroundStyle(Color.primary)
-
-            Spacer()
-
-            Button(action: overlayVM.dismissPanel) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.primary.opacity(0.65))
-                    .frame(width: 30, height: 30)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .glassChromeSurface(in: Circle())
-            .accessibilityLabel(String(localized: "floorplan.panel.close",
-                                       defaultValue: "Close panel"))
-        }
     }
 }
 

@@ -241,24 +241,47 @@ struct FloorplanEditorView: View {
     /// vive nel proprio GeometryReader, quindi quando il pannello entra la
     /// geometria (imageRect, marker, tap, collisioni) si ricalcola da sola
     /// dalla larghezza ridotta — nessun caso speciale.
+    /// Layout iPad "opzione A" (27/08): la chrome — titolo, tab, chips — vive
+    /// in un layer a TUTTA larghezza sopra mappa e pannello, e non si
+    /// ricalcola mai all'apertura del pannello: prima stava nella colonna
+    /// mappa, che restringendosi la faceva collassare su sé stessa. Il
+    /// pannello occupa solo il vano sotto la fascia chrome (stessa costante
+    /// che riserva la mappa) e non ha più un header suo: il titolo lo dice
+    /// già il tab, la chiusura sta in barra.
     private var canvasContent: some View {
-        HStack(spacing: 0) {
-            mapColumn
+        GeometryReader { outer in
+            ZStack {
+                HStack(spacing: 0) {
+                    mapColumn
 
-            if isDockedPanelVisible, let vm = overlayVM {
-                FloorplanDockedContextPanel(
-                    overlayVM: vm,
-                    floorplan: floorplan,
-                    environmentViewModel: overlayEnvVM,
-                    background: floorplanBackgroundColor,
-                    adapterMap: currentAdapterMap()
-                )
-                .frame(width: FloorplanDockedContextPanel.width)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-                .environment(\.colorScheme, chromeColorScheme)
+                    if isDockedPanelVisible, let vm = overlayVM {
+                        FloorplanDockedContextPanel(
+                            overlayVM: vm,
+                            floorplan: floorplan,
+                            environmentViewModel: overlayEnvVM,
+                            background: floorplanBackgroundColor,
+                            adapterMap: currentAdapterMap(),
+                            topInset: chromeLayout(for: outer.size).topInset
+                        )
+                        .frame(width: FloorplanDockedContextPanel.width)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .environment(\.colorScheme, chromeColorScheme)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.35), value: isDockedPanelVisible)
+
+                // Top bar SEMPRE a piena larghezza, sopra mappa E pannello:
+                // il vetro scorre su entrambi e le soglie di collasso della
+                // pill non dipendono più dal pannello. Resta la regola iPhone:
+                // con una stanza zoomata, niente chrome — solo planimetria e
+                // "‹ indietro" (feedback 26/08).
+                if !(isCompactScreen && !ui.isEditing && overlayVM?.zoomedRoomID != nil) {
+                    topBar(in: outer.size)
+                        .environment(\.colorScheme, chromeColorScheme)
+                        .transition(.opacity)
+                }
             }
         }
-        .animation(.easeInOut(duration: 0.35), value: isDockedPanelVisible)
     }
 
     /// Colonna mappa (l'intero canvas pre-redesign). Separata dalla catena di
@@ -293,15 +316,9 @@ struct FloorplanEditorView: View {
                     )
                 }
 
-                // Top bar: sempre visibile — TRANNE con una stanza zoomata su
-                // iPhone: lì restano solo planimetria e "‹ indietro", perché
-                // la mappa zoomata finiva sotto le trasparenze della chrome e
-                // generava solo rumore (feedback 26/08).
-                if !(isCompactScreen && !ui.isEditing && overlayVM?.zoomedRoomID != nil) {
-                    topBar(in: proxy.size)
-                        .environment(\.colorScheme, chromeColorScheme)
-                        .transition(.opacity)
-                }
+                // La top bar NON sta più qui: vive nel layer esterno a piena
+                // larghezza (opzione A, 27/08), così l'apertura del pannello
+                // docked non la fa mai ricalcolare.
 
                 // Controlli secondari (zoom, toolbar marker): soggetti ad auto-hide
                 secondaryControls(in: proxy.size)
