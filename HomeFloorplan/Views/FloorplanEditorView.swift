@@ -251,6 +251,12 @@ struct FloorplanEditorView: View {
     private var canvasContent: some View {
         GeometryReader { outer in
             ZStack {
+                // UN solo sfondo per mappa E pannello: due layer affiancati
+                // dello stesso colore non sono mai davvero la stessa
+                // superficie — si vedeva un'ombra al confine (feedback 27/08).
+                floorplanBackgroundColor
+                    .ignoresSafeArea()
+
                 HStack(spacing: 0) {
                     mapColumn
 
@@ -259,7 +265,6 @@ struct FloorplanEditorView: View {
                             overlayVM: vm,
                             floorplan: floorplan,
                             environmentViewModel: overlayEnvVM,
-                            background: floorplanBackgroundColor,
                             adapterMap: currentAdapterMap(),
                             topInset: chromeLayout(for: outer.size).topInset
                         )
@@ -290,8 +295,10 @@ struct FloorplanEditorView: View {
     private var mapColumn: some View {
         GeometryReader { proxy in
             ZStack {
-                floorplanBackgroundColor
-                    .ignoresSafeArea()
+                // Il colore lo dipinge il canvas esterno, UNA volta per mappa
+                // e pannello insieme; qui resta solo il segnaposto che dà al
+                // Var ZStack la sua area (layout e hit-testing invariati).
+                Color.clear
 
                 if let image = imageCache.image {
                     imageWithMarkers(image: image, container: proxy.size)

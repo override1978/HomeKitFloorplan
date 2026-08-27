@@ -125,10 +125,6 @@ struct FloorplanDockedContextPanel: View {
     @Bindable var overlayVM: FloorplanOverlayViewModel
     let floorplan: Floorplan
     let environmentViewModel: EnvironmentViewModel
-    /// Sfondo del canvas (dipende dalla planimetria): la colonna lo prosegue,
-    /// separata solo da un filo, così il pannello appartiene alla stessa
-    /// superficie e non sembra una sheet appoggiata sopra.
-    let background: Color
     /// Per il dettaglio clima (novità D).
     var adapterMap: [UUID: any AccessoryAdapter] = [:]
     /// Fascia riservata alla chrome a piena larghezza (opzione A, 27/08): il
@@ -152,11 +148,10 @@ struct FloorplanDockedContextPanel: View {
         }
         .contentMargins(.top, topInset, for: .scrollContent)
         .frame(maxHeight: .infinity)
-        // Nessun filo di separazione: la colonna prosegue lo sfondo della
-        // planimetria senza confini, e sono le card — superfici piene con
-        // ombra — a galleggiare sopra. (Feedback utente del 26/08: il pannello
-        // non deve leggersi come una sheet laterale.)
-        .background(background.ignoresSafeArea(edges: .vertical))
+        // NESSUNO sfondo proprio: il pannello è trasparente sul fondo unico
+        // che il canvas dipinge per mappa e colonna insieme — solo così le
+        // due zone sono davvero la stessa superficie, senza ombre al confine
+        // (feedback 27/08). Le card galleggiano, il resto è planimetria.
     }
 }
 
