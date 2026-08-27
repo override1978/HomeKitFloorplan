@@ -34,6 +34,7 @@ struct FloorplanEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(IdleTimerService.self) private var idleTimer
     @Environment(SmartLightingEngine.self) private var smartLightingEngine
     @Environment(CloudKitSyncService.self) private var cloudKitSync
     
@@ -828,6 +829,11 @@ struct FloorplanEditorView: View {
             && !ui.isEditing
             && overlayVM != nil
             && overlayVM?.zoomedRoomID == nil
+            // Lo screensaver vive nella gerarchia dell'app, ma lo sheet è una
+            // presentazione di sistema e gli galleggiava SOPRA (feedback
+            // 27/08): quando lo screensaver è attivo lo sheet si congeda, e
+            // al tocco di ritorno riappare da solo.
+            && !idleTimer.shouldShowScreensaver
     }
 
     private var compactFindMySheetBinding: Binding<Bool> {
