@@ -446,6 +446,21 @@ struct FloorplanEditorView: View {
         .onChange(of: floorplan.updatedAt) { _, _ in
             imageLoader.refresh(for: floorplan)
         }
+        // Cambio planimetria dal selettore del titolo: la vista è la stessa
+        // e lo @State sopravvive — ma il VM overlay è PER-PIANO, e una
+        // stanza espansa del piano precedente faceva filtrare i marker su un
+        // UUID inesistente: zero accessori, e compariva l'empty state
+        // "Nessun accessorio posizionato" (bug 28/08). Al cambio si ricrea
+        // il VM e si riaggancia tutta la meccanica per-piano.
+        .onChange(of: floorplan.id) { _, newID in
+            overlayVM = FloorplanOverlayViewModel(floorplanID: newID)
+            viewport = FloorplanViewportState()
+            viewportController.restore()
+            imageLoader.refresh(for: floorplan)
+            accessoryObservationCoordinator.subscribe(to: floorplan)
+            refreshOverlayContext()
+            refreshAdapterCaches()
+        }
     }
 
     var body: some View {
