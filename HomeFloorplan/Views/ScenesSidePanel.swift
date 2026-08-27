@@ -18,37 +18,18 @@ struct ScenesSidePanel: View {
     @State private var usageStore: SceneUsageStore?
 
     var body: some View {
-        // Due card invece di un pannello unico, come gli overlay Ambiente,
-        // Sicurezza e Intelligenza: i comandi in una, il contenuto nell'altra.
-        //
-        // Da lastra unica, intestazione e ricerca stavano nello stesso blocco
-        // della lista e servivano dei `Divider` a fare il lavoro che ora fa lo
-        // spazio fra le card. Separandole, i comandi restano fermi mentre la
-        // lista scorre — che è il motivo vero della divisione, non l'estetica.
-        VStack(spacing: 12) {
-            // ── Card 1: comandi ────────────────────────────────────────────
-            VStack(spacing: 0) {
-                panelHeader
-                searchBar
-                if !scenesService.representedRooms.isEmpty {
-                    roomFilterBar
-                }
+        // Niente lastroni (feedback 28/08): il linguaggio del pannello
+        // contestuale è fatto di card PICCOLE che galleggiano sul fondo
+        // condiviso. Qui: intestazione nuda, ricerca come capsula propria,
+        // chips libere, e OGNI scena con la sua card. I comandi restano
+        // comunque fermi mentre la lista scorre.
+        VStack(spacing: 8) {
+            panelHeader
+            searchBar
+            if !scenesService.representedRooms.isEmpty {
+                roomFilterBar
             }
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .glassChromeSurface(
-                in: RoundedRectangle(cornerRadius: 20, style: .continuous),
-                legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
-                legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 10, y: 3)
-            )
-
-            // ── Card 2: le scene ───────────────────────────────────────────
             sceneList
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .glassChromeSurface(
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous),
-                    legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
-                legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 10, y: 3)
-                )
         }
         // Colonna docked (28/08): il margine alto lo dà la fascia chrome dal
         // contenitore; qui restano i margini della colonna, simmetrici.
@@ -93,9 +74,9 @@ struct ScenesSidePanel: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
+        // Intestazione nuda sul fondo condiviso: niente card attorno.
+        .padding(.horizontal, 4)
+        .padding(.top, 4)
     }
 
     // MARK: - Search bar
@@ -118,14 +99,14 @@ struct ScenesSidePanel: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(.quaternary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        // Capsula propria, come le altre superfici fluttuanti.
+        .glassChromeSurface(
+            in: Capsule(),
+            legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
+            legacyShadow: GlassChromeShadow(color: .black.opacity(0.08), radius: 6, y: 2)
         )
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     // MARK: - Room filter bar
@@ -138,8 +119,8 @@ struct ScenesSidePanel: View {
                     roomPill(label: room.name, roomID: room.id)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 4)
         }
     }
 
@@ -183,12 +164,14 @@ struct ScenesSidePanel: View {
                 ContentUnavailableView.search(text: searchText)
                     .padding(.top, 24)
             } else {
-                LazyVStack(spacing: 8) {
+                LazyVStack(spacing: 10) {
                     ForEach(filtered) { scene in
                         sceneRow(scene)
                     }
                 }
-                .padding(12)
+                .padding(.horizontal, 2)
+                .padding(.top, 4)
+                .padding(.bottom, 12)
             }
         }
     }
@@ -246,11 +229,14 @@ struct ScenesSidePanel: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.ultraThinMaterial)
+        // Ogni scena è una card che galleggia, come le righe stanza del
+        // pannello: fill pieno, ombra leggera — mai materiale traslucido.
+        .glassChromeSurface(
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+            legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
+            legacyShadow: GlassChromeShadow(color: .black.opacity(0.08), radius: 6, y: 2)
         )
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .opacity(isExecuting ? 0.6 : 1.0)
         .onTapGesture {
             guard !isExecuting else { return }
