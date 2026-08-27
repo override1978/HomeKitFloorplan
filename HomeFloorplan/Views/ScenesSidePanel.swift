@@ -37,7 +37,8 @@ struct ScenesSidePanel: View {
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .glassChromeSurface(
                 in: RoundedRectangle(cornerRadius: 20, style: .continuous),
-                legacyShadow: GlassChromeShadow(color: .black.opacity(0.14), radius: 14, x: -3, y: 0)
+                legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
+                legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 10, y: 3)
             )
 
             // ── Card 2: le scene ───────────────────────────────────────────
@@ -45,11 +46,15 @@ struct ScenesSidePanel: View {
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .glassChromeSurface(
                     in: RoundedRectangle(cornerRadius: 20, style: .continuous),
-                    legacyShadow: GlassChromeShadow(color: .black.opacity(0.14), radius: 14, x: -3, y: 0)
+                    legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
+                legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 10, y: 3)
                 )
         }
-        .padding(.vertical, 12)
-        .padding(.trailing, 12)
+        // Colonna docked (28/08): il margine alto lo dà la fascia chrome dal
+        // contenitore; qui restano i margini della colonna, simmetrici.
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
         .task {
             scenesService.refresh()
             if usageStore == nil {

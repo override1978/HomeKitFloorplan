@@ -272,8 +272,21 @@ struct FloorplanEditorView: View {
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                         .environment(\.colorScheme, chromeColorScheme)
                     }
+
+                    // Scene con la stessa dignità del contestuale (28/08):
+                    // colonna docked nel vano planimetria, sfondo condiviso,
+                    // niente scrim. La mutua esclusione garantisce che qui
+                    // ci sia sempre UNA sola colonna.
+                    if !isCompactScreen, ui.showScenesPanel {
+                        ScenesSidePanel(isPresented: $ui.showScenesPanel)
+                            .padding(.top, chromeLayout(for: outer.size).topInset)
+                            .frame(width: FloorplanDockedContextPanel.width)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                            .environment(\.colorScheme, chromeColorScheme)
+                    }
                 }
                 .animation(.easeInOut(duration: 0.35), value: isDockedPanelVisible)
+                .animation(.easeInOut(duration: 0.35), value: ui.showScenesPanel)
 
                 // Top bar SEMPRE a piena larghezza, sopra mappa E pannello:
                 // il vetro scorre su entrambi e le soglie di collasso della
@@ -349,36 +362,9 @@ struct FloorplanEditorView: View {
                 zoomedRoomBackButton(container: proxy.size)
                     .environment(\.colorScheme, chromeColorScheme)
 
-                // Right-side scenes panel overlay
-                if ui.showScenesPanel {
-                    Color.black.opacity(0.25)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                ui.showScenesPanel = false
-                            }
-                        }
-                        .transition(.opacity)
-                }
-
-                // Su iPhone il pannello non si costruisce affatto: non è
-                // apribile (il bottone Scene non c'è) e da chiuso restava
-                // comunque nella gerarchia, spinto fuori da un `offset` — e un
-                // bordo continuava a sporgere. Ciò che non esiste non sporge.
-                // Scene: da chiuso NON esiste — l'offset che lo parcheggiava
-                // "fuori" dalla colonna mappa lo faceva atterrare esattamente
-                // sopra il pannello docked accanto (feedback 28/08). Stessa
-                // lezione già pagata su iPhone: ciò che non esiste non sporge.
-                if !isCompactScreen, ui.showScenesPanel {
-                    HStack(spacing: 0) {
-                        Spacer()
-                        ScenesSidePanel(isPresented: $ui.showScenesPanel)
-                            .frame(width: min(proxy.size.width * 0.72, 320))
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
-                    .ignoresSafeArea(edges: .vertical)
-                    .environment(\.colorScheme, chromeColorScheme)
-                }
+                // Le Scene non sono più un overlay con scrim su questa
+                // colonna: sono una colonna docked in canvasContent, pari
+                // grado del pannello contestuale (28/08).
 
                 // Il pannello su compact non è più un overlay laterale: è il
                 // bottom sheet a 2 detent presentato da `observedCanvas`
@@ -1080,8 +1066,15 @@ struct FloorplanEditorView: View {
         if !ui.isEditing {
             chromeController.showControlsAndScheduleAutoHide(isEditing: ui.isEditing)
             // iPad: il tap sulla planimetria congeda il pannello — il gesto
-            // naturale di "torno alla mappa" (richiesta 28/08). I badge
+            // naturale di "torno alla mappa" (richiesta 28/08). Vale anche
+            // per le Scene, ora che sono una colonna pari grado. I badge
             // stanza sono Button e non passano di qui.
+            if !isCompactScreen, ui.showScenesPanel {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    ui.showScenesPanel = false
+                }
+                return
+            }
             if !isCompactScreen, overlayVM?.isPanelVisible == true {
                 overlayVM?.dismissPanel()
                 return
