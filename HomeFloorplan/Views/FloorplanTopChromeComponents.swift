@@ -495,7 +495,7 @@ struct FloorplanEditModeBanner: View {
                 Text(String(localized: "floorplan.edit.banner.title", defaultValue: "Edit floorplan"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
-                Text(String(localized: "floorplan.edit.banner.subtitle", defaultValue: "Tap a room to add there. Use + for free placement."))
+                Text(String(localized: "floorplan.edit.banner.subtitle.maintenance", defaultValue: "Drag markers to move them. Tap one to rename, change icon or remove."))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

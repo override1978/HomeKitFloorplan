@@ -1139,26 +1139,9 @@ struct FloorplanEditorView: View {
             return
         }
 
-        // 3. Editing + has linked room areas: detect which area was tapped
-        guard !floorplan.linkedRooms.isEmpty else { return }
-        guard let image = imageCache.image,
-              let tapResolution = resolveRoomTap(
-                at: tapLocation,
-                imageSize: image.size,
-                containerSize: containerSize
-              ) else {
-            ui.resetAccessoryPickerContext()
-            return
-        }
-
-        ui.pendingMarkerPosition = tapResolution.markerPosition
-
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-            ui.editHighlightedRoomID = tapResolution.roomID
-        }
-        ui.pickerRoomFilter = tapResolution.roomID
-
-        ui.showingPicker = true
+        // 3. In modifica il tap sulla stanza NON apre più il picker: era
+        // l'ultima doppia via per aggiungere (feedback 28/08) — aggiungere è
+        // compito del flusso guidato, la Modifica mantiene ciò che esiste.
     }
 
     private func resolveRoomTap(at tapLocation: CGPoint,
