@@ -605,7 +605,8 @@ struct FloorplanTopRightActions: View {
                     // esattamente nel caso che ora si è liberato.
                     FloorplanToolsMenu(
                         isDrawingAvailable: isDrawingAvailable,
-                        showsSceneAndEdit: collapsesActions && !isEditing,
+                        showsScenes: collapsesActions && !isEditing,
+                        showsEdit: !isEditing,
                         unplacedCount: unplacedCount,
                         onStartPlacement: onStartPlacement,
                         onShowHelp: onShowHelp,
@@ -638,10 +639,12 @@ struct FloorplanTopRightActions: View {
                         .accessibilityLabel(String(localized: "scenes.title", defaultValue: "Scenes"))
                     }
 
-                    // "Modifica" per esteso quando c'è spazio; "Fatto" SEMPRE,
-                    // perché è l'uscita dalla modalità e nasconderla in un menu
-                    // significherebbe far cercare come tornare indietro.
-                    if isEditing || !collapsesActions {
+                    // "Modifica" NON è più un bottone in barra (feedback
+                    // 28/08): per l'utente finale era la seconda via accanto
+                    // al flusso guidato. La manutenzione vive nel menu ⋯ come
+                    // la diagnostica. "Fatto" resta SEMPRE visibile in
+                    // modifica: l'uscita da una modalità non si nasconde.
+                    if isEditing {
                         Divider().frame(height: 20)
 
                         Button {
@@ -673,7 +676,11 @@ struct FloorplanToolsMenu: View {
     /// Scene e Modifica sono qui dentro solo fuori dalla modalità modifica: in
     /// modifica "Fatto" resta un bottone a sé, perché la via d'USCITA da una
     /// modalità non va nascosta in un menu — un'azione sì, un modo di uscire no.
-    let showsSceneAndEdit: Bool
+    /// Scene compare qui solo quando la barra stretta ha tolto il suo bottone
+    /// esteso; "Modifica" invece vive SOLO qui (feedback 28/08): in barra era
+    /// la seconda via accanto al flusso guidato, da menu è manutenzione.
+    let showsScenes: Bool
+    let showsEdit: Bool
     let unplacedCount: Int
     let onStartPlacement: () -> Void
     let onShowHelp: () -> Void
@@ -700,21 +707,25 @@ struct FloorplanToolsMenu: View {
                 Divider()
             }
 
-            if showsSceneAndEdit {
+            if showsScenes {
                 Button {
                     onShowScenes()
                 } label: {
                     Label(String(localized: "scenes.title", defaultValue: "Scenes"),
                           systemImage: "play.rectangle.on.rectangle")
                 }
+            }
 
+            if showsEdit {
                 Button {
                     onToggleEditing()
                 } label: {
-                    Label(String(localized: "common.edit", defaultValue: "Edit"),
+                    Label(String(localized: "floorplan.edit.markers", defaultValue: "Edit markers"),
                           systemImage: "pencil")
                 }
+            }
 
+            if showsScenes || showsEdit {
                 Divider()
             }
 
