@@ -27,6 +27,10 @@ struct FloorplanTopBarView: View {
     let onOpenSidebar: () -> Void
     let onDismiss: () -> Void
     let onSelectFloorplan: ((UUID) -> Void)?
+    /// Dispositivi con stanza sul piano ma senza marker (fase 6): quando > 0
+    /// il menu strumenti offre il posizionamento guidato.
+    let unplacedCount: Int
+    let onStartPlacement: () -> Void
     let onAddAccessory: () -> Void
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
@@ -107,6 +111,8 @@ struct FloorplanTopBarView: View {
                                 collapsesActions: collapsesActions,
                                 isDrawingAvailable: floorplan.drawingDocumentJSON != nil,
                                 isPanelVisible: overlayVM?.isPanelVisible ?? false,
+                                unplacedCount: unplacedCount,
+                                onStartPlacement: onStartPlacement,
                                 onAddAccessory: onAddAccessory,
                                 onShowHelp: onShowHelp,
                                 onShowDiagnostics: onShowDiagnostics,
@@ -131,6 +137,19 @@ struct FloorplanTopBarView: View {
                             // telefono. UN solo Menu con la propria superficie:
                             // la regola «mai due Menu su una superficie» regge.
                             Menu {
+                                if unplacedCount > 0 {
+                                    Button {
+                                        onStartPlacement()
+                                    } label: {
+                                        Label(String(format: String(localized: "placement.menu.start",
+                                                                    defaultValue: "Place devices (%d)"),
+                                                     unplacedCount),
+                                              systemImage: "plus.viewfinder")
+                                    }
+
+                                    Divider()
+                                }
+
                                 Button {
                                     onEditDrawing()
                                 } label: {
@@ -523,6 +542,8 @@ struct FloorplanTopRightActions: View {
     /// Stato del pannello docked, per il bottone "Dettagli ☰ / Chiudi ✕"
     /// che prende il posto delle azioni nelle modalità overlay.
     let isPanelVisible: Bool
+    let unplacedCount: Int
+    let onStartPlacement: () -> Void
     let onAddAccessory: () -> Void
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
@@ -601,6 +622,8 @@ struct FloorplanTopRightActions: View {
                     FloorplanToolsMenu(
                         isDrawingAvailable: isDrawingAvailable,
                         showsSceneAndEdit: collapsesActions && !isEditing,
+                        unplacedCount: unplacedCount,
+                        onStartPlacement: onStartPlacement,
                         onShowHelp: onShowHelp,
                         onShowDiagnostics: onShowDiagnostics,
                         onEditDrawing: onEditDrawing,
@@ -667,6 +690,8 @@ struct FloorplanToolsMenu: View {
     /// modifica "Fatto" resta un bottone a sé, perché la via d'USCITA da una
     /// modalità non va nascosta in un menu — un'azione sì, un modo di uscire no.
     let showsSceneAndEdit: Bool
+    let unplacedCount: Int
+    let onStartPlacement: () -> Void
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
     let onEditDrawing: () -> Void
@@ -676,6 +701,21 @@ struct FloorplanToolsMenu: View {
 
     var body: some View {
         Menu {
+            // Fase 6: finché ci sono dispositivi con stanza ma senza marker,
+            // il flusso guidato è la prima voce — è l'azione col debito.
+            if unplacedCount > 0 {
+                Button {
+                    onStartPlacement()
+                } label: {
+                    Label(String(format: String(localized: "placement.menu.start",
+                                                defaultValue: "Place devices (%d)"),
+                                 unplacedCount),
+                          systemImage: "plus.viewfinder")
+                }
+
+                Divider()
+            }
+
             if showsSceneAndEdit {
                 Button {
                     onShowScenes()

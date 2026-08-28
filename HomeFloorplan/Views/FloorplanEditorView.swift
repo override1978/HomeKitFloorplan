@@ -55,6 +55,7 @@ struct FloorplanEditorView: View {
     @State private var hideTask: Task<Void, Never>?
     
     @Environment(HomeKitScenesService.self) private var scenesService
+    @Environment(IconOverrideStore.self) private var iconOverrides
 
     @Query(sort: \Floorplan.createdAt, order: .reverse) private var allFloorplans: [Floorplan]
 
@@ -63,6 +64,14 @@ struct FloorplanEditorView: View {
 
     /// Overlay layer view model — scoped to this editor instance, keyed to the floorplan UUID.
     @State private var overlayVM: FloorplanOverlayViewModel?
+
+    /// Flusso di posizionamento guidato (fase 6): non-nil = attivo. Lo stato
+    /// vive solo per la sessione del flusso — gli "salta" non si persistono.
+    @State private var placementModel: FloorplanPlacementOnboardingModel?
+
+    /// Dispositivi che mancano all'appello, per la voce di menu. In cache:
+    /// contarli scandisce casa e adapter, non è roba da ogni render.
+    @State private var cachedUnplacedCount: Int = 0
     @State private var compactSheetDetent: PresentationDetent = .height(112)
     /// Shared environment view model used by both the overlay layer and the context panel.
     @State private var overlayEnvVM = EnvironmentViewModel()
@@ -234,7 +243,8 @@ struct FloorplanEditorView: View {
     /// nessuna stanza viene coperta. Su compact resta l'overlay di sempre
     /// (diventerà bottom sheet in fase 4).
     private var isDockedPanelVisible: Bool {
-        !isCompactScreen && !ui.isEditing && (overlayVM?.isPanelVisible ?? false)
+        !isCompactScreen && !ui.isEditing && placementModel == nil
+            && (overlayVM?.isPanelVisible ?? false)
     }
 
     /// Contenuto canvas: colonna mappa + eventuale pannello docked. La mappa
@@ -277,7 +287,7 @@ struct FloorplanEditorView: View {
                     // colonna docked nel vano planimetria, sfondo condiviso,
                     // niente scrim. La mutua esclusione garantisce che qui
                     // ci sia sempre UNA sola colonna.
-                    if !isCompactScreen, ui.showScenesPanel {
+                    if !isCompactScreen, ui.showScenesPanel, placementModel == nil {
                         ScenesSidePanel(isPresented: $ui.showScenesPanel)
                             .padding(.top, chromeLayout(for: outer.size).topInset)
                             .frame(width: FloorplanDockedContextPanel.width)
@@ -293,7 +303,22 @@ struct FloorplanEditorView: View {
                 // pill non dipendono più dal pannello. Resta la regola iPhone:
                 // con una stanza zoomata, niente chrome — solo planimetria e
                 // "‹ indietro" (feedback 26/08).
-                if !(isCompactScreen && !ui.isEditing && overlayVM?.zoomedRoomID != nil) {
+                if let placementModel {
+                    // Fase 6: la chrome del flusso guidato prende il posto
+                    // della top bar — due chrome insieme direbbero due cose.
+                    placementHeader(model: placementModel)
+                        .environment(\.colorScheme, chromeColorScheme)
+                        .transition(.opacity)
+
+                    if placementModel.isCompleted {
+                        FloorplanPlacementCompletionCard(
+                            placedCount: placementModel.sessionPlaced,
+                            onFinish: exitPlacementOnboarding
+                        )
+                        .environment(\.colorScheme, chromeColorScheme)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    }
+                } else if !(isCompactScreen && !ui.isEditing && overlayVM?.zoomedRoomID != nil) {
                     topBar(in: outer.size)
                         .environment(\.colorScheme, chromeColorScheme)
                         .transition(.opacity)
@@ -405,6 +430,12 @@ struct FloorplanEditorView: View {
         .modifier(editorPresentationModifier)
         .suppressesIdleScreensaver(.floorplanInteraction, when: ui.shouldSuppressIdleScreensaver)
         .onAppear(perform: handleAppear)
+        // Conteggio "da posizionare" per la voce di menu: si rifà solo quando
+        // cambia la casa o i marker posati, non a ogni render.
+        .task(id: "\(homeKit.allAccessories.count)|\(floorplan.accessories.count)") {
+            cachedUnplacedCount = FloorplanPlacementQueue.unplacedCount(floorplan: floorplan,
+                                                                       homeKit: homeKit)
+        }
         .onChange(of: homeKit.isReady) { _, isReady in
             if isReady {
                 measureMain("isReady.subscribe") {
@@ -707,6 +738,8 @@ struct FloorplanEditorView: View {
             onOpenSidebar: openSidebar,
             onDismiss: dismiss.callAsFunction,
             onSelectFloorplan: onSelectFloorplan,
+            unplacedCount: cachedUnplacedCount,
+            onStartPlacement: startPlacementOnboarding,
             onAddAccessory: showAccessoryPicker,
             onShowHelp: chromeController.showHelpManually,
             onShowDiagnostics: { ui.showFloorplanDiagnostics = true },
@@ -879,6 +912,7 @@ struct FloorplanEditorView: View {
     private var showsCompactPaneAndIsland: Bool {
         isCompactScreen && verticalSizeClass == .regular
             && !ui.isEditing
+            && placementModel == nil
             && overlayVM != nil
             && overlayVM?.zoomedRoomID == nil
             // Lo screensaver vive nella gerarchia dell'app, ma lo sheet è una
@@ -1052,6 +1086,9 @@ struct FloorplanEditorView: View {
     }
     
     private func handleBackgroundTap(at tapLocation: CGPoint, in containerSize: CGSize) {
+        // Durante il posizionamento guidato il tap sulla mappa non deve né
+        // zoomare né congedare pannelli: il flusso ha i suoi controlli.
+        guard placementModel == nil else { return }
         // 1. Deselect marker in edit mode
         if ui.isEditing && ui.selectedMarkerID != nil {
             withAnimation(.spring(response: 0.35)) {
@@ -1236,7 +1273,9 @@ struct FloorplanEditorView: View {
     /// girarla aiuta. In modifica MAI: le scritture restano nell'orientamento
     /// originale e non serve alcuna trasformazione inversa.
     private func displayRotationActive(image: UIImage, container: CGSize) -> Bool {
-        !ui.isEditing && isCompactScreen
+        // Anche il posizionamento guidato scrive coordinate: come la modifica,
+        // lavora nell'orientamento originale e non ruota mai.
+        !ui.isEditing && placementModel == nil && isCompactScreen
             && FloorplanRotation.shouldRotate(imageSize: image.size, container: container)
     }
 
@@ -1256,20 +1295,28 @@ struct FloorplanEditorView: View {
         // In modifica vale ancora il vecchio riparo del portrait iPhone; fuori
         // dalla modifica ci pensa la vista a riassunto (cluster/badge + zoom
         // semantico) a non ammucchiare marker sullo schermo stretto.
-        let showMarkers = ui.isEditing
+        let showMarkers = (ui.isEditing || placementModel != nil)
             ? !hidesMarkersInPortrait(container: container)
             : (overlayVM?.activeMode == .controls && !controlsClusterModeActive)
         return FloorplanCanvasView(
             image: displayImage,
             containerSize: container,
             chrome: chromeLayout(for: container),
-            showOverlayLayer: overlayVM != nil && !ui.isEditing,
+            showOverlayLayer: (overlayVM != nil || placementModel != nil) && !ui.isEditing,
             showEditLayer: ui.isEditing && !floorplan.linkedRooms.isEmpty,
             showMarkers: showMarkers,
             markerItems: showMarkers ? markerRenderItems(rotated: isRotated) : [],
             collisionOffsets: showMarkers ? markerCollisionOffsets(in: rect) : [:]
         ) { container, imageRect in
-            if let vm = overlayVM, !ui.isEditing {
+            if let placementModel, !ui.isEditing {
+                // Fase 6: sotto i marker vivono i fill stanza e i badge di
+                // scelta. La rotazione qui è sempre spenta, quindi le stanze
+                // sono quelle originali.
+                placementRoomsLayer(model: placementModel,
+                                    container: container,
+                                    imageRect: imageRect)
+                    .environment(\.colorScheme, chromeColorScheme)
+            } else if let vm = overlayVM, !ui.isEditing {
                 overlayLayer(vm: vm, container: container, imageRect: imageRect,
                              rooms: rooms, isRotated: isRotated)
             } else {
@@ -1293,7 +1340,14 @@ struct FloorplanEditorView: View {
                 }
             )
         } overMarkerLayer: { _, imageRect in
-            expandedRoomChrome(imageRect: imageRect)
+            if let placementModel, !ui.isEditing {
+                // Il fantasma sta SOPRA i marker già posati: deve restare
+                // trascinabile anche dove i dispositivi si addensano.
+                placementGhostLayer(model: placementModel, imageRect: imageRect)
+                    .environment(\.colorScheme, chromeColorScheme)
+            } else {
+                expandedRoomChrome(imageRect: imageRect)
+            }
         }
     }
 
@@ -1847,5 +1901,149 @@ struct FloorplanEditorView: View {
         // Stesso momento, stessa logica: chi ha marker posati da prima si
         // ritrova il legame con l'apertura senza dover rifare niente.
         markerEditingCoordinator.backfillMarkerOpeningLinksIfNeeded()
+    }
+
+    // MARK: - Posizionamento guidato (fase 6)
+
+    private func startPlacementOnboarding() {
+        let model = FloorplanPlacementOnboardingModel()
+        model.initialTotal = FloorplanPlacementQueue.unplacedCount(floorplan: floorplan,
+                                                                  homeKit: homeKit)
+        guard model.initialTotal > 0, !floorplan.linkedRooms.isEmpty else { return }
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+            // Il flusso vuole la mappa intera per sé: pannelli e Scene si
+            // congedano, la modalità torna Controlli così l'uscita atterra lì.
+            ui.showScenesPanel = false
+            overlayVM?.dismissPanel()
+            overlayVM?.activeMode = .controls
+            placementModel = model
+        }
+    }
+
+    private func exitPlacementOnboarding() {
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+            placementModel = nil
+        }
+    }
+
+    private func placementQueues(model: FloorplanPlacementOnboardingModel) -> [FloorplanPlacementRoomQueue] {
+        FloorplanPlacementQueue.roomQueues(floorplan: floorplan,
+                                           homeKit: homeKit,
+                                           skipped: model.skipped)
+    }
+
+    private func placementPickRoom(_ roomID: UUID, model: FloorplanPlacementOnboardingModel) {
+        let queues = placementQueues(model: model)
+        guard let queue = queues.first(where: { $0.id == roomID }),
+              let first = queue.accessories.first else { return }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            model.phase = .placing(roomID: roomID)
+            model.roomInitialCount = queue.remainingCount
+            model.currentAccessoryUUID = first.uniqueIdentifier
+            model.ghostPosition = markerEditingCoordinator.normalizedCenter(for: queue.room)
+        }
+    }
+
+    private func placementConfirm(model: FloorplanPlacementOnboardingModel) {
+        guard case .placing(let roomID) = model.phase,
+              let uuid = model.currentAccessoryUUID,
+              let accessory = homeKit.accessory(for: uuid) else { return }
+        // UNICA via di scrittura: il coordinator, o il marker resta sul
+        // device e non arriva su CloudKit.
+        markerEditingCoordinator.addAccessory(accessory, at: model.ghostPosition)
+        model.sessionPlaced += 1
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        placementAdvance(model: model, in: roomID)
+    }
+
+    private func placementSkip(model: FloorplanPlacementOnboardingModel) {
+        guard case .placing(let roomID) = model.phase,
+              let uuid = model.currentAccessoryUUID else { return }
+        // Solo per la sessione: un saltato resta in coda e torna alla
+        // prossima apertura del flusso (da design).
+        model.skipped.insert(uuid)
+        placementAdvance(model: model, in: roomID)
+    }
+
+    /// Prossimo della stessa stanza; a coda di stanza esaurita si torna alla
+    /// scelta, e a code TUTTE esaurite compare il riepilogo.
+    private func placementAdvance(model: FloorplanPlacementOnboardingModel, in roomID: UUID) {
+        let queues = placementQueues(model: model)
+        if let queue = queues.first(where: { $0.id == roomID }),
+           let next = queue.accessories.first {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                model.currentAccessoryUUID = next.uniqueIdentifier
+                model.ghostPosition = markerEditingCoordinator.normalizedCenter(for: queue.room)
+            }
+            return
+        }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            model.phase = .pickRoom
+            model.currentAccessoryUUID = nil
+            if queues.allSatisfy(\.isComplete) {
+                model.isCompleted = true
+            }
+        }
+    }
+
+    private func placementHeader(model: FloorplanPlacementOnboardingModel) -> some View {
+        FloorplanPlacementHeader(
+            phase: model.phase,
+            placingRoomName: model.placingRoomID.flatMap { id in
+                floorplan.linkedRooms.first { $0.hmRoomUUID == id }?.name
+            },
+            placedCount: model.sessionPlaced,
+            totalCount: model.initialTotal,
+            onBackToRooms: {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    model.phase = .pickRoom
+                    model.currentAccessoryUUID = nil
+                }
+            },
+            onExit: exitPlacementOnboarding
+        )
+    }
+
+    private func placementRoomsLayer(model: FloorplanPlacementOnboardingModel,
+                                     container: CGSize,
+                                     imageRect: CGRect) -> some View {
+        let queues = placementQueues(model: model)
+        let byRoom = Dictionary(queues.map { ($0.id, $0) },
+                                uniquingKeysWith: { first, _ in first })
+        return FloorplanPlacementRoomsLayer(
+            rooms: floorplan.linkedRooms,
+            queues: byRoom,
+            phase: model.phase,
+            containerSize: container,
+            imageRect: imageRect,
+            effectiveScale: effectiveScale,
+            onPickRoom: { placementPickRoom($0, model: model) }
+        )
+    }
+
+    @ViewBuilder
+    private func placementGhostLayer(model: FloorplanPlacementOnboardingModel,
+                                     imageRect: CGRect) -> some View {
+        if case .placing(let roomID) = model.phase,
+           let uuid = model.currentAccessoryUUID,
+           let accessory = homeKit.accessory(for: uuid) {
+            let remaining = placementQueues(model: model)
+                .first { $0.id == roomID }?.remainingCount ?? 0
+            FloorplanPlacementGhostLayer(
+                accessory: accessory,
+                iconName: iconOverrides.effectiveIcon(
+                    for: accessory,
+                    adapter: AccessoryAdapterFactory.adapter(for: accessory, homeKit: homeKit)
+                ),
+                queuePosition: (current: max(1, model.roomInitialCount - remaining + 1),
+                                total: model.roomInitialCount),
+                ghostPosition: model.ghostPosition,
+                imageRect: imageRect,
+                effectiveScale: effectiveScale,
+                onMove: { model.ghostPosition = $0 },
+                onConfirm: { placementConfirm(model: model) },
+                onSkip: { placementSkip(model: model) }
+            )
+        }
     }
 }
