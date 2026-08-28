@@ -704,11 +704,6 @@ struct FloorplanEditorView: View {
         }
     }
 
-    private func showAccessoryPicker() {
-        ui.resetAccessoryPickerContext()
-        ui.showingPicker = true
-    }
-
     // MARK: - Top bar (sempre visibile)
 
     @ViewBuilder
@@ -740,7 +735,6 @@ struct FloorplanEditorView: View {
             onSelectFloorplan: onSelectFloorplan,
             unplacedCount: cachedUnplacedCount,
             onStartPlacement: startPlacementOnboarding,
-            onAddAccessory: showAccessoryPicker,
             onShowHelp: chromeController.showHelpManually,
             onShowDiagnostics: { ui.showFloorplanDiagnostics = true },
             onEditDrawing: { ui.drawingEditFloorplan = floorplan },
@@ -1344,9 +1338,17 @@ struct FloorplanEditorView: View {
             FloorplanEmptyMarkersHint(
                 hasAreas: !floorplan.linkedRooms.isEmpty,
                 onAddAccessory: {
-                    ui.pickerRoomFilter = nil
-                    ui.pendingMarkerPosition = nil
-                    ui.showingPicker = true
+                    // Su un piano vergine l'invito porta al flusso guidato,
+                    // che è LA via per aggiungere (decisione 28/08); il
+                    // picker libero resta solo per chi non ha coda (stanze
+                    // non disegnate o senza dispositivi).
+                    if cachedUnplacedCount > 0 {
+                        startPlacementOnboarding()
+                    } else {
+                        ui.pickerRoomFilter = nil
+                        ui.pendingMarkerPosition = nil
+                        ui.showingPicker = true
+                    }
                 }
             )
         } overMarkerLayer: { _, imageRect in

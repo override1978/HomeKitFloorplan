@@ -31,7 +31,6 @@ struct FloorplanTopBarView: View {
     /// il menu strumenti offre il posizionamento guidato.
     let unplacedCount: Int
     let onStartPlacement: () -> Void
-    let onAddAccessory: () -> Void
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
     let onEditDrawing: () -> Void
@@ -113,7 +112,6 @@ struct FloorplanTopBarView: View {
                                 isPanelVisible: overlayVM?.isPanelVisible ?? false,
                                 unplacedCount: unplacedCount,
                                 onStartPlacement: onStartPlacement,
-                                onAddAccessory: onAddAccessory,
                                 onShowHelp: onShowHelp,
                                 onShowDiagnostics: onShowDiagnostics,
                                 onEditDrawing: onEditDrawing,
@@ -544,7 +542,6 @@ struct FloorplanTopRightActions: View {
     let isPanelVisible: Bool
     let unplacedCount: Int
     let onStartPlacement: () -> Void
-    let onAddAccessory: () -> Void
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
     let onEditDrawing: () -> Void
@@ -595,24 +592,11 @@ struct FloorplanTopRightActions: View {
     private var actionsPill: some View {
         GlassTitlePill {
             HStack(spacing: 0) {
-                if isEditing {
-                    Button {
-                        onAddAccessory()
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.headline)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: "floorplan.addAccessory", defaultValue: "Add accessory"))
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
-
-                    Divider().frame(height: 20)
-                        .transition(.opacity)
-                }
-
+                // Il "+" non vive più qui (decisione 28/08): aggiungere
+                // dispositivi è compito del flusso guidato, la Modifica resta
+                // la modalità di manutenzione — sposta, rinomina, icona,
+                // elimina, audit. Il picker libero sopravvive dietro le
+                // quinte per il posizionamento assistito dalla diagnostica.
                 if !hidesActions {
                     // Fuori dalla modifica resta il solo menu: Scene e Modifica
                     // sono dentro di esso. Erano due bottoni con testo, circa
