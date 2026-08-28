@@ -1474,7 +1474,10 @@ struct FloorplanEditorView: View {
                    value: item.isShaking)
         .animation(.spring(response: 0.3), value: item.isSelected)
         .gesture(
-            ui.isEditing
+            // Nel flusso guidato i marker già posati sono SOLO riferimento
+            // visivo: né toggle né scheda (feedback 28/08 — un tap durante il
+            // posizionamento azionava casa). La modifica è di "Edit markers".
+            (ui.isEditing || placementModel != nil)
             ? nil
             : markerInteractionGesture(for: item.id, accessory: item.accessory, adapter: item.adapter)
         )
