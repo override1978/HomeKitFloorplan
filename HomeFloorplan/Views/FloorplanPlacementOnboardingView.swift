@@ -4,38 +4,24 @@ import HomeKit
 // MARK: - Header
 
 /// Chrome del flusso di posizionamento guidato (fase 6): titolo, barra di
-/// progresso e uscita. Prende il posto della top bar finché il flusso è
-/// aperto — due chrome contemporanee direbbero due cose diverse.
+/// progresso, uscita e — sotto — il banner-istruzione che rende esplicita la
+/// modalità e dice sempre qual è il prossimo gesto (feedback 28/08: non era
+/// chiaro né che si dovesse toccare una stanza, né di essere in un flusso).
+/// Prende il posto della top bar finché il flusso è aperto.
 struct FloorplanPlacementHeader: View {
     let phase: FloorplanPlacementOnboardingModel.Phase
     let placingRoomName: String?
     let placedCount: Int
     let totalCount: Int
-    let onBackToRooms: () -> Void
     let onExit: () -> Void
 
     private var accent: Color { FloorplanTokens.Mode.accent(.controls) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                if case .placing = phase {
-                    Button(action: onBackToRooms) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                                .font(.footnote.weight(.semibold))
-                            Text(String(localized: "placement.backToRooms", defaultValue: "Rooms"))
-                                .font(.subheadline.weight(.medium))
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .glassChromeSurface(in: Capsule())
-                }
-
-                Spacer(minLength: 0)
+        VStack(spacing: 8) {
+            // Titolo+progresso centrati; il ✕ sta a destra senza spostarli.
+            HStack {
+                Spacer(minLength: 44)
 
                 VStack(spacing: 5) {
                     Text(headerTitle)
@@ -66,24 +52,48 @@ struct FloorplanPlacementHeader: View {
                 .padding(.vertical, 8)
                 .glassChromeSurface(in: Capsule())
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 12)
 
+                // Chiusura, non "salta tutto": il flusso si riprende quando
+                // si vuole dal menu, uscire non butta via niente.
                 Button(action: onExit) {
-                    Text(String(localized: "placement.skipAll", defaultValue: "Skip all"))
-                        .font(.subheadline.weight(.medium))
+                    Image(systemName: "xmark")
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color.primary.opacity(0.7))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .contentShape(Capsule())
+                        .frame(width: 36, height: 36)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .glassChromeSurface(in: Capsule())
+                .glassChromeSurface(in: Circle())
+                .accessibilityLabel(String(localized: "common.close", defaultValue: "Close"))
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
+
+            // Banner-istruzione, tinto d'accento come il banner della
+            // modifica: è LUI a dire che si è in una modalità a parte.
+            HStack(spacing: 10) {
+                Image(systemName: instructionIcon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(accent)
+
+                Text(instructionText)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .frame(maxWidth: 560)
+            .glassChromeSurface(
+                in: Capsule(),
+                tint: accent.opacity(0.18),
+                legacyBorder: accent.opacity(0.18)
+            )
 
             Spacer()
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
@@ -92,6 +102,20 @@ struct FloorplanPlacementHeader: View {
             return placingRoomName
         }
         return String(localized: "placement.title", defaultValue: "Place your devices")
+    }
+
+    private var instructionIcon: String {
+        if case .placing = phase { return "hand.draw" }
+        return "hand.tap"
+    }
+
+    private var instructionText: String {
+        if case .placing = phase {
+            return String(localized: "placement.instruction.placing",
+                          defaultValue: "Drag the marker where the device is, then confirm. Tap the map to go back to the rooms.")
+        }
+        return String(localized: "placement.instruction.pickRoom",
+                      defaultValue: "Tap a room badge to place its devices.")
     }
 
     private var progressFraction: CGFloat {

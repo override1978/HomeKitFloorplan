@@ -1086,9 +1086,19 @@ struct FloorplanEditorView: View {
     }
     
     private func handleBackgroundTap(at tapLocation: CGPoint, in containerSize: CGSize) {
-        // Durante il posizionamento guidato il tap sulla mappa non deve né
-        // zoomare né congedare pannelli: il flusso ha i suoi controlli.
-        guard placementModel == nil else { return }
+        // Durante il posizionamento guidato il tap sulla mappa non zooma né
+        // congeda pannelli: dentro una stanza RIPORTA alla scelta stanze — è
+        // il gesto d'uscita, al posto di un bottone "indietro" che nessuno
+        // capiva (feedback 28/08).
+        if let placementModel {
+            if case .placing = placementModel.phase {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    placementModel.phase = .pickRoom
+                    placementModel.currentAccessoryUUID = nil
+                }
+            }
+            return
+        }
         // 1. Deselect marker in edit mode
         if ui.isEditing && ui.selectedMarkerID != nil {
             withAnimation(.spring(response: 0.35)) {
@@ -1994,12 +2004,6 @@ struct FloorplanEditorView: View {
             },
             placedCount: model.sessionPlaced,
             totalCount: model.initialTotal,
-            onBackToRooms: {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                    model.phase = .pickRoom
-                    model.currentAccessoryUUID = nil
-                }
-            },
             onExit: exitPlacementOnboarding
         )
     }
