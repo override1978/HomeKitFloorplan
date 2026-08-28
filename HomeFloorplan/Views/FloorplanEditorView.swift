@@ -203,7 +203,9 @@ struct FloorplanEditorView: View {
     }
     
     private var shouldShowControls: Bool {
-        chromeController.shouldShowControls(isEditing: ui.isEditing)
+        // Nel flusso guidato i controlli non vanno mai in auto-hide, come in
+        // Modifica: la card del marker selezionato deve restare visibile.
+        chromeController.shouldShowControls(isEditing: markerMaintenanceModeActive)
     }
 
 
@@ -756,7 +758,10 @@ struct FloorplanEditorView: View {
     private func secondaryControls(in size: CGSize) -> some View {
         FloorplanSecondaryControlsLayer(
             effectiveScale: effectiveScale,
-            isEditing: ui.isEditing,
+            // Manutenzione, non solo Modifica: la card del marker vale anche
+            // nel flusso guidato (feedback 28/08 — il tap selezionava ma la
+            // card restava dietro questo gate).
+            isEditing: markerMaintenanceModeActive,
             isOverlayPanelVisible: overlayVM?.isPanelVisible,
             activeOverlayMode: overlayVM?.activeMode,
             selectedMarkerID: ui.selectedMarkerID,
