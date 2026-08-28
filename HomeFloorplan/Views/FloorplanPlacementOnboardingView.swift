@@ -115,7 +115,7 @@ struct FloorplanPlacementHeader: View {
                           defaultValue: "Drag the marker where the device is, then confirm. Tap the map to go back to the rooms.")
         }
         return String(localized: "placement.instruction.pickRoom",
-                      defaultValue: "Tap a room badge to place its devices.")
+                      defaultValue: "Tap a room badge to place its devices. Tap a placed marker to adjust or move it.")
     }
 
     private var progressFraction: CGFloat {

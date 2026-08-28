@@ -781,7 +781,7 @@ struct FloorplanEditorView: View {
     }
 
     private var selectedMarkerToolbarState: FloorplanSelectedMarkerToolbarState? {
-        guard ui.isEditing, let markerID = ui.selectedMarkerID else { return nil }
+        guard markerMaintenanceModeActive, let markerID = ui.selectedMarkerID else { return nil }
         guard let placed = marker(withID: markerID) else { return nil }
         return selectedMarkerToolbarStateBuilder.state(for: placed)
     }
@@ -1085,6 +1085,14 @@ struct FloorplanEditorView: View {
         // il gesto d'uscita, al posto di un bottone "indietro" che nessuno
         // capiva (feedback 28/08).
         if let placementModel {
+            // Prima si congeda la card del marker selezionato, come in
+            // Modifica; solo il tap successivo torna alla scelta stanze.
+            if ui.selectedMarkerID != nil {
+                withAnimation(.spring(response: 0.35)) {
+                    ui.selectedMarkerID = nil
+                }
+                return
+            }
             if case .placing = placementModel.phase {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     placementModel.phase = .pickRoom
@@ -1474,15 +1482,16 @@ struct FloorplanEditorView: View {
                    value: item.isShaking)
         .animation(.spring(response: 0.3), value: item.isSelected)
         .gesture(
-            // Nel flusso guidato i marker già posati sono SOLO riferimento
-            // visivo: né toggle né scheda (feedback 28/08 — un tap durante il
-            // posizionamento azionava casa). La modifica è di "Edit markers".
-            (ui.isEditing || placementModel != nil)
+            // Nel flusso guidato il tap NON aziona mai casa (feedback 28/08):
+            // lì i marker posati hanno l'interazione della manutenzione —
+            // selezione con card e trascinamento — così il flusso è lo
+            // strumento unico per i marker (feedback 28/08, secondo giro).
+            markerMaintenanceModeActive
             ? nil
             : markerInteractionGesture(for: item.id, accessory: item.accessory, adapter: item.adapter)
         )
         .simultaneousGesture(
-            ui.isEditing
+            markerMaintenanceModeActive
             ? TapGesture()
                 .onEnded {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -1492,8 +1501,16 @@ struct FloorplanEditorView: View {
             : nil
         )
         .gesture(
-            ui.isEditing ? dragGesture(for: item.id, position: item.position, imageRect: imageRect) : nil
+            markerMaintenanceModeActive
+            ? dragGesture(for: item.id, position: item.position, imageRect: imageRect)
+            : nil
         )
+    }
+
+    /// Vero quando i marker posati rispondono da manutenzione (selezione +
+    /// card + drag) invece che da controllo: in Modifica e nel flusso guidato.
+    private var markerMaintenanceModeActive: Bool {
+        ui.isEditing || placementModel != nil
     }
 
     private func markerRenderItems(rotated: Bool = false) -> [FloorplanMarkerRenderItem] {
@@ -1920,6 +1937,7 @@ struct FloorplanEditorView: View {
 
     private func exitPlacementOnboarding() {
         withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+            ui.selectedMarkerID = nil
             placementModel = nil
         }
     }
