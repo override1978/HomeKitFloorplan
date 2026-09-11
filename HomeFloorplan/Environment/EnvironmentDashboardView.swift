@@ -20,6 +20,8 @@ struct EnvironmentDashboardView: View {
     @Environment(HomeKitService.self) private var homeKit
     @Environment(\.modelContext) private var modelContext
     @Environment(ActionExecutionService.self) private var executionService
+    /// Lo stato ambientale in memoria: è da qui che arrivano i valori correnti.
+    @Environment(HomeState.self) private var homeState
 
     @State private var vm = EnvironmentViewModel()
 
@@ -122,11 +124,23 @@ struct EnvironmentDashboardView: View {
                 EnvironmentRoomReorderSheet(vm: vm)
             }
             .onAppear {
-                vm.configure(modelContainer: modelContext.container)
+                vm.configure(modelContainer: modelContext.container, homeState: homeState)
+                // Prima il presente, sincrono: la schermata si dipinge subito
+                // con i valori veri invece di aspettare un fetch da 500 righe
+                // per poi mostrarne uno vecchio di minuti.
+                vm.applyLiveState(homeState)
+                // Poi l'archivio, in sottofondo, per ciò che solo lui sa:
+                // le soglie utente e la direzione a 45 minuti.
                 vm.loadFromCoreData()
                 AlertNotificationService.shared.clearBadge()
                 sampleIfNeeded()
                 homeKit.startObserving(accessoryUUIDs: RoomPresenceLocator.presenceAccessoryUUIDs(homeKit: homeKit))
+            }
+            // Ogni volta che HomeKit consegna qualcosa di nuovo la schermata si
+            // riallinea, senza toccare il disco. È questo a rendere la
+            // dashboard viva invece che aggiornata ogni quindici minuti.
+            .onChange(of: homeState.lastChange) { _, _ in
+                vm.applyLiveState(homeState)
             }
             .onReceive(presenceTick) { _ in
                 if let strongest = RoomPresenceLocator.activeDetections(homeKit: homeKit).first {

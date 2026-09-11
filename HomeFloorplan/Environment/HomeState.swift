@@ -81,6 +81,15 @@ final class HomeState {
     /// Nome corrente di ogni stanza, per la sola presentazione.
     private(set) var roomNames: [UUID: String] = [:]
 
+    /// Istante dell'ultima applicazione di nuovi valori.
+    ///
+    /// Serve come appiglio di osservazione: `readings` è un dizionario annidato
+    /// e osservarlo direttamente da una vista significa ridisegnare a ogni
+    /// mutazione di qualunque stanza. Qui un `onChange` su una singola data
+    /// basta a sapere che c'è qualcosa di nuovo, e chi lo riceve decide cosa
+    /// rileggere.
+    private(set) var lastChange: Date = .distantPast
+
     /// Oltre questa età una lettura non concorre più ai valori aggregati.
     ///
     /// Trenta minuti: l'heartbeat di osservazione rilegge ogni dieci, quindi un
@@ -285,6 +294,7 @@ final class HomeState {
         roomNames.removeAll()
         pending.removeAll()
         pendingRoomNames.removeAll()
+        lastChange = Date()
     }
 
     // MARK: - Private
@@ -346,6 +356,8 @@ final class HomeState {
             names.merge(pendingRoomNames) { _, new in new }
             roomNames = names
         }
+
+        lastChange = Date()
     }
 
     // MARK: - Mappatura HomeKit

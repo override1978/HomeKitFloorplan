@@ -222,6 +222,24 @@ final class EnvironmentViewModel {
     private var modelContainer: ModelContainer?
     private var currentLoadTask: Task<Void, Never>?
 
+    // MARK: - Cache per il percorso vivo
+
+    /// Soglie utente, tenute da parte dopo il primo caricamento.
+    ///
+    /// Cambiano forse una volta al mese, e finora venivano rilette per intero
+    /// a ogni ricarica insieme alle 500 letture. Il percorso vivo le legge da
+    /// qui, così non deve toccare l'archivio per sapere quando un valore è
+    /// fuori soglia.
+    private var cachedThresholds: [RawSensorThreshold] = []
+
+    /// Direzione a 45 minuti, per «stanza|tipo».
+    ///
+    /// Il trend è l'unica cosa nella schermata che ha davvero bisogno dello
+    /// storico: un valore corrente non sa da dove viene. Resta quindi un
+    /// prodotto dell'archivio, ma smette di stare sul percorso critico —
+    /// arriva dopo il primo disegno e il percorso vivo lo riusa così com'è.
+    private var cachedTrends: [String: SensorTrend] = [:]
+
     // MARK: - Ordinamento custom
 
     static let orderKey = "environmentRoomOrder"
@@ -238,8 +256,15 @@ final class EnvironmentViewModel {
         customOrderNames = orderedRooms.map(\.roomName)
     }
 
-    func configure(modelContainer: ModelContainer) {
+    /// Lo stato vivo, quando il chiamante ne ha uno.
+    ///
+    /// Opzionale perché le altre istanze di questo ViewModel non lo passano
+    /// ancora: senza, tutto continua a funzionare come prima, dall'archivio.
+    private var liveState: HomeState?
+
+    func configure(modelContainer: ModelContainer, homeState: HomeState? = nil) {
         self.modelContainer = modelContainer
+        if let homeState { self.liveState = homeState }
     }
 
     // MARK: - Score globale (cached — recomputed only when rooms changes)
@@ -287,6 +312,95 @@ final class EnvironmentViewModel {
     /// Stesse soglie uniche di `qualityColor` (design v3).
     var globalColor: Color {
         FloorplanTokens.Semantic.forScore(Int((globalScore * 100).rounded()))
+    }
+
+    // MARK: - Percorso vivo (HomeState)
+
+    /// Ricostruisce `rooms` dallo stato in memoria. Sincrono, nessun fetch.
+    ///
+    /// È la differenza fra aprire la schermata e aspettarla. Il percorso da
+    /// archivio fa un fetch di 500 letture più tutte le soglie, le mappa in
+    /// DTO e poi le rimastica in sei passaggi — per mostrare un numero che nel
+    /// frattempo ha già fino a quindici minuti. Qui i valori correnti arrivano
+    /// dalle notifiche che HomeKit consegna in tempo reale, e leggerli costa
+    /// un accesso a dizionario.
+    ///
+    /// Quello che l'archivio continua a dare è ciò che solo lui può dare: il
+    /// trend, che richiede un prima. Finché non è arrivato i sensori sono
+    /// `.steady`, che è la stessa cosa che succedeva quando la lettura di
+    /// confronto mancava.
+    ///
+    /// I sensori stantii non entrano proprio: `HomeState` li esclude a monte,
+    /// quindi un sensore spento da giorni smette di pesare sul punteggio della
+    /// stanza invece di restarci con un numero che sembra attuale.
+    @discardableResult
+    func applyLiveState(_ homeState: HomeState, now: Date = Date()) -> [RoomEnvironmentData] {
+        var byRoom: [String: [SensorData]] = [:]
+
+        for roomUUID in homeState.knownRoomUUIDs {
+            guard let roomName = homeState.roomName(roomUUID) else { continue }
+
+            for serviceType in homeState.availableTypes(inRoom: roomUUID, now: now) {
+                let live = homeState.allReadings(serviceType, inRoom: roomUUID, now: now)
+                guard let first = live.first else { continue }
+
+                let aggregatedValue: Double
+                if serviceType.isBooleanAlert || serviceType == .airQuality {
+                    aggregatedValue = live.map(\.value).max() ?? first.value
+                } else {
+                    aggregatedValue = live.reduce(0.0) { $0 + $1.value } / Double(live.count)
+                }
+
+                let threshold = cachedThresholds.first {
+                    $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == roomName && $0.isEnabled
+                } ?? cachedThresholds.first {
+                    $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == nil && $0.isEnabled
+                }
+
+                let syntheticID = UUID(uuidString: stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
+
+                byRoom[roomName, default: []].append(SensorData(
+                    id: syntheticID,
+                    accessoryUUIDs: live.map(\.accessoryUUID).map(\.uuidString),
+                    serviceType: serviceType,
+                    roomName: roomName,
+                    currentValue: aggregatedValue,
+                    lastUpdated: live.map(\.confirmedAt).max() ?? now,
+                    warningThreshold: threshold?.warningValue ?? serviceType.defaultWarning,
+                    dangerThreshold:  threshold?.dangerValue  ?? serviceType.defaultDanger,
+                    sourceCount: live.count,
+                    trend: cachedTrends["\(roomName)|\(serviceType.rawValue)"] ?? .steady
+                ))
+            }
+        }
+
+        rooms = Self.arrange(byRoom, customOrder: customOrderNames)
+        lastRefresh = now
+        return rooms
+    }
+
+    /// Ordinamento condiviso dai due percorsi: stanze critiche prima, salvo
+    /// l'ordine scelto dall'utente. Duplicarlo significherebbe farli divergere.
+    private static func arrange(_ byRoom: [String: [SensorData]],
+                                customOrder: [String]) -> [RoomEnvironmentData] {
+        // Esclude la stanza sintetica outdoor: i dati meteo hanno il loro banner.
+        let outdoorUUID = "weather.outdoor"
+        let roomData = byRoom
+            .filter { _, sensors in
+                !sensors.allSatisfy { $0.accessoryUUIDs == [outdoorUUID] }
+            }
+            .map { roomName, sensors -> RoomEnvironmentData in
+                RoomEnvironmentData(id: UUID(),
+                                    roomName: roomName,
+                                    sensors: sensors.sorted { $0.urgency > $1.urgency })
+            }
+            .sorted { $0.worstUrgency > $1.worstUrgency }
+
+        guard !customOrder.isEmpty else { return roomData }
+        let orderMap = Dictionary(uniqueKeysWithValues: customOrder.enumerated().map { ($1, $0) })
+        return roomData.sorted { a, b in
+            (orderMap[a.roomName] ?? Int.max) < (orderMap[b.roomName] ?? Int.max)
+        }
     }
 
     // MARK: - Caricamento da SwiftData
@@ -429,28 +543,28 @@ final class EnvironmentViewModel {
                 ))
             }
 
-            // 4. Costruisce RoomEnvironmentData e ordina
-            // Esclude la stanza sintetica outdoor (UUID "weather.outdoor") — i dati meteo
-            // sono mostrati nell'OutdoorBannerView tramite WeatherKitService.
-            let outdoorUUID = "weather.outdoor"
-            let roomData = byRoom
-                .filter { _, sensors in
-                    !sensors.allSatisfy { $0.accessoryUUIDs == [outdoorUUID] }
+            // 4. Alimenta le cache del percorso vivo con ciò che solo
+            //    l'archivio sa: le soglie utente e la direzione a 45 minuti.
+            //    Da qui in poi la schermata può ridisegnarsi dallo stato in
+            //    memoria senza tornare a leggere il disco.
+            cachedThresholds = rawThresholds
+            for (_, sensors) in byRoom {
+                for sensor in sensors {
+                    cachedTrends["\(sensor.roomName)|\(sensor.serviceType.rawValue)"] = sensor.trend
                 }
-                .map { roomName, sensors -> RoomEnvironmentData in
-                    RoomEnvironmentData(id: UUID(), roomName: roomName, sensors: sensors.sorted { $0.urgency > $1.urgency })
-                }
-                .sorted { $0.worstUrgency > $1.worstUrgency }
+            }
 
-            // 5. Applica ordinamento utente
-            let orderNames = customOrderNames
-            if orderNames.isEmpty {
-                rooms = roomData
+            // 5. Costruisce, ordina e applica l'ordinamento utente.
+            //
+            //    Se c'è uno stato vivo, i valori correnti li ha lui: qui si
+            //    ridisegna da quello, ora che le cache sono piene. Assegnare
+            //    `byRoom` sovrascriverebbe numeri freschi con numeri vecchi
+            //    fino alla notifica successiva — cioè la schermata si
+            //    aggiornerebbe *all'indietro* dopo il primo disegno.
+            if let liveState {
+                applyLiveState(liveState)
             } else {
-                let orderMap = Dictionary(uniqueKeysWithValues: orderNames.enumerated().map { ($1, $0) })
-                rooms = roomData.sorted { a, b in
-                    (orderMap[a.roomName] ?? Int.max) < (orderMap[b.roomName] ?? Int.max)
-                }
+                rooms = Self.arrange(byRoom, customOrder: customOrderNames)
             }
             guard !Task.isCancelled else {
                 isLoading = false
