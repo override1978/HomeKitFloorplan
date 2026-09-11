@@ -868,6 +868,16 @@ private extension CloudKitSyncService {
         )
     }
 
+    /// Quante righe di storico energia si mettono in coda per passata.
+    ///
+    /// Il fetch era senza limite, e `EnergySample` è l'unica tabella ad alto
+    /// volume che non viene mai potata: la coda dei pendenti cresceva quindi
+    /// senza tetto, e `markSavedRecord` apre un `ModelContext` e fa un `save()`
+    /// per ogni singolo record. Con il limite l'arretrato si smaltisce in
+    /// ordine cronologico — la passata gira ogni cinque minuti, quindi sono
+    /// circa seimila righe l'ora — senza mai costruire un array illimitato.
+    private static let maxPendingEnergySamplesPerPass = 500
+
     /// Lo storico energia: righe append-only e immutabili — il caso di sync
     /// più docile che esista (niente conflitti possibili, mai update, mai
     /// delete remoti). La contabilità sta nel flag `needsSync` sul modello:
@@ -884,9 +894,12 @@ private extension CloudKitSyncService {
             recordType: "EnergySample",
             recordPrefix: Self.energySamplePrefix,
             pendingChanges: { [self] context, _ in
-                let pending = (try? context.fetch(
-                    FetchDescriptor<EnergySample>(predicate: #Predicate { $0.needsSync })
-                )) ?? []
+                var descriptor = FetchDescriptor<EnergySample>(
+                    predicate: #Predicate { $0.needsSync },
+                    sortBy: [SortDescriptor(\EnergySample.timestamp, order: .forward)]
+                )
+                descriptor.fetchLimit = Self.maxPendingEnergySamplesPerPass
+                let pending = (try? context.fetch(descriptor)) ?? []
                 return pending.map { .saveRecord(energySampleRecordID($0.id)) }
             },
             buildRecord: { [self] recordID, context in

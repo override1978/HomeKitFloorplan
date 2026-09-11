@@ -9,9 +9,11 @@ struct SettingsView: View {
     /// €/kWh per stimare i costi dai consumi misurati. 0 = niente costi in UI,
     /// solo energia: meglio nessun numero che un numero inventato.
     @AppStorage("energy.tariffPerKWh") private var energyTariffPerKWh = 0.0
-    /// Rete di sicurezza rimasta accesa dopo una migrazione: finché è true
-    /// nessuna potatura tocca letture ed eventi grezzi.
-    @AppStorage(LocalDataProtection.preserveSwiftDataKey) private var preservesRawData = true
+    /// Finché è true nessuna potatura tocca letture ed eventi grezzi. Il
+    /// default è `false` come in `LocalDataProtection`: i due valori devono
+    /// coincidere, altrimenti l'interruttore mostra uno stato e il ciclo dati
+    /// ne applica un altro.
+    @AppStorage(LocalDataProtection.preserveSwiftDataKey) private var preservesRawData = false
     @Environment(HomeKitService.self)       private var homeKit
     @Environment(OnboardingService.self)    private var onboarding
     @Environment(WeatherKitService.self)    private var weatherKit

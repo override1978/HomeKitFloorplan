@@ -129,16 +129,24 @@ final class ActivityLoggerService {
         try? context.save()
     }
 
+    /// Quanti eventi scaduti si cancellano al massimo per inserimento.
+    private static let maxAgedDeletionsPerInsert = 200
+
     /// Rimuove eventi vecchi o in eccesso rispetto ai limiti configurati.
     private func pruneIfNeeded() {
         guard !LocalDataProtection.shouldPreserveSwiftData else { return }
 
         let cutoff = Calendar.current.date(byAdding: .day, value: -maxAgeDays, to: Date()) ?? Date()
 
-        // Elimina per età
-        let oldDescriptor = FetchDescriptor<ActivityEvent>(
+        // Elimina per età, a lotti. Il tetto serve perché questo metodo gira a
+        // OGNI inserimento: senza, il primo evento dopo la riaccensione della
+        // potatura materializzerebbe in un colpo tutto l'arretrato accumulato
+        // nei mesi in cui non si potava. Con il tetto l'arretrato si smaltisce
+        // in qualche decina di eventi, invisibile all'uso.
+        var oldDescriptor = FetchDescriptor<ActivityEvent>(
             predicate: #Predicate { $0.timestamp < cutoff }
         )
+        oldDescriptor.fetchLimit = Self.maxAgedDeletionsPerInsert
         if let old = try? context.fetch(oldDescriptor) {
             old.forEach { context.delete($0) }
         }
