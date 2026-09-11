@@ -37,6 +37,9 @@ private struct ChatSuggestionCategory: Identifiable {
 struct ChatBotView: View {
 
     @Environment(HomeKitService.self)            private var homeKit
+    /// Lo stato ambientale vivo: le risposte del chatbot sui sensori devono
+    /// parlare di adesso, non di un quarto d'ora fa.
+    @Environment(HomeState.self)                 private var homeState
     @Environment(WeatherKitService.self)         private var weatherKit
     @Environment(AISettings.self)               private var aiSettings
     @Environment(SmartLightingEngine.self)       private var smartLightingEngine
@@ -151,6 +154,12 @@ struct ChatBotView: View {
             try? await Task.sleep(for: .milliseconds(320))
             setupViewModels()
             withAnimation(.easeOut(duration: 0.25)) { isReady = true }
+        }
+        // Il ViewModel si costruisce una volta sola all'apertura, quindi senza
+        // questo resterebbe la fotografia di quel momento: una chat aperta da
+        // mezz'ora risponderebbe con i valori di mezz'ora fa.
+        .onChange(of: homeState.lastChange) { _, _ in
+            envVM?.applyLiveState(homeState)
         }
         .onDisappear {
             loopTask?.cancel()
@@ -1387,7 +1396,10 @@ struct ChatBotView: View {
 
     private func setupViewModels() {
         let evm = EnvironmentViewModel()
-        evm.configure(modelContainer: modelContext.container)
+        evm.configure(modelContainer: modelContext.container, homeState: homeState)
+        // Prima i valori correnti, sincroni: se l'utente chiede «che
+        // temperatura c'è in cucina» la risposta non deve venire dall'archivio.
+        evm.applyLiveState(homeState)
         evm.loadFromCoreData()
         envVM = evm
 
