@@ -21,6 +21,16 @@ private struct RawSensorThreshold: Sendable {
     let isEnabled: Bool
 }
 
+/// Il normale di una stanza per un tipo di misura, da quattordici giorni suoi.
+///
+/// Solo baseline personali: le norme stagionali generiche che
+/// `BaselineProvider` usa come ripiego dicono com'è una casa europea media, e
+/// su quella non si sopprime la segnalazione di nessuno.
+private struct RawBaseline: Sendable {
+    let avg: Double
+    let stdDev: Double
+}
+
 // MARK: - SensorUrgency
 
 /// Livello di urgenza di un sensore ambientale.
@@ -111,14 +121,66 @@ struct SensorData: Identifiable {
 
     var isStale: Bool { staleFor != nil }
 
+    /// Tipo della stanza che ospita il sensore.
+    ///
+    /// Serve all'urgenza: fuori casa il comfort non è un criterio. Un balcone
+    /// al 65% di umidità a mezzanotte è la notte, non un'anomalia — eppure
+    /// finiva arancione ogni sera perché gli si applicavano le soglie da
+    /// interno.
+    var roomType: RoomType = .indoor
+
+    /// Scostamento dal normale *di questa stanza*, in deviazioni standard.
+    ///
+    /// `nil` quando una baseline personale non c'è ancora: in quel caso non si
+    /// sopprime niente e valgono le sole soglie, cioè il comportamento di
+    /// prima. Le norme stagionali generiche non bastano — dicono com'è una
+    /// casa europea media, non com'è la tua.
+    var baselineSigma: Double?
+
+    /// Oltre quante sigma uno sforamento diventa una notizia.
+    ///
+    /// Due, come nel rilevatore di anomalie: sotto, il valore è dentro la
+    /// variabilità ordinaria di quella stanza a quell'ora.
+    static let baselineSigmaGate: Double = 2.0
+
     /// Retrocompatibilità: primo UUID (o stringa vuota se lista vuota).
     var accessoryUUID: String { accessoryUUIDs.first ?? "" }
 
+    /// Quanto questo sensore merita attenzione, adesso.
+    ///
+    /// Era un confronto con due soglie fisse, e produceva rumore per
+    /// costruzione: un bagno al 75% a mezzanotte e un balcone al 65% di notte
+    /// restavano arancioni tutte le sere, perché sopra soglia lo sono
+    /// davvero — solo che è normale che lo siano. Tre segnalazioni su tre
+    /// sempre accese insegnano a non guardarle, e la sera che una conta non la
+    /// si guarda comunque.
+    ///
+    /// Adesso «Attenzione» vuol dire due cose insieme: sopra soglia **e**
+    /// fuori dal normale di questa stanza. La baseline che serve a dirlo
+    /// esiste già da tempo — la usava solo l'analisi AI, ed è il motivo per
+    /// cui l'AI sapeva contestualizzare mentre la card sotto no.
     var urgency: SensorUrgency {
         guard serviceType != .lightSensor else { return .normal }
-        if currentValue >= dangerThreshold  { return .danger }
-        if currentValue >= warningThreshold { return .warning }
-        return .normal
+
+        // Gli allarmi veri non si negoziano mai: fumo e monossido restano
+        // quello che sono ovunque e comunque, senza statistica di mezzo.
+        let isHardAlarm = serviceType.isBooleanAlert || serviceType == .carbonMonoxide
+
+        // All'aperto il comfort non è un criterio: temperatura e umidità sono
+        // il tempo che fa. Gli allarmi invece contano anche lì.
+        if roomType == .outdoor && !isHardAlarm { return .normal }
+
+        let raw: SensorUrgency = {
+            if currentValue >= dangerThreshold  { return .danger }
+            if currentValue >= warningThreshold { return .warning }
+            return .normal
+        }()
+        guard raw != .normal, !isHardAlarm else { return raw }
+
+        // Senza una baseline personale non si sopprime nulla: meglio un falso
+        // positivo di un falso silenzio.
+        guard let sigma = baselineSigma else { return raw }
+        return abs(sigma) < Self.baselineSigmaGate ? .normal : raw
     }
 
     var formattedValue: String {
@@ -271,6 +333,13 @@ final class EnvironmentViewModel {
     /// arriva dopo il primo disegno e il percorso vivo lo riusa così com'è.
     private var cachedTrends: [String: SensorTrend] = [:]
 
+    /// Il normale di ogni «stanza|tipo», quando ne conosciamo uno personale.
+    ///
+    /// È la conoscenza che l'analisi AI usava già e la card sotto ignorava —
+    /// da cui il paradosso per cui l'insight sapeva contestualizzare («stabile
+    /// con tempo sereno») mentre il badge accanto gridava comunque.
+    private var cachedBaselines: [String: RawBaseline] = [:]
+
     // MARK: - Ordinamento custom
 
     static let orderKey = "environmentRoomOrder"
@@ -367,6 +436,7 @@ final class EnvironmentViewModel {
     @discardableResult
     func applyLiveState(_ homeState: HomeState, now: Date = Date()) -> [RoomEnvironmentData] {
         var byRoom: [String: [SensorData]] = [:]
+        let outdoorRoom = UserDefaults.standard.string(forKey: "outdoorRoomName") ?? ""
 
         for roomUUID in homeState.knownRoomUUIDs {
             guard let roomName = homeState.roomName(roomUUID) else { continue }
@@ -400,6 +470,7 @@ final class EnvironmentViewModel {
 
                 let syntheticID = UUID(uuidString: stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
 
+                let key = "\(roomName)|\(serviceType.rawValue)"
                 byRoom[roomName, default: []].append(SensorData(
                     id: syntheticID,
                     accessoryUUIDs: group.map(\.accessoryUUID).map(\.uuidString),
@@ -410,8 +481,10 @@ final class EnvironmentViewModel {
                     warningThreshold: threshold?.warningValue ?? serviceType.defaultWarning,
                     dangerThreshold:  threshold?.dangerValue  ?? serviceType.defaultDanger,
                     sourceCount: group.count,
-                    trend: cachedTrends["\(roomName)|\(serviceType.rawValue)"] ?? .steady,
-                    staleFor: staleFor
+                    trend: cachedTrends[key] ?? .steady,
+                    staleFor: staleFor,
+                    roomType: RoomClassifier.classify(roomName: roomName, outdoorRoomName: outdoorRoom),
+                    baselineSigma: Self.sigma(of: aggregatedValue, against: cachedBaselines[key])
                 ))
             }
         }
@@ -419,6 +492,15 @@ final class EnvironmentViewModel {
         rooms = Self.arrange(byRoom, customOrder: customOrderNames)
         lastRefresh = now
         return rooms
+    }
+
+    /// Di quante deviazioni standard un valore sta fuori dal normale noto.
+    ///
+    /// `nil` quando quel normale non c'è: l'assenza di baseline non deve mai
+    /// tradursi in silenzio, solo nel comportamento di prima.
+    private static func sigma(of value: Double, against baseline: RawBaseline?) -> Double? {
+        guard let baseline, baseline.stdDev > 0 else { return nil }
+        return (value - baseline.avg) / baseline.stdDev
     }
 
     /// Ordine dei sensori dentro una stanza: prima chi ha qualcosa da dire,
@@ -507,7 +589,7 @@ final class EnvironmentViewModel {
         let _loadStart = ContinuousClock.now
         #endif
         // ── Fase 1: fetch off main thread ───────────────────────────────
-        let (rawReadings, rawThresholds) = await Task.detached(priority: .userInitiated) {
+        let (rawReadings, rawThresholds, rawBaselines) = await Task.detached(priority: .userInitiated) {
             let context = ModelContext(container)
 
             // Limita alle 500 letture più recenti: copre tutti i dispositivi attivi
@@ -523,7 +605,24 @@ final class EnvironmentViewModel {
             // Estraiamo subito value-type Sendable per evitare di passare @Model tra attori
             let r = fetchedReadings.map { RawSensorReading(accessoryUUID: $0.accessoryUUID, serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, value: $0.value, timestamp: $0.timestamp) }
             let t = fetchedThresholds.map { RawSensorThreshold(serviceTypeRaw: $0.serviceTypeRaw, roomName: $0.roomName, warningValue: $0.warningValue, dangerValue: $0.dangerValue, isEnabled: $0.isEnabled) }
-            return (r, t)
+
+            // Il normale di ogni stanza, dalla stessa sorgente che usa
+            // l'analisi AI. Sta qui e non sul main actor perché legge i
+            // riepiloghi giornalieri: è I/O, e il percorso vivo la vuole già
+            // pronta in cache invece che da calcolare a ogni ridisegno.
+            var b: [String: RawBaseline] = [:]
+            let provider = BaselineProvider()
+            let typesByRoom = Dictionary(grouping: r, by: \.roomName)
+                .mapValues { Set($0.map(\.serviceTypeRaw)).sorted() }
+            for (roomName, types) in typesByRoom {
+                let result = provider.baseline(for: roomName, serviceTypes: types, context: context)
+                // Solo il livello personale: vedi RawBaseline.
+                guard result.level == .personal else { continue }
+                for (typeRaw, stat) in result.byType where stat.stdDev > 0 {
+                    b["\(roomName)|\(typeRaw)"] = RawBaseline(avg: stat.avg, stdDev: stat.stdDev)
+                }
+            }
+            return (r, t, b)
         }.value
 
         guard !Task.isCancelled else {
@@ -600,6 +699,7 @@ final class EnvironmentViewModel {
 
                 let syntheticID = UUID(uuidString: stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
 
+                let outdoorRoom = UserDefaults.standard.string(forKey: "outdoorRoomName") ?? ""
                 byRoom[roomName, default: []].append(SensorData(
                     id: syntheticID,
                     accessoryUUIDs: group.map(\.accessoryUUID),
@@ -610,7 +710,10 @@ final class EnvironmentViewModel {
                     warningThreshold: threshold?.warningValue ?? serviceType.defaultWarning,
                     dangerThreshold:  threshold?.dangerValue  ?? serviceType.defaultDanger,
                     sourceCount: group.count,
-                    trend: trend
+                    trend: trend,
+                    roomType: RoomClassifier.classify(roomName: roomName, outdoorRoomName: outdoorRoom),
+                    baselineSigma: Self.sigma(of: aggregatedValue,
+                                              against: rawBaselines["\(roomName)|\(serviceType.rawValue)"])
                 ))
             }
 
@@ -619,6 +722,7 @@ final class EnvironmentViewModel {
             //    Da qui in poi la schermata può ridisegnarsi dallo stato in
             //    memoria senza tornare a leggere il disco.
             cachedThresholds = rawThresholds
+            cachedBaselines  = rawBaselines
             for (_, sensors) in byRoom {
                 for sensor in sensors {
                     cachedTrends["\(sensor.roomName)|\(sensor.serviceType.rawValue)"] = sensor.trend

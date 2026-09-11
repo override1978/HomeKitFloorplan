@@ -274,6 +274,86 @@ struct EnvironmentLiveStateTests {
         #expect(first == ["Cucina", "Soggiorno"], "a parità di urgenza decide il nome")
     }
 
+    // MARK: - Attenzione: soglia più baseline
+
+    @Test("All'aperto il comfort non conta: umidità e temperatura non allarmano")
+    func outdoorRoomIsNotJudgedByIndoorComfort() {
+        // 65% di umidità su un balcone a mezzanotte è la notte, non un'anomalia.
+        let outdoor = SensorData(
+            id: UUID(), accessoryUUIDs: ["a"], serviceType: .humidity,
+            roomName: "Balcone", currentValue: 65, lastUpdated: Date(),
+            warningThreshold: 60, dangerThreshold: 75, sourceCount: 1,
+            roomType: .outdoor
+        )
+        #expect(outdoor.urgency == .normal)
+
+        let indoor = SensorData(
+            id: UUID(), accessoryUUIDs: ["a"], serviceType: .humidity,
+            roomName: "Bagno", currentValue: 65, lastUpdated: Date(),
+            warningThreshold: 60, dangerThreshold: 75, sourceCount: 1,
+            roomType: .indoor
+        )
+        #expect(indoor.urgency == .warning, "lo stesso numero dentro casa resta una segnalazione")
+    }
+
+    @Test("Gli allarmi veri suonano anche all'aperto")
+    func hardAlarmsIgnoreRoomType() {
+        let smoke = SensorData(
+            id: UUID(), accessoryUUIDs: ["a"], serviceType: .smoke,
+            roomName: "Balcone", currentValue: 1, lastUpdated: Date(),
+            warningThreshold: 1, dangerThreshold: 1, sourceCount: 1,
+            roomType: .outdoor
+        )
+        #expect(smoke.urgency == .danger)
+    }
+
+    @Test("Sopra soglia ma dentro il proprio normale: nessuna attenzione")
+    func withinOwnNormalIsQuiet() {
+        // Bagno al 75% a mezzanotte, con un normale di 72% e σ 6 → 0,5σ.
+        let usual = SensorData(
+            id: UUID(), accessoryUUIDs: ["a"], serviceType: .humidity,
+            roomName: "Bagno", currentValue: 75, lastUpdated: Date(),
+            warningThreshold: 60, dangerThreshold: 80, sourceCount: 1,
+            baselineSigma: 0.5
+        )
+        #expect(usual.urgency == .normal, "è quello che fa un bagno dopo una doccia")
+    }
+
+    @Test("Sopra soglia e fuori dal normale: attenzione")
+    func beyondOwnNormalStillAlerts() {
+        // Cucina a 930 ppm con un normale di 600 e σ 100 → 3,3σ.
+        let unusual = SensorData(
+            id: UUID(), accessoryUUIDs: ["a"], serviceType: .carbonDioxide,
+            roomName: "Cucina", currentValue: 930, lastUpdated: Date(),
+            warningThreshold: 800, dangerThreshold: 1500, sourceCount: 1,
+            baselineSigma: 3.3
+        )
+        #expect(unusual.urgency == .warning)
+    }
+
+    @Test("Senza baseline non si sopprime niente")
+    func noBaselineKeepsOldBehaviour() {
+        let noBaseline = SensorData(
+            id: UUID(), accessoryUUIDs: ["a"], serviceType: .humidity,
+            roomName: "Bagno", currentValue: 75, lastUpdated: Date(),
+            warningThreshold: 60, dangerThreshold: 80, sourceCount: 1
+        )
+        #expect(noBaseline.baselineSigma == nil)
+        #expect(noBaseline.urgency == .warning,
+                "meglio un falso positivo che un falso silenzio finché non conosciamo la stanza")
+    }
+
+    @Test("Il monossido non si smorza mai con la statistica")
+    func carbonMonoxideIsNeverSuppressed() {
+        let co = SensorData(
+            id: UUID(), accessoryUUIDs: ["a"], serviceType: .carbonMonoxide,
+            roomName: "Cucina", currentValue: 60, lastUpdated: Date(),
+            warningThreshold: 50, dangerThreshold: 100, sourceCount: 1,
+            baselineSigma: 0.1
+        )
+        #expect(co.urgency == .warning, "abituarsi al monossido non è un normale accettabile")
+    }
+
     @Test("Stato vuoto: nessuna stanza, nessun crash")
     func emptyStateYieldsNoRooms() {
         let vm = EnvironmentViewModel()
