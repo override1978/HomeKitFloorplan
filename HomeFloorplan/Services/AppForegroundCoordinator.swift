@@ -64,9 +64,20 @@ struct AppForegroundCoordinator {
             Cadence.stamp(Cadence.proactiveCycle, Date().addingTimeInterval(90 - 15 * 60))
         }
 
+        // Lo stato ambientale in memoria nasce vuoto: le notifiche HomeKit lo
+        // riempiono man mano, ma finché non ne arriva una la casa non ha un
+        // presente da mostrare. La prima semina lo popola dai valori già in
+        // cache nel framework, senza un solo round-trip.
+        var didSeedHomeState = false
+
         while !Task.isCancelled {
             let now = Date()
             if let home = homeKit.currentHome {
+                if !didSeedHomeState {
+                    await homeKit.seedHomeState()
+                    didSeedHomeState = true
+                }
+
                 if Cadence.isDue(Cadence.lightSample, interval: 5 * 60, now: now) {
                     await SensorLogger.shared.sampleLightSensors(home: home, modelContainer: container)
                     Cadence.stamp(Cadence.lightSample)
@@ -88,6 +99,11 @@ struct AppForegroundCoordinator {
                 // Ri-legge i valori e ri-arma le notifiche ogni 10 minuti.
                 if Cadence.isDue(Cadence.observationBeat, interval: 10 * 60, now: now) {
                     homeKit.refreshObservedAccessories()
+                    // Subito dopo la rilettura vera: la cache del framework è
+                    // appena stata rinfrescata, quindi ri-confermare le letture
+                    // qui è onesto. Il filtro di raggiungibilità dentro
+                    // `seedHomeState` esclude chi non ha risposto.
+                    await homeKit.seedHomeState()
                     Cadence.stamp(Cadence.observationBeat)
                 }
             }

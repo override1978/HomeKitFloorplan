@@ -33,6 +33,9 @@ final class AppServices {
     let aiSettings: AISettings
     let cloudKitSync: CloudKitSyncService
     let matterEnergyLiveStore = MatterEnergyLiveStore()
+    /// Lo stato ambientale corrente, in memoria. Unica verità del presente:
+    /// SwiftData resta l'archivio del passato.
+    let homeState = HomeState()
 
     var idleTimer: IdleTimerService { IdleTimerService.shared }
 
@@ -49,6 +52,9 @@ final class AppServices {
 
         let kit = HomeKitService()
         self.homeKit = kit
+        // Le notifiche che HomeKit consegna in tempo reale alimentano lo stato
+        // in memoria, oltre alla cache generica e all'analisi.
+        kit.homeState = homeState
         // Le azioni AI/CTA scrivono via HomeKitService (cache + eventi + log),
         // non direttamente sulla caratteristica: vedi NextActionExecutor.write.
         NextActionExecutor.homeKit = kit

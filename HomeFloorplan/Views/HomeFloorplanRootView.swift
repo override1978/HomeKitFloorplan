@@ -137,6 +137,7 @@ struct HomeFloorplanRootView: View {
             aiSettings: services.aiSettings,
             cloudKitSync: services.cloudKitSync,
             matterEnergyLiveStore: services.matterEnergyLiveStore,
+            homeState: services.homeState,
             locale: AppLanguage.resolved(from: appLanguageRaw).locale
         )
     }
@@ -261,6 +262,7 @@ private struct AppEnvironmentModifier: ViewModifier {
     let aiSettings: AISettings
     let cloudKitSync: CloudKitSyncService
     let matterEnergyLiveStore: MatterEnergyLiveStore
+    let homeState: HomeState
     let locale: Locale
 
     func body(content: Content) -> some View {
@@ -284,6 +286,7 @@ private struct AppEnvironmentModifier: ViewModifier {
             .environment(aiSettings)
             .environment(cloudKitSync)
             .environment(matterEnergyLiveStore)
+            .environment(homeState)
             .environment(\.locale, locale)
     }
 }

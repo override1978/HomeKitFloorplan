@@ -111,6 +111,15 @@ final class HomeKitService: NSObject {
     /// Routes sensor value changes to the unified analysis pipeline. Iniettato dall'app dopo l'init.
     var sensorEventRouter: SensorEventRouter?
 
+    /// Lo stato ambientale corrente in memoria. Iniettato dall'app dopo l'init.
+    ///
+    /// `characteristicValues` resta la cache generica di ogni caratteristica —
+    /// luci, serrature, tapparelle. `HomeState` è la fetta ambientale, indicizzata
+    /// per stanza e tipo di misura invece che per UUID di caratteristica, così
+    /// chiedere «quanto è la temperatura del soggiorno» costa un accesso a
+    /// dizionario invece di una ricostruzione dall'archivio.
+    var homeState: HomeState?
+
     /// Smart Lighting engine. Iniettato dall'app per sospendere temporaneamente
     /// una stanza quando l'utente cambia manualmente una luce.
     weak var smartLightingEngine: SmartLightingEngine?
@@ -290,6 +299,25 @@ final class HomeKitService: NSObject {
                     subscribe(to: characteristic)
                 }
             }
+        }
+    }
+
+    /// Ripopola `HomeState` dai valori che HomeKit tiene in cache.
+    ///
+    /// Va chiamata all'avvio — quando nessuna notifica è ancora arrivata e lo
+    /// stato sarebbe vuoto — e dopo l'heartbeat, che una rilettura vera l'ha
+    /// appena fatta. Passa il filtro di raggiungibilità perché la cache resta
+    /// popolata anche a dispositivo offline: senza, si confermerebbero letture
+    /// di sensori morti e niente risulterebbe mai stantio.
+    ///
+    /// `@MainActor` sul singolo metodo: il servizio nel suo insieme non lo è,
+    /// ma qui si tocca `HomeState` e si maneggia un `HMHome`, che non è
+    /// `Sendable` e quindi non può attraversare un hop.
+    @MainActor
+    func seedHomeState() {
+        guard let homeState, let home = currentHome else { return }
+        homeState.seed(from: home) { [weak self] accessory in
+            self?.isReachable(accessory) ?? accessory.isReachable
         }
     }
 
@@ -751,6 +779,12 @@ extension HomeKitService: HMAccessoryDelegate {
                     store.saveEvent(dto)
                 }
             }
+
+            // Aggiorna lo stato ambientale in memoria. È questo il canale che
+            // rende il presente davvero presente: finora la push aggiornava la
+            // cache e svegliava l'analisi, ma la dashboard continuava a leggere
+            // da SwiftData con minuti di ritardo.
+            homeState?.ingest(characteristic: characteristic, value: value, accessory: accessory)
 
             // Instrada letture sensore verso la pipeline unificata di analisi.
             sensorEventRouter?.route(characteristic: characteristic, value: value, accessory: accessory)
