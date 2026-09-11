@@ -282,7 +282,9 @@ final class HomeKitService: NSObject {
     /// staleness permanente. `subscribe(to:)` fa readValue + re-enable delle
     /// notifiche cadute (il guard su isNotificationEnabled evita re-arm inutili).
     func refreshObservedAccessories() {
-        for uuid in observedAccessoryUUIDs {
+        // Anche i sensori ambientali: sono la sorgente di HomeState, e un buco
+        // nelle loro notifiche si vede come una stanza che diventa grigia.
+        for uuid in observedAccessoryUUIDs.union(environmentAccessoryUUIDs) {
             guard let accessory = accessory(for: uuid) else { continue }
 
             if let last = lastNotificationDates[uuid] {
@@ -300,6 +302,49 @@ final class HomeKitService: NSObject {
                 }
             }
         }
+    }
+
+    /// Accessori i cui sensori ambientali sono osservati in permanenza.
+    ///
+    /// Separati da `observedAccessoryUUIDs` perché hanno un ciclo di vita
+    /// diverso: quelli seguono la planimetria aperta e si spengono quando la
+    /// chiudi, questi devono restare accesi finché l'app è viva — sono la
+    /// sorgente di `HomeState`.
+    private(set) var environmentAccessoryUUIDs: Set<UUID> = []
+
+    /// Sottoscrive tutti i sensori ambientali della casa, ovunque siano.
+    ///
+    /// Serviva, e mancava. Le sottoscrizioni erano limitate agli accessori
+    /// posati sulla planimetria aperta, quindi un sensore di CO₂ non ancora
+    /// posizionato non veniva mai letto: `characteristic.value` restava `nil`,
+    /// la risemina non trovava niente da seminare, e la stanza compariva senza
+    /// dati finché il campionamento dei quindici minuti non la scopriva. Da
+    /// fuori sembrava che l'analisi AI sapesse della CO₂ prima della
+    /// planimetria — ed era esattamente così.
+    ///
+    /// Le letture partono tutte insieme: `readValue` qui è a callback, non
+    /// atteso in serie come nel campionamento storico, quindi HomeKit le
+    /// accoda da sé senza tenere occupato il main actor.
+    @MainActor
+    func observeEnvironmentSensors() {
+        guard let home = currentHome else { return }
+        for accessory in home.accessories {
+            var isEnvironmental = false
+            for service in accessory.services {
+                for characteristic in service.characteristics
+                where HomeState.sensorType(for: characteristic) != nil {
+                    if !isEnvironmental {
+                        accessory.delegate = self
+                        isEnvironmental = true
+                    }
+                    subscribe(to: characteristic)
+                }
+            }
+            if isEnvironmental {
+                environmentAccessoryUUIDs.insert(accessory.uniqueIdentifier)
+            }
+        }
+        dprint("🌡️ HomeState: osservati \(environmentAccessoryUUIDs.count) accessori con sensori ambientali")
     }
 
     /// Ripopola `HomeState` dai valori che HomeKit tiene in cache.
@@ -326,8 +371,13 @@ final class HomeKitService: NSObject {
         for uuid in accessoryUUIDs {
             guard let accessory = accessory(for: uuid) else { continue }
             for service in accessory.services {
+                // Le caratteristiche ambientali non si spengono qui: non
+                // appartengono a questa osservazione ma a quella permanente di
+                // `observeEnvironmentSensors`. Chiudere la planimetria zittiva
+                // i sensori di una stanza e HomeState smetteva di sapere.
                 for characteristic in service.characteristics
-                where characteristic.isNotificationEnabled {
+                where characteristic.isNotificationEnabled
+                    && HomeState.sensorType(for: characteristic) == nil {
                     characteristic.enableNotification(false) { _ in }
                 }
             }
@@ -358,6 +408,32 @@ final class HomeKitService: NSObject {
             if let value = characteristic.value {
                 self.queueCharacteristicUpdate(characteristic.uniqueIdentifier, value: value)
                 self.updateAlarmTriggeredIfNeeded(characteristic, value: value)
+                // Anche lo stato ambientale, non solo la cache generica.
+                // Mancava, e si vedeva: la lettura iniziale riempiva
+                // `characteristicValues` mentre `HomeState` restava vuoto
+                // finché non arrivava una notifica spontanea — cioè fino al
+                // primo cambio di valore, che per una CO₂ stabile può non
+                // arrivare per parecchio.
+                //
+                // Questa callback è nonisolated, quindi i primitivi si
+                // estraggono qui e attraversa solo roba `Sendable`.
+                if let accessory = characteristic.service?.accessory,
+                   let sensorType = HomeState.sensorType(for: characteristic),
+                   let room = accessory.room,
+                   let numeric = HomeState.numericValue(from: value, type: sensorType) {
+                    let roomUUID = room.uniqueIdentifier
+                    let roomName = room.name
+                    let accessoryUUID = accessory.uniqueIdentifier
+                    let accessoryName = accessory.name
+                    Task { @MainActor [weak self] in
+                        self?.homeState?.ingest(type: sensorType,
+                                                roomUUID: roomUUID,
+                                                roomName: roomName,
+                                                accessoryUUID: accessoryUUID,
+                                                accessoryName: accessoryName,
+                                                value: numeric)
+                    }
+                }
             }
         }
         

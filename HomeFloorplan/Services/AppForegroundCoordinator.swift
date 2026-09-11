@@ -74,7 +74,13 @@ struct AppForegroundCoordinator {
             let now = Date()
             if let home = homeKit.currentHome {
                 if !didSeedHomeState {
-                    await homeKit.seedHomeState()
+                    // Prima le sottoscrizioni, poi la semina. L'ordine conta:
+                    // `subscribe` fa partire le letture che popolano la cache
+                    // del framework, e la semina raccoglie ciò che è già lì.
+                    // I valori che arrivano dopo entrano da soli, perché la
+                    // lettura iniziale alimenta HomeState anche lei.
+                    homeKit.observeEnvironmentSensors()
+                    homeKit.seedHomeState()
                     didSeedHomeState = true
                 }
 
@@ -103,7 +109,7 @@ struct AppForegroundCoordinator {
                     // appena stata rinfrescata, quindi ri-confermare le letture
                     // qui è onesto. Il filtro di raggiungibilità dentro
                     // `seedHomeState` esclude chi non ha risposto.
-                    await homeKit.seedHomeState()
+                    homeKit.seedHomeState()
                     Cadence.stamp(Cadence.observationBeat)
                 }
             }

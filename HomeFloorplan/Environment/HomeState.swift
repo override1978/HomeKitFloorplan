@@ -380,7 +380,7 @@ final class HomeState {
 
     /// Stessa regola usata da `SensorEventRouter`: un solo posto dove si
     /// decide che una caratteristica è una misura ambientale.
-    static func sensorType(for characteristic: HMCharacteristic) -> SensorServiceType? {
+    nonisolated static func sensorType(for characteristic: HMCharacteristic) -> SensorServiceType? {
         SensorServiceType.allCases.first {
             !$0.isWeatherKitSource && $0.hmCharacteristicType == characteristic.characteristicType
         }
@@ -391,7 +391,7 @@ final class HomeState {
     /// Nessuna validazione di intervallo qui di proposito: `HomeState` riporta
     /// ciò che il sensore dice. Decidere che −40 °C è implausibile è lavoro di
     /// chi interpreta, non di chi registra.
-    static func numericValue(from value: Any, type: SensorServiceType) -> Double? {
+    nonisolated static func numericValue(from value: Any, type: SensorServiceType) -> Double? {
         if let d = value as? Double { return d }
         if let f = value as? Float  { return Double(f) }
         if let i = value as? Int    { return Double(i) }

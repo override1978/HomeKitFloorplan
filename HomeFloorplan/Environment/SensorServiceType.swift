@@ -58,7 +58,10 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
 
     /// True for types whose readings come from WeatherKit rather than HomeKit.
     /// SensorLogger.sampleAllSensors skips these; use sampleOutdoor instead.
-    var isWeatherKitSource: Bool {
+    ///
+    /// `nonisolated`: è uno `switch` sul caso, senza stato. Serve leggibile
+    /// anche dalle callback di HomeKit, che arrivano fuori dal main actor.
+    nonisolated var isWeatherKitSource: Bool {
         switch self {
         case .outdoorTemperature, .outdoorHumidity: return true
         default: return false
@@ -75,7 +78,11 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
     }
 
     /// Tipo caratteristica HomeKit corrispondente.
-    var hmCharacteristicType: String {
+    ///
+    /// `nonisolated` per la stessa ragione di `isWeatherKitSource`: è la
+    /// mappatura che riconosce una misura ambientale, e va fatta dove la
+    /// caratteristica arriva.
+    nonisolated var hmCharacteristicType: String {
         switch self {
         case .temperature:        return HMCharacteristicTypeCurrentTemperature
         case .humidity:           return HMCharacteristicTypeCurrentRelativeHumidity
@@ -167,7 +174,7 @@ enum SensorServiceType: String, CaseIterable, Identifiable, Codable {
     // MARK: Alert booleano
 
     /// True se il sensore restituisce un valore booleano (rilevato/non rilevato).
-    var isBooleanAlert: Bool {
+    nonisolated var isBooleanAlert: Bool {
         self == .smoke
     }
 
