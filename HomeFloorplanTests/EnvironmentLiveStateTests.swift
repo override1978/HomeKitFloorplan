@@ -107,8 +107,8 @@ struct EnvironmentLiveStateTests {
 
     // MARK: - Freschezza
 
-    @Test("Un sensore stantio non entra nella schermata")
-    func staleSensorIsAbsent() {
+    @Test("La stanza muta resta in scena, ma dichiarata muta")
+    func silentRoomIsMarkedNotHidden() throws {
         let state = makeState()
         let vm = EnvironmentViewModel()
         let t0 = Date()
@@ -116,9 +116,58 @@ struct EnvironmentLiveStateTests {
 
         feed(state, .temperature, 21.5, at: t0)
 
-        #expect(vm.applyLiveState(state, now: t0).count == 1)
-        #expect(vm.applyLiveState(state, now: later).isEmpty,
-                "una stanza i cui sensori tacciono tutti non ha più niente da dire")
+        let live = try #require(vm.applyLiveState(state, now: t0).first)
+        #expect(live.isSilent == false)
+        #expect(live.sensors.first?.isStale == false)
+
+        let silent = try #require(vm.applyLiveState(state, now: later).first)
+        #expect(silent.isSilent, "far sparire la stanza nasconderebbe che il sensore è morto")
+        #expect(silent.sensors.first?.currentValue == 21.5,
+                "l'ultimo valore resta: è l'unica informazione rimasta")
+        #expect(silent.sensors.first?.isStale == true)
+        #expect((silent.silentFor ?? 0) > HomeState.defaultStaleInterval)
+    }
+
+    @Test("Una stanza muta non è una stanza eccellente")
+    func silentRoomIsNotExcellent() throws {
+        let state = makeState()
+        let vm = EnvironmentViewModel()
+        let t0 = Date()
+        let later = t0.addingTimeInterval(HomeState.defaultStaleInterval + 60)
+
+        // Valore da allarme che poi smette di aggiornarsi.
+        feed(state, .carbonDioxide, 3000, at: t0)
+
+        let alarmed = try #require(vm.applyLiveState(state, now: t0).first)
+        #expect(alarmed.worstUrgency == .danger)
+
+        let silent = try #require(vm.applyLiveState(state, now: later).first)
+        #expect(silent.worstUrgency == .normal,
+                "un valore fermo non deve più guidare l'urgenza: non sappiamo se vale ancora")
+        #expect(silent.qualityLabel != String(localized: "quality.excellent", defaultValue: "Excellent"),
+                "ed è proprio qui che il punteggio neutro mentirebbe")
+        #expect(silent.liveSensors.isEmpty)
+    }
+
+    @Test("Un sensore muto fra due vivi non tinge la stanza ma resta leggibile")
+    func partiallySilentRoom() throws {
+        let state = makeState()
+        let vm = EnvironmentViewModel()
+        let t0 = Date()
+        let t1 = t0.addingTimeInterval(HomeState.defaultStaleInterval + 60)
+
+        feed(state, .carbonDioxide, 3000, at: t0)              // si ferma qui
+        feed(state, .temperature, 21.0, at: t0)
+        feed(state, .temperature, 21.0, at: t1)                // continua
+
+        let room = try #require(vm.applyLiveState(state, now: t1).first)
+        #expect(room.isSilent == false, "la stanza parla ancora, tramite il termometro")
+        #expect(room.sensors.count == 2, "ma la CO₂ resta visibile")
+        #expect(room.liveSensors.count == 1)
+        #expect(room.worstUrgency == .normal,
+                "la CO₂ ferma a 3000 non deve più dipingere la stanza di rosso")
+        let co2 = try #require(room.sensors.first { $0.serviceType == .carbonDioxide })
+        #expect(co2.isStale)
     }
 
     @Test("Il sensore morto non trascina il punteggio della stanza")

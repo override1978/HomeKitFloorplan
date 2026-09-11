@@ -30,6 +30,8 @@ struct FloorplanEditorView: View {
     var startInEditMode: Bool = false
     
     @Environment(HomeKitService.self) private var homeKit
+    /// Lo stato ambientale vivo, per l'overlay Ambiente.
+    @Environment(HomeState.self) private var homeState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -504,6 +506,12 @@ struct FloorplanEditorView: View {
             trackSecurityModeChange()
         }
         .task(id: overlayVM?.activeMode, refreshEnvironmentOverlayWhileActive)
+        // L'overlay segue le notifiche HomeKit invece dei cinque minuti del
+        // ciclo: una finestra che si apre tinge la stanza quando succede, non
+        // al prossimo giro.
+        .onChange(of: homeState.lastChange) { _, _ in
+            overlayEnvVM.applyLiveState(homeState)
+        }
         // Su iPhone il cambio tab azzera lo zoom semantico anche nel
         // viewport: lo stato (`zoomedRoomID`) lo pulisce già il didSet del
         // modo, ma la mappa resterebbe inquadrata sulla stanza.
@@ -579,7 +587,11 @@ struct FloorplanEditorView: View {
                 overlayVM = FloorplanOverlayViewModel(floorplanID: floorplan.id)
             }
             measureMain("appear.envConfigure") {
-                overlayEnvVM.configure(modelContainer: modelContext.container)
+                overlayEnvVM.configure(modelContainer: modelContext.container, homeState: homeState)
+                // Le tinte delle stanze compaiono subito dallo stato in
+                // memoria: prima restavano al placeholder finché il fetch da
+                // 500 letture non tornava.
+                overlayEnvVM.applyLiveState(homeState)
                 overlayEnvVM.loadFromCoreData()
             }
             measureMain("appear.subscribe") {

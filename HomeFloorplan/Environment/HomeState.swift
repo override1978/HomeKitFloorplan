@@ -182,6 +182,22 @@ final class HomeState {
         return out
     }
 
+    /// Tutti i tipi mai visti in una stanza, vivi o muti.
+    ///
+    /// Serve a chi deve dire «non lo so» invece di tacere: sapere che una
+    /// stanza *aveva* un termometro è la differenza fra una stanza senza
+    /// sensori e una col sensore spento.
+    func typesEverSeen(inRoom roomUUID: UUID) -> Set<SensorServiceType> {
+        Set(readings.keys.filter { $0.roomUUID == roomUUID }.map(\.type))
+    }
+
+    /// Tutte le letture di una coordinata, senza filtro di freschezza.
+    func everyReading(_ type: SensorServiceType, inRoom roomUUID: UUID) -> [Reading] {
+        (readings[Slot(roomUUID: roomUUID, type: type)] ?? [:])
+            .values
+            .sorted { $0.confirmedAt > $1.confirmedAt }
+    }
+
     /// Le letture che esistono ma hanno smesso di aggiornarsi.
     ///
     /// Serve a dirlo invece di nasconderlo: un sensore che tace è una

@@ -99,6 +99,18 @@ struct SensorData: Identifiable {
     /// Direzione rispetto alla lettura di ~45+ minuti fa (default per i mock).
     var trend: SensorTrend = .steady
 
+    /// Da quanto il sensore non si fa sentire. `nil` quando è vivo.
+    ///
+    /// Un sensore muto non è un sensore a posto. Finché questo campo non
+    /// esisteva l'ultima lettura restava in scena travestita da attuale: una
+    /// stanza col termometro spento da tre giorni continuava a colorarsi
+    /// secondo un numero di tre giorni prima. Qui il valore resta visibile —
+    /// buttarlo via perderebbe l'unica informazione disponibile — ma smette di
+    /// contare per l'urgenza e per il punteggio.
+    var staleFor: TimeInterval?
+
+    var isStale: Bool { staleFor != nil }
+
     /// Retrocompatibilità: primo UUID (o stringa vuota se lista vuota).
     var accessoryUUID: String { accessoryUUIDs.first ?? "" }
 
@@ -157,17 +169,32 @@ struct RoomEnvironmentData: Identifiable {
     let roomName: String
     let sensors: [SensorData]
 
+    /// I soli sensori che stanno ancora parlando.
+    var liveSensors: [SensorData] { sensors.filter { !$0.isStale } }
+
+    /// Vero quando la stanza ha sensori ma tacciono tutti.
+    ///
+    /// È lo stato che mancava, e la ragione per cui serviva: senza, «non lo
+    /// so» e «va bene» finiscono dipinti dello stesso verde.
+    var isSilent: Bool { !sensors.isEmpty && liveSensors.isEmpty }
+
+    /// Da quanto la stanza non dice niente: il più recente fra i suoi silenzi.
+    var silentFor: TimeInterval? {
+        sensors.compactMap(\.staleFor).min()
+    }
+
     var worstUrgency: SensorUrgency {
-        sensors.map(\.urgency).max() ?? .normal
+        liveSensors.map(\.urgency).max() ?? .normal
     }
 
     /// Quality score 0.0–1.0 using the same weighted algorithm as `EnvironmentViewModel.globalScore`
     /// but scoped to this room's sensors.
     var qualityScore: Double {
-        guard !sensors.isEmpty else { return 1.0 }
+        let scored = liveSensors
+        guard !scored.isEmpty else { return 1.0 }
         var weightedScore = 0.0
         var totalWeight   = 0.0
-        for sensor in sensors {
+        for sensor in scored {
             let weight = sensor.serviceType.qualityWeight
             let score: Double
             switch sensor.urgency {
@@ -184,6 +211,9 @@ struct RoomEnvironmentData: Identifiable {
     /// Stesse bande delle soglie colore uniche (v3): l'etichetta non può dire
     /// "Attenzione" dove il colore dice critico — un 40% È critico.
     var qualityLabel: String {
+        // Una stanza muta non è una stanza eccellente: senza questo ramo il
+        // punteggio neutro di partenza la farebbe apparire perfetta.
+        if isSilent { return String(localized: "quality.silent", defaultValue: "No data") }
         switch qualityScore {
         case 0.85...1.0:  return String(localized: "quality.excellent", defaultValue: "Excellent")
         case 0.60..<0.85: return String(localized: "quality.fair",      defaultValue: "Fair")
@@ -195,7 +225,8 @@ struct RoomEnvironmentData: Identifiable {
     /// rosso <60 — le stesse ovunque, mai un 66% rosso e un 70% arancio
     /// nella stessa schermata.
     var qualityColor: Color {
-        FloorplanTokens.Semantic.forScore(Int((qualityScore * 100).rounded()))
+        if isSilent { return .secondary }
+        return FloorplanTokens.Semantic.forScore(Int((qualityScore * 100).rounded()))
     }
 
     /// Classifica la stanza usando RoomClassifier.
@@ -340,15 +371,25 @@ final class EnvironmentViewModel {
         for roomUUID in homeState.knownRoomUUIDs {
             guard let roomName = homeState.roomName(roomUUID) else { continue }
 
-            for serviceType in homeState.availableTypes(inRoom: roomUUID, now: now) {
-                let live = homeState.allReadings(serviceType, inRoom: roomUUID, now: now)
-                guard let first = live.first else { continue }
+            for serviceType in homeState.typesEverSeen(inRoom: roomUUID) {
+                let everything = homeState.everyReading(serviceType, inRoom: roomUUID)
+                let live = everything.filter { !$0.isStale(after: HomeState.defaultStaleInterval, now: now) }
+
+                // Se qualcuno parla ancora si usa solo lui. Se tacciono tutti si
+                // tiene comunque l'ultima parola detta, marcata: buttarla via
+                // perderebbe l'unica informazione che resta, e mostrarla senza
+                // marcarla è la bugia che stiamo togliendo.
+                let group = live.isEmpty ? everything : live
+                guard let first = group.first else { continue }
+                let staleFor: TimeInterval? = live.isEmpty
+                    ? group.map { $0.age(now: now) }.min()
+                    : nil
 
                 let aggregatedValue: Double
                 if serviceType.isBooleanAlert || serviceType == .airQuality {
-                    aggregatedValue = live.map(\.value).max() ?? first.value
+                    aggregatedValue = group.map(\.value).max() ?? first.value
                 } else {
-                    aggregatedValue = live.reduce(0.0) { $0 + $1.value } / Double(live.count)
+                    aggregatedValue = group.reduce(0.0) { $0 + $1.value } / Double(group.count)
                 }
 
                 let threshold = cachedThresholds.first {
@@ -361,15 +402,16 @@ final class EnvironmentViewModel {
 
                 byRoom[roomName, default: []].append(SensorData(
                     id: syntheticID,
-                    accessoryUUIDs: live.map(\.accessoryUUID).map(\.uuidString),
+                    accessoryUUIDs: group.map(\.accessoryUUID).map(\.uuidString),
                     serviceType: serviceType,
                     roomName: roomName,
                     currentValue: aggregatedValue,
-                    lastUpdated: live.map(\.confirmedAt).max() ?? now,
+                    lastUpdated: group.map(\.confirmedAt).max() ?? now,
                     warningThreshold: threshold?.warningValue ?? serviceType.defaultWarning,
                     dangerThreshold:  threshold?.dangerValue  ?? serviceType.defaultDanger,
-                    sourceCount: live.count,
-                    trend: cachedTrends["\(roomName)|\(serviceType.rawValue)"] ?? .steady
+                    sourceCount: group.count,
+                    trend: cachedTrends["\(roomName)|\(serviceType.rawValue)"] ?? .steady,
+                    staleFor: staleFor
                 ))
             }
         }

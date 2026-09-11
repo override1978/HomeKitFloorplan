@@ -53,6 +53,20 @@ struct EnvironmentOverlayView: View {
             return dict
         }()
 
+        // Stanze i cui sensori tacciono tutti. Non sono stanze a posto: sono
+        // stanze di cui non sappiamo niente, e vanno dipinte diversamente da
+        // entrambe le cose che sappiamo — «bene» e «male».
+        let silentRooms: Set<String> = {
+            guard !isLoading else { return [] }
+            var out: Set<String> = []
+            for room in floorplan.linkedRooms {
+                if envVM.rooms.first(where: { $0.roomName == room.name })?.isSilent == true {
+                    out.insert(room.name)
+                }
+            }
+            return out
+        }()
+
         // Scostamento dalle soglie personalizzate (0 = sotto warning,
         // 0..1 = rampa warning→danger, >1 = oltre danger): il riempimento
         // diventa proporzionale a "quanto" la stanza sfora, non solo al livello.
@@ -74,9 +88,17 @@ struct EnvironmentOverlayView: View {
                 for room in geometryRooms {
                     let path = h.overlayPath(for: room)
                     let u = urgencyByRoom[room.name] ?? .normal
-                    let fill = isLoading
-                        ? FloorplanTokens.Semantic.ok.opacity(0.08)
-                        : gradedFillColor(urgency: u, deviation: deviationByRoom[room.name] ?? 0)
+                    let fill: Color
+                    if isLoading {
+                        fill = FloorplanTokens.Semantic.ok.opacity(0.08)
+                    } else if silentRooms.contains(room.name) {
+                        // Grigio, non verde: il verde direbbe «a posto», e non
+                        // lo sappiamo. È tutta qui la differenza per cui questo
+                        // stato è stato aggiunto.
+                        fill = Color.secondary.opacity(0.12)
+                    } else {
+                        fill = gradedFillColor(urgency: u, deviation: deviationByRoom[room.name] ?? 0)
+                    }
                     ctx.fill(path, with: .color(fill))
                     ctx.stroke(path, with: .color(fill.opacity(0.6)), lineWidth: 1.5 / effectiveScale)
                 }
@@ -167,9 +189,11 @@ struct EnvironmentOverlayView: View {
         // Col filtro attivo l'accento è l'urgenza del sensore; mostrando lo
         // SCORE l'accento segue le soglie uniche (v3): un 40% arancio accanto
         // al rosso di forScore era esattamente l'incoerenza da eliminare.
-        let borderColor = (filtSensor != nil || roomData == nil)
-            ? urgencyBorderColor(urgency)
-            : roomData!.qualityColor
+        let borderColor: Color = {
+            if roomData?.isSilent == true { return .secondary }
+            if filtSensor != nil || roomData == nil { return urgencyBorderColor(urgency) }
+            return roomData!.qualityColor
+        }()
         let valueText = filtSensor?.formattedValue
             ?? roomData.map { "\(Int($0.qualityScore * 100))%" }
         let level = FloorplanRoomBadgeCollapse.level(
@@ -210,12 +234,30 @@ struct EnvironmentOverlayView: View {
                     Text(sensor.formattedValue)
                         .font(.caption.weight(.bold))
                         .monospacedDigit()
-                    if let trendSymbol = sensor.trend.symbolName {
+                    if sensor.isStale {
+                        // L'ultimo valore resta leggibile, ma con accanto da
+                        // quanto è fermo: un numero senza età si legge come
+                        // «adesso», ed è la lettura sbagliata.
+                        Image(systemName: "clock.badge.exclamationmark")
+                            .font(.system(size: 8, weight: .bold))
+                    } else if let trendSymbol = sensor.trend.symbolName {
                         Image(systemName: trendSymbol)
                             .font(.system(size: 8, weight: .bold))
                     }
                 }
-                .foregroundStyle(urgencyBorderColor(sensor.urgency))
+                .foregroundStyle(sensor.isStale ? Color.secondary : urgencyBorderColor(sensor.urgency))
+            } else if let data = roomData, data.isSilent {
+                // Stanza muta: al posto del punteggio, da quanto tace.
+                HStack(spacing: 3) {
+                    Image(systemName: "clock.badge.exclamationmark")
+                        .font(.system(size: 9, weight: .semibold))
+                    if showsName, let silence = data.silentFor {
+                        Text(Self.shortAge(silence))
+                            .font(.system(size: 9, weight: .medium))
+                            .monospacedDigit()
+                    }
+                }
+                .foregroundStyle(.secondary)
             } else if let data = roomData {
                 // All-types mode: score % (+ label solo al livello L1)
                 HStack(spacing: 3) {
@@ -250,6 +292,16 @@ struct EnvironmentOverlayView: View {
         .foregroundStyle(.primary)
         .shadow(color: borderColor.opacity(0.12), radius: 8, y: 3)
         .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
+    }
+
+    /// Età in forma brevissima: nel badge c'è spazio per tre caratteri, non
+    /// per «2 ore e 14 minuti».
+    static func shortAge(_ interval: TimeInterval) -> String {
+        let minutes = Int(interval / 60)
+        if minutes < 60 { return "\(max(minutes, 1))m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h" }
+        return "\(hours / 24)g"
     }
 
     // MARK: Urgency helpers
