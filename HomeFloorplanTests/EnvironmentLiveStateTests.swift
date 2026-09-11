@@ -235,6 +235,45 @@ struct EnvironmentLiveStateTests {
         #expect(sensor.trend == .steady)
     }
 
+    @Test("L'ordine dei sensori non cambia fra due ricostruzioni identiche")
+    func sensorOrderIsStable() {
+        let state = makeState()
+        let vm = EnvironmentViewModel()
+        let now = Date()
+
+        // Quattro tipi tutti tranquilli: senza spareggio l'urgenza non
+        // ordinerebbe niente e l'ordine resterebbe quello del Set.
+        feed(state, .temperature, 21, at: now)
+        feed(state, .humidity, 45, at: now)
+        feed(state, .lightSensor, 120, at: now)
+        feed(state, .carbonDioxide, 500, at: now)
+
+        let first  = vm.applyLiveState(state, now: now).first?.sensors.map(\.serviceType)
+        let second = vm.applyLiveState(state, now: now).first?.sensors.map(\.serviceType)
+        let third  = vm.applyLiveState(state, now: now).first?.sensors.map(\.serviceType)
+
+        #expect(first == second)
+        #expect(second == third)
+        #expect(first?.count == 4)
+    }
+
+    @Test("Anche l'ordine delle stanze tranquille è stabile")
+    func roomOrderIsStable() {
+        let state = makeState()
+        let vm = EnvironmentViewModel()
+        let now = Date()
+
+        feed(state, .temperature, 21, room: Self.soggiorno, roomName: "Soggiorno", at: now)
+        feed(state, .temperature, 21, room: Self.cucina, roomName: "Cucina",
+             accessory: Self.sensorB, at: now)
+
+        let first  = vm.applyLiveState(state, now: now).map(\.roomName)
+        let second = vm.applyLiveState(state, now: now).map(\.roomName)
+
+        #expect(first == second)
+        #expect(first == ["Cucina", "Soggiorno"], "a parità di urgenza decide il nome")
+    }
+
     @Test("Stato vuoto: nessuna stanza, nessun crash")
     func emptyStateYieldsNoRooms() {
         let vm = EnvironmentViewModel()

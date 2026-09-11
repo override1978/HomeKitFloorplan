@@ -421,22 +421,51 @@ final class EnvironmentViewModel {
         return rooms
     }
 
+    /// Ordine dei sensori dentro una stanza: prima chi ha qualcosa da dire,
+    /// poi per peso, poi per nome.
+    ///
+    /// I due criteri di spareggio non sono pedanteria. Ordinando solo per
+    /// urgenza, quando i sensori stanno tutti bene — cioè quasi sempre — la
+    /// relazione non decide niente e l'ordine finale resta quello, arbitrario,
+    /// in cui il dizionario di partenza si è fatto scorrere. Finché la lista si
+    /// ricostruiva ogni quindici minuti la cosa passava inosservata; da quando
+    /// si ricostruisce a ogni notifica HomeKit le icone si rimescolano sotto
+    /// gli occhi a ogni aggiornamento.
+    private static func sensorOrder(_ a: SensorData, _ b: SensorData) -> Bool {
+        if a.urgency != b.urgency { return a.urgency > b.urgency }
+        let wa = a.serviceType.qualityWeight, wb = b.serviceType.qualityWeight
+        if wa != wb { return wa > wb }
+        return a.serviceType.rawValue < b.serviceType.rawValue
+    }
+
+    /// Ordine delle stanze: prima chi ha qualcosa da segnalare, poi per nome.
+    private static func roomOrder(_ a: RoomEnvironmentData, _ b: RoomEnvironmentData) -> Bool {
+        if a.worstUrgency != b.worstUrgency { return a.worstUrgency > b.worstUrgency }
+        return a.roomName.localizedCaseInsensitiveCompare(b.roomName) == .orderedAscending
+    }
+
     /// Ordinamento condiviso dai due percorsi: stanze critiche prima, salvo
     /// l'ordine scelto dall'utente. Duplicarlo significherebbe farli divergere.
     private static func arrange(_ byRoom: [String: [SensorData]],
                                 customOrder: [String]) -> [RoomEnvironmentData] {
         // Esclude la stanza sintetica outdoor: i dati meteo hanno il loro banner.
         let outdoorUUID = "weather.outdoor"
-        let roomData = byRoom
-            .filter { _, sensors in
-                !sensors.allSatisfy { $0.accessoryUUIDs == [outdoorUUID] }
-            }
-            .map { roomName, sensors -> RoomEnvironmentData in
-                RoomEnvironmentData(id: UUID(),
-                                    roomName: roomName,
-                                    sensors: sensors.sorted { $0.urgency > $1.urgency })
-            }
-            .sorted { $0.worstUrgency > $1.worstUrgency }
+        // In passaggi espliciti e non in catena: incatenati, filter/map/sorted
+        // con questi predicati mandano il type-checker fuori tempo massimo.
+        var built: [RoomEnvironmentData] = []
+        built.reserveCapacity(byRoom.count)
+        for (roomName, sensors) in byRoom {
+            let isSyntheticOutdoor = sensors.allSatisfy { $0.accessoryUUIDs == [outdoorUUID] }
+            guard !isSyntheticOutdoor else { continue }
+            built.append(RoomEnvironmentData(id: UUID(),
+                                             roomName: roomName,
+                                             sensors: sensors.sorted(by: sensorOrder)))
+        }
+
+        // Il nome come spareggio: fra stanze ugualmente tranquille l'urgenza non
+        // ordina niente, e senza un secondo criterio la griglia si
+        // rimescolerebbe a ogni aggiornamento.
+        let roomData = built.sorted(by: roomOrder)
 
         guard !customOrder.isEmpty else { return roomData }
         let orderMap = Dictionary(uniqueKeysWithValues: customOrder.enumerated().map { ($1, $0) })
