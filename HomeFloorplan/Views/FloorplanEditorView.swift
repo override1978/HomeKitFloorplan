@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import SwiftData
 import HomeKit
 
@@ -116,6 +117,49 @@ struct FloorplanEditorView: View {
     /// Meteo per la temperatura esterna della barra di stato. @Observable:
     /// la pill si aggiorna da sola quando arriva un refresh.
     @Environment(WeatherKitService.self) private var weatherKit
+    @Environment(HomeKitAutomationsService.self) private var automationsService
+    @Environment(CalendarEventsService.self) private var calendarEvents
+
+    // MARK: - Giornata della casa
+
+    /// I momenti di oggi, ricalcolati fuori dal body.
+    ///
+    /// Non è una computed property di proposito: costruirli attraversa 87
+    /// automazioni ed enumera le occorrenze di ciascuna, e questa vista si
+    /// rivaluta a ogni gesto sulla mappa. Qui vale la stessa disciplina delle
+    /// altre cache del file — si rifà quando cambia qualcosa, non a ogni
+    /// render.
+    @State private var dayMoments: [DayMoment] = []
+    @State private var dayClock = Date()
+
+    /// Il nastro compare solo quando si guarda la casa.
+    ///
+    /// In modifica e nel flusso guidato ogni pixel serve al lavoro in corso, e
+    /// la giornata non c'entra: chi sta spostando un marker non ha bisogno di
+    /// sapere che alle 23:00 parte Notte.
+    private var showsDayRibbon: Bool {
+        !ui.isEditing && placementModel == nil && !dayMoments.isEmpty
+    }
+
+    private var daySolarTimes: NextFireResolver.SolarTimes {
+        NextFireResolver.SolarTimes(todaySunrise: weatherKit.todaySunrise,
+                                    todaySunset: weatherKit.todaySunset,
+                                    tomorrowSunrise: weatherKit.tomorrowSunrise,
+                                    tomorrowSunset: weatherKit.tomorrowSunset)
+    }
+
+    private func refreshDayMoments() {
+        let now = Date()
+        dayClock = now
+        let day = AutomationsView.dayInterval(containing: now)
+        if automationsService.automations.isEmpty { automationsService.refresh() }
+        calendarEvents.refresh(day: day)
+        dayMoments = DayTimeline.build(day: day,
+                                       now: now,
+                                       automations: automationsService.today(now: now, solar: daySolarTimes),
+                                       solar: daySolarTimes,
+                                       calendarEntries: calendarEvents.todayEntries)
+    }
 
     /// Stessa sorgente e semantica di SecurityOverlayView: solo i sensori
     /// contatto monitorati contano come "aperture".
@@ -327,8 +371,42 @@ struct FloorplanEditorView: View {
                         .environment(\.colorScheme, chromeColorScheme)
                         .transition(.opacity)
                 }
+
+                if showsDayRibbon {
+                    dayRibbonCard
+                        .environment(\.colorScheme, chromeColorScheme)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .animation(.easeInOut(duration: 0.3), value: showsDayRibbon)
         }
+    }
+
+    /// Il nastro in fondo alla planimetria.
+    ///
+    /// Card piena con ombra e non materiale traslucido: sotto c'è la
+    /// planimetria, e una superficie trasparente lascerebbe passare muri e
+    /// tinte delle stanze proprio sotto le etichette — lo stesso motivo per
+    /// cui i badge dell'overlay hanno smesso di essere di vetro.
+    private var dayRibbonCard: some View {
+        DayRibbonView(moments: dayMoments.filter { !$0.isSolarKind },
+                      day: AutomationsView.dayInterval(containing: dayClock),
+                      now: dayClock,
+                      sunrise: weatherKit.todaySunrise,
+                      sunset: weatherKit.todaySunset)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+            .background(floorplanBackgroundColor,
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 14)
     }
 
     /// Colonna mappa (l'intero canvas pre-redesign). Separata dalla catena di
@@ -529,6 +607,13 @@ struct FloorplanEditorView: View {
         }
         // Meteo per la pill temperatura: si auto-limita a un refresh ogni 30'.
         .task { await weatherKit.refreshIfNeeded() }
+        // La giornata si ricalcola al minuto: gli orari invecchiano, e la
+        // linea di "adesso" deve muoversi con loro.
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            refreshDayMoments()
+        }
+        .onChange(of: automationsService.automations.count) { _, _ in refreshDayMoments() }
+        .onChange(of: weatherKit.todaySunset) { _, _ in refreshDayMoments() }
         // La salute casa dipende dalla raggiungibilità: ricalcolo su evento
         // discreto, come per gli adapter.
         .onChange(of: homeKit.reachabilityVersion) { _, _ in
@@ -593,6 +678,9 @@ struct FloorplanEditorView: View {
                 // 500 letture non tornava.
                 overlayEnvVM.applyLiveState(homeState)
                 overlayEnvVM.loadFromCoreData()
+            }
+            measureMain("appear.dayMoments") {
+                refreshDayMoments()
             }
             measureMain("appear.subscribe") {
                 accessoryObservationCoordinator.subscribe(to: floorplan)
