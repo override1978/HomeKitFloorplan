@@ -340,6 +340,10 @@ final class EnvironmentViewModel {
     /// con tempo sereno») mentre il badge accanto gridava comunque.
     private var cachedBaselines: [String: RawBaseline] = [:]
 
+    /// Firma dell'ultimo contenuto applicato a `rooms`, per non riassegnarla
+    /// quando la ricostruzione produce esattamente la stessa schermata.
+    private var lastRenderSignature: Int?
+
     // MARK: - Ordinamento custom
 
     static let orderKey = "environmentRoomOrder"
@@ -468,7 +472,7 @@ final class EnvironmentViewModel {
                     $0.serviceTypeRaw == serviceType.rawValue && $0.roomName == nil && $0.isEnabled
                 }
 
-                let syntheticID = UUID(uuidString: stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
+                let syntheticID = UUID(uuidString: Self.stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
 
                 let key = "\(roomName)|\(serviceType.rawValue)"
                 byRoom[roomName, default: []].append(SensorData(
@@ -489,9 +493,48 @@ final class EnvironmentViewModel {
             }
         }
 
-        rooms = Self.arrange(byRoom, customOrder: customOrderNames)
-        lastRefresh = now
+        let next = Self.arrange(byRoom, customOrder: customOrderNames)
+
+        // Le notifiche HomeKit arrivano fitte e quasi nessuna cambia ciò che
+        // si vede: una luminosità che oscilla di tre lux non deve ricostruire
+        // la griglia. Senza questo confronto `rooms` veniva riassegnata a ogni
+        // push, e ogni riassegnazione ridisegna nove card con i loro anelli.
+        let signature = Self.renderSignature(next)
+        if signature != lastRenderSignature {
+            lastRenderSignature = signature
+            rooms = next
+        }
+
+        // `lastRefresh` è osservata dall'overlay, che a ogni suo cambio lancia
+        // l'analisi AI: aggiornarla a ogni notifica la farebbe ripartire a
+        // raffica. È mostrata al minuto, quindi mezzo minuto di granularità
+        // non toglie niente a chi legge.
+        if lastRefresh == nil || now.timeIntervalSince(lastRefresh!) >= 30 {
+            lastRefresh = now
+        }
         return rooms
+    }
+
+    /// Firma di ciò che finisce a schermo.
+    ///
+    /// Deliberatamente non comprende `lastUpdated`: quello cambia a ogni
+    /// conferma anche quando il valore è identico, e confrontarlo
+    /// significherebbe non saltare mai nulla. Qui contano i numeri arrotondati
+    /// al decimo, l'urgenza, la direzione e il silenzio — cioè esattamente le
+    /// cose che una card disegna.
+    private static func renderSignature(_ rooms: [RoomEnvironmentData]) -> Int {
+        var hasher = Hasher()
+        for room in rooms {
+            hasher.combine(room.roomName)
+            for sensor in room.sensors {
+                hasher.combine(sensor.serviceType)
+                hasher.combine((sensor.currentValue * 10).rounded())
+                hasher.combine(sensor.urgency)
+                hasher.combine(sensor.trend)
+                hasher.combine(sensor.isStale)
+            }
+        }
+        return hasher.finalize()
     }
 
     /// Di quante deviazioni standard un valore sta fuori dal normale noto.
@@ -539,7 +582,13 @@ final class EnvironmentViewModel {
         for (roomName, sensors) in byRoom {
             let isSyntheticOutdoor = sensors.allSatisfy { $0.accessoryUUIDs == [outdoorUUID] }
             guard !isSyntheticOutdoor else { continue }
-            built.append(RoomEnvironmentData(id: UUID(),
+            // Identità stabile, derivata dal nome. Con un UUID nuovo a ogni
+            // ricostruzione SwiftUI vedeva stanze sempre diverse e smontava e
+            // rimontava tutte le card invece di aggiornarle — il "refresh
+            // costante" che si nota da quando la lista si ricostruisce a ogni
+            // notifica invece che ogni quindici minuti.
+            let roomID = UUID(uuidString: stableUUID(room: roomName, type: "__room")) ?? UUID()
+            built.append(RoomEnvironmentData(id: roomID,
                                              roomName: roomName,
                                              sensors: sensors.sorted(by: sensorOrder)))
         }
@@ -697,7 +746,7 @@ final class EnvironmentViewModel {
                     }
                 }
 
-                let syntheticID = UUID(uuidString: stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
+                let syntheticID = UUID(uuidString: Self.stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
 
                 let outdoorRoom = UserDefaults.standard.string(forKey: "outdoorRoomName") ?? ""
                 byRoom[roomName, default: []].append(SensorData(
@@ -755,7 +804,7 @@ final class EnvironmentViewModel {
 
     /// Genera un UUID v5-like deterministico da una stringa composta.
     /// Usa SHA-256 dei byte UTF-8, tronca ai 16 byte necessari per UUID.
-    private func stableUUID(room: String, type: String) -> String {
+    private static func stableUUID(room: String, type: String) -> String {
         let input = "\(room)|\(type)"
         // Semplice hash deterministico basato sui code point
         var h: UInt64 = 14_695_981_039_346_656_037

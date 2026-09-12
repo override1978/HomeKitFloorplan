@@ -354,6 +354,53 @@ struct EnvironmentLiveStateTests {
         #expect(co.urgency == .warning, "abituarsi al monossido non è un normale accettabile")
     }
 
+    // MARK: - Identità
+
+    @Test("L'identità di una stanza non cambia fra due ricostruzioni")
+    func roomIdentityIsStable() throws {
+        let state = makeState()
+        let vm = EnvironmentViewModel()
+        let now = Date()
+
+        feed(state, .temperature, 21, room: Self.soggiorno, roomName: "Soggiorno", at: now)
+        feed(state, .temperature, 19, room: Self.cucina, roomName: "Cucina",
+             accessory: Self.sensorB, at: now)
+
+        let first  = vm.applyLiveState(state, now: now).map(\.id)
+        let second = vm.applyLiveState(state, now: now.addingTimeInterval(1)).map(\.id)
+
+        #expect(first == second,
+                "con identità nuove a ogni giro SwiftUI smonta e rimonta le card invece di aggiornarle")
+    }
+
+    @Test("L'identità sopravvive anche a un cambio di valore")
+    func roomIdentitySurvivesValueChange() throws {
+        let state = makeState()
+        let vm = EnvironmentViewModel()
+        let t0 = Date()
+        let t1 = t0.addingTimeInterval(60)
+
+        feed(state, .temperature, 21, at: t0)
+        let before = try #require(vm.applyLiveState(state, now: t0).first)
+
+        feed(state, .temperature, 24, at: t1)
+        let after = try #require(vm.applyLiveState(state, now: t1).first)
+
+        #expect(before.id == after.id, "è la stessa stanza: deve aggiornarsi, non rinascere")
+        #expect(after.sensors.first?.currentValue == 24)
+    }
+
+    @Test("Due ViewModel diversi danno alla stessa stanza la stessa identità")
+    func roomIdentityIsDeterministicAcrossInstances() throws {
+        let state = makeState()
+        let now = Date()
+        feed(state, .temperature, 21, at: now)
+
+        let a = try #require(EnvironmentViewModel().applyLiveState(state, now: now).first)
+        let b = try #require(EnvironmentViewModel().applyLiveState(state, now: now).first)
+        #expect(a.id == b.id)
+    }
+
     @Test("Stato vuoto: nessuna stanza, nessun crash")
     func emptyStateYieldsNoRooms() {
         let vm = EnvironmentViewModel()
