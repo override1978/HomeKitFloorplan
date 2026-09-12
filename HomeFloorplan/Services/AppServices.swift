@@ -38,6 +38,8 @@ final class AppServices {
     let homeState = HomeState()
     /// Gli impegni di oggi, quando l'utente li ha voluti nella giornata.
     let calendarEvents = CalendarEventsService()
+    /// I salti temporanei delle automazioni, e la memoria di quando disfarli.
+    let automationSkips = AutomationSkipStore()
 
     var idleTimer: IdleTimerService { IdleTimerService.shared }
 

@@ -775,7 +775,11 @@ final class HomeKitAutomationsService {
 
     /// Uno scatto previsto: cosa farà la casa, e quando.
     struct ScheduledFire: Identifiable, Equatable, Sendable {
+        /// Identità dell'**occorrenza**: la stessa automazione può scattare
+        /// più volte in una giornata, e ogni scatto è una riga a sé.
         let id: String
+        /// Identità del **trigger**, stabile fra le occorrenze.
+        let automationID: String
         let name: String
         let at: Date
         /// Solo i nomi di scena che informano: vedi `SceneItem.hasInformativeName`.
@@ -821,6 +825,7 @@ final class HomeKitAutomationsService {
             let scenes = item.trigger.actionSets.map { SceneItem(actionSet: $0) }
             return ScheduledFire(
                 id: item.id,
+                automationID: item.id,
                 name: Self.strippingRedundantTime(from: item.name, firingAt: fire, calendar: calendar),
                 at: fire,
                 actionSetNames: scenes.filter(\.hasInformativeName).map(\.name).sorted(),
@@ -829,6 +834,32 @@ final class HomeKitAutomationsService {
                 isConditional: !item.conditionSummaries.isEmpty)
         }
         .sorted { $0.at < $1.at }
+    }
+
+    /// L'orario dichiarato all'inizio di un nome, se c'è.
+    ///
+    /// Serve a due cose opposte: togliere un'eco quando coincide con lo scatto
+    /// vero, e segnalare una discrepanza quando non coincide. Il secondo caso è
+    /// informazione che nessuno dà: in Casa, una volta rinominata a mano,
+    /// un'automazione smette di aggiornare il proprio nome — e se poi ne cambi
+    /// l'ora, il nome resta congelato su quella vecchia.
+    static func leadingTime(in name: String) -> (hour: Int, minute: Int)? {
+        var rest = Substring(name).drop { $0.isWhitespace }
+
+        // Una parola di servizio davanti («Alle», «At», «Ore»…), se c'è.
+        let afterWord = rest.drop { $0.isLetter }
+        if afterWord.count < rest.count, afterWord.first?.isWhitespace == true {
+            rest = afterWord.drop { $0.isWhitespace }
+        }
+
+        let hourDigits = rest.prefix { $0.isNumber }
+        guard (1...2).contains(hourDigits.count), let hour = Int(hourDigits) else { return nil }
+        var afterHour = rest.dropFirst(hourDigits.count)
+        guard let separator = afterHour.first, separator == ":" || separator == "." else { return nil }
+        afterHour = afterHour.dropFirst()
+        let minuteDigits = afterHour.prefix { $0.isNumber }
+        guard minuteDigits.count == 2, let minute = Int(minuteDigits) else { return nil }
+        return (hour, minute)
     }
 
     /// Toglie dal nome un orario iniziale che ripete quello già in colonna.
@@ -915,6 +946,7 @@ final class HomeKitAutomationsService {
                 .map { fire in
                     ScheduledFire(
                         id: "\(item.id)@\(Int(fire.timeIntervalSinceReferenceDate))",
+                        automationID: item.id,
                         name: Self.strippingRedundantTime(from: item.name, firingAt: fire, calendar: calendar),
                         at: fire,
                         actionSetNames: names,

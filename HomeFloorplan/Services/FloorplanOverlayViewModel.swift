@@ -113,6 +113,12 @@ final class FloorplanOverlayViewModel {
         case dashboard
         /// UUID dell'accessorio HomeKit mostrato nel dettaglio.
         case device(UUID)
+        /// Un momento della giornata, scelto dal nastro.
+        ///
+        /// Senza payload: il momento vive dove vivono i momenti, cioè nella
+        /// vista che li costruisce. Qui basta sapere *cosa* il pannello sta
+        /// mostrando, ed è la regola che tiene questo enum piccolo.
+        case moment
     }
 
     /// Espande una stanza (tab Controlli) e comprime l'eventuale precedente.
@@ -126,6 +132,20 @@ final class FloorplanOverlayViewModel {
     func collapseRoom() {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             expandedRoomID = nil
+        }
+    }
+
+    /// Apre il dettaglio di un momento della giornata.
+    ///
+    /// Vale la stessa regola del dettaglio dispositivo — vince l'ultimo tocco —
+    /// perché il pannello è «il dettaglio di ciò che hai appena toccato», che
+    /// è una regola che non serve spiegare a nessuno.
+    func showMomentDetail() {
+        panelContent = .moment
+        if !isPanelVisible {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+                isPanelVisible = true
+            }
         }
     }
 

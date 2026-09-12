@@ -13,6 +13,8 @@ struct AppForegroundCoordinator {
     let maintenancePredictionService: MaintenancePredictionService
     let locationPresenceService: LocationPresenceService
     let dataLifecycleService: DataLifecycleService
+    let automationsService: HomeKitAutomationsService
+    let automationSkips: AutomationSkipStore
 
     /// Cadenze del loop foreground, persistite fuori dal task.
     ///
@@ -47,6 +49,36 @@ struct AppForegroundCoordinator {
         }
     }
 
+    /// Riaccende le automazioni il cui salto è scaduto.
+    ///
+    /// Se la riaccensione fallisce il salto **non** si cancella: resterà lì e
+    /// si riproverà al giro dopo. Dimenticarlo lascerebbe un'automazione spenta
+    /// per sempre senza che niente lo dica, che è il modo peggiore in cui
+    /// questa funzione può rompersi.
+    private func restoreExpiredSkips() async {
+        let expired = await automationSkips.expiredTriggerIDs()
+        guard !expired.isEmpty else { return }
+        if await automationsService.automations.isEmpty {
+            await automationsService.refresh()
+        }
+        for triggerID in expired {
+            guard let item = await automationsService.automations.first(where: { $0.id == triggerID })
+            else {
+                // Il trigger non esiste più: il salto non ha più un oggetto e
+                // tenerlo significherebbe riprovare all'infinito.
+                await automationSkips.clearSkip(triggerID)
+                continue
+            }
+            do {
+                try await automationsService.setEnabled(true, for: item)
+                await automationSkips.clearSkip(triggerID)
+                dprint("⏭ Salto scaduto: \(item.name) torna attiva")
+            } catch {
+                dprint("⚠️ Ripristino fallito per \(item.name): si riprova al prossimo giro")
+            }
+        }
+    }
+
     func runForegroundSamplingLoop(isActive: Bool) async {
         guard isActive else { return }
         let container = sharedModelContainer
@@ -72,6 +104,16 @@ struct AppForegroundCoordinator {
 
         while !Task.isCancelled {
             let now = Date()
+            // Le automazioni saltate tornano in funzione da sole.
+            //
+            // È la parte che rende onesta la promessa di «stavolta no»:
+            // HomeKit non ha un salto, solo uno spegnimento, quindi qualcuno
+            // deve ricordarsi di riaccendere. Sta qui e non su un timer perché
+            // un timer non scatta se l'app è chiusa, mentre questo giro passa a
+            // ogni ritorno in primo piano — e la scadenza è persistita, quindi
+            // sopravvive a riavvii e chiusure.
+            await restoreExpiredSkips()
+
             if let home = homeKit.currentHome {
                 if !didSeedHomeState {
                     // Prima le sottoscrizioni, poi la semina. L'ordine conta:

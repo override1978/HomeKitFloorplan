@@ -10,6 +10,8 @@ struct FloorplanContextDashboardRouter: View {
     let environmentViewModel: EnvironmentViewModel
     /// Per risolvere l'adapter del dettaglio clima (novità D).
     var adapterMap: [UUID: any AccessoryAdapter] = [:]
+    /// Il momento scelto sul nastro, quando il pannello lo sta mostrando.
+    var selectedMoment: DayMoment? = nil
 
     var body: some View {
         VStack(spacing: 14) {
@@ -17,7 +19,9 @@ struct FloorplanContextDashboardRouter: View {
             // aperto da un tap esplicito su un marker. Clima ha la sua vista
             // dedicata; le altre categorie usano la sezione controlli che
             // ogni adapter già espone, con le letture come ripiego.
-            if case .device(let accessoryID) = overlayVM.panelContent,
+            if case .moment = overlayVM.panelContent, let selectedMoment {
+                FloorplanMomentPanelContent(moment: selectedMoment, overlayVM: overlayVM)
+            } else if case .device(let accessoryID) = overlayVM.panelContent,
                let adapter = adapterMap[accessoryID] {
                 if let thermostat = adapter as? (any ThermostatControlling) {
                     FloorplanClimatePanelContent(

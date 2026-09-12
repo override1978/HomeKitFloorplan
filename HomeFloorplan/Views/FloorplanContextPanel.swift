@@ -127,6 +127,8 @@ struct FloorplanDockedContextPanel: View {
     let environmentViewModel: EnvironmentViewModel
     /// Per il dettaglio clima (novità D).
     var adapterMap: [UUID: any AccessoryAdapter] = [:]
+    /// Il momento scelto sul nastro, quando il pannello lo sta mostrando.
+    var selectedMoment: DayMoment? = nil
     /// Fascia riservata alla chrome a piena larghezza (opzione A, 27/08): il
     /// contenuto parte sotto di lei, come la mappa. Il vetro della barra
     /// scorre anche su questa colonna.
@@ -140,7 +142,8 @@ struct FloorplanDockedContextPanel: View {
                 overlayVM: overlayVM,
                 floorplan: floorplan,
                 environmentViewModel: environmentViewModel,
-                adapterMap: adapterMap
+                adapterMap: adapterMap,
+                selectedMoment: selectedMoment
             )
             .padding(.horizontal, 12)
             .padding(.top, 8)

@@ -139,6 +139,7 @@ struct HomeFloorplanRootView: View {
             matterEnergyLiveStore: services.matterEnergyLiveStore,
             homeState: services.homeState,
             calendarEvents: services.calendarEvents,
+            automationSkips: services.automationSkips,
             locale: AppLanguage.resolved(from: appLanguageRaw).locale
         )
     }
@@ -169,7 +170,9 @@ struct HomeFloorplanRootView: View {
             proactiveIntelligenceService: services.proactiveIntelligenceService,
             maintenancePredictionService: services.maintenancePredictionService,
             locationPresenceService: services.locationPresenceService,
-            dataLifecycleService: services.dataLifecycleService
+            dataLifecycleService: services.dataLifecycleService,
+            automationsService: services.automationsService,
+            automationSkips: services.automationSkips
         )
     }
 
@@ -265,6 +268,7 @@ private struct AppEnvironmentModifier: ViewModifier {
     let matterEnergyLiveStore: MatterEnergyLiveStore
     let homeState: HomeState
     let calendarEvents: CalendarEventsService
+    let automationSkips: AutomationSkipStore
     let locale: Locale
 
     func body(content: Content) -> some View {
@@ -290,6 +294,7 @@ private struct AppEnvironmentModifier: ViewModifier {
             .environment(matterEnergyLiveStore)
             .environment(homeState)
             .environment(calendarEvents)
+            .environment(automationSkips)
             .environment(\.locale, locale)
     }
 }

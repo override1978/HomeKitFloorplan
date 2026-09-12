@@ -23,6 +23,10 @@ struct DayRibbonView: View {
     var sunrise: Date?
     var sunset: Date?
 
+    /// Chi riceve la selezione. Il nastro non sa cosa farne: se ne occupa chi
+    /// lo ospita, che è l'unico a sapere se c'è un pannello dove metterla.
+    var onSelect: ((DayMoment) -> Void)? = nil
+
     @State private var selected: DayMoment?
 
     // MARK: Geometria
@@ -148,7 +152,10 @@ struct DayRibbonView: View {
         .frame(height: Self.totalHeight, alignment: .top)
         .position(x: placement.x + max(placement.labelWidth ?? 0, 10) / 2 - 5,
                   y: Self.totalHeight / 2)
-        .onTapGesture { selected = isSelected ? nil : moment }
+        .onTapGesture {
+            selected = isSelected ? nil : moment
+            if !isSelected { onSelect?(moment) }
+        }
     }
 
     /// Il gambo e il punto.

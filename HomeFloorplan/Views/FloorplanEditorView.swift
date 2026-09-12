@@ -131,6 +131,7 @@ struct FloorplanEditorView: View {
     /// render.
     @State private var dayMoments: [DayMoment] = []
     @State private var dayClock = Date()
+    @State private var selectedMoment: DayMoment?
 
     /// Il nastro compare solo quando si guarda la casa.
     ///
@@ -328,6 +329,7 @@ struct FloorplanEditorView: View {
                             floorplan: floorplan,
                             environmentViewModel: overlayEnvVM,
                             adapterMap: currentAdapterMap(),
+                            selectedMoment: selectedMoment,
                             topInset: chromeLayout(for: outer.size).topInset
                         )
                         .frame(width: FloorplanDockedContextPanel.width)
@@ -398,7 +400,11 @@ struct FloorplanEditorView: View {
                       day: AutomationsView.dayInterval(containing: dayClock),
                       now: dayClock,
                       sunrise: weatherKit.todaySunrise,
-                      sunset: weatherKit.todaySunset)
+                      sunset: weatherKit.todaySunset,
+                      onSelect: { moment in
+                          selectedMoment = moment
+                          overlayVM?.showMomentDetail()
+                      })
             .padding(.horizontal, 14)
             .padding(.top, 10)
             .padding(.bottom, 6)

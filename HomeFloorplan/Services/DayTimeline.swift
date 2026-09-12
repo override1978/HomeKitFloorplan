@@ -38,6 +38,11 @@ struct DayMoment: Identifiable, Equatable, Sendable {
     /// Riga secondaria, quando aggiunge qualcosa. `nil` quando tacerebbe.
     let detail: String?
     let kind: Kind
+    /// Identificativo del trigger HomeKit, per i momenti che ne hanno uno.
+    ///
+    /// Senza, un momento si può leggere ma non fermare: è il ponte fra ciò che
+    /// il nastro mostra e l'automazione che lo produce.
+    var automationID: String?
     /// Vero quando l'orario è trascorso.
     ///
     /// Per le automazioni vuol dire «era previsto», non «è successo»: il
@@ -108,6 +113,7 @@ enum DayTimeline {
                     ? (fire.actionCount > 0 ? actionsLabel(fire.actionCount) : nil)
                     : fire.actionSetNames.joined(separator: " · "),
                 kind: .automation(isConditional: fire.isConditional),
+                automationID: fire.automationID,
                 isPast: fire.at <= now))
         }
 
