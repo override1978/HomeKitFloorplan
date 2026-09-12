@@ -125,6 +125,11 @@ struct FloorplanChromeLayout: Equatable {
     /// SOPRA il peek del pannello, non finirci sotto (feedback 26/08).
     var hasBottomPane = false
 
+    /// Il nastro della giornata in fondo (iPad): la planimetria gli sta
+    /// sopra, come già fa col peek del pannello su iPhone. Senza, il disegno
+    /// continua sotto la card e le stanze in basso finiscono coperte.
+    var hasDayRibbon = false
+
     /// Layout dell'app com'è oggi: solo top bar + superfici per-modo già
     /// coperte dal margine base.
     static let legacy = FloorplanChromeLayout()
@@ -144,6 +149,10 @@ struct FloorplanChromeLayout: Equatable {
     /// Spazio riservato in basso a peek del pannello + isola (iPhone).
     static let bottomPaneInset: CGFloat = 132
 
+    /// Spazio riservato al nastro della giornata: la card misurata più il
+    /// respiro sotto e sopra.
+    static let dayRibbonInset: CGFloat = 112
+
     var topInset: CGFloat {
         var inset = FloorplanCanvasGeometry.chromeTopInset
         if hasUnifiedStatusStrip { inset += Self.statusStripHeight }
@@ -152,8 +161,12 @@ struct FloorplanChromeLayout: Equatable {
         return inset
     }
 
+    /// I due non convivono mai — il nastro sta su regular, il peek su
+    /// compact — ma sommarli invece di sceglierne uno sarebbe fragile se un
+    /// domani convivessero: il massimo resta corretto in entrambi i casi.
     var bottomInset: CGFloat {
-        hasBottomPane ? Self.bottomPaneInset : 0
+        max(hasBottomPane ? Self.bottomPaneInset : 0,
+            hasDayRibbon ? Self.dayRibbonInset : 0)
     }
 }
 

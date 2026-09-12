@@ -137,8 +137,12 @@ struct FloorplanEditorView: View {
     /// In modifica e nel flusso guidato ogni pixel serve al lavoro in corso, e
     /// la giornata non c'entra: chi sta spostando un marker non ha bisogno di
     /// sapere che alle 23:00 parte Notte.
+    /// Per ora solo su schermo largo: in compatto il fondo è già occupato dal
+    /// pannello a scomparsa in stile «Dov'è», e due superfici sovrapposte lì
+    /// sotto non starebbero. L'iPhone vuole una forma sua, non questa
+    /// rimpicciolita.
     private var showsDayRibbon: Bool {
-        !ui.isEditing && placementModel == nil && !dayMoments.isEmpty
+        !isCompactScreen && !ui.isEditing && placementModel == nil && !dayMoments.isEmpty
     }
 
     private var daySolarTimes: NextFireResolver.SolarTimes {
@@ -1316,7 +1320,8 @@ struct FloorplanEditorView: View {
         // non esiste e la mappa riprende tutta l'altezza.
         FloorplanChromeLayout(hasTwoRowTabBar: !isCompactScreen,
                               hasBottomPane: isCompactScreen && !ui.isEditing
-                                  && container.height > container.width)
+                                  && container.height > container.width,
+                              hasDayRibbon: showsDayRibbon)
     }
 
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {

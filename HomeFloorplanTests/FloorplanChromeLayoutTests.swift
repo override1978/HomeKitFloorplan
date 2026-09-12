@@ -81,3 +81,44 @@ struct FloorplanChromeLayoutTests {
         #expect(abs((resolution?.markerPosition.y ?? 0) - 0.5) < 0.001)
     }
 }
+
+// MARK: - Nastro della giornata
+
+@Suite("FloorplanChromeLayout — il nastro alza la planimetria")
+struct FloorplanDayRibbonInsetTests {
+
+    @Test("Senza nastro il margine inferiore resta quello di prima")
+    func noRibbonNoInset() {
+        #expect(FloorplanChromeLayout().bottomInset == 0)
+    }
+
+    @Test("Col nastro la planimetria riserva lo spazio della card")
+    func ribbonReservesSpace() {
+        let layout = FloorplanChromeLayout(hasDayRibbon: true)
+        #expect(layout.bottomInset == FloorplanChromeLayout.dayRibbonInset)
+    }
+
+    @Test("Peek del pannello e nastro non si sommano: vince il più alto")
+    func insetsDoNotStack() {
+        let both = FloorplanChromeLayout(hasBottomPane: true, hasDayRibbon: true)
+        #expect(both.bottomInset == max(FloorplanChromeLayout.bottomPaneInset,
+                                        FloorplanChromeLayout.dayRibbonInset),
+                "sommarli spingerebbe il disegno molto più in alto del necessario")
+    }
+
+    @Test("Il margine inferiore riduce davvero l'area del disegno")
+    func insetShrinksTheDrawing() {
+        let container = CGSize(width: 1000, height: 800)
+        let image = CGSize(width: 1000, height: 800)
+        let without = FloorplanCanvasGeometry.imageRect(imageSize: image,
+                                                        container: container,
+                                                        topInset: 0, bottomInset: 0)
+        let with = FloorplanCanvasGeometry.imageRect(imageSize: image,
+                                                     container: container,
+                                                     topInset: 0,
+                                                     bottomInset: FloorplanChromeLayout.dayRibbonInset)
+        #expect(with.height < without.height)
+        #expect(with.maxY <= container.height - FloorplanChromeLayout.dayRibbonInset + 0.5,
+                "il disegno deve finire sopra la card, non sotto")
+    }
+}
