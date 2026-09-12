@@ -8,6 +8,8 @@
 		<string>com.homefloorplan.ruleEvaluation</string>
 		<string>com.homefloorplan.dataLifecycle</string>
 	</array>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>HomeFloorplan legge gli impegni di oggi per collocarli nella giornata della casa, accanto ad automazioni e orari del sole. Gli eventi restano sul dispositivo e non vengono inviati a nessun servizio.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>HomeFloorplan usa la fotocamera per mostrare la diagnostica della planimetria in realtà aumentata.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

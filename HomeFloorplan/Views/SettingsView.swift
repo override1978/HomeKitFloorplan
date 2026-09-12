@@ -21,6 +21,10 @@ struct SettingsView: View {
     @Environment(AISettings.self)           private var aiSettings
     @Environment(CloudKitSyncService.self)  private var cloudKitSync
     @Environment(DataLifecycleService.self) private var dataLifecycleService
+    @Environment(CalendarEventsService.self) private var calendarEvents
+    /// Spento di default: una casa non legge gli impegni di nessuno finché
+    /// non glielo si chiede.
+    @AppStorage(CalendarEventsService.enabledKey) private var showsCalendarInDay = false
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -261,6 +265,50 @@ struct SettingsView: View {
                 Text(String(localized: "settings.section.data", defaultValue: "Data"))
             } footer: {
                 Text(String(localized: "settings.data.footer", defaultValue: "Readings are summarised into permanent daily aggregates, which feed the environmental baselines. Maintenance normally runs by itself once a day."))
+            }
+
+            // MARK: - Calendario
+
+            Section {
+                Toggle(isOn: $showsCalendarInDay) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(String(localized: "settings.calendar.toggle",
+                                        defaultValue: "Impegni nella giornata"))
+                            Text(String(localized: "settings.calendar.toggle.subtitle",
+                                        defaultValue: "Mostra gli eventi di oggi accanto ad automazioni e orari del sole."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "calendar")
+                    }
+                }
+                .onChange(of: showsCalendarInDay) { _, isOn in
+                    // Il permesso si chiede qui e non di sorpresa mentre si
+                    // guarda la planimetria: chiedere nel momento in cui
+                    // l'utente ha appena espresso l'intenzione è l'unico in cui
+                    // la domanda ha senso.
+                    guard isOn else { return }
+                    Task { await calendarEvents.requestAccess() }
+                }
+
+                if showsCalendarInDay, calendarEvents.access == .denied {
+                    Label {
+                        Text(String(localized: "settings.calendar.denied",
+                                    defaultValue: "Accesso al calendario negato. Si concede da Impostazioni di sistema, alla voce Privacy."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    }
+                }
+            } header: {
+                Text(String(localized: "settings.section.calendar", defaultValue: "Calendario"))
+            } footer: {
+                Text(String(localized: "settings.calendar.footer",
+                            defaultValue: "Gli eventi si leggono dal calendario del dispositivo e restano lì: non vengono salvati nell'archivio dell'app né inviati a nessun servizio."))
             }
 
             // MARK: - iCloud

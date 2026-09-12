@@ -9,6 +9,7 @@ struct AutomationsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// Alba e tramonto reali: senza, le automazioni solari non hanno un orario.
     @Environment(WeatherKitService.self) private var weatherKit
+    @Environment(CalendarEventsService.self) private var calendarEvents
     /// Riavanza ogni minuto, così gli orari non invecchiano sotto gli occhi.
     @State private var clock = Date()
     @State private var selectedType: TypeFilter = .all
@@ -222,8 +223,13 @@ struct AutomationsView: View {
     /// invece che in una scaletta.
     @ViewBuilder
     private var todaySection: some View {
-        let fires = automationsService.today(now: clock, solar: solarTimes)
-        let firstUpcoming = fires.firstIndex { !$0.isPast }
+        let day = Self.dayInterval(containing: clock)
+        let moments = DayTimeline.build(day: day,
+                                        now: clock,
+                                        automations: automationsService.today(now: clock, solar: solarTimes),
+                                        solar: solarTimes,
+                                        calendarEntries: calendarEvents.todayEntries)
+        let firstUpcoming = moments.firstIndex { !$0.isPast }
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "calendar.day.timeline.left")
@@ -232,14 +238,14 @@ struct AutomationsView: View {
                 Text(String(localized: "automations.today.title", defaultValue: "Oggi"))
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                if !fires.isEmpty {
-                    Text("\(fires.count)")
+                if !moments.isEmpty {
+                    Text("\(moments.count)")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
 
-            if fires.isEmpty {
+            if moments.isEmpty {
                 // Una giornata senza scatti previsti è un'informazione, non un
                 // vuoto da riempire.
                 Text(String(localized: "automations.today.nothing",
@@ -252,10 +258,10 @@ struct AutomationsView: View {
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(fires.enumerated()), id: \.element.id) { index, fire in
+                    ForEach(Array(moments.enumerated()), id: \.element.id) { index, moment in
                         if index == firstUpcoming && index > 0 { nowMarker }
                         else if index > 0 { Divider().padding(.leading, 64) }
-                        todayRow(fire)
+                        todayRow(moment)
                     }
                     // Se tutto è già passato il segno va in fondo, altrimenti
                     // la giornata sembrerebbe ancora in corso.
@@ -264,7 +270,7 @@ struct AutomationsView: View {
                 .background(Color(.secondarySystemGroupedBackground),
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                if fires.contains(where: \.isPast) {
+                if moments.contains(where: { $0.isPast && $0.kind.isAutomation }) {
                     // Detto una volta sola, e detto: le righe passate sono ciò
                     // che era in programma, non un registro di cosa è successo.
                     // Prometterlo senza averlo sarebbe la bugia più facile.
@@ -278,6 +284,11 @@ struct AutomationsView: View {
         }
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { now in
             clock = now
+            calendarEvents.refresh(day: Self.dayInterval(containing: now))
+        }
+        .onAppear {
+            calendarEvents.refreshAccessStatus()
+            calendarEvents.refresh(day: day)
         }
     }
 
@@ -296,31 +307,45 @@ struct AutomationsView: View {
         .padding(.vertical, 6)
     }
 
-    private func todayRow(_ fire: HomeKitAutomationsService.ScheduledFire) -> some View {
+    /// La giornata civile che contiene un istante: da mezzanotte a mezzanotte.
+    static func dayInterval(containing instant: Date, calendar: Calendar = .current) -> DateInterval {
+        let start = calendar.startOfDay(for: instant)
+        return DateInterval(start: start,
+                            end: calendar.startOfDay(for: instant.addingTimeInterval(24 * 3600)))
+    }
+
+    private func todayRow(_ moment: DayMoment) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(fire.at.formatted(date: .omitted, time: .shortened))
-                .font(.subheadline.weight(.semibold).monospacedDigit())
-                .foregroundStyle(BrandColor.primary)
-                .frame(width: 52, alignment: .leading)
+            Group {
+                if case .calendar(true) = moment.kind {
+                    // Un impegno di tutto il giorno non ha un'ora da mostrare:
+                    // scriverne una inventerebbe una precisione che non c'è.
+                    Text(String(localized: "day.allDay", defaultValue: "tutto il dì"))
+                        .font(.caption2.weight(.semibold))
+                } else {
+                    Text(moment.at.formatted(date: .omitted, time: .shortened))
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                }
+            }
+            .foregroundStyle(BrandColor.primary)
+            .frame(width: 52, alignment: .leading)
+
+            Image(systemName: moment.symbolName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(fire.name)
+                Text(moment.title)
                     .font(.subheadline)
                     .lineLimit(1)
-                // Il sottotitolo compare solo se informa. I nomi vuoti o a
-                // UUID sono già stati scartati a monte: qui resta la scelta fra
-                // dire le scene, dire quante azioni, o tacere.
-                if !fire.actionSetNames.isEmpty {
-                    Text(fire.actionSetNames.joined(separator: " · "))
+                // Il sottotitolo compare solo se informa: i nomi vuoti o a UUID
+                // sono già stati scartati a monte.
+                if let detail = moment.detail {
+                    Text(detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                } else if fire.actionCount > 0 {
-                    Text(fire.actionCount == 1
-                         ? String(localized: "automations.today.oneAction", defaultValue: "1 azione")
-                         : String(localized: "automations.today.actions", defaultValue: "\(fire.actionCount) azioni"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -328,7 +353,7 @@ struct AutomationsView: View {
 
             // Il condizionale va detto: «alle 23:00 parte Notte» è una
             // promessa, «se siete in casa» è una previsione.
-            if fire.isConditional {
+            if case .automation(true) = moment.kind {
                 Image(systemName: "questionmark.diamond")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -339,7 +364,7 @@ struct AutomationsView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         // Il passato resta leggibile ma arretra: è contesto, non il punto.
-        .opacity(fire.isPast ? 0.45 : 1)
+        .opacity(moment.isPast ? 0.45 : 1)
     }
 
     private var automationFilterBar: some View {

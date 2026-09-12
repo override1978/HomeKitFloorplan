@@ -36,6 +36,8 @@ final class AppServices {
     /// Lo stato ambientale corrente, in memoria. Unica verità del presente:
     /// SwiftData resta l'archivio del passato.
     let homeState = HomeState()
+    /// Gli impegni di oggi, quando l'utente li ha voluti nella giornata.
+    let calendarEvents = CalendarEventsService()
 
     var idleTimer: IdleTimerService { IdleTimerService.shared }
 
