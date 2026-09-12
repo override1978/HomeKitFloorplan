@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import HomeKit
 
 /// Vista read-only delle automazioni HomeKit con toggle abilita/disabilita.
@@ -6,6 +7,10 @@ struct AutomationsView: View {
 
     @Environment(HomeKitAutomationsService.self) private var automationsService
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// Alba e tramonto reali: senza, le automazioni solari non hanno un orario.
+    @Environment(WeatherKitService.self) private var weatherKit
+    /// Riavanza ogni minuto, così gli orari non invecchiano sotto gli occhi.
+    @State private var clock = Date()
     @State private var selectedType: TypeFilter = .all
     @State private var searchText: String = ""
     @State private var toggleError: String?
@@ -172,6 +177,8 @@ struct AutomationsView: View {
                     )
                 }
 
+                if searchText.isEmpty { todaySection }
+
                 automationFilterBar
 
                 if filtered.isEmpty {
@@ -196,6 +203,101 @@ struct AutomationsView: View {
         .refreshable {
             automationsService.refresh()
         }
+    }
+
+    // MARK: - Cosa farà la casa oggi
+
+    private var solarTimes: NextFireResolver.SolarTimes {
+        NextFireResolver.SolarTimes(todaySunrise: weatherKit.todaySunrise,
+                                    todaySunset: weatherKit.todaySunset,
+                                    tomorrowSunrise: weatherKit.tomorrowSunrise,
+                                    tomorrowSunset: weatherKit.tomorrowSunset)
+    }
+
+    /// Il resto della giornata, in ordine di orario.
+    ///
+    /// Compaiono solo le automazioni che hanno un momento. Presenza e
+    /// posizione restano fuori: non ne hanno uno, e riempire l'elenco di
+    /// «quando rientri» lo trasformerebbe di nuovo in una lista di regole
+    /// invece che in una scaletta.
+    @ViewBuilder
+    private var todaySection: some View {
+        let fires = automationsService.remainderOfToday(now: clock, solar: solarTimes)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "calendar.day.timeline.left")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandColor.primary)
+                Text(String(localized: "automations.today.title", defaultValue: "Oggi"))
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if !fires.isEmpty {
+                    Text("\(fires.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if fires.isEmpty {
+                // Una giornata senza scatti previsti è un'informazione, non un
+                // vuoto da riempire.
+                Text(String(localized: "automations.today.nothing",
+                            defaultValue: "Da qui a mezzanotte non è previsto nulla."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Color(.secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(fires.enumerated()), id: \.element.id) { index, fire in
+                        if index > 0 { Divider().padding(.leading, 64) }
+                        todayRow(fire)
+                    }
+                }
+                .background(Color(.secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { now in
+            clock = now
+        }
+    }
+
+    private func todayRow(_ fire: HomeKitAutomationsService.ScheduledFire) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(fire.at.formatted(date: .omitted, time: .shortened))
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(BrandColor.primary)
+                .frame(width: 52, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(fire.name)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                if !fire.actionSetNames.isEmpty {
+                    Text(fire.actionSetNames.joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            // Il condizionale va detto: «alle 23:00 parte Notte» è una
+            // promessa, «se siete in casa» è una previsione.
+            if fire.isConditional {
+                Image(systemName: "questionmark.diamond")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(String(localized: "automations.today.conditional",
+                                               defaultValue: "Solo se le condizioni sono soddisfatte"))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
     private var automationFilterBar: some View {
