@@ -778,7 +778,10 @@ final class HomeKitAutomationsService {
         let id: String
         let name: String
         let at: Date
+        /// Solo i nomi di scena che informano: vedi `SceneItem.hasInformativeName`.
         let actionSetNames: [String]
+        /// Quante azioni esegue, per dire qualcosa anche quando i nomi tacciono.
+        let actionCount: Int
         /// Vero quando il trigger ha condizioni che possono impedirgli di agire.
         ///
         /// Va detto e non nascosto: «alle 23:00 parte Notte» è una promessa,
@@ -809,13 +812,56 @@ final class HomeKitAutomationsService {
                                                    calendar: calendar),
                   fire <= until
             else { return nil }
-            return ScheduledFire(id: item.id,
-                                 name: item.name,
-                                 at: fire,
-                                 actionSetNames: item.actionSetNames,
-                                 isConditional: !item.conditionSummaries.isEmpty)
+            let scenes = item.trigger.actionSets.map { SceneItem(actionSet: $0) }
+            return ScheduledFire(
+                id: item.id,
+                name: Self.strippingRedundantTime(from: item.name, firingAt: fire, calendar: calendar),
+                at: fire,
+                actionSetNames: scenes.filter(\.hasInformativeName).map(\.name).sorted(),
+                actionCount: scenes.reduce(0) { $0 + $1.actionCount },
+                isConditional: !item.conditionSummaries.isEmpty)
         }
         .sorted { $0.at < $1.at }
+    }
+
+    /// Toglie dal nome un orario iniziale che ripete quello già in colonna.
+    ///
+    /// Molte automazioni si chiamano «Alle 20:30 Chiudi la Tenda in Cucina»,
+    /// perché il nome è stato scritto quando l'ora non era mostrata altrove. In
+    /// una scaletta con l'ora a sinistra quel prefisso diventa un'eco.
+    ///
+    /// Si toglie solo quando l'orario nel nome **coincide** con quello
+    /// calcolato: è la verifica che rende l'operazione sicura invece che una
+    /// scommessa su come l'utente battezza le cose. Un nome in formato a dodici
+    /// ore semplicemente non combacia e resta intatto.
+    static func strippingRedundantTime(from name: String,
+                                       firingAt fire: Date,
+                                       calendar: Calendar = .current) -> String {
+        let expected = calendar.dateComponents([.hour, .minute], from: fire)
+        var rest = Substring(name).drop { $0.isWhitespace }
+
+        // Una parola di servizio davanti («Alle», «At», «Ore»…), se c'è.
+        let afterWord = rest.drop { $0.isLetter }
+        if afterWord.count < rest.count, afterWord.first?.isWhitespace == true {
+            rest = afterWord.drop { $0.isWhitespace }
+        }
+
+        let hourDigits = rest.prefix { $0.isNumber }
+        guard (1...2).contains(hourDigits.count),
+              let hour = Int(hourDigits) else { return name }
+        var afterHour = rest.dropFirst(hourDigits.count)
+        guard let separator = afterHour.first, separator == ":" || separator == "." else { return name }
+        afterHour = afterHour.dropFirst()
+        let minuteDigits = afterHour.prefix { $0.isNumber }
+        guard minuteDigits.count == 2, let minute = Int(minuteDigits) else { return name }
+
+        guard hour == expected.hour, minute == expected.minute else { return name }
+
+        let tail = afterHour.dropFirst(minuteDigits.count)
+            .drop { $0.isWhitespace || $0 == "-" || $0 == "–" || $0 == "—" || $0 == ":" }
+        let stripped = String(tail)
+        // Se restasse solo l'ora, il nome era tutto lì: meglio tenerlo.
+        return stripped.isEmpty ? name : stripped
     }
 
     /// Il resto di oggi, fino a mezzanotte.

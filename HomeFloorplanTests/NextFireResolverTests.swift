@@ -161,3 +161,61 @@ struct NextFireResolverTests {
         #expect(tomorrow == date(2026, 9, 13, 23))
     }
 }
+
+// MARK: - Pulizia del nome
+
+@Suite("ScheduledFire — il nome non ripete l'ora già in colonna")
+struct ScheduledFireNameTests {
+
+    private var cal: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "Europe/Rome")!
+        return c
+    }
+
+    private func fire(_ h: Int, _ m: Int) -> Date {
+        cal.date(from: DateComponents(year: 2026, month: 9, day: 12, hour: h, minute: m))!
+    }
+
+    private func strip(_ name: String, _ h: Int, _ m: Int) -> String {
+        HomeKitAutomationsService.strippingRedundantTime(from: name, firingAt: fire(h, m), calendar: cal)
+    }
+
+    @Test("«Alle 20:30 Chiudi la Tenda» diventa «Chiudi la Tenda»")
+    func stripsItalianPrefix() {
+        #expect(strip("Alle 20:30 Chiudi la Tenda in Cucina", 20, 30) == "Chiudi la Tenda in Cucina")
+    }
+
+    @Test("Funziona anche senza parola di servizio davanti")
+    func stripsBareTime() {
+        #expect(strip("22:00 Attivo Antifurto", 22, 0) == "Attivo Antifurto")
+    }
+
+    @Test("Tollera i separatori dopo l'ora")
+    func stripsSeparators() {
+        #expect(strip("Alle 23:00 - Spegni Purificatore", 23, 0) == "Spegni Purificatore")
+        #expect(strip("23.00 — Spegni Purificatore", 23, 0) == "Spegni Purificatore")
+    }
+
+    @Test("Se l'ora nel nome non è quella dello scatto non si tocca niente")
+    func leavesMismatchedTimeAlone() {
+        #expect(strip("Alle 07:00 Sveglia", 20, 30) == "Alle 07:00 Sveglia",
+                "togliere un orario diverso cancellerebbe informazione vera")
+    }
+
+    @Test("Un nome senza orario resta intatto")
+    func leavesPlainNameAlone() {
+        #expect(strip("Modalità Notturna", 22, 30) == "Modalità Notturna")
+    }
+
+    @Test("Un nome fatto solo dell'ora si tiene com'è")
+    func keepsTimeOnlyName() {
+        #expect(strip("Alle 22:30", 22, 30) == "Alle 22:30",
+                "svuotarlo lascerebbe una riga senza titolo")
+    }
+
+    @Test("Il formato a dodici ore non combacia e passa indenne")
+    func twelveHourFormatUntouched() {
+        #expect(strip("At 8:30 PM Close the blinds", 20, 30) == "At 8:30 PM Close the blinds")
+    }
+}

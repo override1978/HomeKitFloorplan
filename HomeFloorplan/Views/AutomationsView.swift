@@ -276,11 +276,20 @@ struct AutomationsView: View {
                 Text(fire.name)
                     .font(.subheadline)
                     .lineLimit(1)
+                // Il sottotitolo compare solo se informa. I nomi vuoti o a
+                // UUID sono già stati scartati a monte: qui resta la scelta fra
+                // dire le scene, dire quante azioni, o tacere.
                 if !fire.actionSetNames.isEmpty {
                     Text(fire.actionSetNames.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                } else if fire.actionCount > 0 {
+                    Text(fire.actionCount == 1
+                         ? String(localized: "automations.today.oneAction", defaultValue: "1 azione")
+                         : String(localized: "automations.today.actions", defaultValue: "\(fire.actionCount) azioni"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 

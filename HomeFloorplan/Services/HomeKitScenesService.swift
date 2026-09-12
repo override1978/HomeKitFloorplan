@@ -1669,6 +1669,23 @@ struct SceneItem: Identifiable {
             return String(localized: "scene.linked", defaultValue: "Linked Scene")
         }
     }
+    /// Vero quando il nome dice qualcosa a chi legge.
+    ///
+    /// HomeKit battezza con un UUID gli insiemi di azioni creati dentro
+    /// un'automazione, e lascia vuoti quelli senza nome. Entrambi i casi
+    /// producono un'etichetta che non informa nessuno — «Scena collegata», o
+    /// peggio «38737CF2-F954-5CD9-8BB2-BE1F89EB9EB4». Mostrarla è esattamente
+    /// ciò che fanno le app che sputano i nomi grezzi del framework.
+    var hasInformativeName: Bool {
+        if let override = displayNameOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !override.isEmpty { return true }
+        let trimmed = actionSet.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Senza nome, le scene di sistema ne ricavano uno sensato dal tipo;
+        // quelle definite dall'utente no.
+        if trimmed.isEmpty { return isBuiltIn }
+        return UUID(uuidString: trimmed) == nil
+    }
+
     var hasGenericDisplayName: Bool {
         let trimmed = actionSet.name.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty && actionSet.actionSetType == HMActionSetTypeUserDefined
