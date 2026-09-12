@@ -837,10 +837,21 @@ final class HomeKitAutomationsService {
     /// perché il nome è stato scritto quando l'ora non era mostrata altrove. In
     /// una scaletta con l'ora a sinistra quel prefisso diventa un'eco.
     ///
-    /// Si toglie solo quando l'orario nel nome **coincide** con quello
-    /// calcolato: è la verifica che rende l'operazione sicura invece che una
-    /// scommessa su come l'utente battezza le cose. Un nome in formato a dodici
-    /// ore semplicemente non combacia e resta intatto.
+    /// Si toglie solo a due condizioni, ed entrambe servono a farla astenere
+    /// quando non è sicura.
+    ///
+    /// La prima: l'orario nel nome deve **coincidere** con quello calcolato,
+    /// così non si cancella mai un'informazione vera. Un nome in formato a
+    /// dodici ore non combacia e resta intatto.
+    ///
+    /// La seconda: ciò che resta deve cominciare per maiuscola. L'app Casa
+    /// genera nomi come «Alle 9:00 di ogni giorno Attiva Purificatore» o «Alle
+    /// 2:00 del mattino imposta la Buonanotte»: togliere il solo orario lascia
+    /// un troncone che comincia a metà frase — «di ogni giorno Attiva
+    /// Purificatore» — cioè peggio del problema che si voleva risolvere. La
+    /// maiuscola è il segno che dopo l'ora comincia davvero l'azione; una
+    /// minuscola dice che l'ora era incastrata in una frase e va lasciata
+    /// dov'è. Meglio un'ora ripetuta di una frase mutilata.
     static func strippingRedundantTime(from name: String,
                                        firingAt fire: Date,
                                        calendar: Calendar = .current) -> String {
@@ -866,9 +877,12 @@ final class HomeKitAutomationsService {
 
         let tail = afterHour.dropFirst(minuteDigits.count)
             .drop { $0.isWhitespace || $0 == "-" || $0 == "–" || $0 == "—" || $0 == ":" }
-        let stripped = String(tail)
         // Se restasse solo l'ora, il nome era tutto lì: meglio tenerlo.
-        return stripped.isEmpty ? name : stripped
+        guard let firstLetter = tail.first else { return name }
+        // E se ciò che resta non comincia per maiuscola, l'ora faceva parte
+        // della frase: toglierla la spezzerebbe.
+        guard firstLetter.isUppercase else { return name }
+        return String(tail)
     }
 
     /// L'intera giornata: da mezzanotte a mezzanotte, passato compreso.

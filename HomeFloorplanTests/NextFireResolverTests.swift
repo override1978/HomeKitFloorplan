@@ -214,6 +214,16 @@ struct ScheduledFireNameTests {
                 "svuotarlo lascerebbe una riga senza titolo")
     }
 
+    @Test("Se dopo l'ora la frase continua in minuscolo non si taglia niente")
+    func doesNotMutilateSentences() {
+        // Nomi generati dall'app Casa: l'ora è incastrata nella frase.
+        #expect(strip("Alle 9:00 di ogni giorno Attiva Purificatore", 9, 0)
+                == "Alle 9:00 di ogni giorno Attiva Purificatore",
+                "togliere solo l'ora lascerebbe «di ogni giorno Attiva Purificatore»")
+        #expect(strip("Alle 2:00 del mattino imposta la Buonanotte", 2, 0)
+                == "Alle 2:00 del mattino imposta la Buonanotte")
+    }
+
     @Test("Il formato a dodici ore non combacia e passa indenne")
     func twelveHourFormatUntouched() {
         #expect(strip("At 8:30 PM Close the blinds", 20, 30) == "At 8:30 PM Close the blinds")
