@@ -83,3 +83,55 @@ struct DayRibbonLayoutTests {
                 "meglio tre punti muti di tre etichette illeggibili")
     }
 }
+
+// MARK: - Titolo sull'asse
+
+@MainActor
+@Suite("DayRibbonView — l'etichetta comincia da ciò che distingue")
+struct DayRibbonTitleTests {
+
+    private func automation(_ title: String) -> DayMoment {
+        DayMoment(id: title, at: Date(), title: title, detail: nil,
+                  kind: .automation(isConditional: false), isPast: false)
+    }
+    private func short(_ title: String) -> String {
+        DayRibbonView.ribbonTitle(for: automation(title))
+    }
+
+    @Test("Via l'orario, resta l'azione")
+    func dropsLeadingTime() {
+        #expect(short("Alle 07:30 Sveglia Lavoro") == "Sveglia Lavoro")
+        #expect(short("22:00 Attivo Antifurto") == "Attivo Antifurto")
+    }
+
+    @Test("Via anche le parole di servizio fino alla prima maiuscola")
+    func dropsConnectiveWords() {
+        #expect(short("Alle 09:00 di ogni giorno Attiva Purificatore") == "Attiva Purificatore")
+        #expect(short("Alle 02:00 del mattino imposta la Buonanotte") == "Buonanotte",
+                "su un asse è esattamente l'etichetta che serve")
+    }
+
+    @Test("Un nome già pulito non si tocca")
+    func leavesCleanNameAlone() {
+        #expect(short("Modalità Notturna") == "Modalità Notturna")
+        #expect(short("Alfred In Settimana Aspira Mansarda") == "Alfred In Settimana Aspira Mansarda")
+    }
+
+    @Test("Senza maiuscole da cui ripartire il nome resta intero")
+    func keepsAllLowercaseName() {
+        #expect(short("Alle 08:00 accendi la luce") == "accendi la luce")
+        #expect(short("spegni tutto") == "spegni tutto",
+                "meglio troncato che svuotato")
+    }
+
+    @Test("I momenti che non sono automazioni restano intatti")
+    func leavesOtherKindsAlone() {
+        let event = DayMoment(id: "e", at: Date(), title: "Festa Morelli", detail: nil,
+                              kind: .calendar(isAllDay: false), isPast: false)
+        #expect(DayRibbonView.ribbonTitle(for: event) == "Festa Morelli")
+
+        let dawn = DayMoment(id: "s", at: Date(), title: "Alba", detail: nil,
+                             kind: .solar(.sunrise), isPast: true)
+        #expect(DayRibbonView.ribbonTitle(for: dawn) == "Alba")
+    }
+}

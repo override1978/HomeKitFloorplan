@@ -132,7 +132,7 @@ struct DayRibbonView: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             if let labelWidth = placement.labelWidth {
-                Text(moment.title)
+                Text(Self.ribbonTitle(for: moment))
                     .font(.system(size: 9, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -188,6 +188,64 @@ struct DayRibbonView: View {
                 .frame(width: 2, height: Self.axisY + Self.axisHeight - Self.labelRowHeight)
         }
         .position(x: min(max(x, 18), width - 18), y: (Self.axisY + Self.axisHeight) / 2 + 4)
+    }
+
+    // MARK: Titolo per l'asse
+
+    /// Il nome ridotto a ciò che lo distingue.
+    ///
+    /// Sull'asse lo spazio è il vincolo, e i nomi generati dall'app Casa
+    /// cominciano tutti con la parte che non serve: «Alle 09:00 di ogni giorno
+    /// Attiva Purificatore» in ottantotto punti diventa «Alle 09:00 di ogni…»,
+    /// cioè un'etichetta che consuma una riga intera per non dire niente. E
+    /// l'ora è doppiamente sprecata, perché la posizione sull'asse *è già*
+    /// l'ora.
+    ///
+    /// Quindi qui si taglia più a fondo che nell'elenco: via l'orario iniziale
+    /// e, se quel che resta comincia in minuscolo, via anche le parole di
+    /// servizio fino alla prima maiuscola — che è dove comincia la cosa vera.
+    /// «del mattino imposta la Buonanotte» diventa «Buonanotte», che su un
+    /// asse è esattamente l'etichetta giusta.
+    ///
+    /// Vale solo per le automazioni: «Festa Morelli» e «Alba» sono già nomi, e
+    /// accorciarli li rovinerebbe. E se non c'è nessuna maiuscola da cui
+    /// ripartire, il nome resta intero — meglio troncato che svuotato.
+    static func ribbonTitle(for moment: DayMoment) -> String {
+        guard moment.isAutomationKind else { return moment.title }
+
+        var rest = Substring(moment.title).drop { $0.isWhitespace }
+
+        // Una parola di servizio davanti («Alle», «At»…), se seguita dall'ora.
+        let afterWord = rest.drop { $0.isLetter }
+        if afterWord.count < rest.count, afterWord.first?.isWhitespace == true {
+            let candidate = afterWord.drop { $0.isWhitespace }
+            if candidate.first?.isNumber == true { rest = candidate }
+        }
+
+        // L'orario, se c'è.
+        let hour = rest.prefix { $0.isNumber }
+        if (1...2).contains(hour.count) {
+            var after = rest.dropFirst(hour.count)
+            if let sep = after.first, sep == ":" || sep == "." {
+                after = after.dropFirst()
+                let minute = after.prefix { $0.isNumber }
+                if minute.count == 2 {
+                    rest = after.dropFirst(minute.count)
+                        .drop { $0.isWhitespace || $0 == "-" || $0 == "–" || $0 == "—" || $0 == ":" }
+                }
+            }
+        }
+
+        // Se riparte in minuscolo, si salta fino alla prima maiuscola.
+        if let first = rest.first, !first.isUppercase {
+            let words = rest.split(separator: " ", omittingEmptySubsequences: true)
+            if let start = words.firstIndex(where: { $0.first?.isUppercase == true }) {
+                rest = Substring(words[start...].joined(separator: " "))
+            }
+        }
+
+        let out = String(rest).trimmingCharacters(in: .whitespacesAndNewlines)
+        return out.isEmpty ? moment.title : out
     }
 
     // MARK: Disposizione delle etichette
