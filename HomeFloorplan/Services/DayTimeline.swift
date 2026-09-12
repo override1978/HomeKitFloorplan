@@ -48,6 +48,13 @@ struct DayMoment: Identifiable, Equatable, Sendable {
     /// «previsto contro avvenuto». Alba e impegni sono fatti, non promesse.
     var isAutomationKind: Bool { kind.isAutomation }
 
+    /// Alba e tramonto: sul nastro diventano lo sfondo invece che due punti in
+    /// fila, quindi chi li disegna così deve poterli togliere dall'elenco.
+    var isSolarKind: Bool {
+        if case .solar = kind { return true }
+        return false
+    }
+
     var symbolName: String {
         switch kind {
         case .automation:      return "gearshape.2"

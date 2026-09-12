@@ -249,7 +249,11 @@ struct AutomationsView: View {
             // confronto che serve per decidere quale delle due forme merita il
             // posto fisso, e nessuna descrizione lo sostituisce.
             if !moments.isEmpty {
-                DayRibbonView(moments: moments, day: day, now: clock)
+                DayRibbonView(moments: moments.filter { !$0.isSolarKind },
+                              day: day,
+                              now: clock,
+                              sunrise: solarTimes.todaySunrise,
+                              sunset: solarTimes.todaySunset)
                     .padding(12)
                     .background(Color(.secondarySystemGroupedBackground),
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous))
