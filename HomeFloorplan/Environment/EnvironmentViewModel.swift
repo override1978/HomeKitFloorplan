@@ -641,12 +641,31 @@ final class EnvironmentViewModel {
         let (rawReadings, rawThresholds, rawBaselines) = await Task.detached(priority: .userInitiated) {
             let context = ModelContext(container)
 
-            // Limita alle 500 letture più recenti: copre tutti i dispositivi attivi
-            // evitando di scansionare l'intera storia (fino a 30 giorni × N sensori).
-            var desc = FetchDescriptor<SensorReading>(
+            // Finestra temporale, non un tetto di righe.
+            //
+            // Il tetto era 500 letture più recenti, scelto per coprire tutti i
+            // dispositivi attivi senza scandire trenta giorni di storia. Aveva
+            // però un difetto silenzioso: bastava un dispositivo loquace — o
+            // una raffica di scritture dopo una riconnessione — perché le 500
+            // righe appartenessero quasi tutte a lui, e un sensore lento
+            // sparisse del tutto dalla schermata senza che niente lo dicesse.
+            //
+            // Adesso quella query serve a una cosa sola, il trend: per ogni
+            // dispositivo, la lettura più recente ma anteriore ai 45 minuti. I
+            // valori correnti non passano più di qui — arrivano da HomeState —
+            // quindi il criterio giusto è il tempo, che è ciò che la domanda
+            // significa. Sei ore bastano con abbondanza per un confronto a 45
+            // minuti, e un sensore muto da sei ore semplicemente non ha una
+            // direzione da mostrare, il che è la risposta corretta.
+            //
+            // Il volume resta limitato e prevedibile: sei ore per una trentina
+            // di sensori sono un paio di migliaia di righe, contro un tetto che
+            // poteva nascondere chiunque.
+            let trendWindowStart = Date().addingTimeInterval(-6 * 3600)
+            let desc = FetchDescriptor<SensorReading>(
+                predicate: #Predicate<SensorReading> { $0.timestamp >= trendWindowStart },
                 sortBy: [SortDescriptor(\SensorReading.timestamp, order: .reverse)]
             )
-            desc.fetchLimit = 500
 
             let fetchedReadings    = (try? context.fetch(desc)) ?? []
             let fetchedThresholds  = (try? context.fetch(FetchDescriptor<SensorAlertThreshold>())) ?? []

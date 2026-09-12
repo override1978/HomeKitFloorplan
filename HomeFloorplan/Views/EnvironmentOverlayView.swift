@@ -498,7 +498,10 @@ struct EnvironmentContextDashboard: View {
                 showsStatusLabel: false
             )
 
-            if envVM.isLoading {
+            // `&& rooms.isEmpty` come altrove: adesso il percorso vivo dipinge
+            // subito e il caricamento da archivio parte dopo, quindi `isLoading`
+            // da solo farebbe comparire «Caricamento…» sopra dati già a schermo.
+            if envVM.isLoading && envVM.rooms.isEmpty {
                 HStack(spacing: 8) {
                     ProgressView().scaleEffect(0.8)
                     Text(String(localized: "environment.panel.loading", defaultValue: "Loading data…"))

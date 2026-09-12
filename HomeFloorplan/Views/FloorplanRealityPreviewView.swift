@@ -53,6 +53,8 @@ struct FloorplanRealityPreviewView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
+    /// Lo stato ambientale vivo: alimenta gli strati Ambiente della scena 3D.
+    @Environment(HomeState.self) private var homeState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     /// Copia locale per la reattivita' del passo: il modello e' la verita', ma
@@ -376,6 +378,13 @@ struct FloorplanRealityPreviewView: View {
         // Lo stato non è più una fotografia: se apri una finestra mentre stai
         // guardando, l'anta si muove. `characteristicValues` è osservabile, e
         // ricalcolare l'insieme costa una manciata di confronti.
+        // Gli strati Ambiente seguono le notifiche HomeKit, ma solo dopo che
+        // qualcuno li ha accesi: finché la scena mostra la sola casa non c'è
+        // niente da riallineare e non si paga nulla.
+        .onChange(of: homeState.lastChange) { _, _ in
+            guard didLoadEnvironment else { return }
+            envVM.applyLiveState(homeState)
+        }
         .onChange(of: openOpeningIDs) { _, _ in rebuildScene() }
         // Una tapparella che scende cambia la geometria, quindi va ricostruita —
         // ma a scatti di un ventesimo, non a ogni millimetro riportato da
@@ -2585,14 +2594,19 @@ struct FloorplanRealityPreviewView: View {
         return .normal
     }
 
-    /// Il modello ambientale costa **oltre un secondo sul main actor**, e la
-    /// vista si apre con lo strato spento: caricarlo all'apparire voleva dire
-    /// pagarlo sempre, anche per chi guarda solo la casa. Si carica alla prima
-    /// accensione di uno strato.
+    /// Prepara il modello ambientale alla prima accensione di uno strato.
+    ///
+    /// La pigrizia nacque perché il caricamento costava **oltre un secondo sul
+    /// main actor**: pagarlo all'apparire voleva dire pagarlo anche a chi
+    /// guarda solo la casa. Quel motivo adesso vale solo per metà. I valori
+    /// correnti arrivano da `HomeState` e costano un accesso a dizionario,
+    /// quindi si prendono subito e lo strato si accende già popolato; resta
+    /// differito l'archivio, che serve solo a trend e soglie.
     private func loadEnvironmentIfNeeded() {
         guard !didLoadEnvironment else { return }
         didLoadEnvironment = true
-        envVM.configure(modelContainer: modelContext.container)
+        envVM.configure(modelContainer: modelContext.container, homeState: homeState)
+        envVM.applyLiveState(homeState)
         envVM.loadFromCoreData()
     }
 
