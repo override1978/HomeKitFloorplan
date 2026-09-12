@@ -771,6 +771,65 @@ final class HomeKitAutomationsService {
         self.homeKit = homeKit
     }
 
+    // MARK: - La giornata della casa
+
+    /// Uno scatto previsto: cosa farà la casa, e quando.
+    struct ScheduledFire: Identifiable, Equatable, Sendable {
+        let id: String
+        let name: String
+        let at: Date
+        let actionSetNames: [String]
+        /// Vero quando il trigger ha condizioni che possono impedirgli di agire.
+        ///
+        /// Va detto e non nascosto: «alle 23:00 parte Notte» è una promessa,
+        /// «alle 23:00 parte Notte se siete in casa» è una previsione. Dare la
+        /// seconda per la prima è il modo più rapido di perdere fiducia.
+        let isConditional: Bool
+    }
+
+    /// Cosa farà la casa da adesso a `until`, in ordine di orario.
+    ///
+    /// Compaiono solo le automazioni che hanno un momento: timer, eventi di
+    /// calendario ed eventi solari. Presenza, posizione e caratteristiche sono
+    /// escluse perché non ne hanno uno — dipendono da qualcuno che rientra o da
+    /// un valore che cambia, e inventare per loro un orario sarebbe peggio che
+    /// ammettere di non saperlo.
+    ///
+    /// Le disabilitate non compaiono: non scatteranno.
+    func upcoming(until: Date,
+                  now: Date = Date(),
+                  solar: NextFireResolver.SolarTimes,
+                  calendar: Calendar = .current) -> [ScheduledFire] {
+        automations.compactMap { item -> ScheduledFire? in
+            guard item.isEnabled,
+                  let schedule = NextFireResolver.schedule(for: item.trigger),
+                  let fire = NextFireResolver.next(for: schedule,
+                                                   after: now,
+                                                   solar: solar,
+                                                   calendar: calendar),
+                  fire <= until
+            else { return nil }
+            return ScheduledFire(id: item.id,
+                                 name: item.name,
+                                 at: fire,
+                                 actionSetNames: item.actionSetNames,
+                                 isConditional: !item.conditionSummaries.isEmpty)
+        }
+        .sorted { $0.at < $1.at }
+    }
+
+    /// Il resto di oggi, fino a mezzanotte.
+    ///
+    /// La giornata finisce a mezzanotte e non fra ventiquattro ore: «oggi» deve
+    /// voler dire qualcosa, altrimenti il confine scivola e la stessa domanda
+    /// dà risposte diverse a seconda dell'ora in cui la fai.
+    func remainderOfToday(now: Date = Date(),
+                          solar: NextFireResolver.SolarTimes,
+                          calendar: Calendar = .current) -> [ScheduledFire] {
+        let midnight = calendar.startOfDay(for: now.addingTimeInterval(24 * 3600))
+        return upcoming(until: midnight, now: now, solar: solar, calendar: calendar)
+    }
+
     /// Carica/ricarica la lista delle automazioni dalla casa corrente.
     func refresh() {
         guard let home = homeKit.currentHome else {

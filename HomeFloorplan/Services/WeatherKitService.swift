@@ -48,6 +48,15 @@ final class WeatherKitService {
     private(set) var isLoading = false
     private(set) var todaySunrise: Date?
     private(set) var todaySunset: Date?
+    /// Alba e tramonto di domani.
+    ///
+    /// Servono per rispondere a «quand'è il prossimo tramonto» quando quello di
+    /// oggi è già passato — cioè per metà giornata. L'alternativa sarebbe
+    /// sommare ventiquattro ore a quello di oggi, che sbaglia di qualche minuto
+    /// e di parecchio vicino ai solstizi: un'ora che si dichiara calcolata non
+    /// deve essere stimata.
+    private(set) var tomorrowSunrise: Date?
+    private(set) var tomorrowSunset: Date?
 
     // MARK: - Private
 
@@ -98,6 +107,8 @@ final class WeatherKitService {
             }
             if forecast.count > 1 {
                 let tmr = forecast[1]
+                tomorrowSunrise = tmr.sun.sunrise
+                tomorrowSunset  = tmr.sun.sunset
                 tomorrowForecast = TomorrowForecast(
                     maxTemperature:          tmr.highTemperature.converted(to: .celsius).value,
                     minTemperature:          tmr.lowTemperature.converted(to: .celsius).value,

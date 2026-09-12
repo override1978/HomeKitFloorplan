@@ -1,0 +1,163 @@
+import Foundation
+import Testing
+@testable import HomeFloorplan
+
+@Suite("NextFireResolver — quando scatterà")
+struct NextFireResolverTests {
+
+    // MARK: - Fixture
+
+    /// Calendario fisso: fuso di Roma e gregoriano, così i casi di cambio d'ora
+    /// sono riproducibili ovunque giri la suite.
+    private var cal: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "Europe/Rome")!
+        c.locale = Locale(identifier: "it_IT")
+        return c
+    }
+
+    private func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int, _ min: Int = 0) -> Date {
+        cal.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))!
+    }
+
+    // MARK: - Timer una tantum
+
+    @Test("Un timer non ricorrente nel futuro scatta a quella data")
+    func oneShotInFuture() {
+        let fire = date(2026, 9, 20, 7, 30)
+        let next = NextFireResolver.next(for: .timer(first: fire, recurrence: nil),
+                                         after: date(2026, 9, 12, 9), calendar: cal)
+        #expect(next == fire)
+    }
+
+    @Test("Un timer non ricorrente già passato non scatterà più")
+    func oneShotInPast() {
+        let next = NextFireResolver.next(for: .timer(first: date(2026, 9, 1, 7), recurrence: nil),
+                                         after: date(2026, 9, 12, 9), calendar: cal)
+        #expect(next == nil, "una tantum vuol dire una volta sola")
+    }
+
+    // MARK: - Ricorrenze
+
+    @Test("Giornaliero: se l'ora di oggi è passata, tocca a domani")
+    func dailyRollsToTomorrow() {
+        let next = NextFireResolver.next(
+            for: .timer(first: date(2026, 9, 10, 7), recurrence: DateComponents(day: 1)),
+            after: date(2026, 9, 12, 9), calendar: cal)
+        #expect(next == date(2026, 9, 13, 7))
+    }
+
+    @Test("Giornaliero: se l'ora di oggi deve ancora venire, è oggi")
+    func dailyStaysToday() {
+        let next = NextFireResolver.next(
+            for: .timer(first: date(2026, 9, 10, 7), recurrence: DateComponents(day: 1)),
+            after: date(2026, 9, 12, 6), calendar: cal)
+        #expect(next == date(2026, 9, 12, 7))
+    }
+
+    @Test("Settimanale: avanza di sette giorni per volta")
+    func weeklyStep() {
+        let next = NextFireResolver.next(
+            for: .timer(first: date(2026, 9, 7, 8), recurrence: DateComponents(weekOfYear: 1)),
+            after: date(2026, 9, 12, 9), calendar: cal)
+        #expect(next == date(2026, 9, 14, 8), "stesso giorno della settimana, sette giorni dopo")
+    }
+
+    @Test("Un primo scatto dimenticato anni indietro si risolve lo stesso")
+    func veryOldFireDateStillResolves() throws {
+        let next = try #require(NextFireResolver.next(
+            for: .timer(first: date(2024, 1, 1, 6, 45), recurrence: DateComponents(day: 1)),
+            after: date(2026, 9, 12, 9), calendar: cal))
+        #expect(next == date(2026, 9, 13, 6, 45))
+    }
+
+    @Test("Una ricorrenza che non avanza non manda in ciclo: risponde nil")
+    func zeroRecurrenceDoesNotLoop() {
+        let next = NextFireResolver.next(
+            for: .timer(first: date(2026, 9, 1, 7), recurrence: DateComponents()),
+            after: date(2026, 9, 12, 9), calendar: cal)
+        #expect(next == nil, "meglio ammettere di non saperlo che girare a vuoto")
+    }
+
+    @Test("Attraverso il cambio d'ora il timer resta alla stessa ora di orologio")
+    func survivesDaylightSavingChange() {
+        // In Italia l'ora solare torna domenica 25 ottobre 2026.
+        let next = NextFireResolver.next(
+            for: .timer(first: date(2026, 10, 24, 7), recurrence: DateComponents(day: 1)),
+            after: date(2026, 10, 24, 9), calendar: cal)
+        #expect(next == date(2026, 10, 25, 7),
+                "è il motivo per cui si avanza col calendario invece di sommare 86.400 secondi")
+    }
+
+    // MARK: - Sole
+
+    @Test("Tramonto: se deve ancora venire, è quello di oggi")
+    func sunsetToday() {
+        let solar = NextFireResolver.SolarTimes(
+            todaySunset: date(2026, 9, 12, 19, 32),
+            tomorrowSunset: date(2026, 9, 13, 19, 30))
+        let next = NextFireResolver.next(for: .solar(.sunset, offset: 0),
+                                         after: date(2026, 9, 12, 15),
+                                         solar: solar, calendar: cal)
+        #expect(next == date(2026, 9, 12, 19, 32))
+    }
+
+    @Test("Tramonto: se è già passato, è quello di domani")
+    func sunsetRollsToTomorrow() {
+        let solar = NextFireResolver.SolarTimes(
+            todaySunset: date(2026, 9, 12, 19, 32),
+            tomorrowSunset: date(2026, 9, 13, 19, 30))
+        let next = NextFireResolver.next(for: .solar(.sunset, offset: 0),
+                                         after: date(2026, 9, 12, 21),
+                                         solar: solar, calendar: cal)
+        #expect(next == date(2026, 9, 13, 19, 30),
+                "e non il tramonto di oggi più ventiquattro ore: i minuti non coincidono")
+    }
+
+    @Test("Lo scarto si applica prima del confronto")
+    func offsetIsAppliedBeforeComparing() {
+        let solar = NextFireResolver.SolarTimes(todaySunset: date(2026, 9, 12, 19, 30))
+        // «Trenta minuti prima del tramonto», guardato alle 19:15: è già passato.
+        let past = NextFireResolver.next(for: .solar(.sunset, offset: -30 * 60),
+                                         after: date(2026, 9, 12, 19, 15),
+                                         solar: solar, calendar: cal)
+        #expect(past == nil, "senza il tramonto di domani non c'è più nulla da promettere")
+
+        let upcoming = NextFireResolver.next(for: .solar(.sunset, offset: -30 * 60),
+                                             after: date(2026, 9, 12, 18),
+                                             solar: solar, calendar: cal)
+        #expect(upcoming == date(2026, 9, 12, 19), "trenta minuti prima delle 19:30")
+    }
+
+    @Test("Alba e tramonto non si confondono")
+    func sunriseAndSunsetAreDistinct() {
+        let solar = NextFireResolver.SolarTimes(
+            todaySunrise: date(2026, 9, 12, 6, 58),
+            todaySunset:  date(2026, 9, 12, 19, 32))
+        let atDawn = NextFireResolver.next(for: .solar(.sunrise, offset: 0),
+                                           after: date(2026, 9, 12, 3),
+                                           solar: solar, calendar: cal)
+        #expect(atDawn == date(2026, 9, 12, 6, 58))
+    }
+
+    @Test("Senza istanti solari non si indovina")
+    func noSolarDataMeansNoAnswer() {
+        let next = NextFireResolver.next(for: .solar(.sunset, offset: 0),
+                                         after: date(2026, 9, 12, 15),
+                                         solar: NextFireResolver.SolarTimes(), calendar: cal)
+        #expect(next == nil)
+    }
+
+    // MARK: - Ora fissa
+
+    @Test("Ora del giorno fissa: la prossima occorrenza")
+    func dailyTimeFindsNextOccurrence() {
+        let next = NextFireResolver.next(for: .dailyTime(DateComponents(hour: 23, minute: 0)),
+                                         after: date(2026, 9, 12, 9), calendar: cal)
+        #expect(next == date(2026, 9, 12, 23))
+
+        let tomorrow = NextFireResolver.next(for: .dailyTime(DateComponents(hour: 23, minute: 0)),
+                                             after: date(2026, 9, 12, 23, 30), calendar: cal)
+        #expect(tomorrow == date(2026, 9, 13, 23))
+    }
+}
