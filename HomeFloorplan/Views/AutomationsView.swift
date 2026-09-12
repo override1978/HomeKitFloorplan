@@ -245,6 +245,16 @@ struct AutomationsView: View {
                 }
             }
 
+            // L'asse sopra e l'elenco sotto, deliberatamente insieme: è il
+            // confronto che serve per decidere quale delle due forme merita il
+            // posto fisso, e nessuna descrizione lo sostituisce.
+            if !moments.isEmpty {
+                DayRibbonView(moments: moments, day: day, now: clock)
+                    .padding(12)
+                    .background(Color(.secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
             if moments.isEmpty {
                 // Una giornata senza scatti previsti è un'informazione, non un
                 // vuoto da riempire.
