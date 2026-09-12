@@ -222,7 +222,8 @@ struct AutomationsView: View {
     /// invece che in una scaletta.
     @ViewBuilder
     private var todaySection: some View {
-        let fires = automationsService.remainderOfToday(now: clock, solar: solarTimes)
+        let fires = automationsService.today(now: clock, solar: solarTimes)
+        let firstUpcoming = fires.firstIndex { !$0.isPast }
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "calendar.day.timeline.left")
@@ -242,7 +243,7 @@ struct AutomationsView: View {
                 // Una giornata senza scatti previsti è un'informazione, non un
                 // vuoto da riempire.
                 Text(String(localized: "automations.today.nothing",
-                            defaultValue: "Da qui a mezzanotte non è previsto nulla."))
+                            defaultValue: "Oggi non è previsto nulla a orario."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -252,17 +253,47 @@ struct AutomationsView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(fires.enumerated()), id: \.element.id) { index, fire in
-                        if index > 0 { Divider().padding(.leading, 64) }
+                        if index == firstUpcoming && index > 0 { nowMarker }
+                        else if index > 0 { Divider().padding(.leading, 64) }
                         todayRow(fire)
                     }
+                    // Se tutto è già passato il segno va in fondo, altrimenti
+                    // la giornata sembrerebbe ancora in corso.
+                    if firstUpcoming == nil { nowMarker }
                 }
                 .background(Color(.secondarySystemGroupedBackground),
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                if fires.contains(where: \.isPast) {
+                    // Detto una volta sola, e detto: le righe passate sono ciò
+                    // che era in programma, non un registro di cosa è successo.
+                    // Prometterlo senza averlo sarebbe la bugia più facile.
+                    Text(String(localized: "automations.today.pastDisclaimer",
+                                defaultValue: "Gli orari già trascorsi sono quelli previsti: se l'automazione sia davvero scattata non è ancora registrato."))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 4)
+                }
             }
         }
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { now in
             clock = now
         }
+    }
+
+    /// Dove finisce il passato e comincia il resto della giornata.
+    private var nowMarker: some View {
+        HStack(spacing: 8) {
+            Text(clock.formatted(date: .omitted, time: .shortened))
+                .font(.caption2.weight(.semibold).monospacedDigit())
+                .foregroundStyle(BrandColor.primary)
+                .frame(width: 52, alignment: .leading)
+            Rectangle()
+                .fill(BrandColor.primary.opacity(0.5))
+                .frame(height: 1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
     }
 
     private func todayRow(_ fire: HomeKitAutomationsService.ScheduledFire) -> some View {
@@ -307,6 +338,8 @@ struct AutomationsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        // Il passato resta leggibile ma arretra: è contesto, non il punto.
+        .opacity(fire.isPast ? 0.45 : 1)
     }
 
     private var automationFilterBar: some View {

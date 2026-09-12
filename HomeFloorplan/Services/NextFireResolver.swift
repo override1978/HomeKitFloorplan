@@ -94,6 +94,90 @@ enum NextFireResolver {
         }
     }
 
+    /// Tutte le volte che questa pianificazione scatta dentro un intervallo.
+    ///
+    /// `next` risponde a «e adesso?», questa a «e la giornata?». Sono due
+    /// domande diverse e la seconda non si ottiene dalla prima: guardando solo
+    /// avanti, alle quattro del pomeriggio metà dei momenti di una casa sono
+    /// già passati e invisibili, e si finisce per giudicare quanto sia densa
+    /// una giornata avendone vista mezza.
+    ///
+    /// Gli istanti restituiti sono quelli **previsti**. Che l'automazione sia
+    /// davvero scattata è un'altra cosa: poteva essere disabilitata allora, le
+    /// condizioni potevano non essere soddisfatte, HomeKit poteva mancarla. Per
+    /// sapere cosa è successo davvero serve il registro degli eventi, non
+    /// questo calcolo.
+    static func occurrences(for schedule: Schedule,
+                            in interval: DateInterval,
+                            solar: SolarTimes = SolarTimes(),
+                            calendar: Calendar = .current) -> [Date] {
+        switch schedule {
+        case let .timer(first, recurrence):
+            return timerOccurrences(first: first, recurrence: recurrence,
+                                    in: interval, calendar: calendar)
+
+        case let .solar(event, offset):
+            let candidates: [Date?] = {
+                switch event {
+                case .sunrise: return [solar.todaySunrise, solar.tomorrowSunrise]
+                case .sunset:  return [solar.todaySunset,  solar.tomorrowSunset]
+                }
+            }()
+            return candidates
+                .compactMap { $0?.addingTimeInterval(offset) }
+                .filter { interval.contains($0) }
+                .sorted()
+
+        case let .dailyTime(components):
+            var out: [Date] = []
+            calendar.enumerateDates(startingAfter: interval.start.addingTimeInterval(-1),
+                                    matching: components,
+                                    matchingPolicy: .nextTime) { date, _, stop in
+                guard let date, date <= interval.end, out.count < maxOccurrencesPerWindow else {
+                    stop = true; return
+                }
+                out.append(date)
+            }
+            return out
+        }
+    }
+
+    /// Tetto di scatti restituiti per finestra.
+    ///
+    /// Una ricorrenza al minuto produrrebbe 1.440 righe per una giornata: un
+    /// elenco così non è una scaletta, è un log. Meglio troncare e restare
+    /// leggibili.
+    private static let maxOccurrencesPerWindow = 500
+
+    private static func timerOccurrences(first: Date,
+                                         recurrence: DateComponents?,
+                                         in interval: DateInterval,
+                                         calendar: Calendar) -> [Date] {
+        guard let recurrence, hasPositiveStep(recurrence) else {
+            return interval.contains(first) ? [first] : []
+        }
+        guard first <= interval.end else { return [] }
+
+        var candidate = first
+        var steps = 0
+        // Porta il candidato dentro la finestra.
+        while candidate < interval.start && steps < maxRecurrenceSteps {
+            guard let advanced = calendar.date(byAdding: recurrence, to: candidate),
+                  advanced > candidate else { return [] }
+            candidate = advanced
+            steps += 1
+        }
+
+        var out: [Date] = []
+        while candidate <= interval.end && out.count < maxOccurrencesPerWindow {
+            out.append(candidate)
+            guard let advanced = calendar.date(byAdding: recurrence, to: candidate),
+                  advanced > candidate else { break }
+            candidate = advanced
+        }
+        return out
+    }
+
     // MARK: - Timer
 
     private static func nextTimer(first: Date,

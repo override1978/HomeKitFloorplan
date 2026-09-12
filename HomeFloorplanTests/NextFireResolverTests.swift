@@ -219,3 +219,101 @@ struct ScheduledFireNameTests {
         #expect(strip("At 8:30 PM Close the blinds", 20, 30) == "At 8:30 PM Close the blinds")
     }
 }
+
+// MARK: - La giornata intera
+
+@Suite("NextFireResolver — tutti gli scatti di una giornata")
+struct NextFireOccurrencesTests {
+
+    private var cal: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "Europe/Rome")!
+        return c
+    }
+
+    private func date(_ d: Int, _ h: Int, _ m: Int = 0) -> Date {
+        cal.date(from: DateComponents(year: 2026, month: 9, day: d, hour: h, minute: m))!
+    }
+
+    private var today: DateInterval {
+        DateInterval(start: date(12, 0), end: date(13, 0))
+    }
+
+    @Test("Un giornaliero compare una volta, anche se il primo scatto è di mesi fa")
+    func dailyAppearsOnceInTheDay() {
+        let fires = NextFireResolver.occurrences(
+            for: .timer(first: date(1, 7, 15), recurrence: DateComponents(day: 1)),
+            in: today, calendar: cal)
+        #expect(fires == [date(12, 7, 15)])
+    }
+
+    @Test("Il mattino non sparisce solo perché è pomeriggio")
+    func pastOccurrencesAreIncluded() {
+        let fires = NextFireResolver.occurrences(
+            for: .timer(first: date(12, 7, 0), recurrence: DateComponents(day: 1)),
+            in: today, calendar: cal)
+        #expect(fires.first == date(12, 7, 0),
+                "guardando solo avanti alle 16 questa riga non esisterebbe")
+    }
+
+    @Test("Una ricorrenza oraria produce tutte le sue occorrenze del giorno")
+    func hourlyFillsTheDay() {
+        let fires = NextFireResolver.occurrences(
+            for: .timer(first: date(12, 0), recurrence: DateComponents(hour: 6)),
+            in: today, calendar: cal)
+        #expect(fires == [date(12, 0), date(12, 6), date(12, 12), date(12, 18), date(13, 0)])
+    }
+
+    @Test("Un settimanale che non cade oggi non compare")
+    func weeklyOutsideTheDayIsAbsent() {
+        let fires = NextFireResolver.occurrences(
+            for: .timer(first: date(7, 8), recurrence: DateComponents(weekOfYear: 1)),
+            in: today, calendar: cal)
+        #expect(fires.isEmpty, "il prossimo è il 14, non oggi")
+    }
+
+    @Test("Una tantum: compare solo se cade dentro la giornata")
+    func oneShotInsideAndOutside() {
+        #expect(NextFireResolver.occurrences(
+            for: .timer(first: date(12, 9, 30), recurrence: nil),
+            in: today, calendar: cal) == [date(12, 9, 30)])
+        #expect(NextFireResolver.occurrences(
+            for: .timer(first: date(20, 9, 30), recurrence: nil),
+            in: today, calendar: cal).isEmpty)
+    }
+
+    @Test("Il tramonto di oggi compare anche quando è già passato")
+    func sunsetOfTodayIsListed() {
+        let solar = NextFireResolver.SolarTimes(
+            todaySunset: date(12, 19, 32),
+            tomorrowSunset: date(13, 19, 30))
+        let fires = NextFireResolver.occurrences(for: .solar(.sunset, offset: 0),
+                                                 in: today, solar: solar, calendar: cal)
+        #expect(fires == [date(12, 19, 32)], "quello di domani è fuori dalla finestra")
+    }
+
+    @Test("Un'ora fissa del giorno compare una volta")
+    func dailyTimeAppearsOnce() {
+        let fires = NextFireResolver.occurrences(
+            for: .dailyTime(DateComponents(hour: 23, minute: 0)),
+            in: today, calendar: cal)
+        #expect(fires == [date(12, 23, 0)])
+    }
+
+    @Test("Una ricorrenza al minuto viene troncata invece di produrre un log")
+    func pathologicalRecurrenceIsCapped() {
+        let fires = NextFireResolver.occurrences(
+            for: .timer(first: date(12, 0), recurrence: DateComponents(minute: 1)),
+            in: today, calendar: cal)
+        #expect(fires.count <= 500)
+        #expect(fires.count > 0)
+    }
+
+    @Test("Una ricorrenza che non avanza non manda in ciclo")
+    func zeroRecurrenceIsSafe() {
+        let fires = NextFireResolver.occurrences(
+            for: .timer(first: date(12, 8), recurrence: DateComponents()),
+            in: today, calendar: cal)
+        #expect(fires == [date(12, 8)], "senza passo resta il solo primo scatto")
+    }
+}

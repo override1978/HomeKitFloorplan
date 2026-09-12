@@ -782,6 +782,12 @@ final class HomeKitAutomationsService {
         let actionSetNames: [String]
         /// Quante azioni esegue, per dire qualcosa anche quando i nomi tacciono.
         let actionCount: Int
+        /// Vero quando l'orario è già trascorso.
+        ///
+        /// Attenzione al significato: vuol dire «era previsto», non «è
+        /// successo». Se l'automazione sia davvero scattata lo sa il registro
+        /// degli eventi, non questo calcolo.
+        let isPast: Bool
         /// Vero quando il trigger ha condizioni che possono impedirgli di agire.
         ///
         /// Va detto e non nascosto: «alle 23:00 parte Notte» è una promessa,
@@ -819,6 +825,7 @@ final class HomeKitAutomationsService {
                 at: fire,
                 actionSetNames: scenes.filter(\.hasInformativeName).map(\.name).sorted(),
                 actionCount: scenes.reduce(0) { $0 + $1.actionCount },
+                isPast: false,
                 isConditional: !item.conditionSummaries.isEmpty)
         }
         .sorted { $0.at < $1.at }
@@ -862,6 +869,47 @@ final class HomeKitAutomationsService {
         let stripped = String(tail)
         // Se restasse solo l'ora, il nome era tutto lì: meglio tenerlo.
         return stripped.isEmpty ? name : stripped
+    }
+
+    /// L'intera giornata: da mezzanotte a mezzanotte, passato compreso.
+    ///
+    /// Guardare solo avanti mostra mezza giornata e la metà sbagliata: nel
+    /// pomeriggio gli scatti del mattino sono già avvenuti e sparirebbero,
+    /// lasciando credere che la casa faccia pochissimo.
+    ///
+    /// Le righe già trascorse portano `isPast`, che vuol dire «era previsto» e
+    /// non «è successo»: chi le mostra deve dirlo, altrimenti promette un
+    /// registro che qui non c'è.
+    func today(now: Date = Date(),
+               solar: NextFireResolver.SolarTimes,
+               calendar: Calendar = .current) -> [ScheduledFire] {
+        let start = calendar.startOfDay(for: now)
+        let end = calendar.startOfDay(for: now.addingTimeInterval(24 * 3600))
+        let day = DateInterval(start: start, end: end)
+
+        return automations.flatMap { item -> [ScheduledFire] in
+            guard item.isEnabled,
+                  let schedule = NextFireResolver.schedule(for: item.trigger)
+            else { return [] }
+
+            let scenes = item.trigger.actionSets.map { SceneItem(actionSet: $0) }
+            let names = scenes.filter(\.hasInformativeName).map(\.name).sorted()
+            let actions = scenes.reduce(0) { $0 + $1.actionCount }
+
+            return NextFireResolver.occurrences(for: schedule, in: day,
+                                                solar: solar, calendar: calendar)
+                .map { fire in
+                    ScheduledFire(
+                        id: "\(item.id)@\(Int(fire.timeIntervalSinceReferenceDate))",
+                        name: Self.strippingRedundantTime(from: item.name, firingAt: fire, calendar: calendar),
+                        at: fire,
+                        actionSetNames: names,
+                        actionCount: actions,
+                        isPast: fire <= now,
+                        isConditional: !item.conditionSummaries.isEmpty)
+                }
+        }
+        .sorted { $0.at < $1.at }
     }
 
     /// Il resto di oggi, fino a mezzanotte.
