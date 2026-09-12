@@ -81,9 +81,18 @@ struct ContentView: View {
     @AppStorage("floorplan.compactEditorVisible")
     private var compactFloorplanEditorVisible = false
 
+    /// Interruttore temporaneo del pulsante flottante della chat.
+    ///
+    /// Spento mentre si valuta il nastro della giornata: vivevano nello stesso
+    /// angolo e il cerchio copriva gli ultimi momenti della sera. Per
+    /// riaccenderlo basta rimettere `true` — e a quel punto va deciso chi dei
+    /// due cede lo spazio, perché la coabitazione non funzionava.
+    private static let showsChatFloatingButton = false
+
     /// FAB is allowed only when NOT inside a non-controls floorplan overlay.
     /// (Environment and Security overlays already have their own panel buttons.)
     private var floorplanFabAllowed: Bool {
+        guard Self.showsChatFloatingButton else { return false }
         guard aiSettings.isAIEnabled else { return false }
         if compactFloorplanEditorVisible { return false }
         guard case .floorplan = selection else { return true }

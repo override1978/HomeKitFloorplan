@@ -270,7 +270,13 @@ struct DayRibbonView: View {
     static func layout(_ moments: [DayMoment],
                        width: CGFloat,
                        fraction: (Date) -> CGFloat) -> [Placement] {
-        let maxLabelWidth: CGFloat = 88
+        // Il tetto c'è perché un'etichetta lunghissima in una zona vuota
+        // sbilancerebbe l'asse, ma a 88 punti anche i nomi con tutto lo spazio
+        // del mondo intorno venivano troncati — «Alfred In Settiman…» con sei
+        // ore libere davanti. Centotrenta lascia respirare chi ha posto senza
+        // permettere a nessuno di invadere il vicino, perché la larghezza vera
+        // resta comunque la distanza dal prossimo sulla stessa riga.
+        let maxLabelWidth: CGFloat = 130
         // Sotto questa larghezza l'etichetta mostrerebbe tre caratteri e un
         // puntino: non è un'etichetta corta, è rumore con l'aria di
         // un'informazione. Meglio il solo punto, che almeno non promette nulla.
