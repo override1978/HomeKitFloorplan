@@ -122,7 +122,7 @@ final class AccessoryEventStore {
     ]
 
     private static let onUUID             = "00000025-0000-1000-8000-0026bb765291"
-    private static let brightnessUUID     = "00000008-0000-1000-8000-0026bb765291"
+    nonisolated private static let brightnessUUID = "00000008-0000-1000-8000-0026bb765291"
     private static let targetPositionUUID = "0000007c-0000-1000-8000-0026bb765291"
     private static let currentPositionUUID = "0000006d-0000-1000-8000-0026bb765291"
     /// Contatto: aperto/chiuso (HMCharacteristicTypeContactState)
@@ -135,7 +135,10 @@ final class AccessoryEventStore {
     /// Crea un AccessoryEventDTO da una HMCharacteristic se il tipo è rilevante.
     /// Restituisce nil per sensori ambientali, termostati, serrature e altri tipi
     /// che non vanno in questo store.
-    static func makeDTO(
+    /// `nonisolated` perché serve anche dalla callback di `readValue`, che non
+    /// è isolata: è una funzione pura dei suoi argomenti e non tocca stato
+    /// condiviso, quindi non c'era ragione perché fosse confinata.
+    nonisolated static func makeDTO(
         from characteristic: HMCharacteristic,
         value: Any?,
         accessory: HMAccessory

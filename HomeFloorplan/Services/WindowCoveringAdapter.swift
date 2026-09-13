@@ -2,10 +2,13 @@ import HomeKit
 import Observation
 import SwiftUI
 
+/// `nonisolated` sui membri di sola lettura: sono funzioni pure più una
+/// preferenza in UserDefaults, che è già sicura fra thread, e servono anche
+/// dalle callback non isolate di HomeKit.
 enum WindowCoveringPositionMapper {
-    private static let keyPrefix = "windowCovering.positionMapping.reversed."
+    nonisolated private static let keyPrefix = "windowCovering.positionMapping.reversed."
 
-    static func isReversed(accessoryID: UUID) -> Bool {
+    nonisolated static func isReversed(accessoryID: UUID) -> Bool {
         UserDefaults.standard.bool(forKey: keyPrefix + accessoryID.uuidString)
     }
 
@@ -13,7 +16,7 @@ enum WindowCoveringPositionMapper {
         UserDefaults.standard.set(isReversed, forKey: keyPrefix + accessoryID.uuidString)
     }
 
-    static func logicalPosition(fromRaw rawPosition: Int, accessoryID: UUID) -> Int {
+    nonisolated static func logicalPosition(fromRaw rawPosition: Int, accessoryID: UUID) -> Int {
         let clamped = clamp(rawPosition)
         return isReversed(accessoryID: accessoryID) ? 100 - clamped : clamped
     }
@@ -34,7 +37,7 @@ enum WindowCoveringPositionMapper {
         }
     }
 
-    private static func clamp(_ value: Int) -> Int {
+    nonisolated private static func clamp(_ value: Int) -> Int {
         max(0, min(100, value))
     }
 }

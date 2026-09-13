@@ -464,6 +464,20 @@ final class HomeKitService: NSObject {
             if let value = characteristic.value {
                 self.queueCharacteristicUpdate(characteristic.uniqueIdentifier, value: value)
                 self.updateAlarmTriggeredIfNeeded(characteristic, value: value)
+
+                // Lo stato di partenza si impara qui, dove è una lettura e non
+                // un avvenimento. Senza questo, il primo valore che arriva
+                // dopo l'avvio sembra un cambiamento a chiunque lo guardi
+                // dopo.
+                if let accessory = characteristic.service?.accessory,
+                   let dto = AccessoryEventStore.makeDTO(
+                       from: characteristic, value: value, accessory: accessory) {
+                    let charID = characteristic.uniqueIdentifier
+                    let state = dto.state
+                    Task { @MainActor [weak self] in
+                        self?.seedEventBaseline(charID, state: state)
+                    }
+                }
                 // Anche lo stato ambientale, non solo la cache generica.
                 // Mancava, e si vedeva: la lettura iniziale riempiva
                 // `characteristicValues` mentre `HomeState` restava vuoto
@@ -520,6 +534,25 @@ final class HomeKitService: NSObject {
     /// invariati che diventavano eventi fantasma — i "gruppi da 39 accessori
     /// alle 23:00" che inquinavano l'analisi abitudini.
     private var lastSavedEventStates: [UUID: Bool] = [:]
+
+    /// Registra lo stato di partenza di una caratteristica senza produrre un evento.
+    ///
+    /// La mappa qui sopra vive in memoria e riparte vuota a ogni lancio. Nel
+    /// delegate la guardia era `lastSavedEventStates[id] != stato`, e con la
+    /// mappa vuota `nil != stato` è sempre vero: la **prima** consegna di ogni
+    /// caratteristica dopo un avvio finiva in archivio come cambiamento
+    /// esterno. Decine insieme, in tutte le stanze, con l'ora dell'avvio — che
+    /// sul nastro diventavano un rombo da quarantasette comandi all'una e
+    /// mezza di notte. Non erano comandi: era l'app che scopriva com'è fatta
+    /// la casa e lo scriveva come se fosse successo qualcosa.
+    ///
+    /// La guardia contro gli echi copriva solo il caso dello stato
+    /// *invariato*; questo è il caso dello stato *mai visto*, che è diverso e
+    /// non era stato scritto.
+    func seedEventBaseline(_ characteristicID: UUID, state: Bool) {
+        guard lastSavedEventStates[characteristicID] == nil else { return }
+        lastSavedEventStates[characteristicID] = state
+    }
 
     /// Scrive un valore su una caratteristica (es. accende una luce).
     /// Aggiorna anche localmente per dare risposta UI immediata (ottimistico).
@@ -906,8 +939,13 @@ extension HomeKitService: HMAccessoryDelegate {
                    from: characteristic, value: value, accessory: accessory) {
                 dto.origin = "external"
                 let charID = characteristic.uniqueIdentifier
-                if lastSavedEventStates[charID] != dto.state {
-                    lastSavedEventStates[charID] = dto.state
+                let knownState = lastSavedEventStates[charID]
+                lastSavedEventStates[charID] = dto.state
+                // Solo una **transizione** da uno stato noto è un avvenimento.
+                // Senza stato noto questa è la prima volta che vediamo la
+                // caratteristica — di solito perché l'app è appena partita — e
+                // la cosa onesta è imparare, non raccontare.
+                if let knownState, knownState != dto.state {
                     store.saveEvent(dto)
                 }
             }

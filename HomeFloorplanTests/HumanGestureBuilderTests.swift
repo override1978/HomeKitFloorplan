@@ -139,7 +139,11 @@ struct HumanGesturePlausibilityTests {
                      origin: String = "external") -> HumanGestureBuilder.RawChange {
         HumanGestureBuilder.RawChange(accessoryUUID: UUID(),
                                       accessoryName: "Luce \(index)",
-                                      roomName: "Stanza \(index)",
+                                      // Poche stanze di proposito: qui si prova
+                                      // la simultaneità, e dare una stanza a
+                                      // testa farebbe scattare il vincolo sul
+                                      // percorso mascherando ciò che si misura.
+                                      roomName: "Stanza \(index % 4)",
                                       state: true,
                                       brightness: nil,
                                       eventType: "light",
@@ -282,5 +286,58 @@ struct HumanGestureSceneAttributionTests {
         let gestures = HumanGestureBuilder.build(from: burst(uuids, spacing: 20), scenes: [scene])
         #expect(gestures.count == 1)
         #expect(gestures[0].isScene == false)
+    }
+}
+
+// MARK: - Il vincolo fisico
+
+@Suite("Nessuno è in dieci stanze in tre minuti")
+struct HumanGestureRoomSpreadTests {
+
+    private let base = Date(timeIntervalSinceReferenceDate: 0)
+
+    private func change(room: String, at offset: TimeInterval) -> HumanGestureBuilder.RawChange {
+        HumanGestureBuilder.RawChange(accessoryUUID: UUID(),
+                                      accessoryName: "Luce \(room)",
+                                      roomName: room,
+                                      state: false,
+                                      brightness: nil,
+                                      eventType: "light",
+                                      at: base.addingTimeInterval(offset),
+                                      origin: "external")
+    }
+
+    @Test("Dieci stanze, anche prendendosela comoda, non sono un percorso")
+    func tooManyRoomsIsNotAWalk() {
+        // Un evento ogni dieci secondi: la simultaneità non lo prenderebbe.
+        let spread = (0..<10).map { change(room: "Stanza \($0)", at: Double($0) * 10) }
+        #expect(HumanGestureBuilder.build(from: spread).isEmpty)
+    }
+
+    @Test("Uscire di casa attraversa quattro stanze e resta un gesto")
+    func leavingHomeIsAWalk() {
+        let rooms = ["Cucina", "Soggiorno", "Entrata", "Scala"]
+        let walk = rooms.enumerated().map { change(room: $0.element, at: Double($0.offset) * 15) }
+        #expect(HumanGestureBuilder.build(from: walk).count == 1)
+    }
+
+    @Test("Molti accessori in poche stanze restano un gesto")
+    func manyAccessoriesFewRooms() {
+        // Dodici lampade fra soggiorno e cucina, con calma: è una persona che
+        // sistema, non una trasmissione.
+        let changes = (0..<12).map { change(room: $0 % 2 == 0 ? "Soggiorno" : "Cucina",
+                                            at: Double($0) * 8) }
+        #expect(HumanGestureBuilder.build(from: changes).count == 1)
+    }
+
+    @Test("Una scena riconosciuta passa anche attraverso dieci stanze")
+    func attributedSceneIgnoresRoomSpread() {
+        let changes = (0..<10).map { change(room: "Stanza \($0)", at: Double($0) * 0.1) }
+        let scene = HumanGestureBuilder.SceneSignature(
+            id: UUID(), name: "Buonanotte",
+            accessoryUUIDs: Set(changes.map(\.accessoryUUID)))
+        let gestures = HumanGestureBuilder.build(from: changes, scenes: [scene])
+        #expect(gestures.count == 1)
+        #expect(gestures[0].sceneName == "Buonanotte")
     }
 }

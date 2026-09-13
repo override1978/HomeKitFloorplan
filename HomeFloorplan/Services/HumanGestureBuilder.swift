@@ -125,6 +125,17 @@ enum HumanGestureBuilder {
     /// nome.
     static let simultaneityWindow: TimeInterval = 5
 
+    /// Oltre quante stanze un gruppo smette di essere un percorso.
+    ///
+    /// È il vincolo più duro di tutti, perché è fisico: una persona non può
+    /// essere in dieci stanze in tre minuti. Uscendo di casa se ne attraversano
+    /// quattro o cinque — entrata, soggiorno, cucina, scala — e lì si smette.
+    /// Di là non c'è più nessuno che cammina: c'è qualcosa che trasmette.
+    ///
+    /// Serve anche come rete per ciò che è già in archivio, che nessuna
+    /// correzione a monte può più ripulire.
+    static let maxRoomsPerGesture = 5
+
     /// I tipi che sono **comandi**, non osservazioni.
     ///
     /// Una finestra che si apre e un movimento rilevato sono fatti della casa,
@@ -247,6 +258,9 @@ enum HumanGestureBuilder {
     /// utile — le proprie scene, le riconsegne dopo una riconnessione — e
     /// nessuna di quelle porta un'etichetta che lo dica.
     nonisolated static func isPlausiblyHuman(_ gesture: HumanGesture) -> Bool {
+        // Troppe stanze: non è un percorso, qualunque tempo ci abbia messo.
+        if gesture.roomNames.count > maxRoomsPerGesture { return false }
+
         guard gesture.changes.count > simultaneityThreshold else { return true }
         guard let first = gesture.changes.first?.at,
               let last = gesture.changes.last?.at else { return true }
