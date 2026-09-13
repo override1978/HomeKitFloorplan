@@ -9,7 +9,7 @@ struct FloorplanImageCacheState {
     /// più recente mentre caricavo" (da ricaricare).
     var loadingDate: Date?
 
-    /// La variante scura, decodificata a parte.
+    /// La variante **scura**, qualunque dei due slot la contenga.
     ///
     /// Cache separata e non un secondo `FloorplanImageCacheState` perché le due
     /// immagini si muovono insieme: nascono dallo stesso salvataggio e portano
@@ -38,7 +38,10 @@ struct FloorplanImageLoader {
 
         cache.imageDate = stamp
 
-        guard let data = floorplan.currentImageData else {
+        // L'immagine di base è sempre la chiara quando entrambe esistono: la
+        // scura le va sopra in dissolvenza. Senza una chiara — chi ha scelto
+        // il buio e non ha ancora la controparte — resta quella che c'è.
+        guard let data = floorplan.lightVariantImageData ?? floorplan.currentImageData else {
             cache.isLoading = false
             cache.loadingDate = nil
             return
@@ -52,7 +55,7 @@ struct FloorplanImageLoader {
             #if DEBUG
             let decodeStart = DispatchTime.now().uptimeNanoseconds
             #endif
-            let darkData = floorplan.imageDataDark
+            let darkData = floorplan.darkVariantImageData
             let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
                 guard let decoded = UIImage(data: data) else { return nil }
                 // `UIImage(data:)` è pigra: tiene i byte e rasterizza solo quando

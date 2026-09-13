@@ -75,7 +75,7 @@ final class Floorplan {
     /// Image data stored externally by SwiftData. Nil for records pending migration from imageFilename.
     @Attribute(.externalStorage) var imageData: Data?
 
-    /// La stessa planimetria resa in stile scuro, per la notte circadiana.
+    /// La stessa planimetria resa nell'**altro** stile, per la fase opposta.
     ///
     /// Due raster invece di uno perché la differenza fra giorno e notte non è
     /// una regolazione di luminosità: nello stile chiaro i muri sono scuri su
@@ -83,7 +83,28 @@ final class Floorplan {
     /// l'uno nell'altro, e rigenerare a runtime vorrebbe dire ridisegnare il
     /// documento due volte al giorno su ogni dispositivo. Si disegnano
     /// entrambe una volta sola, al salvataggio, e l'ora sceglie.
-    @Attribute(.externalStorage) var imageDataDark: Data?
+    ///
+    /// «L'altro» e non «lo scuro»: `imageData` resta lo stile che l'utente ha
+    /// scelto, sempre. Averlo trasformato nella variante chiara era un errore
+    /// che si propagava lontano — lista, anteprima 3D e vista compatta
+    /// mostravano una planimetria chiara a chi aveva scelto il buio, e
+    /// spegnendo la modalità circadiana restava quella. Chi è chiaro e chi è
+    /// scuro si deduce da `drawingVisualExportStyleRaw`, che lo sa già.
+    @Attribute(.externalStorage) var imageDataAlternate: Data?
+
+    /// Il raster in stile chiaro, se disponibile.
+    var lightVariantImageData: Data? {
+        drawingVisualExportStyleRaw == DrawingVisualExportStyle.architecturalDark.rawValue
+            ? imageDataAlternate
+            : imageData
+    }
+
+    /// Il raster in stile scuro, se disponibile.
+    var darkVariantImageData: Data? {
+        drawingVisualExportStyleRaw == DrawingVisualExportStyle.architecturalDark.rawValue
+            ? imageData
+            : imageDataAlternate
+    }
     var createdAt: Date
     var updatedAt: Date
     /// Modalità di interazione sui marker. Default: aprire il pannello.

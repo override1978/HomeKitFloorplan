@@ -1096,14 +1096,14 @@ struct DrawingFloorplanSheet: View {
                                             exportRotation: exportRotation).0
             }
 
-            // Chi arriva a valle vuole sempre «chiara» e «scura», non «la tua»
-            // e «l'altra»: così non deve sapere quale dei due stili l'utente
-            // avesse scelto per rimetterle nell'ordine giusto.
-            let lightVariant = visualExportStyle == .architecturalDark ? (counterpart ?? image) : image
-            let darkVariant  = visualExportStyle == .architecturalDark ? image : counterpart
-
+            // Si consegna «la tua» e «l'altra», in quest'ordine. Consegnare
+            // «chiara» e «scura» sembrava più comodo a valle e invece era un
+            // errore: l'immagine principale smetteva di essere quella dello
+            // stile scelto, e ogni altra vista — lista, 3D, compatta — si
+            // ritrovava a mostrare una planimetria chiara a chi aveva scelto
+            // il buio. Chi delle due sia la scura lo dice già lo stile.
             clearSessionDraft()
-            onComplete(lightVariant, darkVariant, linkedRooms, document,
+            onComplete(image, counterpart, linkedRooms, document,
                        exteriorFillColorIndex, visualExportStyle, exportRotation)
             dismiss()
         }

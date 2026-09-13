@@ -1376,11 +1376,11 @@ struct FloorplanEditorView: View {
             initialExteriorFillColorIndex: floorplan.exteriorFillColorIndex,
             initialVisualExportStyle: DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard,
             initialExportRotation: floorplan.drawingExportRotation
-        ) { image, darkImage, rooms, doc, colorIndex, visualStyle, exportRotation in
+        ) { image, alternateImage, rooms, doc, colorIndex, visualStyle, exportRotation in
             applyDrawingUpdate(
                 FloorplanDrawingUpdate(
                     image: image,
-                    darkImage: darkImage,
+                    alternateImage: alternateImage,
                     rooms: rooms,
                     document: doc,
                     exteriorFillColorIndex: colorIndex,

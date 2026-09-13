@@ -3,8 +3,8 @@ import SwiftUI
 
 struct FloorplanDrawingUpdate {
     let image: UIImage
-    /// La variante scura, quando la modalità circadiana è accesa.
-    var darkImage: UIImage?
+    /// La variante nell'altro stile, quando la modalità circadiana è accesa.
+    var alternateImage: UIImage?
     let rooms: [LinkedRoom]
     let document: DrawingDocument
     let exteriorFillColorIndex: Int
@@ -30,8 +30,8 @@ struct FloorplanDrawingUpdateCoordinator {
         }
         // Nil non cancella: chi risalva con la modalità circadiana spenta non
         // deve perdere una variante che qualcun altro aveva già prodotto.
-        if let darkData = update.darkImage?.pngData() {
-            floorplan.imageDataDark = darkData
+        if let alternateData = update.alternateImage?.pngData() {
+            floorplan.imageDataAlternate = alternateData
         }
         floorplan.drawingDocument = update.document
         floorplan.exteriorFillColorIndex = update.exteriorFillColorIndex
