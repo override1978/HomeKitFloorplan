@@ -542,7 +542,14 @@ struct FloorplanEditorView: View {
     /// tinte delle stanze proprio sotto le etichette — lo stesso motivo per
     /// cui i badge dell'overlay hanno smesso di essere di vetro.
     private var dayRibbonCard: some View {
-        DayRibbonView(moments: dayMoments.filter { !$0.isSolarKind },
+        VStack(spacing: 2) {
+            DayRibbonView.DayBar(dayOffset: dayOffset,
+                                 day: visibleDay.start,
+                                 canGoBack: dayOffset > -Self.maxDaysBack,
+                                 canGoForward: dayOffset < Self.maxDaysForward,
+                                 onShiftDay: { shiftDay(by: $0) },
+                                 onReturnToday: { shiftDay(by: -dayOffset) })
+            DayRibbonView(moments: dayMoments.filter { !$0.isSolarKind },
                       day: visibleDay,
                       now: dayClock,
                       sunrise: daySolarTimes.todaySunrise,
@@ -561,8 +568,9 @@ struct FloorplanEditorView: View {
                       },
                       onShiftDay: { shiftDay(by: $0) },
                       onReturnToday: { shiftDay(by: -dayOffset) })
+        }
             .padding(.horizontal, 14)
-            .padding(.top, 10)
+            .padding(.top, 8)
             .padding(.bottom, 6)
             .background(floorplanBackgroundColor,
                         in: RoundedRectangle(cornerRadius: 16, style: .continuous))

@@ -58,3 +58,40 @@ struct DayRibbonNavigationTests {
         #expect(abs(fraction - 0.5) < 0.01)
     }
 }
+
+/// L'elastico del trascinamento.
+///
+/// Oltre il limite il nastro non si blocca: rallenta. Un muro invisibile fa
+/// credere che il gesto non abbia funzionato, mentre un elastico dice «ho
+/// capito, ma di là non c'è niente» — e lo dice col dito.
+@Suite("Il nastro segue il dito")
+struct DayRibbonDragTests {
+
+    @Test("Dove si può andare, il nastro segue")
+    func followsWhereAllowed() {
+        let back = DayRibbonView.resisted(100, canGoBack: true, canGoForward: true)
+        #expect(back > 50)
+        let forward = DayRibbonView.resisted(-100, canGoBack: true, canGoForward: true)
+        #expect(forward < -50)
+    }
+
+    @Test("Al limite resiste, ma non si blocca")
+    func resistsAtTheEdge() {
+        let blocked = DayRibbonView.resisted(100, canGoBack: false, canGoForward: true)
+        #expect(blocked > 0, "un muro secco sembrerebbe un gesto non riuscito")
+        #expect(blocked < 20, "ma deve sentirsi che di là non si va")
+    }
+
+    @Test("Le due direzioni si giudicano separatamente")
+    func directionsAreIndependent() {
+        // Primo giorno disponibile: indietro no, avanti sì.
+        let backwards = DayRibbonView.resisted(100, canGoBack: false, canGoForward: true)
+        let forwards  = DayRibbonView.resisted(-100, canGoBack: false, canGoForward: true)
+        #expect(abs(backwards) < abs(forwards))
+    }
+
+    @Test("Fermo resta fermo")
+    func zeroStaysZero() {
+        #expect(DayRibbonView.resisted(0, canGoBack: true, canGoForward: true) == 0)
+    }
+}

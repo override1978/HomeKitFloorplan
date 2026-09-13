@@ -44,6 +44,8 @@ struct DayRibbonView: View {
 
     @State private var selected: DayMoment?
     @State private var selectedGestureID: String?
+    /// Quanto il nastro sta seguendo il dito in questo istante.
+    @State private var dragOffset: CGFloat = 0
 
     // MARK: Geometria
 
@@ -91,12 +93,13 @@ struct DayRibbonView: View {
                     diamond(placement, width: width)
                 }
 
-                if dayOffset == 0 {
-                    nowLine(width: width)
-                } else {
-                    dayBadge(width: width)
-                }
+                if dayOffset == 0 { nowLine(width: width) }
             }
+            .offset(x: dragOffset)
+            // Il contenuto sbiadisce mentre si trascina: dice che quello che
+            // stai guardando sta per non essere più valido, senza aspettare
+            // che sia cambiato.
+            .opacity(1 - min(abs(dragOffset) / 220, 0.45))
         }
         .frame(height: Self.totalHeight)
         .contentShape(Rectangle())
@@ -104,50 +107,55 @@ struct DayRibbonView: View {
             selected = nil
             selectedGestureID = nil
         }
-        // Trascinare il nastro cambia giorno.
-        //
-        // È il gesto che il nastro chiede da solo — è un asse orizzontale, e
-        // un asse orizzontale si spinge — e non costa nessuna chrome in più su
-        // una superficie dove lo spazio è già tutto assegnato. La soglia è
-        // generosa perché sul nastro si tocca anche: sotto i quaranta punti
-        // era un tocco storto, non un trascinamento.
-        .gesture(
-            DragGesture(minimumDistance: 40)
-                .onEnded { value in
-                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                    let backwards = value.translation.width > 0
-                    if backwards, canGoBack { onShiftDay?(-1) }
-                    if !backwards, canGoForward { onShiftDay?(1) }
-                }
-        )
+        .gesture(dayDrag)
     }
 
-    /// La data, al posto dell'ora, quando non si guarda oggi.
+    // MARK: Trascinare i giorni
+
+    /// Il nastro segue il dito, e un colpetto basta.
     ///
-    /// Prende esattamente il posto della linea di «adesso» perché è la stessa
-    /// domanda — *quando siamo?* — e perché fuori da oggi quella linea non
-    /// avrebbe dove stare: «adesso» non cade dentro un giorno che non è questo.
+    /// Prima era una soglia secca a quaranta punti: funzionava e non si
+    /// capiva, perché un gesto che non dà risposta mentre lo fai non sembra un
+    /// gesto — sembra che non sia successo niente. Seguire il dito è ciò che
+    /// rende il nastro *afferrabile*: si scopre che si muove provando a
+    /// muoverlo.
     ///
-    /// Ed è toccabile: è l'unica via di ritorno. Senza, si può finire in una
-    /// giornata di tre settimane fa senza capire come tornare — e a quel punto
-    /// il nastro ha smesso di essere una finestra ed è diventato un labirinto.
-    private func dayBadge(width: CGFloat) -> some View {
-        Button {
-            onReturnToday?()
-        } label: {
-            HStack(spacing: 5) {
-                Text(Self.dayLabel(offset: dayOffset, day: day.start))
-                    .font(.system(size: 10, weight: .semibold))
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 8, weight: .bold))
+    /// Si decide sulla traiettoria prevista e non sulla distanza percorsa, così
+    /// un colpetto svelto conta quanto un trascinamento lungo — è quello che
+    /// fa sentire la cosa inerziale invece che a scatti.
+    private var dayDrag: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                dragOffset = Self.resisted(value.translation.width,
+                                           canGoBack: canGoBack, canGoForward: canGoForward)
             }
-            .foregroundStyle(BrandColor.primary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(BrandColor.primary.opacity(0.14), in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .position(x: width / 2, y: Self.labelRowHeight)
+            .onEnded { value in
+                let predicted = value.predictedEndTranslation.width
+                if predicted > Self.commitDistance, canGoBack {
+                    onShiftDay?(-1)
+                } else if predicted < -Self.commitDistance, canGoForward {
+                    onShiftDay?(1)
+                }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    dragOffset = 0
+                }
+            }
+    }
+
+    static let commitDistance: CGFloat = 60
+
+    /// Quanto il nastro segue il dito, e quanto resiste al bordo.
+    ///
+    /// Oltre il limite non si blocca: rallenta. Un muro invisibile lascia
+    /// credere che il gesto non abbia funzionato, mentre un elastico dice
+    /// «ho capito, ma di là non c'è niente» — e lo dice col dito, che è
+    /// l'unico posto dove si stava già guardando.
+    nonisolated static func resisted(_ translation: CGFloat,
+                                     canGoBack: Bool,
+                                     canGoForward: Bool) -> CGFloat {
+        let allowed = translation > 0 ? canGoBack : canGoForward
+        return allowed ? translation * 0.75 : translation * 0.12
     }
 
     /// «Ieri», «Domani», o la data. Le parole dove esistono, la data dove no.
@@ -380,6 +388,81 @@ struct DayRibbonView: View {
                 .frame(width: 2, height: Self.axisY + Self.axisHeight - Self.labelRowHeight)
         }
         .position(x: min(max(x, 18), width - 18), y: (Self.axisY + Self.axisHeight) / 2 + 4)
+    }
+
+    // MARK: La barra del giorno
+
+    /// I comandi del giorno, sempre visibili.
+    ///
+    /// Il trascinamento da solo non bastava: è un gesto che nessuno prova se
+    /// niente gli dice che esiste, e su un pannello appeso al muro non c'è
+    /// nemmeno la curiosità di chi tiene l'oggetto in mano. Due frecce e una
+    /// data risolvono la scoperta e restano utili dopo — sono anche il modo
+    /// più preciso di spostarsi di un giorno solo, che col dito è sempre un po'
+    /// una scommessa.
+    ///
+    /// Vive fuori dal disegno dell'asse di proposito: lassù ogni riga è già
+    /// assegnata alle etichette dei momenti, e una pillola galleggiante in
+    /// mezzo finirebbe sotto o sopra un nome.
+    struct DayBar: View {
+        let dayOffset: Int
+        let day: Date
+        let canGoBack: Bool
+        let canGoForward: Bool
+        var onShiftDay: ((Int) -> Void)? = nil
+        var onReturnToday: (() -> Void)? = nil
+
+        var body: some View {
+            HStack(spacing: 6) {
+                arrow("chevron.left", enabled: canGoBack) { onShiftDay?(-1) }
+                Spacer(minLength: 0)
+                label
+                Spacer(minLength: 0)
+                arrow("chevron.right", enabled: canGoForward) { onShiftDay?(1) }
+            }
+        }
+
+        @ViewBuilder
+        private var label: some View {
+            if dayOffset == 0 {
+                Text(DayRibbonView.dayLabel(offset: 0, day: day))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            } else {
+                // Fuori da oggi l'etichetta diventa la via di ritorno. Senza,
+                // si può finire in una giornata di tre settimane fa senza
+                // capire come tornare, e il nastro smette di essere una
+                // finestra per diventare un labirinto.
+                Button { onReturnToday?() } label: {
+                    HStack(spacing: 5) {
+                        Text(DayRibbonView.dayLabel(offset: dayOffset, day: day))
+                            .font(.system(size: 10, weight: .semibold))
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundStyle(BrandColor.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(BrandColor.primary.opacity(0.14), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+
+        private func arrow(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+            Button(action: action) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    // Disabilitata si vede ancora, sbiadita: sparire
+                    // cambierebbe la larghezza della barra e farebbe ballare
+                    // la data ogni volta che si tocca un limite.
+                    .foregroundStyle(enabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.quaternary))
+                    .frame(width: 30, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!enabled)
+        }
     }
 
     // MARK: Titolo per l'asse

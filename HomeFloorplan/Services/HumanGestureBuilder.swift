@@ -125,16 +125,31 @@ enum HumanGestureBuilder {
     /// nome.
     static let simultaneityWindow: TimeInterval = 5
 
-    /// Oltre quante stanze un gruppo smette di essere un percorso.
+    /// Quanto ci vuole, come minimo, per passare da una stanza all'altra.
     ///
-    /// È il vincolo più duro di tutti, perché è fisico: una persona non può
-    /// essere in dieci stanze in tre minuti. Uscendo di casa se ne attraversano
-    /// quattro o cinque — entrata, soggiorno, cucina, scala — e lì si smette.
-    /// Di là non c'è più nessuno che cammina: c'è qualcosa che trasmette.
+    /// Era un tetto sul numero di stanze, e sbagliava: i gesti si concatenano —
+    /// la finestra di tre minuti vale fra comandi *consecutivi* — quindi un
+    /// giro serale per casa, una stanza ogni due minuti, diventa un gesto solo
+    /// da otto stanze. È il gesto più reale che ci sia, e un tetto sul
+    /// conteggio lo buttava via insieme alle raffiche.
     ///
-    /// Serve anche come rete per ciò che è già in archivio, che nessuna
-    /// correzione a monte può più ripulire.
-    static let maxRoomsPerGesture = 5
+    /// Il vincolo giusto è lo stesso della simultaneità, applicato alle stanze
+    /// invece che agli accessori: non *quante*, ma *quanto in fretta*. Dieci
+    /// secondi a stanza è una camminata svelta in un appartamento — esci di
+    /// casa toccando quattro stanze in un minuto e passi — ma rende
+    /// impossibili le dieci stanze in due secondi, che è ciò che si voleva
+    /// escludere.
+    static let minimumRoomTransition: TimeInterval = 10
+
+    /// Quante stanze può toccare un gesto senza che qualcuno abbia camminato.
+    ///
+    /// Un interruttore di gruppo accende la Scala e l'Entrata insieme, e le due
+    /// luci stanno in due stanze HomeKit diverse: pretendere il tempo di
+    /// percorrenza lì significherebbe negare un gesto che è avvenuto davvero,
+    /// con un solo dito. Fino a tre stanze quindi non si chiede niente; di là
+    /// «stanze» comincia a voler dire «percorso», e un percorso ha bisogno di
+    /// tempo.
+    static let roomsWithoutWalking = 3
 
     /// I tipi che sono **comandi**, non osservazioni.
     ///
@@ -258,13 +273,19 @@ enum HumanGestureBuilder {
     /// utile — le proprie scene, le riconsegne dopo una riconnessione — e
     /// nessuna di quelle porta un'etichetta che lo dica.
     nonisolated static func isPlausiblyHuman(_ gesture: HumanGesture) -> Bool {
-        // Troppe stanze: non è un percorso, qualunque tempo ci abbia messo.
-        if gesture.roomNames.count > maxRoomsPerGesture { return false }
-
-        guard gesture.changes.count > simultaneityThreshold else { return true }
         guard let first = gesture.changes.first?.at,
               let last = gesture.changes.last?.at else { return true }
-        return last.timeIntervalSince(first) >= simultaneityWindow
+        let span = last.timeIntervalSince(first)
+
+        // Un percorso ha bisogno di tempo per essere percorso.
+        let rooms = gesture.roomNames.count
+        if rooms > roomsWithoutWalking {
+            let transitions = Double(rooms - 1)
+            if span < transitions * minimumRoomTransition { return false }
+        }
+
+        guard gesture.changes.count > simultaneityThreshold else { return true }
+        return span >= simultaneityWindow
     }
 
     /// Fonde più gesti in uno solo.

@@ -151,7 +151,7 @@ struct FloorplanChromeLayout: Equatable {
 
     /// Spazio riservato al nastro della giornata: la card misurata più il
     /// respiro sotto e sopra.
-    static let dayRibbonInset: CGFloat = 128
+    static let dayRibbonInset: CGFloat = 148
 
     var topInset: CGFloat {
         var inset = FloorplanCanvasGeometry.chromeTopInset

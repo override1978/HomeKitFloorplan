@@ -307,11 +307,39 @@ struct HumanGestureRoomSpreadTests {
                                       origin: "external")
     }
 
-    @Test("Dieci stanze, anche prendendosela comoda, non sono un percorso")
-    func tooManyRoomsIsNotAWalk() {
-        // Un evento ogni dieci secondi: la simultaneità non lo prenderebbe.
-        let spread = (0..<10).map { change(room: "Stanza \($0)", at: Double($0) * 10) }
+    @Test("Dieci stanze in due secondi non sono un percorso")
+    func tooManyRoomsTooFastIsNotAWalk() {
+        let spread = (0..<10).map { change(room: "Stanza \($0)", at: Double($0) * 0.2) }
         #expect(HumanGestureBuilder.build(from: spread).isEmpty)
+    }
+
+    @Test("Il giro serale per casa è un gesto, anche se tocca otto stanze")
+    func slowRoundOfTheHouseSurvives() {
+        // Una stanza ogni due minuti: dentro la finestra di raggruppamento,
+        // quindi un gesto solo — e il più reale che ci sia.
+        let round = (0..<8).map { change(room: "Stanza \($0)", at: Double($0) * 120) }
+        let gestures = HumanGestureBuilder.build(from: round)
+        #expect(gestures.count == 1)
+        #expect(gestures[0].roomNames.count == 8)
+    }
+
+    @Test("Le stanze si contano nel tempo, non in assoluto")
+    func roomsAreJudgedByPace() {
+        // Sei stanze in un minuto: dieci secondi a stanza, una camminata svelta.
+        let brisk = (0..<6).map { change(room: "Stanza \($0)", at: Double($0) * 12) }
+        #expect(HumanGestureBuilder.build(from: brisk).count == 1)
+        // Le stesse sei in tre secondi: nessuno cammina così.
+        let instant = (0..<6).map { change(room: "Stanza \($0)", at: Double($0) * 0.5) }
+        #expect(HumanGestureBuilder.build(from: instant).isEmpty)
+    }
+
+    @Test("Un interruttore di gruppo accende due stanze insieme, e va bene")
+    func groupSwitchAcrossRoomsSurvives() {
+        // Scala ed Entrata sullo stesso comando: due stanze HomeKit, un dito.
+        let group = [change(room: "Scala", at: 0),
+                     change(room: "Entrata", at: 0.03),
+                     change(room: "Scala", at: 0.05)]
+        #expect(HumanGestureBuilder.build(from: group).count == 1)
     }
 
     @Test("Uscire di casa attraversa quattro stanze e resta un gesto")
