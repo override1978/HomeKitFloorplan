@@ -212,6 +212,7 @@ struct FloorplanEditorView: View {
         }
         return HumanGestureBuilder.build(from: raw,
                                          scheduledFires: dayMoments.filter(\.isAutomationKind).map(\.at),
+                                         scenes: scenesService.sceneSignatures(),
                                          now: now)
     }
 

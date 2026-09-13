@@ -54,7 +54,7 @@ struct FloorplanGesturePanelContent: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Image(systemName: "hand.tap")
+                Image(systemName: gesture.isScene ? "square.stack.3d.up.fill" : "hand.tap")
                     .font(.caption.weight(.semibold))
                 Text(gesture.at.formatted(date: .omitted, time: .shortened))
                     .font(.title3.weight(.bold).monospacedDigit())
@@ -74,9 +74,18 @@ struct FloorplanGesturePanelContent: View {
             // «A mano» e non «Tu»: HomeKit dice soltanto che il comando non è
             // arrivato da quest'app, non chi l'ha dato. Potrebbe essere un
             // altro di casa, o Siri. Dirlo com'è costa una parola.
-            Text(String(format: String(localized: "gesture.subtitle",
-                                       defaultValue: "%d comandi, a mano"),
-                        gesture.changes.count))
+            //
+            // E su una scena riconosciuta non si dice affatto «a mano»: una
+            // scena può averla lanciata una persona, Siri o un automatismo che
+            // non avevamo previsto. «Scena eseguita» è vero in tutti e tre i
+            // casi.
+            Text(gesture.isScene
+                 ? String(format: String(localized: "gesture.subtitle.scene",
+                                         defaultValue: "Scena eseguita · %d accessori"),
+                          gesture.changes.count)
+                 : String(format: String(localized: "gesture.subtitle",
+                                         defaultValue: "%d comandi, a mano"),
+                          gesture.changes.count))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -139,32 +148,43 @@ struct FloorplanGesturePanelContent: View {
 
     // MARK: I verbi
 
+    /// I verbi, che non sono gli stessi per una mano e per una scena.
+    ///
+    /// Su una scena riconosciuta «salva come scena» sarebbe una seconda copia
+    /// della stessa cosa, e «rifai adesso» quarantasette scritture separate
+    /// dove ne basta una: HomeKit sa eseguire un insieme di azioni, e farlo
+    /// passare per la porta giusta è anche l'unico modo perché arrivi atomico.
+    @ViewBuilder
     private var verbs: some View {
         VStack(spacing: 8) {
             Button {
                 Task { await replay() }
             } label: {
-                Label(String(localized: "gesture.replay", defaultValue: "Rifai adesso"),
+                Label(gesture.isScene
+                      ? String(localized: "gesture.runScene", defaultValue: "Esegui adesso")
+                      : String(localized: "gesture.replay", defaultValue: "Rifai adesso"),
                       systemImage: "arrow.clockwise")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .disabled(isWorking)
 
-            Button {
-                namingForAutomation = false
-                draftName = HumanGestureBuilder.suggestedName(for: gesture)
-            } label: {
-                Label(String(localized: "gesture.saveScene", defaultValue: "Salva come scena"),
-                      systemImage: "square.stack.3d.up")
-                    .frame(maxWidth: .infinity)
+            if !gesture.isScene {
+                Button {
+                    namingForAutomation = false
+                    draftName = HumanGestureBuilder.suggestedName(for: gesture)
+                } label: {
+                    Label(String(localized: "gesture.saveScene", defaultValue: "Salva come scena"),
+                          systemImage: "square.stack.3d.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isWorking)
             }
-            .buttonStyle(.bordered)
-            .disabled(isWorking)
 
             Button {
                 namingForAutomation = true
-                draftName = HumanGestureBuilder.suggestedName(for: gesture)
+                draftName = gesture.sceneName ?? HumanGestureBuilder.suggestedName(for: gesture)
             } label: {
                 Label(String(localized: "gesture.remember", defaultValue: "Ricordalo a quest'ora"),
                       systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
@@ -173,8 +193,11 @@ struct FloorplanGesturePanelContent: View {
             .buttonStyle(.bordered)
             .disabled(isWorking)
 
-            Text(String(localized: "gesture.verbs.explain",
-                        defaultValue: "Si salva lo stato finale, non la sequenza: una scena è una configurazione."))
+            Text(gesture.isScene
+                 ? String(localized: "gesture.verbs.explain.scene",
+                          defaultValue: "La scena esiste già: qui puoi solo rilanciarla o darle un orario fisso.")
+                 : String(localized: "gesture.verbs.explain",
+                          defaultValue: "Si salva lo stato finale, non la sequenza: una scena è una configurazione."))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -259,6 +282,22 @@ struct FloorplanGesturePanelContent: View {
     private func replay() async {
         isWorking = true
         defer { isWorking = false }
+
+        // Una scena si esegue, non si ricostruisce: HomeKit la applica in un
+        // colpo solo, senza la finestra di mezzo secondo in cui metà casa è
+        // già cambiata e metà no.
+        if let sceneID = gesture.sceneID,
+           let scene = scenesService.scenes.first(where: { $0.id == sceneID }) {
+            do {
+                try await scenesService.run(scene)
+                outcome = .replayed
+            } catch {
+                outcome = .failed(String(localized: "gesture.replay.failed",
+                                         defaultValue: "Non sono riuscito a rifarlo."))
+            }
+            return
+        }
+
         var failures = 0
         for change in gesture.changes {
             guard let accessory = homeKit.accessory(for: change.accessoryUUID),
@@ -296,7 +335,18 @@ struct FloorplanGesturePanelContent: View {
         defer { isWorking = false }
         let wantsAutomation = namingForAutomation
         do {
-            let scene = try await scenesService.createScene(named: name, capturing: gesture.changes)
+            // Se la scena esiste già si riusa: creare un duplicato con lo
+            // stesso contenuto vorrebbe dire che d'ora in poi vanno tenute
+            // allineate a mano tutte e due.
+            let existing = gesture.sceneID.flatMap { id in
+                scenesService.scenes.first(where: { $0.id == id })
+            }
+            let scene: SceneItem
+            if let existing {
+                scene = existing
+            } else {
+                scene = try await scenesService.createScene(named: name, capturing: gesture.changes)
+            }
             if wantsAutomation {
                 var schedule = AutomationScheduleTrigger()
                 schedule.kind = .fixedTime

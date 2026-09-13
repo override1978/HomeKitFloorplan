@@ -608,6 +608,27 @@ final class HomeKitScenesService {
         return SceneItem(actionSet: actionSet)
     }
 
+    /// Le scene ridotte a «quali accessori tocco», per il riconoscimento sul nastro.
+    ///
+    /// Solo quelle con un nome leggibile: una scena che si chiama
+    /// `38737CF2-…` — HomeKit battezza così gli insiemi creati dentro
+    /// un'automazione — non aggiunge niente a «quarantasette comandi», e
+    /// metterla su un rombo sarebbe barattare un'etichetta inutile con
+    /// un'altra.
+    func sceneSignatures() -> [HumanGestureBuilder.SceneSignature] {
+        scenes.compactMap { scene in
+            guard scene.hasInformativeName else { return nil }
+            let accessories = Set(scene.actionSet.actions.compactMap { action in
+                (action as? HMCharacteristicWriteAction<NSCopying>)?
+                    .characteristic.service?.accessory?.uniqueIdentifier
+            })
+            guard !accessories.isEmpty else { return nil }
+            return HumanGestureBuilder.SceneSignature(id: scene.id,
+                                                      name: scene.name,
+                                                      accessoryUUIDs: accessories)
+        }
+    }
+
     /// La caratteristica di accensione di un accessorio, qualunque nome porti.
     ///
     /// Due UUID e non uno: i dispositivi «attivi» — ventilatori, purificatori,

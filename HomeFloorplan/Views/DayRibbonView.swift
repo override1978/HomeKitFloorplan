@@ -220,7 +220,17 @@ struct DayRibbonView: View {
         let side = Self.diamondSide(changeCount: gesture.changes.count) + (isSelected ? 3 : 0)
 
         return Rectangle()
-            .fill(Self.gestureTint.opacity(isSelected ? 1 : 0.75))
+            // Una scena è vuota come le automazioni passate sopra l'asse: non
+            // l'ha fatta una mano, e la stessa distinzione di forma che lassù
+            // separa il previsto dal fatto, qui separa ciò che ha premuto
+            // qualcuno da ciò che ha eseguito la casa.
+            .fill(gesture.isScene ? Color.clear : Self.gestureTint.opacity(isSelected ? 1 : 0.75))
+            .overlay {
+                if gesture.isScene {
+                    Rectangle().strokeBorder(Self.gestureTint.opacity(isSelected ? 1 : 0.8),
+                                             lineWidth: 1.5)
+                }
+            }
             .frame(width: side, height: side)
             .rotationEffect(.degrees(45))
             .overlay {

@@ -29,6 +29,15 @@ struct HumanGesture: Identifiable, Equatable, Sendable {
     let at: Date
     let changes: [Change]
 
+    /// Il nome della scena riconosciuta, quando il gesto è l'esecuzione di una.
+    ///
+    /// Cambia tutto ciò che il pannello dice e offre: una scena ha già un
+    /// nome, si riesegue in un colpo solo, e non ha senso salvarla come
+    /// scena una seconda volta.
+    var sceneName: String?
+    var sceneID: UUID?
+    var isScene: Bool { sceneID != nil }
+
     /// Le stanze toccate, senza ripetizioni e in ordine di apparizione.
     var roomNames: [String] {
         var seen: Set<String> = []
@@ -47,6 +56,7 @@ struct HumanGesture: Identifiable, Equatable, Sendable {
     /// testa al pannello serve una riga sola, e la cosa che distingue due gesti
     /// della stessa giornata è quasi sempre **dove** sono successi.
     var shortTitle: String {
+        if let sceneName { return sceneName }
         let rooms = roomNames
         switch rooms.count {
         case 0:  return changes.first?.accessoryName ?? String(localized: "gesture.untitled", defaultValue: "Comandi")
@@ -82,6 +92,39 @@ enum HumanGestureBuilder {
     /// tale invece di spacciarla per attribuzione certa.
     static let automationTolerance: TimeInterval = 60
 
+    /// L'unica origine che vale come gesto, dichiarata in positivo.
+    ///
+    /// Era una lista nera — «tutto tranne `app`» — e non filtrava niente: il
+    /// valore `app` non viene scritto da nessuna parte. Il percorso di
+    /// scrittura passa `user` o `engine` verbatim, il delegate scrive
+    /// `external`, e il commento del modello che parlava di `app` era rimasto
+    /// indietro. Risultato: ogni valutazione di SmartLighting e ogni tap dentro
+    /// l'app comparivano nella corsia come se fossero stati una mano.
+    ///
+    /// In positivo questo non può ricapitare: il giorno che nasce una quarta
+    /// origine, resta fuori finché qualcuno non decide che è un gesto — che è
+    /// il verso giusto in cui sbagliare.
+    static let humanOrigin = "external"
+
+    /// Oltre quanti comandi insieme si smette di credere alla mano.
+    static let simultaneityThreshold = 6
+
+    /// Entro quanto quei comandi devono cadere perché sia una raffica.
+    ///
+    /// Il criterio non è *quanti* ma *quanto in fretta*: «esco di casa e spengo
+    /// quindici cose» è un gesto vero, e anzi il più interessante della
+    /// giornata — ma dura un minuto, perché una mano cammina. Quarantasette
+    /// accessori in dieci stanze nello stesso istante sono una scena, un
+    /// automatismo o una riconsegna di massa dopo una riconnessione: qualunque
+    /// cosa siano, non sono qualcuno che gira per casa.
+    ///
+    /// Resta fuori anche il caso ambiguo: una persona che tocca una scena
+    /// nell'app Casa *ha* un'intenzione umana, ma il modo giusto di mostrarla è
+    /// col nome della scena, non come una lista di quarantasette comandi.
+    /// Finché non sappiamo riconoscerla, tacere è più onesto che sbagliare
+    /// nome.
+    static let simultaneityWindow: TimeInterval = 5
+
     /// I tipi che sono **comandi**, non osservazioni.
     ///
     /// Una finestra che si apre e un movimento rilevato sono fatti della casa,
@@ -97,6 +140,22 @@ enum HumanGestureBuilder {
         AccessoryEventType.humidifier.rawValue,
         AccessoryEventType.thermostat.rawValue
     ]
+
+    /// Una scena ridotta a ciò che serve per riconoscerla: quali accessori tocca.
+    struct SceneSignature: Equatable, Sendable {
+        let id: UUID
+        let name: String
+        let accessoryUUIDs: Set<UUID>
+    }
+
+    /// Quanta parte di una raffica deve appartenere a una scena perché sia lei.
+    ///
+    /// Non il contrario — non si chiede che la raffica copra la scena — perché
+    /// una scena che imposta quaranta accessori ne muove solo quelli che non
+    /// erano già nello stato giusto: la sera in cui metà casa è già spenta,
+    /// «Buonanotte» produce venti eventi, non quaranta. Pretendere la
+    /// copertura la renderebbe irriconoscibile proprio nei casi normali.
+    static let sceneMatchRatio = 0.8
 
     /// Un evento grezzo, ridotto a ciò che serve per attribuirlo.
     struct RawChange: Equatable, Sendable {
@@ -119,6 +178,7 @@ enum HumanGestureBuilder {
     ///     i cambiamenti che sono quasi certamente loro.
     static func build(from raw: [RawChange],
                       scheduledFires: [Date] = [],
+                      scenes: [SceneSignature] = [],
                       now: Date = Date()) -> [HumanGesture] {
         let fires = scheduledFires.sorted()
 
@@ -126,7 +186,7 @@ enum HumanGestureBuilder {
             .filter { commandTypes.contains($0.eventType) }
             // Le scritture di app e motori non sono gesti: sono la casa che
             // agisce, ed è già raccontata sopra l'asse.
-            .filter { $0.origin != "app" }
+            .filter { $0.origin == humanOrigin }
             .filter { !isNearAnyFire($0.at, fires: fires) }
             .sorted { $0.at < $1.at }
 
@@ -143,7 +203,54 @@ enum HumanGestureBuilder {
             current.append(change)
         }
         if !current.isEmpty { gestures.append(makeGesture(from: current)) }
+
+        // Prima si prova a dare un nome, poi si scarta ciò che è rimasto senza.
+        // L'ordine è tutto: una scena riconosciuta è informazione buona proprio
+        // perché muove molte cose insieme, e la regola di plausibilità —
+        // scritta per togliere di mezzo le raffiche anonime — la butterebbe via
+        // per la stessa ragione per cui è interessante.
         return gestures
+            .map { attribute($0, to: scenes) }
+            .filter { $0.isScene || isPlausiblyHuman($0) }
+    }
+
+    /// Riconosce l'esecuzione di una scena dentro una raffica di comandi.
+    ///
+    /// Fra più scene compatibili vince la più piccola: una «Spegni tutto» da
+    /// quaranta accessori contiene quasi ogni altra scena della casa, e senza
+    /// questa regola si prenderebbe il merito di tutte.
+    nonisolated static func attribute(_ gesture: HumanGesture,
+                                      to scenes: [SceneSignature]) -> HumanGesture {
+        guard gesture.changes.count > simultaneityThreshold, !scenes.isEmpty else { return gesture }
+        let touched = Set(gesture.changes.map(\.accessoryUUID))
+        guard !touched.isEmpty else { return gesture }
+
+        let match = scenes
+            .filter { scene in
+                let shared = touched.intersection(scene.accessoryUUIDs).count
+                return Double(shared) / Double(touched.count) >= sceneMatchRatio
+            }
+            .min { $0.accessoryUUIDs.count < $1.accessoryUUIDs.count }
+
+        guard let match else { return gesture }
+        var named = gesture
+        named.sceneName = match.name
+        named.sceneID = match.id
+        return named
+    }
+
+    /// Vero quando un gruppo può davvero essere stato fatto da qualcuno.
+    ///
+    /// Ultima rete, dopo tutte le attribuzioni: quelle guardano *da dove*
+    /// arriva un comando, questa guarda *come si muove* il gruppo. Serve
+    /// perché HomeKit marca «external» anche ciò che external non è in senso
+    /// utile — le proprie scene, le riconsegne dopo una riconnessione — e
+    /// nessuna di quelle porta un'etichetta che lo dica.
+    nonisolated static func isPlausiblyHuman(_ gesture: HumanGesture) -> Bool {
+        guard gesture.changes.count > simultaneityThreshold else { return true }
+        guard let first = gesture.changes.first?.at,
+              let last = gesture.changes.last?.at else { return true }
+        return last.timeIntervalSince(first) >= simultaneityWindow
     }
 
     /// Fonde più gesti in uno solo.
@@ -161,9 +268,17 @@ enum HumanGestureBuilder {
         for change in gestures.flatMap(\.changes).sorted(by: { $0.at < $1.at }) {
             latest[change.accessoryUUID] = change
         }
-        return HumanGesture(id: first.id,
-                            at: first.at,
-                            changes: latest.values.sorted { $0.at < $1.at })
+        var merged = HumanGesture(id: first.id,
+                                  at: first.at,
+                                  changes: latest.values.sorted { $0.at < $1.at })
+        // Il nome di una scena sopravvive alla fusione visiva: se uno dei
+        // rombi sovrapposti era «Buonanotte», dirlo resta meglio che tornare a
+        // «quarantasette comandi».
+        if let named = gestures.first(where: { $0.isScene }) {
+            merged.sceneName = named.sceneName
+            merged.sceneID = named.sceneID
+        }
+        return merged
     }
 
     /// Il nome da proporre quando un gesto diventa una scena.
