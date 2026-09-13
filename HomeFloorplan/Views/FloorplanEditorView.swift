@@ -899,6 +899,15 @@ struct FloorplanEditorView: View {
                 overlayEnvVM.applyLiveState(homeState)
                 overlayEnvVM.loadFromCoreData()
             }
+            // La variante mancante si produce guardandola, non riesportando.
+            if isDaylightGroundEnabled, FloorplanVariantBackfill.needsAlternate(floorplan) {
+                measureMain("appear.variantBackfill") {
+                    if FloorplanVariantBackfill.fill(floorplan, in: modelContext) {
+                        imageCache = FloorplanImageCacheState()
+                        FloorplanImageLoader(cache: $imageCache).refresh(for: floorplan)
+                    }
+                }
+            }
             measureMain("appear.dayMoments") {
                 refreshDayMoments()
             }
