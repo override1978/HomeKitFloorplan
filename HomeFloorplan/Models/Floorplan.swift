@@ -74,6 +74,16 @@ final class Floorplan {
     var imageFilename: String
     /// Image data stored externally by SwiftData. Nil for records pending migration from imageFilename.
     @Attribute(.externalStorage) var imageData: Data?
+
+    /// La stessa planimetria resa in stile scuro, per la notte circadiana.
+    ///
+    /// Due raster invece di uno perché la differenza fra giorno e notte non è
+    /// una regolazione di luminosità: nello stile chiaro i muri sono scuri su
+    /// fondo chiaro, in quello scuro il contrario. Nessun filtro trasforma
+    /// l'uno nell'altro, e rigenerare a runtime vorrebbe dire ridisegnare il
+    /// documento due volte al giorno su ogni dispositivo. Si disegnano
+    /// entrambe una volta sola, al salvataggio, e l'ora sceglie.
+    @Attribute(.externalStorage) var imageDataDark: Data?
     var createdAt: Date
     var updatedAt: Date
     /// Modalità di interazione sui marker. Default: aprire il pannello.

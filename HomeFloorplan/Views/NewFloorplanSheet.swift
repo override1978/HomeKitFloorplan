@@ -16,6 +16,7 @@ struct NewFloorplanSheet: View {
 
     @State private var name: String = ""
     @State private var selectedImage: UIImage?
+    @State private var selectedDarkImage: UIImage?
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -140,8 +141,9 @@ struct NewFloorplanSheet: View {
             initialExteriorFillColorIndex: savedExteriorFillColorIndex,
             initialVisualExportStyle: savedVisualExportStyle,
             initialExportRotation: savedExportRotation
-        ) { drawnImage, rooms, doc, colorIndex, visualStyle, exportRotation in
+        ) { drawnImage, darkImage, rooms, doc, colorIndex, visualStyle, exportRotation in
             selectedImage = drawnImage
+            selectedDarkImage = darkImage
             linkedRooms = rooms
             savedDrawingDocument = doc
             savedExteriorFillColorIndex = colorIndex
@@ -168,6 +170,7 @@ struct NewFloorplanSheet: View {
             homeUUID: homeKit.currentHome?.uniqueIdentifier
         )
         floorplan.imageData = imageData
+        floorplan.imageDataDark = selectedDarkImage?.pngData()
         if !linkedRooms.isEmpty {
             floorplan.linkedRooms = linkedRooms
         }

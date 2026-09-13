@@ -90,6 +90,25 @@ enum DaylightGround {
         /// Il grosso del segnale resta sul fondo e sul calore.
         var imageBrightness: Double { 0.16 * luminance }
 
+        /// Quanto pesa la variante scura del disegno.
+        ///
+        /// La transizione non è un istante ma una fascia: il passaggio avviene
+        /// mentre la luce cala fra il crepuscolo pieno e la sera, che è
+        /// esattamente quando in casa si accendono le lampade. Sotto si è
+        /// architectural scuro, sopra si è chiari, in mezzo si è entrambi.
+        ///
+        /// Il raccordo è un coseno e non una rampa: una rampa ha uno spigolo
+        /// dove comincia e dove finisce, e su un incrocio fra due disegni gli
+        /// spigoli sono l'unica cosa che si nota.
+        var darkVariantOpacity: Double {
+            let start = 0.42   // sopra: pieno giorno, disegno chiaro
+            let end = 0.16     // sotto: notte, disegno scuro
+            if luminance >= start { return 0 }
+            if luminance <= end { return 1 }
+            let t = (start - luminance) / (start - end)
+            return (1 - cos(.pi * t)) / 2
+        }
+
         /// Un filo di contrasto in più, a compensare l'appiattimento.
         var imageContrast: Double { 1 + 0.10 * luminance }
 
@@ -192,10 +211,40 @@ enum DaylightGround {
         return pow(1 - height, 1.6)
     }
 
-    /// Il fondo per un dato istante, a partire dal colore scelto dall'utente.
+    /// Il fondo del momento, uguale per tutti.
     ///
-    /// `base` è la notte: a luce zero torna esattamente sé stesso, quindi al
-    /// buio non c'è nessuna regressione rispetto a com'era prima.
+    /// La luce è una proprietà dell'istante, non del documento. Partendo dal
+    /// colore scelto per ciascuna planimetria si otteneva il contrario: due
+    /// planimetrie aperte alla stessa ora avevano due luci diverse — una scura
+    /// e una crema alle 21:44 — perché ognuna restava ancorata alla propria
+    /// palette. Con l'interruttore acceso quel colore non serve più: il disegno
+    /// esce senza fondo, e il fondo lo mette l'ora.
+    ///
+    /// È anche ciò che permette alla scala di essere assoluta e larga davvero.
+    /// Finché il riferimento era il documento, «notte» voleva dire cose diverse
+    /// a seconda di cosa si stava guardando, e l'escursione doveva restare
+    /// piccola per non tradire nessuna delle due.
+    nonisolated static func circadianGround(light cycle: Light) -> Color {
+        let light = min(max(cycle.luminance, 0), 1)
+        let warm = min(max(cycle.warmth, 0), 1)
+
+        // Da un bruno quasi nero a una carta chiara. Non bianco pieno: sotto i
+        // muri di una planimetria abbaglia e mangia i contorni.
+        let brightness = 0.10 + (0.92 - 0.10) * light
+        // Il caldo cala salendo di luce, e cala anche in valore assoluto
+        // perché un fondo chiaro e saturo urla: a mezzogiorno resta neutro.
+        let saturation = warm * 0.16 * (1 - light * 0.75)
+
+        return Color(hue: Double(amberHue),
+                     saturation: Double(saturation),
+                     brightness: Double(brightness))
+    }
+
+    /// Il fondo modulato a partire dal colore scelto dall'utente.
+    ///
+    /// Resta per il caso in cui la luce circadiana è spenta e per chi ha un
+    /// disegno col proprio fondo cotto dentro: lì il colore scelto è ancora il
+    /// riferimento, e a luce zero torna esattamente sé stesso.
     nonisolated static func ground(base: Color, light cycle: Light) -> Color {
         let light = min(max(cycle.luminance, 0), 1)
 

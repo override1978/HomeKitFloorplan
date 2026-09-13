@@ -192,7 +192,7 @@ struct FloorplanListView: View {
             initialExteriorFillColorIndex: floorplan.exteriorFillColorIndex,
             initialVisualExportStyle: DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard,
             initialExportRotation: floorplan.drawingExportRotation
-        ) { image, rooms, doc, colorIndex, visualStyle, exportRotation in
+        ) { image, darkImage, rooms, doc, colorIndex, visualStyle, exportRotation in
             // Lo stesso coordinatore dell'altro punto di salvataggio. Qui c'era
             // una copia a mano che era **rimasta indietro** su tre cose: JPEG
             // invece del PNG lossless, contenimento stanza solo-rettangolo (il
@@ -206,6 +206,7 @@ struct FloorplanListView: View {
                 markerEditingCoordinator: markerCoordinator(for: floorplan)
             ).apply(
                 FloorplanDrawingUpdate(image: image,
+                                       darkImage: darkImage,
                                        rooms: rooms,
                                        document: doc,
                                        exteriorFillColorIndex: colorIndex,

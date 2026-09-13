@@ -2,6 +2,8 @@ import SwiftUI
 
 struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: View, EmptyContent: View, OverMarkerLayer: View>: View {
     let image: UIImage
+    /// La stessa planimetria in stile scuro, quando esiste.
+    let darkImage: UIImage?
     let containerSize: CGSize
     let chrome: FloorplanChromeLayout
     /// La luce che illumina il disegno. `.night` lascia il raster com'è.
@@ -22,6 +24,7 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
 
     init(
         image: UIImage,
+        darkImage: UIImage? = nil,
         containerSize: CGSize,
         chrome: FloorplanChromeLayout = .legacy,
         light: DaylightGround.Light = .night,
@@ -37,6 +40,7 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         @ViewBuilder overMarkerLayer: @escaping (CGSize, CGRect) -> OverMarkerLayer = { _, _ in EmptyView() }
     ) {
         self.image = image
+        self.darkImage = darkImage
         self.containerSize = containerSize
         self.chrome = chrome
         self.light = light
@@ -71,15 +75,33 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
             // sta qui e non più in alto perché marker, overlay e chrome non
             // devono riceverlo: i loro colori significano qualcosa e devono
             // restare quelli a qualunque ora.
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: rect.width, height: rect.height)
-                .brightness(light.imageBrightness)
-                .contrast(light.imageContrast)
-                .colorMultiply(light.imageTint)
-                .position(x: rect.midX, y: rect.midY)
-                .animation(.easeInOut(duration: 1.5), value: light)
+            ZStack {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: rect.width, height: rect.height)
+
+                // La variante scura sopra, in dissolvenza.
+                //
+                // Due raster incrociati e non uno commutato: fra chiaro e scuro
+                // non c'è una regolazione ma due disegni diversi — muri scuri su
+                // fondo chiaro, o il contrario — e scambiarli di colpo sarebbe
+                // uno scatto proprio dove tutto il resto è un passaggio.
+                // Attraversandosi, la planimetria diventa l'altra mentre la
+                // luce cala, come una stanza che si spegne.
+                if let darkImage {
+                    Image(uiImage: darkImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: rect.width, height: rect.height)
+                        .opacity(light.darkVariantOpacity)
+                }
+            }
+            .brightness(light.imageBrightness)
+            .contrast(light.imageContrast)
+            .colorMultiply(light.imageTint)
+            .position(x: rect.midX, y: rect.midY)
+            .animation(.easeInOut(duration: 1.5), value: light)
 
             if showOverlayLayer {
                 overlayLayer(containerSize, rect)

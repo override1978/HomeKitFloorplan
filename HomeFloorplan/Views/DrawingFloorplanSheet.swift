@@ -90,7 +90,7 @@ struct DrawingFloorplanSheet: View {
 
     /// Called when the user taps "Fatto" — provides the rendered PNG, linked rooms, drawing document,
     /// exterior-fill color index, and visual export style so the caller can persist them on the floorplan.
-    var onComplete: (UIImage, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle, DrawingExportRotation) -> Void
+    var onComplete: (UIImage, UIImage?, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle, DrawingExportRotation) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(HomeKitService.self) private var homeKit
@@ -107,7 +107,7 @@ struct DrawingFloorplanSheet: View {
          initialExteriorFillColorIndex: Int = -1,
          initialVisualExportStyle: DrawingVisualExportStyle = .standard,
          initialExportRotation: DrawingExportRotation = .asDrawn,
-         onComplete: @escaping (UIImage, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle, DrawingExportRotation) -> Void) {
+         onComplete: @escaping (UIImage, UIImage?, [LinkedRoom], DrawingDocument, Int, DrawingVisualExportStyle, DrawingExportRotation) -> Void) {
         self.onComplete = onComplete
         // La risanatura silenziosa: le giunzioni «quasi giuste» (fessure sotto
         // i 12 pt, invisibili a occhio) si saldano QUI, prima dello snapshot —
@@ -1077,8 +1077,34 @@ struct DrawingFloorplanSheet: View {
                 visualStyle: visualExportStyle,
                 exportRotation: exportRotation
             )
+
+            // La seconda variante: la stessa planimetria nell'altro registro.
+            //
+            // Si disegna solo con la modalità circadiana accesa, perché senza
+            // non la guarderebbe nessuno e costerebbe un raster in più per
+            // planimetria. E si disegna **qui**, dove il documento vettoriale è
+            // già in mano e il rendering è già in corso: rigenerarla a runtime
+            // vorrebbe dire ridisegnare due volte al giorno su ogni
+            // dispositivo, per un risultato che non cambia mai.
+            var counterpart: UIImage?
+            if isDaylightGroundEnabled {
+                let otherStyle: DrawingVisualExportStyle =
+                    visualExportStyle == .architecturalDark ? .architectural : .architecturalDark
+                counterpart = renderToImage(document,
+                                            mode: .adaptive,
+                                            visualStyle: otherStyle,
+                                            exportRotation: exportRotation).0
+            }
+
+            // Chi arriva a valle vuole sempre «chiara» e «scura», non «la tua»
+            // e «l'altra»: così non deve sapere quale dei due stili l'utente
+            // avesse scelto per rimetterle nell'ordine giusto.
+            let lightVariant = visualExportStyle == .architecturalDark ? (counterpart ?? image) : image
+            let darkVariant  = visualExportStyle == .architecturalDark ? image : counterpart
+
             clearSessionDraft()
-            onComplete(image, linkedRooms, document, exteriorFillColorIndex, visualExportStyle, exportRotation)
+            onComplete(lightVariant, darkVariant, linkedRooms, document,
+                       exteriorFillColorIndex, visualExportStyle, exportRotation)
             dismiss()
         }
     }
@@ -1480,5 +1506,5 @@ struct DrawingFloorplanSheet: View {
 // MARK: - Preview
 
 #Preview {
-    DrawingFloorplanSheet { _, _, _, _, _, _ in }
+    DrawingFloorplanSheet { _, _, _, _, _, _, _ in }
 }

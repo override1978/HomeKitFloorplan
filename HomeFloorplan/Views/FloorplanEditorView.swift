@@ -406,7 +406,8 @@ struct FloorplanEditorView: View {
 
 
     private var floorplanBackgroundColor: Color {
-        DaylightGround.ground(base: chosenBackgroundColor, light: currentLight)
+        guard isDaylightGroundEnabled else { return chosenBackgroundColor }
+        return DaylightGround.circadianGround(light: currentLight)
     }
 
     /// Il colore che l'utente ha scelto per questa planimetria.
@@ -1375,10 +1376,11 @@ struct FloorplanEditorView: View {
             initialExteriorFillColorIndex: floorplan.exteriorFillColorIndex,
             initialVisualExportStyle: DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard,
             initialExportRotation: floorplan.drawingExportRotation
-        ) { image, rooms, doc, colorIndex, visualStyle, exportRotation in
+        ) { image, darkImage, rooms, doc, colorIndex, visualStyle, exportRotation in
             applyDrawingUpdate(
                 FloorplanDrawingUpdate(
                     image: image,
+                    darkImage: darkImage,
                     rooms: rooms,
                     document: doc,
                     exteriorFillColorIndex: colorIndex,
@@ -1609,6 +1611,10 @@ struct FloorplanEditorView: View {
         // coordinate già trasposte — geometria, marker, tap, overlay.
         let isRotated = displayRotationActive(image: image, container: container)
         let displayImage = isRotated ? rotatedImageCache.rotated(for: image) : image
+        let darkDisplayImage: UIImage? = {
+            guard isDaylightGroundEnabled, let dark = imageCache.darkImage else { return nil }
+            return isRotated ? rotatedImageCache.rotated(for: dark) : dark
+        }()
         let rooms = displayRooms(rotated: isRotated)
 
         let rect = imageRect(imageSize: displayImage.size, container: container)
@@ -1620,6 +1626,7 @@ struct FloorplanEditorView: View {
             : (overlayVM?.activeMode == .controls && !controlsClusterModeActive)
         return FloorplanCanvasView(
             image: displayImage,
+            darkImage: darkDisplayImage,
             containerSize: container,
             chrome: chromeLayout(for: container),
             light: currentLight,
