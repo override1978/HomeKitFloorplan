@@ -284,7 +284,9 @@ final class HomeKitService: NSObject {
     func refreshObservedAccessories() {
         // Anche i sensori ambientali: sono la sorgente di HomeState, e un buco
         // nelle loro notifiche si vede come una stanza che diventa grigia.
-        for uuid in observedAccessoryUUIDs.union(environmentAccessoryUUIDs) {
+        for uuid in observedAccessoryUUIDs
+            .union(environmentAccessoryUUIDs)
+            .union(historyAccessoryUUIDs) {
             guard let accessory = accessory(for: uuid) else { continue }
 
             if let last = lastNotificationDates[uuid] {
@@ -311,6 +313,55 @@ final class HomeKitService: NSObject {
     /// chiudi, questi devono restare accesi finché l'app è viva — sono la
     /// sorgente di `HomeState`.
     private(set) var environmentAccessoryUUIDs: Set<UUID> = []
+
+    /// Sottoscrive tutto ciò che produce storia: sensori ambientali e
+    /// accessori che generano eventi.
+    ///
+    /// Sono due elenchi diversi con lo stesso problema. Le sottoscrizioni erano
+    /// limitate agli accessori **posati sulla planimetria aperta**, quindi una
+    /// lampada non ancora posizionata non consegnava mai un evento: per
+    /// qualunque cosa si costruisca sopra la storia — la corsia dei gesti, lo
+    /// scrub del passato — quella lampada sarebbe rimasta spenta per sempre. E
+    /// il guaio peggiore non è il buco: è che non si vede. Una giornata
+    /// parziale ha lo stesso aspetto di una giornata completa.
+    @MainActor
+    func observeHistorySources() {
+        observeEnvironmentSensors()
+        observeEventfulAccessories()
+    }
+
+    /// Sottoscrive le caratteristiche che diventano `AccessoryEvent`.
+    ///
+    /// Il filtro non è una lista scritta qui: è `AccessoryEventStore` a dire
+    /// quali caratteristiche producono un evento, così le due non divergono.
+    /// Un accessorio senza nessuna di quelle non viene toccato — sottoscriverlo
+    /// sarebbe un giro a vuoto su una casa da 135 dispositivi.
+    @MainActor
+    func observeEventfulAccessories() {
+        guard let home = currentHome else { return }
+        var touched = 0
+        for accessory in home.accessories {
+            var isEventful = false
+            for service in accessory.services {
+                for characteristic in service.characteristics
+                where AccessoryEventStore.producesEvents(characteristic) {
+                    if !isEventful {
+                        accessory.delegate = self
+                        isEventful = true
+                    }
+                    subscribe(to: characteristic)
+                }
+            }
+            if isEventful {
+                historyAccessoryUUIDs.insert(accessory.uniqueIdentifier)
+                touched += 1
+            }
+        }
+        dprint("📜 Storia: osservati \(touched) accessori che producono eventi")
+    }
+
+    /// Accessori osservati in permanenza perché producono storia.
+    private(set) var historyAccessoryUUIDs: Set<UUID> = []
 
     /// Sottoscrive tutti i sensori ambientali della casa, ovunque siano.
     ///
@@ -375,9 +426,14 @@ final class HomeKitService: NSObject {
                 // appartengono a questa osservazione ma a quella permanente di
                 // `observeEnvironmentSensors`. Chiudere la planimetria zittiva
                 // i sensori di una stanza e HomeState smetteva di sapere.
+                // Né le ambientali né quelle che producono storia si spengono
+                // qui: appartengono all'osservazione permanente, non a quella
+                // della planimetria aperta. Chiudere la mappa non deve far
+                // perdere eventi a nessuno.
                 for characteristic in service.characteristics
                 where characteristic.isNotificationEnabled
-                    && HomeState.sensorType(for: characteristic) == nil {
+                    && HomeState.sensorType(for: characteristic) == nil
+                    && !AccessoryEventStore.producesEvents(characteristic) {
                     characteristic.enableNotification(false) { _ in }
                 }
             }

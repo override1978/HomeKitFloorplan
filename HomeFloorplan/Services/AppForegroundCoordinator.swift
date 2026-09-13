@@ -121,7 +121,7 @@ struct AppForegroundCoordinator {
                     // del framework, e la semina raccoglie ciò che è già lì.
                     // I valori che arrivano dopo entrano da soli, perché la
                     // lettura iniziale alimenta HomeState anche lei.
-                    homeKit.observeEnvironmentSensors()
+                    homeKit.observeHistorySources()
                     homeKit.seedHomeState()
                     didSeedHomeState = true
                 }

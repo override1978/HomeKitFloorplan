@@ -105,6 +105,22 @@ final class AccessoryEventStore {
     // MARK: - DTO Factory
 
     // HAP UUID costanti (lowercase) — allineate con ActivityLoggerService
+    /// Le caratteristiche che producono un evento.
+    ///
+    /// Esposta perché è anche l'elenco di ciò che vale la pena **osservare**:
+    /// un accessorio che non ha nessuna di queste non genererà mai una riga di
+    /// storia, e sottoscriverlo sarebbe un giro a vuoto. Tenere il filtro qui
+    /// dentro, accanto a chi decide cosa diventa evento, è l'unico modo perché
+    /// le due liste non divergano.
+    nonisolated static func producesEvents(_ characteristic: HMCharacteristic) -> Bool {
+        eventCharacteristicTypes.contains(characteristic.characteristicType.lowercased())
+    }
+
+    nonisolated static let eventCharacteristicTypes: Set<String> = [
+        onUUID, targetPositionUUID, currentPositionUUID,
+        contactStateUUID, motionDetectedUUID, activeUUID
+    ]
+
     private static let onUUID             = "00000025-0000-1000-8000-0026bb765291"
     private static let brightnessUUID     = "00000008-0000-1000-8000-0026bb765291"
     private static let targetPositionUUID = "0000007c-0000-1000-8000-0026bb765291"
