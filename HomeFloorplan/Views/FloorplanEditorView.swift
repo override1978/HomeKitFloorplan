@@ -156,6 +156,8 @@ struct FloorplanEditorView: View {
     @State private var selectedGesture: HumanGesture?
     /// Il ridisegno della corsia in attesa, per non rifarlo a ogni lampada.
     @State private var gestureRefreshTask: Task<Void, Never>?
+    /// L'istante che il dito sta illuminando, mentre trascina la luce.
+    @State private var scrubbedInstant: Date?
 
     /// Il nastro compare solo quando si guarda la casa.
     ///
@@ -438,6 +440,7 @@ struct FloorplanEditorView: View {
     }
 
     private var illuminatedInstant: Date {
+        if let scrubbedInstant { return scrubbedInstant }
         guard !isShowingToday else { return dayClock }
         let calendar = Calendar.current
         let time = calendar.dateComponents([.hour, .minute, .second], from: dayClock)
@@ -609,7 +612,16 @@ struct FloorplanEditorView: View {
                           overlayVM?.showGestureDetail()
                       },
                       onShiftDay: { shiftDay(by: $0) },
-                      onReturnToday: { shiftDay(by: -dayOffset) })
+                      onReturnToday: { shiftDay(by: -dayOffset) },
+                      onScrubLight: { instant in
+                          // Senza animazione mentre il dito si muove: la luce
+                          // deve stare sotto il dito, e un'animazione da un
+                          // secondo e mezzo la farebbe arrivare quando il dito
+                          // è già altrove.
+                          var transaction = Transaction()
+                          transaction.disablesAnimations = true
+                          withTransaction(transaction) { scrubbedInstant = instant }
+                      })
         }
             .padding(.horizontal, 14)
             .padding(.top, 8)

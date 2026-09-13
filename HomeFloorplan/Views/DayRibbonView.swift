@@ -42,10 +42,18 @@ struct DayRibbonView: View {
     var onShiftDay: ((Int) -> Void)? = nil
     var onReturnToday: (() -> Void)? = nil
 
+    /// Tieni premuto e scorri: la casa si illumina come a quell'ora.
+    ///
+    /// `nil` al rilascio, per tornare ad adesso. Il nastro non sa cosa
+    /// significhi: si limita a dire dove sta il dito.
+    var onScrubLight: ((Date?) -> Void)? = nil
+
     @State private var selected: DayMoment?
     @State private var selectedGestureID: String?
     /// Quanto il nastro sta seguendo il dito in questo istante.
     @State private var dragOffset: CGFloat = 0
+    /// Dove sta il dito mentre si trascina la luce, in frazione di giornata.
+    @State private var scrubFraction: CGFloat?
 
     // MARK: Geometria
 
@@ -75,6 +83,10 @@ struct DayRibbonView: View {
 
     // MARK: Corpo
 
+    /// L'ultima larghezza misurata, per i gesti che vivono fuori dal
+    /// `GeometryReader` e devono comunque sapere quanto è largo il nastro.
+    @State private var lastWidth: CGFloat = 1
+
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
@@ -94,7 +106,10 @@ struct DayRibbonView: View {
                 }
 
                 if dayOffset == 0 { nowLine(width: width) }
+                if let scrubFraction { scrubLine(at: scrubFraction, width: width) }
             }
+            .onAppear { lastWidth = width }
+            .onChange(of: width) { _, new in lastWidth = new }
             .offset(x: dragOffset)
             // Il contenuto sbiadisce mentre si trascina: dice che quello che
             // stai guardando sta per non essere più valido, senza aspettare
@@ -108,6 +123,56 @@ struct DayRibbonView: View {
             selectedGestureID = nil
         }
         .gesture(dayDrag)
+        .simultaneousGesture(scrubGesture)
+    }
+
+    // MARK: Trascinare la luce
+
+    /// Tieni premuto, poi scorri: tutta la schermata si illumina come a quell'ora.
+    ///
+    /// Nasce da un'impossibilità pratica: la luce circadiana attraversa quattro
+    /// fasi nell'arco di una giornata, e senza un modo di muoverla si può
+    /// giudicare solo quella dell'ora in cui si guarda. Per vedere l'alba
+    /// bisognava alzarsi all'alba. Una funzionalità che non si può osservare
+    /// non si può nemmeno tarare.
+    ///
+    /// Preceduto da una pressione lunga perché il trascinamento orizzontale è
+    /// già dei giorni: senza, ogni scorrimento sarebbe ambiguo e uno dei due
+    /// gesti dovrebbe rinunciare. Premere prima dice «non voglio cambiare
+    /// giorno, voglio muovermi dentro questo».
+    ///
+    /// Muove solo la luce, non lo stato della casa: i marker restano quelli di
+    /// adesso. È una differenza che va tenuta onesta — ricostruire la casa a un
+    /// istante qualunque è un'altra cosa, e prometterla con lo stesso gesto
+    /// sarebbe la bugia più facile.
+    private var scrubGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.3)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                guard case .second(true, let drag?) = value else { return }
+                let width = max(lastWidth, 1)
+                let fraction = min(max(drag.location.x / width, 0), 1)
+                scrubFraction = fraction
+                onScrubLight?(day.start.addingTimeInterval(day.duration * Double(fraction)))
+            }
+            .onEnded { _ in
+                scrubFraction = nil
+                onScrubLight?(nil)
+            }
+    }
+
+    private func scrubLine(at fraction: CGFloat, width: CGFloat) -> some View {
+        let instant = day.start.addingTimeInterval(day.duration * Double(fraction))
+        return VStack(spacing: 1) {
+            Text(instant.formatted(date: .omitted, time: .shortened))
+                .font(.system(size: 9, weight: .bold).monospacedDigit())
+                .foregroundStyle(.orange)
+            Rectangle()
+                .fill(Color.orange)
+                .frame(width: 2, height: Self.axisY + Self.axisHeight - Self.labelRowHeight)
+        }
+        .position(x: min(max(fraction * width, 18), width - 18),
+                  y: (Self.axisY + Self.axisHeight) / 2 + 4)
     }
 
     // MARK: Trascinare i giorni
