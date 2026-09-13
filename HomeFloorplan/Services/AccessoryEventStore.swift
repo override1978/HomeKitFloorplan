@@ -21,6 +21,19 @@ final class AccessoryEventStore {
     /// Throttles the batch delete to once per hour instead of once per HomeKit notification.
     @ObservationIgnored private var lastCleanupDate: Date = .distantPast
 
+    /// L'istante dell'ultimo evento salvato, osservabile.
+    ///
+    /// Serve a una cosa sola: dire al nastro che è successo qualcosa. Prima la
+    /// corsia dei gesti si ricostruiva sul timer al minuto, e accendere una
+    /// luce non la faceva comparire finché non scadeva il minuto o non si
+    /// cambiava vista. Su una superficie di controllo è il difetto peggiore
+    /// possibile: mostra il passato recente e lo chiama presente.
+    ///
+    /// Un istante e non un contatore perché è anche leggibile in diagnostica, e
+    /// perché due eventi nello stesso millisecondo non hanno bisogno di essere
+    /// contati separatamente per ottenere un ridisegno.
+    private(set) var lastSavedAt: Date?
+
     // MARK: - Init
 
     init(modelContainer: ModelContainer) {
@@ -52,6 +65,7 @@ final class AccessoryEventStore {
             originRaw:     dto.origin
         )
         context.insert(event)
+        lastSavedAt = Date()
 
         // Batch delete throttled to once per hour — running a predicate-delete
         // on every HomeKit notification was blocking the main thread unnecessarily.

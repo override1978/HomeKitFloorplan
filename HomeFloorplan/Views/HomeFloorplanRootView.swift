@@ -140,6 +140,7 @@ struct HomeFloorplanRootView: View {
             homeState: services.homeState,
             calendarEvents: services.calendarEvents,
             automationSkips: services.automationSkips,
+            accessoryEventStore: services.accessoryEventStore,
             locale: AppLanguage.resolved(from: appLanguageRaw).locale
         )
     }
@@ -269,6 +270,7 @@ private struct AppEnvironmentModifier: ViewModifier {
     let homeState: HomeState
     let calendarEvents: CalendarEventsService
     let automationSkips: AutomationSkipStore
+    let accessoryEventStore: AccessoryEventStore
     let locale: Locale
 
     func body(content: Content) -> some View {
@@ -295,6 +297,7 @@ private struct AppEnvironmentModifier: ViewModifier {
             .environment(homeState)
             .environment(calendarEvents)
             .environment(automationSkips)
+            .environment(accessoryEventStore)
             .environment(\.locale, locale)
     }
 }

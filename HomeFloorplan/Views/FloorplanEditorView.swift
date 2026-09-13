@@ -119,6 +119,7 @@ struct FloorplanEditorView: View {
     @Environment(WeatherKitService.self) private var weatherKit
     @Environment(HomeKitAutomationsService.self) private var automationsService
     @Environment(CalendarEventsService.self) private var calendarEvents
+    @Environment(AccessoryEventStore.self) private var accessoryEvents
 
     // MARK: - Giornata della casa
 
@@ -134,6 +135,8 @@ struct FloorplanEditorView: View {
     @State private var dayClock = Date()
     @State private var selectedMoment: DayMoment?
     @State private var selectedGesture: HumanGesture?
+    /// Il ridisegno della corsia in attesa, per non rifarlo a ogni lampada.
+    @State private var gestureRefreshTask: Task<Void, Never>?
 
     /// Il nastro compare solo quando si guarda la casa.
     ///
@@ -180,6 +183,28 @@ struct FloorplanEditorView: View {
         // è il genere di costo che non si vede finché non diventa uno scatto
         // mentre si trascina un marker.
         dayGestures = isRibbonEligible ? loadGestures(day: day, now: now) : []
+    }
+
+    /// Ricostruisce la sola corsia dei gesti, poco dopo l'ultimo evento.
+    ///
+    /// Separato da `refreshDayMoments` perché i momenti costano molto di più —
+    /// attraversano ottantasette automazioni ed enumerano le occorrenze di
+    /// ciascuna — e non cambiano perché qualcuno ha acceso una luce.
+    ///
+    /// Il ritardo breve non è pigrizia: accendere i faretti dell'entrata sono
+    /// tre eventi in mezzo secondo, e ricostruire tre volte per disegnare lo
+    /// stesso rombo è lavoro buttato. Quattro decimi non si percepiscono e
+    /// fanno collassare la raffica in un ridisegno solo — che è anche il modo
+    /// in cui il gesto si forma davvero: non esiste finché non è finito.
+    private func scheduleGestureRefresh() {
+        guard isRibbonEligible else { return }
+        gestureRefreshTask?.cancel()
+        gestureRefreshTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            let now = Date()
+            dayGestures = loadGestures(day: AutomationsView.dayInterval(containing: now), now: now)
+        }
     }
 
     /// I gesti umani di oggi, letti dal registro eventi.
@@ -678,6 +703,10 @@ struct FloorplanEditorView: View {
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
             refreshDayMoments()
         }
+        // Il nastro reagisce all'evento, non all'orologio: una superficie di
+        // controllo che mostra con un minuto di ritardo ciò che hai appena
+        // fatto non sta mostrando il presente.
+        .onChange(of: accessoryEvents.lastSavedAt) { _, _ in scheduleGestureRefresh() }
         .onChange(of: automationsService.automations.count) { _, _ in refreshDayMoments() }
         .onChange(of: weatherKit.todaySunset) { _, _ in refreshDayMoments() }
         // La salute casa dipende dalla raggiungibilità: ricalcolo su evento
