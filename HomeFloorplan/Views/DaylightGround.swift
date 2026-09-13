@@ -76,6 +76,34 @@ enum DaylightGround {
         let warmth: Double
 
         static let night = Light(luminance: 0, warmth: 1)
+
+        /// Quanto schiarire il disegno della planimetria.
+        ///
+        /// Il disegno è un raster coi colori già cotti dentro, quindi se lo si
+        /// lascia fermo mentre il fondo si schiarisce diventa un rettangolo
+        /// scuro che galleggia su una tovaglia chiara — il difetto si vede
+        /// subito e rovina l'effetto invece di produrlo. La luce va data anche
+        /// a lui.
+        ///
+        /// Poco però: alzare la luminosità di un disegno scuro gli spegne il
+        /// contrasto, e la planimetria deve restare leggibile a qualunque ora.
+        /// Il grosso del segnale resta sul fondo e sul calore.
+        var imageBrightness: Double { 0.16 * luminance }
+
+        /// Un filo di contrasto in più, a compensare l'appiattimento.
+        var imageContrast: Double { 1 + 0.10 * luminance }
+
+        /// La tinta calda da moltiplicare sul disegno.
+        ///
+        /// Moltiplicare e non sovrapporre: un velo sopra coprirebbe i tratti
+        /// più sottili, mentre il prodotto scalda lasciando intatta la
+        /// geometria. Il bianco puro a mezzogiorno è l'identità, quindi di
+        /// giorno non succede niente.
+        var imageTint: Color {
+            Color(red: 1,
+                  green: 1 - 0.06 * warmth,
+                  blue: 1 - 0.14 * warmth)
+        }
     }
 
     nonisolated static func light(at instant: Date,
@@ -177,9 +205,15 @@ enum DaylightGround {
 
         // La luminanza di giorno non viene dal colore scelto ma dalla luce: un
         // fondo già scuro resterebbe scuro, e l'intera idea non si vedrebbe.
-        // Si sale verso una carta chiara, non verso il bianco — il bianco pieno
-        // sotto i muri di una planimetria abbaglia e mangia i contorni.
-        let dayBrightness: CGFloat = 0.90
+        //
+        // Ma nemmeno si sale fino alla carta. Il disegno della planimetria è un
+        // raster scuro che si può schiarire solo fin dove regge il contrasto, e
+        // un fondo che diventasse bianco lascerebbe comunque un rettangolo
+        // d'inchiostro in mezzo a una tovaglia: due materiali diversi invece di
+        // una stanza illuminata. Il tetto è quello che il disegno sa seguire.
+        // Da 0,12 a 0,42 il valore più che triplica — si vede benissimo — e i
+        // due strati restano parenti.
+        let dayBrightness: CGFloat = 0.42
         let targetBrightness = brightness + (dayBrightness - brightness) * CGFloat(light)
 
         // Salendo di luce il fondo si smorza: un colore saturo che diventa

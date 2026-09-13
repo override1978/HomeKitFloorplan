@@ -4,6 +4,8 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
     let image: UIImage
     let containerSize: CGSize
     let chrome: FloorplanChromeLayout
+    /// La luce che illumina il disegno. `.night` lascia il raster com'è.
+    let light: DaylightGround.Light
     let showOverlayLayer: Bool
     let showEditLayer: Bool
     let showMarkers: Bool
@@ -22,6 +24,7 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         image: UIImage,
         containerSize: CGSize,
         chrome: FloorplanChromeLayout = .legacy,
+        light: DaylightGround.Light = .night,
         showOverlayLayer: Bool,
         showEditLayer: Bool,
         showMarkers: Bool,
@@ -36,6 +39,7 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         self.image = image
         self.containerSize = containerSize
         self.chrome = chrome
+        self.light = light
         self.showOverlayLayer = showOverlayLayer
         self.showEditLayer = showEditLayer
         self.showMarkers = showMarkers
@@ -59,11 +63,23 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         ZStack(alignment: .topLeading) {
             Color.clear
 
+            // La luce cade sul disegno, non solo attorno.
+            //
+            // Il raster ha i colori cotti dentro: lasciandolo fermo mentre il
+            // fondo si schiarisce diventa un rettangolo scuro su una tovaglia
+            // chiara, che è il difetto che si vede per primo. Il trattamento
+            // sta qui e non più in alto perché marker, overlay e chrome non
+            // devono riceverlo: i loro colori significano qualcosa e devono
+            // restare quelli a qualunque ora.
             Image(uiImage: image)
                 .resizable()
                 .scaledToFit()
                 .frame(width: rect.width, height: rect.height)
+                .brightness(light.imageBrightness)
+                .contrast(light.imageContrast)
+                .colorMultiply(light.imageTint)
                 .position(x: rect.midX, y: rect.midY)
+                .animation(.easeInOut(duration: 1.5), value: light)
 
             if showOverlayLayer {
                 overlayLayer(containerSize, rect)

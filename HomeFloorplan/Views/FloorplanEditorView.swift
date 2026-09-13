@@ -1622,6 +1622,7 @@ struct FloorplanEditorView: View {
             image: displayImage,
             containerSize: container,
             chrome: chromeLayout(for: container),
+            light: currentLight,
             showOverlayLayer: (overlayVM != nil || placementModel != nil) && !ui.isEditing,
             showEditLayer: ui.isEditing && !floorplan.linkedRooms.isEmpty,
             showMarkers: showMarkers,

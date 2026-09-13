@@ -149,14 +149,30 @@ struct DaylightGroundTests {
     @Test("Di giorno il fondo schiarisce davvero, anche partendo dal buio")
     func dayLiftsEvenADarkBase() {
         let base = Color(hue: 0.6, saturation: 0.2, brightness: 0.12)
-        let day = DaylightGround.ground(base: base, light: noonLight)
-        #expect(hsb(day).b > 0.8, "un fondo scuro che resta scuro renderebbe l'idea invisibile")
+        let day = hsb(DaylightGround.ground(base: base, light: noonLight))
+        // Più che triplicato rispetto alla base: si vede benissimo. Ma non si
+        // arriva alla carta, perché il disegno della planimetria è un raster
+        // scuro che non può seguire fin lassù, e resterebbe un rettangolo
+        // d'inchiostro su una tovaglia.
+        #expect(day.b > 0.35, "un fondo scuro che resta scuro renderebbe l'idea invisibile")
+        #expect(day.b < 0.55, "oltre, il disegno non riesce a starle dietro")
     }
 
     @Test("Il fondo non diventa mai bianco pieno")
     func neverPureWhite() {
         let base = Color(hue: 0, saturation: 0, brightness: 0.1)
-        #expect(hsb(DaylightGround.ground(base: base, light: noonLight)).b < 0.95)
+        #expect(hsb(DaylightGround.ground(base: base, light: noonLight)).b < 0.6)
+    }
+
+    @Test("Anche il disegno riceve la luce, ma con misura")
+    func theDrawingIsLitToo() {
+        // Senza questo il raster resta fermo mentre il fondo si muove, e
+        // diventa un rettangolo scuro che galleggia.
+        #expect(noonLight.imageBrightness > 0.1)
+        #expect(DaylightGround.Light.night.imageBrightness == 0,
+                "di notte il disegno è quello che hai esportato, intatto")
+        // Di giorno la tinta è l'identità: moltiplicare per bianco non fa nulla.
+        #expect(noonLight.imageTint == Color(red: 1, green: 1, blue: 1))
     }
 
     @Test("Salendo di luce il fondo si smorza invece di accendersi")
@@ -195,12 +211,14 @@ struct DaylightGroundTests {
         #expect(hsb(golden).s < 0.12, "l'arancione satura nell'app vuol dire attenzione")
     }
 
-    @Test("La luminanza attraversa la soglia che ribalta il tema della chrome")
-    func chromeWillFlip() {
-        // Non è un dettaglio: sotto e sopra 0.5 la chrome cambia tema da sola,
-        // ed è ciò che tiene leggibile il testo mentre il fondo si muove.
+    @Test("Il fondo resta sotto la soglia che ribalta il tema della chrome")
+    func chromeStaysDark() {
         let base = Color(hue: 0.6, saturation: 0.2, brightness: 0.12)
         #expect(hsb(DaylightGround.ground(base: base, light: .night)).b < 0.5)
-        #expect(hsb(DaylightGround.ground(base: base, light: noonLight)).b > 0.5)
+        // A 0,42 la chrome resta sul tema scuro tutto il giorno: è una
+        // conseguenza voluta del tetto più basso, non una svista. Il pannello
+        // non ribalta più il tema a metà mattina, e il testo non deve
+        // riadattarsi due volte al giorno.
+        #expect(hsb(DaylightGround.ground(base: base, light: noonLight)).b < 0.5)
     }
 }
