@@ -19,6 +19,9 @@ struct AppearanceSettingsView: View {
     @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
     private var isLiquidGlassEnabled: Bool = false
 
+    @AppStorage(AppAppearanceSettings.daylightGroundKey)
+    private var isDaylightGroundEnabled: Bool = true
+
     /// Timeout salvo in secondi. Default 90s (= 1m 30s).
     @AppStorage("idleTimeout")
     private var idleTimeoutSeconds: Double = 90
@@ -64,6 +67,19 @@ struct AppearanceSettingsView: View {
                         }
                     } icon: {
                         Image(systemName: "sparkles.rectangle.stack")
+                    }
+                }
+
+                Toggle(isOn: $isDaylightGroundEnabled) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(String(localized: "settings.appearance.daylight", defaultValue: "Luce del giorno"))
+                            Text(String(localized: "settings.appearance.daylight.subtitle", defaultValue: "Il fondo della planimetria schiarisce all'alba e si spegne al tramonto."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "sun.horizon")
                     }
                 }
             } header: {

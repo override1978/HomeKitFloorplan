@@ -2,6 +2,8 @@ import SwiftUI
 
 enum AppAppearanceSettings {
     static let liquidGlassEnabledKey = "appearance.liquidGlassEnabled"
+    /// Il fondo della planimetria segue il sole. Acceso di default.
+    static let daylightGroundKey = "appearance.daylightGround"
 }
 
 private struct LiquidGlassSuppressionKey: EnvironmentKey {

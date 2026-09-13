@@ -406,12 +406,48 @@ struct FloorplanEditorView: View {
 
 
     private var floorplanBackgroundColor: Color {
+        DaylightGround.ground(base: chosenBackgroundColor, daylight: currentDaylight)
+    }
+
+    /// Il colore che l'utente ha scelto per questa planimetria.
+    ///
+    /// Resta il riferimento: è la notte, e a luce zero il fondo torna
+    /// esattamente lui. Il giorno si aggiunge sopra, non lo sostituisce.
+    private var chosenBackgroundColor: Color {
         let visualStyle = DrawingVisualExportStyle(rawValue: floorplan.drawingVisualExportStyleRaw) ?? .standard
         if visualStyle == .architecturalDark {
             return DrawingVisualExportStyle.architecturalDarkBackgroundColor
         }
         return ExteriorFillPalette(rawValue: floorplan.exteriorFillColorIndex).map { $0.swiftUIColor } ?? Color.white
     }
+
+    /// Quanta luce c'è nell'istante che il nastro sta illuminando.
+    ///
+    /// Un solo ingresso di proposito. Oggi vale «adesso», e guardando un altro
+    /// giorno vale la stessa ora di quel giorno — che non è una scorciatoia: le
+    /// otto di sera di dicembre e di giugno sono due luci diverse, ed è
+    /// esattamente ciò che il fondo deve saper dire. Quando arriverà lo scrub
+    /// sarà lui a muovere questo valore, e non ci sarà altro da cambiare.
+    private var currentDaylight: Double {
+        guard isDaylightGroundEnabled else { return 0 }
+        let solar = daySolarTimes
+        return DaylightGround.daylight(at: illuminatedInstant,
+                                       sunrise: solar.todaySunrise,
+                                       sunset: solar.todaySunset)
+    }
+
+    private var illuminatedInstant: Date {
+        guard !isShowingToday else { return dayClock }
+        let calendar = Calendar.current
+        let time = calendar.dateComponents([.hour, .minute, .second], from: dayClock)
+        return calendar.date(bySettingHour: time.hour ?? 12,
+                             minute: time.minute ?? 0,
+                             second: time.second ?? 0,
+                             of: visibleDay.start) ?? visibleDay.start
+    }
+
+    @AppStorage(AppAppearanceSettings.daylightGroundKey)
+    private var isDaylightGroundEnabled = true
 
     /// Tema della chrome flottante, dedotto dalla **planimetria** e non da iOS.
     ///
@@ -464,6 +500,11 @@ struct FloorplanEditorView: View {
                 // superficie — si vedeva un'ombra al confine (feedback 27/08).
                 floorplanBackgroundColor
                     .ignoresSafeArea()
+                    // Un minuto alla volta il passo è minuscolo, ma il cambio
+                    // di tema della chrome attorno a metà luminanza è uno
+                    // scatto: animarlo lo rende un'alba invece di un
+                    // interruttore.
+                    .animation(.easeInOut(duration: 1.5), value: currentDaylight)
 
                 HStack(spacing: 0) {
                     mapColumn
