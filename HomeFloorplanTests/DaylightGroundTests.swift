@@ -22,17 +22,22 @@ struct DaylightGroundTests {
     private var sunrise: Date { time(7, 0) }
     private var sunset: Date { time(19, 30) }
 
+    private var noonLight: DaylightGround.Light {
+        DaylightGround.Light(luminance: 1, warmth: 0)
+    }
+
     private func light(_ hour: Int, _ minute: Int = 0) -> Double {
         DaylightGround.daylight(at: time(hour, minute), sunrise: sunrise, sunset: sunset)
     }
 
     // MARK: La curva
 
-    @Test("A mezzanotte e alle tre non c'è luce")
+    @Test("A notte fonda non c'è luce")
     func nightIsDark() {
-        #expect(light(0) == 0)
         #expect(light(3) == 0)
-        #expect(light(23) == 0)
+        #expect(light(5) == 0)
+        // Le undici di sera no: lì la casa è ancora accesa.
+        #expect(light(23) > 0)
     }
 
     @Test("Mezzogiorno è il massimo della giornata")
@@ -47,10 +52,42 @@ struct DaylightGroundTests {
     func twilightExtendsBeyondTheHorizon() {
         // Venti minuti prima dell'alba si vede già qualcosa.
         #expect(light(6, 40) > 0)
-        // Un'ora prima no.
+        // Un'ora prima no: prima dell'alba la casa dorme, e il fondo è nero.
         #expect(light(6, 0) == 0)
-        #expect(light(19, 50) > 0)
-        #expect(light(20, 30) == 0)
+    }
+
+    @Test("La sera non crolla a zero quando finisce il crepuscolo")
+    func eveningHoldsAfterTwilight() {
+        // Il difetto da cui nasce tutto questo: alle 20:50 lo schermo era già
+        // notte piena, mentre in casa c'erano le lampade accese.
+        let evening = light(20, 50)
+        #expect(evening > 0.15, "in casa c'è ancora qualcuno sveglio")
+        #expect(evening < light(19, 0), "ma meno che al tramonto")
+    }
+
+    @Test("La giornata è asimmetrica, come lo è davvero")
+    func morningAndEveningDiffer() {
+        // Stessa distanza dall'orizzonte: buio al mattino, ancora luce la sera.
+        // Al mattino c'è solo il sole; la sera ci sono anche le lampade.
+        #expect(light(6, 10) == 0)
+        #expect(light(20, 20) > 0)
+    }
+
+    @Test("A notte fonda si arriva davvero a zero")
+    func deepNightReachesZero() {
+        #expect(light(1, 0) == 0)
+        #expect(light(3, 0) == 0)
+    }
+
+    @Test("Fra il tramonto e la notte fonda non ci sono salti")
+    func eveningDescendsWithoutSteps() {
+        var previous = light(19, 0)
+        for minutes in stride(from: 19 * 60 + 15, through: 24 * 60 + 30, by: 15) {
+            let current = light(minutes / 60 % 24, minutes % 60)
+            #expect(current <= previous + 0.0001, "risalita a \(minutes / 60):\(minutes % 60)")
+            #expect(previous - current < 0.12, "salto a \(minutes / 60):\(minutes % 60)")
+            previous = current
+        }
     }
 
     @Test("All'alba c'è poca luce, non zero e non tanta")
@@ -90,46 +127,71 @@ struct DaylightGroundTests {
         return (h, s, b)
     }
 
-    @Test("A luce zero il colore scelto torna intatto")
+    @Test("A luce zero un colore scelto torna intatto")
     func nightKeepsTheChosenColor() {
+        // Saturazione sopra la soglia: è una tinta voluta, e resta tale.
         let base = Color(hue: 0.6, saturation: 0.2, brightness: 0.12)
-        let ground = DaylightGround.ground(base: base, daylight: 0)
-        #expect(hsb(ground).b == hsb(base).b)
-        #expect(hsb(ground).s == hsb(base).s)
+        let ground = DaylightGround.ground(base: base, light: .night)
+        #expect(abs(hsb(ground).b - hsb(base).b) < 0.001)
+        #expect(abs(hsb(ground).s - hsb(base).s) < 0.001)
+        #expect(abs(hsb(ground).h - hsb(base).h) < 0.001)
+    }
+
+    @Test("Un fondo neutro invece la notte si scalda, come una lampada")
+    func neutralBaseWarmsAtNight() {
+        let base = Color(hue: 0, saturation: 0, brightness: 0.12)
+        let night = hsb(DaylightGround.ground(base: base, light: .night))
+        #expect(night.s > 0.05, "la notte circadiana è ambra, non grigio")
+        #expect(night.s < 0.2, "ma un'ambra scurissima, non un allarme")
+        #expect(abs(night.b - 0.12) < 0.001, "e la luminosità resta quella scelta")
     }
 
     @Test("Di giorno il fondo schiarisce davvero, anche partendo dal buio")
     func dayLiftsEvenADarkBase() {
         let base = Color(hue: 0.6, saturation: 0.2, brightness: 0.12)
-        let day = DaylightGround.ground(base: base, daylight: 1)
+        let day = DaylightGround.ground(base: base, light: noonLight)
         #expect(hsb(day).b > 0.8, "un fondo scuro che resta scuro renderebbe l'idea invisibile")
     }
 
     @Test("Il fondo non diventa mai bianco pieno")
     func neverPureWhite() {
         let base = Color(hue: 0, saturation: 0, brightness: 0.1)
-        #expect(hsb(DaylightGround.ground(base: base, daylight: 1)).b < 0.95)
+        #expect(hsb(DaylightGround.ground(base: base, light: noonLight)).b < 0.95)
     }
 
     @Test("Salendo di luce il fondo si smorza invece di accendersi")
     func brighterMeansLessSaturated() {
         let base = Color(hue: 0.08, saturation: 0.5, brightness: 0.15)
-        let night = hsb(DaylightGround.ground(base: base, daylight: 0.02))
-        let noon = hsb(DaylightGround.ground(base: base, daylight: 1))
+        let night = hsb(DaylightGround.ground(base: base, light: .night))
+        let noon = hsb(DaylightGround.ground(base: base, light: noonLight))
         #expect(noon.s < night.s, "un fondo chiaro E saturo competerebbe con gli allarmi")
     }
 
-    @Test("Il caldo sta all'orizzonte e da nessun'altra parte")
-    func warmthOnlyNearTheHorizon() {
-        #expect(DaylightGround.warmth(daylight: 0.25) > 0.9)
-        #expect(DaylightGround.warmth(daylight: 1) == 0)
-        #expect(DaylightGround.warmth(daylight: 0) < 0.4)
+    @Test("Il caldo segue il sole al contrario: massimo di notte")
+    func warmthIsCircadian() {
+        #expect(DaylightGround.warmth(solar: 0) == 1)
+        #expect(DaylightGround.warmth(solar: 1) == 0)
+        // Monotona: non deve esistere un punto in cui risalendo il sole
+        // il fondo si riscalda.
+        var previous = DaylightGround.warmth(solar: 0)
+        for step in 1...20 {
+            let current = DaylightGround.warmth(solar: Double(step) / 20)
+            #expect(current <= previous)
+            previous = current
+        }
+    }
+
+    @Test("A metà giornata il caldo è già quasi sparito")
+    func warmthFadesEarly() {
+        #expect(DaylightGround.warmth(solar: 0.5) < 0.35,
+                "un fondo beige tutto il giorno è gusto, non informazione")
     }
 
     @Test("Anche al massimo del caldo la saturazione resta bassa")
     func warmthNeverShouts() {
         let base = Color(hue: 0, saturation: 0, brightness: 0.1)
-        let golden = DaylightGround.ground(base: base, daylight: 0.25)
+        let golden = DaylightGround.ground(base: base,
+                                           light: DaylightGround.Light(luminance: 0.28, warmth: 0.6))
         #expect(hsb(golden).s < 0.12, "l'arancione satura nell'app vuol dire attenzione")
     }
 
@@ -138,7 +200,7 @@ struct DaylightGroundTests {
         // Non è un dettaglio: sotto e sopra 0.5 la chrome cambia tema da sola,
         // ed è ciò che tiene leggibile il testo mentre il fondo si muove.
         let base = Color(hue: 0.6, saturation: 0.2, brightness: 0.12)
-        #expect(hsb(DaylightGround.ground(base: base, daylight: 0)).b < 0.5)
-        #expect(hsb(DaylightGround.ground(base: base, daylight: 1)).b > 0.5)
+        #expect(hsb(DaylightGround.ground(base: base, light: .night)).b < 0.5)
+        #expect(hsb(DaylightGround.ground(base: base, light: noonLight)).b > 0.5)
     }
 }

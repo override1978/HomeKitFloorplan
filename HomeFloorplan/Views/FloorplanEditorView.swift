@@ -406,7 +406,7 @@ struct FloorplanEditorView: View {
 
 
     private var floorplanBackgroundColor: Color {
-        DaylightGround.ground(base: chosenBackgroundColor, daylight: currentDaylight)
+        DaylightGround.ground(base: chosenBackgroundColor, light: currentLight)
     }
 
     /// Il colore che l'utente ha scelto per questa planimetria.
@@ -428,12 +428,12 @@ struct FloorplanEditorView: View {
     /// otto di sera di dicembre e di giugno sono due luci diverse, ed è
     /// esattamente ciò che il fondo deve saper dire. Quando arriverà lo scrub
     /// sarà lui a muovere questo valore, e non ci sarà altro da cambiare.
-    private var currentDaylight: Double {
-        guard isDaylightGroundEnabled else { return 0 }
+    private var currentLight: DaylightGround.Light {
+        guard isDaylightGroundEnabled else { return .night }
         let solar = daySolarTimes
-        return DaylightGround.daylight(at: illuminatedInstant,
-                                       sunrise: solar.todaySunrise,
-                                       sunset: solar.todaySunset)
+        return DaylightGround.light(at: illuminatedInstant,
+                                    sunrise: solar.todaySunrise,
+                                    sunset: solar.todaySunset)
     }
 
     private var illuminatedInstant: Date {
@@ -504,7 +504,7 @@ struct FloorplanEditorView: View {
                     // di tema della chrome attorno a metà luminanza è uno
                     // scatto: animarlo lo rende un'alba invece di un
                     // interruttore.
-                    .animation(.easeInOut(duration: 1.5), value: currentDaylight)
+                    .animation(.easeInOut(duration: 1.5), value: currentLight)
 
                 HStack(spacing: 0) {
                     mapColumn
