@@ -132,6 +132,19 @@ struct DrawingFloorplanSheet: View {
     @State private var furnitureKind: FurnitureKind = .generic
     @AppStorage("drawing.export.visualStyle") private var visualExportStyleRaw: String = DrawingVisualExportStyle.standard.rawValue
     @AppStorage("drawing.help.hasSeen") private var hasSeenDrawingHelp = false
+
+    /// Lo stesso interruttore che decide il fondo circadiano decide anche
+    /// l'export.
+    ///
+    /// Parametrico e non sempre: con la modalità spenta l'immagine porta il
+    /// proprio fondo come ha sempre fatto, e vince il colore scelto per la
+    /// planimetria — nessuna differenza rispetto a prima per chi non ha chiesto
+    /// niente. Con la modalità accesa il fondo esce dall'immagine ed entra
+    /// nell'app, dove può cambiare con l'ora.
+    @AppStorage(AppAppearanceSettings.daylightGroundKey)
+    private var isDaylightGroundEnabled: Bool = true
+
+    private var exportsTransparentBackground: Bool { isDaylightGroundEnabled }
     @State private var exteriorFillColorIndex: Int = -1
     @State private var exportRotation: DrawingExportRotation = .asDrawn
     /// When false, wall drawing snaps only to the 20pt grid (no vertex snapping).
@@ -1198,8 +1211,10 @@ struct DrawingFloorplanSheet: View {
         let image = renderer.image { ctx in
             let cgCtx = ctx.cgContext
 
-            cgCtx.setFillColor(outputBackgroundColor.cgColor)
-            cgCtx.fill(CGRect(origin: .zero, size: outputSize))
+            if !exportsTransparentBackground {
+                cgCtx.setFillColor(outputBackgroundColor.cgColor)
+                cgCtx.fill(CGRect(origin: .zero, size: outputSize))
+            }
 
             // Transform: shift to crop origin, then scale to fit output size
             cgCtx.translateBy(x: -originX * scaleFactor, y: -originY * scaleFactor)
@@ -1209,7 +1224,8 @@ struct DrawingFloorplanSheet: View {
                            in: cgCtx,
                            canvasSize: DrawingDocument.canvasSize,
                            exteriorFillColorIndex: exteriorFillColorIndex,
-                           visualStyle: visualStyle)
+                           visualStyle: visualStyle,
+                           transparentBackground: exportsTransparentBackground)
         }
         return (image, linkedRooms)
     }
@@ -1438,8 +1454,10 @@ struct DrawingFloorplanSheet: View {
 
         let image = renderer.image { ctx in
             let cgCtx = ctx.cgContext
-            cgCtx.setFillColor(outputBackgroundColor.cgColor)
-            cgCtx.fill(CGRect(origin: .zero, size: outputSize))
+            if !exportsTransparentBackground {
+                cgCtx.setFillColor(outputBackgroundColor.cgColor)
+                cgCtx.fill(CGRect(origin: .zero, size: outputSize))
+            }
             cgCtx.saveGState()
             cgCtx.translateBy(x: outputW / 2, y: outputH / 2)
             cgCtx.rotate(by: rotationAngle)
@@ -1450,7 +1468,8 @@ struct DrawingFloorplanSheet: View {
                            canvasSize: DrawingDocument.canvasSize,
                            exteriorFillColorIndex: exteriorFillColorIndex,
                            visualStyle: visualStyle,
-                           drawText: exportRotation == .asDrawn)
+                           drawText: exportRotation == .asDrawn,
+                           transparentBackground: exportsTransparentBackground)
             cgCtx.restoreGState()
             drawUprightExportText(in: cgCtx)
         }

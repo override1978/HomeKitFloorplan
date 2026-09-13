@@ -358,23 +358,39 @@ func drawGrid(in rect: CGRect,
 /// The export has a plain white background — no grid — so the result is clean
 /// when used as a floorplan background image.
 /// Call from inside a `UIGraphicsImageRenderer` block.
+/// - Parameter transparentBackground: disegna senza fondo, lasciando l'alfa.
+///   Serve alla modalità circadiana: se il raster porta con sé il proprio
+///   fondo, resta fermo mentre la luce attorno cambia e diventa un rettangolo
+///   scuro che galleggia. Senza, la luce viva passa da dietro e il disegno
+///   smette di essere un'immagine incollata sopra per diventare il piano di
+///   una stanza illuminata.
+///
+///   I fondi delle stanze sono disegnati a parte, quindi qui sparisce solo
+///   l'esterno — che è esattamente la parte che deve mostrare la luce.
 func renderDocument(_ doc: DrawingDocument,
                     in cgContext: CGContext,
                     canvasSize: CGFloat,
                     exteriorFillColorIndex: Int = -1,
                     visualStyle: DrawingVisualExportStyle = .standard,
-                    drawText: Bool = true) {
+                    drawText: Bool = true,
+                    transparentBackground: Bool = false) {
     if visualStyle == .architecturalDark {
-        renderDarkArchitecturalDocument(doc, in: cgContext, canvasSize: canvasSize, drawText: drawText)
+        renderDarkArchitecturalDocument(doc, in: cgContext, canvasSize: canvasSize,
+                                        drawText: drawText,
+                                        transparentBackground: transparentBackground)
         return
     }
 
-    // White background only — no grid in the exported image
-    cgContext.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-    cgContext.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
+    if !transparentBackground {
+        // White background only — no grid in the exported image
+        cgContext.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        cgContext.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
 
-    if exteriorFillColorIndex >= 0 {
-        drawExteriorFillCG(doc, context: cgContext, canvasSize: canvasSize, colorIndex: exteriorFillColorIndex)
+        // Il riempimento esterno È il fondo: senza di lui la luce viva prende
+        // il suo posto, che è il punto di tutta la faccenda.
+        if exteriorFillColorIndex >= 0 {
+            drawExteriorFillCG(doc, context: cgContext, canvasSize: canvasSize, colorIndex: exteriorFillColorIndex)
+        }
     }
 
     // Room areas (behind walls and depth shadow)
@@ -452,9 +468,12 @@ private enum DarkArchitecturalPalette {
 private func renderDarkArchitecturalDocument(_ doc: DrawingDocument,
                                              in context: CGContext,
                                              canvasSize: CGFloat,
-                                             drawText: Bool = true) {
-    context.setFillColor(DarkArchitecturalPalette.background.cgColor)
-    context.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
+                                             drawText: Bool = true,
+                                             transparentBackground: Bool = false) {
+    if !transparentBackground {
+        context.setFillColor(DarkArchitecturalPalette.background.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
+    }
 
     for (index, area) in doc.roomAreas.enumerated() {
         drawDarkRoomAreaCG(area, index: index, context: context, drawText: drawText)
