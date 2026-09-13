@@ -40,6 +40,23 @@ struct HumanGesture: Identifiable, Equatable, Sendable {
     var isMostlyOn: Bool {
         changes.filter(\.state).count > changes.count / 2
     }
+
+    /// Come si chiama un gesto quando lo si guarda da lontano.
+    ///
+    /// Un gesto non ha un nome: ha una lista di comandi. Ma sul nastro e in
+    /// testa al pannello serve una riga sola, e la cosa che distingue due gesti
+    /// della stessa giornata è quasi sempre **dove** sono successi.
+    var shortTitle: String {
+        let rooms = roomNames
+        switch rooms.count {
+        case 0:  return changes.first?.accessoryName ?? String(localized: "gesture.untitled", defaultValue: "Comandi")
+        case 1:  return rooms[0]
+        case 2:  return "\(rooms[0]), \(rooms[1])"
+        default: return String(format: String(localized: "gesture.rooms.more",
+                                              defaultValue: "%@ e altre %d stanze"),
+                               rooms[0], rooms.count - 1)
+        }
+    }
 }
 
 // MARK: - HumanGestureBuilder
@@ -127,6 +144,47 @@ enum HumanGestureBuilder {
         }
         if !current.isEmpty { gestures.append(makeGesture(from: current)) }
         return gestures
+    }
+
+    /// Fonde più gesti in uno solo.
+    ///
+    /// Serve al nastro, non alle regole: la finestra di raggruppamento è di
+    /// tre minuti, ma su ventiquattr'ore compresse in ottocento punti tre
+    /// minuti sono meno di due punti. Due rombi che si sovrappongono sono già
+    /// una cosa sola per l'occhio, e devono esserlo anche per il dito —
+    /// altrimenti si tocca quello sotto e si apre quello sopra.
+    static func merge(_ gestures: [HumanGesture]) -> HumanGesture {
+        guard gestures.count > 1, let first = gestures.min(by: { $0.at < $1.at }) else {
+            return gestures.first ?? HumanGesture(id: "gesture@empty", at: Date(), changes: [])
+        }
+        var latest: [UUID: HumanGesture.Change] = [:]
+        for change in gestures.flatMap(\.changes).sorted(by: { $0.at < $1.at }) {
+            latest[change.accessoryUUID] = change
+        }
+        return HumanGesture(id: first.id,
+                            at: first.at,
+                            changes: latest.values.sorted { $0.at < $1.at })
+    }
+
+    /// Il nome da proporre quando un gesto diventa una scena.
+    ///
+    /// Proporre un nome e non chiederlo a freddo: un campo vuoto davanti a
+    /// «come la chiami?» è il punto in cui si abbandona. «Sera in Soggiorno» è
+    /// già giusto abbastanza da premere Salva senza pensarci, e resta
+    /// modificabile per chi vuole.
+    static func suggestedName(for gesture: HumanGesture,
+                              calendar: Calendar = .current) -> String {
+        let hour = calendar.component(.hour, from: gesture.at)
+        let moment: String
+        switch hour {
+        case 5...11:  moment = String(localized: "gesture.part.morning",   defaultValue: "Mattina")
+        case 12...17: moment = String(localized: "gesture.part.afternoon", defaultValue: "Pomeriggio")
+        case 18...22: moment = String(localized: "gesture.part.evening",   defaultValue: "Sera")
+        default:      moment = String(localized: "gesture.part.night",     defaultValue: "Notte")
+        }
+        guard let room = gesture.roomNames.first else { return moment }
+        return String(format: String(localized: "gesture.suggestedName",
+                                     defaultValue: "%@ in %@"), moment, room)
     }
 
     // MARK: - Private

@@ -129,6 +129,8 @@ struct FloorplanDockedContextPanel: View {
     var adapterMap: [UUID: any AccessoryAdapter] = [:]
     /// Il momento scelto sul nastro, quando il pannello lo sta mostrando.
     var selectedMoment: DayMoment? = nil
+    /// Il gesto scelto nella corsia sotto l'asse.
+    var selectedGesture: HumanGesture? = nil
     /// Fascia riservata alla chrome a piena larghezza (opzione A, 27/08): il
     /// contenuto parte sotto di lei, come la mappa. Il vetro della barra
     /// scorre anche su questa colonna.
@@ -143,7 +145,8 @@ struct FloorplanDockedContextPanel: View {
                 floorplan: floorplan,
                 environmentViewModel: environmentViewModel,
                 adapterMap: adapterMap,
-                selectedMoment: selectedMoment
+                selectedMoment: selectedMoment,
+                selectedGesture: selectedGesture
             )
             .padding(.horizontal, 12)
             .padding(.top, 8)

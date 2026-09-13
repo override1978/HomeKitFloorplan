@@ -130,8 +130,10 @@ struct FloorplanEditorView: View {
     /// altre cache del file — si rifà quando cambia qualcosa, non a ogni
     /// render.
     @State private var dayMoments: [DayMoment] = []
+    @State private var dayGestures: [HumanGesture] = []
     @State private var dayClock = Date()
     @State private var selectedMoment: DayMoment?
+    @State private var selectedGesture: HumanGesture?
 
     /// Il nastro compare solo quando si guarda la casa.
     ///
@@ -143,7 +145,16 @@ struct FloorplanEditorView: View {
     /// sotto non starebbero. L'iPhone vuole una forma sua, non questa
     /// rimpicciolita.
     private var showsDayRibbon: Bool {
-        !isCompactScreen && !ui.isEditing && placementModel == nil && !dayMoments.isEmpty
+        isRibbonEligible && !(dayMoments.isEmpty && dayGestures.isEmpty)
+    }
+
+    /// Le condizioni di contesto, senza quelle di contenuto.
+    ///
+    /// Separata da `showsDayRibbon` perché serve *prima* di sapere se c'è
+    /// qualcosa da mostrare: è la condizione che decide se vale la pena
+    /// andarlo a cercare.
+    private var isRibbonEligible: Bool {
+        !isCompactScreen && !ui.isEditing && placementModel == nil
     }
 
     private var daySolarTimes: NextFireResolver.SolarTimes {
@@ -164,6 +175,44 @@ struct FloorplanEditorView: View {
                                        automations: automationsService.today(now: now, solar: daySolarTimes),
                                        solar: daySolarTimes,
                                        calendarEntries: calendarEvents.todayEntries)
+        // La corsia si legge solo quando c'è: in modifica e nel flusso guidato
+        // il nastro non è a schermo, e una query al minuto per disegnare niente
+        // è il genere di costo che non si vede finché non diventa uno scatto
+        // mentre si trascina un marker.
+        dayGestures = isRibbonEligible ? loadGestures(day: day, now: now) : []
+    }
+
+    /// I gesti umani di oggi, letti dal registro eventi.
+    ///
+    /// La finestra è il giorno e non «gli ultimi N»: la corsia deve coprire
+    /// esattamente lo stesso arco dell'asse sopra, altrimenti un pomeriggio
+    /// vuoto potrebbe voler dire «nessuno ha toccato niente» oppure «il limite
+    /// si è esaurito prima», e le due cose non si distinguerebbero guardando.
+    private func loadGestures(day: DateInterval, now: Date) -> [HumanGesture] {
+        let start = day.start
+        let end = day.end
+        var descriptor = FetchDescriptor<AccessoryEvent>(
+            predicate: #Predicate { $0.timestamp >= start && $0.timestamp < end },
+            sortBy: [SortDescriptor(\.timestamp, order: .forward)])
+        // Tetto di sicurezza, non una finestra: una giornata normale ne produce
+        // qualche centinaio, e se una casa impazzita ne producesse diecimila
+        // meglio un nastro incompleto che un frame perso sulla planimetria.
+        descriptor.fetchLimit = 3_000
+        guard let events = try? modelContext.fetch(descriptor) else { return [] }
+
+        let raw = events.map { event in
+            HumanGestureBuilder.RawChange(accessoryUUID: event.accessoryID,
+                                          accessoryName: event.accessoryName,
+                                          roomName: event.roomName,
+                                          state: event.state,
+                                          brightness: event.brightness,
+                                          eventType: event.eventType,
+                                          at: event.timestamp,
+                                          origin: event.originRaw)
+        }
+        return HumanGestureBuilder.build(from: raw,
+                                         scheduledFires: dayMoments.filter(\.isAutomationKind).map(\.at),
+                                         now: now)
     }
 
     /// Stessa sorgente e semantica di SecurityOverlayView: solo i sensori
@@ -330,6 +379,7 @@ struct FloorplanEditorView: View {
                             environmentViewModel: overlayEnvVM,
                             adapterMap: currentAdapterMap(),
                             selectedMoment: selectedMoment,
+                            selectedGesture: selectedGesture,
                             topInset: chromeLayout(for: outer.size).topInset
                         )
                         .frame(width: FloorplanDockedContextPanel.width)
@@ -401,9 +451,14 @@ struct FloorplanEditorView: View {
                       now: dayClock,
                       sunrise: weatherKit.todaySunrise,
                       sunset: weatherKit.todaySunset,
+                      gestures: dayGestures,
                       onSelect: { moment in
                           selectedMoment = moment
                           overlayVM?.showMomentDetail()
+                      },
+                      onSelectGesture: { gesture in
+                          selectedGesture = gesture
+                          overlayVM?.showGestureDetail()
                       })
             .padding(.horizontal, 14)
             .padding(.top, 10)

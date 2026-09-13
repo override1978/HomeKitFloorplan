@@ -119,6 +119,9 @@ final class FloorplanOverlayViewModel {
         /// vista che li costruisce. Qui basta sapere *cosa* il pannello sta
         /// mostrando, ed è la regola che tiene questo enum piccolo.
         case moment
+        /// Un gesto umano, scelto dalla corsia sotto l'asse. Senza payload
+        /// per la stessa ragione di `.moment`.
+        case gesture
     }
 
     /// Espande una stanza (tab Controlli) e comprime l'eventuale precedente.
@@ -142,6 +145,16 @@ final class FloorplanOverlayViewModel {
     /// è una regola che non serve spiegare a nessuno.
     func showMomentDetail() {
         panelContent = .moment
+        if !isPanelVisible {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+                isPanelVisible = true
+            }
+        }
+    }
+
+    /// Apre il dettaglio di un gesto umano.
+    func showGestureDetail() {
+        panelContent = .gesture
         if !isPanelVisible {
             withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
                 isPanelVisible = true

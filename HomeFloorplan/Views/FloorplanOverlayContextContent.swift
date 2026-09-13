@@ -12,6 +12,8 @@ struct FloorplanContextDashboardRouter: View {
     var adapterMap: [UUID: any AccessoryAdapter] = [:]
     /// Il momento scelto sul nastro, quando il pannello lo sta mostrando.
     var selectedMoment: DayMoment? = nil
+    /// Il gesto scelto nella corsia sotto l'asse.
+    var selectedGesture: HumanGesture? = nil
 
     var body: some View {
         VStack(spacing: 14) {
@@ -21,6 +23,8 @@ struct FloorplanContextDashboardRouter: View {
             // ogni adapter già espone, con le letture come ripiego.
             if case .moment = overlayVM.panelContent, let selectedMoment {
                 FloorplanMomentPanelContent(moment: selectedMoment, overlayVM: overlayVM)
+            } else if case .gesture = overlayVM.panelContent, let selectedGesture {
+                FloorplanGesturePanelContent(gesture: selectedGesture, overlayVM: overlayVM)
             } else if case .device(let accessoryID) = overlayVM.panelContent,
                let adapter = adapterMap[accessoryID] {
                 if let thermostat = adapter as? (any ThermostatControlling) {

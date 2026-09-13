@@ -566,6 +566,75 @@ final class HomeKitScenesService {
         return SceneItem(actionSet: actionSet)
     }
 
+    /// Crea una scena catturando lo stato finale di un gesto.
+    ///
+    /// È il verbo che dà senso alla corsia dei gesti: hai sistemato il
+    /// soggiorno a mano come piace a te, l'app se n'è accorta, e ti offre di
+    /// renderlo ripetibile. Il salto da «osservare» a «imparare» sta tutto
+    /// qui, e la macchina per farlo c'era già — mancava solo il momento in cui
+    /// proporlo.
+    ///
+    /// Si salva lo stato **finale**, non la sequenza: una scena è una
+    /// configurazione, non una registrazione di gesti.
+    @discardableResult
+    func createScene(named name: String, capturing changes: [HumanGesture.Change]) async throws -> SceneItem {
+        guard let home = homeKit.currentHome else {
+            throw NSError(domain: "HomeKitScenesService", code: 5,
+                          userInfo: [NSLocalizedDescriptionKey: "HomeKit home not available"])
+        }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw NSError(domain: "HomeKitScenesService", code: 6,
+                          userInfo: [NSLocalizedDescriptionKey: String(localized: "scene.editor.error.emptyName", defaultValue: "The scene needs a name")])
+        }
+
+        let actionSet = try await addActionSet(named: trimmed, to: home)
+        for change in changes {
+            guard let accessory = homeKit.accessory(for: change.accessoryUUID),
+                  let power = Self.powerCharacteristic(of: accessory) else { continue }
+            try await add(HMCharacteristicWriteAction(characteristic: power,
+                                                      targetValue: NSNumber(value: change.state)),
+                          to: actionSet)
+            // La luminosità solo se la luce resta accesa: registrare un livello
+            // su una luce spenta è un'istruzione che si contraddice.
+            if change.state, let brightness = change.brightness,
+               let dimmer = Self.brightnessCharacteristic(of: accessory) {
+                try await add(HMCharacteristicWriteAction(characteristic: dimmer,
+                                                          targetValue: NSNumber(value: Int((brightness * 100).rounded()))),
+                              to: actionSet)
+            }
+        }
+        refresh()
+        return SceneItem(actionSet: actionSet)
+    }
+
+    /// La caratteristica di accensione di un accessorio, qualunque nome porti.
+    ///
+    /// Due UUID e non uno: i dispositivi «attivi» — ventilatori, purificatori,
+    /// umidificatori — usano `Active` invece di `PowerState`, ed erano
+    /// esattamente quelli che sparivano quando si cercava solo il secondo.
+    nonisolated static func powerCharacteristic(of accessory: HMAccessory) -> HMCharacteristic? {
+        let wanted: Set<String> = ["00000025-0000-1000-8000-0026bb765291",
+                                   "000000b0-0000-1000-8000-0026bb765291"]
+        for service in accessory.services {
+            for characteristic in service.characteristics
+            where wanted.contains(characteristic.characteristicType.lowercased()) {
+                return characteristic
+            }
+        }
+        return nil
+    }
+
+    nonisolated static func brightnessCharacteristic(of accessory: HMAccessory) -> HMCharacteristic? {
+        for service in accessory.services {
+            for characteristic in service.characteristics
+            where characteristic.characteristicType.lowercased() == "00000008-0000-1000-8000-0026bb765291" {
+                return characteristic
+            }
+        }
+        return nil
+    }
+
     func deleteUserScene(_ scene: SceneItem) async throws {
         guard let home = homeKit.currentHome else {
             throw NSError(domain: "HomeKitScenesService", code: 5,

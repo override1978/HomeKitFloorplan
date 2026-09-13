@@ -23,11 +23,20 @@ struct DayRibbonView: View {
     var sunrise: Date?
     var sunset: Date?
 
+    /// I gesti umani della giornata: la corsia sotto l'asse.
+    ///
+    /// Sopra la riga c'è la casa che si muove da sola, sotto le persone che la
+    /// muovono. Sono due voci diverse e stanno da parti diverse, così non c'è
+    /// bisogno di una legenda per capire chi ha fatto cosa.
+    var gestures: [HumanGesture] = []
+
     /// Chi riceve la selezione. Il nastro non sa cosa farne: se ne occupa chi
     /// lo ospita, che è l'unico a sapere se c'è un pannello dove metterla.
     var onSelect: ((DayMoment) -> Void)? = nil
+    var onSelectGesture: ((HumanGesture) -> Void)? = nil
 
     @State private var selected: DayMoment?
+    @State private var selectedGestureID: String?
 
     // MARK: Geometria
 
@@ -42,7 +51,10 @@ struct DayRibbonView: View {
     private static let stalkHeight: CGFloat = 20
     private static let axisY: CGFloat = stalkTop + stalkHeight
     private static let axisHeight: CGFloat = 10
-    private static let totalHeight: CGFloat = axisY + axisHeight + 14
+    /// La corsia dei gesti, appena sotto l'asse.
+    static let gestureLaneY: CGFloat = axisY + axisHeight + 9
+    private static let hourLabelY: CGFloat = gestureLaneY + 15
+    static let totalHeight: CGFloat = hourLabelY + 9
 
     private func color(for moment: DayMoment) -> Color {
         switch moment.kind {
@@ -68,12 +80,19 @@ struct DayRibbonView: View {
                     marker(placement, width: width)
                 }
 
+                ForEach(Self.lane(gestures, width: width, fraction: fraction), id: \.gesture.id) { placement in
+                    diamond(placement, width: width)
+                }
+
                 nowLine(width: width)
             }
         }
         .frame(height: Self.totalHeight)
         .contentShape(Rectangle())
-        .onTapGesture { selected = nil }
+        .onTapGesture {
+            selected = nil
+            selectedGestureID = nil
+        }
     }
 
     // MARK: Cornice del giorno
@@ -123,7 +142,7 @@ struct DayRibbonView: View {
                 .font(.system(size: 9, weight: .medium).monospacedDigit())
                 .foregroundStyle(.tertiary)
                 .position(x: min(max(x, 10), width - 10),
-                          y: Self.axisY + Self.axisHeight + 8)
+                          y: Self.hourLabelY)
         }
     }
 
@@ -182,6 +201,97 @@ struct DayRibbonView: View {
                 .frame(width: isSelected ? 2 : 1.2, height: Self.stalkHeight)
         }
         .offset(x: -4, y: Self.stalkTop - 8)
+    }
+
+    // MARK: Gesti
+
+    /// Un rombo per ogni gesto, grande quanto il gesto è stato ampio.
+    ///
+    /// Rombo e non cerchio: la differenza di forma è l'unico modo per cui la
+    /// corsia si legge anche coprendo metà del nastro con una mano, e non
+    /// dipende dal colore — che qui deve restare libero di significare
+    /// dell'altro. La dimensione segue il numero di comandi perché «ho spento
+    /// una luce» e «ho sistemato tutto il piano» non sono lo stesso gesto, e
+    /// l'unica differenza che si può mostrare senza etichette è quanto spazio
+    /// occupano.
+    private func diamond(_ placement: GesturePlacement, width: CGFloat) -> some View {
+        let gesture = placement.gesture
+        let isSelected = selectedGestureID == gesture.id
+        let side = Self.diamondSide(changeCount: gesture.changes.count) + (isSelected ? 3 : 0)
+
+        return Rectangle()
+            .fill(Self.gestureTint.opacity(isSelected ? 1 : 0.75))
+            .frame(width: side, height: side)
+            .rotationEffect(.degrees(45))
+            .overlay {
+                if isSelected {
+                    Rectangle()
+                        .strokeBorder(Self.gestureTint, lineWidth: 1)
+                        .frame(width: side + 6, height: side + 6)
+                        .rotationEffect(.degrees(45))
+                }
+            }
+            // Il bersaglio del dito è sempre più grande del rombo: un rombo da
+            // sette punti è leggibile ma non toccabile, e ridurre il disegno a
+            // ciò che le dita richiedono farebbe della corsia una fila di
+            // bolloni.
+            .frame(width: 30, height: 26)
+            .contentShape(Rectangle())
+            .position(x: placement.x, y: Self.gestureLaneY)
+            .onTapGesture {
+                selected = nil
+                if isSelected {
+                    selectedGestureID = nil
+                } else {
+                    selectedGestureID = gesture.id
+                    onSelectGesture?(gesture)
+                }
+            }
+    }
+
+    private static let gestureTint = Color.teal
+
+    nonisolated static func diamondSide(changeCount: Int) -> CGFloat {
+        min(7 + CGFloat(max(changeCount - 1, 0)) * 1.4, 13)
+    }
+
+    struct GesturePlacement {
+        let gesture: HumanGesture
+        let x: CGFloat
+    }
+
+    /// Colloca i gesti sull'asse, fondendo quelli che finirebbero uno sull'altro.
+    ///
+    /// La fusione è visiva, non semantica: le regole di raggruppamento stanno
+    /// in `HumanGestureBuilder` e ragionano in minuti, qui si ragiona in punti
+    /// perché è lo schermo a decidere cosa si distingue. Su ventiquattr'ore
+    /// larghe ottocento punti, tre minuti sono meno di due punti: senza questo
+    /// passaggio due gesti vicini diventerebbero un rombo che ne nasconde un
+    /// altro, e toccandolo si aprirebbe quello sbagliato.
+    static func lane(_ gestures: [HumanGesture],
+                     width: CGFloat,
+                     fraction: (Date) -> CGFloat,
+                     minSpacing: CGFloat = 26) -> [GesturePlacement] {
+        let sorted = gestures.sorted { $0.at < $1.at }
+        guard !sorted.isEmpty else { return [] }
+
+        var groups: [[HumanGesture]] = []
+        var currentX: CGFloat = -.greatestFiniteMagnitude
+
+        for gesture in sorted {
+            let x = fraction(gesture.at) * width
+            if x - currentX < minSpacing, !groups.isEmpty {
+                groups[groups.count - 1].append(gesture)
+            } else {
+                groups.append([gesture])
+                currentX = x
+            }
+        }
+
+        return groups.map { group in
+            let merged = group.count == 1 ? group[0] : HumanGestureBuilder.merge(group)
+            return GesturePlacement(gesture: merged, x: fraction(merged.at) * width)
+        }
     }
 
     private func nowLine(width: CGFloat) -> some View {
