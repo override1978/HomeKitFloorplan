@@ -4,7 +4,12 @@ import Observation
 
 // MARK: - Retention constants
 // Stored in a caseless enum so they are never inferred as @MainActor-isolated.
-private enum DLCRetention {
+//
+// Non più `private`: il nastro deve sapere fin dove può tornare indietro, e la
+// risposta è esattamente questa soglia. Averla in due posti vorrebbe dire che
+// il giorno che si alza la potatura, il nastro continua a offrire giorni che
+// non esistono più.
+enum DLCRetention {
     nonisolated static let sensorRaw        = 30
     nonisolated static let accessoryRaw     = 30
     nonisolated static let effectivenessRaw = 90

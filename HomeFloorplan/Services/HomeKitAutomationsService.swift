@@ -930,8 +930,25 @@ final class HomeKitAutomationsService {
                calendar: Calendar = .current) -> [ScheduledFire] {
         let start = calendar.startOfDay(for: now)
         let end = calendar.startOfDay(for: now.addingTimeInterval(24 * 3600))
-        let day = DateInterval(start: start, end: end)
+        return fires(in: DateInterval(start: start, end: end), now: now,
+                     solar: solar, calendar: calendar)
+    }
 
+    /// Gli scatti previsti dentro un intervallo qualunque.
+    ///
+    /// Era `today` e basta, con il giorno ricavato da `now`. Separare i due
+    /// concetti è ciò che permette al nastro di mostrare ieri: il giorno che si
+    /// guarda e l'istante in cui lo si guarda smettono di essere la stessa
+    /// cosa, ed è `now` a decidere cosa è passato — non il giorno.
+    ///
+    /// Attenzione a cosa questo può e non può dire: enumera le occorrenze delle
+    /// automazioni **di adesso**. Su un giorno passato è una ricostruzione di
+    /// ciò che era previsto, non un registro di ciò che è successo. Se
+    /// un'automazione è nata stamattina, comparirà anche su martedì scorso.
+    func fires(in day: DateInterval,
+               now: Date = Date(),
+               solar: NextFireResolver.SolarTimes,
+               calendar: Calendar = .current) -> [ScheduledFire] {
         return automations.flatMap { item -> [ScheduledFire] in
             guard item.isEnabled,
                   let schedule = NextFireResolver.schedule(for: item.trigger)

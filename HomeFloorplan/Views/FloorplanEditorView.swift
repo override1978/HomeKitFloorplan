@@ -130,6 +130,25 @@ struct FloorplanEditorView: View {
     /// rivaluta a ogni gesto sulla mappa. Qui vale la stessa disciplina delle
     /// altre cache del file — si rifà quando cambia qualcosa, non a ogni
     /// render.
+    /// Quanti giorni si è distanti da oggi. Zero è oggi.
+    @State private var dayOffset: Int = 0
+
+    /// Fin dove si può tornare indietro: dove finisce l'archivio.
+    ///
+    /// Trenta giorni è la soglia di potatura di `AccessoryEvent`. Oltre, la
+    /// corsia dei gesti sarebbe vuota e sembrerebbe «non hai fatto niente»
+    /// invece di «non lo so più» — che è la differenza fra un'informazione e
+    /// una bugia.
+    private static let maxDaysBack = DLCRetention.accessoryRaw
+
+    /// Fin dove si può andare avanti.
+    ///
+    /// Sette giorni perché la ricorrenza settimanale è il ciclo più lungo che
+    /// le automazioni HomeKit esprimono: l'ottavo giorno non mostrerebbe niente
+    /// che il primo non abbia già mostrato. Di là è speculazione su una casa
+    /// che nel frattempo sarà cambiata.
+    private static let maxDaysForward = 7
+
     @State private var dayMoments: [DayMoment] = []
     @State private var dayGestures: [HumanGesture] = []
     @State private var dayClock = Date()
@@ -148,7 +167,7 @@ struct FloorplanEditorView: View {
     /// sotto non starebbero. L'iPhone vuole una forma sua, non questa
     /// rimpicciolita.
     private var showsDayRibbon: Bool {
-        isRibbonEligible && !(dayMoments.isEmpty && dayGestures.isEmpty)
+        isRibbonEligible && (!isShowingToday || !(dayMoments.isEmpty && dayGestures.isEmpty))
     }
 
     /// Le condizioni di contesto, senza quelle di contenuto.
@@ -160,22 +179,67 @@ struct FloorplanEditorView: View {
         !isCompactScreen && !ui.isEditing && placementModel == nil
     }
 
+    /// Il giorno che il nastro sta mostrando.
+    private var visibleDay: DateInterval { visibleDay(at: dayClock) }
+
+    /// Esplicito sull'istante da cui contare, perché chi ricostruisce ha già
+    /// `now` in mano e non deve dipendere dall'ordine in cui aggiorna lo stato.
+    private func visibleDay(at instant: Date) -> DateInterval {
+        let anchor = Calendar.current.date(byAdding: .day, value: dayOffset, to: instant) ?? instant
+        return AutomationsView.dayInterval(containing: anchor)
+    }
+
+    private var isShowingToday: Bool { dayOffset == 0 }
+
+    /// Alba e tramonto del giorno visibile, e del successivo.
+    ///
+    /// Per oggi e domani comanda WeatherKit: tiene conto di rifrazione ed
+    /// elevazione meglio di qualunque formula, e su quei due giorni la risposta
+    /// ce l'ha già. Per tutti gli altri si calcola. Non è un ripiego uniforme
+    /// applicato ovunque per coerenza: è usare il dato migliore dove esiste.
     private var daySolarTimes: NextFireResolver.SolarTimes {
-        NextFireResolver.SolarTimes(todaySunrise: weatherKit.todaySunrise,
-                                    todaySunset: weatherKit.todaySunset,
-                                    tomorrowSunrise: weatherKit.tomorrowSunrise,
-                                    tomorrowSunset: weatherKit.tomorrowSunset)
+        if isShowingToday {
+            return NextFireResolver.SolarTimes(todaySunrise: weatherKit.todaySunrise,
+                                               todaySunset: weatherKit.todaySunset,
+                                               tomorrowSunrise: weatherKit.tomorrowSunrise,
+                                               tomorrowSunset: weatherKit.tomorrowSunset)
+        }
+        guard let coordinates = SolarCalculator.homeCoordinates else {
+            return NextFireResolver.SolarTimes(todaySunrise: nil, todaySunset: nil,
+                                               tomorrowSunrise: nil, tomorrowSunset: nil)
+        }
+        let day = visibleDay
+        let today = SolarCalculator.events(on: day.start, at: coordinates)
+        let tomorrow = SolarCalculator.events(on: day.end, at: coordinates)
+        return NextFireResolver.SolarTimes(todaySunrise: today.sunrise,
+                                           todaySunset: today.sunset,
+                                           tomorrowSunrise: tomorrow.sunrise,
+                                           tomorrowSunset: tomorrow.sunset)
+    }
+
+    /// Sposta la finestra, entro i limiti di ciò che si può dire davvero.
+    private func shiftDay(by delta: Int) {
+        let target = max(-Self.maxDaysBack, min(Self.maxDaysForward, dayOffset + delta))
+        guard target != dayOffset else { return }
+        dayOffset = target
+        selectedMoment = nil
+        selectedGesture = nil
+        if overlayVM?.panelContent == .moment || overlayVM?.panelContent == .gesture {
+            overlayVM?.closeDetailContent()
+        }
+        refreshDayMoments()
     }
 
     private func refreshDayMoments() {
         let now = Date()
         dayClock = now
-        let day = AutomationsView.dayInterval(containing: now)
+        let day = visibleDay(at: now)
         if automationsService.automations.isEmpty { automationsService.refresh() }
         calendarEvents.refresh(day: day)
         dayMoments = DayTimeline.build(day: day,
                                        now: now,
-                                       automations: automationsService.today(now: now, solar: daySolarTimes),
+                                       automations: automationsService.fires(in: day, now: now,
+                                                                             solar: daySolarTimes),
                                        solar: daySolarTimes,
                                        calendarEntries: calendarEvents.todayEntries)
         // La corsia si legge solo quando c'è: in modifica e nel flusso guidato
@@ -183,6 +247,10 @@ struct FloorplanEditorView: View {
         // è il genere di costo che non si vede finché non diventa uno scatto
         // mentre si trascina un marker.
         dayGestures = isRibbonEligible ? loadGestures(day: day, now: now) : []
+        // Un giorno vuoto è un risultato, non un errore: se non si mostrasse il
+        // nastro tornare indietro sembrerebbe rotto, e non ci sarebbe più modo
+        // di andare oltre.
+        
     }
 
     /// Ricostruisce la sola corsia dei gesti, poco dopo l'ultimo evento.
@@ -197,13 +265,15 @@ struct FloorplanEditorView: View {
     /// fanno collassare la raffica in un ridisegno solo — che è anche il modo
     /// in cui il gesto si forma davvero: non esiste finché non è finito.
     private func scheduleGestureRefresh() {
-        guard isRibbonEligible else { return }
+        // Un evento di adesso non cambia ieri: mentre si guarda un altro
+        // giorno il nastro sta fermo, com'è giusto che sia.
+        guard isRibbonEligible, isShowingToday else { return }
         gestureRefreshTask?.cancel()
         gestureRefreshTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
             let now = Date()
-            dayGestures = loadGestures(day: AutomationsView.dayInterval(containing: now), now: now)
+            dayGestures = loadGestures(day: visibleDay, now: now)
         }
     }
 
@@ -473,11 +543,14 @@ struct FloorplanEditorView: View {
     /// cui i badge dell'overlay hanno smesso di essere di vetro.
     private var dayRibbonCard: some View {
         DayRibbonView(moments: dayMoments.filter { !$0.isSolarKind },
-                      day: AutomationsView.dayInterval(containing: dayClock),
+                      day: visibleDay,
                       now: dayClock,
-                      sunrise: weatherKit.todaySunrise,
-                      sunset: weatherKit.todaySunset,
+                      sunrise: daySolarTimes.todaySunrise,
+                      sunset: daySolarTimes.todaySunset,
                       gestures: dayGestures,
+                      dayOffset: dayOffset,
+                      canGoBack: dayOffset > -Self.maxDaysBack,
+                      canGoForward: dayOffset < Self.maxDaysForward,
                       onSelect: { moment in
                           selectedMoment = moment
                           overlayVM?.showMomentDetail()
@@ -485,7 +558,9 @@ struct FloorplanEditorView: View {
                       onSelectGesture: { gesture in
                           selectedGesture = gesture
                           overlayVM?.showGestureDetail()
-                      })
+                      },
+                      onShiftDay: { shiftDay(by: $0) },
+                      onReturnToday: { shiftDay(by: -dayOffset) })
             .padding(.horizontal, 14)
             .padding(.top, 10)
             .padding(.bottom, 6)

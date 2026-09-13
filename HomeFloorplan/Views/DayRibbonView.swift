@@ -32,8 +32,15 @@ struct DayRibbonView: View {
 
     /// Chi riceve la selezione. Il nastro non sa cosa farne: se ne occupa chi
     /// lo ospita, che è l'unico a sapere se c'è un pannello dove metterla.
+    /// A quanti giorni da oggi siamo, e fin dove ci si può spingere.
+    var dayOffset: Int = 0
+    var canGoBack: Bool = false
+    var canGoForward: Bool = false
+
     var onSelect: ((DayMoment) -> Void)? = nil
     var onSelectGesture: ((HumanGesture) -> Void)? = nil
+    var onShiftDay: ((Int) -> Void)? = nil
+    var onReturnToday: (() -> Void)? = nil
 
     @State private var selected: DayMoment?
     @State private var selectedGestureID: String?
@@ -84,7 +91,11 @@ struct DayRibbonView: View {
                     diamond(placement, width: width)
                 }
 
-                nowLine(width: width)
+                if dayOffset == 0 {
+                    nowLine(width: width)
+                } else {
+                    dayBadge(width: width)
+                }
             }
         }
         .frame(height: Self.totalHeight)
@@ -92,6 +103,60 @@ struct DayRibbonView: View {
         .onTapGesture {
             selected = nil
             selectedGestureID = nil
+        }
+        // Trascinare il nastro cambia giorno.
+        //
+        // È il gesto che il nastro chiede da solo — è un asse orizzontale, e
+        // un asse orizzontale si spinge — e non costa nessuna chrome in più su
+        // una superficie dove lo spazio è già tutto assegnato. La soglia è
+        // generosa perché sul nastro si tocca anche: sotto i quaranta punti
+        // era un tocco storto, non un trascinamento.
+        .gesture(
+            DragGesture(minimumDistance: 40)
+                .onEnded { value in
+                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                    let backwards = value.translation.width > 0
+                    if backwards, canGoBack { onShiftDay?(-1) }
+                    if !backwards, canGoForward { onShiftDay?(1) }
+                }
+        )
+    }
+
+    /// La data, al posto dell'ora, quando non si guarda oggi.
+    ///
+    /// Prende esattamente il posto della linea di «adesso» perché è la stessa
+    /// domanda — *quando siamo?* — e perché fuori da oggi quella linea non
+    /// avrebbe dove stare: «adesso» non cade dentro un giorno che non è questo.
+    ///
+    /// Ed è toccabile: è l'unica via di ritorno. Senza, si può finire in una
+    /// giornata di tre settimane fa senza capire come tornare — e a quel punto
+    /// il nastro ha smesso di essere una finestra ed è diventato un labirinto.
+    private func dayBadge(width: CGFloat) -> some View {
+        Button {
+            onReturnToday?()
+        } label: {
+            HStack(spacing: 5) {
+                Text(Self.dayLabel(offset: dayOffset, day: day.start))
+                    .font(.system(size: 10, weight: .semibold))
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .foregroundStyle(BrandColor.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(BrandColor.primary.opacity(0.14), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .position(x: width / 2, y: Self.labelRowHeight)
+    }
+
+    /// «Ieri», «Domani», o la data. Le parole dove esistono, la data dove no.
+    nonisolated static func dayLabel(offset: Int, day: Date) -> String {
+        switch offset {
+        case 0:  return String(localized: "ribbon.day.today", defaultValue: "Oggi")
+        case -1: return String(localized: "ribbon.day.yesterday", defaultValue: "Ieri")
+        case 1:  return String(localized: "ribbon.day.tomorrow", defaultValue: "Domani")
+        default: return day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
         }
     }
 
