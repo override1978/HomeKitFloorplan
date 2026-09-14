@@ -175,3 +175,66 @@ struct SpanDurationTextTests {
         #expect(FloorplanSpanPanelContent.durationText(-100) == "0 min")
     }
 }
+
+/// Le righe: due periodi sovrapposti non stanno mai sulla stessa.
+@Suite("Le corsie dei periodi")
+struct SpanLaneTests {
+
+    private let base = Date(timeIntervalSinceReferenceDate: 0)
+    private func at(_ hour: Double) -> Date { base.addingTimeInterval(hour * 3600) }
+
+    private func span(_ name: String, _ from: Double, _ to: Double?) -> DaySpan {
+        DaySpan(id: name, accessoryUUID: UUID(), name: name, roomName: nil,
+                eventType: "airPurifier", start: at(from),
+                end: to.map(at), startsBeforeWindow: false)
+    }
+
+    @Test("Periodi che non si toccano stanno tutti sulla prima riga")
+    func disjointShareOneLane() {
+        let placed = DayRibbonView.assignLanes([span("a", 1, 2), span("b", 5, 6), span("c", 9, 10)],
+                                               now: at(12))
+        #expect(placed.allSatisfy { $0.lane == 0 })
+    }
+
+    @Test("Periodi sovrapposti finiscono su righe diverse")
+    func overlappingGetOwnLanes() {
+        let placed = DayRibbonView.assignLanes([span("a", 1, 8), span("b", 2, 9), span("c", 3, 10)],
+                                               now: at(12))
+        #expect(Set(placed.map(\.lane)) == [0, 1, 2])
+    }
+
+    @Test("La riga si riusa appena si libera")
+    func lanesAreReused() {
+        let placed = DayRibbonView.assignLanes([span("a", 1, 4), span("b", 2, 5), span("c", 6, 8)],
+                                               now: at(12))
+        let byName = Dictionary(uniqueKeysWithValues: placed.map { ($0.span.name, $0.lane) })
+        #expect(byName["a"] == 0)
+        #expect(byName["b"] == 1)
+        #expect(byName["c"] == 0, "quando «a» è finito la prima riga torna libera")
+    }
+
+    @Test("Oltre le righe disponibili si rinuncia invece di accavallare")
+    func overflowIsDroppedNotStacked() {
+        let crowd = (0..<6).map { span("s\($0)", Double($0) * 0.1, 10) }
+        let placed = DayRibbonView.assignLanes(crowd, now: at(12))
+        #expect(placed.count == DayRibbonView.spanLanes)
+        #expect(Set(placed.map(\.lane)).count == placed.count, "e nessuna riga porta due barre")
+    }
+
+    @Test("Un periodo ancora aperto occupa la riga fino ad adesso")
+    func openSpanHoldsItsLane() {
+        let placed = DayRibbonView.assignLanes([span("aperto", 1, nil), span("dopo", 5, 6)],
+                                               now: at(12))
+        let byName = Dictionary(uniqueKeysWithValues: placed.map { ($0.span.name, $0.lane) })
+        #expect(byName["dopo"] != byName["aperto"],
+                "l'aperto arriva fino ad adesso, quindi la riga è ancora sua")
+    }
+
+    @Test("L'ordine di ingresso non cambia il risultato")
+    func inputOrderDoesNotMatter() {
+        let a = span("a", 1, 8), b = span("b", 2, 9)
+        let one = DayRibbonView.assignLanes([a, b], now: at(12))
+        let two = DayRibbonView.assignLanes([b, a], now: at(12))
+        #expect(one == two)
+    }
+}

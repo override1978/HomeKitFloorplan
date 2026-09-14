@@ -72,7 +72,19 @@ struct DayRibbonView: View {
     private static let stalkTop: CGFloat = labelRowHeight * CGFloat(labelRows) + 4
     private static let stalkHeight: CGFloat = 20
     private static let axisY: CGFloat = stalkTop + stalkHeight
-    private static let axisHeight: CGFloat = 10
+
+    /// L'asse è diventato una fascia, perché i periodi hanno bisogno di righe.
+    ///
+    /// Con una riga sola due periodi sovrapposti si disegnavano uno sull'altro
+    /// e il risultato era una striscia continua con dentro dei nomi tagliati:
+    /// sembrava una cosa sola con tre etichette invece di tre cose. Il tempo si
+    /// sovrappone — è la sua natura — e l'unico modo di mostrarlo è dare a
+    /// ciascuno una riga sua.
+    static let spanLanes = 3
+    private static let spanLaneHeight: CGFloat = 6
+    private static let spanLaneGap: CGFloat = 1
+    private static let axisHeight: CGFloat =
+        spanLaneHeight * CGFloat(spanLanes) + spanLaneGap * CGFloat(spanLanes - 1) + 2
     /// La corsia dei gesti, appena sotto l'asse.
     static let gestureLaneY: CGFloat = axisY + axisHeight + 9
     private static let hourLabelY: CGFloat = gestureLaneY + 15
@@ -111,6 +123,9 @@ struct DayRibbonView: View {
                     diamond(placement, width: width)
                 }
 
+                if let span = spans.first(where: { $0.id == selectedSpanID }) {
+                    spanReadout(span, width: width)
+                }
                 if dayOffset == 0 { nowLine(width: width) }
                 if let scrubFraction { scrubLine(at: scrubFraction, width: width) }
             }
@@ -360,44 +375,91 @@ struct DayRibbonView: View {
     /// questa fascia è l'unica valuta che conta.
     @ViewBuilder
     private func spanBars(width: CGFloat) -> some View {
-        ForEach(spans) { span in
-            let x0 = fraction(of: span.start) * width
-            let x1 = fraction(of: span.end ?? now) * width
+        let placed = Self.assignLanes(spans, now: now)
+        ForEach(placed, id: \.span.id) { item in
+            let x0 = fraction(of: item.span.start) * width
+            let x1 = fraction(of: item.span.end ?? now) * width
             let barWidth = max(x1 - x0, 3)
-            let isSelected = selectedSpanID == span.id
-            let tint = Self.spanTint(for: span)
+            let isSelected = selectedSpanID == item.span.id
+            let tint = Self.spanTint(for: item.span)
 
             Capsule()
-                .fill(tint.opacity(span.isRunning ? 0.95 : 0.62))
-                .frame(width: barWidth, height: isSelected ? Self.axisHeight : Self.axisHeight - 2)
-                .overlay(alignment: .leading) {
-                    // Il nome sta dentro la barra quando ci sta, e tace quando
-                    // non ci sta: una didascalia sopra ruberebbe una riga alle
-                    // etichette dei momenti, e questo è già un oggetto che si
-                    // sa spiegare da sé — è largo quanto è durato.
-                    if barWidth > 54 {
-                        Text(span.name)
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.92))
-                            .lineLimit(1)
-                            .padding(.leading, 5)
-                            .frame(width: barWidth - 8, alignment: .leading)
-                    }
+                .fill(tint.opacity(item.span.isRunning ? 0.95 : 0.70))
+                .overlay {
+                    // Un filo di bordo chiaro: la barra vive dentro la banda
+                    // del giorno, che a mezzogiorno è quasi bianca e a
+                    // mezzanotte quasi nera. Senza, su uno dei due estremi
+                    // sparirebbe nello sfondo.
+                    Capsule().strokeBorder(.white.opacity(isSelected ? 0.9 : 0.35), lineWidth: 0.5)
                 }
-                .position(x: x0 + barWidth / 2, y: Self.axisY + Self.axisHeight / 2)
-                // Bersaglio più alto della barra: dieci punti non si toccano.
-                .contentShape(Rectangle().inset(by: -9))
+                .frame(width: barWidth, height: Self.spanLaneHeight)
+                .position(x: x0 + barWidth / 2, y: Self.spanLaneY(item.lane))
+                // Bersaglio più alto della barra: sei punti non si toccano.
+                .contentShape(Rectangle().inset(by: -7))
                 .onTapGesture {
                     selected = nil
                     selectedGestureID = nil
                     if isSelected {
                         selectedSpanID = nil
                     } else {
-                        selectedSpanID = span.id
-                        onSelectSpan?(span)
+                        selectedSpanID = item.span.id
+                        onSelectSpan?(item.span)
                     }
                 }
         }
+    }
+
+    /// Il nome del periodo scelto, dove vivono le etichette.
+    ///
+    /// Fuori dalla barra e non dentro: le righe sono alte sei punti, e un testo
+    /// lì dentro andrebbe a sette punti e troncato a metà parola — «Purificatore
+    /// Stu» non è un nome, è un rumore con la forma di un nome. Solo il
+    /// selezionato, perché tre nomi insieme sono di nuovo il problema da cui si
+    /// veniva.
+    private func spanReadout(_ span: DaySpan, width: CGFloat) -> some View {
+        let x0 = fraction(of: span.start) * width
+        let x1 = fraction(of: span.end ?? now) * width
+        return Text(span.name)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(Self.spanTint(for: span))
+            .lineLimit(1)
+            .fixedSize()
+            .position(x: min(max((x0 + x1) / 2, 40), width - 40),
+                      y: Self.axisY - 7)
+    }
+
+    private static func spanLaneY(_ lane: Int) -> CGFloat {
+        axisY + 1 + (spanLaneHeight + spanLaneGap) * CGFloat(lane) + spanLaneHeight / 2
+    }
+
+    struct SpanPlacement: Equatable {
+        let span: DaySpan
+        let lane: Int
+    }
+
+    /// Dà a ogni periodo una riga in cui non tocca nessuno.
+    ///
+    /// Assegnazione greedy sul tempo: si scorre per inizio e si prende la prima
+    /// riga libera. È l'algoritmo giusto perché il problema è letteralmente
+    /// quello di colorare un grafo di intervalli, e su un asse temporale il
+    /// greedy ordinato per inizio è ottimo — non esiste una disposizione che
+    /// usi meno righe.
+    ///
+    /// Oltre il numero di righe disponibili si rinuncia invece di accavallare.
+    /// È la stessa scelta delle etichette dei momenti: due cose sovrapposte non
+    /// si leggono né l'una né l'altra, e l'ultima arrivata che copre le altre
+    /// le rovina tutte per mostrare sé stessa.
+    nonisolated static func assignLanes(_ spans: [DaySpan], now: Date) -> [SpanPlacement] {
+        var laneEnds = [Date](repeating: .distantPast, count: spanLanes)
+        var placements: [SpanPlacement] = []
+
+        for span in spans.sorted(by: { $0.start < $1.start }) {
+            let end = span.end ?? now
+            guard let lane = (0..<spanLanes).first(where: { laneEnds[$0] <= span.start }) else { continue }
+            laneEnds[lane] = end
+            placements.append(SpanPlacement(span: span, lane: lane))
+        }
+        return placements
     }
 
     /// Un colore per famiglia di processo, non uno per accessorio.
