@@ -626,13 +626,20 @@ struct FloorplanEditorView: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
             .padding(.bottom, 6)
-            .background(floorplanBackgroundColor,
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
+            // Superficie di chrome, non più una card del colore del fondo.
+            //
+            // Era riempita con `floorplanBackgroundColor` da quando il fondo
+            // era fisso: allora si staccava. Con la luce circadiana il fondo si
+            // muove, e una card dello stesso identico colore sparisce —
+            // letteralmente, alle nove del mattino restavano solo i pallini
+            // sospesi nel vuoto. Il vetro invece prende identità da ciò che ha
+            // sotto, che è esattamente la proprietà che serve a una superficie
+            // che deve galleggiare su un fondo che cambia tutto il giorno.
+            .glassChromeSurface(
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous),
+                legacyFill: AnyShapeStyle(.regularMaterial),
+                legacyBorder: Color.primary.opacity(0.08),
+                legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 14, y: 4))
             .padding(.horizontal, 16)
             .padding(.bottom, 14)
     }

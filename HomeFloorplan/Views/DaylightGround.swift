@@ -39,7 +39,24 @@ enum DaylightGround {
     /// d'ora. Fuori era corretto; dentro no, perché alle 20:50 in casa ci sono
     /// le lampade accese e qualcuno sveglio, che è ciò che il pannello sta
     /// davvero guardando.
-    static let eveningLevel = 0.28
+    static let eveningLevel = 0.24
+
+    /// Sopra quale altezza del sole la stanza è semplicemente illuminata.
+    ///
+    /// Una stanza non si schiarisce in proporzione all'altezza del sole: già
+    /// poco dopo l'alba è chiara, e resta chiara fino a sera. La curva solare
+    /// nuda invece passa ore nei valori intermedi, e i valori intermedi di una
+    /// scala neutra sono **grigio** — alle nove del mattino si vedeva una
+    /// planimetria grigia, che non somiglia a nessuna stanza di questo mondo.
+    ///
+    /// Oltre questa soglia si è al massimo, e sotto si sale in fretta. È la
+    /// stessa ragione per cui una fotografia in interni non ha bisogno di
+    /// aspettare mezzogiorno per essere bianca.
+    static let fullLightAltitude = 0.55
+
+    /// Quanto ripida è la salita sotto quella soglia. Sotto uno: parte forte e
+    /// poi si appiattisce, come fa la luce vera all'alba.
+    static let lightResponseCurve = 0.7
 
     /// L'ora in cui la casa si spegne davvero, e con lei il fondo.
     ///
@@ -140,11 +157,12 @@ enum DaylightGround {
 
         if t <= 1 {
             let solar = sin(.pi * t)
+            let lit = roomResponse(solar: solar)
             // Il pomeriggio resta puro sole; le lampade subentrano solo quando
             // il sole scende sotto di loro. Un raccordo che sollevasse tutta la
             // seconda metà renderebbe le cinque del pomeriggio più luminose
             // delle nove del mattino, che è la stessa altezza del sole.
-            let luminance = t > 0.5 ? max(solar, eveningLevel) : solar
+            let luminance = t > 0.5 ? max(lit, eveningLevel) : lit
             return Light(luminance: luminance, warmth: warmth(solar: solar))
         }
 
@@ -206,6 +224,13 @@ enum DaylightGround {
     /// metà giornata deve già essere quasi sparito, altrimenti il fondo è
     /// beige dalla mattina alla sera, che è una scelta di gusto invece che
     /// un'informazione.
+    /// Da quanto è alto il sole a quanto è illuminata la stanza.
+    nonisolated static func roomResponse(solar: Double) -> Double {
+        let height = min(max(solar, 0), 1)
+        guard height < fullLightAltitude else { return 1 }
+        return pow(height / fullLightAltitude, lightResponseCurve)
+    }
+
     nonisolated static func warmth(solar: Double) -> Double {
         let height = min(max(solar, 0), 1)
         return pow(1 - height, 1.6)
@@ -228,12 +253,19 @@ enum DaylightGround {
         let light = min(max(cycle.luminance, 0), 1)
         let warm = min(max(cycle.warmth, 0), 1)
 
-        // Da un bruno quasi nero a una carta chiara. Non bianco pieno: sotto i
-        // muri di una planimetria abbaglia e mangia i contorni.
-        let brightness = 0.10 + (0.92 - 0.10) * light
-        // Il caldo cala salendo di luce, e cala anche in valore assoluto
-        // perché un fondo chiaro e saturo urla: a mezzogiorno resta neutro.
-        let saturation = warm * 0.16 * (1 - light * 0.75)
+        // Da un bruno quasi nero al bianco. Non bianco assoluto: sotto i muri
+        // di una planimetria abbaglia e mangia i contorni, ma abbastanza da
+        // essere letto come bianco e non come grigio chiaro.
+        let brightness = 0.10 + (0.95 - 0.10) * light
+
+        // Il caldo non viene spento dalla luce, solo attenuato.
+        //
+        // Prima lo era quasi del tutto, e l'effetto mattina diventava «grigio
+        // che schiarisce» invece di «bianco con riflessi caldi». La luce vera
+        // del primo mattino è chiara **e** calda insieme: è il sole basso su
+        // una parete bianca, non una parete grigia. Quello che va evitato è
+        // chiaro e **saturo**, che urla; un bianco appena crema no.
+        let saturation = warm * 0.16 * (1 - light * 0.5)
 
         return Color(hue: Double(amberHue),
                      saturation: Double(saturation),

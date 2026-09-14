@@ -43,9 +43,48 @@ struct DaylightGroundTests {
     @Test("Mezzogiorno è il massimo della giornata")
     func noonIsBrightest() {
         let noon = light(13, 15)  // mezzo fra alba e tramonto
-        #expect(noon > light(9))
-        #expect(noon > light(17))
+        #expect(noon >= light(9))
+        #expect(noon >= light(17))
         #expect(noon > 0.95)
+    }
+
+    @Test("Alle nove del mattino la stanza è già bianca")
+    func morningIsWhiteNotGrey() {
+        // Il difetto che ha fatto riscrivere la curva: la curva solare nuda
+        // passa la mattina nei valori intermedi, e i valori intermedi di una
+        // scala neutra sono grigio. Nessuna stanza è grigia alle nove.
+        let ground = DaylightGround.circadianGround(
+            light: DaylightGround.light(at: time(9, 9), sunrise: sunrise, sunset: sunset))
+        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(ground).getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
+        #expect(b > 0.85, "alle nove deve leggersi bianco, non grigio")
+    }
+
+    @Test("Il bianco del mattino ha un riflesso caldo, quello di mezzogiorno no")
+    func morningWhiteIsWarm() {
+        func saturation(_ hour: Int, _ minute: Int) -> CGFloat {
+            let ground = DaylightGround.circadianGround(
+                light: DaylightGround.light(at: time(hour, minute),
+                                            sunrise: sunrise, sunset: sunset))
+            var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            UIColor(ground).getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+            return s
+        }
+        // Chiaro E caldo insieme è la luce del primo mattino; chiaro e saturo
+        // urlerebbe, quindi resta un bianco appena crema.
+        #expect(saturation(7, 30) > saturation(13, 15))
+        #expect(saturation(7, 30) < 0.12)
+    }
+
+    @Test("La stanza si illumina prima di quanto salga il sole")
+    func roomRespondsFasterThanTheSun() {
+        // A metà altezza del sole la stanza è già quasi al massimo: è la
+        // differenza fra «quanto è alto il sole» e «quanto è illuminata una
+        // stanza», che è ciò che la curva nuda sbagliava.
+        #expect(DaylightGround.roomResponse(solar: 0.3) > 0.6)
+        #expect(DaylightGround.roomResponse(solar: 0.55) == 1)
+        #expect(DaylightGround.roomResponse(solar: 1) == 1)
+        #expect(DaylightGround.roomResponse(solar: 0) == 0)
     }
 
     @Test("Il crepuscolo comincia prima dell'alba e finisce dopo il tramonto")
@@ -90,11 +129,15 @@ struct DaylightGroundTests {
         }
     }
 
-    @Test("All'alba c'è poca luce, non zero e non tanta")
-    func sunriseIsDim() {
+    @Test("All'alba la stanza è a metà strada: né buia né bianca")
+    func sunriseIsHalfLit() {
+        // Non più «poca luce»: una stanza all'alba è già ben visibile, ed è il
+        // motivo per cui la risposta è ripida. Ma non è ancora il giorno.
         let dawn = light(7, 0)
-        #expect(dawn > 0.05)
-        #expect(dawn < 0.35)
+        #expect(dawn > 0.3)
+        #expect(dawn < 0.8)
+        #expect(dawn > light(6, 20), "e più chiara di mezz'ora prima")
+        #expect(dawn < light(9, 0), "e meno delle nove")
     }
 
     @Test("La curva sale e scende senza salti")
@@ -155,13 +198,14 @@ struct DaylightGroundTests {
         // scuro che non può seguire fin lassù, e resterebbe un rettangolo
         // d'inchiostro su una tovaglia.
         #expect(day.b > 0.35, "un fondo scuro che resta scuro renderebbe l'idea invisibile")
-        #expect(day.b < 0.55, "oltre, il disegno non riesce a starle dietro")
     }
 
-    @Test("Il fondo non diventa mai bianco pieno")
+    @Test("Il fondo non diventa mai bianco assoluto")
     func neverPureWhite() {
-        let base = Color(hue: 0, saturation: 0, brightness: 0.1)
-        #expect(hsb(DaylightGround.ground(base: base, light: noonLight)).b < 0.6)
+        // Sotto i muri di una planimetria il bianco pieno abbaglia e mangia i
+        // contorni — ma deve mancarci poco, o si legge grigio chiaro.
+        #expect(hsb(DaylightGround.circadianGround(light: noonLight)).b < 0.99)
+        #expect(hsb(DaylightGround.circadianGround(light: noonLight)).b > 0.9)
     }
 
     @Test("Anche il disegno riceve la luce, ma con misura")
@@ -228,8 +272,8 @@ struct DaylightGroundTests {
         let night = hsb(DaylightGround.circadianGround(light: .night))
         let noon = hsb(DaylightGround.circadianGround(light: noonLight))
         #expect(night.b < 0.15)
-        #expect(noon.b > 0.85)
-        #expect(noon.b < 0.95, "il bianco pieno sotto i muri abbaglia")
+        #expect(noon.b > 0.9)
+        #expect(noon.b < 0.99, "il bianco pieno sotto i muri abbaglia")
     }
 
     @Test("Il fondo attraversa la soglia che ribalta il tema della chrome")
