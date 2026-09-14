@@ -8,6 +8,8 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
     let chrome: FloorplanChromeLayout
     /// La luce che illumina il disegno. `.night` lascia il raster com'è.
     let light: DaylightGround.Light
+    /// I fuochi di luce: il sole che entra da un'apertura, le lampade accese.
+    let glows: [CircadianGlow]
     let showOverlayLayer: Bool
     let showEditLayer: Bool
     let showMarkers: Bool
@@ -28,6 +30,7 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         containerSize: CGSize,
         chrome: FloorplanChromeLayout = .legacy,
         light: DaylightGround.Light = .night,
+        glows: [CircadianGlow] = [],
         showOverlayLayer: Bool,
         showEditLayer: Bool,
         showMarkers: Bool,
@@ -44,6 +47,7 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         self.containerSize = containerSize
         self.chrome = chrome
         self.light = light
+        self.glows = glows
         self.showOverlayLayer = showOverlayLayer
         self.showEditLayer = showEditLayer
         self.showMarkers = showMarkers
@@ -102,6 +106,26 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
             .colorMultiply(light.imageTint)
             .position(x: rect.midX, y: rect.midY)
             .animation(.easeInOut(duration: 1.5), value: light)
+
+            // I fuochi di luce cadono **sul** disegno e sotto tutto il resto.
+            //
+            // Sopra il raster perché la luce illumina la planimetria, non le sta
+            // dietro; sotto marker e chrome perché quelli hanno colori che
+            // significano qualcosa e non vanno scaldati. In somma additiva:
+            // un velo opaco coprirebbe i tratti sottili dei muri, mentre la
+            // luce si aggiunge — che è anche ciò che fa la luce.
+            ForEach(Array(glows.enumerated()), id: \.offset) { _, glow in
+                RadialGradient(colors: [glow.color.opacity(glow.intensity),
+                                        glow.color.opacity(0)],
+                               center: glow.centre,
+                               startRadius: 0,
+                               endRadius: max(rect.width, rect.height) * 0.75)
+                    .frame(width: rect.width * 1.5, height: rect.height * 1.5)
+                    .position(x: rect.midX, y: rect.midY)
+                    .blendMode(.plusLighter)
+                    .allowsHitTesting(false)
+            }
+            .animation(.easeInOut(duration: 1.5), value: glows)
 
             if showOverlayLayer {
                 overlayLayer(containerSize, rect)

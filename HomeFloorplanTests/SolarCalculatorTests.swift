@@ -102,3 +102,75 @@ struct SolarCalculatorTests {
         #expect(abs(back.timeIntervalSince(now)) < 0.001)
     }
 }
+
+/// Dove sta il sole, non solo se c'è.
+@Suite("La posizione del sole")
+struct SolarPositionTests {
+
+    private let rome = SolarCalculator.Coordinates(latitude: 41.9028, longitude: 12.4964)
+    private let calendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "Europe/Rome")!
+        return c
+    }()
+
+    private func moment(_ hour: Int, _ minute: Int = 0, month: Int = 9, day: Int = 14) -> Date {
+        var components = DateComponents()
+        components.year = 2026; components.month = month; components.day = day
+        components.hour = hour; components.minute = minute
+        return calendar.date(from: components)!
+    }
+
+    @Test("A mezzogiorno solare il sole è a sud e al punto più alto")
+    func noonIsSouthAndHighest() {
+        // Mezzogiorno vero a Roma a settembre cade poco dopo le 13 legali.
+        let noon = SolarCalculator.position(at: moment(13, 5), coordinates: rome)
+        #expect(abs(noon.azimuth - 180) < 6, "azimut \(noon.azimuth), atteso sud")
+        #expect(noon.altitude > SolarCalculator.position(at: moment(9), coordinates: rome).altitude)
+        #expect(noon.altitude > SolarCalculator.position(at: moment(17), coordinates: rome).altitude)
+    }
+
+    @Test("La mattina il sole è a est, la sera a ovest")
+    func morningEastEveningWest() {
+        // È la distinzione che `acos` da sola non sa fare: restituisce sempre
+        // l'angolo a est, ed è l'angolo orario a dire da che parte siamo.
+        #expect(SolarCalculator.position(at: moment(8), coordinates: rome).azimuth < 140)
+        #expect(SolarCalculator.position(at: moment(18), coordinates: rome).azimuth > 230)
+    }
+
+    @Test("L'azimut cresce lungo la giornata, senza tornare indietro")
+    func azimuthAdvances() {
+        var previous = SolarCalculator.position(at: moment(7), coordinates: rome).azimuth
+        for hour in 8...19 {
+            let current = SolarCalculator.position(at: moment(hour), coordinates: rome).azimuth
+            #expect(current > previous, "alle \(hour) l'azimut è tornato indietro")
+            previous = current
+        }
+    }
+
+    @Test("L'altezza è negativa di notte")
+    func altitudeIsNegativeAtNight() {
+        #expect(SolarCalculator.position(at: moment(3), coordinates: rome).altitude < 0)
+        #expect(SolarCalculator.position(at: moment(23), coordinates: rome).altitude < 0)
+        #expect(SolarCalculator.position(at: moment(13), coordinates: rome).altitude > 0)
+    }
+
+    @Test("All'alba e al tramonto l'altezza passa per lo zero")
+    func altitudeCrossesZeroAtTheHorizon() throws {
+        let events = SolarCalculator.events(on: moment(12), at: rome, calendar: calendar)
+        let sunrise = try #require(events.sunrise)
+        let sunset = try #require(events.sunset)
+        // Alla convenzione dell'almanacco il centro è poco sotto l'orizzonte.
+        #expect(abs(SolarCalculator.position(at: sunrise, coordinates: rome).altitude) < 1.5)
+        #expect(abs(SolarCalculator.position(at: sunset, coordinates: rome).altitude) < 1.5)
+    }
+
+    @Test("D'estate il sole tramonta più a nord che d'inverno")
+    func sunsetSwingsWithTheSeason() {
+        // È la ragione per cui un'apertura a sud-ovest prende luce diversa a
+        // giugno e a dicembre: non cambia solo l'ora, cambia la direzione.
+        let june = SolarCalculator.position(at: moment(19, 0, month: 6, day: 21), coordinates: rome)
+        let december = SolarCalculator.position(at: moment(15, 30, month: 12, day: 21), coordinates: rome)
+        #expect(june.azimuth > december.azimuth)
+    }
+}

@@ -107,3 +107,99 @@ struct CircadianPaletteTests {
         #expect(environment.circadianPalette == nil)
     }
 }
+
+/// La luce che entra dalle finestre, e quella che nasce dalle lampade.
+@Suite("I fuochi di luce")
+struct CircadianGlowTests {
+
+    private let southWest: Double = 225
+
+    private func admittance(sun: Double, altitude: Double = 40) -> Double {
+        CircadianGlow.admittance(sunAzimuth: sun, openingBearing: southWest, sunAltitude: altitude)
+    }
+
+    @Test("Un balcone a sud-ovest è in ombra la mattina")
+    func southWestIsShadedInTheMorning() {
+        // Sole a est (90°): guarda la parete opposta.
+        #expect(admittance(sun: 90) == 0)
+        #expect(admittance(sun: 110) == 0)
+    }
+
+    @Test("E prende tutto il pomeriggio")
+    func southWestTakesTheAfternoon() {
+        #expect(admittance(sun: 180) > 0.3, "a mezzogiorno il sole è già di sbieco")
+        #expect(admittance(sun: 225) > 0.9, "allineato in pieno")
+        #expect(admittance(sun: 260) > 0.5)
+    }
+
+    @Test("Il massimo cade quando il sole sta davanti all'apertura")
+    func peakIsWhenFacing() {
+        let aligned = admittance(sun: southWest)
+        for offset in stride(from: -80.0, through: 80.0, by: 20) where offset != 0 {
+            #expect(admittance(sun: southWest + offset) <= aligned)
+        }
+    }
+
+    @Test("Di notte non entra niente, per quanto sia allineato")
+    func noSunNoLight() {
+        #expect(admittance(sun: 225, altitude: -5) == 0)
+        #expect(admittance(sun: 225, altitude: 0) == 0)
+    }
+
+    @Test("Un sole radente porta meno luce di uno alto")
+    func lowSunGivesLess() {
+        #expect(admittance(sun: 225, altitude: 5) < admittance(sun: 225, altitude: 40))
+    }
+
+    @Test("Più il sole è basso più la luce che passa è calda")
+    func lowSunIsWarmer() throws {
+        func saturation(_ warmth: Double) throws -> CGFloat {
+            let glow = try #require(CircadianGlow.sunlight(through: .center, bearing: southWest,
+                                                           sunAzimuth: 225, sunAltitude: 20,
+                                                           warmth: warmth))
+            var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            UIColor(glow.color).getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+            return s
+        }
+        #expect(try saturation(1) > saturation(0))
+    }
+
+    // MARK: Le lampade
+
+    @Test("Di giorno le lampade non si vedono")
+    func lampsLoseAgainstTheSun() {
+        // Competono col sole e perdono: disegnarle comunque farebbe un alone
+        // che non corrisponde a niente di visibile.
+        #expect(CircadianGlow.lamps(at: [.center], daylight: 1) == nil)
+        #expect(CircadianGlow.lamps(at: [.center], daylight: 0.5) == nil)
+        #expect(CircadianGlow.lamps(at: [.center], daylight: 0.05) != nil)
+    }
+
+    @Test("Il bagliore nasce dove sono le lampade accese")
+    func lampsGlowWhereTheyAre() throws {
+        // Non un punto fisso: se stasera è accesa solo la cucina, il bagliore è
+        // in cucina.
+        let left = try #require(CircadianGlow.lamps(at: [UnitPoint(x: 0.2, y: 0.5)], daylight: 0))
+        let right = try #require(CircadianGlow.lamps(at: [UnitPoint(x: 0.8, y: 0.5)], daylight: 0))
+        #expect(left.centre.x < right.centre.x)
+        let both = try #require(CircadianGlow.lamps(at: [UnitPoint(x: 0.2, y: 0.5),
+                                                         UnitPoint(x: 0.8, y: 0.5)], daylight: 0))
+        #expect(abs(both.centre.x - 0.5) < 0.01)
+    }
+
+    @Test("Più luci accese, più bagliore — ma non all'infinito")
+    func moreLampsSaturate() throws {
+        func intensity(_ count: Int) throws -> Double {
+            let points = (0..<count).map { _ in UnitPoint.center }
+            return try #require(CircadianGlow.lamps(at: points, daylight: 0)).intensity
+        }
+        #expect(try intensity(1) < intensity(4))
+        // Fra sei e dodici la stanza non è il doppio più luminosa.
+        #expect(try abs(intensity(6) - intensity(12)) < 0.001)
+    }
+
+    @Test("Nessuna luce accesa, nessun bagliore")
+    func noLampsNoGlow() {
+        #expect(CircadianGlow.lamps(at: [], daylight: 0) == nil)
+    }
+}

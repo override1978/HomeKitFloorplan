@@ -163,6 +163,86 @@ struct CircadianPalette: Equatable, Sendable {
     }
 }
 
+// MARK: - CircadianGlow
+
+/// La luce che entra da un'apertura, e da dove.
+///
+/// Un'apertura non prende la stessa luce tutto il giorno: un balcone a
+/// sud-ovest è in ombra la mattina e prende tutto il pomeriggio. È una cosa
+/// che chi abita la casa sa senza misurarla, ed è il motivo per cui un velo
+/// uniforme non somiglierebbe a niente — la luce vera ha una provenienza.
+struct CircadianGlow: Equatable, Sendable {
+    /// Dove nasce, in coordinate normalizzate del canvas.
+    let centre: UnitPoint
+    /// Quanto è forte, da 0 a 1.
+    let intensity: Double
+    let color: Color
+
+    /// Quanta luce passa da un'apertura orientata in una certa direzione.
+    ///
+    /// Il coseno fra l'azimut del sole e la normale dell'apertura: piena
+    /// quando il sole ci sta davanti, nulla quando gli sta dietro. È
+    /// un'approssimazione grossolana di come funziona una finestra — non tiene
+    /// conto di sporgenze, vetri, ostacoli — ma coglie l'unica cosa che conta
+    /// visivamente, cioè che la luce arriva quando il sole è da quella parte.
+    ///
+    /// Moltiplicata per l'altezza del sole, perché un sole radente porta meno
+    /// luce anche quando è perfettamente allineato.
+    nonisolated static func admittance(sunAzimuth: Double,
+                                       openingBearing: Double,
+                                       sunAltitude: Double) -> Double {
+        guard sunAltitude > 0 else { return 0 }
+        let delta = (sunAzimuth - openingBearing) * .pi / 180
+        let facing = max(0, cos(delta))
+        // L'altezza conta poco sopra i trenta gradi: oltre, la finestra è
+        // comunque piena di cielo.
+        let height = min(sunAltitude / 30, 1)
+        return facing * height
+    }
+
+    /// Il velo caldo che entra dall'apertura, quando il sole ci arriva.
+    nonisolated static func sunlight(through opening: UnitPoint,
+                                     bearing: Double,
+                                     sunAzimuth: Double,
+                                     sunAltitude: Double,
+                                     warmth: Double) -> CircadianGlow? {
+        let amount = admittance(sunAzimuth: sunAzimuth,
+                                openingBearing: bearing,
+                                sunAltitude: sunAltitude)
+        guard amount > 0.02 else { return nil }
+        // Più il sole è basso più la luce che passa è calda e arancione: è il
+        // motivo per cui una stanza esposta a ovest a settembre è arancione
+        // alle sette e bianca alle due.
+        return CircadianGlow(centre: opening,
+                             intensity: amount * 0.5,
+                             color: Color(hue: 0.085,
+                                          saturation: 0.25 + 0.35 * min(max(warmth, 0), 1),
+                                          brightness: 1))
+    }
+
+    /// Il bagliore che di sera nasce dalle stanze accese.
+    ///
+    /// L'altra metà, e non è la stessa cosa col segno cambiato: di giorno la
+    /// luce viene da fuori e ha una direzione sola, di sera viene da dentro e
+    /// nasce dove sono le lampade. Per questo il centro è il baricentro di ciò
+    /// che è acceso e non un punto fisso — se stasera è accesa solo la cucina,
+    /// il bagliore è in cucina.
+    nonisolated static func lamps(at points: [UnitPoint], daylight: Double) -> CircadianGlow? {
+        guard !points.isEmpty else { return nil }
+        // Di giorno le lampade non si vedono: competono col sole e perdono.
+        let darkness = max(0, 1 - daylight / 0.45)
+        guard darkness > 0.05 else { return nil }
+        let centre = UnitPoint(x: points.map(\.x).reduce(0, +) / CGFloat(points.count),
+                               y: points.map(\.y).reduce(0, +) / CGFloat(points.count))
+        // Cresce col numero di lampade ma satura presto: fra sei e dodici luci
+        // accese la stanza non è il doppio più luminosa.
+        let amount = min(Double(points.count) / 6, 1)
+        return CircadianGlow(centre: centre,
+                             intensity: darkness * amount * 0.34,
+                             color: Color(hue: 0.095, saturation: 0.55, brightness: 1))
+    }
+}
+
 // MARK: - Environment
 
 private struct CircadianPaletteKey: EnvironmentKey {

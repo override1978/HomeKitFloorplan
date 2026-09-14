@@ -475,6 +475,67 @@ struct FloorplanEditorView: View {
         return CircadianPalette.make(light: currentLight)
     }
 
+    /// Da che parte guarda l'apertura principale, in gradi da nord.
+    ///
+    /// 225 è sud-ovest, che è il caso di questa casa. È un dato che l'utente
+    /// conosce e il telefono no: la bussola direbbe dove punta il **device**,
+    /// non dove punta il balcone.
+    @AppStorage("daylight.openingBearing") private var openingBearing: Double = 225
+
+    /// I fuochi di luce dell'istante.
+    ///
+    /// Due meccanismi diversi e non uno col segno cambiato: di giorno la luce
+    /// viene da fuori, da una direzione sola, e passa da un'apertura; di sera
+    /// nasce da dentro, dove sono le lampade accese. Il mockup li distingue, e
+    /// aveva ragione — mettere un velo caldo fisso somiglierebbe a una
+    /// cartolina, non a una casa.
+    private func currentGlows(rotated: Bool) -> [CircadianGlow] {
+        guard isDaylightGroundEnabled else { return [] }
+        var glows: [CircadianGlow] = []
+        let light = currentLight
+
+        if let coordinates = SolarCalculator.homeCoordinates, let opening = sunOpeningPoint {
+            let sun = SolarCalculator.position(at: illuminatedInstant, coordinates: coordinates)
+            if let glow = CircadianGlow.sunlight(through: opening,
+                                                 bearing: openingBearing,
+                                                 sunAzimuth: sun.azimuth,
+                                                 sunAltitude: sun.altitude,
+                                                 warmth: light.warmth) {
+                glows.append(glow)
+            }
+        }
+
+        if let glow = CircadianGlow.lamps(at: litMarkerPoints(rotated: rotated),
+                                          daylight: light.luminance) {
+            glows.append(glow)
+        }
+        return glows
+    }
+
+    /// Il centro dell'apertura da cui entra il sole.
+    ///
+    /// Presa dalla planimetria e non dall'orientamento: sapere che il balcone
+    /// guarda a sud-ovest dice *quando* la luce arriva, ma non *da che parte
+    /// dello schermo* — quello dipende da come è disegnato il piano, ed è già
+    /// scritto lì.
+    private var sunOpeningPoint: UnitPoint? {
+        let candidates = ["balcon", "terrazz", "veranda", "giardino", "loggia"]
+        guard let room = floorplan.linkedRooms.first(where: { room in
+            let name = room.name.lowercased()
+            return candidates.contains { name.contains($0) }
+        }) else { return nil }
+        let rect = room.normalizedRect
+        return UnitPoint(x: rect.x + rect.width / 2, y: rect.y + rect.height / 2)
+    }
+
+    /// Dove sono le lampade accese, in coordinate normalizzate.
+    private func litMarkerPoints(rotated: Bool) -> [UnitPoint] {
+        markerRenderItems(rotated: rotated).compactMap { item in
+            guard let adapter = item.adapter, adapter.isOn else { return nil }
+            return UnitPoint(x: item.position.x, y: item.position.y)
+        }
+    }
+
     private var currentLight: DaylightGround.Light {
         guard isDaylightGroundEnabled else { return .night }
         let solar = daySolarTimes
@@ -1715,6 +1776,7 @@ struct FloorplanEditorView: View {
             containerSize: container,
             chrome: chromeLayout(for: container),
             light: currentLight,
+            glows: currentGlows(rotated: isRotated),
             showOverlayLayer: (overlayVM != nil || placementModel != nil) && !ui.isEditing,
             showEditLayer: ui.isEditing && !floorplan.linkedRooms.isEmpty,
             showMarkers: showMarkers,
