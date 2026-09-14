@@ -80,7 +80,7 @@ enum AccessoryEventType: String {
 // MARK: - AccessoryEventDTO
 
 /// DTO senza riferimento a SwiftData, usato da HomeKitService per costruire eventi.
-struct AccessoryEventDTO {
+struct AccessoryEventDTO: Sendable {
     let accessoryID: UUID
     let accessoryName: String
     let roomID: UUID?

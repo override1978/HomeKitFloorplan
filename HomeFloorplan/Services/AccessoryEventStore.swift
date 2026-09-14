@@ -149,6 +149,23 @@ final class AccessoryEventStore {
     /// Crea un AccessoryEventDTO da una HMCharacteristic se il tipo è rilevante.
     /// Restituisce nil per sensori ambientali, termostati, serrature e altri tipi
     /// che non vanno in questo store.
+    /// Se un valore appena visto va registrato come avvenimento.
+    ///
+    /// Una funzione sola per i tre percorsi che la chiedono — notifica push,
+    /// scrittura nostra, rilettura del battito — perché erano tre copie della
+    /// stessa decisione e una delle tre si è rivelata diversa dalle altre senza
+    /// che nessuno lo notasse.
+    ///
+    /// - Parameter known: lo stato che credevamo, o `nil` se non lo sapevamo.
+    /// - Returns: `true` solo per una transizione da uno stato noto. Senza
+    ///   stato noto si impara e basta: è la prima volta che vediamo la
+    ///   caratteristica, di solito perché l'app è appena partita, e chiamarlo
+    ///   cambiamento riempirebbe l'archivio di avvenimenti mai avvenuti.
+    nonisolated static func shouldRecord(known: Bool?, incoming: Bool) -> Bool {
+        guard let known else { return false }
+        return known != incoming
+    }
+
     /// `nonisolated` perché serve anche dalla callback di `readValue`, che non
     /// è isolata: è una funzione pura dei suoi argomenti e non tocca stato
     /// condiviso, quindi non c'era ragione perché fosse confinata.

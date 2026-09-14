@@ -469,13 +469,17 @@ final class HomeKitService: NSObject {
                 // un avvenimento. Senza questo, il primo valore che arriva
                 // dopo l'avvio sembra un cambiamento a chiunque lo guardi
                 // dopo.
+                //
+                // E se uno stato noto c'era già ed è diverso, questa rilettura
+                // è l'unica occasione di accorgersi di una notifica caduta:
+                // si registra la transizione invece di correggere in silenzio
+                // solo la cache.
                 if let accessory = characteristic.service?.accessory,
                    let dto = AccessoryEventStore.makeDTO(
                        from: characteristic, value: value, accessory: accessory) {
                     let charID = characteristic.uniqueIdentifier
-                    let state = dto.state
                     Task { @MainActor [weak self] in
-                        self?.seedEventBaseline(charID, state: state)
+                        self?.reconcileEventState(charID, dto: dto)
                     }
                 }
                 // Anche lo stato ambientale, non solo la cache generica.
@@ -552,6 +556,33 @@ final class HomeKitService: NSObject {
     func seedEventBaseline(_ characteristicID: UUID, state: Bool) {
         guard lastSavedEventStates[characteristicID] == nil else { return }
         lastSavedEventStates[characteristicID] = state
+    }
+
+    /// Allinea lo stato noto a quello appena letto, registrando ciò che ci siamo persi.
+    ///
+    /// Serve perché le notifiche push di HomeKit **cadono**, e su un pannello
+    /// sempre acceso non c'è nessun ciclo background→foreground a rimettere le
+    /// cose a posto. Il battito d'osservazione rileggeva già i valori ogni
+    /// dieci minuti, ma si limitava ad aggiornare la cache: una transizione
+    /// persa restava persa per sempre, e `lastSavedEventStates` teneva il
+    /// valore vecchio in eterno.
+    ///
+    /// L'effetto era visibile e sbagliato in modo preciso: una presa spenta da
+    /// ore continuava a mostrarsi come periodo aperto sul nastro, perché il suo
+    /// spegnimento non era mai stato scritto — e tutto ciò che era successo nel
+    /// frattempo mancava sia dalle barre sia dai rombi.
+    ///
+    /// L'ora registrata è quella della rilettura e non quella vera, che nessuno
+    /// conosce: il cambiamento è avvenuto in un punto qualunque degli ultimi
+    /// dieci minuti. È un'imprecisione dichiarata, e resta molto meglio di un
+    /// periodo che non finisce mai.
+    func reconcileEventState(_ characteristicID: UUID, dto: AccessoryEventDTO) {
+        let known = lastSavedEventStates[characteristicID]
+        lastSavedEventStates[characteristicID] = dto.state
+        guard AccessoryEventStore.shouldRecord(known: known, incoming: dto.state),
+              let store = accessoryEventStore else { return }
+        store.saveEvent(dto)
+        dprint("🔄 Transizione recuperata dal battito: \(dto.accessoryName) → \(dto.state)")
     }
 
     /// Scrive un valore su una caratteristica (es. accende una luce).
@@ -945,7 +976,7 @@ extension HomeKitService: HMAccessoryDelegate {
                 // Senza stato noto questa è la prima volta che vediamo la
                 // caratteristica — di solito perché l'app è appena partita — e
                 // la cosa onesta è imparare, non raccontare.
-                if let knownState, knownState != dto.state {
+                if AccessoryEventStore.shouldRecord(known: knownState, incoming: dto.state) {
                     store.saveEvent(dto)
                 }
             }

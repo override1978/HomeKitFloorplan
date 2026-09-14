@@ -388,3 +388,42 @@ struct SpanGestureOverlapTests {
         #expect(try #require(spans.first).startedByHand == false)
     }
 }
+
+/// Quando un valore appena visto va scritto in archivio.
+///
+/// Una decisione sola per tre percorsi — notifica push, scrittura nostra,
+/// rilettura del battito — perché erano tre copie e una si è rivelata diversa
+/// dalle altre senza che nessuno lo notasse.
+@Suite("Cosa conta come avvenimento")
+struct AccessoryEventRecordingTests {
+
+    @Test("Senza stato noto si impara, non si racconta")
+    func firstSightingIsNotAnEvent() {
+        // È il difetto che riempiva l'archivio all'avvio: con la mappa vuota
+        // ogni prima consegna sembrava un cambiamento.
+        #expect(AccessoryEventStore.shouldRecord(known: nil, incoming: true) == false)
+        #expect(AccessoryEventStore.shouldRecord(known: nil, incoming: false) == false)
+    }
+
+    @Test("Uno stato invariato non è un avvenimento")
+    func echoesAreNotEvents() {
+        #expect(AccessoryEventStore.shouldRecord(known: true, incoming: true) == false)
+        #expect(AccessoryEventStore.shouldRecord(known: false, incoming: false) == false)
+    }
+
+    @Test("Una transizione da uno stato noto sì")
+    func transitionsAreEvents() {
+        #expect(AccessoryEventStore.shouldRecord(known: true, incoming: false))
+        #expect(AccessoryEventStore.shouldRecord(known: false, incoming: true))
+    }
+
+    @Test("Vale anche quando la transizione la scopre una rilettura")
+    func lateDiscoveryStillCounts() {
+        // Le notifiche push cadono, e su un pannello sempre acceso non c'è
+        // nessun ciclo background→foreground a rimettere le cose a posto. Se
+        // la rilettura del battito trova un valore diverso da quello noto, quel
+        // cambiamento è avvenuto: scoprirlo in ritardo non lo rende meno vero,
+        // e non registrarlo lascia un periodo che non finisce mai.
+        #expect(AccessoryEventStore.shouldRecord(known: true, incoming: false))
+    }
+}
