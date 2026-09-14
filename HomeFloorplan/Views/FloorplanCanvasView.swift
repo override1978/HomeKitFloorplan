@@ -135,7 +135,13 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
                 ],
                 center: Self.containerCentre(of: glow, imageRect: rect, container: containerSize),
                 startRadius: 0,
-                endRadius: hypot(containerSize.width, containerSize.height) * 0.72)
+                // Il raggio si misura sulla **planimetria**, non sulla
+                // superficie: una lampada illumina una stanza, e quanto sia
+                // grande lo schermo attorno non la rende più forte. Il riquadro
+                // però resta quello della superficie, così il gradiente ha
+                // sempre spazio per spegnersi — è la coppia «riquadro largo,
+                // raggio stretto» a togliere i bordi, non l'una o l'altro.
+                endRadius: hypot(rect.width, rect.height) * glow.radius)
                     .frame(width: containerSize.width, height: containerSize.height)
                     .blendMode(.plusLighter)
                     .allowsHitTesting(false)

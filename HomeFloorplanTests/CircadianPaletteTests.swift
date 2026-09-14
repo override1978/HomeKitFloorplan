@@ -170,37 +170,62 @@ struct CircadianGlowTests {
     func lampsLoseAgainstTheSun() {
         // Competono col sole e perdono: disegnarle comunque farebbe un alone
         // che non corrisponde a niente di visibile.
-        #expect(CircadianGlow.lamps(at: [.center], daylight: 1) == nil)
-        #expect(CircadianGlow.lamps(at: [.center], daylight: 0.5) == nil)
-        #expect(CircadianGlow.lamps(at: [.center], daylight: 0.05) != nil)
+        #expect(CircadianGlow.lamps(byRoom: [[.center]], daylight: 1).isEmpty)
+        #expect(CircadianGlow.lamps(byRoom: [[.center]], daylight: 0.5).isEmpty)
+        #expect(CircadianGlow.lamps(byRoom: [[.center]], daylight: 0.05).isEmpty == false)
     }
 
-    @Test("Il bagliore nasce dove sono le lampade accese")
-    func lampsGlowWhereTheyAre() throws {
-        // Non un punto fisso: se stasera è accesa solo la cucina, il bagliore è
-        // in cucina.
-        let left = try #require(CircadianGlow.lamps(at: [UnitPoint(x: 0.2, y: 0.5)], daylight: 0))
-        let right = try #require(CircadianGlow.lamps(at: [UnitPoint(x: 0.8, y: 0.5)], daylight: 0))
-        #expect(left.centre.x < right.centre.x)
-        let both = try #require(CircadianGlow.lamps(at: [UnitPoint(x: 0.2, y: 0.5),
-                                                         UnitPoint(x: 0.8, y: 0.5)], daylight: 0))
-        #expect(abs(both.centre.x - 0.5) < 0.01)
+    @Test("Due stanze accese fanno due pozze, non una in mezzo")
+    func twoRoomsMakeTwoPools() {
+        // Il difetto che questa forma corregge: con un solo bagliore al
+        // baricentro, soggiorno e cucina accesi producevano un alone nel
+        // corridoio fra i due, dove non è acceso niente.
+        let glows = CircadianGlow.lamps(byRoom: [[UnitPoint(x: 0.2, y: 0.5)],
+                                                 [UnitPoint(x: 0.8, y: 0.5)]],
+                                        daylight: 0)
+        #expect(glows.count == 2)
+        #expect(glows.contains { $0.centre.x < 0.3 })
+        #expect(glows.contains { $0.centre.x > 0.7 })
+        #expect(glows.allSatisfy { abs($0.centre.x - 0.5) > 0.2 },
+                "nessuna pozza dove non c'è nessuna lampada")
     }
 
-    @Test("Più luci accese, più bagliore — ma non all'infinito")
+    @Test("Dentro una stanza le lampade si mediano")
+    func lampsWithinARoomAverage() throws {
+        let glows = CircadianGlow.lamps(byRoom: [[UnitPoint(x: 0.2, y: 0.5),
+                                                  UnitPoint(x: 0.4, y: 0.5)]],
+                                        daylight: 0)
+        let glow = try #require(glows.first)
+        #expect(abs(glow.centre.x - 0.3) < 0.01)
+    }
+
+    @Test("Più luci in una stanza, più bagliore — ma non all'infinito")
     func moreLampsSaturate() throws {
         func intensity(_ count: Int) throws -> Double {
             let points = (0..<count).map { _ in UnitPoint.center }
-            return try #require(CircadianGlow.lamps(at: points, daylight: 0)).intensity
+            return try #require(CircadianGlow.lamps(byRoom: [points], daylight: 0).first).intensity
         }
-        #expect(try intensity(1) < intensity(4))
-        // Fra sei e dodici la stanza non è il doppio più luminosa.
-        #expect(try abs(intensity(6) - intensity(12)) < 0.001)
+        #expect(try intensity(1) < intensity(3))
+        #expect(try abs(intensity(3) - intensity(9)) < 0.001)
     }
 
     @Test("Nessuna luce accesa, nessun bagliore")
     func noLampsNoGlow() {
-        #expect(CircadianGlow.lamps(at: [], daylight: 0) == nil)
+        #expect(CircadianGlow.lamps(byRoom: [], daylight: 0).isEmpty)
+        #expect(CircadianGlow.lamps(byRoom: [[]], daylight: 0).isEmpty)
+    }
+
+    @Test("Una lampada illumina una stanza, non un piano")
+    func lampsAreTighterThanTheSun() throws {
+        // È la correzione rispetto al mockup: la luce larga metà schermo non
+        // somiglia a una lampada, somiglia a una vignettatura — ed è quella che
+        // va a sbattere contro i bordi.
+        let lamp = try #require(CircadianGlow.lamps(byRoom: [[.center]], daylight: 0).first)
+        let sun = try #require(CircadianGlow.sunlight(through: .center, bearing: 225,
+                                                      sunAzimuth: 225, sunAltitude: 40,
+                                                      warmth: 0.5))
+        #expect(lamp.radius < sun.radius)
+        #expect(sun.radius < 0.5, "e nemmeno il sole arriva ai bordi")
     }
 }
 
@@ -209,7 +234,7 @@ struct CircadianGlowTests {
 struct GlowPlacementTests {
 
     private func glow(_ x: CGFloat, _ y: CGFloat) -> CircadianGlow {
-        CircadianGlow(centre: UnitPoint(x: x, y: y), intensity: 0.3, color: .orange)
+        CircadianGlow(centre: UnitPoint(x: x, y: y), intensity: 0.3, radius: 0.2, color: .orange)
     }
 
     @Test("Il centro dell'immagine resta il centro dell'immagine")

@@ -518,10 +518,8 @@ struct FloorplanEditorView: View {
             }
         }
 
-        if let glow = CircadianGlow.lamps(at: litMarkerPoints(rotated: rotated),
-                                          daylight: light.luminance) {
-            glows.append(glow)
-        }
+        glows.append(contentsOf: CircadianGlow.lamps(byRoom: litPointsByRoom(rotated: rotated),
+                                                     daylight: light.luminance))
         return glows
     }
 
@@ -541,12 +539,28 @@ struct FloorplanEditorView: View {
         return UnitPoint(x: rect.x + rect.width / 2, y: rect.y + rect.height / 2)
     }
 
-    /// Dove sono le lampade accese, in coordinate normalizzate.
-    private func litMarkerPoints(rotated: Bool) -> [UnitPoint] {
-        markerRenderItems(rotated: rotated).compactMap { item in
-            guard let adapter = item.adapter, adapter.isOn else { return nil }
-            return UnitPoint(x: item.position.x, y: item.position.y)
+    /// Dove sono le lampade accese, raggruppate per stanza.
+    ///
+    /// Per stanza e non tutte insieme: il bagliore nasce dove c'è la luce, e
+    /// il baricentro di due stanze accese cade fra le due, dove non è acceso
+    /// niente.
+    private func litPointsByRoom(rotated: Bool) -> [[UnitPoint]] {
+        var byRoom: [UUID: [UnitPoint]] = [:]
+        var unassigned: [[UnitPoint]] = []
+        for item in markerRenderItems(rotated: rotated) {
+            guard let adapter = item.adapter, adapter.isOn else { continue }
+            let point = UnitPoint(x: item.position.x, y: item.position.y)
+            if let room = item.linkedRoomUUID {
+                byRoom[room, default: []].append(point)
+            } else {
+                // Senza stanza sta per conto suo: mediarlo con altri lo
+                // sposterebbe in un punto che non è il suo.
+                unassigned.append([point])
+            }
         }
+        // Ordine stabile, o le pozze di luce si riassegnano a ogni ridisegno.
+        return byRoom.keys.sorted { $0.uuidString < $1.uuidString }.map { byRoom[$0]! }
+            + unassigned
     }
 
     private var currentLight: DaylightGround.Light {

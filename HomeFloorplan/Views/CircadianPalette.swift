@@ -176,10 +176,18 @@ struct CircadianPalette: Equatable, Sendable {
 /// che chi abita la casa sa senza misurarla, ed è il motivo per cui un velo
 /// uniforme non somiglierebbe a niente — la luce vera ha una provenienza.
 struct CircadianGlow: Equatable, Sendable {
-    /// Dove nasce, in coordinate normalizzate del canvas.
+    /// Dove nasce, in coordinate normalizzate della planimetria.
     let centre: UnitPoint
     /// Quanto è forte, da 0 a 1.
     let intensity: Double
+    /// Quanto è ampio, in frazione della diagonale della planimetria.
+    ///
+    /// Piccolo di proposito. Una luce larga metà schermo non somiglia a una
+    /// lampada: somiglia a una vignettatura, e per di più è quella che va a
+    /// sbattere contro i bordi. Stretta e più intensa legge come luce, si
+    /// spegne da sola molto prima di qualunque lato, e il problema dei bordi
+    /// smette di esistere invece di essere gestito.
+    let radius: Double
     let color: Color
 
     /// Quanta luce passa da un'apertura orientata in una certa direzione.
@@ -218,32 +226,46 @@ struct CircadianGlow: Equatable, Sendable {
         // motivo per cui una stanza esposta a ovest a settembre è arancione
         // alle sette e bianca alle due.
         return CircadianGlow(centre: opening,
-                             intensity: amount * 0.5,
+                             intensity: amount * 0.42,
+                             // Il sole entra da un'apertura sola ma illumina
+                             // più in là di una lampada: resta il più ampio dei
+                             // due, senza per questo diventare un velo.
+                             radius: 0.42,
                              color: Color(hue: 0.085,
                                           saturation: 0.25 + 0.35 * min(max(warmth, 0), 1),
                                           brightness: 1))
     }
 
-    /// Il bagliore che di sera nasce dalle stanze accese.
+    /// I bagliori che di sera nascono dalle stanze accese — **uno per stanza**.
     ///
     /// L'altra metà, e non è la stessa cosa col segno cambiato: di giorno la
     /// luce viene da fuori e ha una direzione sola, di sera viene da dentro e
-    /// nasce dove sono le lampade. Per questo il centro è il baricentro di ciò
-    /// che è acceso e non un punto fisso — se stasera è accesa solo la cucina,
-    /// il bagliore è in cucina.
-    nonisolated static func lamps(at points: [UnitPoint], daylight: Double) -> CircadianGlow? {
-        guard !points.isEmpty else { return nil }
+    /// nasce dove sono le lampade.
+    ///
+    /// Uno per stanza e non uno solo al baricentro di tutto. Con le luci accese
+    /// in soggiorno e in cucina, il baricentro cade nel corridoio in mezzo — un
+    /// punto dove non è acceso niente — e il risultato è un alone largo dove
+    /// non c'è nessuna lampada invece di due pozze dove ce ne sono. Una casa
+    /// illuminata di sera non ha un centro di luce: ne ha tanti quante sono le
+    /// stanze in cui c'è qualcuno.
+    nonisolated static func lamps(byRoom rooms: [[UnitPoint]], daylight: Double) -> [CircadianGlow] {
         // Di giorno le lampade non si vedono: competono col sole e perdono.
         let darkness = max(0, 1 - daylight / 0.45)
-        guard darkness > 0.05 else { return nil }
-        let centre = UnitPoint(x: points.map(\.x).reduce(0, +) / CGFloat(points.count),
-                               y: points.map(\.y).reduce(0, +) / CGFloat(points.count))
-        // Cresce col numero di lampade ma satura presto: fra sei e dodici luci
-        // accese la stanza non è il doppio più luminosa.
-        let amount = min(Double(points.count) / 6, 1)
-        return CircadianGlow(centre: centre,
-                             intensity: darkness * amount * 0.34,
-                             color: Color(hue: 0.095, saturation: 0.55, brightness: 1))
+        guard darkness > 0.05 else { return [] }
+
+        return rooms.compactMap { points in
+            guard !points.isEmpty else { return nil }
+            let centre = UnitPoint(x: points.map(\.x).reduce(0, +) / CGFloat(points.count),
+                                   y: points.map(\.y).reduce(0, +) / CGFloat(points.count))
+            // Cresce col numero di lampade ma satura presto: fra tre e sei luci
+            // accese una stanza non è il doppio più luminosa.
+            let amount = min(Double(points.count) / 3, 1)
+            return CircadianGlow(centre: centre,
+                                 intensity: darkness * (0.35 + 0.65 * amount) * 0.30,
+                                 // Stretto: è una stanza, non un piano.
+                                 radius: 0.20,
+                                 color: Color(hue: 0.095, saturation: 0.55, brightness: 1))
+        }
     }
 }
 
