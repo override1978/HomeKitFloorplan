@@ -613,8 +613,26 @@ final class HomeKitService: NSObject {
     /// l'app era spenta, invece di prenderlo per buono come stato iniziale.
     func seedEventBaselinesFromArchive() {
         guard let store = accessoryEventStore else { return }
-        archivedAccessoryStates = store.lastKnownStates()
-        dprint("🗄 Stato noto recuperato dall'archivio per \(archivedAccessoryStates.count) accessori")
+
+        // Solo per gli accessori con **una sola** caratteristica che produce
+        // eventi.
+        //
+        // L'archivio ricorda per accessorio, non per caratteristica, e una
+        // multipresa da quattro prese è un accessorio solo con quattro stati
+        // diversi. Dando a tutt'e quattro lo stesso ricordo, ciascuna si
+        // credeva cambiata e scriveva — quattro «transizioni recuperate» per
+        // la stessa presa, tutte false. Dove l'approssimazione non regge è
+        // meglio non ricordare che ricordare a caso.
+        let single = Set(allAccessories.filter { accessory in
+            accessory.services
+                .flatMap(\.characteristics)
+                .filter(AccessoryEventStore.producesEvents)
+                .count == 1
+        }.map(\.uniqueIdentifier))
+
+        archivedAccessoryStates = store.lastKnownStates().filter { single.contains($0.key) }
+        dprint("🗄 Stato noto dall'archivio per \(archivedAccessoryStates.count) accessori "
+               + "(su \(single.count) con una sola caratteristica)")
     }
 
     func reconcileEventState(_ characteristicID: UUID, dto: AccessoryEventDTO) {
@@ -623,6 +641,10 @@ final class HomeKitService: NSObject {
         let known = lastSavedEventStates[characteristicID]
             ?? archivedAccessoryStates[dto.accessoryID]
         lastSavedEventStates[characteristicID] = dto.state
+        // Il ricordo d'archivio si consuma: serve per il primo confronto e
+        // basta. Lasciandolo lì, ogni rilettura successiva lo ritrovava
+        // immutato e riscriveva la stessa transizione all'infinito.
+        archivedAccessoryStates.removeValue(forKey: dto.accessoryID)
         guard AccessoryEventStore.shouldRecord(known: known, incoming: dto.state),
               let store = accessoryEventStore else { return }
         store.saveEvent(dto)

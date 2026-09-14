@@ -312,13 +312,26 @@ struct FloorplanEditorView: View {
     private func loadGestures(day: DateInterval, now: Date) -> [HumanGesture] {
         let start = day.start
         let end = day.end
-        var descriptor = FetchDescriptor<AccessoryEvent>(
+        let descriptor = FetchDescriptor<AccessoryEvent>(
             predicate: #Predicate { $0.timestamp >= start && $0.timestamp < end },
             sortBy: [SortDescriptor(\.timestamp, order: .forward)])
-        // Tetto di sicurezza, non una finestra: una giornata normale ne produce
-        // qualche centinaio, e se una casa impazzita ne producesse diecimila
-        // meglio un nastro incompleto che un frame perso sulla planimetria.
-        descriptor.fetchLimit = 3_000
+        // Nessun tetto.
+        //
+        // C'era, a tremila, con il ragionamento che una giornata normale ne
+        // produce qualche centinaio e che meglio un nastro incompleto di un
+        // frame perso. Erano sbagliate tutte e due le parti. Il numero: questa
+        // casa ne produce quattromilacinquecento al giorno. E il ragionamento:
+        // ordinati per timestamp crescente, il tetto non toglie «i meno
+        // importanti» — toglie **la fine della giornata**. Il nastro mostrava
+        // fino a metà pomeriggio e poi il buio, e una barra aperta là dentro
+        // non incontrava mai il proprio spegnimento perché stava oltre il
+        // taglio.
+        //
+        // Il difetto peggiore però non è la troncatura: è che non si vedeva.
+        // Una giornata tagliata ha lo stesso aspetto di una giornata tranquilla,
+        // e ho passato tre correzioni a cercare nella scrittura un guasto che
+        // era nella lettura. La finestra del giorno è già il limite giusto —
+        // il tempo, non un conteggio — e se mai servisse un tetto dovrà dirlo.
         guard let events = try? modelContext.fetch(descriptor) else { return [] }
 
         let raw = events.map { event in
