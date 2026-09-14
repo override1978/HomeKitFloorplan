@@ -579,6 +579,33 @@ final class HomeKitService: NSObject {
     /// Quel che l'archivio ricorda, per il primo confronto dopo un avvio.
     private var archivedAccessoryStates: [UUID: Bool] = [:]
 
+    // Contatori di diagnostica: dove si perdono gli eventi.
+    private var deliveriesSeen = 0
+    private var droppedUnchanged = 0
+    private var droppedNoBaseline = 0
+
+    /// Una riga sola che dice a che punto della catena si rompe.
+    ///
+    /// I tre casi da fuori si somigliano tutti - nessun evento nuovo sul
+    /// nastro - e hanno rimedi opposti: se HomeKit tace il problema sono le
+    /// sottoscrizioni, se parla ma scartiamo e' la regola di registrazione, se
+    /// scriviamo ma il nastro non li vede e' la lettura. Sceglierne uno a
+    /// intuito e' come ho gia' sbagliato tre volte.
+    func logEventPipelineHealth() {
+        let stored = accessoryEventStore?.countToday() ?? -1
+        let written = accessoryEventStore?.written ?? -1
+        let failures = accessoryEventStore?.saveFailures ?? -1
+        dprint("[Eventi] consegne viste: \(deliveriesSeen)"
+               + " | scartate invariate: \(droppedUnchanged)"
+               + " | scartate senza stato noto: \(droppedNoBaseline)"
+               + " | scritte: \(written)"
+               + " | fallimenti salvataggio: \(failures)"
+               + " | in archivio oggi: \(stored)"
+               + " | baseline RAM: \(lastSavedEventStates.count)"
+               + " | baseline archivio: \(archivedAccessoryStates.count)"
+               + " | osservati: \(historyAccessoryUUIDs.count)")
+    }
+
     /// Riempie la memoria di partenza dall'archivio.
     ///
     /// Va chiamata prima di sottoscrivere: è ciò che permette alla prima
@@ -982,6 +1009,8 @@ extension HomeKitService: HMAccessoryDelegate {
             // alle TRANSIZIONI di stato: gli echi delle nostre scritture e le
             // riconsegne di massa (riconnessioni, heartbeat) hanno stato
             // invariato e vengono soppressi qui — niente più eventi fantasma.
+            if AccessoryEventStore.producesEvents(characteristic) { deliveriesSeen += 1 }
+
             if let store = accessoryEventStore,
                var dto = AccessoryEventStore.makeDTO(
                    from: characteristic, value: value, accessory: accessory) {
@@ -995,6 +1024,10 @@ extension HomeKitService: HMAccessoryDelegate {
                 // la cosa onesta è imparare, non raccontare.
                 if AccessoryEventStore.shouldRecord(known: knownState, incoming: dto.state) {
                     store.saveEvent(dto)
+                } else if knownState == nil {
+                    droppedNoBaseline += 1
+                } else {
+                    droppedUnchanged += 1
                 }
             }
 

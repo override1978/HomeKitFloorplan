@@ -21,6 +21,25 @@ final class AccessoryEventStore {
     /// Throttles the batch delete to once per hour instead of once per HomeKit notification.
     @ObservationIgnored private var lastCleanupDate: Date = .distantPast
 
+    // MARK: - Diagnostica
+    //
+    // Tre correzioni ragionate non hanno cambiato niente di visibile, il che e'
+    // il segnale che sbagliato e' il modello mentale e non la sua applicazione.
+    // Questi contatori distinguono i tre casi che da fuori si somigliano tutti
+    // - HomeKit tace, HomeKit parla ma scartiamo, scriviamo ma non si legge -
+    // invece di sceglierne uno a intuito.
+    @ObservationIgnored private(set) var written = 0
+    @ObservationIgnored private(set) var saveFailures = 0
+
+    /// Quanti eventi ci sono davvero in archivio per la giornata in corso.
+    @MainActor
+    func countToday(calendar: Calendar = .current) -> Int {
+        let start = calendar.startOfDay(for: Date())
+        let descriptor = FetchDescriptor<AccessoryEvent>(
+            predicate: #Predicate { $0.timestamp >= start })
+        return (try? modelContainer.mainContext.fetchCount(descriptor)) ?? -1
+    }
+
     /// L'istante dell'ultimo evento salvato, osservabile.
     ///
     /// Serve a una cosa sola: dire al nastro che è successo qualcosa. Prima la
@@ -66,6 +85,22 @@ final class AccessoryEventStore {
         )
         context.insert(event)
         lastSavedAt = Date()
+        written += 1
+
+        // Salvataggio esplicito, di nuovo.
+        //
+        // Era stato tolto affidandosi all'autosave, con il ragionamento che
+        // cosi' non si blocca il main thread a ogni notifica. Il ragionamento
+        // regge sui volumi - qualche decina di eventi al giorno - ma toglieva
+        // l'unica occasione di **accorgersi** di un fallimento: un autosave
+        // che non scatta non dice niente a nessuno, e da fuori e'
+        // indistinguibile da "non e' successo niente". Qui un errore si vede.
+        do {
+            try context.save()
+        } catch {
+            saveFailures += 1
+            dprint("!! [EventStore] salvataggio fallito per " + dto.accessoryName + ": \(error)")
+        }
 
         // Batch delete throttled to once per hour — running a predicate-delete
         // on every HomeKit notification was blocking the main thread unnecessarily.

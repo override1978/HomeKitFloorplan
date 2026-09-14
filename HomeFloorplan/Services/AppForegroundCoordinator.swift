@@ -128,6 +128,7 @@ struct AppForegroundCoordinator {
                     homeKit.seedEventBaselinesFromArchive()
                     homeKit.observeHistorySources()
                     homeKit.seedHomeState()
+                    homeKit.logEventPipelineHealth()
                     didSeedHomeState = true
                 }
 
@@ -157,6 +158,7 @@ struct AppForegroundCoordinator {
                     // qui è onesto. Il filtro di raggiungibilità dentro
                     // `seedHomeState` esclude chi non ha risposto.
                     homeKit.seedHomeState()
+                    homeKit.logEventPipelineHealth()
                     Cadence.stamp(Cadence.observationBeat)
                 }
             }
