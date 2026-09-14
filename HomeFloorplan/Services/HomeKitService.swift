@@ -576,8 +576,25 @@ final class HomeKitService: NSObject {
     /// conosce: il cambiamento è avvenuto in un punto qualunque degli ultimi
     /// dieci minuti. È un'imprecisione dichiarata, e resta molto meglio di un
     /// periodo che non finisce mai.
+    /// Quel che l'archivio ricorda, per il primo confronto dopo un avvio.
+    private var archivedAccessoryStates: [UUID: Bool] = [:]
+
+    /// Riempie la memoria di partenza dall'archivio.
+    ///
+    /// Va chiamata prima di sottoscrivere: è ciò che permette alla prima
+    /// lettura dopo il lancio di **accorgersi** di quanto è cambiato mentre
+    /// l'app era spenta, invece di prenderlo per buono come stato iniziale.
+    func seedEventBaselinesFromArchive() {
+        guard let store = accessoryEventStore else { return }
+        archivedAccessoryStates = store.lastKnownStates()
+        dprint("🗄 Stato noto recuperato dall'archivio per \(archivedAccessoryStates.count) accessori")
+    }
+
     func reconcileEventState(_ characteristicID: UUID, dto: AccessoryEventDTO) {
+        // Senza memoria in RAM si ricorre all'archivio: è il caso del primo
+        // confronto dopo un avvio, cioè proprio quello che prima si perdeva.
         let known = lastSavedEventStates[characteristicID]
+            ?? archivedAccessoryStates[dto.accessoryID]
         lastSavedEventStates[characteristicID] = dto.state
         guard AccessoryEventStore.shouldRecord(known: known, incoming: dto.state),
               let store = accessoryEventStore else { return }

@@ -121,6 +121,11 @@ struct AppForegroundCoordinator {
                     // del framework, e la semina raccoglie ciò che è già lì.
                     // I valori che arrivano dopo entrano da soli, perché la
                     // lettura iniziale alimenta HomeState anche lei.
+                    // Prima l'archivio, poi le sottoscrizioni: la prima
+                    // lettura deve avere con cosa confrontarsi, o ciò che è
+                    // cambiato mentre l'app era spenta passa per stato
+                    // iniziale e sparisce.
+                    homeKit.seedEventBaselinesFromArchive()
                     homeKit.observeHistorySources()
                     homeKit.seedHomeState()
                     didSeedHomeState = true

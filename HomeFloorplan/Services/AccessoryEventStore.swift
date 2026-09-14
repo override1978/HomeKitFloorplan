@@ -149,6 +149,33 @@ final class AccessoryEventStore {
     /// Crea un AccessoryEventDTO da una HMCharacteristic se il tipo è rilevante.
     /// Restituisce nil per sensori ambientali, termostati, serrature e altri tipi
     /// che non vanno in questo store.
+    /// L'ultimo stato registrato per ogni accessorio.
+    ///
+    /// È la memoria vera di cosa era acceso, e vive in archivio invece che in
+    /// RAM. La mappa in memoria riparte vuota a ogni avvio, e questo rendeva
+    /// impossibile accorgersi di ciò che era cambiato **mentre l'app era
+    /// spenta**: la prima lettura dopo il lancio non aveva niente con cui
+    /// confrontarsi, quindi si limitava a imparare, e una presa spenta a metà
+    /// pomeriggio restava accesa sul nastro per sempre.
+    ///
+    /// Per accessorio e non per caratteristica perché l'archivio è già così: un
+    /// `AccessoryEvent` porta l'id dell'accessorio, non quello della singola
+    /// caratteristica. È un'approssimazione per i pochi accessori che ne hanno
+    /// più d'una rilevante, e resta molto meglio di nessuna memoria.
+    @MainActor
+    func lastKnownStates(within days: Int = 30) -> [UUID: Bool] {
+        let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
+        var descriptor = FetchDescriptor<AccessoryEvent>(
+            predicate: #Predicate { $0.timestamp >= cutoff },
+            sortBy: [SortDescriptor(\.timestamp, order: .forward)])
+        descriptor.propertiesToFetch = [\.accessoryID, \.state, \.timestamp]
+        guard let events = try? modelContainer.mainContext.fetch(descriptor) else { return [:] }
+        // In ordine crescente l'ultima scrittura vince: è l'ultimo stato noto.
+        var states: [UUID: Bool] = [:]
+        for event in events { states[event.accessoryID] = event.state }
+        return states
+    }
+
     /// Se un valore appena visto va registrato come avvenimento.
     ///
     /// Una funzione sola per i tre percorsi che la chiedono — notifica push,
