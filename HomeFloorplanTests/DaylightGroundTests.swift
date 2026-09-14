@@ -57,7 +57,7 @@ struct DaylightGroundTests {
             light: DaylightGround.light(at: time(9, 9), sunrise: sunrise, sunset: sunset))
         var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         UIColor(ground).getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
-        #expect(b > 0.85, "alle nove deve leggersi bianco, non grigio")
+        #expect(b > 0.95, "alle nove deve leggersi bianco, non grigio")
     }
 
     @Test("Il bianco del mattino ha un riflesso caldo, quello di mezzogiorno no")
@@ -200,19 +200,24 @@ struct DaylightGroundTests {
         #expect(day.b > 0.35, "un fondo scuro che resta scuro renderebbe l'idea invisibile")
     }
 
-    @Test("Il fondo non diventa mai bianco assoluto")
-    func neverPureWhite() {
-        // Sotto i muri di una planimetria il bianco pieno abbaglia e mangia i
-        // contorni — ma deve mancarci poco, o si legge grigio chiaro.
-        #expect(hsb(DaylightGround.circadianGround(light: noonLight)).b < 0.99)
-        #expect(hsb(DaylightGround.circadianGround(light: noonLight)).b > 0.9)
+    @Test("A mezzogiorno il fondo si legge bianco, non grigio chiaro")
+    func noonReadsWhite() {
+        // Il bianco non è una quantità assoluta ma un confronto: accanto ai
+        // riempimenti bianchi del disegno, un fondo a 0,95 è semplicemente il
+        // grigio della coppia. Deve mancare pochissimo al bianco pieno.
+        let noon = hsb(DaylightGround.circadianGround(light: noonLight)).b
+        #expect(noon > 0.97)
+        #expect(noon < 1.0, "non del tutto: un filo di stacco resta utile")
     }
 
-    @Test("Anche il disegno riceve la luce, ma con misura")
-    func theDrawingIsLitToo() {
-        // Senza questo il raster resta fermo mentre il fondo si muove, e
-        // diventa un rettangolo scuro che galleggia.
-        #expect(noonLight.imageBrightness > 0.1)
+    @Test("Al disegno la luce arriva come un soffio, non come una schiarita")
+    func theDrawingIsBarelyLit() {
+        // Schiarirlo serviva quando il disegno era uno solo e doveva coprire
+        // tutta la giornata. Con due varianti ognuna è già quella giusta per
+        // la propria fase, e insistere le sbianca i muri fino a farli sembrare
+        // accesi — che è anche ciò che faceva leggere grigio il fondo accanto.
+        #expect(noonLight.imageBrightness > 0)
+        #expect(noonLight.imageBrightness < 0.08)
         #expect(DaylightGround.Light.night.imageBrightness == 0,
                 "di notte il disegno è quello che hai esportato, intatto")
         // Di giorno la tinta è l'identità: moltiplicare per bianco non fa nulla.
@@ -272,8 +277,8 @@ struct DaylightGroundTests {
         let night = hsb(DaylightGround.circadianGround(light: .night))
         let noon = hsb(DaylightGround.circadianGround(light: noonLight))
         #expect(night.b < 0.15)
-        #expect(noon.b > 0.9)
-        #expect(noon.b < 0.99, "il bianco pieno sotto i muri abbaglia")
+        #expect(noon.b > 0.97)
+        #expect(noon.b < 1.0)
     }
 
     @Test("Il fondo attraversa la soglia che ribalta il tema della chrome")

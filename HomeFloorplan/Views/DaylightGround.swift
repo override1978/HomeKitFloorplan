@@ -105,7 +105,15 @@ enum DaylightGround {
         /// Poco però: alzare la luminosità di un disegno scuro gli spegne il
         /// contrasto, e la planimetria deve restare leggibile a qualunque ora.
         /// Il grosso del segnale resta sul fondo e sul calore.
-        var imageBrightness: Double { 0.16 * luminance }
+        /// Un soffio, non più una compensazione.
+        ///
+        /// Valeva 0,16 quando il disegno era uno solo e doveva coprire da solo
+        /// tutta la giornata: schiarirlo era l'unico modo di farlo somigliare
+        /// al giorno. Con due varianti ognuna è già quella giusta per la
+        /// propria fase, e continuare a schiarirla la sbianca e basta — i muri
+        /// chiari saturavano a bianco pieno e sembravano accesi, che è anche
+        /// ciò che faceva leggere grigio il fondo accanto a loro.
+        var imageBrightness: Double { 0.04 * luminance }
 
         /// Quanto pesa la variante scura del disegno.
         ///
@@ -127,7 +135,7 @@ enum DaylightGround {
         }
 
         /// Un filo di contrasto in più, a compensare l'appiattimento.
-        var imageContrast: Double { 1 + 0.10 * luminance }
+        var imageContrast: Double { 1 + 0.03 * luminance }
 
         /// La tinta calda da moltiplicare sul disegno.
         ///
@@ -253,10 +261,15 @@ enum DaylightGround {
         let light = min(max(cycle.luminance, 0), 1)
         let warm = min(max(cycle.warmth, 0), 1)
 
-        // Da un bruno quasi nero al bianco. Non bianco assoluto: sotto i muri
-        // di una planimetria abbaglia e mangia i contorni, ma abbastanza da
-        // essere letto come bianco e non come grigio chiaro.
-        let brightness = 0.10 + (0.95 - 0.10) * light
+        // Da un bruno quasi nero al bianco.
+        //
+        // Il tetto era 0,95, e a mezzogiorno si leggeva grigio: il bianco non è
+        // una quantità assoluta ma un confronto, e accanto ai riempimenti
+        // bianchi del disegno un fondo a 0,95 è semplicemente il grigio della
+        // coppia. Era un ragionamento giusto sul colore e sbagliato sulla
+        // scena — «non arrivare al bianco perché abbaglia» vale per una
+        // superficie sola, non per una che ne tocca un'altra più chiara.
+        let brightness = 0.10 + (0.99 - 0.10) * light
 
         // Il caldo non viene spento dalla luce, solo attenuato.
         //
