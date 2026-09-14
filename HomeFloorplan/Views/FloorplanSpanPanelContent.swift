@@ -60,12 +60,14 @@ struct FloorplanSpanPanelContent: View {
 
     private var facts: some View {
         VStack(alignment: .leading, spacing: 8) {
-            row(icon: "play.circle",
+            row(icon: span.startedByHand ? "hand.tap" : "play.circle",
                 // Il bordo della finestra non è un inizio: dirlo «dalle 00:00»
                 // sarebbe inventare un'accensione che non abbiamo visto.
                 text: span.startsBeforeWindow
                     ? String(localized: "span.startedEarlier", defaultValue: "Era già acceso a inizio giornata")
-                    : String(format: String(localized: "span.startedAt", defaultValue: "Acceso alle %@"),
+                    : String(format: span.startedByHand
+                                ? String(localized: "span.startedAtByHand", defaultValue: "Acceso a mano alle %@")
+                                : String(localized: "span.startedAt", defaultValue: "Acceso alle %@"),
                              span.start.formatted(date: .omitted, time: .shortened)))
 
             if let end = span.end {

@@ -334,12 +334,17 @@ struct FloorplanEditorView: View {
         // Una lettura sola, due letture diverse degli stessi eventi: i gesti
         // guardano *chi* ha agito, i periodi guardano *per quanto*. Rifare la
         // query per la seconda sarebbe pagare due volte la stessa risposta.
-        daySpans = DaySpanBuilder.build(from: raw, window: day, now: now)
+        let fires = dayMoments.filter(\.isAutomationKind).map(\.at)
+        daySpans = DaySpanBuilder.build(from: raw, window: day,
+                                        scheduledFires: fires, now: now)
 
-        return HumanGestureBuilder.build(from: raw,
-                                         scheduledFires: dayMoments.filter(\.isAutomationKind).map(\.at),
-                                         scenes: scenesService.sceneSignatures(),
-                                         now: now)
+        let gestures = HumanGestureBuilder.build(from: raw,
+                                                 scheduledFires: fires,
+                                                 scenes: scenesService.sceneSignatures(),
+                                                 now: now)
+        // I due racconti si incontrano qui: dove la barra dice già tutto, il
+        // rombo si toglie di mezzo.
+        return HumanGestureBuilder.removingCovered(gestures, by: daySpans)
     }
 
     /// Stessa sorgente e semantica di SecurityOverlayView: solo i sensori

@@ -26,6 +26,15 @@ struct DaySpan: Identifiable, Equatable, Sendable {
     /// bordo sinistro non è un inizio ma il limite di ciò che sappiamo.
     let startsBeforeWindow: Bool
 
+    /// Vero quando ad accenderlo è stata una mano, non l'app né uno scatto
+    /// previsto.
+    ///
+    /// È l'unica cosa che il rombo del gesto sapeva e la barra no. Da quando il
+    /// rombo sparisce se la barra dice già tutto, quell'informazione doveva
+    /// passare di qui — altrimenti togliere la ripetizione avrebbe tolto anche
+    /// un pezzo di verità.
+    let startedByHand: Bool
+
     func duration(now: Date) -> TimeInterval {
         (end ?? now).timeIntervalSince(start)
     }
@@ -73,6 +82,7 @@ enum DaySpanBuilder {
     ///     quando è finito», che su un giorno passato sono cose diverse.
     static func build(from raw: [HumanGestureBuilder.RawChange],
                       window: DateInterval,
+                      scheduledFires: [Date] = [],
                       now: Date = Date()) -> [DaySpan] {
         var byAccessory: [UUID: [HumanGestureBuilder.RawChange]] = [:]
         for change in raw where processTypes.contains(change.eventType) {
@@ -84,6 +94,7 @@ enum DaySpanBuilder {
             let ordered = changes.sorted { $0.at < $1.at }
             var openedAt: Date?
             var openedBeforeWindow = false
+            var openedByHand = false
 
             // Se il primo evento della finestra è uno spegnimento, la cosa era
             // già accesa quando la finestra è cominciata: il periodo esiste, e
@@ -99,13 +110,23 @@ enum DaySpanBuilder {
                     if openedAt == nil {
                         openedAt = change.at
                         openedBeforeWindow = false
+                        // Stessa misura che usa la corsia dei gesti: origine
+                        // esterna e lontano da uno scatto previsto. Altrimenti
+                        // «a mano» vorrebbe dire due cose diverse a seconda di
+                        // dove lo si legge.
+                        openedByHand = change.origin == HumanGestureBuilder.humanOrigin
+                            && !scheduledFires.contains {
+                                abs($0.timeIntervalSince(change.at)) <= HumanGestureBuilder.automationTolerance
+                            }
                     }
                 } else if let start = openedAt {
                     spans.append(contentsOf: make(uuid: uuid, sample: change,
                                                   start: start, end: change.at,
-                                                  before: openedBeforeWindow))
+                                                  before: openedBeforeWindow,
+                                                  byHand: openedByHand))
                     openedAt = nil
                     openedBeforeWindow = false
+                    openedByHand = false
                 }
             }
 
@@ -118,7 +139,8 @@ enum DaySpanBuilder {
                 spans.append(contentsOf: make(uuid: uuid, sample: sample,
                                               start: start,
                                               end: stillRunning ? nil : window.end,
-                                              before: openedBeforeWindow))
+                                              before: openedBeforeWindow,
+                                              byHand: openedByHand))
             }
         }
 
@@ -154,7 +176,8 @@ enum DaySpanBuilder {
                              sample: HumanGestureBuilder.RawChange,
                              start: Date,
                              end: Date?,
-                             before: Bool) -> [DaySpan] {
+                             before: Bool,
+                             byHand: Bool) -> [DaySpan] {
         if let end, end.timeIntervalSince(start) < minimumSpan { return [] }
         return [DaySpan(id: "\(uuid)@\(Int(start.timeIntervalSinceReferenceDate))",
                         accessoryUUID: uuid,
@@ -163,6 +186,7 @@ enum DaySpanBuilder {
                         eventType: sample.eventType,
                         start: start,
                         end: end,
-                        startsBeforeWindow: before)]
+                        startsBeforeWindow: before,
+                        startedByHand: byHand)]
     }
 }

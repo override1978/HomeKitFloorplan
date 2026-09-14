@@ -240,6 +240,42 @@ enum HumanGestureBuilder {
             .filter { $0.isScene || isPlausiblyHuman($0) }
     }
 
+    /// Toglie i gesti che le barre raccontano già.
+    ///
+    /// Da quando l'asse mostra anche le durate, accendere il purificatore a
+    /// mano produceva due cose: un rombo all'istante in cui l'hai acceso e una
+    /// barra che comincia esattamente lì. Sono lo stesso fatto detto due volte,
+    /// e la barra lo dice meglio — il suo bordo sinistro **è** quell'istante, e
+    /// in più sa quanto è durato.
+    ///
+    /// Sparisce solo il gesto che non aggiunge niente: se ne ha fatte quattro e
+    /// tre erano luci — che barre non ne producono — il rombo resta, perché
+    /// senza di lui quelle tre sparirebbero dal nastro. La ripetizione si
+    /// toglie dove è ripetizione, non dove è l'unica copia.
+    ///
+    /// «A mano» non si perde: passa alla barra, che lo dice nel pannello.
+    static func removingCovered(_ gestures: [HumanGesture],
+                                by spans: [DaySpan],
+                                tolerance: TimeInterval = 90) -> [HumanGesture] {
+        guard !spans.isEmpty else { return gestures }
+        var edges: [UUID: [Date]] = [:]
+        for span in spans {
+            edges[span.accessoryUUID, default: []].append(span.start)
+            if let end = span.end { edges[span.accessoryUUID, default: []].append(end) }
+        }
+
+        return gestures.filter { gesture in
+            // Una scena riconosciuta resta comunque: il suo nome è
+            // informazione che nessuna barra porta.
+            if gesture.isScene { return true }
+            return !gesture.changes.allSatisfy { change in
+                (edges[change.accessoryUUID] ?? []).contains {
+                    abs($0.timeIntervalSince(change.at)) <= tolerance
+                }
+            }
+        }
+    }
+
     /// Riconosce l'esecuzione di una scena dentro una raffica di comandi.
     ///
     /// Fra più scene compatibili vince la più piccola: una «Spegni tutto» da

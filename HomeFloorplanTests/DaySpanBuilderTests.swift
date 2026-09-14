@@ -186,7 +186,7 @@ struct SpanLaneTests {
     private func span(_ name: String, _ from: Double, _ to: Double?) -> DaySpan {
         DaySpan(id: name, accessoryUUID: UUID(), name: name, roomName: nil,
                 eventType: "airPurifier", start: at(from),
-                end: to.map(at), startsBeforeWindow: false)
+                end: to.map(at), startsBeforeWindow: false, startedByHand: false)
     }
 
     @Test("Periodi che non si toccano stanno tutti sulla prima riga")
@@ -279,7 +279,8 @@ struct SpanIdentityTests {
 
     private func span(type: String) -> DaySpan {
         DaySpan(id: "x", accessoryUUID: UUID(), name: "X", roomName: nil,
-                eventType: type, start: Date(), end: nil, startsBeforeWindow: false)
+                eventType: type, start: Date(), end: nil,
+                startsBeforeWindow: false, startedByHand: false)
     }
 
     @Test("Ogni tipo di processo ha il suo simbolo")
@@ -295,5 +296,95 @@ struct SpanIdentityTests {
         // Una barra muta costringe a toccarla per sapere cos'è, che su un
         // pannello al muro vuol dire non dirlo.
         #expect(DayRibbonView.spanSymbol(for: span(type: "qualcosa")).isEmpty == false)
+    }
+}
+
+/// Dove barra e rombo raccontano lo stesso fatto, resta la barra.
+@Suite("Un fatto, un oggetto")
+struct SpanGestureOverlapTests {
+
+    private let base = Date(timeIntervalSinceReferenceDate: 0)
+    private func at(_ hour: Double) -> Date { base.addingTimeInterval(hour * 3600) }
+    private var day: DateInterval { DateInterval(start: base, duration: 24 * 3600) }
+
+    private func raw(_ uuid: UUID, on: Bool, at hour: Double,
+                     type: String, name: String) -> HumanGestureBuilder.RawChange {
+        HumanGestureBuilder.RawChange(accessoryUUID: uuid, accessoryName: name,
+                                      roomName: "Studio", state: on, brightness: nil,
+                                      eventType: type, at: at(hour), origin: "external")
+    }
+
+    @Test("Accendere a mano il purificatore lascia solo la barra")
+    func onlyTheBarSurvives() {
+        let uuid = UUID()
+        let events = [raw(uuid, on: true, at: 9, type: "airPurifier", name: "Purificatore"),
+                      raw(uuid, on: false, at: 11, type: "airPurifier", name: "Purificatore")]
+        let spans = DaySpanBuilder.build(from: events, window: day, now: at(12))
+        let gestures = HumanGestureBuilder.build(from: events, now: at(12))
+        #expect(spans.count == 1)
+        #expect(gestures.isEmpty == false, "il gesto esiste...")
+        #expect(HumanGestureBuilder.removingCovered(gestures, by: spans).isEmpty,
+                "...ma la barra lo dice già, e meglio")
+    }
+
+    @Test("Se il gesto ha toccato anche una luce, il rombo resta")
+    func partialCoverageKeepsTheGesture() {
+        let purifier = UUID(), lamp = UUID()
+        let events = [raw(purifier, on: true, at: 9, type: "airPurifier", name: "Purificatore"),
+                      raw(lamp, on: true, at: 9.01, type: "light", name: "Piantana"),
+                      raw(purifier, on: false, at: 11, type: "airPurifier", name: "Purificatore")]
+        let spans = DaySpanBuilder.build(from: events, window: day, now: at(12))
+        let gestures = HumanGestureBuilder.build(from: events, now: at(12))
+        #expect(HumanGestureBuilder.removingCovered(gestures, by: spans).count == 1,
+                "la luce non produce barre: senza il rombo sparirebbe dal nastro")
+    }
+
+    @Test("Una scena riconosciuta resta anche se le barre la coprono")
+    func scenesAreNeverRedundant() {
+        let uuids = (0..<10).map { _ in UUID() }
+        let events = uuids.enumerated().map {
+            raw($0.element, on: true, at: 9 + Double($0.offset) * 0.001,
+                type: "outlet", name: "Presa \($0.offset)")
+        }
+        let spans = DaySpanBuilder.build(from: events, window: day, now: at(12))
+        let scene = HumanGestureBuilder.SceneSignature(id: UUID(), name: "Cinema",
+                                                       accessoryUUIDs: Set(uuids))
+        let gestures = HumanGestureBuilder.build(from: events, scenes: [scene], now: at(12))
+        #expect(HumanGestureBuilder.removingCovered(gestures, by: spans).count == 1,
+                "il nome della scena è informazione che nessuna barra porta")
+    }
+
+    @Test("Senza barre non si toglie niente")
+    func noSpansNoRemoval() {
+        let uuid = UUID()
+        let events = [raw(uuid, on: true, at: 9, type: "light", name: "Piantana")]
+        let gestures = HumanGestureBuilder.build(from: events, now: at(12))
+        #expect(HumanGestureBuilder.removingCovered(gestures, by: []).count == gestures.count)
+    }
+
+    @Test("La barra sa se l'ha accesa una mano")
+    func spanKnowsWhoStartedIt() throws {
+        let uuid = UUID()
+        let byHand = DaySpanBuilder.build(
+            from: [raw(uuid, on: true, at: 9, type: "airPurifier", name: "P")],
+            window: day, now: at(12))
+        #expect(try #require(byHand.first).startedByHand)
+
+        // Lo stesso istante, ma a ridosso di uno scatto previsto: è
+        // l'automazione, e dirlo «a mano» sarebbe attribuirlo a qualcuno.
+        let byAutomation = DaySpanBuilder.build(
+            from: [raw(uuid, on: true, at: 9, type: "airPurifier", name: "P")],
+            window: day, scheduledFires: [at(9)], now: at(12))
+        #expect(try #require(byAutomation.first).startedByHand == false)
+    }
+
+    @Test("Una scrittura dell'app non è una mano")
+    func appWritesAreNotHands() throws {
+        let uuid = UUID()
+        let engine = HumanGestureBuilder.RawChange(
+            accessoryUUID: uuid, accessoryName: "P", roomName: nil, state: true,
+            brightness: nil, eventType: "airPurifier", at: at(9), origin: "engine")
+        let spans = DaySpanBuilder.build(from: [engine], window: day, now: at(12))
+        #expect(try #require(spans.first).startedByHand == false)
     }
 }
