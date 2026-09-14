@@ -70,7 +70,10 @@ struct DayRibbonView: View {
     private static let labelRowHeight: CGFloat = 13
     private static let labelRows = 2
     private static let stalkTop: CGFloat = labelRowHeight * CGFloat(labelRows) + 4
-    private static let stalkHeight: CGFloat = 20
+    // Il gambo si accorcia per pagare le righe più alte dei periodi: la fascia
+    // non poteva crescere ancora senza rubare spazio alla planimetria, e fra un
+    // gambo lungo e una barra leggibile il gambo è l'ornamento.
+    private static let stalkHeight: CGFloat = 14
     private static let axisY: CGFloat = stalkTop + stalkHeight
 
     /// L'asse è diventato una fascia, perché i periodi hanno bisogno di righe.
@@ -81,7 +84,10 @@ struct DayRibbonView: View {
     /// sovrappone — è la sua natura — e l'unico modo di mostrarlo è dare a
     /// ciascuno una riga sua.
     static let spanLanes = 3
-    private static let spanLaneHeight: CGFloat = 6
+    /// Nove punti e non sei: dentro sei non ci sta niente, e una barra che non
+    /// può dire cosa è costringe a toccarla per saperlo — su un pannello
+    /// appeso al muro, che nessuno tocca per curiosità, vuol dire non dirlo.
+    private static let spanLaneHeight: CGFloat = 9
     private static let spanLaneGap: CGFloat = 1
     private static let axisHeight: CGFloat =
         spanLaneHeight * CGFloat(spanLanes) + spanLaneGap * CGFloat(spanLanes - 1) + 2
@@ -392,6 +398,7 @@ struct DayRibbonView: View {
                     // sparirebbe nello sfondo.
                     Capsule().strokeBorder(.white.opacity(isSelected ? 0.9 : 0.35), lineWidth: 0.5)
                 }
+                .overlay(alignment: .leading) { spanContent(item.span, barWidth: barWidth) }
                 .frame(width: barWidth, height: Self.spanLaneHeight)
                 .position(x: x0 + barWidth / 2, y: Self.spanLaneY(item.lane))
                 // Bersaglio più alto della barra: sei punti non si toccano.
@@ -419,13 +426,52 @@ struct DayRibbonView: View {
     private func spanReadout(_ span: DaySpan, width: CGFloat) -> some View {
         let x0 = fraction(of: span.start) * width
         let x1 = fraction(of: span.end ?? now) * width
-        return Text(span.name)
+        // Solo per le barre strette: su quelle larghe il nome è già dentro, e
+        // scriverlo due volte sarebbe solo più inchiostro per la stessa cosa.
+        return Text(x1 - x0 > 64 ? "" : span.name)
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(Self.spanTint(for: span))
             .lineLimit(1)
             .fixedSize()
             .position(x: min(max((x0 + x1) / 2, 40), width - 40),
                       y: Self.axisY - 7)
+    }
+
+    /// Cosa c'è scritto dentro una barra: un'icona, e il nome se ci sta.
+    ///
+    /// L'icona per prima perché sopravvive a qualunque larghezza e si legge da
+    /// lontano, che è la distanza da cui si guarda un pannello al muro. Il nome
+    /// entra solo quando può entrare **intero**: un nome troncato a metà parola
+    /// non è un nome corto, è una promessa non mantenuta, e ne avevamo già
+    /// visto l'effetto con «Purificatore Stu».
+    @ViewBuilder
+    private func spanContent(_ span: DaySpan, barWidth: CGFloat) -> some View {
+        let icon = Self.spanSymbol(for: span)
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 6, weight: .bold))
+            if barWidth > 64 {
+                Text(span.name)
+                    .font(.system(size: 7, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .foregroundStyle(.white.opacity(0.95))
+        .padding(.leading, 4)
+        .frame(width: max(barWidth - 6, 0), alignment: .leading)
+        .allowsHitTesting(false)
+    }
+
+    /// Il simbolo del processo, lo stesso che l'accessorio porta altrove.
+    nonisolated static func spanSymbol(for span: DaySpan) -> String {
+        switch AccessoryEventType(rawValue: span.eventType) {
+        case .airPurifier: return "air.purifier"
+        case .fan:         return "fan"
+        case .humidifier:  return "humidifier"
+        case .outlet:      return "powerplug"
+        default:           return "switch.2"
+        }
     }
 
     private static func spanLaneY(_ lane: Int) -> CGFloat {

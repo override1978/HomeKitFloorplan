@@ -238,3 +238,28 @@ struct SpanLaneTests {
         #expect(one == two)
     }
 }
+
+/// Cosa una barra riesce a dire di sé.
+@Suite("Le barre si presentano")
+struct SpanIdentityTests {
+
+    private func span(type: String) -> DaySpan {
+        DaySpan(id: "x", accessoryUUID: UUID(), name: "X", roomName: nil,
+                eventType: type, start: Date(), end: nil, startsBeforeWindow: false)
+    }
+
+    @Test("Ogni tipo di processo ha il suo simbolo")
+    func eachTypeHasASymbol() {
+        #expect(DayRibbonView.spanSymbol(for: span(type: "airPurifier")) == "air.purifier")
+        #expect(DayRibbonView.spanSymbol(for: span(type: "fan")) == "fan")
+        #expect(DayRibbonView.spanSymbol(for: span(type: "humidifier")) == "humidifier")
+        #expect(DayRibbonView.spanSymbol(for: span(type: "outlet")) == "powerplug")
+    }
+
+    @Test("Un tipo sconosciuto non resta senza simbolo")
+    func unknownTypeStillHasOne() {
+        // Una barra muta costringe a toccarla per sapere cos'è, che su un
+        // pannello al muro vuol dire non dirlo.
+        #expect(DayRibbonView.spanSymbol(for: span(type: "qualcosa")).isEmpty == false)
+    }
+}
