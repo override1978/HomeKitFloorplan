@@ -128,9 +128,14 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
                 //
                 // Una luce non ha bordi: o si spegne da sola prima di
                 // incontrarli, o quei bordi si vedono.
+                // Coda corta. Con la fermata intermedia al 45% il bagliore
+                // restava percepibile quasi fino al raggio pieno, e fuori dalla
+                // planimetria il caldo copriva il colore della notte invece di
+                // lasciarglielo. Una lampada illumina attorno a sé e poi
+                // smette: il fondo deve poter restare il fondo.
                 RadialGradient(stops: [
                     .init(color: glow.color.opacity(glow.intensity), location: 0),
-                    .init(color: glow.color.opacity(glow.intensity * 0.30), location: 0.45),
+                    .init(color: glow.color.opacity(glow.intensity * 0.22), location: 0.32),
                     .init(color: glow.color.opacity(0), location: 1)
                 ],
                 center: Self.containerCentre(of: glow, imageRect: rect, container: containerSize),

@@ -230,7 +230,7 @@ struct CircadianGlow: Equatable, Sendable {
                              // Il sole entra da un'apertura sola ma illumina
                              // più in là di una lampada: resta il più ampio dei
                              // due, senza per questo diventare un velo.
-                             radius: 0.42,
+                             radius: 0.36,
                              color: Color(hue: 0.085,
                                           saturation: 0.25 + 0.35 * min(max(warmth, 0), 1),
                                           brightness: 1))
@@ -263,7 +263,7 @@ struct CircadianGlow: Equatable, Sendable {
             return CircadianGlow(centre: centre,
                                  intensity: darkness * (0.35 + 0.65 * amount) * 0.30,
                                  // Stretto: è una stanza, non un piano.
-                                 radius: 0.20,
+                                 radius: 0.16,
                                  color: Color(hue: 0.095, saturation: 0.55, brightness: 1))
         }
     }

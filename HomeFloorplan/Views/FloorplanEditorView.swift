@@ -548,6 +548,17 @@ struct FloorplanEditorView: View {
         var byRoom: [UUID: [UnitPoint]] = [:]
         var unassigned: [[UnitPoint]] = []
         for item in markerRenderItems(rotated: rotated) {
+            // Solo le **lampade**, non tutto ciò che è acceso.
+            //
+            // È la causa a monte del caldo che invadeva tutta la schermata:
+            // con quindici cose accese fra prese, ciabatte e televisore si
+            // generavano dodici pozze che sommandosi diventavano una lavata
+            // uniforme. Ma soprattutto era falso — una multipresa accesa non
+            // illumina niente, e il bagliore deve nascere da ciò che fa luce
+            // davvero.
+            guard let accessory = item.accessory,
+                  accessory.services.contains(where: { $0.serviceType == HMServiceTypeLightbulb })
+            else { continue }
             guard let adapter = item.adapter, adapter.isOn else { continue }
             let point = UnitPoint(x: item.position.x, y: item.position.y)
             if let room = item.linkedRoomUUID {

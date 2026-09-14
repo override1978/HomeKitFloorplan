@@ -227,6 +227,20 @@ struct CircadianGlowTests {
         #expect(lamp.radius < sun.radius)
         #expect(sun.radius < 0.5, "e nemmeno il sole arriva ai bordi")
     }
+
+    @Test("Il fondo resta il fondo: la luce non arriva ai bordi")
+    func lightDoesNotReachTheEdges() throws {
+        // Il difetto che il mockup rendeva evidente: fuori dalla planimetria il
+        // caldo copriva il colore della notte invece di lasciarglielo. Con un
+        // raggio inferiore a un quarto della planimetria, un bagliore centrato
+        // al suo interno si spegne prima di uscirne — quindi il fondo attorno
+        // resta quello che la luce circadiana ha deciso.
+        let lamp = try #require(CircadianGlow.lamps(byRoom: [[.center]], daylight: 0).first)
+        #expect(lamp.radius < 0.25)
+        // Anche partendo dal bordo della planimetria, il raggio non copre
+        // nemmeno metà della sua diagonale.
+        #expect(lamp.radius * 2 < 0.5)
+    }
 }
 
 /// Dal punto sulla planimetria al punto sulla schermata.
