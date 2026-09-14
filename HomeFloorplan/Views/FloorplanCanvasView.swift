@@ -115,13 +115,28 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
             // un velo opaco coprirebbe i tratti sottili dei muri, mentre la
             // luce si aggiunge — che è anche ciò che fa la luce.
             ForEach(Array(glows.enumerated()), id: \.offset) { _, glow in
-                RadialGradient(colors: [glow.color.opacity(glow.intensity),
-                                        glow.color.opacity(0)],
-                               center: glow.centre,
-                               startRadius: 0,
-                               endRadius: max(rect.width, rect.height) * 0.75)
-                    .frame(width: rect.width * 1.5, height: rect.height * 1.5)
-                    .position(x: rect.midX, y: rect.midY)
+                // Il bagliore copre **tutta** la superficie, non un riquadro
+                // attorno al disegno.
+                //
+                // Prima era un rettangolo di una volta e mezza l'immagine,
+                // centrato su di lei: dove quel rettangolo finiva il gradiente
+                // veniva tagliato di netto invece di spegnersi, e si vedeva una
+                // riga dritta — sopra e a sinistra, dove comincia la chrome. In
+                // verticale peggiorava, perché con l'altezza maggiore della
+                // larghezza il raggio superava i lati e il taglio cadeva ancora
+                // più dentro.
+                //
+                // Una luce non ha bordi: o si spegne da sola prima di
+                // incontrarli, o quei bordi si vedono.
+                RadialGradient(stops: [
+                    .init(color: glow.color.opacity(glow.intensity), location: 0),
+                    .init(color: glow.color.opacity(glow.intensity * 0.30), location: 0.45),
+                    .init(color: glow.color.opacity(0), location: 1)
+                ],
+                center: Self.containerCentre(of: glow, imageRect: rect, container: containerSize),
+                startRadius: 0,
+                endRadius: hypot(containerSize.width, containerSize.height) * 0.72)
+                    .frame(width: containerSize.width, height: containerSize.height)
                     .blendMode(.plusLighter)
                     .allowsHitTesting(false)
             }
@@ -153,6 +168,23 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
             overMarkerLayer(containerSize, rect)
         }
         .frame(width: containerSize.width, height: containerSize.height)
+    }
+}
+
+extension FloorplanCanvasView {
+    /// Dal punto sulla planimetria al punto sulla schermata.
+    ///
+    /// Il centro di un bagliore è espresso in coordinate della **planimetria** —
+    /// è lì che stanno il balcone e le lampade — mentre il gradiente si
+    /// disegna su tutta la superficie. Senza questa conversione la sorgente
+    /// scivolerebbe ogni volta che l'immagine cambia dimensione o posizione.
+    nonisolated static func containerCentre(of glow: CircadianGlow,
+                                            imageRect: CGRect,
+                                            container: CGSize) -> UnitPoint {
+        guard container.width > 0, container.height > 0 else { return .center }
+        let x = (imageRect.minX + glow.centre.x * imageRect.width) / container.width
+        let y = (imageRect.minY + glow.centre.y * imageRect.height) / container.height
+        return UnitPoint(x: x, y: y)
     }
 }
 

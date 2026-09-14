@@ -203,3 +203,55 @@ struct CircadianGlowTests {
         #expect(CircadianGlow.lamps(at: [], daylight: 0) == nil)
     }
 }
+
+/// Dal punto sulla planimetria al punto sulla schermata.
+@Suite("Dove cade il bagliore")
+struct GlowPlacementTests {
+
+    private func glow(_ x: CGFloat, _ y: CGFloat) -> CircadianGlow {
+        CircadianGlow(centre: UnitPoint(x: x, y: y), intensity: 0.3, color: .orange)
+    }
+
+    @Test("Il centro dell'immagine resta il centro dell'immagine")
+    func imageCentreMapsToImageCentre() {
+        // La planimetria occupa la metà destra di una superficie larga il
+        // doppio: il suo centro cade a tre quarti dello schermo.
+        let rect = CGRect(x: 100, y: 0, width: 100, height: 100)
+        let point = FloorplanCanvasView<EmptyView, EmptyView, EmptyView, EmptyView, EmptyView>
+            .containerCentre(of: glow(0.5, 0.5), imageRect: rect,
+                             container: CGSize(width: 200, height: 100))
+        #expect(abs(point.x - 0.75) < 0.001)
+        #expect(abs(point.y - 0.5) < 0.001)
+    }
+
+    @Test("Un angolo della planimetria resta quell'angolo")
+    func cornersMapToCorners() {
+        let rect = CGRect(x: 50, y: 20, width: 100, height: 60)
+        let container = CGSize(width: 200, height: 100)
+        let topLeft = FloorplanCanvasView<EmptyView, EmptyView, EmptyView, EmptyView, EmptyView>
+            .containerCentre(of: glow(0, 0), imageRect: rect, container: container)
+        #expect(abs(topLeft.x - 0.25) < 0.001)
+        #expect(abs(topLeft.y - 0.20) < 0.001)
+    }
+
+    @Test("La sorgente non scivola quando l'immagine cambia misura")
+    func sourceDoesNotDriftWithImageSize() {
+        // È la ragione per cui la conversione esiste: il balcone sta dove sta
+        // sulla planimetria, non dove capita sullo schermo.
+        let container = CGSize(width: 400, height: 300)
+        let small = CGRect(x: 100, y: 75, width: 200, height: 150)
+        let large = CGRect(x: 0, y: 0, width: 400, height: 300)
+        let a = FloorplanCanvasView<EmptyView, EmptyView, EmptyView, EmptyView, EmptyView>
+            .containerCentre(of: glow(0.5, 0.5), imageRect: small, container: container)
+        let b = FloorplanCanvasView<EmptyView, EmptyView, EmptyView, EmptyView, EmptyView>
+            .containerCentre(of: glow(0.5, 0.5), imageRect: large, container: container)
+        #expect(abs(a.x - b.x) < 0.001, "il centro della planimetria è lo stesso punto")
+    }
+
+    @Test("Una superficie degenere non produce coordinate assurde")
+    func degenerateContainerIsSafe() {
+        let point = FloorplanCanvasView<EmptyView, EmptyView, EmptyView, EmptyView, EmptyView>
+            .containerCentre(of: glow(0.5, 0.5), imageRect: .zero, container: .zero)
+        #expect(point == .center)
+    }
+}
