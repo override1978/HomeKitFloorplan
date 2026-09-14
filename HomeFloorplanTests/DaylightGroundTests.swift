@@ -71,9 +71,14 @@ struct DaylightGroundTests {
             return s
         }
         // Chiaro E caldo insieme è la luce del primo mattino; chiaro e saturo
-        // urlerebbe, quindi resta un bianco appena crema.
+        // urlerebbe. Il tetto qui è largo di proposito: il vincolo vero è che
+        // saturazione e luminosità non siano alte **insieme**, ed è provato in
+        // `neverBrightAndSaturated`. Ripeterlo come tetto sulla sola
+        // saturazione vorrebbe dire due regole per una cosa sola, e quella di
+        // troppo si sarebbe messa di traverso a ogni ritocco della palette —
+        // come ha fatto.
         #expect(saturation(7, 30) > saturation(13, 15))
-        #expect(saturation(7, 30) < 0.12)
+        #expect(saturation(7, 30) < 0.2)
     }
 
     @Test("La stanza si illumina prima di quanto salga il sole")
@@ -289,14 +294,99 @@ struct DaylightGroundTests {
         #expect(hsb(DaylightGround.circadianGround(light: noonLight)).b > 0.5)
     }
 
-    @Test("Di notte il fondo assoluto è caldo, a mezzogiorno neutro")
+    @Test("Di notte il fondo è colorato, a mezzogiorno neutro")
     func absoluteGroundIsCircadian() {
-        #expect(hsb(DaylightGround.circadianGround(light: .night)).s > 0.08,
-                "la notte circadiana è ambra, non grigio")
-        #expect(hsb(DaylightGround.circadianGround(light: .night)).s < 0.2,
-                "ma un'ambra scurissima, non un allarme")
+        #expect(hsb(DaylightGround.circadianGround(light: .night)).s > 0.3,
+                "sotto, il colore non si vede: si vede un grigio con un'idea di tinta")
         #expect(hsb(DaylightGround.circadianGround(light: noonLight)).s < 0.02,
-                "chiaro e saturo insieme urlano")
+                "e a mezzogiorno la luce vera è neutra")
+    }
+
+    @Test("La notte è viola, non marrone")
+    func nightIsViolet() {
+        // Sotto l'orizzonte il cielo non è ambra: passa per il magenta e
+        // finisce nel viola. Con una tinta sola l'arco della giornata restava
+        // una scala di grigi appena tiepida, perché il colore non si legge
+        // come colore se non cambia.
+        let night = DaylightGround.skyHue(light: 0, rising: false)
+        #expect(night > 0.58 && night < 0.75)
+    }
+
+    @Test("Alba e tramonto non hanno lo stesso colore")
+    func dawnAndDuskDiffer() {
+        // Stessa luminosità, tinte diverse: senza questa distinzione le due
+        // metà della giornata sarebbero specularmente identiche.
+        let dawn = DaylightGround.skyHue(light: 0.35, rising: true)
+        let dusk = DaylightGround.skyHue(light: 0.35, rising: false)
+        #expect(dawn != dusk)
+        #expect(dawn < dusk, "l'alba è più rosa, il tramonto più arancione")
+    }
+
+    @Test("Salendo di luce le due convergono all'oro")
+    func bothConvergeToGold() {
+        let dawn = DaylightGround.skyHue(light: 0.9, rising: true)
+        let dusk = DaylightGround.skyHue(light: 0.9, rising: false)
+        #expect(abs(dawn - dusk) < 0.01)
+    }
+
+    @Test("La tinta resta sempre un valore valido")
+    func hueStaysInRange() {
+        for step in 0...40 {
+            for rising in [true, false] {
+                let hue = DaylightGround.skyHue(light: Double(step) / 40, rising: rising)
+                #expect(hue >= 0 && hue < 1, "tinta fuori scala a \(step)")
+            }
+        }
+    }
+
+    @Test("Il colore vive agli estremi e sparisce a mezzogiorno")
+    func colourLivesAtTheEdges() {
+        #expect(DaylightGround.skySaturation(light: 0) > 0.3)
+        #expect(DaylightGround.skySaturation(light: 1) == 0)
+        var previous = DaylightGround.skySaturation(light: 0)
+        for step in 1...20 {
+            let current = DaylightGround.skySaturation(light: Double(step) / 20)
+            #expect(current <= previous, "la saturazione non risale mai salendo di luce")
+            previous = current
+        }
+    }
+
+    @Test("Mai chiaro e saturo insieme — l'unica regola che conta")
+    func neverBrightAndSaturated() {
+        // È il vincolo vero, e vale più del tetto sulla sola saturazione: un
+        // bruno profondo a luminosità 0,4 non si confonde con un allarme, che
+        // è arancione pieno **e** luminoso. Tenere bassa la saturazione anche
+        // al buio era cautela mal riposta, e costava tutta l'ambra della sera.
+        for step in 0...20 {
+            let level = Double(step) / 20
+            let cycle = DaylightGround.Light(luminance: level,
+                                             warmth: DaylightGround.warmth(solar: level))
+            let ground = hsb(DaylightGround.circadianGround(light: cycle))
+            #expect(ground.s * ground.b < 0.15,
+                    "a luce \(level) il fondo è chiaro e saturo insieme")
+        }
+    }
+
+    @Test("La sera è colorata sul serio, non grigio tiepido")
+    func eveningIsProperlyColoured() {
+        // Il caso misurato: alle 19:32 il fondo stava all'undici per cento di
+        // saturazione e si leggeva come una scala di grigi.
+        let dusk = DaylightGround.light(at: time(19, 32), sunrise: sunrise, sunset: sunset)
+        let ground = hsb(DaylightGround.circadianGround(light: dusk))
+        #expect(ground.s > 0.18)
+        #expect(ground.b < 0.5, "e resta scuro: è sera, non pomeriggio")
+    }
+
+    @Test("Anche il disegno riceve una tinta che si vede")
+    func drawingTintIsPerceptible() {
+        // Sei e quattordici per cento non scaldano niente: il fondo era appena
+        // tiepido e il disegno del tutto neutro, cioè un tramonto in bianco e
+        // nero. Una lampada toglie al blu molto più di così.
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(DaylightGround.Light.night.imageTint).getRed(&r, green: &g, blue: &b, alpha: &a)
+        #expect(r == 1)
+        #expect(b < 0.8, "il blu è ciò che una luce calda toglie per prima")
+        #expect(g > b, "ma il verde meno del blu, o diventa rosso invece che ambra")
     }
 
     @Test("Salendo di luce il fondo assoluto non torna mai indietro")

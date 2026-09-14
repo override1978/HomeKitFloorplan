@@ -91,8 +91,15 @@ enum DaylightGround {
     struct Light: Equatable, Sendable {
         let luminance: Double
         let warmth: Double
+        /// Vero prima del mezzogiorno solare.
+        ///
+        /// Serve alla tinta e a nient'altro: alba e tramonto hanno la stessa
+        /// luminosità e colori diversi — l'alba è rosa e fredda, il tramonto
+        /// arancione. Senza sapere da che parte si sta andando le due mattine
+        /// e le due sere sarebbero indistinguibili.
+        var isRising: Bool = false
 
-        static let night = Light(luminance: 0, warmth: 1)
+        static let night = Light(luminance: 0, warmth: 1, isRising: false)
 
         /// Quanto schiarire il disegno della planimetria.
         ///
@@ -143,10 +150,16 @@ enum DaylightGround {
         /// più sottili, mentre il prodotto scalda lasciando intatta la
         /// geometria. Il bianco puro a mezzogiorno è l'identità, quindi di
         /// giorno non succede niente.
+        ///
+        /// Anche qui la prima versione era troppo timida — sei e quattordici
+        /// per cento non scaldano niente di percepibile — e il risultato era un
+        /// tramonto in scala di grigi: il fondo appena tiepido e il disegno
+        /// del tutto neutro. La luce di una lampada toglie al blu molto più di
+        /// così.
         var imageTint: Color {
             Color(red: 1,
-                  green: 1 - 0.06 * warmth,
-                  blue: 1 - 0.14 * warmth)
+                  green: 1 - 0.13 * warmth,
+                  blue: 1 - 0.30 * warmth)
         }
     }
 
@@ -171,14 +184,14 @@ enum DaylightGround {
             // seconda metà renderebbe le cinque del pomeriggio più luminose
             // delle nove del mattino, che è la stessa altezza del sole.
             let luminance = t > 0.5 ? max(lit, eveningLevel) : lit
-            return Light(luminance: luminance, warmth: warmth(solar: solar))
+            return Light(luminance: luminance, warmth: warmth(solar: solar), isRising: t < 0.5)
         }
 
         // Dopo il crepuscolo: il sole non c'è più, restano le lampade che si
         // consumano.
         return Light(luminance: eveningLevel * eveningFade(from: end, at: instant,
                                                            calendar: calendar),
-                     warmth: 1)
+                     warmth: 1, isRising: false)
     }
 
     /// Compatibilità: la sola luminanza.
@@ -259,9 +272,8 @@ enum DaylightGround {
     /// piccola per non tradire nessuna delle due.
     nonisolated static func circadianGround(light cycle: Light) -> Color {
         let light = min(max(cycle.luminance, 0), 1)
-        let warm = min(max(cycle.warmth, 0), 1)
 
-        // Da un bruno quasi nero al bianco.
+        // Da un viola quasi nero al bianco.
         //
         // Il tetto era 0,95, e a mezzogiorno si leggeva grigio: il bianco non è
         // una quantità assoluta ma un confronto, e accanto ai riempimenti
@@ -271,18 +283,54 @@ enum DaylightGround {
         // superficie sola, non per una che ne tocca un'altra più chiara.
         let brightness = 0.10 + (0.99 - 0.10) * light
 
-        // Il caldo non viene spento dalla luce, solo attenuato.
-        //
-        // Prima lo era quasi del tutto, e l'effetto mattina diventava «grigio
-        // che schiarisce» invece di «bianco con riflessi caldi». La luce vera
-        // del primo mattino è chiara **e** calda insieme: è il sole basso su
-        // una parete bianca, non una parete grigia. Quello che va evitato è
-        // chiaro e **saturo**, che urla; un bianco appena crema no.
-        let saturation = warm * 0.16 * (1 - light * 0.5)
+        return Color(hue: skyHue(light: light, rising: cycle.isRising),
+                     saturation: skySaturation(light: light),
+                     brightness: brightness)
+    }
 
-        return Color(hue: Double(amberHue),
-                     saturation: Double(saturation),
-                     brightness: Double(brightness))
+    /// La tinta del cielo a una data quantità di luce.
+    ///
+    /// Una tinta sola non bastava. Con l'ambra fissa, qualunque saturazione
+    /// dessi, l'arco della giornata restava una scala di grigi appena tiepida:
+    /// il colore non si legge come colore se non **cambia**. E un'alba vera non
+    /// è ambra — è rosa che diventa oro; un tramonto è oro che diventa arancio
+    /// e poi prugna e poi viola.
+    ///
+    /// Tre tratti, tutti presi dalla cosa vera:
+    ///
+    /// Alba e tramonto partono da tinte diverse — rosa freddo contro arancio —
+    /// perché la stessa luminosità al mattino e alla sera ha colori diversi, e
+    /// senza questa distinzione le due metà della giornata sarebbero
+    /// specularmente identiche.
+    ///
+    /// Salendo di luce entrambe convergono all'oro e poi diventano
+    /// irrilevanti, perché a mezzogiorno la saturazione è zero e la tinta non
+    /// ha più niente da tingere.
+    ///
+    /// Scendendo sotto il livello della sera la tinta **scende** di valore
+    /// invece di salire: da arancio verso magenta e poi viola. È il verso
+    /// corto sulla ruota, ma è anche la sequenza vera del crepuscolo — chi ha
+    /// guardato un cielo dopo il tramonto l'ha vista.
+    nonisolated static func skyHue(light: Double, rising: Bool) -> Double {
+        let edge = rising ? -0.035 : 0.045      // rosa all'alba, arancio al tramonto
+        let warm = edge + (0.11 - edge) * smoothstep(light, from: 0, to: 0.65)
+        let nightness = max(0, (eveningLevel - light) / eveningLevel)
+        return (warm - 0.40 * nightness).truncatingRemainder(dividingBy: 1) + (warm - 0.40 * nightness < 0 ? 1 : 0)
+    }
+
+    /// Quanto è colorato il cielo: massimo agli estremi, nullo a mezzogiorno.
+    ///
+    /// L'esponente poco sopra uno fa sì che la saturazione cali più in fretta
+    /// di quanto salga la luce: è ciò che tiene automaticamente vera l'unica
+    /// regola che conta, cioè mai chiaro **e** saturo insieme. Non serve un
+    /// tetto separato — lo garantisce la forma della curva.
+    nonisolated static func skySaturation(light: Double) -> Double {
+        0.34 * pow(1 - min(max(light, 0), 1), 1.1)
+    }
+
+    nonisolated private static func smoothstep(_ x: Double, from a: Double, to b: Double) -> Double {
+        let t = min(max((x - a) / (b - a), 0), 1)
+        return t * t * (3 - 2 * t)
     }
 
     /// Il fondo modulato a partire dal colore scelto dall'utente.
