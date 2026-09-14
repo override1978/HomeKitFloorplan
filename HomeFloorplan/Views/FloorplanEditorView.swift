@@ -156,6 +156,20 @@ struct FloorplanEditorView: View {
     @State private var selectedGesture: HumanGesture?
     /// Il ridisegno della corsia in attesa, per non rifarlo a ogni lampada.
     @State private var gestureRefreshTask: Task<Void, Never>?
+
+    /// Il battito del minuto, creato una volta sola.
+    ///
+    /// Stava scritto dentro il body come `Timer.publish(...)` passato
+    /// direttamente a `onReceive`. Sembra innocuo e non lo è: ogni volta che il
+    /// body si rivaluta viene costruito un publisher **nuovo**, `onReceive`
+    /// annulla la vecchia sottoscrizione e ricomincia — e l'intervallo riparte
+    /// da zero. Su una planimetria viva il body gira molto più spesso di una
+    /// volta al minuto, quindi il timer non arrivava quasi mai in fondo: la
+    /// linea di «adesso» restava indietro di minuti, a volte di parecchi.
+    ///
+    /// In `@State` il publisher sopravvive alla ricostruzione della struct, che
+    /// è l'unica cosa che gli serviva per contare in pace.
+    @State private var minuteTicker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     /// L'istante che il dito sta illuminando, mentre trascina la luce.
     @State private var scrubbedInstant: Date?
 
@@ -844,7 +858,7 @@ struct FloorplanEditorView: View {
         .task { await weatherKit.refreshIfNeeded() }
         // La giornata si ricalcola al minuto: gli orari invecchiano, e la
         // linea di "adesso" deve muoversi con loro.
-        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(minuteTicker) { _ in
             refreshDayMoments()
         }
         // Il nastro reagisce all'evento, non all'orologio: una superficie di

@@ -12,6 +12,9 @@ struct AutomationsView: View {
     @Environment(CalendarEventsService.self) private var calendarEvents
     /// Riavanza ogni minuto, così gli orari non invecchiano sotto gli occhi.
     @State private var clock = Date()
+    /// Il battito del minuto, creato una volta sola: costruito dentro il body
+    /// ripartiva da zero a ogni ridisegno e non arrivava quasi mai in fondo.
+    @State private var minuteTicker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     @State private var selectedType: TypeFilter = .all
     @State private var searchText: String = ""
     @State private var toggleError: String?
@@ -296,7 +299,7 @@ struct AutomationsView: View {
                 }
             }
         }
-        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { now in
+        .onReceive(minuteTicker) { now in
             clock = now
             calendarEvents.refresh(day: Self.dayInterval(containing: now))
         }
