@@ -281,7 +281,15 @@ enum DaylightGround {
         // coppia. Era un ragionamento giusto sul colore e sbagliato sulla
         // scena — «non arrivare al bianco perché abbaglia» vale per una
         // superficie sola, non per una che ne tocca un'altra più chiara.
-        let brightness = 0.10 + (0.99 - 0.10) * light
+        // Il fondo della notte non è nero: è prugna scurissimo.
+        //
+        // Era 0,10, e finché la luce calda si spandeva su tutta la schermata
+        // quel valore non si vedeva mai. Con i bagliori stretti sulle stanze il
+        // fondo vero è venuto fuori, e a 0,10 con questa tinta fa `#111119` —
+        // che di notte, su uno schermo, è nero. Perdeva senso tutta la parte
+        // del ciclo che sta sotto l'orizzonte: quattro ore di viola diverso
+        // rese indistinguibili dal nero assoluto.
+        let brightness = 0.15 + (0.99 - 0.15) * light
 
         return Color(hue: skyHue(light: light, rising: cycle.isRising),
                      saturation: skySaturation(light: light),
@@ -315,8 +323,19 @@ enum DaylightGround {
         let edge = rising ? -0.035 : 0.045      // rosa all'alba, arancio al tramonto
         let warm = edge + (0.11 - edge) * smoothstep(light, from: 0, to: 0.65)
         let nightness = max(0, (eveningLevel - light) / eveningLevel)
-        return (warm - 0.40 * nightness).truncatingRemainder(dividingBy: 1) + (warm - 0.40 * nightness < 0 ? 1 : 0)
+        // La rotazione si ferma sulla prugna, non prosegue fino al blu.
+        //
+        // Era 0,40 e portava la notte a un indigo da 232°. Il cielo dopo il
+        // tramonto passa per l'arancio, il magenta e il viola, e si ferma lì
+        // prima di diventare buio — non vira al blu di mezzogiorno d'inverno.
+        // «Fondo prugna freddo» è la descrizione giusta, e prugna sta a
+        // trecentodieci gradi.
+        let rotated = warm - nightRotation * nightness
+        return rotated.truncatingRemainder(dividingBy: 1) + (rotated < 0 ? 1 : 0)
     }
+
+    /// Quanto la tinta ruota scendendo nella notte. Si ferma sulla prugna.
+    static let nightRotation = 0.185
 
     /// Quanto è colorato il cielo: massimo agli estremi, nullo a mezzogiorno.
     ///

@@ -281,7 +281,7 @@ struct DaylightGroundTests {
     func absoluteRange() {
         let night = hsb(DaylightGround.circadianGround(light: .night))
         let noon = hsb(DaylightGround.circadianGround(light: noonLight))
-        #expect(night.b < 0.15)
+        #expect(night.b < 0.22)
         #expect(noon.b > 0.97)
         #expect(noon.b < 1.0)
     }
@@ -302,14 +302,26 @@ struct DaylightGroundTests {
                 "e a mezzogiorno la luce vera è neutra")
     }
 
-    @Test("La notte è viola, non marrone")
-    func nightIsViolet() {
-        // Sotto l'orizzonte il cielo non è ambra: passa per il magenta e
-        // finisce nel viola. Con una tinta sola l'arco della giornata restava
-        // una scala di grigi appena tiepida, perché il colore non si legge
-        // come colore se non cambia.
+    @Test("La notte è prugna, e si ferma lì")
+    func nightIsPlum() {
+        // Sotto l'orizzonte il cielo non è ambra: passa per l'arancio e il
+        // magenta e si ferma sulla prugna. Ruotando oltre arrivava a un indigo
+        // da 232°, che è il blu di un mezzogiorno d'inverno e non il colore di
+        // un cielo dopo il tramonto.
         let night = DaylightGround.skyHue(light: 0, rising: false)
-        #expect(night > 0.58 && night < 0.75)
+        #expect(night > 0.82 && night < 0.92, "trecentodieci gradi circa, cioè prugna")
+    }
+
+    @Test("Il fondo della notte non è nero")
+    func nightIsNotBlack() {
+        // A 0,10 con questa tinta faceva #111119, che di notte su uno schermo
+        // è nero — e rendeva indistinguibili quattro ore di viola diverso.
+        // Non si vedeva finché la luce calda si spandeva su tutta la
+        // schermata; con i bagliori stretti sulle stanze è venuto fuori.
+        let night = hsb(DaylightGround.circadianGround(light: .night))
+        #expect(night.b > 0.13, "deve restare un colore, non diventare il nulla")
+        #expect(night.b < 0.22, "ma è pur sempre notte")
+        #expect(night.s > 0.25, "e la tinta deve leggersi")
     }
 
     @Test("Alba e tramonto non hanno lo stesso colore")
