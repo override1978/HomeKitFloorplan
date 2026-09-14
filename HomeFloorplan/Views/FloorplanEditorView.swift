@@ -465,6 +465,16 @@ struct FloorplanEditorView: View {
     /// otto di sera di dicembre e di giugno sono due luci diverse, ed è
     /// esattamente ciò che il fondo deve saper dire. Quando arriverà lo scrub
     /// sarà lui a muovere questo valore, e non ci sarà altro da cambiare.
+    /// I colori dell'interfaccia all'ora che è.
+    ///
+    /// `nil` con la modalità classica: le viste che la leggono tornano ai token
+    /// di sempre, quindi spegnere l'interruttore non ha bisogno di un secondo
+    /// percorso — è l'assenza della palette.
+    private var circadianPalette: CircadianPalette? {
+        guard isDaylightGroundEnabled else { return nil }
+        return CircadianPalette.make(light: currentLight)
+    }
+
     private var currentLight: DaylightGround.Light {
         guard isDaylightGroundEnabled else { return .night }
         let solar = daySolarTimes
@@ -612,6 +622,10 @@ struct FloorplanEditorView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.3), value: showsDayRibbon)
+            // La luce non si ferma al fondo: superfici, inchiostro e bordi la
+            // ereditano da qui. I colori di categoria no — quelli restano
+            // identici a qualunque ora, perché sono identità e non atmosfera.
+            .environment(\.circadianPalette, circadianPalette)
         }
     }
 
@@ -677,9 +691,12 @@ struct FloorplanEditorView: View {
             // che deve galleggiare su un fondo che cambia tutto il giorno.
             .glassChromeSurface(
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous),
-                legacyFill: AnyShapeStyle(.regularMaterial),
-                legacyBorder: Color.primary.opacity(0.08),
+                tint: circadianPalette?.surface,
+                legacyFill: circadianPalette.map { AnyShapeStyle($0.surface) }
+                    ?? AnyShapeStyle(.regularMaterial),
+                legacyBorder: circadianPalette?.border ?? Color.primary.opacity(0.08),
                 legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 14, y: 4))
+            .foregroundStyle(circadianPalette?.ink ?? .primary)
             .padding(.horizontal, 16)
             .padding(.bottom, 14)
     }
