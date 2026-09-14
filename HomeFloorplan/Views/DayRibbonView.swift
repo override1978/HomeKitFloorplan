@@ -30,6 +30,9 @@ struct DayRibbonView: View {
     /// bisogno di una legenda per capire chi ha fatto cosa.
     var gestures: [HumanGesture] = []
 
+    /// Le cose che sono **durate**: barre sull'asse, non punti sopra.
+    var spans: [DaySpan] = []
+
     /// Chi riceve la selezione. Il nastro non sa cosa farne: se ne occupa chi
     /// lo ospita, che è l'unico a sapere se c'è un pannello dove metterla.
     /// A quanti giorni da oggi siamo, e fin dove ci si può spingere.
@@ -39,6 +42,7 @@ struct DayRibbonView: View {
 
     var onSelect: ((DayMoment) -> Void)? = nil
     var onSelectGesture: ((HumanGesture) -> Void)? = nil
+    var onSelectSpan: ((DaySpan) -> Void)? = nil
     var onShiftDay: ((Int) -> Void)? = nil
     var onReturnToday: (() -> Void)? = nil
 
@@ -50,6 +54,7 @@ struct DayRibbonView: View {
 
     @State private var selected: DayMoment?
     @State private var selectedGestureID: String?
+    @State private var selectedSpanID: String?
     /// Quanto il nastro sta seguendo il dito in questo istante.
     @State private var dragOffset: CGFloat = 0
     /// Dove sta il dito mentre si trascina la luce, in frazione di giornata.
@@ -95,6 +100,7 @@ struct DayRibbonView: View {
             ZStack(alignment: .topLeading) {
                 daylightBand(width: width)
                 solarBoundaries(width: width)
+                spanBars(width: width)
                 hourTicks(width: width)
 
                 ForEach(placements, id: \.moment.id) { placement in
@@ -121,6 +127,7 @@ struct DayRibbonView: View {
         .onTapGesture {
             selected = nil
             selectedGestureID = nil
+            selectedSpanID = nil
         }
         .gesture(dayDrag)
         .simultaneousGesture(scrubGesture)
@@ -339,6 +346,72 @@ struct DayRibbonView: View {
                 .frame(width: isSelected ? 2 : 1.2, height: Self.stalkHeight)
         }
         .offset(x: -4, y: Self.stalkTop - 8)
+    }
+
+    // MARK: Durate
+
+    /// Le barre dei periodi, dentro l'asse.
+    ///
+    /// Dentro e non sopra: un periodo non è un avvenimento che sta *in* un
+    /// momento, è un pezzo di giornata che è stato in un certo modo — e la
+    /// giornata è l'asse. Metterle su una corsia propria le farebbe sembrare
+    /// una terza categoria di cose accanto alle altre due, mentre sono lo
+    /// sfondo su cui le altre due succedono. Costa anche zero altezza, che su
+    /// questa fascia è l'unica valuta che conta.
+    @ViewBuilder
+    private func spanBars(width: CGFloat) -> some View {
+        ForEach(spans) { span in
+            let x0 = fraction(of: span.start) * width
+            let x1 = fraction(of: span.end ?? now) * width
+            let barWidth = max(x1 - x0, 3)
+            let isSelected = selectedSpanID == span.id
+            let tint = Self.spanTint(for: span)
+
+            Capsule()
+                .fill(tint.opacity(span.isRunning ? 0.95 : 0.62))
+                .frame(width: barWidth, height: isSelected ? Self.axisHeight : Self.axisHeight - 2)
+                .overlay(alignment: .leading) {
+                    // Il nome sta dentro la barra quando ci sta, e tace quando
+                    // non ci sta: una didascalia sopra ruberebbe una riga alle
+                    // etichette dei momenti, e questo è già un oggetto che si
+                    // sa spiegare da sé — è largo quanto è durato.
+                    if barWidth > 54 {
+                        Text(span.name)
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .lineLimit(1)
+                            .padding(.leading, 5)
+                            .frame(width: barWidth - 8, alignment: .leading)
+                    }
+                }
+                .position(x: x0 + barWidth / 2, y: Self.axisY + Self.axisHeight / 2)
+                // Bersaglio più alto della barra: dieci punti non si toccano.
+                .contentShape(Rectangle().inset(by: -9))
+                .onTapGesture {
+                    selected = nil
+                    selectedGestureID = nil
+                    if isSelected {
+                        selectedSpanID = nil
+                    } else {
+                        selectedSpanID = span.id
+                        onSelectSpan?(span)
+                    }
+                }
+        }
+    }
+
+    /// Un colore per famiglia di processo, non uno per accessorio.
+    ///
+    /// Tenuti desaturati e distinti dai due che significano già qualcosa —
+    /// `BrandColor.primary` per le automazioni, il verde acqua per i gesti — e
+    /// lontani dall'arancione e dal rosso, che nell'app vogliono dire
+    /// attenzione e urgenza.
+    nonisolated static func spanTint(for span: DaySpan) -> Color {
+        switch AccessoryEventType(rawValue: span.eventType) {
+        case .airPurifier, .fan: return Color(hue: 0.52, saturation: 0.45, brightness: 0.62)
+        case .humidifier:        return Color(hue: 0.58, saturation: 0.42, brightness: 0.60)
+        default:                 return Color(hue: 0.72, saturation: 0.34, brightness: 0.60)
+        }
     }
 
     // MARK: Gesti

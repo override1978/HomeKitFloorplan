@@ -154,6 +154,8 @@ struct FloorplanEditorView: View {
     @State private var dayClock = Date()
     @State private var selectedMoment: DayMoment?
     @State private var selectedGesture: HumanGesture?
+    @State private var selectedSpan: DaySpan?
+    @State private var daySpans: [DaySpan] = []
     /// Il ridisegno della corsia in attesa, per non rifarlo a ogni lampada.
     @State private var gestureRefreshTask: Task<Void, Never>?
 
@@ -183,7 +185,8 @@ struct FloorplanEditorView: View {
     /// sotto non starebbero. L'iPhone vuole una forma sua, non questa
     /// rimpicciolita.
     private var showsDayRibbon: Bool {
-        isRibbonEligible && (!isShowingToday || !(dayMoments.isEmpty && dayGestures.isEmpty))
+        isRibbonEligible
+            && (!isShowingToday || !(dayMoments.isEmpty && dayGestures.isEmpty && daySpans.isEmpty))
     }
 
     /// Le condizioni di contesto, senza quelle di contenuto.
@@ -240,7 +243,9 @@ struct FloorplanEditorView: View {
         dayOffset = target
         selectedMoment = nil
         selectedGesture = nil
-        if overlayVM?.panelContent == .moment || overlayVM?.panelContent == .gesture {
+        selectedSpan = nil
+        if overlayVM?.panelContent == .moment || overlayVM?.panelContent == .gesture
+            || overlayVM?.panelContent == .span {
             overlayVM?.closeDetailContent()
         }
         refreshDayMoments()
@@ -262,7 +267,12 @@ struct FloorplanEditorView: View {
         // il nastro non è a schermo, e una query al minuto per disegnare niente
         // è il genere di costo che non si vede finché non diventa uno scatto
         // mentre si trascina un marker.
-        dayGestures = isRibbonEligible ? loadGestures(day: day, now: now) : []
+        if isRibbonEligible {
+            dayGestures = loadGestures(day: day, now: now)
+        } else {
+            dayGestures = []
+            daySpans = []
+        }
         // Un giorno vuoto è un risultato, non un errore: se non si mostrasse il
         // nastro tornare indietro sembrerebbe rotto, e non ci sarebbe più modo
         // di andare oltre.
@@ -289,7 +299,7 @@ struct FloorplanEditorView: View {
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
             let now = Date()
-            dayGestures = loadGestures(day: visibleDay, now: now)
+            dayGestures = loadGestures(day: visibleDay, now: now)  // aggiorna anche daySpans
         }
     }
 
@@ -321,6 +331,11 @@ struct FloorplanEditorView: View {
                                           at: event.timestamp,
                                           origin: event.originRaw)
         }
+        // Una lettura sola, due letture diverse degli stessi eventi: i gesti
+        // guardano *chi* ha agito, i periodi guardano *per quanto*. Rifare la
+        // query per la seconda sarebbe pagare due volte la stessa risposta.
+        daySpans = DaySpanBuilder.build(from: raw, window: day, now: now)
+
         return HumanGestureBuilder.build(from: raw,
                                          scheduledFires: dayMoments.filter(\.isAutomationKind).map(\.at),
                                          scenes: scenesService.sceneSignatures(),
@@ -535,6 +550,7 @@ struct FloorplanEditorView: View {
                             adapterMap: currentAdapterMap(),
                             selectedMoment: selectedMoment,
                             selectedGesture: selectedGesture,
+                            selectedSpan: selectedSpan,
                             topInset: chromeLayout(for: outer.size).topInset
                         )
                         .frame(width: FloorplanDockedContextPanel.width)
@@ -614,6 +630,7 @@ struct FloorplanEditorView: View {
                       sunrise: daySolarTimes.todaySunrise,
                       sunset: daySolarTimes.todaySunset,
                       gestures: dayGestures,
+                      spans: daySpans,
                       dayOffset: dayOffset,
                       canGoBack: dayOffset > -Self.maxDaysBack,
                       canGoForward: dayOffset < Self.maxDaysForward,
@@ -624,6 +641,10 @@ struct FloorplanEditorView: View {
                       onSelectGesture: { gesture in
                           selectedGesture = gesture
                           overlayVM?.showGestureDetail()
+                      },
+                      onSelectSpan: { span in
+                          selectedSpan = span
+                          overlayVM?.showSpanDetail()
                       },
                       onShiftDay: { shiftDay(by: $0) },
                       onReturnToday: { shiftDay(by: -dayOffset) },
