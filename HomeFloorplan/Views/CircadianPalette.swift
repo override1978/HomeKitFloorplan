@@ -20,6 +20,10 @@ struct CircadianPalette: Equatable, Sendable {
     /// Il fondo: il cielo dietro tutto.
     let ground: Color
     /// Le superfici che galleggiano sopra — card, pillole, pannelli.
+    ///
+    /// Serve dove il vetro non c'è. Col Liquid Glass acceso la superficie
+    /// segue già la luce da sola, perché rifrange ciò che ha sotto: tingerla
+    /// oltre non aggiunge niente e la irrigidisce in una lastra piena.
     let surface: Color
     /// Quelle che devono staccare di più: una card sopra una card.
     let elevatedSurface: Color

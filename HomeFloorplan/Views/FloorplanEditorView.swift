@@ -750,14 +750,20 @@ struct FloorplanEditorView: View {
             // sospesi nel vuoto. Il vetro invece prende identità da ciò che ha
             // sotto, che è esattamente la proprietà che serve a una superficie
             // che deve galleggiare su un fondo che cambia tutto il giorno.
+            // Stessa superficie delle pill in alto: vetro senza tinta.
+            //
+            // Le tingevo con la superficie circadiana, e il risultato era una
+            // lastra piena accanto a pillole di vetro — due materiali diversi
+            // sulla stessa schermata. Ma è anche ridondante, e questa è la
+            // parte che vale la pena ricordare: **il vetro segue già la luce da
+            // solo**, perché rifrange ciò che ha sotto. La tinta serve dove il
+            // vetro non c'è, cioè nel ramo legacy, e lì infatti resta.
             .glassChromeSurface(
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous),
-                tint: circadianPalette?.surface,
                 legacyFill: circadianPalette.map { AnyShapeStyle($0.surface) }
                     ?? AnyShapeStyle(.regularMaterial),
                 legacyBorder: circadianPalette?.border ?? Color.primary.opacity(0.08),
                 legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 14, y: 4))
-            .foregroundStyle(circadianPalette?.ink ?? .primary)
             .padding(.horizontal, 16)
             .padding(.bottom, 14)
     }

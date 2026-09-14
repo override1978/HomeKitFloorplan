@@ -239,7 +239,6 @@ private struct ClusterCard: View {
         // stanza avesse una temperatura e i mobili un'altra.
         .glassChromeSurface(
             in: RoundedRectangle(cornerRadius: 14, style: .continuous),
-            tint: palette?.surface,
             legacyFill: palette.map { AnyShapeStyle($0.surface) }
                 ?? AnyShapeStyle(FloorplanTokens.Surface.card),
             legacyBorder: palette?.border,
