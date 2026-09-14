@@ -400,9 +400,25 @@ struct DayRibbonView: View {
                 }
                 .overlay(alignment: .leading) { spanContent(item.span, barWidth: barWidth) }
                 .frame(width: barWidth, height: Self.spanLaneHeight)
+                // Il bersaglio è alto quanto il passo fra due corsie: qualche
+                // punto in più della barra, ma non abbastanza da invadere la
+                // corsia vicina. Allargarlo di più sembrerebbe generoso e
+                // sarebbe il contrario, perché due corsie adiacenti sono
+                // adiacenti proprio quando si sovrappongono nel tempo: il
+                // bersaglio grande di una ruberebbe i tocchi all'altra.
+                .frame(height: Self.spanLaneHeight + Self.spanLaneGap)
+                // **Prima** di `position`, non dopo.
+                //
+                // `position` espande la vista a tutto lo spazio disponibile e
+                // ci colloca dentro il contenuto: una `contentShape` applicata
+                // dopo descrive quello spazio, non la barra. Ogni barra aveva
+                // così come area di tocco l'intero nastro, e a vincere era
+                // sempre la stessa — toccandone una qualunque si apriva la
+                // scheda di quell'unica. Gli altri elementi funzionavano per
+                // caso: senza `contentShape` il tocco segue il disegno, che è
+                // già la forma giusta.
+                .contentShape(Rectangle())
                 .position(x: x0 + barWidth / 2, y: Self.spanLaneY(item.lane))
-                // Bersaglio più alto della barra: sei punti non si toccano.
-                .contentShape(Rectangle().inset(by: -7))
                 .onTapGesture {
                     selected = nil
                     selectedGestureID = nil
