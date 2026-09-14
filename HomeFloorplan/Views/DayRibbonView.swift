@@ -495,11 +495,16 @@ struct DayRibbonView: View {
     /// È la stessa scelta delle etichette dei momenti: due cose sovrapposte non
     /// si leggono né l'una né l'altra, e l'ultima arrivata che copre le altre
     /// le rovina tutte per mostrare sé stessa.
+    ///
+    /// L'ordinamento è quello **totale** di `DaySpanBuilder.precedes` e non un
+    /// confronto sul solo inizio: a parità di inizio — cioè per tutto ciò che
+    /// era già acceso a mezzanotte — un ordinamento parziale lasciava decidere
+    /// al caso, e le corsie cambiavano da sole a ogni ricostruzione.
     nonisolated static func assignLanes(_ spans: [DaySpan], now: Date) -> [SpanPlacement] {
         var laneEnds = [Date](repeating: .distantPast, count: spanLanes)
         var placements: [SpanPlacement] = []
 
-        for span in spans.sorted(by: { $0.start < $1.start }) {
+        for span in spans.sorted(by: DaySpanBuilder.precedes) {
             let end = span.end ?? now
             guard let lane = (0..<spanLanes).first(where: { laneEnds[$0] <= span.start }) else { continue }
             laneEnds[lane] = end

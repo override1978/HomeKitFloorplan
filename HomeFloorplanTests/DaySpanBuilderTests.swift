@@ -237,6 +237,40 @@ struct SpanLaneTests {
         let two = DayRibbonView.assignLanes([b, a], now: at(12))
         #expect(one == two)
     }
+
+    @Test("Anche a parità di inizio le corsie restano ferme")
+    func equalStartsStayPut() {
+        // Il caso vero: tutto ciò che era già acceso a mezzanotte comincia
+        // esattamente al bordo della finestra, quindi i pari merito sono la
+        // norma e non l'eccezione. Con un ordinamento sul solo inizio decideva
+        // il caso, e le barre del passato si spostavano da sole al minuto.
+        let together = [span("a", 0, 5), span("b", 0, 7), span("c", 0, 3)]
+        let reference = DayRibbonView.assignLanes(together, now: at(12))
+        for permutation in [[2, 0, 1], [1, 2, 0], [2, 1, 0]] {
+            let shuffled = permutation.map { together[$0] }
+            #expect(DayRibbonView.assignLanes(shuffled, now: at(12)) == reference)
+        }
+    }
+
+    @Test("Ricostruire un minuto dopo non muove il passato")
+    func aMinuteLaterNothingMoves() {
+        let day = DateInterval(start: base, duration: 24 * 3600)
+        let uuid = UUID(), other = UUID()
+        let raw = [
+            HumanGestureBuilder.RawChange(accessoryUUID: uuid, accessoryName: "A", roomName: nil,
+                                          state: false, brightness: nil, eventType: "outlet",
+                                          at: at(7), origin: "external"),
+            HumanGestureBuilder.RawChange(accessoryUUID: other, accessoryName: "B", roomName: nil,
+                                          state: false, brightness: nil, eventType: "switch",
+                                          at: at(9), origin: "external")
+        ]
+        let first = DayRibbonView.assignLanes(
+            DaySpanBuilder.build(from: raw, window: day, now: at(11)), now: at(11))
+        let later = DayRibbonView.assignLanes(
+            DaySpanBuilder.build(from: raw, window: day, now: at(11.02)), now: at(11.02))
+        #expect(first.map { ($0.span.id, $0.lane) }.map(\.1)
+                == later.map { ($0.span.id, $0.lane) }.map(\.1))
+    }
 }
 
 /// Cosa una barra riesce a dire di sé.

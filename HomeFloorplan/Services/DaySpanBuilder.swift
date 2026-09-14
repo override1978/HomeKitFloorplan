@@ -122,7 +122,30 @@ enum DaySpanBuilder {
             }
         }
 
-        return spans.sorted { $0.start < $1.start }
+        return spans.sorted(by: precedes)
+    }
+
+    /// Un ordinamento **totale**, non solo per inizio.
+    ///
+    /// Ordinare per il solo `start` lascia indecisi i pari merito, e i pari
+    /// merito qui sono la norma: ogni cosa già accesa a inizio giornata parte
+    /// dal bordo della finestra, quindi tre o quattro periodi condividono
+    /// esattamente lo stesso istante. `sort` in Swift non è stabile, perciò a
+    /// ogni ricostruzione quei periodi potevano uscire in ordine diverso — e
+    /// con l'ordine cambiava la corsia. Da fuori si vedevano barre del passato
+    /// che si spostavano da sole, una volta al minuto, senza che fosse
+    /// cambiato niente.
+    ///
+    /// I criteri di spareggio finiscono sull'`id`, che è unico: così l'ordine
+    /// esiste sempre ed è sempre lo stesso. È lo stesso difetto che faceva
+    /// rimescolare le icone dei sensori, e vale la stessa lezione — dove c'è un
+    /// ordinamento parziale, prima o poi si vede qualcosa muoversi.
+    nonisolated static func precedes(_ a: DaySpan, _ b: DaySpan) -> Bool {
+        if a.start != b.start { return a.start < b.start }
+        let endA = a.end ?? Date.distantFuture
+        let endB = b.end ?? Date.distantFuture
+        if endA != endB { return endA < endB }
+        return a.id < b.id
     }
 
     // MARK: - Private
