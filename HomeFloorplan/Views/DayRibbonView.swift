@@ -67,13 +67,13 @@ struct DayRibbonView: View {
         CGFloat(min(max(instant.timeIntervalSince(day.start) / span, 0), 1))
     }
 
-    private static let labelRowHeight: CGFloat = 13
-    private static let labelRows = 2
-    private static let stalkTop: CGFloat = labelRowHeight * CGFloat(labelRows) + 4
+    private static let labelRowHeight: CGFloat = 0
+    private static let labelRows = 0
+    private static let stalkTop: CGFloat = 8
     // Il gambo si accorcia per pagare le righe più alte dei periodi: la fascia
     // non poteva crescere ancora senza rubare spazio alla planimetria, e fra un
     // gambo lungo e una barra leggibile il gambo è l'ornamento.
-    private static let stalkHeight: CGFloat = 14
+    private static let stalkHeight: CGFloat = 8
     private static let axisY: CGFloat = stalkTop + stalkHeight
 
     /// L'asse è diventato una fascia, perché i periodi hanno bisogno di righe.
@@ -83,18 +83,36 @@ struct DayRibbonView: View {
     /// sembrava una cosa sola con tre etichette invece di tre cose. Il tempo si
     /// sovrappone — è la sua natura — e l'unico modo di mostrarlo è dare a
     /// ciascuno una riga sua.
-    static let spanLanes = 3
+    nonisolated static let spanLanes = 3
     /// Nove punti e non sei: dentro sei non ci sta niente, e una barra che non
     /// può dire cosa è costringe a toccarla per saperlo — su un pannello
     /// appeso al muro, che nessuno tocca per curiosità, vuol dire non dirlo.
+    /// Nove punti, non sei.
+    ///
+    /// A sei l'icona sta a sei punti e il nome a sette: leggibili in teoria,
+    /// faticosi in pratica — e su un pannello guardato da due metri la teoria
+    /// non serve a niente. Tre punti in più per corsia costano nove punti di
+    /// nastro e li vale, perché una barra che non si legge non dice niente.
     private static let spanLaneHeight: CGFloat = 9
     private static let spanLaneGap: CGFloat = 1
     private static let axisHeight: CGFloat =
         spanLaneHeight * CGFloat(spanLanes) + spanLaneGap * CGFloat(spanLanes - 1) + 2
     /// La corsia dei gesti, appena sotto l'asse.
-    static let gestureLaneY: CGFloat = axisY + axisHeight + 9
-    private static let hourLabelY: CGFloat = gestureLaneY + 15
-    static let totalHeight: CGFloat = hourLabelY + 9
+    static let gestureLaneY: CGFloat = axisY + axisHeight + 3
+    private static let hourLabelY: CGFloat = gestureLaneY + 9
+    static let totalHeight: CGFloat = hourLabelY + 6
+    /// Alta quanto le due righe chiedono davvero.
+    ///
+    /// Era 24, e due righe da nove e dodici punti — con interlinea e discendenti
+    /// — ne vogliono ventotto. Con `alignment: .top` l'eccesso non veniva
+    /// tagliato: traboccava verso il basso, si mangiava il vuoto e finiva
+    /// addosso alle tacche delle automazioni, che partono esattamente dal bordo
+    /// alto della timeline. Un frame più basso del suo contenuto non lo
+    /// contiene: lo lascia uscire da sotto.
+    private static let focusHeaderHeight: CGFloat = 28
+    /// Il vuoto fra testa e asse è anche l'aria sopra i pallini, che stanno in
+    /// cima alla timeline senza margine proprio.
+    private static let focusTimelineGap: CGFloat = 16
 
     private func color(for moment: DayMoment) -> Color {
         switch moment.kind {
@@ -112,46 +130,165 @@ struct DayRibbonView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let width = geo.size.width
-            let placements = Self.layout(moments, width: width, fraction: fraction)
-
-            ZStack(alignment: .topLeading) {
-                daylightBand(width: width)
-                solarBoundaries(width: width)
-                spanBars(width: width)
-                hourTicks(width: width)
-
-                ForEach(placements, id: \.moment.id) { placement in
-                    marker(placement, width: width)
-                }
-
-                ForEach(Self.lane(gestures, width: width, fraction: fraction), id: \.gesture.id) { placement in
-                    diamond(placement, width: width)
-                }
-
-                if let span = spans.first(where: { $0.id == selectedSpanID }) {
-                    spanReadout(span, width: width)
-                }
-                if dayOffset == 0 { nowLine(width: width) }
-                if let scrubFraction { scrubLine(at: scrubFraction, width: width) }
+            let width = max(geo.size.width, 1)
+            VStack(spacing: Self.focusTimelineGap) {
+                focusHeader
+                timelineCanvas(width: width)
             }
-            .onAppear { lastWidth = width }
-            .onChange(of: width) { _, new in lastWidth = new }
-            .offset(x: dragOffset)
-            // Il contenuto sbiadisce mentre si trascina: dice che quello che
-            // stai guardando sta per non essere più valido, senza aspettare
-            // che sia cambiato.
-            .opacity(1 - min(abs(dragOffset) / 220, 0.45))
         }
-        .frame(height: Self.totalHeight)
+        .frame(height: Self.contentHeight)
         .contentShape(Rectangle())
-        .onTapGesture {
-            selected = nil
-            selectedGestureID = nil
-            selectedSpanID = nil
-        }
         .gesture(dayDrag)
         .simultaneousGesture(scrubGesture)
+    }
+
+    private static let contentHeight: CGFloat = focusHeaderHeight + focusTimelineGap + totalHeight
+
+    private static func axisPlacements(_ moments: [DayMoment],
+                                       width: CGFloat,
+                                       fraction: (Date) -> CGFloat) -> [Placement] {
+        layout(moments, width: width, fraction: fraction).map {
+            Placement(moment: $0.moment, x: $0.x, level: 0, labelWidth: nil)
+        }
+    }
+
+    private func timelineCanvas(width: CGFloat) -> some View {
+        let visibleMoments = Self.visibleMoments(moments, now: now)
+        let placements = Self.axisPlacements(visibleMoments, width: width, fraction: fraction)
+
+        return ZStack(alignment: .topLeading) {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selected = nil
+                    selectedGestureID = nil
+                    selectedSpanID = nil
+                }
+
+            daylightBand(width: width)
+            solarBoundaries(width: width)
+            solarLabels(width: width)
+            spanBars(width: width)
+            hourTicks(width: width)
+
+            ForEach(placements, id: \.moment.id) { placement in
+                marker(placement, width: width)
+            }
+
+            ForEach(Self.lane(gestures, width: width, fraction: fraction), id: \.gesture.id) { placement in
+                diamond(placement, width: width)
+            }
+
+            if let span = spans.first(where: { $0.id == selectedSpanID }) {
+                spanReadout(span, width: width)
+            }
+            if dayOffset == 0 { nowLine(width: width) }
+            if let scrubFraction { scrubLine(at: scrubFraction, width: width) }
+        }
+        .frame(width: width, height: Self.totalHeight)
+        .onAppear { lastWidth = width }
+        .onChange(of: width) { _, new in lastWidth = new }
+        .offset(x: dragOffset)
+        // Il contenuto sbiadisce mentre si trascina: dice che quello che
+        // stai guardando sta per non essere più valido, senza aspettare
+        // che sia cambiato.
+        .opacity(1 - min(abs(dragOffset) / 220, 0.45))
+    }
+
+    // MARK: Adesso / prossimo
+
+    private var focusHeader: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(currentEyebrow)
+                    .font(.system(size: 9, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Text(currentDetail)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let next = nextMoment {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(String(localized: "ribbon.next.eyebrow",
+                                defaultValue: "PROSSIMO · \(relativeTime(to: next.at))"))
+                        .font(.system(size: 9, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Text(String(localized: "ribbon.next.detail",
+                                defaultValue: "\(next.at.formatted(date: .omitted, time: .shortened)) \(Self.ribbonTitle(for: next))"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            } else {
+                Text(String(localized: "ribbon.next.none.inline", defaultValue: "PROSSIMO · Nessun evento"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+        .frame(height: Self.focusHeaderHeight, alignment: .top)
+    }
+
+    private var nextMoment: DayMoment? {
+        moments.first { $0.at > now }
+    }
+
+    private var runningSpans: [DaySpan] {
+        spans.filter { span in
+            span.start <= now && (span.end ?? .distantFuture) > now
+        }
+    }
+
+    private var currentEyebrow: String {
+        if dayOffset == 0 {
+            return String(localized: "ribbon.now.eyebrow",
+                          defaultValue: "ADESSO · \(now.formatted(date: .omitted, time: .shortened))")
+        }
+        return DayRibbonView.dayLabel(offset: dayOffset, day: day.start).uppercased()
+    }
+
+    private var currentDetail: String {
+        if let first = runningSpans.first {
+            let extra = runningSpans.count > 1 ? " · +\(runningSpans.count - 1)" : ""
+            return String(localized: "ribbon.now.running",
+                          defaultValue: "\(first.name) attivo\(extra)")
+        }
+
+        let past = moments.filter { $0.at <= now }.count
+        let future = moments.filter { $0.at > now }.count
+        if dayOffset == 0 {
+            return String(localized: "ribbon.now.counts",
+                          defaultValue: "\(past) eseguiti · \(future) in arrivo")
+        }
+        return String(localized: "ribbon.day.counts",
+                      defaultValue: "\(moments.count) eventi · \(spans.count) durate")
+    }
+
+    private func relativeTime(to date: Date) -> String {
+        let interval = max(date.timeIntervalSince(now), 0)
+        let minutes = Int(interval / 60)
+        if minutes < 1 {
+            return String(localized: "ribbon.relative.now", defaultValue: "ora")
+        }
+        if minutes < 60 {
+            return String(localized: "ribbon.relative.minutes", defaultValue: "fra \(minutes)m")
+        }
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        return remainder == 0
+            ? String(localized: "ribbon.relative.hours", defaultValue: "fra \(hours)h")
+            : String(localized: "ribbon.relative.hoursMinutes", defaultValue: "fra \(hours)h \(remainder)m")
+    }
+
+    private static func visibleMoments(_ moments: [DayMoment], now: Date) -> [DayMoment] {
+        let past = moments.filter { $0.at <= now }.suffix(2)
+        let future = moments.filter { $0.at > now }.prefix(6)
+        return Array(past + future).sorted { $0.at == $1.at ? $0.id < $1.id : $0.at < $1.at }
     }
 
     // MARK: Trascinare la luce
@@ -301,6 +438,26 @@ struct DayRibbonView: View {
         }
     }
 
+    @ViewBuilder
+    private func solarLabels(width: CGFloat) -> some View {
+        ForEach(solarAnnotations, id: \.date) { item in
+            Text(item.title)
+                .font(.system(size: 8, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.orange.opacity(0.72))
+                .lineLimit(1)
+                .fixedSize()
+                .position(x: min(max(fraction(of: item.date) * width, 28), width - 38),
+                          y: max(Self.axisY - 7, 6))
+        }
+    }
+
+    private var solarAnnotations: [(title: String, date: Date)] {
+        [
+            sunrise.map { (String(localized: "ribbon.sunrise", defaultValue: "Alba"), $0) },
+            sunset.map { (String(localized: "ribbon.sunset", defaultValue: "Tramonto"), $0) }
+        ].compactMap { $0 }
+    }
+
     private func hourTicks(width: CGFloat) -> some View {
         ForEach([0, 6, 12, 18, 24], id: \.self) { hour in
             let x = (CGFloat(hour) / 24) * width
@@ -331,12 +488,14 @@ struct DayRibbonView: View {
             }
             Spacer(minLength: 0)
         }
-        .frame(width: max(placement.labelWidth ?? 0, 10),
+        .frame(width: max(placement.labelWidth ?? 0, 32),
                height: Self.stalkTop, alignment: .topLeading)
-        .overlay(alignment: .topLeading) { stalk(moment: moment, tint: tint, isSelected: isSelected) }
-        .frame(height: Self.totalHeight, alignment: .top)
-        .position(x: placement.x + max(placement.labelWidth ?? 0, 10) / 2 - 5,
-                  y: Self.totalHeight / 2)
+        .overlay(alignment: .top) { stalk(moment: moment, tint: tint, isSelected: isSelected) }
+        .frame(width: max(placement.labelWidth ?? 0, 32),
+               height: Self.totalHeight,
+               alignment: .topLeading)
+        .contentShape(Rectangle())
+        .position(x: placement.x, y: Self.totalHeight / 2)
         .onTapGesture {
             selected = isSelected ? nil : moment
             if !isSelected { onSelect?(moment) }
@@ -353,7 +512,14 @@ struct DayRibbonView: View {
     private func stalk(moment: DayMoment, tint: Color, isSelected: Bool) -> some View {
         VStack(spacing: 0) {
             Group {
-                if moment.isPast {
+                if case .calendar = moment.kind {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(moment.isPast ? Color.clear : tint)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .strokeBorder(tint.opacity(0.85), lineWidth: 1.4)
+                        }
+                } else if moment.isPast {
                     Circle()
                         .strokeBorder(tint.opacity(0.85), lineWidth: 1.5)
                 } else {
@@ -366,7 +532,7 @@ struct DayRibbonView: View {
                 .fill(tint.opacity(moment.isPast ? 0.30 : 0.55))
                 .frame(width: isSelected ? 2 : 1.2, height: Self.stalkHeight)
         }
-        .offset(x: -4, y: Self.stalkTop - 8)
+        .offset(y: Self.stalkTop - 8)
     }
 
     // MARK: Durate
@@ -465,15 +631,15 @@ struct DayRibbonView: View {
         let icon = Self.spanSymbol(for: span)
         HStack(spacing: 3) {
             Image(systemName: icon)
-                .font(.system(size: 6, weight: .bold))
+                .font(.system(size: 7, weight: .bold))
             if barWidth > 64 {
                 Text(span.name)
-                    .font(.system(size: 7, weight: .semibold))
+                    .font(.system(size: 8, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
         }
-        .foregroundStyle(.white.opacity(0.95))
+        .foregroundStyle(.white)
         .padding(.leading, 4)
         .frame(width: max(barWidth - 6, 0), alignment: .leading)
         .allowsHitTesting(false)
@@ -537,6 +703,7 @@ struct DayRibbonView: View {
     /// attenzione e urgenza.
     nonisolated static func spanTint(for span: DaySpan) -> Color {
         switch AccessoryEventType(rawValue: span.eventType) {
+        case .thermostat:        return Color(hue: 0.07, saturation: 0.58, brightness: 0.68)
         case .airPurifier, .fan: return Color(hue: 0.52, saturation: 0.45, brightness: 0.62)
         case .humidifier:        return Color(hue: 0.58, saturation: 0.42, brightness: 0.60)
         default:                 return Color(hue: 0.72, saturation: 0.34, brightness: 0.60)
@@ -581,11 +748,22 @@ struct DayRibbonView: View {
                         .rotationEffect(.degrees(45))
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                if gesture.changes.count > 1 {
+                    Text("\(min(gesture.changes.count, 99))")
+                        .font(.system(size: 7, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .frame(height: 12)
+                        .background(Self.gestureTint.opacity(isSelected ? 1 : 0.9), in: Capsule())
+                        .offset(x: 7, y: -7)
+                }
+            }
             // Il bersaglio del dito è sempre più grande del rombo: un rombo da
             // sette punti è leggibile ma non toccabile, e ridurre il disegno a
             // ciò che le dita richiedono farebbe della corsia una fila di
             // bolloni.
-            .frame(width: 30, height: 26)
+            .frame(width: 34, height: 28)
             .contentShape(Rectangle())
             .position(x: placement.x, y: Self.gestureLaneY)
             .onTapGesture {
@@ -649,9 +827,9 @@ struct DayRibbonView: View {
         return VStack(spacing: 1) {
             Text(now.formatted(date: .omitted, time: .shortened))
                 .font(.system(size: 9, weight: .bold).monospacedDigit())
-                .foregroundStyle(BrandColor.primary)
+                .foregroundStyle(.primary)
             Rectangle()
-                .fill(BrandColor.primary)
+                .fill(.primary.opacity(0.85))
                 .frame(width: 2, height: Self.axisY + Self.axisHeight - Self.labelRowHeight)
         }
         .position(x: min(max(x, 18), width - 18), y: (Self.axisY + Self.axisHeight) / 2 + 4)
@@ -674,19 +852,12 @@ struct DayRibbonView: View {
     struct DayBar: View {
         let dayOffset: Int
         let day: Date
-        let canGoBack: Bool
-        let canGoForward: Bool
-        var onShiftDay: ((Int) -> Void)? = nil
         var onReturnToday: (() -> Void)? = nil
 
         var body: some View {
-            HStack(spacing: 6) {
-                arrow("chevron.left", enabled: canGoBack) { onShiftDay?(-1) }
-                Spacer(minLength: 0)
-                label
-                Spacer(minLength: 0)
-                arrow("chevron.right", enabled: canGoForward) { onShiftDay?(1) }
-            }
+            label
+                .frame(maxWidth: .infinity)
+            .frame(height: 20)
         }
 
         @ViewBuilder
@@ -714,21 +885,6 @@ struct DayRibbonView: View {
                 }
                 .buttonStyle(.plain)
             }
-        }
-
-        private func arrow(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-            Button(action: action) {
-                Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    // Disabilitata si vede ancora, sbiadita: sparire
-                    // cambierebbe la larghezza della barra e farebbe ballare
-                    // la data ogni volta che si tocca un limite.
-                    .foregroundStyle(enabled ? AnyShapeStyle(.secondary) : AnyShapeStyle(.quaternary))
-                    .frame(width: 30, height: 18)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!enabled)
         }
     }
 

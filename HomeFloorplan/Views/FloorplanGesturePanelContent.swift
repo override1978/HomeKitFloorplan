@@ -41,6 +41,7 @@ struct FloorplanGesturePanelContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+            gestureInsight
             changeList
             if let draftName { naming(draftName) } else { verbs }
             if let outcome { outcomeNote(outcome) }
@@ -89,6 +90,78 @@ struct FloorplanGesturePanelContent: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var gestureInsight: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: insightIcon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(insightTint)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(insightTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(insightDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(insightTint.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(insightTint.opacity(0.22), lineWidth: 0.6)
+        }
+    }
+
+    private var isSceneCandidate: Bool {
+        !gesture.isScene && gesture.changes.count > 1
+    }
+
+    private var insightIcon: String {
+        if gesture.isScene { return "checkmark.seal" }
+        return isSceneCandidate ? "square.stack.3d.up" : "hand.tap"
+    }
+
+    private var insightTint: Color {
+        if gesture.isScene { return .green }
+        return isSceneCandidate ? BrandColor.primary : .secondary
+    }
+
+    private var insightTitle: String {
+        if gesture.isScene {
+            return String(localized: "gesture.insight.scene",
+                          defaultValue: "Scena riconosciuta")
+        }
+        if isSceneCandidate {
+            return String(localized: "gesture.insight.sceneCandidate",
+                          defaultValue: "Possibile scena")
+        }
+        return String(localized: "gesture.insight.single",
+                      defaultValue: "Comando singolo")
+    }
+
+    private var insightDetail: String {
+        if gesture.isScene {
+            return String(localized: "gesture.insight.scene.detail",
+                          defaultValue: "Il rombo rappresenta una scena gia esistente.")
+        }
+        if isSceneCandidate {
+            let rooms = gesture.roomNames.count
+            if rooms > 1 {
+                return String(format: String(localized: "gesture.insight.sceneCandidate.rooms",
+                                             defaultValue: "%d comandi in %d stanze: puo diventare una scena o un promemoria."),
+                              gesture.changes.count, rooms)
+            }
+            return String(format: String(localized: "gesture.insight.sceneCandidate.detail",
+                                         defaultValue: "%d comandi ravvicinati: puo diventare una scena o un promemoria."),
+                          gesture.changes.count)
+        }
+        return String(localized: "gesture.insight.single.detail",
+                      defaultValue: "Evento utile per capire cosa e successo, ma non abbastanza ricco per proporre una scena.")
     }
 
     // MARK: La lista
@@ -169,7 +242,7 @@ struct FloorplanGesturePanelContent: View {
             .buttonStyle(.borderedProminent)
             .disabled(isWorking)
 
-            if !gesture.isScene {
+            if isSceneCandidate {
                 Button {
                     namingForAutomation = false
                     draftName = HumanGestureBuilder.suggestedName(for: gesture)
@@ -193,16 +266,25 @@ struct FloorplanGesturePanelContent: View {
             .buttonStyle(.bordered)
             .disabled(isWorking)
 
-            Text(gesture.isScene
-                 ? String(localized: "gesture.verbs.explain.scene",
-                          defaultValue: "La scena esiste già: qui puoi solo rilanciarla o darle un orario fisso.")
-                 : String(localized: "gesture.verbs.explain",
-                          defaultValue: "Si salva lo stato finale, non la sequenza: una scena è una configurazione."))
+            Text(verbsExplanation)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var verbsExplanation: String {
+        if gesture.isScene {
+            return String(localized: "gesture.verbs.explain.scene",
+                          defaultValue: "La scena esiste gia: qui puoi solo rilanciarla o darle un orario fisso.")
+        }
+        if isSceneCandidate {
+            return String(localized: "gesture.verbs.explain",
+                          defaultValue: "Si salva lo stato finale, non la sequenza: una scena e una configurazione.")
+        }
+        return String(localized: "gesture.verbs.explain.single",
+                      defaultValue: "Un comando singolo si puo rifare o programmare, senza creare una scena.")
     }
 
     /// Il campo nome, che compare solo quando qualcosa sta per essere creato.

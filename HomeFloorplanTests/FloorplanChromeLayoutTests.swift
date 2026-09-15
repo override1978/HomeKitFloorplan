@@ -98,6 +98,13 @@ struct FloorplanDayRibbonInsetTests {
         #expect(layout.bottomInset == FloorplanChromeLayout.dayRibbonInset)
     }
 
+    @Test("Col nastro chiuso resta solo il margine della striscia")
+    func collapsedRibbonUsesCompactInset() {
+        let layout = FloorplanChromeLayout(hasCollapsedDayRibbon: true)
+        #expect(layout.bottomInset == FloorplanChromeLayout.collapsedDayRibbonInset)
+        #expect(layout.bottomInset < FloorplanChromeLayout.dayRibbonInset)
+    }
+
     @Test("Peek del pannello e nastro non si sommano: vince il più alto")
     func insetsDoNotStack() {
         let both = FloorplanChromeLayout(hasBottomPane: true, hasDayRibbon: true)

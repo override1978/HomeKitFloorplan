@@ -234,6 +234,7 @@ struct FloorplanChromeLayout: Equatable {
     /// sopra, come già fa col peek del pannello su iPhone. Senza, il disegno
     /// continua sotto la card e le stanze in basso finiscono coperte.
     var hasDayRibbon = false
+    var hasCollapsedDayRibbon = false
 
     /// Layout dell'app com'è oggi: solo top bar + superfici per-modo già
     /// coperte dal margine base.
@@ -256,7 +257,8 @@ struct FloorplanChromeLayout: Equatable {
 
     /// Spazio riservato al nastro della giornata: la card misurata più il
     /// respiro sotto e sopra.
-    static let dayRibbonInset: CGFloat = 163
+    static let dayRibbonInset: CGFloat = 162
+    static let collapsedDayRibbonInset: CGFloat = 96
 
     var topInset: CGFloat {
         var inset = FloorplanCanvasGeometry.chromeTopInset
@@ -271,7 +273,8 @@ struct FloorplanChromeLayout: Equatable {
     /// domani convivessero: il massimo resta corretto in entrambi i casi.
     var bottomInset: CGFloat {
         max(hasBottomPane ? Self.bottomPaneInset : 0,
-            hasDayRibbon ? Self.dayRibbonInset : 0)
+            hasDayRibbon ? Self.dayRibbonInset : 0,
+            hasCollapsedDayRibbon ? Self.collapsedDayRibbonInset : 0)
     }
 }
 

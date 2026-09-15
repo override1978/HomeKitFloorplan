@@ -56,21 +56,22 @@ enum DaySpanBuilder {
     /// I tipi per cui «per quanto» è la cosa interessante.
     ///
     /// Barre per i **processi**, non per gli stati. Un processo finisce da
-    /// solo — l'aspirapolvere, il purificatore, la ventola, l'umidificatore —
+    /// solo — il condizionatore, il purificatore, la ventola, l'umidificatore —
     /// e sapere quanto manca alla fine è un'informazione. Uno stato finisce
     /// quando qualcuno lo finisce, e una luce accesa per tre ore non racconta
-    /// niente che il colore della stanza non dica già.
+    /// niente che il colore della stanza non dica già. Lo stesso vale per
+    /// prese e switch lasciati accesi: riempiono il nastro per ore senza dire
+    /// cosa sta succedendo.
     ///
     /// È la stessa disciplina dei marker sulla planimetria — solo dove c'è una
     /// domanda vera — applicata all'asse del tempo. Ed è anche ciò che tiene
     /// il nastro leggibile: con trentasette accessori, «una barra per ogni cosa
     /// accesa» sarebbe un istogramma.
     static let processTypes: Set<String> = [
+        AccessoryEventType.thermostat.rawValue,
         AccessoryEventType.airPurifier.rawValue,
         AccessoryEventType.fan.rawValue,
-        AccessoryEventType.humidifier.rawValue,
-        AccessoryEventType.outlet.rawValue,
-        AccessoryEventType.switch.rawValue
+        AccessoryEventType.humidifier.rawValue
     ]
 
     /// Ricostruisce i periodi accesi dentro una finestra.
@@ -95,15 +96,6 @@ enum DaySpanBuilder {
             var openedAt: Date?
             var openedBeforeWindow = false
             var openedByHand = false
-
-            // Se il primo evento della finestra è uno spegnimento, la cosa era
-            // già accesa quando la finestra è cominciata: il periodo esiste, e
-            // comincia al bordo. Ignorarlo perderebbe proprio i periodi lunghi,
-            // che sono quelli che vale di più mostrare.
-            if ordered.first?.state == false {
-                openedAt = window.start
-                openedBeforeWindow = true
-            }
 
             for change in ordered {
                 if change.state {

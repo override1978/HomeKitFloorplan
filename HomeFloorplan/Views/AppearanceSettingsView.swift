@@ -73,8 +73,8 @@ struct AppearanceSettingsView: View {
                 Toggle(isOn: $isDaylightGroundEnabled) {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(String(localized: "settings.appearance.daylight", defaultValue: "Luce circadiana"))
-                            Text(String(localized: "settings.appearance.daylight.subtitle", defaultValue: "La planimetria segue la luce del giorno: ambra all'alba, bianca a mezzogiorno, scura la sera."))
+                            Text(String(localized: "settings.appearance.daylight", defaultValue: "Luci sulla planimetria"))
+                            Text(String(localized: "settings.appearance.daylight.subtitle", defaultValue: "Mostra un bagliore locale nelle stanze dove ci sono lampade accese."))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -83,14 +83,10 @@ struct AppearanceSettingsView: View {
                     }
                 }
 
-                // Detta esplicitamente, perché spegnere un interruttore non
-                // dice mai cosa si ottiene in cambio. Qui in cambio si ottiene
-                // una cosa che qualcuno può preferire — la propria planimetria
-                // sul proprio colore, ferma — e non una funzionalità in meno.
                 if !isDaylightGroundEnabled {
                     Label {
                         Text(String(localized: "settings.appearance.daylight.classic",
-                                    defaultValue: "Modalità classica: la planimetria resta ferma, sullo sfondo del colore che hai scelto per lei."))
+                                    defaultValue: "Effetto spento: la planimetria resta ferma, con la colorazione scelta."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } icon: {

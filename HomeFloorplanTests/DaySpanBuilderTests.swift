@@ -63,15 +63,12 @@ struct DaySpanBuilderTests {
         #expect(span.end == day.end)
     }
 
-    @Test("Se il primo evento è uno spegnimento, era già acceso")
-    func offFirstMeansItWasAlreadyOn() throws {
+    @Test("Uno spegnimento senza accensione non inventa una durata")
+    func offFirstDoesNotInventAStart() {
         let uuid = UUID()
         let spans = DaySpanBuilder.build(from: [change(uuid, on: false, at: 7)],
                                          window: day, now: at(12))
-        let span = try #require(spans.first)
-        #expect(span.start == day.start)
-        #expect(span.startsBeforeWindow, "il bordo non è un inizio, è il limite di ciò che sappiamo")
-        #expect(span.end == at(7))
+        #expect(spans.isEmpty, "senza aver visto l'accensione, partire da mezzanotte sarebbe una deduzione falsa")
     }
 
     @Test("Un lampo di due minuti resta un punto, non diventa una barra")
@@ -90,6 +87,32 @@ struct DaySpanBuilderTests {
                                                 change(uuid, on: false, at: 23, type: "light")],
                                          window: day, now: at(23.5))
         #expect(spans.isEmpty, "una luce accesa tre ore non dice niente che la stanza non dica già")
+    }
+
+    @Test("Prese e switch non diventano barre continue")
+    func outletsAndSwitchesAreNotProcesses() {
+        let outlet = UUID()
+        let switchID = UUID()
+        let spans = DaySpanBuilder.build(from: [
+            change(outlet, on: true, at: 1, type: "outlet", name: "Multipresa"),
+            change(switchID, on: true, at: 2, type: "switch", name: "Switch")
+        ], window: day, now: at(20))
+
+        #expect(spans.isEmpty, "stati lunghi sempre accesi riempiono il nastro senza raccontare un processo")
+    }
+
+    @Test("I climatizzatori sono processi")
+    func thermostatsAreProcesses() throws {
+        let thermostat = UUID()
+        let spans = DaySpanBuilder.build(from: [
+            change(thermostat, on: true, at: 16, type: "thermostat", name: "Condizionatore"),
+            change(thermostat, on: false, at: 22, type: "thermostat", name: "Condizionatore")
+        ], window: day, now: at(23))
+
+        let span = try #require(spans.first)
+        #expect(spans.count == 1)
+        #expect(span.name == "Condizionatore")
+        #expect(span.duration(now: at(23)) == 6 * 3600)
     }
 
     @Test("Accensioni ripetute dello stesso accessorio fanno periodi distinti")

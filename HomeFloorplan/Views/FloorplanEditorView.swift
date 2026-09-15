@@ -132,6 +132,8 @@ struct FloorplanEditorView: View {
     /// render.
     /// Quanti giorni si è distanti da oggi. Zero è oggi.
     @State private var dayOffset: Int = 0
+    @AppStorage("floorplan.dayRibbon.isCollapsed")
+    private var isDayRibbonCollapsed = false
 
     /// Fin dove si può tornare indietro: dove finisce l'archivio.
     ///
@@ -455,8 +457,7 @@ struct FloorplanEditorView: View {
 
 
     private var floorplanBackgroundColor: Color {
-        guard isDaylightGroundEnabled else { return chosenBackgroundColor }
-        return DaylightGround.circadianGround(light: currentLight)
+        chosenBackgroundColor
     }
 
     /// Il colore che l'utente ha scelto per questa planimetria.
@@ -484,8 +485,7 @@ struct FloorplanEditorView: View {
     /// di sempre, quindi spegnere l'interruttore non ha bisogno di un secondo
     /// percorso — è l'assenza della palette.
     private var circadianPalette: CircadianPalette? {
-        guard isDaylightGroundEnabled else { return nil }
-        return CircadianPalette.make(light: currentLight)
+        nil
     }
 
     /// Da che parte guarda l'apertura principale, in gradi da nord.
@@ -504,23 +504,9 @@ struct FloorplanEditorView: View {
     /// cartolina, non a una casa.
     private func currentGlows(rotated: Bool) -> [CircadianGlow] {
         guard isDaylightGroundEnabled else { return [] }
-        var glows: [CircadianGlow] = []
         let light = currentLight
-
-        if let coordinates = SolarCalculator.homeCoordinates, let opening = sunOpeningPoint {
-            let sun = SolarCalculator.position(at: illuminatedInstant, coordinates: coordinates)
-            if let glow = CircadianGlow.sunlight(through: opening,
-                                                 bearing: openingBearing,
-                                                 sunAzimuth: sun.azimuth,
-                                                 sunAltitude: sun.altitude,
-                                                 warmth: light.warmth) {
-                glows.append(glow)
-            }
-        }
-
-        glows.append(contentsOf: CircadianGlow.lamps(byRoom: litPointsByRoom(rotated: rotated),
-                                                     daylight: light.luminance))
-        return glows
+        return CircadianGlow.lamps(byRoom: litPointsByRoom(rotated: rotated),
+                                   daylight: light.luminance)
     }
 
     /// Il centro dell'apertura da cui entra il sole.
@@ -665,7 +651,8 @@ struct FloorplanEditorView: View {
                             selectedMoment: selectedMoment,
                             selectedGesture: selectedGesture,
                             selectedSpan: selectedSpan,
-                            topInset: chromeLayout(for: outer.size).topInset
+                            topInset: chromeLayout(for: outer.size).topInset,
+                            bottomInset: chromeLayout(for: outer.size).bottomInset
                         )
                         .frame(width: FloorplanDockedContextPanel.width)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -735,50 +722,58 @@ struct FloorplanEditorView: View {
     /// tinte delle stanze proprio sotto le etichette — lo stesso motivo per
     /// cui i badge dell'overlay hanno smesso di essere di vetro.
     private var dayRibbonCard: some View {
-        VStack(spacing: 2) {
-            DayRibbonView.DayBar(dayOffset: dayOffset,
-                                 day: visibleDay.start,
-                                 canGoBack: dayOffset > -Self.maxDaysBack,
-                                 canGoForward: dayOffset < Self.maxDaysForward,
-                                 onShiftDay: { shiftDay(by: $0) },
-                                 onReturnToday: { shiftDay(by: -dayOffset) })
-            DayRibbonView(moments: dayMoments.filter { !$0.isSolarKind },
-                      day: visibleDay,
-                      now: dayClock,
-                      sunrise: daySolarTimes.todaySunrise,
-                      sunset: daySolarTimes.todaySunset,
-                      gestures: dayGestures,
-                      spans: daySpans,
-                      dayOffset: dayOffset,
-                      canGoBack: dayOffset > -Self.maxDaysBack,
-                      canGoForward: dayOffset < Self.maxDaysForward,
-                      onSelect: { moment in
-                          selectedMoment = moment
-                          overlayVM?.showMomentDetail()
-                      },
-                      onSelectGesture: { gesture in
-                          selectedGesture = gesture
-                          overlayVM?.showGestureDetail()
-                      },
-                      onSelectSpan: { span in
-                          selectedSpan = span
-                          overlayVM?.showSpanDetail()
-                      },
-                      onShiftDay: { shiftDay(by: $0) },
-                      onReturnToday: { shiftDay(by: -dayOffset) },
-                      onScrubLight: { instant in
-                          // Senza animazione mentre il dito si muove: la luce
-                          // deve stare sotto il dito, e un'animazione da un
-                          // secondo e mezzo la farebbe arrivare quando il dito
-                          // è già altrove.
-                          var transaction = Transaction()
-                          transaction.disablesAnimations = true
-                          withTransaction(transaction) { scrubbedInstant = instant }
-                      })
+        VStack(spacing: isDayRibbonCollapsed ? 4 : 2) {
+            ribbonDragHandle
+
+            if isDayRibbonCollapsed || dayOffset != 0 {
+                DayRibbonView.DayBar(dayOffset: dayOffset,
+                                     day: visibleDay.start,
+                                     onReturnToday: { shiftDay(by: -dayOffset) })
+            }
+
+            if isDayRibbonCollapsed {
+                collapsedDayRibbonSummary
+            }
+
+            if !isDayRibbonCollapsed {
+                DayRibbonView(moments: dayMoments.filter { !$0.isSolarKind },
+                              day: visibleDay,
+                              now: dayClock,
+                              sunrise: daySolarTimes.todaySunrise,
+                              sunset: daySolarTimes.todaySunset,
+                              gestures: dayGestures,
+                              spans: daySpans,
+                              dayOffset: dayOffset,
+                              canGoBack: dayOffset > -Self.maxDaysBack,
+                              canGoForward: dayOffset < Self.maxDaysForward,
+                              onSelect: { moment in
+                                  selectedMoment = moment
+                                  overlayVM?.showMomentDetail()
+                              },
+                              onSelectGesture: { gesture in
+                                  selectedGesture = gesture
+                                  overlayVM?.showGestureDetail()
+                              },
+                              onSelectSpan: { span in
+                                  selectedSpan = span
+                                  overlayVM?.showSpanDetail()
+                              },
+                              onShiftDay: { shiftDay(by: $0) },
+                              onReturnToday: { shiftDay(by: -dayOffset) },
+                              onScrubLight: { instant in
+                                  // Senza animazione mentre il dito si muove: la luce
+                                  // deve stare sotto il dito, e un'animazione da un
+                                  // secondo e mezzo la farebbe arrivare quando il dito
+                                  // è già altrove.
+                                  var transaction = Transaction()
+                                  transaction.disablesAnimations = true
+                                  withTransaction(transaction) { scrubbedInstant = instant }
+                              })
+            }
         }
             .padding(.horizontal, 14)
-            .padding(.top, 8)
-            .padding(.bottom, 6)
+            .padding(.top, isDayRibbonCollapsed ? 5 : 4)
+            .padding(.bottom, isDayRibbonCollapsed ? 6 : 4)
             // Superficie di chrome, non più una card del colore del fondo.
             //
             // Era riempita con `floorplanBackgroundColor` da quando il fondo
@@ -804,6 +799,74 @@ struct FloorplanEditorView: View {
                 legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 14, y: 4))
             .padding(.horizontal, 16)
             .padding(.bottom, 14)
+            .animation(.spring(response: 0.32, dampingFraction: 0.88), value: isDayRibbonCollapsed)
+    }
+
+    private var ribbonDragHandle: some View {
+        Capsule()
+            .fill(.secondary.opacity(0.45))
+            .frame(width: 68, height: 5)
+            .frame(width: 140, height: 18)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                setDayRibbonCollapsed(!isDayRibbonCollapsed)
+            }
+            .gesture(ribbonCollapseDrag)
+            .accessibilityLabel(isDayRibbonCollapsed
+                                ? String(localized: "ribbon.expand", defaultValue: "Show day ribbon")
+                                : String(localized: "ribbon.collapse", defaultValue: "Hide day ribbon"))
+    }
+
+    private var ribbonCollapseDrag: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onEnded { value in
+                if value.translation.height > 10 {
+                    setDayRibbonCollapsed(true)
+                } else if value.translation.height < -10 {
+                    setDayRibbonCollapsed(false)
+                }
+            }
+    }
+
+    private func setDayRibbonCollapsed(_ collapsed: Bool) {
+        guard collapsed != isDayRibbonCollapsed else { return }
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+            isDayRibbonCollapsed = collapsed
+        }
+    }
+
+    private var collapsedDayRibbonSummary: some View {
+        HStack(spacing: 10) {
+            Text(collapsedNowText)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Text(collapsedNextText)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(height: 22)
+    }
+
+    private var collapsedNowText: String {
+        if let span = daySpans.first(where: { $0.start <= dayClock && ($0.end ?? .distantFuture) > dayClock }) {
+            return String(localized: "ribbon.collapsed.now.running",
+                          defaultValue: "ADESSO · \(span.name) attivo")
+        }
+        return String(localized: "ribbon.collapsed.now",
+                      defaultValue: "ADESSO · \(dayClock.formatted(date: .omitted, time: .shortened))")
+    }
+
+    private var collapsedNextText: String {
+        guard let next = dayMoments.filter({ !$0.isSolarKind }).first(where: { $0.at > dayClock }) else {
+            return String(localized: "ribbon.collapsed.next.none", defaultValue: "PROSSIMO · nessun evento")
+        }
+        return String(localized: "ribbon.collapsed.next",
+                      defaultValue: "PROSSIMO · \(next.at.formatted(date: .omitted, time: .shortened)) \(DayRibbonView.ribbonTitle(for: next))")
     }
 
     /// Colonna mappa (l'intero canvas pre-redesign). Separata dalla catena di
@@ -1728,7 +1791,8 @@ struct FloorplanEditorView: View {
         FloorplanChromeLayout(hasTwoRowTabBar: !isCompactScreen,
                               hasBottomPane: isCompactScreen && !ui.isEditing
                                   && container.height > container.width,
-                              hasDayRibbon: showsDayRibbon)
+                              hasDayRibbon: showsDayRibbon && !isDayRibbonCollapsed,
+                              hasCollapsedDayRibbon: showsDayRibbon && isDayRibbonCollapsed)
     }
 
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
@@ -1801,10 +1865,7 @@ struct FloorplanEditorView: View {
         // coordinate già trasposte — geometria, marker, tap, overlay.
         let isRotated = displayRotationActive(image: image, container: container)
         let displayImage = isRotated ? rotatedImageCache.rotated(for: image) : image
-        let darkDisplayImage: UIImage? = {
-            guard isDaylightGroundEnabled, let dark = imageCache.darkImage else { return nil }
-            return isRotated ? rotatedImageCache.rotated(for: dark) : dark
-        }()
+        let darkDisplayImage: UIImage? = nil
         let rooms = displayRooms(rotated: isRotated)
 
         let rect = imageRect(imageSize: displayImage.size, container: container)
@@ -1819,7 +1880,7 @@ struct FloorplanEditorView: View {
             darkImage: darkDisplayImage,
             containerSize: container,
             chrome: chromeLayout(for: container),
-            light: currentLight,
+            light: DaylightGround.Light(luminance: 0, warmth: 0, isRising: false),
             glows: currentGlows(rotated: isRotated),
             showOverlayLayer: (overlayVM != nil || placementModel != nil) && !ui.isEditing,
             showEditLayer: ui.isEditing && !floorplan.linkedRooms.isEmpty,

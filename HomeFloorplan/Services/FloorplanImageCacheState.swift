@@ -38,10 +38,10 @@ struct FloorplanImageLoader {
 
         cache.imageDate = stamp
 
-        // L'immagine di base è sempre la chiara quando entrambe esistono: la
-        // scura le va sopra in dissolvenza. Senza una chiara — chi ha scelto
-        // il buio e non ha ancora la controparte — resta quella che c'è.
-        guard let data = floorplan.lightVariantImageData ?? floorplan.currentImageData else {
+        // L'editor mostra la variante scelta dall'utente: chiaro, scuro o
+        // architectural dark. L'altra resta disponibile come cache secondaria,
+        // ma non decide più il disegno in base all'ora.
+        guard let data = floorplan.currentImageData else {
             cache.isLoading = false
             cache.loadingDate = nil
             return

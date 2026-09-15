@@ -137,6 +137,7 @@ struct FloorplanDockedContextPanel: View {
     /// contenuto parte sotto di lei, come la mappa. Il vetro della barra
     /// scorre anche su questa colonna.
     var topInset: CGFloat = 0
+    var bottomInset: CGFloat = 0
 
     var body: some View {
         // Niente header: il titolo lo dice già il tab attivo e la chiusura
@@ -156,6 +157,7 @@ struct FloorplanDockedContextPanel: View {
             .padding(.bottom, 16)
         }
         .contentMargins(.top, topInset, for: .scrollContent)
+        .contentMargins(.bottom, bottomInset, for: .scrollContent)
         .frame(maxHeight: .infinity)
         // NESSUNO sfondo proprio: il pannello è trasparente sul fondo unico
         // che il canvas dipinge per mappa e colonna insieme — solo così le
