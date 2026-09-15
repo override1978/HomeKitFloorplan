@@ -337,15 +337,37 @@ enum DaylightGround {
     /// Quanto la tinta ruota scendendo nella notte. Si ferma sulla prugna.
     static let nightRotation = 0.185
 
-    /// Quanto è colorato il cielo: massimo agli estremi, nullo a mezzogiorno.
+    /// Quanto è colorato il cielo: una gobba sull'orizzonte, non una discesa.
     ///
-    /// L'esponente poco sopra uno fa sì che la saturazione cali più in fretta
-    /// di quanto salga la luce: è ciò che tiene automaticamente vera l'unica
-    /// regola che conta, cioè mai chiaro **e** saturo insieme. Non serve un
-    /// tetto separato — lo garantisce la forma della curva.
+    /// Prima calava in modo monotono con la luce, e sbagliava la forma. Un
+    /// cielo non è tanto più colorato quanto meno c'è luce: è colorato
+    /// **all'orizzonte** — all'alba e al tramonto — pallido a mezzogiorno e
+    /// scuro ma sobrio di notte. La curva monotona dava il massimo dove il
+    /// cielo è più spento e un valore medio dove è più acceso.
+    ///
+    /// L'effetto si vedeva come grigio, e c'è una ragione percepiva: a
+    /// luminosità media una saturazione bassa non legge come tinta, legge come
+    /// grigio sporco. Al tramonto il fondo stava a 0,195 di saturazione su 0,49
+    /// di luminosità — esattamente la combinazione che l'occhio chiama fango.
+    /// Nel buio la stessa saturazione si legge, perché non c'è luce con cui
+    /// competere; a mezzogiorno non serve. Serve **in mezzo**, ed è lì che
+    /// mancava.
+    ///
+    /// Due termini: una campana centrata sull'orizzonte e un fondo che tiene
+    /// la notte colorata senza farla gridare.
     nonisolated static func skySaturation(light: Double) -> Double {
-        0.34 * pow(1 - min(max(light, 0), 1), 1.1)
+        let value = min(max(light, 0), 1)
+        let horizon = exp(-pow((value - horizonLight) / horizonWidth, 2))
+        let nightness = max(0, (eveningLevel - value) / eveningLevel)
+        return 0.46 * horizon + 0.30 * nightness
     }
+
+    /// Dove cade il massimo del colore: poco sopra il livello della sera, che
+    /// è l'ora dorata.
+    static let horizonLight = 0.42
+    /// Quanto è larga la campana. Stretta abbasserebbe il colore a un lampo di
+    /// pochi minuti; larga lo spalmerebbe su tutta la giornata.
+    static let horizonWidth = 0.30
 
     nonisolated private static func smoothstep(_ x: Double, from a: Double, to b: Double) -> Double {
         let t = min(max((x - a) / (b - a), 0), 1)

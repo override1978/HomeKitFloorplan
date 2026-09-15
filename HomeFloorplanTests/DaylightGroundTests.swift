@@ -78,7 +78,6 @@ struct DaylightGroundTests {
         // troppo si sarebbe messa di traverso a ogni ritocco della palette —
         // come ha fatto.
         #expect(saturation(7, 30) > saturation(13, 15))
-        #expect(saturation(7, 30) < 0.2)
     }
 
     @Test("La stanza si illumina prima di quanto salga il sole")
@@ -351,15 +350,34 @@ struct DaylightGroundTests {
         }
     }
 
-    @Test("Il colore vive agli estremi e sparisce a mezzogiorno")
-    func colourLivesAtTheEdges() {
-        #expect(DaylightGround.skySaturation(light: 0) > 0.3)
-        #expect(DaylightGround.skySaturation(light: 1) == 0)
-        var previous = DaylightGround.skySaturation(light: 0)
-        for step in 1...20 {
-            let current = DaylightGround.skySaturation(light: Double(step) / 20)
-            #expect(current <= previous, "la saturazione non risale mai salendo di luce")
-            previous = current
+    @Test("Il colore culmina all'orizzonte, non al buio")
+    func colourPeaksAtTheHorizon() {
+        // La forma giusta è una gobba, non una discesa. Un cielo non è tanto
+        // più colorato quanto meno c'è luce: è colorato all'alba e al
+        // tramonto, pallido a mezzogiorno, scuro ma sobrio di notte. Con la
+        // discesa monotona il massimo cadeva dove il cielo è più spento.
+        let horizon = DaylightGround.skySaturation(light: DaylightGround.horizonLight)
+        #expect(horizon > DaylightGround.skySaturation(light: 0), "più dell'ora piccola")
+        #expect(horizon > DaylightGround.skySaturation(light: 1), "e molto più di mezzogiorno")
+        #expect(horizon > 0.4)
+    }
+
+    @Test("A mezzogiorno resta quasi neutro, di notte colorato ma sobrio")
+    func extremesAreCalm() {
+        #expect(DaylightGround.skySaturation(light: 1) < 0.03)
+        let night = DaylightGround.skySaturation(light: 0)
+        #expect(night > 0.3, "la notte è prugna, non grigia")
+        #expect(night < 0.42, "ma non grida")
+    }
+
+    @Test("L'ora dorata dura, non è un lampo")
+    func goldenHourHasWidth() {
+        // Con una campana stretta il colore sarebbe comparso per pochi minuti
+        // e sparito, cioè un difetto invece di un'atmosfera.
+        let peak = DaylightGround.skySaturation(light: DaylightGround.horizonLight)
+        for offset in [-0.15, 0.15] {
+            let nearby = DaylightGround.skySaturation(light: DaylightGround.horizonLight + offset)
+            #expect(nearby > peak * 0.6, "a poca distanza dal massimo deve restare colore")
         }
     }
 
@@ -374,7 +392,13 @@ struct DaylightGroundTests {
             let cycle = DaylightGround.Light(luminance: level,
                                              warmth: DaylightGround.warmth(solar: level))
             let ground = hsb(DaylightGround.circadianGround(light: cycle))
-            #expect(ground.s * ground.b < 0.15,
+            // Il tetto è sul **prodotto** e non sulla sola saturazione,
+            // perché è la combinazione a essere confondibile con un allarme.
+            // A 0,30 il massimo del ciclo — il tramonto, HSB(32°, 0,46, 0,49) —
+            // resta lontanissimo dall'arancione d'allarme, che è quasi saturo e
+            // quasi pieno: metà saturazione e metà luminosità non si
+            // confondono con niente.
+            #expect(ground.s * ground.b < 0.30,
                     "a luce \(level) il fondo è chiaro e saturo insieme")
         }
     }
