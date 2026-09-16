@@ -157,6 +157,7 @@ struct FloorplanEditorView: View {
     @State private var selectedMoment: DayMoment?
     @State private var selectedGesture: HumanGesture?
     @State private var selectedSpan: DaySpan?
+    @State private var selectedRunningSpans: [DaySpan] = []
     @State private var daySpans: [DaySpan] = []
     /// Il ridisegno della corsia in attesa, per non rifarlo a ogni lampada.
     @State private var gestureRefreshTask: Task<Void, Never>?
@@ -246,8 +247,9 @@ struct FloorplanEditorView: View {
         selectedMoment = nil
         selectedGesture = nil
         selectedSpan = nil
+        selectedRunningSpans = []
         if overlayVM?.panelContent == .moment || overlayVM?.panelContent == .gesture
-            || overlayVM?.panelContent == .span {
+            || overlayVM?.panelContent == .span || overlayVM?.panelContent == .runningSpans {
             overlayVM?.closeDetailContent()
         }
         refreshDayMoments()
@@ -651,6 +653,7 @@ struct FloorplanEditorView: View {
                             selectedMoment: selectedMoment,
                             selectedGesture: selectedGesture,
                             selectedSpan: selectedSpan,
+                            selectedRunningSpans: selectedRunningSpans,
                             topInset: chromeLayout(for: outer.size).topInset,
                             bottomInset: chromeLayout(for: outer.size).bottomInset
                         )
@@ -748,15 +751,31 @@ struct FloorplanEditorView: View {
                               canGoForward: dayOffset < Self.maxDaysForward,
                               onSelect: { moment in
                                   selectedMoment = moment
+                                  selectedGesture = nil
+                                  selectedSpan = nil
+                                  selectedRunningSpans = []
                                   overlayVM?.showMomentDetail()
                               },
                               onSelectGesture: { gesture in
+                                  selectedMoment = nil
                                   selectedGesture = gesture
+                                  selectedSpan = nil
+                                  selectedRunningSpans = []
                                   overlayVM?.showGestureDetail()
                               },
                               onSelectSpan: { span in
+                                  selectedMoment = nil
+                                  selectedGesture = nil
                                   selectedSpan = span
+                                  selectedRunningSpans = []
                                   overlayVM?.showSpanDetail()
+                              },
+                              onSelectRunningSpans: { spans in
+                                  selectedMoment = nil
+                                  selectedGesture = nil
+                                  selectedSpan = nil
+                                  selectedRunningSpans = spans
+                                  overlayVM?.showRunningSpansDetail()
                               },
                               onShiftDay: { shiftDay(by: $0) },
                               onReturnToday: { shiftDay(by: -dayOffset) },

@@ -48,7 +48,7 @@ struct FloorplanMomentPanelContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
-            if let detail = moment.detail { detailRow(detail) }
+            contextRows
             if let declared = declaredTimeMismatch { mismatchNote(declared) }
             if case .automation(true) = moment.kind { conditionalNote }
             verb
@@ -80,9 +80,6 @@ struct FloorplanMomentPanelContent: View {
             Text(moment.title)
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(tenseLabel)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -98,15 +95,75 @@ struct FloorplanMomentPanelContent: View {
                 ? String(localized: "moment.tense.wasScheduled", defaultValue: "Era previsto")
                 : String(localized: "moment.tense.past", defaultValue: "Già passato")
         }
-        return String(localized: "moment.tense.upcoming", defaultValue: "Deve ancora arrivare")
+        switch moment.kind {
+        case .calendar:
+            return String(localized: "moment.tense.calendar.upcoming", defaultValue: "Evento in calendario")
+        case .automation:
+            return String(localized: "moment.tense.automation.upcoming", defaultValue: "Automazione in arrivo")
+        case .solar:
+            return String(localized: "moment.tense.solar.upcoming", defaultValue: "Evento solare in arrivo")
+        }
     }
 
     // MARK: Righe
 
-    private func detailRow(_ detail: String) -> some View {
-        Label(detail, systemImage: "play.rectangle")
+    private var contextRows: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            detailRow(tenseLabel, icon: moment.symbolName)
+            switch moment.kind {
+            case .calendar(let isAllDay):
+                detailRow(calendarTimeText(isAllDay: isAllDay), icon: isAllDay ? "calendar" : "clock")
+                if let detail = moment.detail {
+                    detailRow(detail, icon: "calendar")
+                }
+                if let location = moment.calendarLocation {
+                    detailRow(location, icon: "mappin.and.ellipse")
+                }
+                if let notes = moment.calendarNotes {
+                    detailRow(notes, icon: "note.text")
+                }
+            case .automation:
+                detailRow(moment.isPast
+                          ? String(localized: "moment.automation.scheduledPast", defaultValue: "Era programmata per questo orario")
+                          : String(format: String(localized: "moment.automation.scheduledFuture",
+                                                  defaultValue: "Scatta alle %@"),
+                                   moment.at.formatted(date: .omitted, time: .shortened)),
+                          icon: "clock")
+                if let detail = moment.detail {
+                    detailRow(detail, icon: "play.rectangle")
+                }
+            case .solar:
+                detailRow(moment.at.formatted(date: .omitted, time: .shortened), icon: "clock")
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.05),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func detailRow(_ detail: String, icon: String) -> some View {
+        Label(detail, systemImage: icon)
             .font(.subheadline)
             .foregroundStyle(.secondary)
+    }
+
+    private func calendarTimeText(isAllDay: Bool) -> String {
+        if isAllDay {
+            return String(localized: "moment.calendar.allDay", defaultValue: "Tutto il giorno")
+        }
+        if let end = moment.calendarEnd, end > moment.at {
+            return String(format: String(localized: "moment.calendar.interval",
+                                         defaultValue: "%@ - %@"),
+                          moment.at.formatted(date: .omitted, time: .shortened),
+                          end.formatted(date: .omitted, time: .shortened))
+        }
+        if moment.isPast {
+            return String(format: String(localized: "moment.calendar.startedAt", defaultValue: "Iniziato alle %@"),
+                          moment.at.formatted(date: .omitted, time: .shortened))
+        }
+        return String(format: String(localized: "moment.calendar.startsAt", defaultValue: "Inizia alle %@"),
+                      moment.at.formatted(date: .omitted, time: .shortened))
     }
 
     private func mismatchNote(_ declared: String) -> some View {

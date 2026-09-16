@@ -43,6 +43,7 @@ struct DayRibbonView: View {
     var onSelect: ((DayMoment) -> Void)? = nil
     var onSelectGesture: ((HumanGesture) -> Void)? = nil
     var onSelectSpan: ((DaySpan) -> Void)? = nil
+    var onSelectRunningSpans: (([DaySpan]) -> Void)? = nil
     var onShiftDay: ((Int) -> Void)? = nil
     var onReturnToday: (() -> Void)? = nil
 
@@ -67,39 +68,35 @@ struct DayRibbonView: View {
         CGFloat(min(max(instant.timeIntervalSince(day.start) / span, 0), 1))
     }
 
-    private static let labelRowHeight: CGFloat = 0
-    private static let labelRows = 0
-    private static let stalkTop: CGFloat = 8
-    // Il gambo si accorcia per pagare le righe più alte dei periodi: la fascia
-    // non poteva crescere ancora senza rubare spazio alla planimetria, e fra un
-    // gambo lungo e una barra leggibile il gambo è l'ornamento.
-    private static let stalkHeight: CGFloat = 8
-    private static let axisY: CGFloat = stalkTop + stalkHeight
+    /// La fascia dei nomi, sopra i pallini.
+    ///
+    /// Una riga sola e non due. Con il raggruppamento dei punti vicini i
+    /// nominati sono pochi e distanti, quindi la seconda riga servirebbe di
+    /// rado e costerebbe sempre — e su questo nastro l'altezza è la valuta.
+    private static let labelRowHeight: CGFloat = 11
+    private static let labelRows = 1
+    private static let stalkTop: CGFloat = labelRowHeight * CGFloat(labelRows) + 3
+    private static let stalkHeight: CGFloat = 7
+    /// L'asse sta sotto la corsia del programmato: sopra ci sono gli eventi, qui
+    /// c'è il tempo. Mischiarli nello stesso centro ottico rendeva illeggibili
+    /// sia i marker sia Alba/Tramonto.
+    private static let axisY: CGFloat = stalkTop + 10 + stalkHeight
 
-    /// L'asse è diventato una fascia, perché i periodi hanno bisogno di righe.
+    /// L'asse resta una fascia, ma non ospita più le durate individuali.
     ///
-    /// Con una riga sola due periodi sovrapposti si disegnavano uno sull'altro
-    /// e il risultato era una striscia continua con dentro dei nomi tagliati:
-    /// sembrava una cosa sola con tre etichette invece di tre cose. Il tempo si
-    /// sovrappone — è la sua natura — e l'unico modo di mostrarlo è dare a
-    /// ciascuno una riga sua.
+    /// Le durate sono ancora calcolate e selezionabili dalla testata, ma la
+    /// scala principale deve leggere solo: momento programmato sopra, attività
+    /// reale sotto. La fascia serve a dare profondità al giorno e a contenere
+    /// alba/tramonto, non a diventare una lista orizzontale.
     nonisolated static let spanLanes = 3
-    /// Nove punti e non sei: dentro sei non ci sta niente, e una barra che non
-    /// può dire cosa è costringe a toccarla per saperlo — su un pannello
-    /// appeso al muro, che nessuno tocca per curiosità, vuol dire non dirlo.
-    /// Nove punti, non sei.
-    ///
-    /// A sei l'icona sta a sei punti e il nome a sette: leggibili in teoria,
-    /// faticosi in pratica — e su un pannello guardato da due metri la teoria
-    /// non serve a niente. Tre punti in più per corsia costano nove punti di
-    /// nastro e li vale, perché una barra che non si legge non dice niente.
     private static let spanLaneHeight: CGFloat = 9
     private static let spanLaneGap: CGFloat = 1
-    private static let axisHeight: CGFloat =
-        spanLaneHeight * CGFloat(spanLanes) + spanLaneGap * CGFloat(spanLanes - 1) + 2
+    private static let axisHeight: CGFloat = 14
     /// La corsia dei gesti, appena sotto l'asse.
-    static let gestureLaneY: CGFloat = axisY + axisHeight + 3
-    private static let hourLabelY: CGFloat = gestureLaneY + 9
+    static let gestureLaneY: CGFloat = axisY + axisHeight + 22
+    /// Le ore stanno sotto le pillole: se condividono quasi la stessa y, il
+    /// numero del gesto sembra appartenere alla scala e il "12" sparisce.
+    private static let hourLabelY: CGFloat = gestureLaneY + 17
     static let totalHeight: CGFloat = hourLabelY + 6
     /// Alta quanto le due righe chiedono davvero.
     ///
@@ -110,9 +107,15 @@ struct DayRibbonView: View {
     /// alto della timeline. Un frame più basso del suo contenuto non lo
     /// contiene: lo lascia uscire da sotto.
     private static let focusHeaderHeight: CGFloat = 28
-    /// Il vuoto fra testa e asse è anche l'aria sopra i pallini, che stanno in
-    /// cima alla timeline senza margine proprio.
-    private static let focusTimelineGap: CGFloat = 16
+    /// Il vuoto fra testa e asse contiene la label di "adesso".
+    ///
+    /// Se questo spazio è stretto, l'orario corrente deve stare quasi addosso
+    /// ai pointer rossi e sembra un'etichetta dell'automazione vicina. Con una
+    /// corsia propria, "20:50" resta il cursore del tempo, non un evento.
+    /// Il vuoto fra testa e asse si dimezza: le etichette ora lo riempiono da
+    /// sole, e tenerlo vuoto **e** metterci sopra dei nomi sarebbe pagare due
+    /// volte la stessa separazione.
+    private static let focusTimelineGap: CGFloat = 9
 
     private func color(for moment: DayMoment) -> Color {
         switch moment.kind {
@@ -144,17 +147,101 @@ struct DayRibbonView: View {
 
     private static let contentHeight: CGFloat = focusHeaderHeight + focusTimelineGap + totalHeight
 
-    private static func axisPlacements(_ moments: [DayMoment],
-                                       width: CGFloat,
-                                       fraction: (Date) -> CGFloat) -> [Placement] {
-        layout(moments, width: width, fraction: fraction).map {
-            Placement(moment: $0.moment, x: $0.x, level: 0, labelWidth: nil)
+    /// Un momento sull'asse, con quanti ne rappresenta e se porta il nome.
+    struct AxisPlacement: Equatable {
+        let moment: DayMoment
+        /// Quanti momenti stanno sotto questo punto. Uno significa sé stesso.
+        let count: Int
+        let x: CGFloat
+        let level: Int
+        /// `nil` quando il nome non si mostra: o non c'è spazio, o quel momento
+        /// è lontano dall'ora presente.
+        let labelWidth: CGFloat?
+    }
+
+    /// Sotto questa distanza due momenti sono lo stesso punto per l'occhio.
+    static let clusterSeparation: CGFloat = 15
+    /// Quanti momenti attorno ad adesso portano il nome.
+    static let labelledPast = 2
+    static let labelledFuture = 3
+    static let maxLabelWidth: CGFloat = 130
+    /// Sotto questa larghezza l'etichetta mostrerebbe tre caratteri e un
+    /// puntino: non è un'etichetta corta, è rumore con l'aria di
+    /// un'informazione.
+    static let minLabelWidth: CGFloat = 40
+
+    /// I momenti sull'asse: raggruppati dove si toccano, nominati dove conta.
+    ///
+    /// Erano tutti pallini muti — dieci cerchi identici in cui non si
+    /// riconosceva niente — e prima ancora erano tutti etichettati, con le
+    /// etichette che si accavallavano. Nessuna delle due è la risposta, perché
+    /// la domanda non è «nominarli o no»: è **quali**.
+    ///
+    /// Su un asse di ventiquattr'ore il nome serve dove si sta guardando, cioè
+    /// attorno all'ora presente: cosa è appena successo e cosa sta per
+    /// succedere. Il resto della giornata è contesto — dove è piena e dove è
+    /// vuota — e per quello basta un punto.
+    ///
+    /// E dove i punti si toccano diventano **uno con il conteggio**, invece di
+    /// tre cerchi sovrapposti che sembrano uno solo e si rubano il tocco a
+    /// vicenda. È la stessa soluzione già adottata per i gesti: quando due cose
+    /// non si distinguono a occhio, non si distinguono nemmeno col dito.
+    static func axisLayout(_ moments: [DayMoment],
+                           now: Date,
+                           width: CGFloat,
+                           fraction: (Date) -> CGFloat) -> [AxisPlacement] {
+        let sorted = moments.sorted { $0.at == $1.at ? $0.id < $1.id : $0.at < $1.at }
+        guard !sorted.isEmpty else { return [] }
+
+        // 1. Grappoli: chi cade troppo vicino al precedente ci finisce dentro.
+        var clusters: [(moment: DayMoment, count: Int, x: CGFloat)] = []
+        for moment in sorted {
+            let x = fraction(moment.at) * width
+            if let last = clusters.last, x - last.x < clusterSeparation {
+                clusters[clusters.count - 1].count += 1
+            } else {
+                clusters.append((moment, 1, x))
+            }
+        }
+
+        // 2. Quali nominare: una finestra attorno ad adesso.
+        let boundary = clusters.firstIndex { $0.moment.at > now } ?? clusters.count
+        let from = max(0, boundary - labelledPast)
+        let to = min(clusters.count, boundary + labelledFuture)
+        let labelled = Array(from..<to)
+
+        // 3. Le etichette dei soli nominati si spartiscono due righe sfalsate,
+        //    con la larghezza che arriva fino al vicino sulla stessa riga.
+        var lastXOnRow = [CGFloat](repeating: -.greatestFiniteMagnitude, count: 2)
+        var rowOf: [Int: Int] = [:]
+        for index in labelled {
+            let x = clusters[index].x
+            for row in 0..<2 where x - lastXOnRow[row] >= minLabelWidth + 6 {
+                rowOf[index] = row
+                lastXOnRow[row] = x
+                break
+            }
+        }
+
+        return clusters.enumerated().map { index, cluster in
+            guard let row = rowOf[index] else {
+                return AxisPlacement(moment: cluster.moment, count: cluster.count,
+                                     x: cluster.x, level: 0, labelWidth: nil)
+            }
+            let nextX = labelled.first { $0 > index && rowOf[$0] == row }
+                .map { clusters[$0].x } ?? width
+            let available = min(maxLabelWidth, nextX - cluster.x - 6)
+            return AxisPlacement(moment: cluster.moment, count: cluster.count,
+                                 x: cluster.x, level: row,
+                                 labelWidth: available >= minLabelWidth ? available : nil)
         }
     }
 
     private func timelineCanvas(width: CGFloat) -> some View {
         let visibleMoments = Self.visibleMoments(moments, now: now)
-        let placements = Self.axisPlacements(visibleMoments, width: width, fraction: fraction)
+        let calendarPills = visibleMoments.filter(Self.usesCalendarDurationPill)
+        let pointMoments = visibleMoments.filter { !Self.usesCalendarDurationPill($0) }
+        let placements = Self.axisLayout(pointMoments, now: now, width: width, fraction: fraction)
 
         return ZStack(alignment: .topLeading) {
             Color.clear
@@ -168,8 +255,12 @@ struct DayRibbonView: View {
             daylightBand(width: width)
             solarBoundaries(width: width)
             solarLabels(width: width)
-            spanBars(width: width)
+            selectedSpanHitAreas(width: width)
             hourTicks(width: width)
+
+            ForEach(calendarPills, id: \.id) { moment in
+                calendarDurationPill(moment, width: width)
+            }
 
             ForEach(placements, id: \.moment.id) { placement in
                 marker(placement, width: width)
@@ -179,11 +270,8 @@ struct DayRibbonView: View {
                 diamond(placement, width: width)
             }
 
-            if let span = spans.first(where: { $0.id == selectedSpanID }) {
-                spanReadout(span, width: width)
-            }
-            if dayOffset == 0 { nowLine(width: width) }
-            if let scrubFraction { scrubLine(at: scrubFraction, width: width) }
+            if dayOffset == 0 { nowLine(width: width).zIndex(5) }
+            if let scrubFraction { scrubLine(at: scrubFraction, width: width).zIndex(6) }
         }
         .frame(width: width, height: Self.totalHeight)
         .onAppear { lastWidth = width }
@@ -203,12 +291,38 @@ struct DayRibbonView: View {
                 Text(currentEyebrow)
                     .font(.system(size: 9, weight: .bold).monospacedDigit())
                     .foregroundStyle(.secondary)
-                Text(currentDetail)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 3) {
+                    Text(currentDetail)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    // Il segno che si può toccare.
+                    //
+                    // Il tocco c'era già e apriva il pannello, ma niente lo
+                    // diceva: su un pannello al muro una funzione che non si
+                    // annuncia è una funzione che non esiste.
+                    if !runningSpans.isEmpty {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                let running = runningSpans
+                guard let first = running.first else { return }
+                selected = nil
+                selectedGestureID = nil
+                if running.count == 1 {
+                    selectedSpanID = first.id
+                    onSelectSpan?(first)
+                } else {
+                    selectedSpanID = nil
+                    onSelectRunningSpans?(running)
+                }
+            }
 
             if let next = nextMoment {
                 VStack(alignment: .trailing, spacing: 2) {
@@ -216,13 +330,29 @@ struct DayRibbonView: View {
                                 defaultValue: "PROSSIMO · \(relativeTime(to: next.at))"))
                         .font(.system(size: 9, weight: .bold).monospacedDigit())
                         .foregroundStyle(.secondary)
-                    Text(String(localized: "ribbon.next.detail",
-                                defaultValue: "\(next.at.formatted(date: .omitted, time: .shortened)) \(Self.ribbonTitle(for: next))"))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                    HStack(spacing: 3) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.tertiary)
+                        Text(String(localized: "ribbon.next.detail",
+                                    defaultValue: "\(next.at.formatted(date: .omitted, time: .shortened)) \(Self.ribbonTitle(for: next))"))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
+                .contentShape(Rectangle())
+                // Simmetrico a «In corso»: da una parte cosa sta girando, da
+                // quella opposta cosa sta per partire, e tutt'e due aprono il
+                // dettaglio. Era toccabile solo la prima, e l'asimmetria non
+                // aveva ragioni — solo il fatto che era stata scritta prima.
+                .onTapGesture {
+                    selectedGestureID = nil
+                    selectedSpanID = nil
+                    selected = next
+                    onSelect?(next)
+                }
             } else {
                 Text(String(localized: "ribbon.next.none.inline", defaultValue: "PROSSIMO · Nessun evento"))
                     .font(.system(size: 11, weight: .semibold))
@@ -254,9 +384,12 @@ struct DayRibbonView: View {
 
     private var currentDetail: String {
         if let first = runningSpans.first {
-            let extra = runningSpans.count > 1 ? " · +\(runningSpans.count - 1)" : ""
+            guard runningSpans.count == 1 else {
+                return String(localized: "ribbon.now.running.count",
+                              defaultValue: "In corso · \(runningSpans.count)")
+            }
             return String(localized: "ribbon.now.running",
-                          defaultValue: "\(first.name) attivo\(extra)")
+                          defaultValue: "\(first.name) in corso")
         }
 
         let past = moments.filter { $0.at <= now }.count
@@ -286,9 +419,9 @@ struct DayRibbonView: View {
     }
 
     private static func visibleMoments(_ moments: [DayMoment], now: Date) -> [DayMoment] {
-        let past = moments.filter { $0.at <= now }.suffix(2)
+        let past = moments.filter { $0.at <= now }
         let future = moments.filter { $0.at > now }.prefix(6)
-        return Array(past + future).sorted { $0.at == $1.at ? $0.id < $1.id : $0.at < $1.at }
+        return (past + Array(future)).sorted { $0.at == $1.at ? $0.id < $1.id : $0.at < $1.at }
     }
 
     // MARK: Trascinare la luce
@@ -328,16 +461,25 @@ struct DayRibbonView: View {
 
     private func scrubLine(at fraction: CGFloat, width: CGFloat) -> some View {
         let instant = day.start.addingTimeInterval(day.duration * Double(fraction))
-        return VStack(spacing: 1) {
+        let labelY = Self.axisY + Self.axisHeight + 8
+        let lineTop = Self.axisY - 1
+        let lineBottom = Self.gestureLaneY + 9
+        let x = min(max(fraction * width, 18), width - 18)
+        return ZStack(alignment: .top) {
+            Rectangle()
+                .fill(Color.orange)
+                .frame(width: 2, height: lineBottom - lineTop)
+                .position(x: x, y: (lineTop + lineBottom) / 2)
+
             Text(instant.formatted(date: .omitted, time: .shortened))
                 .font(.system(size: 9, weight: .bold).monospacedDigit())
                 .foregroundStyle(.orange)
-            Rectangle()
-                .fill(Color.orange)
-                .frame(width: 2, height: Self.axisY + Self.axisHeight - Self.labelRowHeight)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(.background.opacity(0.86), in: Capsule())
+                .position(x: x, y: labelY)
         }
-        .position(x: min(max(fraction * width, 18), width - 18),
-                  y: (Self.axisY + Self.axisHeight) / 2 + 4)
+        .frame(width: width, height: Self.totalHeight, alignment: .topLeading)
     }
 
     // MARK: Trascinare i giorni
@@ -441,13 +583,20 @@ struct DayRibbonView: View {
     @ViewBuilder
     private func solarLabels(width: CGFloat) -> some View {
         ForEach(solarAnnotations, id: \.date) { item in
+            // Testo nudo sulla riga delle ore, non più una pillola sulla banda.
+            //
+            // Con fondo e bordo avevano il peso visivo di un evento, e sull'asse
+            // competevano con le cose che succedono davvero. Ma alba e tramonto
+            // non succedono: sono la cornice — la banda del giorno li racconta
+            // già come sfondo, e questi due nomi servono solo a dire l'ora
+            // esatta di un confine che si vede da sé.
             Text(item.title)
-                .font(.system(size: 8, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.orange.opacity(0.72))
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(.orange.opacity(0.65))
                 .lineLimit(1)
                 .fixedSize()
-                .position(x: min(max(fraction(of: item.date) * width, 28), width - 38),
-                          y: max(Self.axisY - 7, 6))
+                .position(x: min(max(fraction(of: item.date) * width, 24), width - 34),
+                          y: Self.hourLabelY)
         }
     }
 
@@ -471,7 +620,7 @@ struct DayRibbonView: View {
 
     // MARK: Momenti
 
-    private func marker(_ placement: Placement, width: CGFloat) -> some View {
+    private func marker(_ placement: AxisPlacement, width: CGFloat) -> some View {
         let moment = placement.moment
         let isSelected = selected?.id == moment.id
         let tint = color(for: moment)
@@ -502,6 +651,63 @@ struct DayRibbonView: View {
         }
     }
 
+    nonisolated private static func usesCalendarDurationPill(_ moment: DayMoment) -> Bool {
+        guard case .calendar(false) = moment.kind,
+              let end = moment.calendarEnd,
+              end.timeIntervalSince(moment.at) >= 30 * 60
+        else { return false }
+        return true
+    }
+
+    private func calendarDurationPill(_ moment: DayMoment, width: CGFloat) -> some View {
+        let isSelected = selected?.id == moment.id
+        let x0 = fraction(of: moment.at) * width
+        let x1 = fraction(of: min(moment.calendarEnd ?? moment.at, day.end)) * width
+        let pillWidth = max(x1 - x0, 28)
+        let center = min(max(x0 + pillWidth / 2, pillWidth / 2), width - pillWidth / 2)
+        let tint = Color(hue: 0.58, saturation: 0.48, brightness: 0.78)
+
+        return HStack(spacing: 4) {
+            Image(systemName: "calendar")
+                .font(.system(size: 7, weight: .bold))
+            if pillWidth >= 82 {
+                Text(Self.ribbonTitle(for: moment))
+                    .font(.system(size: 8, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+        }
+        .foregroundStyle(tint.opacity(moment.isPast ? 0.55 : 0.95))
+        .padding(.horizontal, pillWidth >= 82 ? 6 : 0)
+        .frame(width: pillWidth, height: 11)
+        .background {
+            Capsule()
+                .fill(tint.opacity(moment.isPast ? 0.08 : 0.14))
+        }
+        .overlay {
+            Capsule()
+                .strokeBorder(tint.opacity(isSelected ? 0.90 : 0.42),
+                              lineWidth: isSelected ? 1.4 : 0.8)
+        }
+        .overlay {
+            if isSelected {
+                Capsule()
+                    .strokeBorder(tint.opacity(0.75), lineWidth: 1)
+                    .padding(-3)
+            }
+        }
+        .frame(width: pillWidth, height: 26)
+        .contentShape(Rectangle())
+        .position(x: center, y: Self.axisY + Self.axisHeight / 2)
+        .onTapGesture {
+            selectedGestureID = nil
+            selectedSpanID = nil
+            selected = isSelected ? nil : moment
+            if !isSelected { onSelect?(moment) }
+        }
+        .zIndex(1)
+    }
+
     /// Il gambo e il punto.
     ///
     /// Passato e futuro si distinguono per **forma** e non solo per intensità:
@@ -509,16 +715,18 @@ struct DayRibbonView: View {
     /// perde sotto il sole o su uno schermo storto, mentre pieno contro vuoto
     /// resta leggibile sempre — ed è anche il modo in cui si disegna da secoli
     /// la differenza fra ciò che è accaduto e ciò che è previsto.
-    private func stalk(moment: DayMoment, tint: Color, isSelected: Bool) -> some View {
+    private func stalk(moment: DayMoment, tint: Color, isSelected: Bool,
+                       count: Int = 1) -> some View {
         VStack(spacing: 0) {
             Group {
                 if case .calendar = moment.kind {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(moment.isPast ? Color.clear : tint)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                .strokeBorder(tint.opacity(0.85), lineWidth: 1.4)
-                        }
+                    ZStack {
+                        Circle()
+                            .fill(tint.opacity(moment.isPast ? 0.14 : 0.22))
+                        Image(systemName: "calendar")
+                            .font(.system(size: isSelected ? 8 : 7, weight: .bold))
+                            .foregroundStyle(tint.opacity(moment.isPast ? 0.72 : 1))
+                    }
                 } else if moment.isPast {
                     Circle()
                         .strokeBorder(tint.opacity(0.85), lineWidth: 1.5)
@@ -526,63 +734,53 @@ struct DayRibbonView: View {
                     Circle().fill(tint)
                 }
             }
-            .frame(width: isSelected ? 9 : 7, height: isSelected ? 9 : 7)
+            .frame(width: isSelected ? 11 : 10, height: isSelected ? 11 : 10)
+            // Il grappolo porta quanti ne nasconde.
+            //
+            // Tre cerchi sovrapposti sembrano uno solo e si rubano il tocco a
+            // vicenda: dire «3» è l'unico modo perché quel punto non menta
+            // sulla propria consistenza.
+            .overlay(alignment: .topTrailing) {
+                if count > 1 {
+                    Text("\(min(count, 9))")
+                        .font(.system(size: 7, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .frame(width: 10, height: 10)
+                        .background(Circle().fill(tint))
+                        .offset(x: 6, y: -4)
+                }
+            }
 
             Rectangle()
                 .fill(tint.opacity(moment.isPast ? 0.30 : 0.55))
                 .frame(width: isSelected ? 2 : 1.2, height: Self.stalkHeight)
         }
-        .offset(y: Self.stalkTop - 8)
+        // Il gambo comincia dove finisce la fascia dei nomi: prima partiva dal
+        // bordo alto e il pallino si sedeva sull'etichetta.
+        .offset(y: Self.stalkTop)
     }
 
     // MARK: Durate
 
-    /// Le barre dei periodi, dentro l'asse.
+    /// Le durate non si disegnano nel nastro compatto.
     ///
-    /// Dentro e non sopra: un periodo non è un avvenimento che sta *in* un
-    /// momento, è un pezzo di giornata che è stato in un certo modo — e la
-    /// giornata è l'asse. Metterle su una corsia propria le farebbe sembrare
-    /// una terza categoria di cose accanto alle altre due, mentre sono lo
-    /// sfondo su cui le altre due succedono. Costa anche zero altezza, che su
-    /// questa fascia è l'unica valuta che conta.
+    /// Prima ogni processo lungo diventava una barra dentro la scala. Era
+    /// corretto come dato, ma sbagliato come lettura: se si vedeva solo
+    /// "Purificatore Studio", sembrava che la casa stesse facendo solo quello.
+    /// La vista compatta ora tiene le durate nella testata "In corso" e nel
+    /// pannello laterale; qui restano solo aree di tocco invisibili, per non
+    /// perdere la selezione quando una durata è già aperta.
     @ViewBuilder
-    private func spanBars(width: CGFloat) -> some View {
+    private func selectedSpanHitAreas(width: CGFloat) -> some View {
         let placed = Self.assignLanes(spans, now: now)
         ForEach(placed, id: \.span.id) { item in
             let x0 = fraction(of: item.span.start) * width
             let x1 = fraction(of: item.span.end ?? now) * width
             let barWidth = max(x1 - x0, 3)
             let isSelected = selectedSpanID == item.span.id
-            let tint = Self.spanTint(for: item.span)
 
-            Capsule()
-                .fill(tint.opacity(item.span.isRunning ? 0.95 : 0.70))
-                .overlay {
-                    // Un filo di bordo chiaro: la barra vive dentro la banda
-                    // del giorno, che a mezzogiorno è quasi bianca e a
-                    // mezzanotte quasi nera. Senza, su uno dei due estremi
-                    // sparirebbe nello sfondo.
-                    Capsule().strokeBorder(.white.opacity(isSelected ? 0.9 : 0.35), lineWidth: 0.5)
-                }
-                .overlay(alignment: .leading) { spanContent(item.span, barWidth: barWidth) }
-                .frame(width: barWidth, height: Self.spanLaneHeight)
-                // Il bersaglio è alto quanto il passo fra due corsie: qualche
-                // punto in più della barra, ma non abbastanza da invadere la
-                // corsia vicina. Allargarlo di più sembrerebbe generoso e
-                // sarebbe il contrario, perché due corsie adiacenti sono
-                // adiacenti proprio quando si sovrappongono nel tempo: il
-                // bersaglio grande di una ruberebbe i tocchi all'altra.
-                .frame(height: Self.spanLaneHeight + Self.spanLaneGap)
-                // **Prima** di `position`, non dopo.
-                //
-                // `position` espande la vista a tutto lo spazio disponibile e
-                // ci colloca dentro il contenuto: una `contentShape` applicata
-                // dopo descrive quello spazio, non la barra. Ogni barra aveva
-                // così come area di tocco l'intero nastro, e a vincere era
-                // sempre la stessa — toccandone una qualunque si apriva la
-                // scheda di quell'unica. Gli altri elementi funzionavano per
-                // caso: senza `contentShape` il tocco segue il disegno, che è
-                // già la forma giusta.
+            Color.clear
+                .frame(width: barWidth, height: Self.spanLaneHeight + Self.spanLaneGap)
                 .contentShape(Rectangle())
                 .position(x: x0 + barWidth / 2, y: Self.spanLaneY(item.lane))
                 .onTapGesture {
@@ -595,22 +793,14 @@ struct DayRibbonView: View {
                         onSelectSpan?(item.span)
                     }
                 }
+                .opacity(isSelected ? 1 : 0.001)
         }
     }
 
-    /// Il nome del periodo scelto, dove vivono le etichette.
-    ///
-    /// Fuori dalla barra e non dentro: le righe sono alte sei punti, e un testo
-    /// lì dentro andrebbe a sette punti e troncato a metà parola — «Purificatore
-    /// Stu» non è un nome, è un rumore con la forma di un nome. Solo il
-    /// selezionato, perché tre nomi insieme sono di nuovo il problema da cui si
-    /// veniva.
     private func spanReadout(_ span: DaySpan, width: CGFloat) -> some View {
         let x0 = fraction(of: span.start) * width
         let x1 = fraction(of: span.end ?? now) * width
-        // Solo per le barre strette: su quelle larghe il nome è già dentro, e
-        // scriverlo due volte sarebbe solo più inchiostro per la stessa cosa.
-        return Text(x1 - x0 > 64 ? "" : span.name)
+        return Text(span.name)
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(Self.spanTint(for: span))
             .lineLimit(1)
@@ -619,35 +809,23 @@ struct DayRibbonView: View {
                       y: Self.axisY - 7)
     }
 
-    /// Cosa c'è scritto dentro una barra: un'icona, e il nome se ci sta.
-    ///
-    /// L'icona per prima perché sopravvive a qualunque larghezza e si legge da
-    /// lontano, che è la distanza da cui si guarda un pannello al muro. Il nome
-    /// entra solo quando può entrare **intero**: un nome troncato a metà parola
-    /// non è un nome corto, è una promessa non mantenuta, e ne avevamo già
-    /// visto l'effetto con «Purificatore Stu».
     @ViewBuilder
     private func spanContent(_ span: DaySpan, barWidth: CGFloat) -> some View {
         let icon = Self.spanSymbol(for: span)
-        HStack(spacing: 3) {
+        if barWidth > 18 {
             Image(systemName: icon)
-                .font(.system(size: 7, weight: .bold))
-            if barWidth > 64 {
-                Text(span.name)
-                    .font(.system(size: 8, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
+                .font(.system(size: 6.5, weight: .bold))
+                .foregroundStyle(.white.opacity(0.92))
+                .padding(.leading, 5)
+                .frame(width: max(barWidth - 6, 0), alignment: .leading)
+                .allowsHitTesting(false)
         }
-        .foregroundStyle(.white)
-        .padding(.leading, 4)
-        .frame(width: max(barWidth - 6, 0), alignment: .leading)
-        .allowsHitTesting(false)
     }
 
     /// Il simbolo del processo, lo stesso che l'accessorio porta altrove.
     nonisolated static func spanSymbol(for span: DaySpan) -> String {
         switch AccessoryEventType(rawValue: span.eventType) {
+        case .thermostat:   return "thermometer"
         case .airPurifier: return "air.purifier"
         case .fan:         return "fan"
         case .humidifier:  return "humidifier"
@@ -712,58 +890,51 @@ struct DayRibbonView: View {
 
     // MARK: Gesti
 
-    /// Un rombo per ogni gesto, grande quanto il gesto è stato ampio.
+    /// Una pillola per ogni gesto, con dentro quanti comandi contiene.
     ///
-    /// Rombo e non cerchio: la differenza di forma è l'unico modo per cui la
-    /// corsia si legge anche coprendo metà del nastro con una mano, e non
-    /// dipende dal colore — che qui deve restare libero di significare
-    /// dell'altro. La dimensione segue il numero di comandi perché «ho spento
-    /// una luce» e «ho sistemato tutto il piano» non sono lo stesso gesto, e
-    /// l'unica differenza che si può mostrare senza etichette è quanto spazio
-    /// occupano.
+    /// La forma a rombo era riconoscibile, ma il numero appeso sopra diventava
+    /// fragile nei temi chiari e finiva per sembrare un badge esterno. La
+    /// pillola prende spunto dal nastro con durate: sta sulla timeline, porta il
+    /// numero dentro e mantiene un bersaglio di tocco leggibile.
     private func diamond(_ placement: GesturePlacement, width: CGFloat) -> some View {
         let gesture = placement.gesture
         let isSelected = selectedGestureID == gesture.id
-        let side = Self.diamondSide(changeCount: gesture.changes.count) + (isSelected ? 3 : 0)
+        let count = min(gesture.changes.count, 99)
+        // Larghezza fissa: il numero lo dice già.
+        //
+        // La pillola cresceva col numero di comandi **e** lo scriveva dentro.
+        // Due codifiche per un dato solo: quella che si legge esattamente — la
+        // cifra — e quella che si legge male — la larghezza, che oltretutto
+        // faceva sembrare un gesto lungo nel tempo ciò che era solo numeroso.
+        let pillWidth = Self.gesturePillWidth(changeCount: 1)
 
-        return Rectangle()
-            // Una scena è vuota come le automazioni passate sopra l'asse: non
-            // l'ha fatta una mano, e la stessa distinzione di forma che lassù
-            // separa il previsto dal fatto, qui separa ciò che ha premuto
-            // qualcuno da ciò che ha eseguito la casa.
-            .fill(gesture.isScene ? Color.clear : Self.gestureTint.opacity(isSelected ? 1 : 0.75))
-            .overlay {
-                if gesture.isScene {
-                    Rectangle().strokeBorder(Self.gestureTint.opacity(isSelected ? 1 : 0.8),
-                                             lineWidth: 1.5)
-                }
+        return HStack(spacing: 3) {
+            if gesture.isScene {
+                Image(systemName: "square.stack.3d.up.fill")
+                    .font(.system(size: 7, weight: .bold))
             }
-            .frame(width: side, height: side)
-            .rotationEffect(.degrees(45))
+            Text("\(count)")
+                .font(.system(size: 8, weight: .bold).monospacedDigit())
+        }
+            .foregroundStyle(gesture.isScene ? Self.gestureTint : .white)
+            .frame(width: pillWidth, height: 16)
+            .background {
+                Capsule()
+                    .fill(gesture.isScene ? Color.clear : Self.gestureTint.opacity(isSelected ? 1 : 0.82))
+            }
+            .overlay {
+                Capsule()
+                    .strokeBorder(Self.gestureTint.opacity(isSelected ? 1 : 0.95),
+                                  lineWidth: gesture.isScene || isSelected ? 1.5 : 0.6)
+            }
             .overlay {
                 if isSelected {
-                    Rectangle()
-                        .strokeBorder(Self.gestureTint, lineWidth: 1)
-                        .frame(width: side + 6, height: side + 6)
-                        .rotationEffect(.degrees(45))
+                    Capsule()
+                        .strokeBorder(Self.gestureTint.opacity(0.9), lineWidth: 1)
+                        .padding(-3)
                 }
             }
-            .overlay(alignment: .topTrailing) {
-                if gesture.changes.count > 1 {
-                    Text("\(min(gesture.changes.count, 99))")
-                        .font(.system(size: 7, weight: .bold).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .frame(height: 12)
-                        .background(Self.gestureTint.opacity(isSelected ? 1 : 0.9), in: Capsule())
-                        .offset(x: 7, y: -7)
-                }
-            }
-            // Il bersaglio del dito è sempre più grande del rombo: un rombo da
-            // sette punti è leggibile ma non toccabile, e ridurre il disegno a
-            // ciò che le dita richiedono farebbe della corsia una fila di
-            // bolloni.
-            .frame(width: 34, height: 28)
+            .frame(width: max(38, pillWidth + 8), height: 28)
             .contentShape(Rectangle())
             .position(x: placement.x, y: Self.gestureLaneY)
             .onTapGesture {
@@ -778,6 +949,10 @@ struct DayRibbonView: View {
     }
 
     private static let gestureTint = Color.teal
+
+    nonisolated static func gesturePillWidth(changeCount: Int) -> CGFloat {
+        min(max(24, 22 + CGFloat(String(min(max(changeCount, 1), 99)).count) * 7), 38)
+    }
 
     nonisolated static func diamondSide(changeCount: Int) -> CGFloat {
         min(7 + CGFloat(max(changeCount - 1, 0)) * 1.4, 13)
@@ -824,15 +999,25 @@ struct DayRibbonView: View {
 
     private func nowLine(width: CGFloat) -> some View {
         let x = fraction(of: now) * width
-        return VStack(spacing: 1) {
+        let labelX = min(max(x, 22), width - 22)
+        let labelY = Self.axisY + Self.axisHeight + 8
+        let lineTop = Self.axisY - 1
+        let lineBottom = Self.gestureLaneY + 9
+        return ZStack(alignment: .top) {
+            Rectangle()
+                .fill(.primary.opacity(0.85))
+                .frame(width: 2, height: lineBottom - lineTop)
+                .position(x: x, y: (lineTop + lineBottom) / 2)
+
             Text(now.formatted(date: .omitted, time: .shortened))
                 .font(.system(size: 9, weight: .bold).monospacedDigit())
                 .foregroundStyle(.primary)
-            Rectangle()
-                .fill(.primary.opacity(0.85))
-                .frame(width: 2, height: Self.axisY + Self.axisHeight - Self.labelRowHeight)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(.background.opacity(0.82), in: Capsule())
+                .position(x: labelX, y: labelY)
         }
-        .position(x: min(max(x, 18), width - 18), y: (Self.axisY + Self.axisHeight) / 2 + 4)
+        .frame(width: width, height: Self.totalHeight, alignment: .topLeading)
     }
 
     // MARK: La barra del giorno

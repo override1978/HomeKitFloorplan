@@ -311,6 +311,7 @@ struct SpanIdentityTests {
         #expect(DayRibbonView.spanSymbol(for: span(type: "airPurifier")) == "air.purifier")
         #expect(DayRibbonView.spanSymbol(for: span(type: "fan")) == "fan")
         #expect(DayRibbonView.spanSymbol(for: span(type: "humidifier")) == "humidifier")
+        #expect(DayRibbonView.spanSymbol(for: span(type: "thermostat")) == "thermometer")
         #expect(DayRibbonView.spanSymbol(for: span(type: "outlet")) == "powerplug")
     }
 

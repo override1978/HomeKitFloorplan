@@ -134,3 +134,85 @@ struct FloorplanSpanPanelContent: View {
         }
     }
 }
+
+// MARK: - FloorplanRunningSpansPanelContent
+
+/// Riepilogo dei processi ancora in corso scelto dalla testata del nastro.
+struct FloorplanRunningSpansPanelContent: View {
+
+    let spans: [DaySpan]
+    @Bindable var overlayVM: FloorplanOverlayViewModel
+
+    private var sortedSpans: [DaySpan] {
+        spans.sorted(by: DaySpanBuilder.precedes)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            list
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.caption.weight(.semibold))
+                Text(String(localized: "runningSpans.title",
+                            defaultValue: "In corso · \(sortedSpans.count)"))
+                    .font(.title3.weight(.bold).monospacedDigit())
+                Spacer()
+                Button { overlayVM.closeDetailContent() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            Text(String(localized: "runningSpans.subtitle",
+                        defaultValue: "Processi attivi adesso"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var list: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(sortedSpans) { span in
+                HStack(spacing: 10) {
+                    Image(systemName: DayRibbonView.spanSymbol(for: span))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(DayRibbonView.spanTint(for: span))
+                        .frame(width: 20)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(span.name)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        HStack(spacing: 5) {
+                            if let room = span.roomName {
+                                Text(room)
+                            }
+                            Text(FloorplanSpanPanelContent.durationText(span.duration(now: Date())))
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 6)
+
+                    Text(String(localized: "runningSpans.active", defaultValue: "Attivo"))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.05),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}

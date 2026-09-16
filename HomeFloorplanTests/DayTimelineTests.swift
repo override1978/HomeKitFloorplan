@@ -58,6 +58,43 @@ struct DayTimelineTests {
         #expect(moment.kind == .calendar(isAllDay: true))
     }
 
+    @Test("Gli eventi calendario portano durata, luogo e note")
+    func calendarMetadataIsPreserved() throws {
+        let moments = DayTimeline.build(
+            day: day, now: date(10), automations: [], solar: .init(),
+            calendarEntries: [.init(id: "m",
+                                    title: "Riunione",
+                                    start: date(11),
+                                    end: date(12, 30),
+                                    isAllDay: false,
+                                    calendarName: "Famiglia",
+                                    location: "Studio",
+                                    notes: "Portare documenti")])
+
+        let moment = try #require(moments.first)
+        #expect(moment.calendarEnd == date(12, 30))
+        #expect(moment.calendarLocation == "Studio")
+        #expect(moment.calendarNotes == "Portare documenti")
+        #expect(moment.detail == "Famiglia")
+    }
+
+    @Test("Un evento calendario iniziato prima del giorno resta visibile se è ancora in corso")
+    func calendarEventCrossingMidnightIsVisible() throws {
+        let yesterday = cal.date(byAdding: .hour, value: -1, to: day.start)!
+        let moments = DayTimeline.build(
+            day: day, now: date(1), automations: [], solar: .init(),
+            calendarEntries: [.init(id: "night",
+                                    title: "Turno notte",
+                                    start: yesterday,
+                                    end: date(2),
+                                    isAllDay: false)])
+
+        let moment = try #require(moments.first)
+        #expect(moment.at == day.start)
+        #expect(moment.calendarEnd == date(2))
+        #expect(moment.isPast == false)
+    }
+
     @Test("Il sottotitolo dice le scene, o quante azioni, o tace")
     func detailFallsBackSensibly() {
         let withScenes = DayTimeline.build(day: day, now: date(12),

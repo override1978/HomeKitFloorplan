@@ -133,6 +133,8 @@ struct FloorplanDockedContextPanel: View {
     var selectedGesture: HumanGesture? = nil
     /// Il periodo scelto fra le barre dentro l'asse.
     var selectedSpan: DaySpan? = nil
+    /// Processi ancora in corso scelti dalla testata del nastro.
+    var selectedRunningSpans: [DaySpan] = []
     /// Fascia riservata alla chrome a piena larghezza (opzione A, 27/08): il
     /// contenuto parte sotto di lei, come la mappa. Il vetro della barra
     /// scorre anche su questa colonna.
@@ -150,7 +152,8 @@ struct FloorplanDockedContextPanel: View {
                 adapterMap: adapterMap,
                 selectedMoment: selectedMoment,
                 selectedGesture: selectedGesture,
-                selectedSpan: selectedSpan
+                selectedSpan: selectedSpan,
+                selectedRunningSpans: selectedRunningSpans
             )
             .padding(.horizontal, 12)
             .padding(.top, 8)

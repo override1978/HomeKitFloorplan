@@ -99,8 +99,25 @@ final class CalendarEventsService {
                 id: event.eventIdentifier ?? "\(start.timeIntervalSinceReferenceDate)-\(title)",
                 title: title,
                 start: start,
+                end: event.endDate,
                 isAllDay: event.isAllDay,
-                calendarName: showsCalendarName ? event.calendar?.title : nil)
+                calendarName: showsCalendarName ? event.calendar?.title : nil,
+                location: Self.cleaned(event.location, maxLength: 80),
+                notes: Self.cleaned(event.notes, maxLength: 180))
         }
+    }
+
+    private static func cleaned(_ text: String?, maxLength: Int) -> String? {
+        guard let text else { return nil }
+        let collapsed = text
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !collapsed.isEmpty else { return nil }
+        guard collapsed.count > maxLength else { return collapsed }
+        let end = collapsed.index(collapsed.startIndex, offsetBy: maxLength)
+        return String(collapsed[..<end]).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
     }
 }

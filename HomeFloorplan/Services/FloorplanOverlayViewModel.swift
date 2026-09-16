@@ -124,6 +124,8 @@ final class FloorplanOverlayViewModel {
         case gesture
         /// Un periodo acceso, scelto dalle barre dentro l'asse.
         case span
+        /// I processi ancora in corso, scelti dalla testata del nastro.
+        case runningSpans
     }
 
     /// Espande una stanza (tab Controlli) e comprime l'eventuale precedente.
@@ -167,6 +169,16 @@ final class FloorplanOverlayViewModel {
     /// Apre il dettaglio di un periodo acceso.
     func showSpanDetail() {
         panelContent = .span
+        if !isPanelVisible {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
+                isPanelVisible = true
+            }
+        }
+    }
+
+    /// Apre il riepilogo dei processi ancora in corso.
+    func showRunningSpansDetail() {
+        panelContent = .runningSpans
         if !isPanelVisible {
             withAnimation(.spring(response: 0.38, dampingFraction: 0.88)) {
                 isPanelVisible = true

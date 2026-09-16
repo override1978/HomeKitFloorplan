@@ -16,6 +16,8 @@ struct FloorplanContextDashboardRouter: View {
     var selectedGesture: HumanGesture? = nil
     /// Il periodo scelto fra le barre dentro l'asse.
     var selectedSpan: DaySpan? = nil
+    /// Processi ancora in corso scelti dalla testata del nastro.
+    var selectedRunningSpans: [DaySpan] = []
 
     var body: some View {
         VStack(spacing: 14) {
@@ -29,6 +31,8 @@ struct FloorplanContextDashboardRouter: View {
                 FloorplanGesturePanelContent(gesture: selectedGesture, overlayVM: overlayVM)
             } else if case .span = overlayVM.panelContent, let selectedSpan {
                 FloorplanSpanPanelContent(span: selectedSpan, overlayVM: overlayVM)
+            } else if case .runningSpans = overlayVM.panelContent, !selectedRunningSpans.isEmpty {
+                FloorplanRunningSpansPanelContent(spans: selectedRunningSpans, overlayVM: overlayVM)
             } else if case .device(let accessoryID) = overlayVM.panelContent,
                let adapter = adapterMap[accessoryID] {
                 if let thermostat = adapter as? (any ThermostatControlling) {

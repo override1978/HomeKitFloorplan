@@ -37,6 +37,12 @@ struct DayMoment: Identifiable, Equatable, Sendable {
     let title: String
     /// Riga secondaria, quando aggiunge qualcosa. `nil` quando tacerebbe.
     let detail: String?
+    /// Fine reale di un evento calendario, quando EventKit la fornisce.
+    let calendarEnd: Date?
+    /// Luogo dell'evento calendario, se l'utente lo ha scritto.
+    let calendarLocation: String?
+    /// Note dell'evento calendario, accorciate prima di arrivare al pannello.
+    let calendarNotes: String?
     let kind: Kind
     /// Identificativo del trigger HomeKit, per i momenti che ne hanno uno.
     ///
@@ -52,6 +58,28 @@ struct DayMoment: Identifiable, Equatable, Sendable {
     /// Serve alla nota sul passato: solo le automazioni hanno il problema
     /// «previsto contro avvenuto». Alba e impegni sono fatti, non promesse.
     var isAutomationKind: Bool { kind.isAutomation }
+
+    init(id: String,
+         at: Date,
+         title: String,
+         detail: String?,
+         calendarEnd: Date? = nil,
+         calendarLocation: String? = nil,
+         calendarNotes: String? = nil,
+         kind: Kind,
+         automationID: String? = nil,
+         isPast: Bool) {
+        self.id = id
+        self.at = at
+        self.title = title
+        self.detail = detail
+        self.calendarEnd = calendarEnd
+        self.calendarLocation = calendarLocation
+        self.calendarNotes = calendarNotes
+        self.kind = kind
+        self.automationID = automationID
+        self.isPast = isPast
+    }
 
     /// Alba e tramonto: sul nastro diventano lo sfondo invece che due punti in
     /// fila, quindi chi li disegna così deve poterli togliere dall'elenco.
@@ -84,16 +112,29 @@ enum DayTimeline {
         let id: String
         let title: String
         let start: Date
+        let end: Date?
         let isAllDay: Bool
         /// Nome del calendario di provenienza, se vale la pena distinguerlo.
         let calendarName: String?
+        let location: String?
+        let notes: String?
 
-        init(id: String, title: String, start: Date, isAllDay: Bool, calendarName: String? = nil) {
+        init(id: String,
+             title: String,
+             start: Date,
+             end: Date? = nil,
+             isAllDay: Bool,
+             calendarName: String? = nil,
+             location: String? = nil,
+             notes: String? = nil) {
             self.id = id
             self.title = title
             self.start = start
+            self.end = end
             self.isAllDay = isAllDay
             self.calendarName = calendarName
+            self.location = location
+            self.notes = notes
         }
     }
 
@@ -112,6 +153,9 @@ enum DayTimeline {
                 detail: fire.actionSetNames.isEmpty
                     ? (fire.actionCount > 0 ? actionsLabel(fire.actionCount) : nil)
                     : fire.actionSetNames.joined(separator: " · "),
+                calendarEnd: nil,
+                calendarLocation: nil,
+                calendarNotes: nil,
                 kind: .automation(isConditional: fire.isConditional),
                 automationID: fire.automationID,
                 isPast: fire.at <= now))
@@ -124,6 +168,9 @@ enum DayTimeline {
                                      at: sunrise,
                                      title: String(localized: "day.sunrise", defaultValue: "Alba"),
                                      detail: nil,
+                                     calendarEnd: nil,
+                                     calendarLocation: nil,
+                                     calendarNotes: nil,
                                      kind: .solar(.sunrise),
                                      isPast: sunrise <= now))
         }
@@ -132,26 +179,39 @@ enum DayTimeline {
                                      at: sunset,
                                      title: String(localized: "day.sunset", defaultValue: "Tramonto"),
                                      detail: nil,
+                                     calendarEnd: nil,
+                                     calendarLocation: nil,
+                                     calendarNotes: nil,
                                      kind: .solar(.sunset),
                                      isPast: sunset <= now))
         }
 
-        for entry in calendarEntries where day.contains(entry.start) {
+        for entry in calendarEntries where calendarEntry(entry, intersects: day) {
+            let displayStart = entry.isAllDay ? day.start : max(entry.start, day.start)
             moments.append(DayMoment(
                 id: "calendar:\(entry.id)",
-                at: entry.isAllDay ? day.start : entry.start,
+                at: displayStart,
                 title: entry.title,
                 detail: entry.calendarName,
+                calendarEnd: entry.end.map { min($0, day.end) },
+                calendarLocation: entry.location,
+                calendarNotes: entry.notes,
                 kind: .calendar(isAllDay: entry.isAllDay),
                 // Un impegno che dura tutto il giorno non è passato finché il
                 // giorno non è finito: trattarlo come le altre righe lo
                 // spegnerebbe subito dopo mezzanotte.
-                isPast: entry.isAllDay ? (day.end <= now) : (entry.start <= now)))
+                isPast: entry.isAllDay ? (day.end <= now) : ((entry.end ?? entry.start) <= now)))
         }
 
         return moments.sorted {
             $0.at == $1.at ? $0.id < $1.id : $0.at < $1.at
         }
+    }
+
+    private static func calendarEntry(_ entry: CalendarEntry, intersects day: DateInterval) -> Bool {
+        if entry.isAllDay { return day.contains(entry.start) }
+        guard let end = entry.end, end > entry.start else { return day.contains(entry.start) }
+        return entry.start < day.end && end > day.start
     }
 
     private static func actionsLabel(_ count: Int) -> String {
