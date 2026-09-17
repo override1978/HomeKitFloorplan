@@ -19,8 +19,6 @@ struct AppearanceSettingsView: View {
     @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
     private var isLiquidGlassEnabled: Bool = false
 
-    @AppStorage(AppAppearanceSettings.daylightGroundKey)
-    private var isDaylightGroundEnabled: Bool = true
 
     /// Timeout salvo in secondi. Default 90s (= 1m 30s).
     @AppStorage("idleTimeout")
@@ -70,30 +68,6 @@ struct AppearanceSettingsView: View {
                     }
                 }
 
-                Toggle(isOn: $isDaylightGroundEnabled) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(String(localized: "settings.appearance.daylight", defaultValue: "Luci sulla planimetria"))
-                            Text(String(localized: "settings.appearance.daylight.subtitle", defaultValue: "Mostra un bagliore locale nelle stanze dove ci sono lampade accese."))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "sun.horizon")
-                    }
-                }
-
-                if !isDaylightGroundEnabled {
-                    Label {
-                        Text(String(localized: "settings.appearance.daylight.classic",
-                                    defaultValue: "Effetto spento: la planimetria resta ferma, con la colorazione scelta."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } icon: {
-                        Image(systemName: "paintpalette")
-                            .foregroundStyle(.secondary)
-                    }
-                }
             } header: {
                 Text(String(localized: "settings.appearance.effects.header", defaultValue: "Effects"))
             }

@@ -202,8 +202,6 @@ struct ExpandedRoomCollapsePill: View {
 /// (pallino colore + numero). Superficie opaca dal registro token — su
 /// planimetria scura passa da sola alla variante dark.
 private struct ClusterCard: View {
-    @Environment(\.circadianPalette) private var palette
-
     let cluster: FloorplanRoomCluster
 
     var body: some View {
@@ -232,16 +230,9 @@ private struct ClusterCard: View {
         .padding(.vertical, 8)
         // Vetro quando attivo, card piena altrimenti — mai dentro un
         // GlassEffectContainer: le card usano .position().
-        // La card eredita l'ora dall'ambiente, o resta il token di sempre.
-        //
-        // Era il punto in cui l'incoerenza si vedeva di più: alle otto di sera
-        // una planimetria ambra con sopra card grigio sistema, come se la
-        // stanza avesse una temperatura e i mobili un'altra.
         .glassChromeSurface(
             in: RoundedRectangle(cornerRadius: 14, style: .continuous),
-            legacyFill: palette.map { AnyShapeStyle($0.surface) }
-                ?? AnyShapeStyle(FloorplanTokens.Surface.card),
-            legacyBorder: palette?.border,
+            legacyFill: AnyShapeStyle(FloorplanTokens.Surface.card),
             legacyShadow: GlassChromeShadow(color: .black.opacity(0.10), radius: 8, y: 2)
         )
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

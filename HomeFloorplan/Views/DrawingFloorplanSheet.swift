@@ -133,18 +133,15 @@ struct DrawingFloorplanSheet: View {
     @AppStorage("drawing.export.visualStyle") private var visualExportStyleRaw: String = DrawingVisualExportStyle.standard.rawValue
     @AppStorage("drawing.help.hasSeen") private var hasSeenDrawingHelp = false
 
-    /// Lo stesso interruttore che decide il fondo circadiano decide anche
-    /// l'export.
+    /// L'export non porta più il proprio fondo, sempre.
     ///
-    /// Parametrico e non sempre: con la modalità spenta l'immagine porta il
-    /// proprio fondo come ha sempre fatto, e vince il colore scelto per la
-    /// planimetria — nessuna differenza rispetto a prima per chi non ha chiesto
-    /// niente. Con la modalità accesa il fondo esce dall'immagine ed entra
-    /// nell'app, dove può cambiare con l'ora.
-    @AppStorage(AppAppearanceSettings.daylightGroundKey)
-    private var isDaylightGroundEnabled: Bool = true
-
-    private var exportsTransparentBackground: Bool { isDaylightGroundEnabled }
+    /// È la cosa che vale la pena tenere di tutto il lavoro sulla luce: un
+    /// disegno senza fondo sta bene su qualunque superficie l'app gli metta
+    /// sotto — chiara o scura — mentre un fondo cotto dentro ne impone una
+    /// sola. Era legato all'interruttore della circadiana, ma con lei non
+    /// c'entrava: era un miglioramento indipendente appoggiato al suo
+    /// interruttore per comodità.
+    private let exportsTransparentBackground = true
     @State private var exteriorFillColorIndex: Int = -1
     @State private var exportRotation: DrawingExportRotation = .asDrawn
     /// When false, wall drawing snaps only to the 20pt grid (no vertex snapping).
@@ -1078,32 +1075,8 @@ struct DrawingFloorplanSheet: View {
                 exportRotation: exportRotation
             )
 
-            // La seconda variante: la stessa planimetria nell'altro registro.
-            //
-            // Si disegna solo con la modalità circadiana accesa, perché senza
-            // non la guarderebbe nessuno e costerebbe un raster in più per
-            // planimetria. E si disegna **qui**, dove il documento vettoriale è
-            // già in mano e il rendering è già in corso: rigenerarla a runtime
-            // vorrebbe dire ridisegnare due volte al giorno su ogni
-            // dispositivo, per un risultato che non cambia mai.
-            var counterpart: UIImage?
-            if isDaylightGroundEnabled {
-                let otherStyle: DrawingVisualExportStyle =
-                    visualExportStyle == .architecturalDark ? .architectural : .architecturalDark
-                counterpart = renderToImage(document,
-                                            mode: .adaptive,
-                                            visualStyle: otherStyle,
-                                            exportRotation: exportRotation).0
-            }
-
-            // Si consegna «la tua» e «l'altra», in quest'ordine. Consegnare
-            // «chiara» e «scura» sembrava più comodo a valle e invece era un
-            // errore: l'immagine principale smetteva di essere quella dello
-            // stile scelto, e ogni altra vista — lista, 3D, compatta — si
-            // ritrovava a mostrare una planimetria chiara a chi aveva scelto
-            // il buio. Chi delle due sia la scura lo dice già lo stile.
             clearSessionDraft()
-            onComplete(image, counterpart, linkedRooms, document,
+            onComplete(image, nil, linkedRooms, document,
                        exteriorFillColorIndex, visualExportStyle, exportRotation)
             dismiss()
         }

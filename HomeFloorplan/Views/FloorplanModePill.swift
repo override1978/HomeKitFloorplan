@@ -124,8 +124,13 @@ struct FloorplanModePill: View {
                             .minimumScaleFactor(0.82)
                     } else {
                         HStack(spacing: 5) {
-                            ModeDot(color: mode.accentColor,
-                                    pulses: status?.pulses(for: mode) == true && !isActive)
+                            if isActive {
+                                ModeDot(color: mode.accentColor, pulses: false)
+                                    .transition(.scale.combined(with: .opacity))
+                            } else if status?.pulses(for: mode) == true {
+                                ModeDot(color: mode.accentColor, pulses: true)
+                                    .transition(.scale.combined(with: .opacity))
+                            }
                             Text(mode.tabLabel)
                                 .font(.system(size: 14, weight: .semibold))
                                 .lineLimit(1)
@@ -136,7 +141,7 @@ struct FloorplanModePill: View {
                     }
                 }
                 .foregroundStyle(isActive
-                                 ? mode.activeForegroundColor
+                                 ? FloorplanTokens.Text.primary
                                  : Color.primary.opacity(0.75))
 
                 if let subtitle {
@@ -168,13 +173,7 @@ struct FloorplanModePill: View {
             usesGlass: usesGlass,
             fill: mode.activeBackgroundColor,
             tint: mode.accentColor,
-            isCompact: isCompact,
-            // Il bordo d'allarme veste il colore DEL TAB (rosa Sicurezza,
-            // viola Intelligenza — feedback 26/08): l'urgenza la dice già il
-            // sottotitolo col suo semantico; il bordo dice solo "guarda qui".
-            // SOLO su regular: su un segmento a tutta larghezza diventava un
-            // anellone — nella tab bar compatta parla il sottotitolo colorato.
-            alarmBorder: (isActive || alarmColor == nil || isCompact) ? nil : mode.accentColor
+            isCompact: isCompact
         ))
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .named(Self.barSpace))
@@ -186,8 +185,8 @@ struct FloorplanModePill: View {
     private func subtitleColor(isActive: Bool,
                                mode: FloorplanOverlayMode,
                                alarmColor: Color?) -> Color {
-        if isActive { return mode.activeForegroundColor.opacity(0.85) }
         if let alarmColor { return alarmColor }
+        if isActive { return FloorplanTokens.Text.primary.opacity(0.85) }
         return FloorplanTokens.Text.tabSubtitleQuiet
     }
 
@@ -258,30 +257,26 @@ private final class ModeFrameStore {
 
 // MARK: - ModeSelectionHighlight
 
-/// Superficie della singola tab 2d: fill pieno nel colore del modo da
-/// selezionata, bordo d'allarme da non selezionata, nulla da quieta.
+/// Superficie della singola tab 2d: fill discreto nel colore del modo da
+/// selezionata, niente bordo (design minimalista).
 private struct ModeSelectionHighlight: ViewModifier {
     let isActive: Bool
     let usesGlass: Bool
-    /// Fill della tab selezionata (activeBackground del modo).
+    /// Fill della tab selezionata.
     let fill: Color
     /// Tinta per il ramo vetro.
     let tint: Color
     let isCompact: Bool
-    /// Bordo 1.5pt della tab non selezionata in allarme; nil = quieta.
-    let alarmBorder: Color?
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if isActive {
             if usesGlass, #available(iOS 26.0, *) {
                 content
-                    .glassEffect(.regular.tint(tint.opacity(isCompact ? 0.22 : 0.28)).interactive(), in: Capsule())
+                    .glassEffect(.regular.tint(tint.opacity(isCompact ? 0.15 : 0.20)).interactive(), in: Capsule())
             } else {
-                content.background(Capsule().fill(fill))
+                content.background(Capsule().fill(Color.primary.opacity(0.08)))
             }
-        } else if let alarmBorder {
-            content.overlay(Capsule().strokeBorder(alarmBorder, lineWidth: 1.5))
         } else {
             content
         }

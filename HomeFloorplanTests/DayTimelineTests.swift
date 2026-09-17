@@ -21,7 +21,7 @@ struct DayTimelineTests {
                       scenes: [String] = [],
                       actions: Int = 0) -> HomeKitAutomationsService.ScheduledFire {
         .init(id: "\(name)@\(h):\(m)", automationID: name, name: name, at: date(h, m),
-              actionSetNames: scenes, actionCount: actions,
+              actionSetNames: scenes, actionSummaries: [], actionCount: actions,
               isPast: false, isConditional: conditional)
     }
 

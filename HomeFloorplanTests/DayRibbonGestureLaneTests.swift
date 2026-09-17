@@ -35,7 +35,7 @@ struct DayRibbonGestureLaneTests {
 
     @Test("Gesti lontani restano distinti")
     func farApartStayDistinct() {
-        let placements = DayRibbonView.lane([gesture(atHour: 8), gesture(atHour: 20)],
+        let placements = DayRibbonLayoutEngine.lane([gesture(atHour: 8), gesture(atHour: 20)],
                                             width: 800, fraction: fraction)
         #expect(placements.count == 2)
         #expect(placements[0].x < placements[1].x)
@@ -45,7 +45,7 @@ struct DayRibbonGestureLaneTests {
     func nearbyGesturesMerge() {
         // Dieci minuti su 24 ore larghe 800 punti sono ~5,5 punti: oltre la
         // finestra di raggruppamento del builder, ben sotto un dito.
-        let placements = DayRibbonView.lane([gesture(atHour: 8),
+        let placements = DayRibbonLayoutEngine.lane([gesture(atHour: 8),
                                              gesture(atHour: 8, minute: 10)],
                                             width: 800, fraction: fraction)
         #expect(placements.count == 1)
@@ -55,7 +55,7 @@ struct DayRibbonGestureLaneTests {
     @Test("La fusione tiene l'ora del primo gesto")
     func mergeKeepsEarliestInstant() {
         let first = gesture(atHour: 8)
-        let placements = DayRibbonView.lane([first, gesture(atHour: 8, minute: 10)],
+        let placements = DayRibbonLayoutEngine.lane([first, gesture(atHour: 8, minute: 10)],
                                             width: 800, fraction: fraction)
         #expect(placements[0].gesture.at == first.at)
     }
@@ -63,25 +63,33 @@ struct DayRibbonGestureLaneTests {
     @Test("Su un nastro largo gli stessi gesti si separano")
     func widerRibbonSeparates() {
         let gestures = [gesture(atHour: 8), gesture(atHour: 8, minute: 10)]
-        let narrow = DayRibbonView.lane(gestures, width: 800, fraction: fraction)
-        let wide   = DayRibbonView.lane(gestures, width: 4_000, fraction: fraction)
+        let narrow = DayRibbonLayoutEngine.lane(gestures, width: 800, fraction: fraction)
+        let wide   = DayRibbonLayoutEngine.lane(gestures, width: 4_000, fraction: fraction)
         #expect(narrow.count == 1)
         #expect(wide.count == 2)
     }
 
     @Test("Nessun gesto, nessun rombo")
     func emptyLane() {
-        #expect(DayRibbonView.lane([], width: 800, fraction: fraction).isEmpty)
+        #expect(DayRibbonLayoutEngine.lane([], width: 800, fraction: fraction).isEmpty)
     }
 
-    @Test("Il rombo cresce coi comandi, ma si ferma")
-    func diamondGrowsAndStops() {
-        let one   = DayRibbonView.diamondSide(changeCount: 1)
-        let three = DayRibbonView.diamondSide(changeCount: 3)
-        let many  = DayRibbonView.diamondSide(changeCount: 40)
-        #expect(one < three)
-        #expect(three < many)
-        #expect(many <= 13)
+    @Test("La pillola cresce con le cifre, non col numero")
+    func pillWidthFollowsDigitsNotMagnitude() {
+        // La distinzione conta: far entrare «12» dove entrava «7» è
+        // tipografia, mentre far crescere la pillola perché il gesto è più
+        // grande sarebbe una seconda codifica del conteggio — e su un asse
+        // dove la larghezza significa durata, la seconda codifica mentirebbe.
+        #expect(DayRibbonView.gesturePillWidth(changeCount: 12)
+                == DayRibbonView.gesturePillWidth(changeCount: 40))
+        #expect(DayRibbonView.gesturePillWidth(changeCount: 7)
+                < DayRibbonView.gesturePillWidth(changeCount: 12))
+    }
+
+    @Test("La pillola di una scena fa posto anche all'icona")
+    func scenePillMakesRoomForTheIcon() {
+        #expect(DayRibbonView.gesturePillWidth(changeCount: 3, hasIcon: true)
+                > DayRibbonView.gesturePillWidth(changeCount: 3))
     }
 
     @Test("Un gesto fuso raccoglie l'ultimo stato di ogni accessorio")

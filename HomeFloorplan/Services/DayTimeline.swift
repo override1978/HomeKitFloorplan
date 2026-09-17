@@ -151,7 +151,7 @@ enum DayTimeline {
                 at: fire.at,
                 title: fire.name,
                 detail: fire.actionSetNames.isEmpty
-                    ? (fire.actionCount > 0 ? actionsLabel(fire.actionCount) : nil)
+                    ? (fire.actionSummaries.isEmpty ? (fire.actionCount > 0 ? actionsLabel(fire.actionCount) : nil) : fire.actionSummaries.joined(separator: " · "))
                     : fire.actionSetNames.joined(separator: " · "),
                 calendarEnd: nil,
                 calendarLocation: nil,

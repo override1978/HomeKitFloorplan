@@ -21,8 +21,8 @@ struct DayRibbonAxisLayoutTests {
                   kind: .automation(isConditional: false), isPast: false)
     }
 
-    private func layout(_ moments: [DayMoment], now: Date) -> [DayRibbonView.AxisPlacement] {
-        DayRibbonView.axisLayout(moments, now: now, width: width, fraction: fraction)
+    private func layout(_ moments: [DayMoment], now: Date) -> [DayRibbonLayoutEngine.AxisPlacement] {
+        DayRibbonLayoutEngine.axisLayout(moments, now: now, width: width, fraction: fraction)
     }
 
     // MARK: I grappoli
@@ -57,8 +57,8 @@ struct DayRibbonAxisLayoutTests {
     @Test("Su un asse più largo gli stessi momenti si separano")
     func widerAxisSeparates() {
         let moments = [moment(9), moment(9.05)]
-        let narrow = DayRibbonView.axisLayout(moments, now: at(12), width: 600, fraction: fraction)
-        let wide = DayRibbonView.axisLayout(moments, now: at(12), width: 9000, fraction: fraction)
+        let narrow = DayRibbonLayoutEngine.axisLayout(moments, now: at(12), width: 600, fraction: fraction)
+        let wide = DayRibbonLayoutEngine.axisLayout(moments, now: at(12), width: 9000, fraction: fraction)
         #expect(narrow.count == 1)
         #expect(wide.count == 2)
     }
@@ -74,7 +74,7 @@ struct DayRibbonAxisLayoutTests {
         let placements = layout(moments, now: at(12))
         let labelled = placements.filter { $0.labelWidth != nil }
         #expect(labelled.count >= 2)
-        #expect(labelled.count <= DayRibbonView.labelledPast + DayRibbonView.labelledFuture)
+        #expect(labelled.count <= DayRibbonLayoutEngine.labelledPast + DayRibbonLayoutEngine.labelledFuture)
         // E cadono attorno a mezzogiorno, non alle sette del mattino.
         #expect(labelled.allSatisfy { abs($0.moment.at.timeIntervalSince(at(12))) < 8 * 3600 })
     }
@@ -115,7 +115,7 @@ struct DayRibbonAxisLayoutTests {
         let placements = layout([moment(12), moment(12.35)], now: at(12))
         for placement in placements {
             if let labelWidth = placement.labelWidth {
-                #expect(labelWidth >= DayRibbonView.minLabelWidth)
+                #expect(labelWidth >= DayRibbonLayoutEngine.minLabelWidth)
             }
         }
     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import HomeKit
 
 // MARK: - FloorplanMomentPanelContent
 
@@ -129,7 +130,58 @@ struct FloorplanMomentPanelContent: View {
                                                   defaultValue: "Scatta alle %@"),
                                    moment.at.formatted(date: .omitted, time: .shortened)),
                           icon: "clock")
-                if let detail = moment.detail {
+                if let automationID = moment.automationID,
+                   let item = automationsService.automations.first(where: { $0.id == automationID }) {
+                    
+                    let affectedAccessories = Array(Set(item.trigger.actionSets.flatMap { actionSet in
+                        actionSet.actions.compactMap { action -> String? in
+                            if let write = action as? HMCharacteristicWriteAction<NSCopying>,
+                               let accName = write.characteristic.service?.accessory?.name {
+                                return accName
+                            }
+                            return nil
+                        }
+                    })).sorted()
+                    
+                    let scenes = item.actionSetNames
+                    
+                    if !item.conditionSummaries.isEmpty || !scenes.isEmpty || !affectedAccessories.isEmpty {
+                        Divider().padding(.vertical, 4)
+                        
+                        if !item.conditionSummaries.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(String(localized: "moment.automation.conditions.header", defaultValue: "CONDIZIONI"))
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.tertiary)
+                                ForEach(item.conditionSummaries, id: \.self) { cond in
+                                    detailRow(cond, icon: "switch.2")
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Divider().padding(.vertical, 4)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(String(localized: "moment.automation.actions.header", defaultValue: "AZIONI"))
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.tertiary)
+                            
+                            ForEach(scenes, id: \.self) { scene in
+                                detailRow(scene, icon: "square.stack.3d.up.fill")
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            
+                            ForEach(affectedAccessories, id: \.self) { acc in
+                                detailRow(acc, icon: "powerplug")
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    } else if let detail = moment.detail {
+                        Divider().padding(.vertical, 4)
+                        detailRow(detail, icon: "play.rectangle")
+                    }
+                } else if let detail = moment.detail {
+                    Divider().padding(.vertical, 4)
                     detailRow(detail, icon: "play.rectangle")
                 }
             case .solar:

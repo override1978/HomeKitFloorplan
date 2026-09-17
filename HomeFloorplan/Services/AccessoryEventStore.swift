@@ -167,7 +167,8 @@ final class AccessoryEventStore {
 
     nonisolated static let eventCharacteristicTypes: Set<String> = [
         onUUID, targetPositionUUID, currentPositionUUID,
-        contactStateUUID, motionDetectedUUID, activeUUID
+        contactStateUUID, motionDetectedUUID, activeUUID,
+        securitySystemTargetStateUUID
     ]
 
     private static let onUUID             = "00000025-0000-1000-8000-0026bb765291"
@@ -180,6 +181,8 @@ final class AccessoryEventStore {
     private static let motionDetectedUUID = "00000022-0000-1000-8000-0026bb765291"
     /// Switch programmabile / generico
     private static let activeUUID         = "000000b0-0000-1000-8000-0026bb765291"
+    /// Stato Antifurto Target
+    private static let securitySystemTargetStateUUID = "00000067-0000-1000-8000-0026bb765291"
 
     /// Crea un AccessoryEventDTO da una HMCharacteristic se il tipo è rilevante.
     /// Restituisce nil per sensori ambientali, termostati, serrature e altri tipi
@@ -364,6 +367,21 @@ final class AccessoryEventStore {
                 state: state,
                 brightness: nil,
                 eventType: eventType
+            )
+
+        case securitySystemTargetStateUUID:
+            // Security system target state
+            guard let raw = intVal(value) else { return nil }
+            // Consideriamo lo stato "disarmato" (3) come "off/falso", e tutti gli altri stati (Home 0, Away 1, Night 2) come "on/vero" (allarme inserito)
+            let state = raw != 3
+            return AccessoryEventDTO(
+                accessoryID: accessory.uniqueIdentifier,
+                accessoryName: accessory.name,
+                roomID: roomID,
+                roomName: roomName,
+                state: state,
+                brightness: nil,
+                eventType: AccessoryEventType.securitySystem.rawValue
             )
 
         default:

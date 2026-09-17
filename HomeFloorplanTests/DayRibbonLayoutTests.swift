@@ -3,7 +3,7 @@ import Testing
 @testable import HomeFloorplan
 
 @MainActor
-@Suite("DayRibbonView — le etichette non si accavallano")
+@Suite("DayRibbonLayoutEngine — le etichette non si accavallano")
 struct DayRibbonLayoutTests {
 
     private var cal: Calendar {
@@ -27,7 +27,7 @@ struct DayRibbonLayoutTests {
 
     @Test("Momenti ben distanziati ricevono tutti un'etichetta, tutti sulla prima riga")
     func spacedMomentsAllLabelled() {
-        let placements = DayRibbonView.layout(
+        let placements = DayRibbonLayoutEngine.layout(
             [moment("A", 2), moment("B", 9), moment("C", 16), moment("D", 22)],
             width: 900, fraction: fraction)
         #expect(placements.allSatisfy { $0.labelWidth != nil })
@@ -36,7 +36,7 @@ struct DayRibbonLayoutTests {
 
     @Test("Due momenti vicini si sfalsano su due righe invece di sovrapporsi")
     func closeMomentsStagger() {
-        let placements = DayRibbonView.layout(
+        let placements = DayRibbonLayoutEngine.layout(
             [moment("Alba", 7, 2), moment("Sveglia", 7, 15)],
             width: 900, fraction: fraction)
         #expect(Set(placements.map(\.level)) == [0, 1],
@@ -47,7 +47,7 @@ struct DayRibbonLayoutTests {
     func denseClusterDropsLabels() {
         let cluster = [moment("A", 19, 30), moment("B", 19, 35),
                        moment("C", 19, 40), moment("D", 19, 45)]
-        let placements = DayRibbonView.layout(cluster, width: 900, fraction: fraction)
+        let placements = DayRibbonLayoutEngine.layout(cluster, width: 900, fraction: fraction)
         #expect(placements.contains { $0.labelWidth == nil },
                 "due etichette accavallate costano più di nessuna")
         #expect(placements.contains { $0.labelWidth != nil },
@@ -56,7 +56,7 @@ struct DayRibbonLayoutTests {
 
     @Test("L'etichetta non invade il vicino sulla stessa riga")
     func labelStopsBeforeNeighbour() throws {
-        let placements = DayRibbonView.layout(
+        let placements = DayRibbonLayoutEngine.layout(
             [moment("Primo", 10), moment("Secondo", 13)],
             width: 900, fraction: fraction)
         let first = try #require(placements.first)
@@ -68,7 +68,7 @@ struct DayRibbonLayoutTests {
 
     @Test("L'ordine di uscita è cronologico anche se l'ingresso non lo è")
     func outputIsChronological() {
-        let placements = DayRibbonView.layout(
+        let placements = DayRibbonLayoutEngine.layout(
             [moment("Sera", 22), moment("Mattino", 7), moment("Pranzo", 13)],
             width: 900, fraction: fraction)
         #expect(placements.map(\.moment.title) == ["Mattino", "Pranzo", "Sera"])
@@ -76,7 +76,7 @@ struct DayRibbonLayoutTests {
 
     @Test("Su una larghezza minuscola nessuna etichetta viene inventata")
     func tinyWidthYieldsNoLabels() {
-        let placements = DayRibbonView.layout(
+        let placements = DayRibbonLayoutEngine.layout(
             [moment("A", 8), moment("B", 9), moment("C", 10)],
             width: 60, fraction: fraction)
         #expect(placements.allSatisfy { $0.labelWidth == nil },
@@ -87,7 +87,7 @@ struct DayRibbonLayoutTests {
 // MARK: - Titolo sull'asse
 
 @MainActor
-@Suite("DayRibbonView — l'etichetta comincia da ciò che distingue")
+@Suite("DayRibbonLayoutEngine — l'etichetta comincia da ciò che distingue")
 struct DayRibbonTitleTests {
 
     private func automation(_ title: String) -> DayMoment {

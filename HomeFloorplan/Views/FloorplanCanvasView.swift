@@ -2,14 +2,10 @@ import SwiftUI
 
 struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: View, EmptyContent: View, OverMarkerLayer: View>: View {
     let image: UIImage
-    /// La stessa planimetria in stile scuro, quando esiste.
-    let darkImage: UIImage?
     let containerSize: CGSize
     let chrome: FloorplanChromeLayout
-    /// La luce che illumina il disegno. `.night` lascia il raster com'è.
-    let light: DaylightGround.Light
-    /// I fuochi di luce: il sole che entra da un'apertura, le lampade accese.
-    let glows: [CircadianGlow]
+    /// I bagliori delle stanze accese.
+    let glows: [RoomLightGlow]
     let showOverlayLayer: Bool
     let showEditLayer: Bool
     let showMarkers: Bool
@@ -26,11 +22,9 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
 
     init(
         image: UIImage,
-        darkImage: UIImage? = nil,
         containerSize: CGSize,
         chrome: FloorplanChromeLayout = .legacy,
-        light: DaylightGround.Light = .night,
-        glows: [CircadianGlow] = [],
+        glows: [RoomLightGlow] = [],
         showOverlayLayer: Bool,
         showEditLayer: Bool,
         showMarkers: Bool,
@@ -43,10 +37,8 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         @ViewBuilder overMarkerLayer: @escaping (CGSize, CGRect) -> OverMarkerLayer = { _, _ in EmptyView() }
     ) {
         self.image = image
-        self.darkImage = darkImage
         self.containerSize = containerSize
         self.chrome = chrome
-        self.light = light
         self.glows = glows
         self.showOverlayLayer = showOverlayLayer
         self.showEditLayer = showEditLayer
@@ -71,43 +63,13 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
         ZStack(alignment: .topLeading) {
             Color.clear
 
-            // La luce cade sul disegno, non solo attorno.
-            //
-            // Il raster ha i colori cotti dentro: lasciandolo fermo mentre il
-            // fondo si schiarisce diventa un rettangolo scuro su una tovaglia
-            // chiara, che è il difetto che si vede per primo. Il trattamento
-            // sta qui e non più in alto perché marker, overlay e chrome non
-            // devono riceverlo: i loro colori significano qualcosa e devono
-            // restare quelli a qualunque ora.
-            ZStack {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: rect.width, height: rect.height)
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
 
-                // La variante scura sopra, in dissolvenza.
-                //
-                // Due raster incrociati e non uno commutato: fra chiaro e scuro
-                // non c'è una regolazione ma due disegni diversi — muri scuri su
-                // fondo chiaro, o il contrario — e scambiarli di colpo sarebbe
-                // uno scatto proprio dove tutto il resto è un passaggio.
-                // Attraversandosi, la planimetria diventa l'altra mentre la
-                // luce cala, come una stanza che si spegne.
-                if let darkImage {
-                    Image(uiImage: darkImage)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: rect.width, height: rect.height)
-                        .opacity(light.darkVariantOpacity)
-                }
-            }
-            .brightness(light.imageBrightness)
-            .contrast(light.imageContrast)
-            .colorMultiply(light.imageTint)
-            .position(x: rect.midX, y: rect.midY)
-            .animation(.easeInOut(duration: 1.5), value: light)
-
-            // I fuochi di luce cadono **sul** disegno e sotto tutto il resto.
+            // I bagliori cadono **sul** disegno e sotto tutto il resto.
             //
             // Sopra il raster perché la luce illumina la planimetria, non le sta
             // dietro; sotto marker e chrome perché quelli hanno colori che
@@ -189,7 +151,7 @@ extension FloorplanCanvasView {
     /// è lì che stanno il balcone e le lampade — mentre il gradiente si
     /// disegna su tutta la superficie. Senza questa conversione la sorgente
     /// scivolerebbe ogni volta che l'immagine cambia dimensione o posizione.
-    nonisolated static func containerCentre(of glow: CircadianGlow,
+    nonisolated static func containerCentre(of glow: RoomLightGlow,
                                             imageRect: CGRect,
                                             container: CGSize) -> UnitPoint {
         guard container.width > 0, container.height > 0 else { return .center }

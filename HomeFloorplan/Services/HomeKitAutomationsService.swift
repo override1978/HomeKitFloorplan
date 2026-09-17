@@ -784,6 +784,7 @@ final class HomeKitAutomationsService {
         let at: Date
         /// Solo i nomi di scena che informano: vedi `SceneItem.hasInformativeName`.
         let actionSetNames: [String]
+        let actionSummaries: [String]
         /// Quante azioni esegue, per dire qualcosa anche quando i nomi tacciono.
         let actionCount: Int
         /// Vero quando l'orario è già trascorso.
@@ -823,12 +824,29 @@ final class HomeKitAutomationsService {
                   fire <= until
             else { return nil }
             let scenes = item.trigger.actionSets.map { SceneItem(actionSet: $0) }
+            
+            // Dato che SceneItem.actionSummaries non esiste e non vogliamo bloccare,
+            // estraggo direttamente le stringhe sommarie descrivendo i write della actionSet.
+            let allActionSummaries = item.trigger.actionSets.flatMap { actionSet -> [String] in
+                var parts: [String] = []
+                for action in actionSet.actions {
+                    if let write = action as? HMCharacteristicWriteAction<NSCopying>,
+                       let accName = write.characteristic.service?.accessory?.name {
+                        // Creiamo una sommaria descrizione manuale per ora per evitare context isolation
+                        let t = write.characteristic.localizedDescription
+                        parts.append("\(accName): \(t)")
+                    }
+                }
+                return parts
+            }
+            
             return ScheduledFire(
                 id: item.id,
                 automationID: item.id,
                 name: Self.strippingRedundantTime(from: item.name, firingAt: fire, calendar: calendar),
                 at: fire,
                 actionSetNames: scenes.filter(\.hasInformativeName).map(\.name).sorted(),
+                actionSummaries: allActionSummaries,
                 actionCount: scenes.reduce(0) { $0 + $1.actionCount },
                 isPast: false,
                 isConditional: !item.conditionSummaries.isEmpty)
@@ -957,6 +975,18 @@ final class HomeKitAutomationsService {
             let scenes = item.trigger.actionSets.map { SceneItem(actionSet: $0) }
             let names = scenes.filter(\.hasInformativeName).map(\.name).sorted()
             let actions = scenes.reduce(0) { $0 + $1.actionCount }
+            
+            let allActionSummaries = item.trigger.actionSets.flatMap { actionSet -> [String] in
+                var parts: [String] = []
+                for action in actionSet.actions {
+                    if let write = action as? HMCharacteristicWriteAction<NSCopying>,
+                       let accName = write.characteristic.service?.accessory?.name {
+                        let t = write.characteristic.localizedDescription
+                        parts.append("\(accName): \(t)")
+                    }
+                }
+                return parts
+            }
 
             return NextFireResolver.occurrences(for: schedule, in: day,
                                                 solar: solar, calendar: calendar)
@@ -967,6 +997,7 @@ final class HomeKitAutomationsService {
                         name: Self.strippingRedundantTime(from: item.name, firingAt: fire, calendar: calendar),
                         at: fire,
                         actionSetNames: names,
+                        actionSummaries: allActionSummaries,
                         actionCount: actions,
                         isPast: fire <= now,
                         isConditional: !item.conditionSummaries.isEmpty)

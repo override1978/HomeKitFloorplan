@@ -9,14 +9,6 @@ struct FloorplanImageCacheState {
     /// più recente mentre caricavo" (da ricaricare).
     var loadingDate: Date?
 
-    /// La variante **scura**, qualunque dei due slot la contenga.
-    ///
-    /// Cache separata e non un secondo `FloorplanImageCacheState` perché le due
-    /// immagini si muovono insieme: nascono dallo stesso salvataggio e portano
-    /// lo stesso stamp. Tenerle qui rende impossibile ritrovarsi con una
-    /// aggiornata e l'altra vecchia, che a schermo vorrebbe dire una
-    /// planimetria che al tramonto cambia anche forma.
-    var darkImage: UIImage?
 }
 
 struct FloorplanImageLoader {
@@ -55,17 +47,12 @@ struct FloorplanImageLoader {
             #if DEBUG
             let decodeStart = DispatchTime.now().uptimeNanoseconds
             #endif
-            let darkData = floorplan.darkVariantImageData
             let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
                 guard let decoded = UIImage(data: data) else { return nil }
                 // `UIImage(data:)` è pigra: tiene i byte e rasterizza solo quando
                 // la si disegna, cioè nel render pass di SwiftUI — sul main
                 // thread. `byPreparingForDisplay()` forza la decodifica qui, in
                 // background, così al momento di disegnare non resta lavoro.
-                return await decoded.byPreparingForDisplay() ?? decoded
-            }.value
-            let darkImage = await Task.detached(priority: .utility) { () -> UIImage? in
-                guard let darkData, let decoded = UIImage(data: darkData) else { return nil }
                 return await decoded.byPreparingForDisplay() ?? decoded
             }.value
             #if DEBUG
@@ -86,7 +73,6 @@ struct FloorplanImageLoader {
                 guard cacheBinding.wrappedValue.loadingDate == stamp else { return }
                 withAnimation(.easeIn(duration: 0.2)) {
                     cacheBinding.wrappedValue.image = image
-                    cacheBinding.wrappedValue.darkImage = darkImage
                     cacheBinding.wrappedValue.isLoading = false
                     cacheBinding.wrappedValue.loadingDate = nil
                 }

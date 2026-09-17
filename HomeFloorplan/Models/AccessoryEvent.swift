@@ -75,6 +75,7 @@ enum AccessoryEventType: String {
     case airPurifier = "airPurifier"
     case humidifier = "humidifier"
     case outlet     = "outlet"
+    case securitySystem = "securitySystem"
 }
 
 // MARK: - AccessoryEventDTO

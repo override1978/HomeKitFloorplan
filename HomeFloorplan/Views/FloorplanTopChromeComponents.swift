@@ -48,10 +48,11 @@ struct FloorplanTopBarView: View {
     /// normale delle toolbar di sistema, quindi non sorprende nessuno.
     ///
     /// La soglia è la somma di ciò che deve stare in riga: titolo e bottone
-    /// sidebar (~290), azioni per esteso (~240), la pill con quattro etichette
-    /// (~480) e i margini (~40).
+    /// sidebar (~290), azioni per esteso (~450), la pill con quattro etichette
+    /// (~480) e i margini (~40). Dato che ora le azioni di setup sono estratte
+    /// occupano più spazio, quindi alzo la soglia per evitare overlap.
     private var collapsesActions: Bool {
-        size.width < 1050
+        size.width < 1250
     }
 
     var body: some View {
@@ -104,6 +105,14 @@ struct FloorplanTopBarView: View {
                         // temperature restano nel pannello Ambiente.
 
                         if !isCompact {
+                            // Filtro categoria su iPad (Option A): dietro un bottone singolo,
+                            // allineato con il design mobile.
+                            if !isEditing,
+                               let overlayVM, overlayVM.activeMode == .controls,
+                               categoryCounts.count > 1 {
+                                compactFilterMenu(overlayVM: overlayVM)
+                            }
+                            
                             FloorplanTopRightActions(
                                 isEditing: isEditing,
                                 isOverlayMode: (overlayVM?.activeMode ?? .controls) != .controls,
@@ -279,18 +288,6 @@ struct FloorplanTopBarView: View {
 
     @ViewBuilder
     private var statusBanners: some View {
-        // Chips filtro categoria (novità C): tab Controlli, SOLO regular.
-        // Su iPhone niente riga fissa (design v3, regola mobile 5): il filtro
-        // sta dietro il bottone singolo accanto al menu della barra.
-        if !isEditing, !isCompact,
-           let overlayVM, overlayVM.activeMode == .controls,
-           categoryCounts.count > 1 {
-            FloorplanCategoryFilterBar(overlayVM: overlayVM,
-                                       counts: categoryCounts)
-                .padding(.top, 4)
-                .transition(.move(edge: .top).combined(with: .opacity))
-        }
-
         if !isEditing,
            overlayVM?.activeMode == .controls,
            isCloudKitMaster,
@@ -598,73 +595,109 @@ struct FloorplanTopRightActions: View {
                 // elimina, audit. Il picker libero sopravvive dietro le
                 // quinte per il posizionamento assistito dalla diagnostica.
                 if !hidesActions {
-                    // Fuori dalla modifica resta il solo menu: Scene e Modifica
-                    // sono dentro di esso. Erano due bottoni con testo, circa
-                    // duecento punti che in verticale mancavano alla mode pill —
-                    // e la pill compare proprio solo fuori dalla modifica, cioè
-                    // esattamente nel caso che ora si è liberato.
-                    FloorplanToolsMenu(
-                        isDrawingAvailable: isDrawingAvailable,
-                        showsScenes: collapsesActions && !isEditing,
-                        showsEdit: !isEditing,
-                        unplacedCount: unplacedCount,
-                        onStartPlacement: onStartPlacement,
-                        onShowHelp: onShowHelp,
-                        onShowDiagnostics: onShowDiagnostics,
-                        onEditDrawing: onEditDrawing,
-                        onView3D: onView3D,
-                        onShowScenes: onShowScenes,
-                        onToggleEditing: onToggleEditing
-                    )
-
-                    // Scene per esteso quando la barra è larga.
-                    if !collapsesActions && !isEditing {
-                        Divider().frame(height: 20)
-
+                    // Le azioni "Modifica" e "Posiziona" le facciamo diventare bottoni principali
+                    // ben in vista. Si comportano quasi come Floating Action Buttons integrati nella barra.
+                    
+                    if unplacedCount > 0 && !isEditing {
                         Button {
-                            onShowScenes()
+                            onStartPlacement()
                         } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: "play.rectangle.on.rectangle")
-                                Text(String(localized: "scenes.title", defaultValue: "Scenes"))
+                                Image(systemName: "plus")
+                                    .font(.subheadline.weight(.bold))
+                                Text(String(format: String(localized: "placement.menu.start",
+                                                           defaultValue: "Place devices (%d)"),
+                                            unplacedCount))
                             }
                             .font(.subheadline)
-                            .fontWeight(.medium)
+                            .fontWeight(.bold)
+                            .foregroundStyle(BrandColor.primary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(Color.primary.opacity(0.55))
-                        .accessibilityLabel(String(localized: "scenes.title", defaultValue: "Scenes"))
+                        .background(BrandColor.primary.opacity(0.12)) // Stile primario più evidente
                     }
 
-                    // "Modifica" NON è più un bottone in barra (feedback
-                    // 28/08): per l'utente finale era la seconda via accanto
-                    // al flusso guidato. La manutenzione vive nel menu ⋯ come
-                    // la diagnostica. "Fatto" resta SEMPRE visibile in
-                    // modifica: l'uscita da una modalità non si nasconde.
-                    if isEditing {
-                        Divider().frame(height: 20)
+                    if !isEditing {
+                        if unplacedCount > 0 {
+                            Divider().frame(height: 20)
+                        }
 
                         Button {
                             onToggleEditing()
                         } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: isEditing ? "checkmark" : "pencil")
-                                Text(isEditing
-                                     ? String(localized: "common.done", defaultValue: "Done")
-                                     : String(localized: "common.edit", defaultValue: "Edit"))
+                                Image(systemName: "pencil")
+                                Text(String(localized: "common.edit", defaultValue: "Edit"))
                             }
                             .font(.subheadline)
                             .fontWeight(.medium)
-                            .foregroundStyle(isEditing ? BrandColor.primary : Color.primary.opacity(0.55))
+                            .foregroundStyle(Color.primary.opacity(0.75))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
+
+                        // Scene per esteso quando la barra è larga e non siamo in modifica.
+                        // Con l'estrazione di Modifica e Posiziona, le Scene vengono
+                        // nascoste più aggressivamente per salvare spazio.
+                        if !collapsesActions && !isEditing {
+                            Divider().frame(height: 20)
+
+                            Button {
+                                onShowScenes()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "play.rectangle.on.rectangle")
+                                    Text(String(localized: "scenes.title", defaultValue: "Scenes"))
+                                }
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.primary.opacity(0.55))
+                            .accessibilityLabel(String(localized: "scenes.title", defaultValue: "Scenes"))
+                        }
+
+                    // "Fatto" resta SEMPRE visibile in modifica: l'uscita da una modalità non si nasconde.
+                    if isEditing {
+                        Button {
+                            onToggleEditing()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark")
+                                Text(String(localized: "common.done", defaultValue: "Done"))
+                            }
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundStyle(BrandColor.primary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Divider().frame(height: 20)
+
+                    // Menu ⋯ ora contiene solo Strumenti/Aiuto secondari (Diagnostica, Aiuto, Editor 2D, 3D)
+                    FloorplanToolsMenu(
+                        isDrawingAvailable: isDrawingAvailable,
+                        showsScenes: collapsesActions && !isEditing,
+                        unplacedCount: unplacedCount,
+                        onShowHelp: onShowHelp,
+                        onShowDiagnostics: onShowDiagnostics,
+                        onEditDrawing: onEditDrawing,
+                        onView3D: onView3D,
+                        onShowScenes: onShowScenes
+                    )
                 }
             }
         }
@@ -673,40 +706,16 @@ struct FloorplanTopRightActions: View {
 
 struct FloorplanToolsMenu: View {
     let isDrawingAvailable: Bool
-    /// Scene e Modifica sono qui dentro solo fuori dalla modalità modifica: in
-    /// modifica "Fatto" resta un bottone a sé, perché la via d'USCITA da una
-    /// modalità non va nascosta in un menu — un'azione sì, un modo di uscire no.
-    /// Scene compare qui solo quando la barra stretta ha tolto il suo bottone
-    /// esteso; "Modifica" invece vive SOLO qui (feedback 28/08): in barra era
-    /// la seconda via accanto al flusso guidato, da menu è manutenzione.
     let showsScenes: Bool
-    let showsEdit: Bool
     let unplacedCount: Int
-    let onStartPlacement: () -> Void
     let onShowHelp: () -> Void
     let onShowDiagnostics: () -> Void
     let onEditDrawing: () -> Void
     let onView3D: () -> Void
     let onShowScenes: () -> Void
-    let onToggleEditing: () -> Void
 
     var body: some View {
         Menu {
-            // Fase 6: finché ci sono dispositivi con stanza ma senza marker,
-            // il flusso guidato è la prima voce — è l'azione col debito.
-            if unplacedCount > 0 {
-                Button {
-                    onStartPlacement()
-                } label: {
-                    Label(String(format: String(localized: "placement.menu.start",
-                                                defaultValue: "Place devices (%d)"),
-                                 unplacedCount),
-                          systemImage: "plus.viewfinder")
-                }
-
-                Divider()
-            }
-
             if showsScenes {
                 Button {
                     onShowScenes()
@@ -714,18 +723,7 @@ struct FloorplanToolsMenu: View {
                     Label(String(localized: "scenes.title", defaultValue: "Scenes"),
                           systemImage: "play.rectangle.on.rectangle")
                 }
-            }
 
-            if showsEdit {
-                Button {
-                    onToggleEditing()
-                } label: {
-                    Label(String(localized: "floorplan.edit.markers", defaultValue: "Edit markers"),
-                          systemImage: "pencil")
-                }
-            }
-
-            if showsScenes || showsEdit {
                 Divider()
             }
 

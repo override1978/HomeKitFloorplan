@@ -214,21 +214,21 @@ struct SpanLaneTests {
 
     @Test("Periodi che non si toccano stanno tutti sulla prima riga")
     func disjointShareOneLane() {
-        let placed = DayRibbonView.assignLanes([span("a", 1, 2), span("b", 5, 6), span("c", 9, 10)],
+        let placed = DayRibbonLayoutEngine.assignLanes([span("a", 1, 2), span("b", 5, 6), span("c", 9, 10)],
                                                now: at(12))
         #expect(placed.allSatisfy { $0.lane == 0 })
     }
 
     @Test("Periodi sovrapposti finiscono su righe diverse")
     func overlappingGetOwnLanes() {
-        let placed = DayRibbonView.assignLanes([span("a", 1, 8), span("b", 2, 9), span("c", 3, 10)],
+        let placed = DayRibbonLayoutEngine.assignLanes([span("a", 1, 8), span("b", 2, 9), span("c", 3, 10)],
                                                now: at(12))
         #expect(Set(placed.map(\.lane)) == [0, 1, 2])
     }
 
     @Test("La riga si riusa appena si libera")
     func lanesAreReused() {
-        let placed = DayRibbonView.assignLanes([span("a", 1, 4), span("b", 2, 5), span("c", 6, 8)],
+        let placed = DayRibbonLayoutEngine.assignLanes([span("a", 1, 4), span("b", 2, 5), span("c", 6, 8)],
                                                now: at(12))
         let byName = Dictionary(uniqueKeysWithValues: placed.map { ($0.span.name, $0.lane) })
         #expect(byName["a"] == 0)
@@ -239,14 +239,14 @@ struct SpanLaneTests {
     @Test("Oltre le righe disponibili si rinuncia invece di accavallare")
     func overflowIsDroppedNotStacked() {
         let crowd = (0..<6).map { span("s\($0)", Double($0) * 0.1, 10) }
-        let placed = DayRibbonView.assignLanes(crowd, now: at(12))
-        #expect(placed.count == DayRibbonView.spanLanes)
+        let placed = DayRibbonLayoutEngine.assignLanes(crowd, now: at(12))
+        #expect(placed.count == DayRibbonLayoutEngine.spanLanes)
         #expect(Set(placed.map(\.lane)).count == placed.count, "e nessuna riga porta due barre")
     }
 
     @Test("Un periodo ancora aperto occupa la riga fino ad adesso")
     func openSpanHoldsItsLane() {
-        let placed = DayRibbonView.assignLanes([span("aperto", 1, nil), span("dopo", 5, 6)],
+        let placed = DayRibbonLayoutEngine.assignLanes([span("aperto", 1, nil), span("dopo", 5, 6)],
                                                now: at(12))
         let byName = Dictionary(uniqueKeysWithValues: placed.map { ($0.span.name, $0.lane) })
         #expect(byName["dopo"] != byName["aperto"],
@@ -256,8 +256,8 @@ struct SpanLaneTests {
     @Test("L'ordine di ingresso non cambia il risultato")
     func inputOrderDoesNotMatter() {
         let a = span("a", 1, 8), b = span("b", 2, 9)
-        let one = DayRibbonView.assignLanes([a, b], now: at(12))
-        let two = DayRibbonView.assignLanes([b, a], now: at(12))
+        let one = DayRibbonLayoutEngine.assignLanes([a, b], now: at(12))
+        let two = DayRibbonLayoutEngine.assignLanes([b, a], now: at(12))
         #expect(one == two)
     }
 
@@ -268,10 +268,10 @@ struct SpanLaneTests {
         // norma e non l'eccezione. Con un ordinamento sul solo inizio decideva
         // il caso, e le barre del passato si spostavano da sole al minuto.
         let together = [span("a", 0, 5), span("b", 0, 7), span("c", 0, 3)]
-        let reference = DayRibbonView.assignLanes(together, now: at(12))
+        let reference = DayRibbonLayoutEngine.assignLanes(together, now: at(12))
         for permutation in [[2, 0, 1], [1, 2, 0], [2, 1, 0]] {
             let shuffled = permutation.map { together[$0] }
-            #expect(DayRibbonView.assignLanes(shuffled, now: at(12)) == reference)
+            #expect(DayRibbonLayoutEngine.assignLanes(shuffled, now: at(12)) == reference)
         }
     }
 
@@ -287,9 +287,9 @@ struct SpanLaneTests {
                                           state: false, brightness: nil, eventType: "switch",
                                           at: at(9), origin: "external")
         ]
-        let first = DayRibbonView.assignLanes(
+        let first = DayRibbonLayoutEngine.assignLanes(
             DaySpanBuilder.build(from: raw, window: day, now: at(11)), now: at(11))
-        let later = DayRibbonView.assignLanes(
+        let later = DayRibbonLayoutEngine.assignLanes(
             DaySpanBuilder.build(from: raw, window: day, now: at(11.02)), now: at(11.02))
         #expect(first.map { ($0.span.id, $0.lane) }.map(\.1)
                 == later.map { ($0.span.id, $0.lane) }.map(\.1))

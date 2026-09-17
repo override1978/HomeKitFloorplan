@@ -83,58 +83,6 @@ enum SolarCalculator {
         return (date(fromJulian: sunrise), date(fromJulian: sunset))
     }
 
-    // MARK: - Dove sta il sole
-
-    /// Dove si trova il sole, non solo se c'è.
-    ///
-    /// Serve per la luce che entra dalle finestre: un'apertura non prende la
-    /// stessa luce tutto il giorno — un balcone a sud-ovest è in ombra la
-    /// mattina e prende tutto il pomeriggio, ed è una differenza che chi abita
-    /// la casa conosce senza doverla misurare.
-    ///
-    /// - Returns: `azimuth` in gradi da nord in senso orario (90 = est, 180 =
-    ///   sud, 270 = ovest) e `altitude` in gradi sopra l'orizzonte, negativa di
-    ///   notte.
-    static func position(at instant: Date,
-                         coordinates: Coordinates,
-                         calendar: Calendar = .current) -> (azimuth: Double, altitude: Double) {
-        let julianDay = julian(from: instant)
-        // Arrotondato, come nel calcolo di alba e tramonto: `n` è il **numero
-        // del giorno**, non l'istante. Lasciandolo frazionario il mezzogiorno
-        // solare finisce a coincidere con l'istante stesso, l'angolo orario è
-        // sempre zero e il sole risulta a sud a qualunque ora — il che ha il
-        // pregio di fallire in modo vistoso invece che di poco.
-        let n = (julianDay - 2_451_545.0 + 0.0008).rounded()
-        let meanSolarNoon = n - coordinates.longitude / 360
-
-        let m = (357.5291 + 0.98560028 * meanSolarNoon).truncatingRemainder(dividingBy: 360)
-        let mRad = m * .pi / 180
-        let center = 1.9148 * sin(mRad) + 0.0200 * sin(2 * mRad) + 0.0003 * sin(3 * mRad)
-        let lambdaRad = (m + center + 180 + 102.9372).truncatingRemainder(dividingBy: 360) * .pi / 180
-
-        let declination = asin(sin(lambdaRad) * sin(epsilon * .pi / 180))
-        let transit = 2_451_545.0 + meanSolarNoon
-            + 0.0053 * sin(mRad) - 0.0069 * sin(2 * lambdaRad)
-
-        // Angolo orario: quanto il sole è avanti o indietro rispetto al proprio
-        // mezzogiorno, in gradi. Negativo di mattina, positivo di pomeriggio.
-        let hourAngle = (julianDay - transit) * 360 * .pi / 180
-        let latRad = coordinates.latitude * .pi / 180
-
-        let sinAltitude = sin(latRad) * sin(declination)
-            + cos(latRad) * cos(declination) * cos(hourAngle)
-        let altitude = asin(min(max(sinAltitude, -1), 1))
-
-        let cosAzimuth = (sin(declination) - sin(altitude) * sin(latRad))
-            / max(cos(altitude) * cos(latRad), 1e-9)
-        var azimuth = acos(min(max(cosAzimuth, -1), 1)) * 180 / .pi
-        // `acos` non sa distinguere mattina da pomeriggio: la restituisce
-        // sempre a est. È l'angolo orario a dire da che parte siamo.
-        if hourAngle > 0 { azimuth = 360 - azimuth }
-
-        return (azimuth, altitude * 180 / .pi)
-    }
-
     // MARK: - Giorno giuliano
 
     nonisolated private static let julianEpoch = 2_440_587.5  // 1 gennaio 1970, 00:00 UTC

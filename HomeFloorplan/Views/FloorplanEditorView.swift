@@ -176,7 +176,6 @@ struct FloorplanEditorView: View {
     /// è l'unica cosa che gli serviva per contare in pace.
     @State private var minuteTicker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     /// L'istante che il dito sta illuminando, mentre trascina la luce.
-    @State private var scrubbedInstant: Date?
 
     /// Il nastro compare solo quando si guarda la casa.
     ///
@@ -481,21 +480,12 @@ struct FloorplanEditorView: View {
     /// otto di sera di dicembre e di giugno sono due luci diverse, ed è
     /// esattamente ciò che il fondo deve saper dire. Quando arriverà lo scrub
     /// sarà lui a muovere questo valore, e non ci sarà altro da cambiare.
-    /// I colori dell'interfaccia all'ora che è.
-    ///
-    /// `nil` con la modalità classica: le viste che la leggono tornano ai token
-    /// di sempre, quindi spegnere l'interruttore non ha bisogno di un secondo
-    /// percorso — è l'assenza della palette.
-    private var circadianPalette: CircadianPalette? {
-        nil
-    }
 
     /// Da che parte guarda l'apertura principale, in gradi da nord.
     ///
     /// 225 è sud-ovest, che è il caso di questa casa. È un dato che l'utente
     /// conosce e il telefono no: la bussola direbbe dove punta il **device**,
     /// non dove punta il balcone.
-    @AppStorage("daylight.openingBearing") private var openingBearing: Double = 225
 
     /// I fuochi di luce dell'istante.
     ///
@@ -504,38 +494,28 @@ struct FloorplanEditorView: View {
     /// nasce da dentro, dove sono le lampade accese. Il mockup li distingue, e
     /// aveva ragione — mettere un velo caldo fisso somiglierebbe a una
     /// cartolina, non a una casa.
-    private func currentGlows(rotated: Bool) -> [CircadianGlow] {
-        guard isDaylightGroundEnabled else { return [] }
-        let light = currentLight
-        return CircadianGlow.lamps(byRoom: litPointsByRoom(rotated: rotated),
-                                   daylight: light.luminance)
+    /// I bagliori delle stanze accese, per i marker già costruiti.
+    ///
+    /// Prende in ingresso gli item invece di ricostruirli: erano due
+    /// ricostruzioni complete della lista marker per ogni valutazione del body
+    /// — una qui dentro e una per disegnarli — su una vista che si rivaluta a
+    /// ogni notifica HomeKit. Passarli è la differenza fra calcolare una volta
+    /// e calcolare due.
+    private func currentGlows(from items: [FloorplanMarkerRenderItem]) -> [RoomLightGlow] {
+        RoomLightGlow.lamps(byRoom: litPointsByRoom(from: items),
+                            onDarkGround: chromeColorScheme == .dark)
     }
 
-    /// Il centro dell'apertura da cui entra il sole.
-    ///
-    /// Presa dalla planimetria e non dall'orientamento: sapere che il balcone
-    /// guarda a sud-ovest dice *quando* la luce arriva, ma non *da che parte
-    /// dello schermo* — quello dipende da come è disegnato il piano, ed è già
-    /// scritto lì.
-    private var sunOpeningPoint: UnitPoint? {
-        let candidates = ["balcon", "terrazz", "veranda", "giardino", "loggia"]
-        guard let room = floorplan.linkedRooms.first(where: { room in
-            let name = room.name.lowercased()
-            return candidates.contains { name.contains($0) }
-        }) else { return nil }
-        let rect = room.normalizedRect
-        return UnitPoint(x: rect.x + rect.width / 2, y: rect.y + rect.height / 2)
-    }
 
     /// Dove sono le lampade accese, raggruppate per stanza.
     ///
     /// Per stanza e non tutte insieme: il bagliore nasce dove c'è la luce, e
     /// il baricentro di due stanze accese cade fra le due, dove non è acceso
     /// niente.
-    private func litPointsByRoom(rotated: Bool) -> [[UnitPoint]] {
+    private func litPointsByRoom(from items: [FloorplanMarkerRenderItem]) -> [[UnitPoint]] {
         var byRoom: [UUID: [UnitPoint]] = [:]
         var unassigned: [[UnitPoint]] = []
-        for item in markerRenderItems(rotated: rotated) {
+        for item in items {
             // Solo le **lampade**, non tutto ciò che è acceso.
             //
             // È la causa a monte del caldo che invadeva tutta la schermata:
@@ -562,27 +542,6 @@ struct FloorplanEditorView: View {
             + unassigned
     }
 
-    private var currentLight: DaylightGround.Light {
-        guard isDaylightGroundEnabled else { return .night }
-        let solar = daySolarTimes
-        return DaylightGround.light(at: illuminatedInstant,
-                                    sunrise: solar.todaySunrise,
-                                    sunset: solar.todaySunset)
-    }
-
-    private var illuminatedInstant: Date {
-        if let scrubbedInstant { return scrubbedInstant }
-        guard !isShowingToday else { return dayClock }
-        let calendar = Calendar.current
-        let time = calendar.dateComponents([.hour, .minute, .second], from: dayClock)
-        return calendar.date(bySettingHour: time.hour ?? 12,
-                             minute: time.minute ?? 0,
-                             second: time.second ?? 0,
-                             of: visibleDay.start) ?? visibleDay.start
-    }
-
-    @AppStorage(AppAppearanceSettings.daylightGroundKey)
-    private var isDaylightGroundEnabled = true
 
     /// Tema della chrome flottante, dedotto dalla **planimetria** e non da iOS.
     ///
@@ -639,7 +598,6 @@ struct FloorplanEditorView: View {
                     // di tema della chrome attorno a metà luminanza è uno
                     // scatto: animarlo lo rende un'alba invece di un
                     // interruttore.
-                    .animation(.easeInOut(duration: 1.5), value: currentLight)
 
                 HStack(spacing: 0) {
                     mapColumn
@@ -711,10 +669,6 @@ struct FloorplanEditorView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.3), value: showsDayRibbon)
-            // La luce non si ferma al fondo: superfici, inchiostro e bordi la
-            // ereditano da qui. I colori di categoria no — quelli restano
-            // identici a qualunque ora, perché sono identità e non atmosfera.
-            .environment(\.circadianPalette, circadianPalette)
         }
     }
 
@@ -728,24 +682,20 @@ struct FloorplanEditorView: View {
         VStack(spacing: isDayRibbonCollapsed ? 4 : 2) {
             ribbonDragHandle
 
-            if isDayRibbonCollapsed || dayOffset != 0 {
-                DayRibbonView.DayBar(dayOffset: dayOffset,
-                                     day: visibleDay.start,
-                                     onReturnToday: { shiftDay(by: -dayOffset) })
-            }
-
             if isDayRibbonCollapsed {
                 collapsedDayRibbonSummary
             }
 
             if !isDayRibbonCollapsed {
-                DayRibbonView(moments: dayMoments.filter { !$0.isSolarKind },
+                let filter = overlayVM?.activeMode == .controls ? overlayVM?.categoryFilter : nil
+                
+                DayRibbonView(moments: filteredMoments(dayMoments.filter { !$0.isSolarKind }, filter: filter),
                               day: visibleDay,
                               now: dayClock,
                               sunrise: daySolarTimes.todaySunrise,
                               sunset: daySolarTimes.todaySunset,
-                              gestures: dayGestures,
-                              spans: daySpans,
+                              gestures: filteredGestures(dayGestures, filter: filter),
+                              spans: filteredSpans(daySpans, filter: filter),
                               dayOffset: dayOffset,
                               canGoBack: dayOffset > -Self.maxDaysBack,
                               canGoForward: dayOffset < Self.maxDaysForward,
@@ -778,16 +728,7 @@ struct FloorplanEditorView: View {
                                   overlayVM?.showRunningSpansDetail()
                               },
                               onShiftDay: { shiftDay(by: $0) },
-                              onReturnToday: { shiftDay(by: -dayOffset) },
-                              onScrubLight: { instant in
-                                  // Senza animazione mentre il dito si muove: la luce
-                                  // deve stare sotto il dito, e un'animazione da un
-                                  // secondo e mezzo la farebbe arrivare quando il dito
-                                  // è già altrove.
-                                  var transaction = Transaction()
-                                  transaction.disablesAnimations = true
-                                  withTransaction(transaction) { scrubbedInstant = instant }
-                              })
+                              onReturnToday: { shiftDay(by: -dayOffset) })
             }
         }
             .padding(.horizontal, 14)
@@ -812,9 +753,8 @@ struct FloorplanEditorView: View {
             // vetro non c'è, cioè nel ramo legacy, e lì infatti resta.
             .glassChromeSurface(
                 in: RoundedRectangle(cornerRadius: 16, style: .continuous),
-                legacyFill: circadianPalette.map { AnyShapeStyle($0.surface) }
-                    ?? AnyShapeStyle(.regularMaterial),
-                legacyBorder: circadianPalette?.border ?? Color.primary.opacity(0.08),
+                legacyFill: AnyShapeStyle(.regularMaterial),
+                legacyBorder: Color.primary.opacity(0.08),
                 legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 14, y: 4))
             .padding(.horizontal, 16)
             .padding(.bottom, 14)
@@ -862,6 +802,24 @@ struct FloorplanEditorView: View {
                 .lineLimit(1)
 
             Spacer(minLength: 8)
+
+            if dayOffset != 0 {
+                Button { shiftDay(by: -dayOffset) } label: {
+                    HStack(spacing: 4) {
+                        Text(DayRibbonView.dayLabel(offset: dayOffset, day: visibleDay.start))
+                            .font(.system(size: 10, weight: .semibold))
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundStyle(BrandColor.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(BrandColor.primary.opacity(0.14), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                
+                Spacer(minLength: 8)
+            }
 
             Text(collapsedNextText)
                 .font(.system(size: 11, weight: .semibold))
@@ -1162,14 +1120,13 @@ struct FloorplanEditorView: View {
                 overlayEnvVM.applyLiveState(homeState)
                 overlayEnvVM.loadFromCoreData()
             }
-            // La variante mancante si produce guardandola, non riesportando.
-            if isDaylightGroundEnabled, FloorplanVariantBackfill.needsAlternate(floorplan) {
-                measureMain("appear.variantBackfill") {
-                    if FloorplanVariantBackfill.fill(floorplan, in: modelContext) {
-                        imageCache = FloorplanImageCacheState()
-                        FloorplanImageLoader(cache: $imageCache).refresh(for: floorplan)
-                    }
-                }
+            // La seconda variante non serve più: se ne è rimasta una in
+            // archivio si libera lo spazio. Un PNG da mezzo megabyte per
+            // planimetria che nessuno legge più non è inerte — è peso che
+            // viaggia anche su CloudKit.
+            if floorplan.imageDataAlternate != nil {
+                floorplan.imageDataAlternate = nil
+                try? modelContext.save()
             }
             measureMain("appear.dayMoments") {
                 refreshDayMoments()
@@ -1295,6 +1252,50 @@ struct FloorplanEditorView: View {
     private func openSidebar() {
         withAnimation(.spring(response: 0.4)) {
             columnVisibility = .all
+        }
+    }
+
+    // MARK: - Filtri per DayRibbon
+
+    private func filteredMoments(_ moments: [DayMoment], filter: AccessoryCategory?) -> [DayMoment] {
+        guard let filter = filter else { return moments }
+        return moments.filter { moment in
+            switch moment.kind {
+            case .calendar, .solar: return true // Eventi non filtrabili, li mostriamo a prescindere per contesto temporale
+            case .automation: return true // Le automazioni per ora le mostriamo, idealmente andrebbero indagate se toccano la categoria
+            }
+        }
+    }
+
+    private func filteredGestures(_ gestures: [HumanGesture], filter: AccessoryCategory?) -> [HumanGesture] {
+        guard let filter = filter else { return gestures }
+        return gestures.filter { gesture in
+            // Un gesto passa se almeno un suo cambio riguarda la categoria filtrata
+            gesture.changes.contains { change in
+                guard let adapterType = AccessoryEventType(rawValue: change.eventType) else { return false }
+                // Semplificazione: mappa manuale dei tipi evento alle categorie principali
+                switch filter {
+                case .lights: return adapterType == .light
+                case .climate: return adapterType == .thermostat || adapterType == .fan || adapterType == .airPurifier || adapterType == .humidifier
+                case .outlets: return adapterType == .outlet || adapterType == .switch
+                case .security: return adapterType == .contact || adapterType == .motion
+                default: return false
+                }
+            }
+        }
+    }
+
+    private func filteredSpans(_ spans: [DaySpan], filter: AccessoryCategory?) -> [DaySpan] {
+        guard let filter = filter else { return spans }
+        return spans.filter { span in
+            guard let adapterType = AccessoryEventType(rawValue: span.eventType) else { return false }
+            switch filter {
+            case .lights: return adapterType == .light
+            case .climate: return adapterType == .thermostat || adapterType == .fan || adapterType == .airPurifier || adapterType == .humidifier
+            case .outlets: return adapterType == .outlet || adapterType == .switch
+            case .security: return adapterType == .contact || adapterType == .motion
+            default: return false
+            }
         }
     }
 
@@ -1884,7 +1885,9 @@ struct FloorplanEditorView: View {
         // coordinate già trasposte — geometria, marker, tap, overlay.
         let isRotated = displayRotationActive(image: image, container: container)
         let displayImage = isRotated ? rotatedImageCache.rotated(for: image) : image
-        let darkDisplayImage: UIImage? = nil
+        // Una sola costruzione della lista marker per render: la usano sia i
+        // bagliori sia i marker stessi.
+        let renderItems = markerRenderItems(rotated: isRotated)
         let rooms = displayRooms(rotated: isRotated)
 
         let rect = imageRect(imageSize: displayImage.size, container: container)
@@ -1896,15 +1899,13 @@ struct FloorplanEditorView: View {
             : (overlayVM?.activeMode == .controls && !controlsClusterModeActive)
         return FloorplanCanvasView(
             image: displayImage,
-            darkImage: darkDisplayImage,
             containerSize: container,
             chrome: chromeLayout(for: container),
-            light: DaylightGround.Light(luminance: 0, warmth: 0, isRising: false),
-            glows: currentGlows(rotated: isRotated),
+            glows: currentGlows(from: renderItems),
             showOverlayLayer: (overlayVM != nil || placementModel != nil) && !ui.isEditing,
             showEditLayer: ui.isEditing && !floorplan.linkedRooms.isEmpty,
             showMarkers: showMarkers,
-            markerItems: showMarkers ? markerRenderItems(rotated: isRotated) : [],
+            markerItems: showMarkers ? renderItems : [],
             collisionOffsets: showMarkers ? markerCollisionOffsets(in: rect) : [:]
         ) { container, imageRect in
             if let placementModel, !ui.isEditing {
