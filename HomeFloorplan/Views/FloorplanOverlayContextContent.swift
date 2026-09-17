@@ -10,8 +10,7 @@ struct FloorplanContextDashboardRouter: View {
     let environmentViewModel: EnvironmentViewModel
     /// Per risolvere l'adapter del dettaglio clima (novità D).
     var adapterMap: [UUID: any AccessoryAdapter] = [:]
-    /// Stanze e conteggi per la lista di Controlli. Vuoti altrove.
-    var clusters: [FloorplanRoomCluster] = []
+    /// Conteggi per categoria del pannello filtri. Vuoti altrove.
     var categoryCounts: [FloorplanRoomCluster.CategoryCount] = []
     /// Il momento scelto sul nastro, quando il pannello lo sta mostrando.
     var selectedMoment: DayMoment? = nil
@@ -62,11 +61,13 @@ struct FloorplanContextDashboardRouter: View {
     private var dashboard: some View {
         switch overlayVM.activeMode {
             case .controls:
-                // Su iPad era `EmptyView()`: il pannello si apriva vuoto.
-                // Ora porta lo stesso contenuto del pannello di iPhone.
-                FloorplanControlsPaneList(overlayVM: overlayVM,
-                                          clusters: clusters,
-                                          categoryCounts: categoryCounts)
+                // Solo i filtri. La lista stanze resta a iPhone, dove il
+                // pannello è sempre presente e serve da indice; su iPad la
+                // planimetria È l'indice delle stanze, e ripeterla in colonna
+                // sarebbe dire due volte la stessa cosa nella stessa
+                // schermata.
+                FloorplanCategoryFilterPanel(overlayVM: overlayVM,
+                                             counts: categoryCounts)
             case .environment:
                 EnvironmentContextDashboard(
                     envVM: environmentViewModel,

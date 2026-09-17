@@ -434,9 +434,6 @@ struct FloorplanEditorView: View {
                             floorplan: floorplan,
                             environmentViewModel: overlayEnvVM,
                             adapterMap: currentAdapterMap(),
-                            clusters: vm.activeMode == .controls
-                                ? currentClusters(rooms: floorplan.linkedRooms)
-                                : [],
                             categoryCounts: vm.activeMode == .controls
                                 ? FloorplanControlsClusterBuilder.floorCategoryCounts(
                                     floorplan: floorplan,

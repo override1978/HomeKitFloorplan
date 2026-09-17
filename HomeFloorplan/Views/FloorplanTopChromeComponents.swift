@@ -221,17 +221,19 @@ struct FloorplanTopBarView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    /// Menu filtro categoria: una voce per categoria presente sul piano,
-    /// spunta sull'attiva, "Tutti" per azzerare.
+    /// Il controllo del filtro categoria, in due forme secondo la piattaforma.
     ///
-    /// A menu chiuso il bottone **dice quale filtro è attivo**, non solo che ce
-    /// n'è uno. Prima si limitava a riempire l'imbuto, e quella era la versione
-    /// peggiore di entrambi i mondi: la planimetria mostrava meno marker del
-    /// solito e l'unico indizio era il peso di un glifo largo sedici punti. Un
-    /// filtro che nasconde roba senza dire cosa sta nascondendo si legge come
-    /// un guasto, e il costo di scoprirlo è aprire il menu.
+    /// Su iPad apre il PANNELLO dei filtri a destra invece di una tendina: le
+    /// categorie stanno tutte in vista coi conteggi e sceglierne una è un tap
+    /// solo, contro i due che costa una tendina — e togliere il filtro ne
+    /// costa comunque uno, dalla ✕ sulla chip, senza aprire niente.
     ///
-    /// Quieto resta un'icona tonda: è lo stato in cui non c'è niente da dire.
+    /// Su iPhone resta la tendina, perché lì un pannello laterale non esiste
+    /// e le stesse pillole vivono già dentro lo sheet.
+    ///
+    /// La chip nomina il filtro attivo invece di limitarsi a riempire
+    /// l'imbuto: la planimetria mostra meno marker del solito, e un filtro che
+    /// nasconde roba senza dire cosa sta nascondendo si legge come un guasto.
     @ViewBuilder
     private func compactFilterMenu(overlayVM: FloorplanOverlayViewModel) -> some View {
         Group {
@@ -246,9 +248,7 @@ struct FloorplanTopBarView: View {
                 // indietro la planimetria intera. Far pagare due tap al ritorno
                 // rende il filtro qualcosa in cui si entra malvolentieri.
                 HStack(spacing: 0) {
-                    Menu {
-                        filterMenuItems(overlayVM: overlayVM)
-                    } label: {
+                    filterOpener(overlayVM: overlayVM) {
                         HStack(spacing: 5) {
                             Circle()
                                 .fill(FloorplanTokens.Category.color(for: active))
@@ -262,7 +262,6 @@ struct FloorplanTopBarView: View {
                         .frame(height: 36)
                         .contentShape(Rectangle())
                     }
-                    .menuOrder(.fixed)
                     .accessibilityLabel(String(localized: "floorplan.filter.menu.change",
                                                defaultValue: "Change category filter"))
 
@@ -283,9 +282,7 @@ struct FloorplanTopBarView: View {
                 .foregroundStyle(Color.primary)
                 .glassChromeSurface(in: Capsule())
             } else {
-                Menu {
-                    filterMenuItems(overlayVM: overlayVM)
-                } label: {
+                filterOpener(overlayVM: overlayVM) {
                     // Senza spazio per il nome resta almeno la differenza fra
                     // imbuto pieno e vuoto: meno di quanto vorrei, ma è l'unico
                     // segnale che entra in 36 punti.
@@ -297,7 +294,6 @@ struct FloorplanTopBarView: View {
                         .frame(width: 36, height: 36)
                         .glassChromeSurface(in: Circle())
                 }
-                .menuOrder(.fixed)
                 .accessibilityLabel(String(localized: "floorplan.filter.menu",
                                            defaultValue: "Filter by category"))
             }
@@ -306,7 +302,37 @@ struct FloorplanTopBarView: View {
                    value: overlayVM.categoryFilter)
     }
 
-    /// Voci della tendina, condivise dalle due forme del controllo.
+    /// Il gesto d'apertura: pannello su iPad, tendina su iPhone.
+    @ViewBuilder
+    private func filterOpener<Label: View>(overlayVM: FloorplanOverlayViewModel,
+                                           @ViewBuilder label: () -> Label) -> some View {
+        if isCompact {
+            Menu { filterMenuItems(overlayVM: overlayVM) } label: { label() }
+                .menuOrder(.fixed)
+        } else {
+            Button { toggleFilterPanel(overlayVM) } label: { label() }
+                .buttonStyle(.plain)
+        }
+    }
+
+    /// Apre il pannello sui filtri, o lo chiude se già lì.
+    ///
+    /// `closeDetailContent()` prima di aprire: col pannello reduce da un tap
+    /// sul nastro il router mostrerebbe ancora quel momento, e l'icona del
+    /// filtro aprirebbe qualcosa che coi filtri non c'entra.
+    private func toggleFilterPanel(_ vm: FloorplanOverlayViewModel) {
+        let alreadyOnFilters = vm.isPanelVisible && vm.panelContent == .dashboard
+        withAnimation(.easeInOut(duration: 0.35)) {
+            if alreadyOnFilters {
+                vm.dismissPanel()
+            } else {
+                vm.closeDetailContent()
+                vm.isPanelVisible = true
+            }
+        }
+    }
+
+    /// Voci della tendina, usate solo su iPhone.
     @ViewBuilder
     private func filterMenuItems(overlayVM: FloorplanOverlayViewModel) -> some View {
         Button {
@@ -644,16 +670,9 @@ struct FloorplanTopRightActions: View {
     // con tutti i dispositivi già posizionati la pill iniziava con una riga
     // verticale sospesa nel vuoto.
     private var showsPlace: Bool { unplacedCount > 0 }
-    /// In Controlli il pannello non aveva come aprirsi: il toggle «Dettagli»
-    /// vive nel ramo overlay, che in Controlli non viene preso. Finché lì
-    /// dentro non c'era niente non si notava — ora ci sono i filtri e la
-    /// lista stanze, e una stanza senza porta non è una stanza.
-    private var showsPanelToggleInline: Bool { !isOverlayMode && !isEditing }
     private var showsScenesInline: Bool { !collapsesActions && !isEditing }
     private var showsDone: Bool { isEditing }
-    private var hasLeadingItem: Bool {
-        showsPlace || showsScenesInline || showsDone || showsPanelToggleInline
-    }
+    private var hasLeadingItem: Bool { showsPlace || showsScenesInline || showsDone }
 
     var body: some View {
         // Nelle modalità overlay le azioni di editing non hanno senso e prima
@@ -775,28 +794,6 @@ struct FloorplanTopRightActions: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                    }
-
-                    // Solo icona, non «Dettagli» per esteso come nel ramo
-                    // overlay: lì il toggle è l'unica cosa in barra e può
-                    // permettersi la parola, qui convive con Posiziona e
-                    // Scene in un budget che è già al limite.
-                    if showsPanelToggleInline {
-                        if showsPlace || showsScenesInline {
-                            Divider().frame(height: 20)
-                        }
-
-                        Button(action: onTogglePanel) {
-                            Image(systemName: isPanelVisible ? "xmark" : "sidebar.trailing")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Color.primary.opacity(0.55))
-                                .frame(width: 40, height: 40)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(isPanelVisible
-                            ? String(localized: "floorplan.panel.close", defaultValue: "Close panel")
-                            : String(localized: "floorplan.panel.details", defaultValue: "Details"))
                     }
 
                     if hasLeadingItem {

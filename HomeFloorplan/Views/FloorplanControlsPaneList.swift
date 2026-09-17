@@ -2,19 +2,21 @@ import SwiftUI
 
 // MARK: - FloorplanControlsPaneList
 
-/// Le pillole dei filtri e la lista delle stanze del tab Controlli.
+/// Le pillole dei filtri e la lista delle stanze: il pannello Controlli di
+/// iPhone.
 ///
-/// Stava dentro il pannello di iPhone, ed era l'unico posto in cui esisteva:
-/// su iPad il pannello destro in Controlli mostrava `EmptyView()`, cioè si
-/// apriva vuoto a meno di non aver toccato qualcosa sul nastro. Due
-/// piattaforme con lo stesso tab, una con dentro qualcosa e una no.
+/// Solo iPhone. Su iPad il pannello destro porta le sole pillole, in colonna
+/// (`FloorplanCategoryFilterPanel`), e la lista stanze non c'è: là la
+/// planimetria È l'indice delle stanze, e ripeterla in colonna direbbe due
+/// volte la stessa cosa nella stessa schermata. Su iPhone invece la mappa è
+/// piccola e il pannello fa da indice, che è il mestiere per cui la lista è
+/// nata.
 ///
-/// Le pillole vivono qui e non SOLO qui: la chip in barra resta, perché è la
-/// via sempre disponibile e dice quale filtro è attivo anche a pannello
-/// chiuso. Non è la stessa ridondanza di «Posiziona» e «Modifica», che erano
-/// due porte per una stanza con nomi e pesi diversi — qui è un unico stato
-/// con un comando permanente e uno a portata di mano mentre lavori
-/// nell'elenco, come un volume che sta sia sulla tastiera sia nel menu.
+/// Vive in un tipo suo, e non più dentro il pannello compatto, da quando su
+/// iPad il tab Controlli ha smesso di mostrare `EmptyView()`: la prima
+/// versione di quel riempimento riusava questa lista, e anche se poi l'iPad
+/// ha preso una strada diversa, averla estratta ha lasciato il pannello di
+/// iPhone più leggibile di com'era.
 struct FloorplanControlsPaneList: View {
 
     @Bindable var overlayVM: FloorplanOverlayViewModel

@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "floorplan.filter.panel.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FILTER BY TYPE"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FILTRA PER TIPO"
+          }
+        }
+      }
+    },
     "environment.legend.good" : {
       "localizations" : {
         "en" : {

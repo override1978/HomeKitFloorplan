@@ -127,8 +127,7 @@ struct FloorplanDockedContextPanel: View {
     let environmentViewModel: EnvironmentViewModel
     /// Per il dettaglio clima (novità D).
     var adapterMap: [UUID: any AccessoryAdapter] = [:]
-    /// Stanze e conteggi della lista Controlli.
-    var clusters: [FloorplanRoomCluster] = []
+    /// Conteggi per categoria del pannello filtri.
     var categoryCounts: [FloorplanRoomCluster.CategoryCount] = []
     /// Il momento scelto sul nastro, quando il pannello lo sta mostrando.
     var selectedMoment: DayMoment? = nil
@@ -153,7 +152,6 @@ struct FloorplanDockedContextPanel: View {
                 floorplan: floorplan,
                 environmentViewModel: environmentViewModel,
                 adapterMap: adapterMap,
-                clusters: clusters,
                 categoryCounts: categoryCounts,
                 selectedMoment: selectedMoment,
                 selectedGesture: selectedGesture,
