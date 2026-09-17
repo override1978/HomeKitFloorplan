@@ -683,7 +683,29 @@ struct FloorplanTopRightActions: View {
                 if !hidesActions {
                     
                     if showsEdit {
-                        Button(action: onToggleEditing) {
+                        // UN tap, non due.
+                        //
+                        // Con dei dispositivi da posizionare porta dritto nel
+                        // flusso guidato invece di fermarsi in modifica a
+                        // offrire un secondo bottone «Posiziona»: il
+                        // posizionamento È la manutenzione, quando c'è da
+                        // farlo, e il flusso permette già di spostare i marker
+                        // posati — «tocca un marker per spostarlo» lo dice la
+                        // sua stessa istruzione.
+                        //
+                        // Accendere ANCHE `isEditing` sarebbe stato il modo
+                        // ovvio di fare «tutto insieme», ed è sbagliato:
+                        // `exitPlacementOnboarding` non lo spegne, quindi il
+                        // bottone «Vai ai Controlli» della schermata finale
+                        // avrebbe lasciato l'utente in modifica — cioè non
+                        // nei Controlli.
+                        Button(action: {
+                            if unplacedCount > 0 {
+                                onStartPlacement()
+                            } else {
+                                onToggleEditing()
+                            }
+                        }) {
                             HStack(spacing: 6) {
                                 Image(systemName: "slider.horizontal.3")
                                 // Col conteggio quando c'è da posizionare: il
