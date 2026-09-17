@@ -55,21 +55,6 @@ struct FloorplanTopBarView: View {
         size.width < 1250
     }
 
-    /// Se il bottone del filtro può permettersi di essere una chip con nome e
-    /// ✕ (~115pt) invece della sola icona (36pt).
-    ///
-    /// Non è prudenza generica: il budget qui sopra somma a 1260 contro una
-    /// soglia di 1250, cioè è già sopra di dieci punti e regge solo perché le
-    /// stime sono larghe. Cinquantaquattro punti in più non si possono prendere
-    /// da lì.
-    ///
-    /// Con le azioni collassate invece il gruppo di destra è un menu solo, un
-    /// centinaio di punti al posto di quattrocentocinquanta, e lo spazio c'è —
-    /// iPhone compreso, dove la pill delle modalità non c'è proprio.
-    private var filterMenuShowsName: Bool {
-        collapsesActions || size.width >= 1340
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             // La mode pill sta FUORI da questo container, non dentro.
@@ -221,92 +206,43 @@ struct FloorplanTopBarView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    /// Il controllo del filtro categoria, in due forme secondo la piattaforma.
+    /// Il controllo del filtro categoria: sempre la stessa icona tonda da 36
+    /// punti, piena quando un filtro è attivo e vuota quando non lo è.
     ///
-    /// Su iPad apre il PANNELLO dei filtri a destra invece di una tendina: le
-    /// categorie stanno tutte in vista coi conteggi e sceglierne una è un tap
-    /// solo, contro i due che costa una tendina — e togliere il filtro ne
-    /// costa comunque uno, dalla ✕ sulla chip, senza aprire niente.
+    /// Ha avuto per poco una forma che si allargava a dire il nome della
+    /// categoria, ed era informazione utile — un filtro che nasconde marker
+    /// senza dire cosa sta nascondendo si legge come un guasto. Ma cresceva
+    /// di una sessantina di punti proprio dove la barra non li ha: il budget
+    /// di riga somma già a 1260 contro la propria soglia di 1250, e a
+    /// schermo intero andava a sbattere nella pill delle modalità, centrata.
+    /// Un controllo che collide è peggio di un controllo laconico.
     ///
-    /// Su iPhone resta la tendina, perché lì un pannello laterale non esiste
-    /// e le stesse pillole vivono già dentro lo sheet.
+    /// Il nome ora lo dice il pannello, che è anche il posto in cui si
+    /// sceglie: là c'è spazio per tutte le categorie insieme, e «Tutti» in
+    /// cima toglie il filtro.
     ///
-    /// La chip nomina il filtro attivo invece di limitarsi a riempire
-    /// l'imbuto: la planimetria mostra meno marker del solito, e un filtro che
-    /// nasconde roba senza dire cosa sta nascondendo si legge come un guasto.
+    /// Su iPad l'icona apre quel pannello; su iPhone, dove una colonna
+    /// laterale non esiste, apre la tendina.
     @ViewBuilder
     private func compactFilterMenu(overlayVM: FloorplanOverlayViewModel) -> some View {
-        Group {
-            if let active = overlayVM.categoryFilter, filterMenuShowsName {
-                // Chip con la ✕: due bersagli su una superficie sola. Il nome
-                // apre la tendina per CAMBIARE categoria, la ✕ toglie il
-                // filtro e basta.
-                //
-                // Prima togliere costava quanto mettere — apri, scorri, «Tutti»
-                // — e togliere è quello che si fa più spesso: un filtro si
-                // mette per guardare una cosa, e appena guardata si vuole
-                // indietro la planimetria intera. Far pagare due tap al ritorno
-                // rende il filtro qualcosa in cui si entra malvolentieri.
-                HStack(spacing: 0) {
-                    filterOpener(overlayVM: overlayVM) {
-                        HStack(spacing: 5) {
-                            Circle()
-                                .fill(FloorplanTokens.Category.color(for: active))
-                                .frame(width: 7, height: 7)
-                            Text(active.displayName)
-                                .font(.system(size: 13, weight: .semibold))
-                                .lineLimit(1)
-                        }
-                        .padding(.leading, 11)
-                        .padding(.trailing, 6)
-                        .frame(height: 36)
-                        .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel(String(localized: "floorplan.filter.menu.change",
-                                               defaultValue: "Change category filter"))
-
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                            overlayVM.categoryFilter = nil
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .frame(width: 27, height: 36)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: "floorplan.filter.clear",
-                                               defaultValue: "Clear filter"))
-                }
+        filterOpener(overlayVM: overlayVM) {
+            Image(systemName: overlayVM.categoryFilter != nil
+                  ? "line.3.horizontal.decrease.circle.fill"
+                  : "line.3.horizontal.decrease.circle")
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Color.primary)
-                .glassChromeSurface(in: Capsule())
-            } else {
-                filterOpener(overlayVM: overlayVM) {
-                    // Senza spazio per il nome resta almeno la differenza fra
-                    // imbuto pieno e vuoto: meno di quanto vorrei, ma è l'unico
-                    // segnale che entra in 36 punti.
-                    Image(systemName: overlayVM.categoryFilter != nil
-                          ? "line.3.horizontal.decrease.circle.fill"
-                          : "line.3.horizontal.decrease.circle")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.primary)
-                        .frame(width: 36, height: 36)
-                        .contentShape(Circle())
-                }
-                // Il vetro sta FUORI dal bottone, con la forma da toccare
-                // dentro. È la regola già scritta due volte in questo
-                // progetto — «il vetro non offre hit-test affidabile» — e
-                // averla invertita qui è costato un bottone che non
-                // rispondeva: da `Menu` reggeva lo stesso, perché un menu
-                // attacca il gesto in un altro modo, da `Button` no.
-                .glassChromeSurface(in: Circle())
-                .accessibilityLabel(String(localized: "floorplan.filter.menu",
-                                           defaultValue: "Filter by category"))
-            }
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.85),
-                   value: overlayVM.categoryFilter)
+        // Il vetro sta FUORI dal bottone, con la forma da toccare dentro:
+        // «il vetro non offre hit-test affidabile» è scritto due volte in
+        // questo progetto, e averlo invertito è già costato un bottone muto.
+        .glassChromeSurface(in: Circle())
+        .accessibilityLabel(overlayVM.categoryFilter != nil
+            ? String(localized: "floorplan.filter.menu.active",
+                     defaultValue: "Filter by category, \(overlayVM.categoryFilter?.displayName ?? "")")
+            : String(localized: "floorplan.filter.menu",
+                     defaultValue: "Filter by category"))
     }
 
     /// Il gesto d'apertura: pannello su iPad, tendina su iPhone.

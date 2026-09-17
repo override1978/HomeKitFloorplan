@@ -712,6 +712,7 @@ struct FloorplanEditorView: View {
         }
         // Meteo per la pill temperatura: si auto-limita a un refresh ogni 30'.
         .task { await weatherKit.refreshIfNeeded() }
+        .task { await loadDayAfterAppear() }
         .modifier(dayTriggers)
         // La salute casa dipende dalla raggiungibilità: ricalcolo su evento
         // discreto, come per gli adapter.
@@ -757,6 +758,30 @@ struct FloorplanEditorView: View {
     /// dell'appear. L'id sul task lo riavvia al cambio modalità, così
     /// entrare in Ambiente ricarica subito.
     @Sendable
+    /// La prima costruzione della giornata, dopo che la planimetria è a
+    /// schermo.
+    ///
+    /// Stava dentro `handleAppear`, ed era la parte peggiore del lavoro che si
+    /// fa lì: `refresh()` attraversa le automazioni per costruire i momenti e
+    /// interroga l'archivio per i gesti, tutto sul main actor, mentre la vista
+    /// sta comparendo. Da cui gli scatti all'apertura.
+    ///
+    /// Va detto per quello che è: **sposta il costo, non lo toglie**. La
+    /// giornata costa uguale, solo che adesso la si paga quando la mappa è già
+    /// lì e la si sta guardando, invece che mentre appare — e il nastro entra
+    /// con la sua animazione da 0.3s, quindi non compare di scatto. Toglierlo
+    /// davvero vorrebbe dire fare quelle query fuori dal main actor, con un
+    /// `ModelContext` suo, che è un lavoro di un altro ordine.
+    ///
+    /// Lo `yield` lascia a SwiftUI il fotogramma di apertura; i 120ms coprono
+    /// il resto della comparsa senza che si veda arrivare il nastro.
+    private func loadDayAfterAppear() async {
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(120))
+        guard !Task.isCancelled else { return }
+        dayModel.refresh()
+    }
+
     private func refreshEnvironmentOverlayWhileActive() async {
         while !Task.isCancelled {
             await overlayEnvVM.reloadFromCoreData()
@@ -803,7 +828,7 @@ struct FloorplanEditorView: View {
                     }
                 }
                 dayModel.isEligible = isRibbonEligible
-                dayModel.refresh()
+                // NIENTE `refresh()` qui: vedi `loadDayAfterAppear()`.
             }
             measureMain("appear.subscribe") {
                 accessoryObservationCoordinator.subscribe(to: floorplan)
