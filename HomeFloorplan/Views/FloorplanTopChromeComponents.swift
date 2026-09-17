@@ -55,8 +55,8 @@ struct FloorplanTopBarView: View {
         size.width < 1250
     }
 
-    /// Se il bottone del filtro può permettersi di dire anche il nome della
-    /// categoria (~90pt) invece della sola icona (36pt).
+    /// Se il bottone del filtro può permettersi di essere una chip con nome e
+    /// ✕ (~115pt) invece della sola icona (36pt).
     ///
     /// Non è prudenza generica: il budget qui sopra somma a 1260 contro una
     /// soglia di 1250, cioè è già sopra di dieci punti e regge solo perché le
@@ -67,7 +67,7 @@ struct FloorplanTopBarView: View {
     /// centinaio di punti al posto di quattrocentocinquanta, e lo spazio c'è —
     /// iPhone compreso, dove la pill delle modalità non c'è proprio.
     private var filterMenuShowsName: Bool {
-        collapsesActions || size.width >= 1310
+        collapsesActions || size.width >= 1340
     }
 
     var body: some View {
@@ -234,65 +234,104 @@ struct FloorplanTopBarView: View {
     /// Quieto resta un'icona tonda: è lo stato in cui non c'è niente da dire.
     @ViewBuilder
     private func compactFilterMenu(overlayVM: FloorplanOverlayViewModel) -> some View {
-        let isFiltering = overlayVM.categoryFilter != nil
-        Menu {
-            Button {
-                overlayVM.categoryFilter = nil
-            } label: {
-                if overlayVM.categoryFilter == nil {
-                    Label(String(localized: "floorplan.filter.all.plain", defaultValue: "All"),
-                          systemImage: "checkmark")
-                } else {
-                    Text(String(localized: "floorplan.filter.all.plain", defaultValue: "All"))
-                }
-            }
-            ForEach(categoryCounts) { count in
-                Button {
-                    overlayVM.categoryFilter =
-                        overlayVM.categoryFilter == count.category ? nil : count.category
-                } label: {
-                    if overlayVM.categoryFilter == count.category {
-                        Label("\(count.category.displayName) · \(count.total)",
-                              systemImage: "checkmark")
-                    } else {
-                        Text("\(count.category.displayName) · \(count.total)")
-                    }
-                }
-            }
-        } label: {
+        Group {
             if let active = overlayVM.categoryFilter, filterMenuShowsName {
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(FloorplanTokens.Category.color(for: active))
-                        .frame(width: 7, height: 7)
-                    Text(active.displayName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
+                // Chip con la ✕: due bersagli su una superficie sola. Il nome
+                // apre la tendina per CAMBIARE categoria, la ✕ toglie il
+                // filtro e basta.
+                //
+                // Prima togliere costava quanto mettere — apri, scorri, «Tutti»
+                // — e togliere è quello che si fa più spesso: un filtro si
+                // mette per guardare una cosa, e appena guardata si vuole
+                // indietro la planimetria intera. Far pagare due tap al ritorno
+                // rende il filtro qualcosa in cui si entra malvolentieri.
+                HStack(spacing: 0) {
+                    Menu {
+                        filterMenuItems(overlayVM: overlayVM)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(FloorplanTokens.Category.color(for: active))
+                                .frame(width: 7, height: 7)
+                            Text(active.displayName)
+                                .font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1)
+                        }
+                        .padding(.leading, 11)
+                        .padding(.trailing, 6)
+                        .frame(height: 36)
+                        .contentShape(Rectangle())
+                    }
+                    .menuOrder(.fixed)
+                    .accessibilityLabel(String(localized: "floorplan.filter.menu.change",
+                                               defaultValue: "Change category filter"))
+
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            overlayVM.categoryFilter = nil
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .frame(width: 27, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(String(localized: "floorplan.filter.clear",
+                                               defaultValue: "Clear filter"))
                 }
                 .foregroundStyle(Color.primary)
-                .padding(.horizontal, 11)
-                .frame(height: 36)
                 .glassChromeSurface(in: Capsule())
             } else {
-                // Senza spazio per il nome resta almeno la differenza fra
-                // imbuto pieno e vuoto: meno di quanto vorrei, ma è l'unico
-                // segnale che entra in 36 punti.
-                Image(systemName: isFiltering
-                      ? "line.3.horizontal.decrease.circle.fill"
-                      : "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.primary)
-                    .frame(width: 36, height: 36)
-                    .glassChromeSurface(in: Circle())
+                Menu {
+                    filterMenuItems(overlayVM: overlayVM)
+                } label: {
+                    // Senza spazio per il nome resta almeno la differenza fra
+                    // imbuto pieno e vuoto: meno di quanto vorrei, ma è l'unico
+                    // segnale che entra in 36 punti.
+                    Image(systemName: overlayVM.categoryFilter != nil
+                          ? "line.3.horizontal.decrease.circle.fill"
+                          : "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                        .frame(width: 36, height: 36)
+                        .glassChromeSurface(in: Circle())
+                }
+                .menuOrder(.fixed)
+                .accessibilityLabel(String(localized: "floorplan.filter.menu",
+                                           defaultValue: "Filter by category"))
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85),
                    value: overlayVM.categoryFilter)
-        .accessibilityLabel(isFiltering
-            ? String(localized: "floorplan.filter.menu.active",
-                     defaultValue: "Filter by category, \(overlayVM.categoryFilter?.displayName ?? "")")
-            : String(localized: "floorplan.filter.menu",
-                     defaultValue: "Filter by category"))
+    }
+
+    /// Voci della tendina, condivise dalle due forme del controllo.
+    @ViewBuilder
+    private func filterMenuItems(overlayVM: FloorplanOverlayViewModel) -> some View {
+        Button {
+            overlayVM.categoryFilter = nil
+        } label: {
+            if overlayVM.categoryFilter == nil {
+                Label(String(localized: "floorplan.filter.all.plain", defaultValue: "All"),
+                      systemImage: "checkmark")
+            } else {
+                Text(String(localized: "floorplan.filter.all.plain", defaultValue: "All"))
+            }
+        }
+        ForEach(categoryCounts) { count in
+            Button {
+                overlayVM.categoryFilter =
+                    overlayVM.categoryFilter == count.category ? nil : count.category
+            } label: {
+                if overlayVM.categoryFilter == count.category {
+                    Label("\(count.category.displayName) · \(count.total)",
+                          systemImage: "checkmark")
+                } else {
+                    Text("\(count.category.displayName) · \(count.total)")
+                }
+            }
+        }
     }
 
     /// Toggle del pannello docked dal bottone "Dettagli / Chiudi" in barra.
