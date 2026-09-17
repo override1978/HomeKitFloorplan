@@ -1625,9 +1625,8 @@ struct FloorplanEditorView: View {
         }
     }
 
-    /// Chrome della stanza espansa (pill di compressione), SOPRA i marker
-    /// così resta tappabile anche dove i dispositivi si addensano. Segue lo
-    /// schema colori della planimetria come il resto della chrome.
+    /// Bandierina della stanza espansa: la pastiglia sta sopra il bordo alto
+    /// della planimetria, dove nessun marker può arrivare.
     @ViewBuilder
     private func expandedRoomChrome(imageRect: CGRect) -> some View {
         if !isCompactScreen, !ui.isEditing,
@@ -1637,7 +1636,7 @@ struct FloorplanEditorView: View {
             ExpandedRoomCollapsePill(
                 room: room,
                 imageRect: imageRect,
-                effectiveScale: effectiveScale,
+                topInset: FloorplanCanvasGeometry.chromeTopInset,
                 onCollapse: { vm.collapseRoom() }
             )
             .environment(\.colorScheme, chromeColorScheme)
