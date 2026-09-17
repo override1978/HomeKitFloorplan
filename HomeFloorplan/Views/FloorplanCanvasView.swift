@@ -140,6 +140,23 @@ struct FloorplanCanvasView<OverlayLayer: View, EditLayer: View, MarkerContent: V
 
             overMarkerLayer(containerSize, rect)
         }
+        // Nessuno strato insegue la geometria: tutti la prendono com'è, ora.
+        //
+        // Aprendo il pannello contestuale si vedeva la planimetria muoversi in
+        // due tempi — prima le aree colorate delle stanze, poi il disegno e i
+        // marker. Non era una durata sbagliata, erano due meccaniche diverse
+        // sulla stessa geometria: gli strati Canvas ridisegnano ai punti che
+        // `rect` dice in quell'istante, mentre `.frame` e `.position`
+        // dell'immagine e dei marker, dentro una transazione animata, vengono
+        // INTERPOLATI verso quel bersaglio. E il bersaglio nel frattempo si
+        // muove, perché la colonna si sta restringendo: chi interpola resta
+        // indietro rispetto a chi ridisegna.
+        //
+        // Annullando l'animazione sui cambi di `rect`, tutto diventa funzione
+        // della geometria corrente. Il movimento resta fluido lo stesso: ad
+        // animare è la larghezza della colonna, e il GeometryReader la riporta
+        // fotogramma per fotogramma.
+        .animation(nil, value: rect)
         .frame(width: containerSize.width, height: containerSize.height)
     }
 }

@@ -157,8 +157,25 @@ struct FloorplanEditorView: View {
     /// qualcosa da mostrare: è la condizione che decide se vale la pena
     /// andarlo a cercare.
     private var isRibbonEligible: Bool {
+        isRibbonContextEligible && !ribbonYieldsToPanel
+    }
+
+    /// Le condizioni di contesto senza la cessione al pannello.
+    private var isRibbonContextEligible: Bool {
         !isCompactScreen && !ui.isEditing && placementModel == nil
-            && !ribbonYieldsToPanel
+    }
+
+    /// Vero quando il nastro c'è, **o** si è fatto da parte solo per il
+    /// pannello: in entrambi i casi la mappa continua a tenergli il posto.
+    ///
+    /// Senza questa distinzione, aprire il pannello faceva scendere la
+    /// planimetria: sparendo il nastro, l'area in cui la mappa si centra
+    /// verticalmente si allungava verso il basso e il disegno andava a
+    /// riprendersi quello spazio. Ma quello spazio serviva al PANNELLO, che è
+    /// un'altra colonna e cresce in altezza per conto suo: la mappa non ne
+    /// guadagna niente e in cambio si sposta sotto gli occhi.
+    private var mapReservesRibbonSpace: Bool {
+        isRibbonContextEligible && (!dayModel.isShowingToday || dayModel.hasContent)
     }
 
     /// Il nastro si fa da parte per il pannello contestuale.
@@ -1002,7 +1019,7 @@ struct FloorplanEditorView: View {
     private func secondaryControls(in size: CGSize) -> some View {
         FloorplanSecondaryControlsLayer(
             effectiveScale: effectiveScale,
-            bottomInset: chromeLayout(for: size).bottomInset,
+            bottomInset: mapChromeLayout(for: size).bottomInset,
             // Manutenzione, non solo Modifica: la card del marker vale anche
             // nel flusso guidato (feedback 28/08 — il tap selezionava ma la
             // card restava dietro questo gate).
@@ -1413,8 +1430,10 @@ struct FloorplanEditorView: View {
             containerSize: containerSize,
             effectiveScale: effectiveScale,
             effectiveOffset: effectiveOffset,
-            topInset: chromeLayout(for: containerSize).topInset,
-            bottomInset: chromeLayout(for: containerSize).bottomInset
+            // LO STESSO layout di `imageRect`: se i due divergono, i tap
+            // atterrano su una geometria che non è quella disegnata.
+            topInset: mapChromeLayout(for: containerSize).topInset,
+            bottomInset: mapChromeLayout(for: containerSize).bottomInset
         ).resolve(tapLocation: tapLocation)
     }
     
@@ -1469,6 +1488,16 @@ struct FloorplanEditorView: View {
             : FloorplanChromeLayout.dayRibbonInset
     }
 
+    /// Layout per la MAPPA: come `chromeLayout`, ma il nastro conta come
+    /// presente anche quando si è fatto da parte per il pannello.
+    private func mapChromeLayout(for container: CGSize) -> FloorplanChromeLayout {
+        FloorplanChromeLayout(hasTwoRowTabBar: !isCompactScreen,
+                              hasBottomPane: isCompactScreen && !ui.isEditing
+                                  && container.height > container.width,
+                              hasDayRibbon: mapReservesRibbonSpace && !isDayRibbonCollapsed,
+                              hasCollapsedDayRibbon: mapReservesRibbonSpace && isDayRibbonCollapsed)
+    }
+
     private func chromeLayout(for container: CGSize) -> FloorplanChromeLayout {
         // Su compact i tab vivono nell'isola in basso (stile Dov'è): in alto
         // resta la barra minima, e in basso la planimetria riserva lo spazio
@@ -1482,7 +1511,7 @@ struct FloorplanEditorView: View {
     }
 
     private func imageRect(imageSize: CGSize, container: CGSize) -> CGRect {
-        let chrome = chromeLayout(for: container)
+        let chrome = mapChromeLayout(for: container)
         return FloorplanCanvasGeometry.imageRect(
             imageSize: imageSize,
             container: container,
@@ -1566,7 +1595,7 @@ struct FloorplanEditorView: View {
         return FloorplanCanvasView(
             image: displayImage,
             containerSize: container,
-            chrome: chromeLayout(for: container),
+            chrome: mapChromeLayout(for: container),
             glows: currentGlows(from: renderItems),
             showOverlayLayer: (overlayVM != nil || placementModel != nil) && !ui.isEditing,
             showEditLayer: ui.isEditing && !floorplan.linkedRooms.isEmpty,
