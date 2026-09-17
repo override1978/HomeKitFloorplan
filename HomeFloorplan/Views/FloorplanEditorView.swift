@@ -123,44 +123,50 @@ struct FloorplanEditorView: View {
 
     // MARK: - Giornata della casa
 
-    /// I momenti di oggi, ricalcolati fuori dal body.
-    ///
-    /// Non è una computed property di proposito: costruirli attraversa 87
-    /// automazioni ed enumera le occorrenze di ciascuna, e questa vista si
-    /// rivaluta a ogni gesto sulla mappa. Qui vale la stessa disciplina delle
-    /// altre cache del file — si rifà quando cambia qualcosa, non a ogni
-    /// render.
-    /// Quanti giorni si è distanti da oggi. Zero è oggi.
-    @State private var dayOffset: Int = 0
+    /// Stato, calcolo e navigazione della giornata vivono in un modello a
+    /// parte: qui resta solo il collegamento alla vista.
+    @State private var dayModel = FloorplanDayModel()
+
     @AppStorage("floorplan.dayRibbon.isCollapsed")
     private var isDayRibbonCollapsed = false
 
-    /// Fin dove si può tornare indietro: dove finisce l'archivio.
+    /// Il nastro compare solo quando si guarda la casa.
     ///
-    /// Trenta giorni è la soglia di potatura di `AccessoryEvent`. Oltre, la
-    /// corsia dei gesti sarebbe vuota e sembrerebbe «non hai fatto niente»
-    /// invece di «non lo so più» — che è la differenza fra un'informazione e
-    /// una bugia.
-    private static let maxDaysBack = DLCRetention.accessoryRaw
-
-    /// Fin dove si può andare avanti.
+    /// In modifica e nel flusso guidato ogni pixel serve al lavoro in corso, e
+    /// la giornata non c'entra: chi sta spostando un marker non ha bisogno di
+    /// sapere che alle 23:00 parte Notte.
+    /// Per ora solo su schermo largo: in compatto il fondo è già occupato dal
+    /// pannello a scomparsa in stile «Dov'è», e due superfici sovrapposte lì
+    /// sotto non starebbero. L'iPhone vuole una forma sua, non questa
+    /// rimpicciolita.
+    /// Tutto ciò che fa ricalcolare la giornata, in un posto solo.
     ///
-    /// Sette giorni perché la ricorrenza settimanale è il ciclo più lungo che
-    /// le automazioni HomeKit esprimono: l'ottavo giorno non mostrerebbe niente
-    /// che il primo non abbia già mostrato. Di là è speculazione su una casa
-    /// che nel frattempo sarà cambiata.
-    private static let maxDaysForward = 7
+    /// Raccolti in un modificatore e non in coda agli altri: la catena del body
+    /// era arrivata al punto in cui il compilatore rinunciava a verificarne il
+    /// tipo. È un limite pratico e non un giudizio estetico — ma è anche il
+    /// segnale che quei cinque innesti riguardano una cosa sola e stavano
+    /// insieme per sedimentazione.
+    private var dayTriggers: DayRefreshTriggers {
+        DayRefreshTriggers(model: dayModel,
+                           ticker: minuteTicker,
+                           lastEventAt: accessoryEvents.lastSavedAt,
+                           isEligible: isRibbonEligible,
+                           automationCount: automationsService.automations.count,
+                           sunset: weatherKit.todaySunset)
+    }
 
-    @State private var dayMoments: [DayMoment] = []
-    @State private var dayGestures: [HumanGesture] = []
-    @State private var dayClock = Date()
-    @State private var selectedMoment: DayMoment?
-    @State private var selectedGesture: HumanGesture?
-    @State private var selectedSpan: DaySpan?
-    @State private var selectedRunningSpans: [DaySpan] = []
-    @State private var daySpans: [DaySpan] = []
-    /// Il ridisegno della corsia in attesa, per non rifarlo a ogni lampada.
-    @State private var gestureRefreshTask: Task<Void, Never>?
+    private var showsDayRibbon: Bool {
+        isRibbonEligible && (!dayModel.isShowingToday || dayModel.hasContent)
+    }
+
+    /// Le condizioni di contesto, senza quelle di contenuto.
+    ///
+    /// Separata da `showsDayRibbon` perché serve *prima* di sapere se c'è
+    /// qualcosa da mostrare: è la condizione che decide se vale la pena
+    /// andarlo a cercare.
+    private var isRibbonEligible: Bool {
+        !isCompactScreen && !ui.isEditing && placementModel == nil
+    }
 
     /// Il battito del minuto, creato una volta sola.
     ///
@@ -175,194 +181,6 @@ struct FloorplanEditorView: View {
     /// In `@State` il publisher sopravvive alla ricostruzione della struct, che
     /// è l'unica cosa che gli serviva per contare in pace.
     @State private var minuteTicker = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
-    /// L'istante che il dito sta illuminando, mentre trascina la luce.
-
-    /// Il nastro compare solo quando si guarda la casa.
-    ///
-    /// In modifica e nel flusso guidato ogni pixel serve al lavoro in corso, e
-    /// la giornata non c'entra: chi sta spostando un marker non ha bisogno di
-    /// sapere che alle 23:00 parte Notte.
-    /// Per ora solo su schermo largo: in compatto il fondo è già occupato dal
-    /// pannello a scomparsa in stile «Dov'è», e due superfici sovrapposte lì
-    /// sotto non starebbero. L'iPhone vuole una forma sua, non questa
-    /// rimpicciolita.
-    private var showsDayRibbon: Bool {
-        isRibbonEligible
-            && (!isShowingToday || !(dayMoments.isEmpty && dayGestures.isEmpty && daySpans.isEmpty))
-    }
-
-    /// Le condizioni di contesto, senza quelle di contenuto.
-    ///
-    /// Separata da `showsDayRibbon` perché serve *prima* di sapere se c'è
-    /// qualcosa da mostrare: è la condizione che decide se vale la pena
-    /// andarlo a cercare.
-    private var isRibbonEligible: Bool {
-        !isCompactScreen && !ui.isEditing && placementModel == nil
-    }
-
-    /// Il giorno che il nastro sta mostrando.
-    private var visibleDay: DateInterval { visibleDay(at: dayClock) }
-
-    /// Esplicito sull'istante da cui contare, perché chi ricostruisce ha già
-    /// `now` in mano e non deve dipendere dall'ordine in cui aggiorna lo stato.
-    private func visibleDay(at instant: Date) -> DateInterval {
-        let anchor = Calendar.current.date(byAdding: .day, value: dayOffset, to: instant) ?? instant
-        return AutomationsView.dayInterval(containing: anchor)
-    }
-
-    private var isShowingToday: Bool { dayOffset == 0 }
-
-    /// Alba e tramonto del giorno visibile, e del successivo.
-    ///
-    /// Per oggi e domani comanda WeatherKit: tiene conto di rifrazione ed
-    /// elevazione meglio di qualunque formula, e su quei due giorni la risposta
-    /// ce l'ha già. Per tutti gli altri si calcola. Non è un ripiego uniforme
-    /// applicato ovunque per coerenza: è usare il dato migliore dove esiste.
-    private var daySolarTimes: NextFireResolver.SolarTimes {
-        if isShowingToday {
-            return NextFireResolver.SolarTimes(todaySunrise: weatherKit.todaySunrise,
-                                               todaySunset: weatherKit.todaySunset,
-                                               tomorrowSunrise: weatherKit.tomorrowSunrise,
-                                               tomorrowSunset: weatherKit.tomorrowSunset)
-        }
-        guard let coordinates = SolarCalculator.homeCoordinates else {
-            return NextFireResolver.SolarTimes(todaySunrise: nil, todaySunset: nil,
-                                               tomorrowSunrise: nil, tomorrowSunset: nil)
-        }
-        let day = visibleDay
-        let today = SolarCalculator.events(on: day.start, at: coordinates)
-        let tomorrow = SolarCalculator.events(on: day.end, at: coordinates)
-        return NextFireResolver.SolarTimes(todaySunrise: today.sunrise,
-                                           todaySunset: today.sunset,
-                                           tomorrowSunrise: tomorrow.sunrise,
-                                           tomorrowSunset: tomorrow.sunset)
-    }
-
-    /// Sposta la finestra, entro i limiti di ciò che si può dire davvero.
-    private func shiftDay(by delta: Int) {
-        let target = max(-Self.maxDaysBack, min(Self.maxDaysForward, dayOffset + delta))
-        guard target != dayOffset else { return }
-        dayOffset = target
-        selectedMoment = nil
-        selectedGesture = nil
-        selectedSpan = nil
-        selectedRunningSpans = []
-        if overlayVM?.panelContent == .moment || overlayVM?.panelContent == .gesture
-            || overlayVM?.panelContent == .span || overlayVM?.panelContent == .runningSpans {
-            overlayVM?.closeDetailContent()
-        }
-        refreshDayMoments()
-    }
-
-    private func refreshDayMoments() {
-        let now = Date()
-        dayClock = now
-        let day = visibleDay(at: now)
-        if automationsService.automations.isEmpty { automationsService.refresh() }
-        calendarEvents.refresh(day: day)
-        dayMoments = DayTimeline.build(day: day,
-                                       now: now,
-                                       automations: automationsService.fires(in: day, now: now,
-                                                                             solar: daySolarTimes),
-                                       solar: daySolarTimes,
-                                       calendarEntries: calendarEvents.todayEntries)
-        // La corsia si legge solo quando c'è: in modifica e nel flusso guidato
-        // il nastro non è a schermo, e una query al minuto per disegnare niente
-        // è il genere di costo che non si vede finché non diventa uno scatto
-        // mentre si trascina un marker.
-        if isRibbonEligible {
-            dayGestures = loadGestures(day: day, now: now)
-        } else {
-            dayGestures = []
-            daySpans = []
-        }
-        // Un giorno vuoto è un risultato, non un errore: se non si mostrasse il
-        // nastro tornare indietro sembrerebbe rotto, e non ci sarebbe più modo
-        // di andare oltre.
-        
-    }
-
-    /// Ricostruisce la sola corsia dei gesti, poco dopo l'ultimo evento.
-    ///
-    /// Separato da `refreshDayMoments` perché i momenti costano molto di più —
-    /// attraversano ottantasette automazioni ed enumerano le occorrenze di
-    /// ciascuna — e non cambiano perché qualcuno ha acceso una luce.
-    ///
-    /// Il ritardo breve non è pigrizia: accendere i faretti dell'entrata sono
-    /// tre eventi in mezzo secondo, e ricostruire tre volte per disegnare lo
-    /// stesso rombo è lavoro buttato. Quattro decimi non si percepiscono e
-    /// fanno collassare la raffica in un ridisegno solo — che è anche il modo
-    /// in cui il gesto si forma davvero: non esiste finché non è finito.
-    private func scheduleGestureRefresh() {
-        // Un evento di adesso non cambia ieri: mentre si guarda un altro
-        // giorno il nastro sta fermo, com'è giusto che sia.
-        guard isRibbonEligible, isShowingToday else { return }
-        gestureRefreshTask?.cancel()
-        gestureRefreshTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            guard !Task.isCancelled else { return }
-            let now = Date()
-            dayGestures = loadGestures(day: visibleDay, now: now)  // aggiorna anche daySpans
-        }
-    }
-
-    /// I gesti umani di oggi, letti dal registro eventi.
-    ///
-    /// La finestra è il giorno e non «gli ultimi N»: la corsia deve coprire
-    /// esattamente lo stesso arco dell'asse sopra, altrimenti un pomeriggio
-    /// vuoto potrebbe voler dire «nessuno ha toccato niente» oppure «il limite
-    /// si è esaurito prima», e le due cose non si distinguerebbero guardando.
-    private func loadGestures(day: DateInterval, now: Date) -> [HumanGesture] {
-        let start = day.start
-        let end = day.end
-        let descriptor = FetchDescriptor<AccessoryEvent>(
-            predicate: #Predicate { $0.timestamp >= start && $0.timestamp < end },
-            sortBy: [SortDescriptor(\.timestamp, order: .forward)])
-        // Nessun tetto.
-        //
-        // C'era, a tremila, con il ragionamento che una giornata normale ne
-        // produce qualche centinaio e che meglio un nastro incompleto di un
-        // frame perso. Erano sbagliate tutte e due le parti. Il numero: questa
-        // casa ne produce quattromilacinquecento al giorno. E il ragionamento:
-        // ordinati per timestamp crescente, il tetto non toglie «i meno
-        // importanti» — toglie **la fine della giornata**. Il nastro mostrava
-        // fino a metà pomeriggio e poi il buio, e una barra aperta là dentro
-        // non incontrava mai il proprio spegnimento perché stava oltre il
-        // taglio.
-        //
-        // Il difetto peggiore però non è la troncatura: è che non si vedeva.
-        // Una giornata tagliata ha lo stesso aspetto di una giornata tranquilla,
-        // e ho passato tre correzioni a cercare nella scrittura un guasto che
-        // era nella lettura. La finestra del giorno è già il limite giusto —
-        // il tempo, non un conteggio — e se mai servisse un tetto dovrà dirlo.
-        guard let events = try? modelContext.fetch(descriptor) else { return [] }
-
-        let raw = events.map { event in
-            HumanGestureBuilder.RawChange(accessoryUUID: event.accessoryID,
-                                          accessoryName: event.accessoryName,
-                                          roomName: event.roomName,
-                                          state: event.state,
-                                          brightness: event.brightness,
-                                          eventType: event.eventType,
-                                          at: event.timestamp,
-                                          origin: event.originRaw)
-        }
-        // Una lettura sola, due letture diverse degli stessi eventi: i gesti
-        // guardano *chi* ha agito, i periodi guardano *per quanto*. Rifare la
-        // query per la seconda sarebbe pagare due volte la stessa risposta.
-        let fires = dayMoments.filter(\.isAutomationKind).map(\.at)
-        daySpans = DaySpanBuilder.build(from: raw, window: day,
-                                        scheduledFires: fires, now: now)
-
-        let gestures = HumanGestureBuilder.build(from: raw,
-                                                 scheduledFires: fires,
-                                                 scenes: scenesService.sceneSignatures(),
-                                                 now: now)
-        // I due racconti si incontrano qui: dove la barra dice già tutto, il
-        // rombo si toglie di mezzo.
-        return HumanGestureBuilder.removingCovered(gestures, by: daySpans)
-    }
-
     /// Stessa sorgente e semantica di SecurityOverlayView: solo i sensori
     /// contatto monitorati contano come "aperture".
     @AppStorage("securityMonitoredUUIDs") private var securityMonitoredUUIDsRaw: String = ""
@@ -608,10 +426,10 @@ struct FloorplanEditorView: View {
                             floorplan: floorplan,
                             environmentViewModel: overlayEnvVM,
                             adapterMap: currentAdapterMap(),
-                            selectedMoment: selectedMoment,
-                            selectedGesture: selectedGesture,
-                            selectedSpan: selectedSpan,
-                            selectedRunningSpans: selectedRunningSpans,
+                            selectedMoment: dayModel.selectedMoment,
+                            selectedGesture: dayModel.selectedGesture,
+                            selectedSpan: dayModel.selectedSpan,
+                            selectedRunningSpans: dayModel.selectedRunningSpans,
                             topInset: chromeLayout(for: outer.size).topInset,
                             bottomInset: chromeLayout(for: outer.size).bottomInset
                         )
@@ -689,46 +507,46 @@ struct FloorplanEditorView: View {
             if !isDayRibbonCollapsed {
                 let filter = overlayVM?.activeMode == .controls ? overlayVM?.categoryFilter : nil
                 
-                DayRibbonView(moments: filteredMoments(dayMoments.filter { !$0.isSolarKind }, filter: filter),
-                              day: visibleDay,
-                              now: dayClock,
-                              sunrise: daySolarTimes.todaySunrise,
-                              sunset: daySolarTimes.todaySunset,
-                              gestures: filteredGestures(dayGestures, filter: filter),
-                              spans: filteredSpans(daySpans, filter: filter),
-                              dayOffset: dayOffset,
-                              canGoBack: dayOffset > -Self.maxDaysBack,
-                              canGoForward: dayOffset < Self.maxDaysForward,
+                DayRibbonView(moments: filteredMoments(dayModel.moments.filter { !$0.isSolarKind }, filter: filter),
+                              day: dayModel.visibleDay,
+                              now: dayModel.clock,
+                              sunrise: dayModel.solarTimes.todaySunrise,
+                              sunset: dayModel.solarTimes.todaySunset,
+                              gestures: filteredGestures(dayModel.gestures, filter: filter),
+                              spans: filteredSpans(dayModel.spans, filter: filter),
+                              dayOffset: dayModel.offset,
+                              canGoBack: dayModel.offset > -FloorplanDayModel.maxDaysBack,
+                              canGoForward: dayModel.offset < FloorplanDayModel.maxDaysForward,
                               onSelect: { moment in
-                                  selectedMoment = moment
-                                  selectedGesture = nil
-                                  selectedSpan = nil
-                                  selectedRunningSpans = []
+                                  dayModel.selectedMoment = moment
+                                  dayModel.selectedGesture = nil
+                                  dayModel.selectedSpan = nil
+                                  dayModel.selectedRunningSpans = []
                                   overlayVM?.showMomentDetail()
                               },
                               onSelectGesture: { gesture in
-                                  selectedMoment = nil
-                                  selectedGesture = gesture
-                                  selectedSpan = nil
-                                  selectedRunningSpans = []
+                                  dayModel.selectedMoment = nil
+                                  dayModel.selectedGesture = gesture
+                                  dayModel.selectedSpan = nil
+                                  dayModel.selectedRunningSpans = []
                                   overlayVM?.showGestureDetail()
                               },
                               onSelectSpan: { span in
-                                  selectedMoment = nil
-                                  selectedGesture = nil
-                                  selectedSpan = span
-                                  selectedRunningSpans = []
+                                  dayModel.selectedMoment = nil
+                                  dayModel.selectedGesture = nil
+                                  dayModel.selectedSpan = span
+                                  dayModel.selectedRunningSpans = []
                                   overlayVM?.showSpanDetail()
                               },
                               onSelectRunningSpans: { spans in
-                                  selectedMoment = nil
-                                  selectedGesture = nil
-                                  selectedSpan = nil
-                                  selectedRunningSpans = spans
+                                  dayModel.selectedMoment = nil
+                                  dayModel.selectedGesture = nil
+                                  dayModel.selectedSpan = nil
+                                  dayModel.selectedRunningSpans = spans
                                   overlayVM?.showRunningSpansDetail()
                               },
-                              onShiftDay: { shiftDay(by: $0) },
-                              onReturnToday: { shiftDay(by: -dayOffset) })
+                              onShiftDay: { dayModel.shift(by: $0) },
+                              onReturnToday: { dayModel.shift(by: -dayModel.offset) })
             }
         }
             .padding(.horizontal, 14)
@@ -803,10 +621,10 @@ struct FloorplanEditorView: View {
 
             Spacer(minLength: 8)
 
-            if dayOffset != 0 {
-                Button { shiftDay(by: -dayOffset) } label: {
+            if dayModel.offset != 0 {
+                Button { dayModel.shift(by: -dayModel.offset) } label: {
                     HStack(spacing: 4) {
-                        Text(DayRibbonView.dayLabel(offset: dayOffset, day: visibleDay.start))
+                        Text(DayRibbonView.dayLabel(offset: dayModel.offset, day: dayModel.visibleDay.start))
                             .font(.system(size: 10, weight: .semibold))
                         Image(systemName: "arrow.uturn.backward")
                             .font(.system(size: 8, weight: .bold))
@@ -830,16 +648,16 @@ struct FloorplanEditorView: View {
     }
 
     private var collapsedNowText: String {
-        if let span = daySpans.first(where: { $0.start <= dayClock && ($0.end ?? .distantFuture) > dayClock }) {
+        if let span = dayModel.spans.first(where: { $0.start <= dayModel.clock && ($0.end ?? .distantFuture) > dayModel.clock }) {
             return String(localized: "ribbon.collapsed.now.running",
                           defaultValue: "ADESSO · \(span.name) attivo")
         }
         return String(localized: "ribbon.collapsed.now",
-                      defaultValue: "ADESSO · \(dayClock.formatted(date: .omitted, time: .shortened))")
+                      defaultValue: "ADESSO · \(dayModel.clock.formatted(date: .omitted, time: .shortened))")
     }
 
     private var collapsedNextText: String {
-        guard let next = dayMoments.filter({ !$0.isSolarKind }).first(where: { $0.at > dayClock }) else {
+        guard let next = dayModel.moments.filter({ !$0.isSolarKind }).first(where: { $0.at > dayModel.clock }) else {
             return String(localized: "ribbon.collapsed.next.none", defaultValue: "PROSSIMO · nessun evento")
         }
         return String(localized: "ribbon.collapsed.next",
@@ -1044,17 +862,7 @@ struct FloorplanEditorView: View {
         }
         // Meteo per la pill temperatura: si auto-limita a un refresh ogni 30'.
         .task { await weatherKit.refreshIfNeeded() }
-        // La giornata si ricalcola al minuto: gli orari invecchiano, e la
-        // linea di "adesso" deve muoversi con loro.
-        .onReceive(minuteTicker) { _ in
-            refreshDayMoments()
-        }
-        // Il nastro reagisce all'evento, non all'orologio: una superficie di
-        // controllo che mostra con un minuto di ritardo ciò che hai appena
-        // fatto non sta mostrando il presente.
-        .onChange(of: accessoryEvents.lastSavedAt) { _, _ in scheduleGestureRefresh() }
-        .onChange(of: automationsService.automations.count) { _, _ in refreshDayMoments() }
-        .onChange(of: weatherKit.todaySunset) { _, _ in refreshDayMoments() }
+        .modifier(dayTriggers)
         // La salute casa dipende dalla raggiungibilità: ricalcolo su evento
         // discreto, come per gli adapter.
         .onChange(of: homeKit.reachabilityVersion) { _, _ in
@@ -1128,8 +936,24 @@ struct FloorplanEditorView: View {
                 floorplan.imageDataAlternate = nil
                 try? modelContext.save()
             }
-            measureMain("appear.dayMoments") {
-                refreshDayMoments()
+            measureMain("appear.day") {
+                dayModel.configure(context: modelContext,
+                                   automations: automationsService,
+                                   calendar: calendarEvents,
+                                   scenes: scenesService,
+                                   weather: weatherKit)
+                // Il nastro chiude il proprio dettaglio quando cambia giorno:
+                // il momento selezionato non esiste più in un altro giorno, e
+                // lasciarlo aperto mostrerebbe qualcosa che non è lì.
+                dayModel.onDayChanged = { [weak overlayVM] in
+                    guard let content = overlayVM?.panelContent else { return }
+                    if content == .moment || content == .gesture
+                        || content == .span || content == .runningSpans {
+                        overlayVM?.closeDetailContent()
+                    }
+                }
+                dayModel.isEligible = isRibbonEligible
+                dayModel.refresh()
             }
             measureMain("appear.subscribe") {
                 accessoryObservationCoordinator.subscribe(to: floorplan)
@@ -2660,5 +2484,43 @@ struct FloorplanEditorView: View {
                 onSkip: { placementSkip(model: model) }
             )
         }
+    }
+}
+
+// MARK: - DayRefreshTriggers
+
+/// Gli eventi che fanno ricostruire la giornata.
+///
+/// Erano cinque `onChange`/`onReceive` in coda al body dell'editor, e insieme
+/// al resto avevano portato la catena oltre il punto in cui il compilatore ne
+/// verifica il tipo. Raccolti qui restano quello che erano — cinque innesti su
+/// un modello solo — ma smettono di pesare su una vista che ha già altro da
+/// fare.
+private struct DayRefreshTriggers: ViewModifier {
+    let model: FloorplanDayModel
+    let ticker: Publishers.Autoconnect<Timer.TimerPublisher>
+    let lastEventAt: Date?
+    let isEligible: Bool
+    let automationCount: Int
+    let sunset: Date?
+
+    func body(content: Content) -> some View {
+        content
+            // La giornata si ricalcola al minuto: gli orari invecchiano, e la
+            // linea di «adesso» deve muoversi con loro.
+            .onReceive(ticker) { _ in model.refresh() }
+            // Il nastro reagisce all'evento, non all'orologio: una superficie
+            // di controllo che mostra con un minuto di ritardo ciò che hai
+            // appena fatto non sta mostrando il presente.
+            .onChange(of: lastEventAt) { _, _ in model.scheduleGestureRefresh() }
+            .onChange(of: isEligible) { _, eligible in
+                // Entrando in modifica il nastro sparisce: smettere di
+                // interrogare l'archivio al minuto è metà del motivo per cui
+                // questa condizione esiste.
+                model.isEligible = eligible
+                model.refresh()
+            }
+            .onChange(of: automationCount) { _, _ in model.refresh() }
+            .onChange(of: sunset) { _, _ in model.refresh() }
     }
 }
