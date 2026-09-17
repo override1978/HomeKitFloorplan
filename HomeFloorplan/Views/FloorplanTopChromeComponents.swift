@@ -675,12 +675,29 @@ struct FloorplanTopRightActions: View {
                             .font(.subheadline)
                             .fontWeight(.bold)
                             .foregroundStyle(BrandColor.primary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 6)
+                            // Capsula, non un `.background(Color)` nudo.
+                            //
+                            // Senza forma il fill prendeva tutta l'altezza
+                            // della pill con gli spigoli vivi: una placca
+                            // rettangolare dentro un contenitore a capsula,
+                            // e la tinta brand al 12% stirata su quell'area
+                            // si leggeva slavata invece che intenzionale.
+                            //
+                            // Stesso trattamento dell'altro invito colorato
+                            // dell'app — il «torna a oggi» del nastro —
+                            // perché è la stessa cosa: un'azione facoltativa
+                            // che conviene fare.
+                            .background(BrandColor.primary.opacity(0.14), in: Capsule())
+                            .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
-                        .background(BrandColor.primary.opacity(0.12)) // Stile primario più evidente
+                        // Rientra dai bordi del contenitore invece di toccarli:
+                        // è una pastiglia dentro la barra, non una fetta della
+                        // barra stessa.
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 4)
                     }
 
                         // Scene per esteso quando la barra è larga e non siamo in modifica.
