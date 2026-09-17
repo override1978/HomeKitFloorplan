@@ -106,7 +106,8 @@ struct FloorplanTopBarView: View {
                                 pinnedFloorplans: pinnedFloorplans,
                                 primaryFloorplanID: primaryFloorplanID,
                                 onOpenSidebar: onOpenSidebar,
-                                onSelectFloorplan: onSelectFloorplan
+                                onSelectFloorplan: onSelectFloorplan,
+                                onManageFloorplan: (isCompact || isEditing) ? nil : onToggleEditing
                             )
                         }
 
@@ -533,7 +534,10 @@ struct FloorplanEditModeBanner: View {
                 .foregroundStyle(BrandColor.primary)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(String(localized: "floorplan.edit.banner.title", defaultValue: "Edit floorplan"))
+                // Stessa chiave della voce di menu che ci porta qui: se la
+                // porta si chiama «Gestione planimetria», la stanza non può
+                // chiamarsi «Modifica planimetria».
+                Text(String(localized: "floorplan.manage", defaultValue: "Manage floorplan"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
                 Text(String(localized: "floorplan.edit.banner.subtitle.maintenance", defaultValue: "Drag markers to move them. Tap one to rename, change icon or remove."))
@@ -595,6 +599,16 @@ struct FloorplanTopRightActions: View {
         isOverlayMode && !isEditing
     }
 
+    // Cosa entra davvero nella pill, in ordine. Serve a sapere se un divisore
+    // ha qualcosa alla propria sinistra: finché «Modifica» c'era sempre, la
+    // domanda non si poneva e i divisori erano scritti fissi. Tolto quello,
+    // con tutti i dispositivi già posizionati la pill iniziava con una riga
+    // verticale sospesa nel vuoto.
+    private var showsPlace: Bool { unplacedCount > 0 }
+    private var showsScenesInline: Bool { !collapsesActions && !isEditing }
+    private var showsDone: Bool { isEditing }
+    private var hasLeadingItem: Bool { showsPlace || showsScenesInline || showsDone }
+
     var body: some View {
         // Nelle modalità overlay le azioni di editing non hanno senso e prima
         // sparivano del tutto; al loro posto ora sta il toggle del pannello
@@ -633,16 +647,21 @@ struct FloorplanTopRightActions: View {
     private var actionsPill: some View {
         GlassTitlePill {
             HStack(spacing: 0) {
+                // Qui restano solo i COMPITI: posizionare ciò che manca, le
+                // scene, e l'uscita dalla gestione. La gestione in sé — che è
+                // una modalità, non un compito — si apre dal menu del titolo,
+                // perché parla di questa planimetria.
+                //
                 // Il "+" non vive più qui (decisione 28/08): aggiungere
-                // dispositivi è compito del flusso guidato, la Modifica resta
-                // la modalità di manutenzione — sposta, rinomina, icona,
-                // elimina, audit. Il picker libero sopravvive dietro le
-                // quinte per il posizionamento assistito dalla diagnostica.
+                // dispositivi è compito del flusso guidato. Il picker libero
+                // sopravvive dietro le quinte per il posizionamento assistito
+                // dalla diagnostica.
                 if !hidesActions {
-                    // Le azioni "Modifica" e "Posiziona" le facciamo diventare bottoni principali
-                    // ben in vista. Si comportano quasi come Floating Action Buttons integrati nella barra.
                     
-                    if unplacedCount > 0 && !isEditing {
+                    // Vale anche in gestione: se sei entrato a sistemare la
+                    // planimetria e tre dispositivi non sono ancora sulla
+                    // mappa, è lì che devi poterlo sapere.
+                    if showsPlace {
                         Button {
                             onStartPlacement()
                         } label: {
@@ -664,33 +683,13 @@ struct FloorplanTopRightActions: View {
                         .background(BrandColor.primary.opacity(0.12)) // Stile primario più evidente
                     }
 
-                    if !isEditing {
-                        if unplacedCount > 0 {
-                            Divider().frame(height: 20)
-                        }
-
-                        Button {
-                            onToggleEditing()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "pencil")
-                                Text(String(localized: "common.edit", defaultValue: "Edit"))
-                            }
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundStyle(Color.primary.opacity(0.75))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-
                         // Scene per esteso quando la barra è larga e non siamo in modifica.
                         // Con l'estrazione di Modifica e Posiziona, le Scene vengono
                         // nascoste più aggressivamente per salvare spazio.
-                        if !collapsesActions && !isEditing {
-                            Divider().frame(height: 20)
+                        if showsScenesInline {
+                            if showsPlace {
+                                Divider().frame(height: 20)
+                            }
 
                             Button {
                                 onShowScenes()
@@ -711,7 +710,11 @@ struct FloorplanTopRightActions: View {
                         }
 
                     // "Fatto" resta SEMPRE visibile in modifica: l'uscita da una modalità non si nasconde.
-                    if isEditing {
+                    if showsDone {
+                        if showsPlace {
+                            Divider().frame(height: 20)
+                        }
+
                         Button {
                             onToggleEditing()
                         } label: {
@@ -729,7 +732,9 @@ struct FloorplanTopRightActions: View {
                         .buttonStyle(.plain)
                     }
 
-                    Divider().frame(height: 20)
+                    if hasLeadingItem {
+                        Divider().frame(height: 20)
+                    }
 
                     // Menu ⋯ ora contiene solo Strumenti/Aiuto secondari (Diagnostica, Aiuto, Editor 2D, 3D)
                     FloorplanToolsMenu(
@@ -818,6 +823,10 @@ struct FloorplanTitleMenu: View {
     let onOpenSidebar: () -> Void
     let onSelectFloorplan: ((UUID) -> Void)?
 
+    /// Entrata in gestione planimetria. `nil` dove la gestione non esiste
+    /// (iPhone: la planimetria lì è solo controllo).
+    var onManageFloorplan: (() -> Void)? = nil
+
     var body: some View {
         Menu {
             if pinnedFloorplans.isEmpty {
@@ -852,6 +861,25 @@ struct FloorplanTitleMenu: View {
                     onOpenSidebar()
                 } label: {
                     Label(String(localized: "sidebar.show", defaultValue: "Show sidebar"), systemImage: "sidebar.left")
+                }
+            }
+
+            // La gestione sta sotto il nome della planimetria perché è di
+            // quella planimetria che parla — spostare marker, rinominarli,
+            // cambiarne l'icona. In barra era un bottone permanente accanto a
+            // «Posiziona», e i due si leggevano come alternative quando invece
+            // portano allo stesso posto: `markerMaintenanceModeActive` è già
+            // `isEditing || placementModel != nil`. Erano due porte per una
+            // stanza sola, una sempre aperta e una che compariva a volte.
+            if let onManageFloorplan {
+                Divider()
+
+                Button {
+                    onManageFloorplan()
+                } label: {
+                    Label(String(localized: "floorplan.manage",
+                                 defaultValue: "Manage floorplan"),
+                          systemImage: "square.and.pencil")
                 }
             }
         } label: {
