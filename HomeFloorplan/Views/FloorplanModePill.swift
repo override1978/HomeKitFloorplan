@@ -4,29 +4,28 @@ import SwiftUI
 
 /// Tab switcher delle modalità.
 ///
-/// Regola unica della barra: **il colore vuol dire "guarda qui", mai "sei
-/// qui"**. Prima ne aveva due — la tinta del modo diceva quale tab era
-/// selezionata, il colore d'allarme diceva quale aveva bisogno di te — e con
-/// Controlli tinto di blu accanto a Sicurezza tinta d'arancio l'occhio non
-/// poteva sapere quale delle due lo stesse chiamando. Ora la selezione è
-/// acromatica e la tinta resta solo agli allarmi, che sono rari: quando
-/// compare, significa qualcosa.
+/// Due regole, e la seconda è nata da un errore mio.
 ///
-/// Da cui i tre stati di una tab:
-/// - **attiva**: capsula neutra, etichetta piena, sottotitolo leggibile;
-/// - **inattiva e quieta**: solo l'etichetta, smorzata. Niente numeri;
-/// - **inattiva con allarme**: pallino e sottotitolo nel colore d'allarme.
+/// **Il colore vuol dire "guarda qui", mai "sei qui".** Prima ne aveva due —
+/// la tinta del modo diceva quale scheda era selezionata, il colore d'allarme
+/// quale aveva bisogno di te — e con Controlli tinto di blu accanto a
+/// Sicurezza tinta d'arancio l'occhio non poteva sapere quale delle due lo
+/// stesse chiamando. La selezione è acromatica; la tinta resta agli allarmi,
+/// che sono rari, e quando compare significa qualcosa.
 ///
-/// I sottotitoli delle tab quiete spariscono perché erano il grosso della
-/// densità — quattro letture vive in contemporanea, tre delle quali su schede
-/// che non stavi guardando — e perché non erano azionabili: le luci accese si
-/// vedono già sulla planimetria, e «91% Ottima» non chiede niente a nessuno.
-/// Quello che invece vale da fermo (aperture, situazioni critiche) resta, ed è
-/// esattamente ciò che ora si prende il colore.
+/// **La struttura è identica su tutte le schede**: etichetta sopra,
+/// sottotitolo sotto, sempre, anche sulle quiete. Avevo provato a nascondere
+/// i sottotitoli quieti per abbassare la densità, ed era sbagliato: con
+/// Controlli selezionato che mostrava il grigio, Ambiente muto e Sicurezza in
+/// arancio, la barra esibiva tre trattamenti diversi su quattro voci e la
+/// regola non era deducibile guardandola — sembrava che Ambiente non avesse
+/// dati, mentre ce li aveva e se li teneva. La densità si è rivelata il costo
+/// minore: una fila di schede si legge come insieme solo se le voci sono
+/// confrontabili, e confrontabili vuol dire fatte allo stesso modo.
 ///
-/// Restano in layout anche da nascosti, con la sola opacità a zero: se
-/// uscissero dal flusso, la tab attiva cambierebbe larghezza a ogni selezione
-/// e le vicine slitterebbero di lato a ogni tocco.
+/// Resta quindi UNA sola cosa a variare fra una scheda e l'altra, ed è il
+/// colore del sottotitolo: grigio quando è a posto, arancio o rosso quando
+/// non lo è.
 struct FloorplanModePill: View {
 
     @Bindable var overlayVM: FloorplanOverlayViewModel
@@ -164,16 +163,6 @@ struct FloorplanModePill: View {
                         .foregroundStyle(subtitleColor(isActive: isActive,
                                                        mode: mode,
                                                        alarmColor: alarmColor))
-                        // Nascosto, non rimosso: vedi la nota sulla larghezza
-                        // in testa al file.
-                        //
-                        // Solo visivamente, però: VoiceOver continua a leggere
-                        // tutti i sottotitoli (li mette `accessibilityText` nel
-                        // label del contenitore). Nasconderli era una scelta di
-                        // densità, e una lettura lineare non ha un problema di
-                        // densità — ha il problema opposto, che è dover entrare
-                        // in ogni scheda per sapere cosa c'è dentro.
-                        .opacity(isActive || alarmColor != nil ? 1 : 0)
                 }
             }
             .fixedSize(horizontal: !isCompact, vertical: false)
