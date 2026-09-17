@@ -2,14 +2,31 @@ import SwiftUI
 
 // MARK: - FloorplanModePill
 
-/// Tab switcher delle modalità col modello "2d" del design v3: ogni tab è
-/// una pill a DUE righe — etichetta stabile sopra, stato vivo sotto — e non
-/// esiste una barra di stato separata. Tre stati per tab:
-/// - selezionata: fill nel colore del modo (activeBackground/Foreground);
-/// - non selezionata ma in allarme: bordo 1.5pt e sottotitolo nel colore
-///   d'allarme (arancio Sicurezza, rosso Intelligenza);
-/// - quieta: trasparente, sottotitolo #a99f8c.
-/// NIENTE badge numerici: lo stato è nel sottotitolo.
+/// Tab switcher delle modalità.
+///
+/// Regola unica della barra: **il colore vuol dire "guarda qui", mai "sei
+/// qui"**. Prima ne aveva due — la tinta del modo diceva quale tab era
+/// selezionata, il colore d'allarme diceva quale aveva bisogno di te — e con
+/// Controlli tinto di blu accanto a Sicurezza tinta d'arancio l'occhio non
+/// poteva sapere quale delle due lo stesse chiamando. Ora la selezione è
+/// acromatica e la tinta resta solo agli allarmi, che sono rari: quando
+/// compare, significa qualcosa.
+///
+/// Da cui i tre stati di una tab:
+/// - **attiva**: capsula neutra, etichetta piena, sottotitolo leggibile;
+/// - **inattiva e quieta**: solo l'etichetta, smorzata. Niente numeri;
+/// - **inattiva con allarme**: pallino e sottotitolo nel colore d'allarme.
+///
+/// I sottotitoli delle tab quiete spariscono perché erano il grosso della
+/// densità — quattro letture vive in contemporanea, tre delle quali su schede
+/// che non stavi guardando — e perché non erano azionabili: le luci accese si
+/// vedono già sulla planimetria, e «91% Ottima» non chiede niente a nessuno.
+/// Quello che invece vale da fermo (aperture, situazioni critiche) resta, ed è
+/// esattamente ciò che ora si prende il colore.
+///
+/// Restano in layout anche da nascosti, con la sola opacità a zero: se
+/// uscissero dal flusso, la tab attiva cambierebbe larghezza a ogni selezione
+/// e le vicine slitterebbero di lato a ogni tocco.
 struct FloorplanModePill: View {
 
     @Bindable var overlayVM: FloorplanOverlayViewModel
@@ -124,11 +141,12 @@ struct FloorplanModePill: View {
                             .minimumScaleFactor(0.82)
                     } else {
                         HStack(spacing: 5) {
-                            if isActive {
-                                ModeDot(color: mode.accentColor, pulses: false)
-                                    .transition(.scale.combined(with: .opacity))
-                            } else if status?.pulses(for: mode) == true {
-                                ModeDot(color: mode.accentColor, pulses: true)
+                            // Solo allarme. Non segna più la selezione: quello
+                            // lo fa la capsula, e due segnali per la stessa
+                            // cosa sono uno di troppo.
+                            if let alarmColor {
+                                ModeDot(color: alarmColor,
+                                        pulses: status?.pulses(for: mode) == true)
                                     .transition(.scale.combined(with: .opacity))
                             }
                             Text(mode.tabLabel)
@@ -152,6 +170,16 @@ struct FloorplanModePill: View {
                         .foregroundStyle(subtitleColor(isActive: isActive,
                                                        mode: mode,
                                                        alarmColor: alarmColor))
+                        // Nascosto, non rimosso: vedi la nota sulla larghezza
+                        // in testa al file.
+                        //
+                        // Solo visivamente, però: VoiceOver continua a leggere
+                        // tutti i sottotitoli (li mette `accessibilityText` nel
+                        // label del contenitore). Nasconderli era una scelta di
+                        // densità, e una lettura lineare non ha un problema di
+                        // densità — ha il problema opposto, che è dover entrare
+                        // in ogni scheda per sapere cosa c'è dentro.
+                        .opacity(isActive || alarmColor != nil ? 1 : 0)
                 }
             }
             .fixedSize(horizontal: !isCompact, vertical: false)
@@ -171,8 +199,6 @@ struct FloorplanModePill: View {
         .modifier(ModeSelectionHighlight(
             isActive: isActive,
             usesGlass: usesGlass,
-            fill: mode.activeBackgroundColor,
-            tint: mode.accentColor,
             isCompact: isCompact
         ))
         .onGeometryChange(for: CGRect.self) { proxy in
@@ -257,15 +283,16 @@ private final class ModeFrameStore {
 
 // MARK: - ModeSelectionHighlight
 
-/// Superficie della singola tab 2d: fill discreto nel colore del modo da
-/// selezionata, niente bordo (design minimalista).
+/// Superficie della tab selezionata: acromatica, senza bordo.
+///
+/// La tinta è `Color.primary`, cioè il colore del testo, non una tinta in
+/// senso cromatico: si adatta a chiaro e scuro e non porta identità. Vetro
+/// puro su vetro puro era la scelta più letterale ma la capsula spariva —
+/// `.regular` su `.regular` non ha stacco — e una selezione invisibile è un
+/// problema peggiore di quello che risolve.
 private struct ModeSelectionHighlight: ViewModifier {
     let isActive: Bool
     let usesGlass: Bool
-    /// Fill della tab selezionata.
-    let fill: Color
-    /// Tinta per il ramo vetro.
-    let tint: Color
     let isCompact: Bool
 
     @ViewBuilder
@@ -273,7 +300,7 @@ private struct ModeSelectionHighlight: ViewModifier {
         if isActive {
             if usesGlass, #available(iOS 26.0, *) {
                 content
-                    .glassEffect(.regular.tint(tint.opacity(isCompact ? 0.15 : 0.20)).interactive(), in: Capsule())
+                    .glassEffect(.regular.tint(Color.primary.opacity(isCompact ? 0.08 : 0.10)).interactive(), in: Capsule())
             } else {
                 content.background(Capsule().fill(Color.primary.opacity(0.08)))
             }
@@ -305,9 +332,7 @@ private struct ModeBarSurface: ViewModifier {
         } else if usesGlass, #available(iOS 26.0, *) {
             content.glassEffect(.regular, in: Capsule())
         } else {
-            content
-                .background(.regularMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+            content.background(.regularMaterial, in: Capsule())
         }
     }
 }
