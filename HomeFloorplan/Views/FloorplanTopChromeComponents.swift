@@ -55,6 +55,21 @@ struct FloorplanTopBarView: View {
         size.width < 1250
     }
 
+    /// Se il bottone del filtro può permettersi di dire anche il nome della
+    /// categoria (~90pt) invece della sola icona (36pt).
+    ///
+    /// Non è prudenza generica: il budget qui sopra somma a 1260 contro una
+    /// soglia di 1250, cioè è già sopra di dieci punti e regge solo perché le
+    /// stime sono larghe. Cinquantaquattro punti in più non si possono prendere
+    /// da lì.
+    ///
+    /// Con le azioni collassate invece il gruppo di destra è un menu solo, un
+    /// centinaio di punti al posto di quattrocentocinquanta, e lo spazio c'è —
+    /// iPhone compreso, dove la pill delle modalità non c'è proprio.
+    private var filterMenuShowsName: Bool {
+        collapsesActions || size.width >= 1310
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // La mode pill sta FUORI da questo container, non dentro.
@@ -207,9 +222,17 @@ struct FloorplanTopBarView: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    /// Menu filtro categoria per iPhone: una voce per categoria presente sul
-    /// piano, spunta sull'attiva, "Tutti" per azzerare. L'icona si riempie
-    /// quando un filtro è attivo, così lo stato resta visibile a menu chiuso.
+    /// Menu filtro categoria: una voce per categoria presente sul piano,
+    /// spunta sull'attiva, "Tutti" per azzerare.
+    ///
+    /// A menu chiuso il bottone **dice quale filtro è attivo**, non solo che ce
+    /// n'è uno. Prima si limitava a riempire l'imbuto, e quella era la versione
+    /// peggiore di entrambi i mondi: la planimetria mostrava meno marker del
+    /// solito e l'unico indizio era il peso di un glifo largo sedici punti. Un
+    /// filtro che nasconde roba senza dire cosa sta nascondendo si legge come
+    /// un guasto, e il costo di scoprirlo è aprire il menu.
+    ///
+    /// Quieto resta un'icona tonda: è lo stato in cui non c'è niente da dire.
     @ViewBuilder
     private func compactFilterMenu(overlayVM: FloorplanOverlayViewModel) -> some View {
         let isFiltering = overlayVM.categoryFilter != nil
@@ -238,16 +261,39 @@ struct FloorplanTopBarView: View {
                 }
             }
         } label: {
-            Image(systemName: isFiltering
-                  ? "line.3.horizontal.decrease.circle.fill"
-                  : "line.3.horizontal.decrease.circle")
-                .font(.system(size: 16, weight: .semibold))
+            if let active = overlayVM.categoryFilter, filterMenuShowsName {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(FloorplanTokens.Category.color(for: active))
+                        .frame(width: 7, height: 7)
+                    Text(active.displayName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                }
                 .foregroundStyle(Color.primary)
-                .frame(width: 36, height: 36)
-                .glassChromeSurface(in: Circle())
+                .padding(.horizontal, 11)
+                .frame(height: 36)
+                .glassChromeSurface(in: Capsule())
+            } else {
+                // Senza spazio per il nome resta almeno la differenza fra
+                // imbuto pieno e vuoto: meno di quanto vorrei, ma è l'unico
+                // segnale che entra in 36 punti.
+                Image(systemName: isFiltering
+                      ? "line.3.horizontal.decrease.circle.fill"
+                      : "line.3.horizontal.decrease.circle")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 36, height: 36)
+                    .glassChromeSurface(in: Circle())
+            }
         }
-        .accessibilityLabel(String(localized: "floorplan.filter.menu",
-                                   defaultValue: "Filter by category"))
+        .animation(.spring(response: 0.3, dampingFraction: 0.85),
+                   value: overlayVM.categoryFilter)
+        .accessibilityLabel(isFiltering
+            ? String(localized: "floorplan.filter.menu.active",
+                     defaultValue: "Filter by category, \(overlayVM.categoryFilter?.displayName ?? "")")
+            : String(localized: "floorplan.filter.menu",
+                     defaultValue: "Filter by category"))
     }
 
     /// Toggle del pannello docked dal bottone "Dettagli / Chiudi" in barra.
