@@ -292,8 +292,15 @@ struct FloorplanTopBarView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Color.primary)
                         .frame(width: 36, height: 36)
-                        .glassChromeSurface(in: Circle())
+                        .contentShape(Circle())
                 }
+                // Il vetro sta FUORI dal bottone, con la forma da toccare
+                // dentro. È la regola già scritta due volte in questo
+                // progetto — «il vetro non offre hit-test affidabile» — e
+                // averla invertita qui è costato un bottone che non
+                // rispondeva: da `Menu` reggeva lo stesso, perché un menu
+                // attacca il gesto in un altro modo, da `Button` no.
+                .glassChromeSurface(in: Circle())
                 .accessibilityLabel(String(localized: "floorplan.filter.menu",
                                            defaultValue: "Filter by category"))
             }
@@ -315,20 +322,22 @@ struct FloorplanTopBarView: View {
         }
     }
 
-    /// Apre il pannello sui filtri, o lo chiude se già lì.
+    /// Apre il pannello sui filtri, o lo chiude se è già lì.
     ///
-    /// `closeDetailContent()` prima di aprire: col pannello reduce da un tap
-    /// sul nastro il router mostrerebbe ancora quel momento, e l'icona del
-    /// filtro aprirebbe qualcosa che coi filtri non c'entra.
+    /// Scrive le due proprietà e basta, invece di passare per
+    /// `closeDetailContent()` / `dismissPanel()`: il primo, in Controlli,
+    /// CHIUDE il pannello — l'opposto di quel che serve qui — e la versione
+    /// precedente si reggeva sull'assegnazione successiva per disfarlo. Una
+    /// riga in meno e nessun effetto da annullare.
+    ///
+    /// `panelContent = .dashboard` in entrambi i rami: col pannello reduce da
+    /// un tap sul nastro il router mostrerebbe ancora quel momento, e l'icona
+    /// del filtro aprirebbe qualcosa che coi filtri non c'entra.
     private func toggleFilterPanel(_ vm: FloorplanOverlayViewModel) {
         let alreadyOnFilters = vm.isPanelVisible && vm.panelContent == .dashboard
         withAnimation(.easeInOut(duration: 0.35)) {
-            if alreadyOnFilters {
-                vm.dismissPanel()
-            } else {
-                vm.closeDetailContent()
-                vm.isPanelVisible = true
-            }
+            vm.panelContent = .dashboard
+            vm.isPanelVisible = !alreadyOnFilters
         }
     }
 
