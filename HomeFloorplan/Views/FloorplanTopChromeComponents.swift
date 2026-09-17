@@ -644,9 +644,16 @@ struct FloorplanTopRightActions: View {
     // con tutti i dispositivi già posizionati la pill iniziava con una riga
     // verticale sospesa nel vuoto.
     private var showsPlace: Bool { unplacedCount > 0 }
+    /// In Controlli il pannello non aveva come aprirsi: il toggle «Dettagli»
+    /// vive nel ramo overlay, che in Controlli non viene preso. Finché lì
+    /// dentro non c'era niente non si notava — ora ci sono i filtri e la
+    /// lista stanze, e una stanza senza porta non è una stanza.
+    private var showsPanelToggleInline: Bool { !isOverlayMode && !isEditing }
     private var showsScenesInline: Bool { !collapsesActions && !isEditing }
     private var showsDone: Bool { isEditing }
-    private var hasLeadingItem: Bool { showsPlace || showsScenesInline || showsDone }
+    private var hasLeadingItem: Bool {
+        showsPlace || showsScenesInline || showsDone || showsPanelToggleInline
+    }
 
     var body: some View {
         // Nelle modalità overlay le azioni di editing non hanno senso e prima
@@ -768,6 +775,28 @@ struct FloorplanTopRightActions: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                    }
+
+                    // Solo icona, non «Dettagli» per esteso come nel ramo
+                    // overlay: lì il toggle è l'unica cosa in barra e può
+                    // permettersi la parola, qui convive con Posiziona e
+                    // Scene in un budget che è già al limite.
+                    if showsPanelToggleInline {
+                        if showsPlace || showsScenesInline {
+                            Divider().frame(height: 20)
+                        }
+
+                        Button(action: onTogglePanel) {
+                            Image(systemName: isPanelVisible ? "xmark" : "sidebar.trailing")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.primary.opacity(0.55))
+                                .frame(width: 40, height: 40)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isPanelVisible
+                            ? String(localized: "floorplan.panel.close", defaultValue: "Close panel")
+                            : String(localized: "floorplan.panel.details", defaultValue: "Details"))
                     }
 
                     if hasLeadingItem {
