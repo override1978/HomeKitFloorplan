@@ -38,9 +38,16 @@ enum FloorplanTokens {
         /// Soglie colore uniche per gli score 0–100 (design v3): verde ≥85,
         /// arancio 60–84, rosso <60 — le stesse OVUNQUE sulla planimetria,
         /// mai un 66% rosso accanto a un 70% arancio.
+        /// Soglie del punteggio, nominate perché non le legge solo questa
+        /// funzione: la legenda del pannello Ambiente scrive gli intervalli a
+        /// partire da qui. Da numeri murati dentro il `if`, cambiarli avrebbe
+        /// lasciato la legenda a raccontare i vecchi.
+        static let goodScore = 85
+        static let watchScore = 60
+
         static func forScore(_ score: Int) -> Color {
-            if score >= 85 { return ok }
-            if score >= 60 { return warning }
+            if score >= goodScore { return ok }
+            if score >= watchScore { return warning }
             return critical
         }
     }

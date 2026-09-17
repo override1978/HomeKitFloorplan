@@ -483,6 +483,8 @@ struct EnvironmentContextDashboard: View {
                 summaryCard(dangerCount: dangerCount,
                             warningCount: warningCount,
                             normalCount: normalCount)
+
+                roomColourLegend
             }
 
             // ── Card 3: Assistant narrative ────────────────────────────────
@@ -1003,6 +1005,102 @@ struct EnvironmentContextDashboard: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .panelCard(accentColor: summaryAccent)
+    }
+
+    // MARK: Legenda dei colori stanza
+
+    /// Cosa vogliono dire i colori che l'overlay mette sulla planimetria.
+    ///
+    /// Sta sotto il riepilogo e non dentro perché parla di un'altra cosa: il
+    /// riepilogo conta SENSORI per urgenza, la mappa colora STANZE per
+    /// punteggio. Stessi tre colori, due soggetti diversi — chi provasse a
+    /// ritrovare sulla planimetria i «3 in attenzione» del riepilogo non ne
+    /// troverebbe tre, e concluderebbe che uno dei due sbaglia.
+    ///
+    /// Le soglie sono scritte perché senza di quelle un badge che dice «72%»
+    /// non si può collegare al proprio colore. E il grigio è in elenco perché
+    /// è il caso che inganna: una stanza spenta sembra una stanza a posto,
+    /// mentre vuol dire che di quella stanza non sappiamo niente.
+    ///
+    /// Sicurezza non ha la sua legenda e non le serve: i suoi badge portano
+    /// icona ED etichetta — Protetta, Aperta, Inserito — cioè si nominano da
+    /// soli invece di affidarsi al colore.
+    private var roomColourLegend: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            cardSectionLabel(String(localized: "environment.panel.roomColours",
+                                    defaultValue: "ROOM COLOURS"),
+                             icon: "circle.hexagongrid.fill")
+
+            // Va a capo da sé: quattro voci in riga non entrano nel pannello
+            // stretto, e la legenda è l'ultima cosa che deve troncarsi.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { legendItems }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 12) { legendPair(0) }
+                    HStack(spacing: 12) { legendPair(1) }
+                }
+            }
+        }
+        .panelCard(accentColor: accent)
+    }
+
+    private struct LegendEntry {
+        let color: Color
+        let range: String
+        let meaning: String
+    }
+
+    private var legendEntries: [LegendEntry] {
+        // Colori E intervalli vengono dalle stesse soglie che colorano la
+        // mappa: la legenda non può descrivere una regola diversa da quella
+        // che sta guardando.
+        let good = FloorplanTokens.Semantic.goodScore
+        let watch = FloorplanTokens.Semantic.watchScore
+        return [
+            LegendEntry(color: FloorplanTokens.Semantic.forScore(good),
+                        range: "≥ \(good)",
+                        meaning: String(localized: "environment.legend.good", defaultValue: "Good")),
+            LegendEntry(color: FloorplanTokens.Semantic.forScore(watch),
+                        range: "\(watch)–\(good - 1)",
+                        meaning: String(localized: "environment.legend.watch", defaultValue: "Watch")),
+            LegendEntry(color: FloorplanTokens.Semantic.forScore(0),
+                        range: "< \(watch)",
+                        meaning: String(localized: "environment.legend.poor", defaultValue: "Poor")),
+            LegendEntry(color: .secondary,
+                        range: "—",
+                        meaning: String(localized: "environment.legend.silent", defaultValue: "No data"))
+        ]
+    }
+
+    @ViewBuilder
+    private var legendItems: some View {
+        ForEach(Array(legendEntries.enumerated()), id: \.offset) { _, entry in
+            legendItem(entry)
+        }
+    }
+
+    @ViewBuilder
+    private func legendPair(_ half: Int) -> some View {
+        ForEach(Array(legendEntries.enumerated()).filter { $0.offset / 2 == half }, id: \.offset) { _, entry in
+            legendItem(entry)
+        }
+    }
+
+    private func legendItem(_ entry: LegendEntry) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(entry.color)
+                .frame(width: 8, height: 8)
+            Text(entry.range)
+                .font(.caption2.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+            Text(entry.meaning)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .fixedSize()
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Reusable sub-views
