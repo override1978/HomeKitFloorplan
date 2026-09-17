@@ -1,6 +1,166 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "placement.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Place your devices"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posiziona i dispositivi"
+          }
+        }
+      }
+    },
+    "placement.instruction.placing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag the marker where the device is, then confirm. Tap the map to go back to the rooms."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trascina il marker dov'è il dispositivo, poi conferma. Tocca la mappa per tornare alle stanze."
+          }
+        }
+      }
+    },
+    "placement.instruction.pickRoom" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap a room badge to place its devices. Tap a placed marker to adjust or move it."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tocca il badge di una stanza per posizionarne i dispositivi. Tocca un marker già posizionato per spostarlo."
+          }
+        }
+      }
+    },
+    "placement.queue.position" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$d of %2$d · drag to adjust"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$d di %2$d · trascina per sistemare"
+          }
+        }
+      }
+    },
+    "placement.confirm" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conferma"
+          }
+        }
+      }
+    },
+    "placement.skip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salta"
+          }
+        }
+      }
+    },
+    "placement.done.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Placement complete"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posizionamento completato"
+          }
+        }
+      }
+    },
+    "placement.done.one" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 device placed on the floorplan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 dispositivo posizionato sulla planimetria"
+          }
+        }
+      }
+    },
+    "placement.done.count" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d devices placed on the floorplan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d dispositivi posizionati sulla planimetria"
+          }
+        }
+      }
+    },
+    "placement.done.cta" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to Controls"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vai ai Controlli"
+          }
+        }
+      }
+    },
     "floorplan.filter.panel.title" : {
       "localizations" : {
         "en" : {
@@ -182,13 +342,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Manage floorplan"
+            "value" : "Edit"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gestione planimetria"
+            "value" : "Modifica"
           }
         }
       }

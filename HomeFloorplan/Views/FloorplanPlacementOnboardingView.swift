@@ -23,33 +23,37 @@ struct FloorplanPlacementHeader: View {
             HStack {
                 Spacer(minLength: 44)
 
-                VStack(spacing: 5) {
+                // Una riga sola, non due impilate.
+                //
+                // Titolo sopra e progresso sotto facevano una targa alta il
+                // doppio del banner che le sta sotto, e i due non si leggevano
+                // più come la stessa famiglia. Di fianco occupano la stessa
+                // altezza di una pastiglia della barra.
+                HStack(spacing: 10) {
                     Text(headerTitle)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .lineLimit(1)
 
-                    HStack(spacing: 8) {
-                        // Barra di progresso: fotografia della coda all'avvio
-                        // come denominatore, i posizionamenti di sessione sopra.
-                        GeometryReader { proxy in
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(Color.primary.opacity(0.12))
-                                Capsule()
-                                    .fill(accent)
-                                    .frame(width: proxy.size.width * progressFraction)
-                            }
+                    // Barra di progresso: fotografia della coda all'avvio
+                    // come denominatore, i posizionamenti di sessione sopra.
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.primary.opacity(0.12))
+                            Capsule()
+                                .fill(accent)
+                                .frame(width: proxy.size.width * progressFraction)
                         }
-                        .frame(width: 120, height: 5)
-
-                        Text("\(placedCount)/\(totalCount)")
-                            .font(.caption2.weight(.bold))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
                     }
+                    .frame(width: 88, height: 4)
+
+                    Text("\(placedCount)/\(totalCount)")
+                        .font(.caption2.weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
                 .glassChromeSurface(in: Capsule())
 
                 Spacer(minLength: 12)
