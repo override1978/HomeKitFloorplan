@@ -977,6 +977,7 @@ struct FloorplanEditorView: View {
     private func secondaryControls(in size: CGSize) -> some View {
         FloorplanSecondaryControlsLayer(
             effectiveScale: effectiveScale,
+            bottomInset: chromeLayout(for: size).bottomInset,
             // Manutenzione, non solo Modifica: la card del marker vale anche
             // nel flusso guidato (feedback 28/08 — il tap selezionava ma la
             // card restava dietro questo gate).
@@ -1092,7 +1093,7 @@ struct FloorplanEditorView: View {
                     // isola; in landscape non ci sono e basta il margine.
                     .padding(.bottom, showsCompactPaneAndIsland
                              ? Self.compactIslandClearance + 68
-                             : 28)
+                             : 28 + dayRibbonClearance)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -1429,6 +1430,20 @@ struct FloorplanEditorView: View {
     /// in landscape la mappa si prende tutto): l'orientamento arriva dal
     /// contenitore, quindi il layout si calcola per-contenitore, sempre da
     /// costanti, mai da misure.
+    /// Quanto si prende il nastro in fondo, per chi non deve finirci sotto.
+    ///
+    /// Il nastro attraversa TUTTA la larghezza: non è un ingombro della sola
+    /// colonna mappa, e qualunque cosa galleggi in basso deve sommarlo al
+    /// proprio margine. Non averlo fatto è costato due pastiglie nascoste
+    /// dietro il nastro — lo zoom a destra e lo spegnimento in blocco al
+    /// centro — che è poi lo stesso difetto due volte.
+    private var dayRibbonClearance: CGFloat {
+        guard showsDayRibbon else { return 0 }
+        return isDayRibbonCollapsed
+            ? FloorplanChromeLayout.collapsedDayRibbonInset
+            : FloorplanChromeLayout.dayRibbonInset
+    }
+
     private func chromeLayout(for container: CGSize) -> FloorplanChromeLayout {
         // Su compact i tab vivono nell'isola in basso (stile Dov'è): in alto
         // resta la barra minima, e in basso la planimetria riserva lo spazio

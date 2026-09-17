@@ -8,6 +8,8 @@ struct FloorplanSelectedMarkerToolbarState {
 
 struct FloorplanSecondaryControlsLayer: View {
     let effectiveScale: CGFloat
+    /// Spazio occupato in fondo dal nastro, da non invadere.
+    var bottomInset: CGFloat = 0
     let isEditing: Bool
     let isOverlayPanelVisible: Bool?
     let activeOverlayMode: FloorplanOverlayMode?
@@ -25,6 +27,7 @@ struct FloorplanSecondaryControlsLayer: View {
     var body: some View {
         FloorplanSecondaryControls(
             effectiveScale: effectiveScale,
+            bottomInset: bottomInset,
             isOverlayPanelVisible: isOverlayPanelVisible,
             activeOverlayMode: activeOverlayMode,
             selectedMarkerID: selectedMarkerID,
@@ -82,6 +85,8 @@ struct FloorplanSecondaryControlsLayer: View {
 
 struct FloorplanSecondaryControls: View {
     let effectiveScale: CGFloat
+    /// Spazio occupato in fondo dal nastro, da non invadere.
+    var bottomInset: CGFloat = 0
     let isOverlayPanelVisible: Bool?
     let activeOverlayMode: FloorplanOverlayMode?
     let selectedMarkerID: UUID?
@@ -127,7 +132,19 @@ struct FloorplanSecondaryControls: View {
             HStack(alignment: .bottom) {
                 Spacer()
                 VStack(spacing: 10) {
-                    if effectiveScale > 1.01 {
+                    // La soglia deve accordarsi con ciò che l'etichetta
+                    // SCRIVE, non con ciò che il numero vale.
+                    //
+                    // Era 1.01, ma il formato ha una sola cifra decimale:
+                    // tutto fra 1.011 e 1.049 compariva scrivendo «1.0×»,
+                    // cioè un comando che si offriva di togliere uno zoom
+                    // mentre dichiarava che non ce n'era. Bastava che la
+                    // colonna della mappa cambiasse larghezza — aprendo il
+                    // pannello dei filtri, per dire — perché il fit si
+                    // assestasse su uno di quei valori.
+                    //
+                    // 1.05 è il primo che arrotonda a «1.1×».
+                    if effectiveScale >= 1.05 {
                         GlassTitlePill {
                             HStack(spacing: 8) {
                                 Text(String(format: "%.1f×", effectiveScale))
@@ -153,7 +170,9 @@ struct FloorplanSecondaryControls: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 20)
+            // Il nastro attraversa tutto il fondo: senza il suo ingombro
+            // questa pastiglia gli finisce sotto, come si vedeva.
+            .padding(.bottom, 20 + bottomInset)
         }
     }
 }
