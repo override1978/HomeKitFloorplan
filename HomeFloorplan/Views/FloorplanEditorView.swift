@@ -158,6 +158,26 @@ struct FloorplanEditorView: View {
     /// andarlo a cercare.
     private var isRibbonEligible: Bool {
         !isCompactScreen && !ui.isEditing && placementModel == nil
+            && !ribbonYieldsToPanel
+    }
+
+    /// Il nastro si fa da parte per il pannello contestuale.
+    ///
+    /// Attraversa tutta la larghezza in fondo, quindi non toglie spazio solo
+    /// alla mappa: il pannello riceve lo stesso `bottomInset` e si accorcia di
+    /// 162 punti: su un iPad in orizzontale è un sesto dell'altezza, tolto
+    /// proprio alle pile di card di Ambiente e Sicurezza, che scorrono e per
+    /// cui l'altezza è la risorsa scarsa.
+    ///
+    /// Solo fuori da Controlli, dove il nastro è parte della modalità — segue
+    /// lo stesso filtro categoria delle chip — e non un ospite.
+    ///
+    /// Legato al pannello aperto, non alla sola modalità: chiuso, quello
+    /// spazio non lo vuole nessuno, e toglierlo lo stesso sarebbe rinunciare
+    /// alla giornata senza darla a niente.
+    private var ribbonYieldsToPanel: Bool {
+        guard let overlayVM else { return false }
+        return overlayVM.activeMode != .controls && overlayVM.isPanelVisible
     }
 
     /// Il battito del minuto, creato una volta sola.
