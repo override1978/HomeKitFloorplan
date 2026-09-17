@@ -93,9 +93,7 @@ struct FloorplanTopBarView: View {
                 if !isEditing, !isCompact, let overlayVM {
                     FloorplanModePill(overlayVM: overlayVM,
                                       context: overlayContext,
-                                      status: statusStrip,
-                                      availableWidth: size.width,
-                                      sideChromeWidth: collapsesActions ? 360 : 560)
+                                      status: statusStrip)
                 }
 
                 LiquidGlassContainer(spacing: 12) {

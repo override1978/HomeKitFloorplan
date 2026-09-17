@@ -38,12 +38,6 @@ struct FloorplanModePill: View {
     /// iPhone: font ridotti (11.5/9.5) e segmenti che dividono la larghezza.
     var isCompact: Bool = false
 
-    /// Larghezza della barra in cui questa pill deve convivere con il titolo a
-    /// sinistra e le azioni a destra (solo regular: la pill è centrata in uno
-    /// ZStack e non partecipa al flusso orizzontale).
-    var availableWidth: CGFloat = .infinity
-    var sideChromeWidth: CGFloat = 0
-
     @AppStorage(AppAppearanceSettings.liquidGlassEnabledKey)
     private var isLiquidGlassEnabled = false
     @Environment(\.isLiquidGlassSuppressed) private var isLiquidGlassSuppressed
