@@ -1613,14 +1613,14 @@ struct FloorplanEditorView: View {
                     }
                 }
             )
-        } overMarkerLayer: { _, imageRect in
+        } overMarkerLayer: { container, imageRect in
             if let placementModel, !ui.isEditing {
                 // Il fantasma sta SOPRA i marker già posati: deve restare
                 // trascinabile anche dove i dispositivi si addensano.
                 placementGhostLayer(model: placementModel, imageRect: imageRect)
                     .environment(\.colorScheme, chromeColorScheme)
             } else {
-                expandedRoomChrome(imageRect: imageRect)
+                expandedRoomChrome(imageRect: imageRect, container: container)
             }
         }
     }
@@ -1628,7 +1628,7 @@ struct FloorplanEditorView: View {
     /// Bandierina della stanza espansa: la pastiglia sta sopra il bordo alto
     /// della planimetria, dove nessun marker può arrivare.
     @ViewBuilder
-    private func expandedRoomChrome(imageRect: CGRect) -> some View {
+    private func expandedRoomChrome(imageRect: CGRect, container: CGSize) -> some View {
         if !isCompactScreen, !ui.isEditing,
            let vm = overlayVM, vm.activeMode == .controls,
            let expandedID = vm.expandedRoomID,
@@ -1636,6 +1636,7 @@ struct FloorplanEditorView: View {
             ExpandedRoomCollapsePill(
                 room: room,
                 imageRect: imageRect,
+                containerSize: container,
                 topInset: FloorplanCanvasGeometry.chromeTopInset,
                 onCollapse: { vm.collapseRoom() }
             )

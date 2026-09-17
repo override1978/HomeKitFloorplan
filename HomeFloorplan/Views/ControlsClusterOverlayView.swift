@@ -152,93 +152,153 @@ struct ControlsClusterOverlayView: View {
 // MARK: - ExpandedRoomCollapsePill
 
 /// Bandierina «NomeStanza ✕» della stanza espansa: la pastiglia sta FUORI
-/// dalla planimetria, sopra il bordo alto del disegno, con un'asta che scende
-/// fino alla stanza di cui parla.
+/// dalla planimetria, sul bordo più vicino alla stanza, con un'asta che la
+/// raggiunge.
 ///
-/// Fuori dal disegno, non fuori dalla stanza: in una casa, fuori da una stanza
-/// è dentro un'altra stanza: ancorarla lì avrebbe spostato la sovrapposizione
-/// invece di toglierla. I marker invece vivono tutti dentro la planimetria,
-/// quindi sopra il suo bordo non c'è niente che si possa coprire — ed è una
-/// garanzia, non una probabilità.
+/// Fuori dal DISEGNO, non fuori dalla stanza. In una casa, fuori da una stanza
+/// è dentro un'altra stanza: ancorarla lì sposterebbe la sovrapposizione
+/// invece di toglierla. I marker vivono tutti dentro la planimetria, quindi
+/// oltre il suo bordo non c'è niente che si possa coprire — è una garanzia
+/// geometrica, non una probabilità.
 ///
-/// Prima era ancorata al bordo alto della STANZA, e da lì nessuna posizione
-/// poteva prometterlo.
+/// Il bordo si sceglie, non è sempre l'alto: con l'alto fisso, una stanza in
+/// fondo alla casa si prendeva un'asta che tagliava l'intero disegno. Fra alto,
+/// sinistra e destra vince il più vicino fra quelli che hanno spazio per la
+/// pastiglia.
 ///
-/// Quando la planimetria è aderente alla chrome — poco margine, o zoom — la
-/// bandierina si ferma sotto la fascia alta invece di infilarcisi. In quel
-/// caso può tornare a sovrapporsi, ma alla chrome, che è una superficie
-/// piatta e non qualcosa che devi leggere sotto.
+/// Il basso è escluso: là sotto c'è il nastro della giornata.
 struct ExpandedRoomCollapsePill: View {
     let room: LinkedRoom
     let imageRect: CGRect
+    let containerSize: CGSize
     /// Fascia riservata in alto alla chrome flottante.
     let topInset: CGFloat
     let onCollapse: () -> Void
 
-    /// Altezza della pastiglia: caption + 6 di padding per lato.
-    private let pillHeight: CGFloat = 28
+    /// Misura vera della pastiglia: il nome della stanza cambia da «Bagno» a
+    /// «Soggiorno», e per stare FUORI dal disegno di lato bisogna sapere
+    /// quanto è larga. Finché non è misurata resta invisibile per un
+    /// fotogramma, che è meglio di vederla saltare da un bordo all'altro.
+    @State private var pillSize: CGSize = .zero
+
+    private let gap: CGFloat = 10
+
+    private enum Edge { case top, left, right }
 
     var body: some View {
         ZStack {
-            if stemHeight > 1 {
-                // L'asta: un capello, non una linea. Deve dire «questa
-                // etichetta parla di quella stanza» senza competere con
-                // niente di ciò che attraversa.
-                Rectangle()
-                    .fill(FloorplanTokens.Surface.filterChipActive.opacity(0.55))
-                    .frame(width: 1.5, height: stemHeight)
-                    .position(x: anchorX, y: pillCentreY + pillHeight / 2 + stemHeight / 2)
+            stem
+            pill
+        }
+        .opacity(pillSize == .zero ? 0 : 1)
+        .transition(.opacity)
+    }
+
+    private var pill: some View {
+        Button(action: onCollapse) {
+            HStack(spacing: 6) {
+                Text(room.name)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundStyle(FloorplanTokens.Surface.filterChipActiveText)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            // Opaca, non vetro: la stessa conclusione dei badge stanza di
+            // Ambiente. Una superficie che porta un nome da leggere non ha
+            // ragione di essere traslucida.
+            .background(
+                Capsule()
+                    .fill(FloorplanTokens.Surface.filterChipActive)
+                    .shadow(color: .black.opacity(0.28), radius: 6, y: 2)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: "floorplan.cluster.collapse",
+                                   defaultValue: "Collapse \(room.name)"))
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { pillSize = $0 }
+        .position(pillCentre)
+    }
+
+    /// L'asta: un capello, non una linea. Dice «questa etichetta parla di
+    /// quella stanza» senza competere con ciò che attraversa.
+    @ViewBuilder
+    private var stem: some View {
+        let tint = FloorplanTokens.Surface.filterChipActive.opacity(0.55)
+        switch edge {
+        case .top:
+            let from = pillCentre.y + pillSize.height / 2
+            if roomRect.minY - from > 1 {
+                Rectangle().fill(tint)
+                    .frame(width: 1.5, height: roomRect.minY - from)
+                    .position(x: pillCentre.x, y: (from + roomRect.minY) / 2)
                     .allowsHitTesting(false)
             }
-
-            Button(action: onCollapse) {
-                HStack(spacing: 6) {
-                    Text(room.name)
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundStyle(FloorplanTokens.Surface.filterChipActiveText)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                // Opaca, non vetro: la stessa conclusione dei badge stanza di
-                // Ambiente. Una superficie che porta un nome da leggere non ha
-                // ragione di essere traslucida.
-                .background(
-                    Capsule()
-                        .fill(FloorplanTokens.Surface.filterChipActive)
-                        .shadow(color: .black.opacity(0.28), radius: 6, y: 2)
-                )
-                .contentShape(Capsule())
+        case .left:
+            let from = pillCentre.x + pillSize.width / 2
+            if roomRect.minX - from > 1 {
+                Rectangle().fill(tint)
+                    .frame(width: roomRect.minX - from, height: 1.5)
+                    .position(x: (from + roomRect.minX) / 2, y: pillCentre.y)
+                    .allowsHitTesting(false)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(String(localized: "floorplan.cluster.collapse",
-                                       defaultValue: "Collapse \(room.name)"))
-            .position(x: anchorX, y: pillCentreY)
+        case .right:
+            let to = pillCentre.x - pillSize.width / 2
+            if to - roomRect.maxX > 1 {
+                Rectangle().fill(tint)
+                    .frame(width: to - roomRect.maxX, height: 1.5)
+                    .position(x: (roomRect.maxX + to) / 2, y: pillCentre.y)
+                    .allowsHitTesting(false)
+            }
         }
-        .transition(.opacity)
     }
 
     private var roomRect: CGRect {
         FloorplanCoordinateHelper(imageRect: imageRect).screenRect(from: room.normalizedRect)
     }
 
-    /// Colonna della bandierina: il centro della stanza, trattenuto perché la
-    /// pastiglia non sporga dai lati del disegno.
-    private var anchorX: CGFloat {
-        min(max(roomRect.midX, imageRect.minX + 60), imageRect.maxX - 60)
+    /// Il bordo più vicino alla stanza fra quelli che hanno spazio per la
+    /// pastiglia. L'alto fa anche da ripiego: se non ci sta nemmeno lui, la
+    /// pastiglia si ferma sotto la chrome invece di uscire dallo schermo.
+    private var edge: Edge {
+        var candidates: [(Edge, CGFloat)] = []
+        if imageRect.minY - topInset >= pillSize.height + gap {
+            candidates.append((.top, roomRect.minY - imageRect.minY))
+        }
+        if imageRect.minX >= pillSize.width + gap {
+            candidates.append((.left, roomRect.minX - imageRect.minX))
+        }
+        if containerSize.width - imageRect.maxX >= pillSize.width + gap {
+            candidates.append((.right, imageRect.maxX - roomRect.maxX))
+        }
+        return candidates.min { $0.1 < $1.1 }?.0 ?? .top
     }
 
-    /// Sopra il bordo alto della planimetria — e mai dentro la fascia chrome,
-    /// che è il caso della planimetria aderente in alto.
-    private var pillCentreY: CGFloat {
-        max(imageRect.minY - 18, topInset + pillHeight / 2 + 6)
+    private var pillCentre: CGPoint {
+        switch edge {
+        case .top:
+            return CGPoint(
+                x: min(max(roomRect.midX, imageRect.minX + pillSize.width / 2),
+                       imageRect.maxX - pillSize.width / 2),
+                y: max(imageRect.minY - gap - pillSize.height / 2,
+                       topInset + pillSize.height / 2 + 6))
+        case .left:
+            return CGPoint(x: imageRect.minX - gap - pillSize.width / 2,
+                           y: clampedRoomMidY)
+        case .right:
+            return CGPoint(x: imageRect.maxX + gap + pillSize.width / 2,
+                           y: clampedRoomMidY)
+        }
     }
 
-    /// Dal fondo della pastiglia al bordo alto della stanza.
-    private var stemHeight: CGFloat {
-        roomRect.minY - (pillCentreY + pillHeight / 2)
+    /// Di lato la pastiglia segue la stanza in verticale, ma non oltre i bordi
+    /// del disegno: per una stanza d'angolo finirebbe fuori dallo schermo.
+    private var clampedRoomMidY: CGFloat {
+        min(max(roomRect.midY, imageRect.minY + pillSize.height / 2),
+            imageRect.maxY - pillSize.height / 2)
     }
 }
 
