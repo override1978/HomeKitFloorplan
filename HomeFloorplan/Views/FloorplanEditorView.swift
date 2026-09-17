@@ -90,18 +90,7 @@ struct FloorplanEditorView: View {
     /// Last known security mode raw value — used to detect mode changes.
     @State private var lastKnownSecurityModeRaw: Int = -1
 
-    /// Adapter del sistema di sicurezza corrente, ricalcolato solo quando gli
-    /// accessori cambiano. Il `currentMode` resta live (letto dalla caratteristica
-    /// HomeKit), quindi cachare il riferimento evita di riscansionare l'intera
-    /// casa e ricostruire adapter ad ogni valutazione del `body`.
-    @State private var cachedSecurityAdapter: SecuritySystemAdapter?
 
-    /// Mappa accessorio → adapter condivisa dai marker, ricalcolata solo sugli
-    /// stessi eventi discreti di `cachedSecurityAdapter` (appear, HomeKit pronto,
-    /// cambio elenco accessori). Gli adapter sono @Observable e leggono lo stato
-    /// live dalle caratteristiche, quindi cachare i riferimenti è sicuro; prima
-    /// venivano ricostruiti per ogni marker a ogni valutazione del `body`.
-    @State private var cachedAdapterMap: [UUID: any AccessoryAdapter] = [:]
 
     /// Cache memoizzante degli offset anti-collisione dei marker (O(n²) nel
     /// resolver). Classe tenuta in @State: la mutazione interna non re-invalida
@@ -126,6 +115,9 @@ struct FloorplanEditorView: View {
     /// Stato, calcolo e navigazione della giornata vivono in un modello a
     /// parte: qui resta solo il collegamento alla vista.
     @State private var dayModel = FloorplanDayModel()
+
+    /// Le tre derivate costose, con una sola invalidazione.
+    @State private var caches = FloorplanRuntimeCaches()
 
     @AppStorage("floorplan.dayRibbon.isCollapsed")
     private var isDayRibbonCollapsed = false
@@ -198,10 +190,6 @@ struct FloorplanEditorView: View {
     )
     private var activeStripInsights: [PersistedHomeInsight]
 
-    /// Salute casa (media pesata per stanza): costa una scansione con adapter
-    /// per accessorio, quindi si ricalcola solo sugli stessi eventi discreti
-    /// degli altri cache (appear, HomeKit pronto, accessori, reachability).
-    @State private var cachedHealthScore: Int?
 
     /// Segnala a ContentView che l'editor è aperto su iPhone: il FAB Home AI
     /// finiva in mezzo all'isola dei tab (feedback 26/08) e lì non deve stare.
@@ -1003,16 +991,14 @@ struct FloorplanEditorView: View {
     /// Il valore è aggiornato da `refreshAdapterCaches()` sui cambi di accessori;
     /// non riscansiona la casa ad ogni render.
     private func findSecurityAdapter() -> SecuritySystemAdapter? {
-        cachedSecurityAdapter
+        caches.securityAdapter
     }
 
     /// Ricalcola gli adapter cache-ati (sicurezza + mappa marker) e la salute
     /// casa. Chiamato solo su eventi discreti (appear, HomeKit pronto, cambio
     /// elenco accessori, reachability), mai per-frame.
     private func refreshAdapterCaches() {
-        cachedSecurityAdapter = runtimeContextController.securityAdapter()
-        cachedAdapterMap = AccessoryAdapterFactory.adapterMap(homeKit: homeKit)
-        cachedHealthScore = FloorplanStatusStripBuilder.weightedHealthScore(homeKit: homeKit)
+        caches.refresh(homeKit: homeKit) { runtimeContextController.securityAdapter() }
     }
 
     /// Stato corrente dei quattro segnali della barra. I pezzi reattivi
@@ -1026,7 +1012,7 @@ struct FloorplanEditorView: View {
             adapterMap: currentAdapterMap()
         )
 
-        if let score = cachedHealthScore {
+        if let score = caches.healthScore {
             state.healthScore = score
             state.healthLabel = AccessoryHealthLevel.from(score: score).label
         }
@@ -1067,10 +1053,7 @@ struct FloorplanEditorView: View {
     /// primissima valutazione del `body` (che precede `onAppear`): evita un
     /// frame iniziale con marker senza adapter.
     private func currentAdapterMap() -> [UUID: any AccessoryAdapter] {
-        if cachedAdapterMap.isEmpty {
-            return AccessoryAdapterFactory.adapterMap(homeKit: homeKit)
-        }
-        return cachedAdapterMap
+        return caches.adapters(homeKit: homeKit)
     }
 
     private func openSidebar() {
