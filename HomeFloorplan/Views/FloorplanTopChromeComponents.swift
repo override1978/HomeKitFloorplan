@@ -686,7 +686,17 @@ struct FloorplanTopRightActions: View {
                         Button(action: onToggleEditing) {
                             HStack(spacing: 6) {
                                 Image(systemName: "slider.horizontal.3")
-                                Text(String(localized: "floorplan.manage", defaultValue: "Edit"))
+                                // Col conteggio quando c'è da posizionare: il
+                                // numero è l'unica cosa che dice, da fuori,
+                                // che c'è del lavoro da fare là dentro.
+                                // Toglierlo aveva reso la barra uniforme al
+                                // prezzo di nascondere quarantuno dispositivi
+                                // fuori dalla mappa.
+                                Text(unplacedCount > 0
+                                     ? String(format: String(localized: "floorplan.manage.count",
+                                                             defaultValue: "Edit (%d)"),
+                                              unplacedCount)
+                                     : String(localized: "floorplan.manage", defaultValue: "Edit"))
                             }
                             .font(.subheadline)
                             .fontWeight(.medium)

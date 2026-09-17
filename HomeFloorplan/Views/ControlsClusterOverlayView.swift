@@ -171,11 +171,18 @@ struct ExpandedRoomCollapsePill: View {
             .foregroundStyle(FloorplanTokens.Surface.filterChipActiveText)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .glassChromeSurface(
-                in: Capsule(),
-                tint: FloorplanTokens.Surface.filterChipActive.opacity(0.75),
-                legacyFill: AnyShapeStyle(FloorplanTokens.Surface.filterChipActive),
-                legacyShadow: GlassChromeShadow(color: .black.opacity(0.18), radius: 5, y: 1)
+            // Opaca, senza vetro — la stessa conclusione a cui sono arrivati i
+            // badge stanza di Ambiente, e per la stessa ragione.
+            //
+            // Era vetro tinto al 75%: traslucido, cioè lasciava passare quello
+            // che aveva sotto. E sotto ha sempre qualcosa, perché sta ancorata
+            // al bordo alto della stanza e i marker si addensano lì. Il nome
+            // perdeva contrasto proprio quando c'era più roba dietro, che è
+            // esattamente quando serve leggerlo.
+            .background(
+                Capsule()
+                    .fill(FloorplanTokens.Surface.filterChipActive)
+                    .shadow(color: .black.opacity(0.28), radius: 6, y: 2)
             )
             .contentShape(Capsule())
         }
@@ -187,12 +194,26 @@ struct ExpandedRoomCollapsePill: View {
         .transition(.opacity)
     }
 
-    /// Ancora: centro del BORDO alto della stanza, leggermente sopra il
-    /// perimetro — fuori dalla zona dove i marker si dispongono.
+    /// Ancora: centro del bordo alto della stanza, sopra il perimetro.
+    ///
+    /// Erano due punti, e `position` fissa il CENTRO: con la pillola alta una
+    /// ventina, metà di essa ricadeva dentro la stanza, dove stanno i marker.
+    ///
+    /// A sedici ci sta interamente sopra — il suo bordo inferiore resta qualche
+    /// punto più in alto di `minY` — quindi non può più coprire un marker della
+    /// propria stanza, che dentro quel rettangolo ci vive per definizione.
+    /// Restano possibili le sovrapposizioni con la stanza SOPRA, o con marker
+    /// trascinati fuori dai propri confini: quelle richiederebbero di conoscere
+    /// le posizioni dei marker, che qui non arrivano.
+    ///
+    /// Il `max` la trattiene dentro l'immagine: per una stanza sul bordo
+    /// superiore della planimetria, sedici punti più su vorrebbe dire fuori
+    /// dal disegno.
     private var anchorPosition: CGPoint {
         let rect = FloorplanCoordinateHelper(imageRect: imageRect)
             .screenRect(from: room.normalizedRect)
-        return CGPoint(x: rect.midX, y: rect.minY - 2)
+        return CGPoint(x: rect.midX,
+                       y: max(rect.minY - 16, imageRect.minY + 12))
     }
 }
 
