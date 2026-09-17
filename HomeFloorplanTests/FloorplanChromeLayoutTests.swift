@@ -128,4 +128,40 @@ struct FloorplanDayRibbonInsetTests {
         #expect(with.maxY <= container.height - FloorplanChromeLayout.dayRibbonInset + 0.5,
                 "il disegno deve finire sopra la card, non sotto")
     }
+
+    @Test("Aprire una colonna laterale rimpicciolisce il disegno senza spostarlo")
+    func sideColumnDoesNotMoveTheDrawingVertically() {
+        // Planimetria larga e bassa come quella vera: è il caso in cui la
+        // colonna fa passare l'inscrizione da vincolata in altezza a vincolata
+        // in larghezza, ed è lì che nasceva la discesa.
+        let image = CGSize(width: 1240, height: 700)
+        let full = CGSize(width: 1000, height: 700)
+        let narrowed = CGSize(width: full.width - 340, height: full.height)
+
+        let wide = FloorplanCanvasGeometry.imageRect(imageSize: image, container: full)
+        let naive = FloorplanCanvasGeometry.imageRect(imageSize: image, container: narrowed)
+        let anchored = FloorplanCanvasGeometry.imageRect(imageSize: image,
+                                                        container: narrowed,
+                                                        verticalReferenceWidth: full.width)
+
+        #expect(naive.minY > wide.minY + 1,
+                "senza riferimento il disegno scende: è il difetto che questo test sorveglia")
+        #expect(abs(anchored.minY - wide.minY) < 0.5,
+                "col riferimento alla larghezza piena la verticale non si muove")
+        #expect(anchored.width < wide.width,
+                "rimpicciolire va bene: è spostarsi che non va")
+        #expect(abs(anchored.width / anchored.height - image.width / image.height) < 0.01,
+                "le proporzioni restano quelle del disegno")
+    }
+
+    @Test("Senza riferimento la geometria è identica a prima")
+    func referenceWidthDefaultsToNoChange() {
+        let image = CGSize(width: 1240, height: 700)
+        let container = CGSize(width: 900, height: 700)
+        let implicit = FloorplanCanvasGeometry.imageRect(imageSize: image, container: container)
+        let explicit = FloorplanCanvasGeometry.imageRect(imageSize: image,
+                                                        container: container,
+                                                        verticalReferenceWidth: container.width)
+        #expect(implicit == explicit)
+    }
 }

@@ -289,23 +289,46 @@ enum FloorplanCanvasGeometry {
     /// divergere. È la differenza con `topBarHeight`, che viveva sommato in un
     /// punto e sottratto in un altro. Passare `topInset: 0` isola l'inscrizione
     /// pura, che è come i test la verificano.
+    /// - Parameter verticalReferenceWidth: larghezza su cui calcolare la
+    ///   posizione VERTICALE, quando è diversa da quella disponibile.
+    ///
+    ///   Serve a una cosa sola: impedire che aprire una colonna laterale
+    ///   sposti la planimetria in su o in giù. Il disegno è inscritto per
+    ///   adattamento e centrato: restringendo il contenitore di 340 punti
+    ///   passa da vincolato in altezza a vincolato in larghezza, rimpicciolisce,
+    ///   e metà dello spazio che avanza gli finisce SOPRA — una sessantina di
+    ///   punti di discesa che non c'entrano niente con quello che l'utente ha
+    ///   chiesto, cioè vedere un pannello.
+    ///
+    ///   Passando qui la larghezza che il vano avrebbe senza la colonna, la
+    ///   verticale resta quella di prima e il disegno si limita a rimpicciolire
+    ///   restando dov'è. Ancorarlo in alto avrebbe risolto lo stesso caso ma
+    ///   rotto quello opposto: su un iPad in verticale il disegno resterebbe
+    ///   incollato sotto la chrome con quattrocento punti di vuoto sotto.
     static func imageRect(imageSize: CGSize,
                           container: CGSize,
                           topInset: CGFloat = chromeTopInset,
-                          bottomInset: CGFloat = 0) -> CGRect {
+                          bottomInset: CGFloat = 0,
+                          verticalReferenceWidth: CGFloat? = nil) -> CGRect {
         let available = CGSize(width: container.width,
                                height: max(container.height - topInset - bottomInset, 1))
         let imageAspect = imageSize.width / imageSize.height
-        let containerAspect = available.width / available.height
-        var size = available
-        if imageAspect > containerAspect {
-            size.height = available.width / imageAspect
-        } else {
-            size.width = available.height * imageAspect
+
+        func fitted(in width: CGFloat) -> CGSize {
+            var size = CGSize(width: width, height: available.height)
+            if imageAspect > width / available.height {
+                size.height = width / imageAspect
+            } else {
+                size.width = available.height * imageAspect
+            }
+            return size
         }
+
+        let size = fitted(in: available.width)
+        let verticalSize = fitted(in: verticalReferenceWidth ?? available.width)
         let origin = CGPoint(
             x: (available.width - size.width) / 2,
-            y: topInset + (available.height - size.height) / 2
+            y: topInset + (available.height - verticalSize.height) / 2
         )
         return CGRect(origin: origin, size: size)
     }

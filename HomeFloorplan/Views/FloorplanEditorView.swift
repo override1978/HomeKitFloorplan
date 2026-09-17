@@ -1516,8 +1516,21 @@ struct FloorplanEditorView: View {
             imageSize: imageSize,
             container: container,
             topInset: chrome.topInset,
-            bottomInset: chrome.bottomInset
+            bottomInset: chrome.bottomInset,
+            verticalReferenceWidth: container.width + sideColumnWidth
         )
+    }
+
+    /// Larghezza che una colonna laterale sta togliendo alla mappa, se aperta.
+    ///
+    /// La verticale della planimetria si calcola come se non ci fosse: aprire
+    /// un pannello la fa rimpicciolire, e va bene, ma non deve farla salire o
+    /// scendere. Pannello contestuale e Scene si escludono a vicenda e sono
+    /// larghi uguale, quindi il conto è uno solo.
+    private var sideColumnWidth: CGFloat {
+        guard !isCompactScreen else { return 0 }
+        let hasColumn = isDockedPanelVisible || (ui.showScenesPanel && placementModel == nil)
+        return hasColumn ? FloorplanDockedContextPanel.width : 0
     }
     
     /// Su iPhone in verticale la planimetria si riduce a una fascia larga ~354
