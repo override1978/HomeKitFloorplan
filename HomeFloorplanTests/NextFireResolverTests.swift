@@ -327,3 +327,105 @@ struct NextFireOccurrencesTests {
         #expect(fires == [date(12, 8)], "senza passo resta il solo primo scatto")
     }
 }
+
+// MARK: - Giorni della settimana
+
+/// Il baco che questa suite difende: il nastro della giornata mostrava le
+/// automazioni a ora fissa **in tutti i giorni**, perché chi le risolveva
+/// leggeva solo l'ora dell'evento e non `HMEventTrigger.recurrences`, dove
+/// HomeKit tiene la restrizione settimanale. Un'automazione del lunedì
+/// compariva anche di giovedì.
+@Suite("NextFireResolver — i giorni in cui una pianificazione vale")
+struct NextFireResolverWeekdayTests {
+
+    private var cal: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "Europe/Rome")!
+        return c
+    }
+
+    /// Settembre 2026: il 14 è lunedì, il 15 martedì, il 19 sabato, il 20 domenica.
+    private func date(_ d: Int, _ h: Int, _ m: Int = 0) -> Date {
+        cal.date(from: DateComponents(year: 2026, month: 9, day: d, hour: h, minute: m))!
+    }
+
+    private func day(_ d: Int) -> DateInterval {
+        DateInterval(start: date(d, 0), end: date(d + 1, 0))
+    }
+
+    private let sevenThirty = DateComponents(hour: 7, minute: 30)
+    private let monday = 2   // numerazione di Calendar: 1 = domenica
+
+    @Test("La settimana di riferimento è quella che credo")
+    func fixtureIsSane() {
+        #expect(cal.component(.weekday, from: date(14, 12)) == monday)
+        #expect(cal.component(.weekday, from: date(15, 12)) == 3)
+    }
+
+    @Test("Un'automazione del lunedì compare di lunedì")
+    func firesOnItsDay() {
+        let plan = NextFireResolver.Plan(schedule: .dailyTime(sevenThirty), weekdays: [monday])
+        #expect(NextFireResolver.occurrences(for: plan, in: day(14), calendar: cal)
+                == [date(14, 7, 30)])
+    }
+
+    @Test("⚠️ E NON compare di martedì — è il baco che si sta correggendo")
+    func doesNotFireOnOtherDays() {
+        let plan = NextFireResolver.Plan(schedule: .dailyTime(sevenThirty), weekdays: [monday])
+        #expect(NextFireResolver.occurrences(for: plan, in: day(15), calendar: cal).isEmpty)
+
+        // Senza la restrizione lo stesso orario di martedì c'è: la differenza
+        // è tutta nei giorni, non nell'ora né nella finestra.
+        let everyDay = NextFireResolver.Plan(schedule: .dailyTime(sevenThirty))
+        #expect(NextFireResolver.occurrences(for: everyDay, in: day(15), calendar: cal)
+                == [date(15, 7, 30)])
+    }
+
+    @Test("Il prossimo scatto salta ai giorni giusti invece di dire «mai»")
+    func nextSkipsToTheRightDay() {
+        let plan = NextFireResolver.Plan(schedule: .dailyTime(sevenThirty), weekdays: [monday])
+        let next = NextFireResolver.next(for: plan, after: date(15, 9), calendar: cal)
+        #expect(next == date(21, 7, 30), "da martedì mattina, il lunedì dopo")
+    }
+
+    @Test("Più giorni insieme: solo il fine settimana")
+    func weekendOnly() {
+        let plan = NextFireResolver.Plan(schedule: .dailyTime(sevenThirty), weekdays: [1, 7])
+        #expect(!NextFireResolver.occurrences(for: plan, in: day(19), calendar: cal).isEmpty)
+        #expect(!NextFireResolver.occurrences(for: plan, in: day(20), calendar: cal).isEmpty)
+        #expect(NextFireResolver.occurrences(for: plan, in: day(18), calendar: cal).isEmpty)
+    }
+
+    @Test("Anche un evento solare rispetta i giorni")
+    func solarRespectsWeekdays() {
+        let solar = NextFireResolver.SolarTimes(todaySunset: date(15, 19, 40))
+        let plan = NextFireResolver.Plan(schedule: .solar(.sunset, offset: 0), weekdays: [monday])
+        #expect(NextFireResolver.occurrences(for: plan, in: day(15), solar: solar, calendar: cal).isEmpty)
+
+        let everyDay = NextFireResolver.Plan(schedule: .solar(.sunset, offset: 0))
+        #expect(NextFireResolver.occurrences(for: everyDay, in: day(15), solar: solar, calendar: cal)
+                == [date(15, 19, 40)])
+    }
+
+    @Test("Senza restrizione un piano si comporta esattamente come la sua pianificazione")
+    func planWithoutWeekdaysMatchesBareSchedule() {
+        let schedule = NextFireResolver.Schedule.dailyTime(sevenThirty)
+        for d in 14...20 {
+            #expect(NextFireResolver.occurrences(for: NextFireResolver.Plan(schedule: schedule),
+                                                 in: day(d), calendar: cal)
+                    == NextFireResolver.occurrences(for: schedule, in: day(d), calendar: cal))
+        }
+    }
+
+    @Test("«Tutti e sette i giorni» e «nessuna restrizione» sono la stessa cosa")
+    func sevenDaysMeansNoRestriction() {
+        #expect(NextFireResolver.activeWeekdays(from: nil) == nil)
+        #expect(NextFireResolver.activeWeekdays(from: []) == nil)
+        #expect(NextFireResolver.activeWeekdays(from: (1...7).map { DateComponents(weekday: $0) }) == nil)
+        #expect(NextFireResolver.activeWeekdays(from: [DateComponents(weekday: 2),
+                                                       DateComponents(weekday: 6)]) == [2, 6])
+        // Un componente senza `weekday` non è un giorno: va ignorato, non
+        // trasformato in una restrizione vuota che spegnerebbe l'automazione.
+        #expect(NextFireResolver.activeWeekdays(from: [DateComponents(hour: 7)]) == nil)
+    }
+}

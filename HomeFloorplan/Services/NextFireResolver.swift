@@ -40,6 +40,33 @@ enum NextFireResolver {
         case dailyTime(DateComponents)
     }
 
+    /// Una pianificazione **con i giorni in cui vale**.
+    ///
+    /// Nasce da un baco vero: `Schedule` diceva *a che ora*, e nessuno diceva
+    /// *in quali giorni*. HomeKit tiene la restrizione settimanale in
+    /// `HMEventTrigger.recurrences`, separata dall'evento, e leggendo solo
+    /// l'ora un'automazione del lunedi' compariva sul nastro tutti i giorni.
+    ///
+    /// Le due cose stanno insieme in un tipo solo proprio perche' separarle e'
+    /// stato l'errore: chi risolve una pianificazione non deve poter
+    /// dimenticare i giorni.
+    struct Plan: Equatable, Sendable {
+        var schedule: Schedule
+        /// Giorni attivi, nella numerazione di `Calendar` (1 = domenica).
+        /// `nil` significa tutti i giorni, non nessuno.
+        var weekdays: Set<Int>?
+
+        init(schedule: Schedule, weekdays: Set<Int>? = nil) {
+            self.schedule = schedule
+            self.weekdays = (weekdays?.isEmpty ?? true) ? nil : weekdays
+        }
+
+        func isActive(on date: Date, calendar: Calendar) -> Bool {
+            guard let weekdays else { return true }
+            return weekdays.contains(calendar.component(.weekday, from: date))
+        }
+    }
+
     /// Gli istanti solari noti. `nil` dove non li sappiamo.
     ///
     /// Si passano invece di calcolarli qui perché il sole è un fatto del posto
@@ -140,6 +167,39 @@ enum NextFireResolver {
             }
             return out
         }
+    }
+
+    /// Il prossimo scatto di una pianificazione, rispettandone i giorni.
+    ///
+    /// Si avanza di giorno in giorno perche' la restrizione settimanale non si
+    /// puo' applicare al solo primo risultato: un'automazione del lunedi'
+    /// chiesta di martedi' non ha «nessun prossimo scatto», ne ha uno fra sei
+    /// giorni.
+    static func next(for plan: Plan,
+                     after now: Date,
+                     solar: SolarTimes = SolarTimes(),
+                     calendar: Calendar = .current) -> Date? {
+        guard plan.weekdays != nil else {
+            return next(for: plan.schedule, after: now, solar: solar, calendar: calendar)
+        }
+
+        var cursor = now
+        for _ in 0..<8 {
+            guard let candidate = next(for: plan.schedule, after: cursor,
+                                       solar: solar, calendar: calendar) else { return nil }
+            if plan.isActive(on: candidate, calendar: calendar) { return candidate }
+            cursor = candidate
+        }
+        return nil
+    }
+
+    /// Gli scatti dentro un intervallo, rispettandone i giorni.
+    static func occurrences(for plan: Plan,
+                            in interval: DateInterval,
+                            solar: SolarTimes = SolarTimes(),
+                            calendar: Calendar = .current) -> [Date] {
+        occurrences(for: plan.schedule, in: interval, solar: solar, calendar: calendar)
+            .filter { plan.isActive(on: $0, calendar: calendar) }
     }
 
     /// Tetto di scatti restituiti per finestra.
@@ -244,21 +304,48 @@ extension NextFireResolver {
     /// automazioni esistono ma non hanno un momento: dipendono da qualcuno che
     /// rientra o da un valore che cambia.
     static func schedule(for trigger: HMTrigger) -> Schedule? {
+        plan(for: trigger)?.schedule
+    }
+
+    /// Riduce un trigger HomeKit a una pianificazione **con i suoi giorni**.
+    ///
+    /// I giorni arrivano da `recurrences`, che HomeKit tiene sul trigger e non
+    /// sull'evento: e' un elenco di `DateComponents` con il solo `weekday`, ed
+    /// e' la stessa forma che l'app scrive quando crea un'automazione a giorni.
+    /// Vuoto o assente vuol dire tutti i giorni.
+    static func plan(for trigger: HMTrigger) -> Plan? {
         if let timer = trigger as? HMTimerTrigger {
-            return .timer(first: timer.fireDate, recurrence: timer.recurrence)
+            // I timer non hanno `recurrences`: la cadenza sta tutta in
+            // `recurrence`, e l'aritmetica del calendario la rispetta gia'.
+            return Plan(schedule: .timer(first: timer.fireDate, recurrence: timer.recurrence))
         }
         guard let eventTrigger = trigger as? HMEventTrigger else { return nil }
+
+        let weekdays = activeWeekdays(from: eventTrigger.recurrences)
 
         for event in eventTrigger.events {
             if let solarEvent = event as? HMSignificantTimeEvent {
                 let kind: SolarEvent = (solarEvent.significantEvent == .sunset) ? .sunset : .sunrise
-                return .solar(kind, offset: seconds(from: solarEvent.offset))
+                return Plan(schedule: .solar(kind, offset: seconds(from: solarEvent.offset)),
+                            weekdays: weekdays)
             }
             if let calendarEvent = event as? HMCalendarEvent {
-                return .dailyTime(calendarEvent.fireDateComponents)
+                return Plan(schedule: .dailyTime(calendarEvent.fireDateComponents),
+                            weekdays: weekdays)
             }
         }
         return nil
+    }
+
+    /// I giorni attivi estratti dalle ricorrenze HomeKit.
+    ///
+    /// `nil` quando non c'e' restrizione: nessuna ricorrenza, oppure tutti e
+    /// sette i giorni — che vuol dire la stessa cosa e conviene ridurre allo
+    /// stesso valore, cosi' a valle non esistono due modi di dire «sempre».
+    static func activeWeekdays(from recurrences: [DateComponents]?) -> Set<Int>? {
+        guard let recurrences, !recurrences.isEmpty else { return nil }
+        let days = Set(recurrences.compactMap(\.weekday).filter { (1...7).contains($0) })
+        return (days.isEmpty || days.count == 7) ? nil : days
     }
 
     /// Converte lo scarto di un evento solare in secondi.

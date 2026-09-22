@@ -816,8 +816,8 @@ final class HomeKitAutomationsService {
                   calendar: Calendar = .current) -> [ScheduledFire] {
         automations.compactMap { item -> ScheduledFire? in
             guard item.isEnabled,
-                  let schedule = NextFireResolver.schedule(for: item.trigger),
-                  let fire = NextFireResolver.next(for: schedule,
+                  let plan = NextFireResolver.plan(for: item.trigger),
+                  let fire = NextFireResolver.next(for: plan,
                                                    after: now,
                                                    solar: solar,
                                                    calendar: calendar),
@@ -969,7 +969,7 @@ final class HomeKitAutomationsService {
                calendar: Calendar = .current) -> [ScheduledFire] {
         return automations.flatMap { item -> [ScheduledFire] in
             guard item.isEnabled,
-                  let schedule = NextFireResolver.schedule(for: item.trigger)
+                  let plan = NextFireResolver.plan(for: item.trigger)
             else { return [] }
 
             let scenes = item.trigger.actionSets.map { SceneItem(actionSet: $0) }
@@ -988,7 +988,7 @@ final class HomeKitAutomationsService {
                 return parts
             }
 
-            return NextFireResolver.occurrences(for: schedule, in: day,
+            return NextFireResolver.occurrences(for: plan, in: day,
                                                 solar: solar, calendar: calendar)
                 .map { fire in
                     ScheduledFire(
