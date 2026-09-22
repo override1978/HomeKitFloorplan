@@ -38,6 +38,8 @@ struct FloorplanScene {
             case wallGlow
             /// L'ombra di contatto alla base di un muro.
             case wallContact
+            /// L'ombra nello spigolo dove due muri di una stanza si incontrano.
+            case wallCorner
             /// L'ombra che un arredo lascia sul pavimento.
             case groundContact
             /// La tapparella calata davanti a un vano.

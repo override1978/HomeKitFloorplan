@@ -36,17 +36,11 @@ enum RealityFloorplanRenderer {
         var roomNames: [UUID: String] = [:]
         var roomFloorKinds: [UUID: FloorKind] = [:]
 
-        // Un piano sotto la casa. Un'ombra vera ha bisogno di qualcosa su cui
-        // cadere, e lo sfondo è un colore, non geometria: senza questo la casa
-        // proietterebbe l'ombra nel vuoto e resterebbe a galleggiare.
-        // Il basamento e' nella scena stessa (ruolo `baseSlab`): l'impronta
-        // vera della casa estrusa in giu' dall'estrusore. Il box rettangolare
-        // provato prima lasciava un vassoio vuoto davanti alle piante a L.
-        let groundSize = max(scene.bounds.radius, 1) * 12
+        // RIPRISTINATO il piano infinito esterno, ma questa volta avrà la texture a "piastrelloni".
+        // La casa tornerà ad appoggiarsi a terra e le ombre potranno finalmente cadere sul pavimento.
+        let groundSize = max(scene.bounds.radius, 1) * 16 // Reso ancora più grande
         let ground = ModelEntity(mesh: .generatePlane(width: groundSize, depth: groundSize),
-                                 materials: [FloorplanMaterialCatalog.groundMaterial(background: background)])
-        // Il coordinatore lo ritrova per nome quando il cielo cambia: di
-        // notte il terreno scurisce col cielo, o l'orizzonte stona.
+                                 materials: [FloorplanMaterialCatalog.groundMaterial(background: background, groundSizeInMeters: groundSize)])
         ground.name = "stage-ground"
         ground.position = SIMD3(0, scene.bounds.min.y - center.y - 0.02, 0)
         root.addChild(ground)
@@ -149,7 +143,7 @@ enum RealityFloorplanRenderer {
 
             let model = ModelEntity(mesh: mesh, materials: [FloorplanMaterialCatalog.material(for: role)])
             if role == .wall || role == .wallTop { ghostableWalls.append(model) }
-            if role == .wallContact { wallShades.append(model) }
+            if role == .wallContact || role == .wallCorner { wallShades.append(model) }
             root.addChild(model)
         }
 
@@ -992,6 +986,18 @@ enum RealityFloorplanRenderer {
             return points.map {
                 SIMD2(0.5, max(0, min(1, ($0.y - floorY) / Float(FloorplanExtruder.contactHeight))))
             }
+        case .wallCorner:
+            // ⚠️ Le UV **seguono l'ordine dei vertici**, come per la macchia
+            // sotto un mobile, e per lo stesso motivo: qui la sfumatura corre in
+            // orizzontale, e l'estrusore e' l'unico a sapere quale dei due capi
+            // e' lo spigolo. Dedurlo dalle coordinate del mondo vorrebbe dire
+            // rifare qui il conto degli incroci.
+            //
+            // La texture e' quella della fascia a terra, letta di traverso: una
+            // sfumatura e' monodimensionale, e la stessa curva che spegne il
+            // buio salendo lo spegne allontanandosi. `v = 0` e' il capo pieno.
+            guard points.count == 4 else { return points.map { SIMD2($0.x, $0.y) } }
+            return [SIMD2(0.5, 0), SIMD2(0.5, 1), SIMD2(0.5, 1), SIMD2(0.5, 0)]
         case .shutter:
             // Il passo delle stecche sta **in metri**, non in frazione di
             // finestra: sette centimetri sono sette centimetri sia sul bagno
@@ -1187,6 +1193,7 @@ extension FloorplanScene.MeshFace.MaterialRole {
         .shutter,
         .wall,
         .wallContact,
+        .wallCorner,
         .wallGlow,
         .balconyTop,
         .wallTop,

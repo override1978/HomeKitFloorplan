@@ -1199,9 +1199,11 @@ struct RealityFloorplanView: UIViewRepresentable {
             let phase = currentSkyPhase
             skyPhase = phase
             skyDome?.model?.materials = [FloorplanMaterialCatalog.skyBackdropMaterial(phase: phase)]
-            if let ground = contentRoot.findEntity(named: "stage-ground") as? ModelEntity {
+            if let ground = anchor.findEntity(named: "stage-ground") as? ModelEntity {
+                let groundSize = max(scene.bounds.radius, 1) * 16
                 ground.model?.materials = [FloorplanMaterialCatalog.stageGroundMaterial(phase: phase,
-                                                                                       background: background)]
+                                                                                       background: background,
+                                                                                       groundSizeInMeters: groundSize)]
             }
             if let glow = skyGlow,
                let material = FloorplanMaterialCatalog.horizonGlowMaterial(phase: phase) {
@@ -1270,7 +1272,11 @@ struct RealityFloorplanView: UIViewRepresentable {
             // — anche la luna le fa, e senza il volume si appiattisce.
             let isDay = sun.isAboveHorizon
 
-            keyLight.light.intensity = isDay ? 3_000 : 760
+            // REPORT UTENTE: Il modello sembra "tutto molto piatto".
+            // Aumentiamo il contrasto complessivo abbassando leggermente la fillLight
+            // e incrementando la keyLight per far staccare meglio le facciate illuminate
+            // da quelle in ombra, enfatizzando il volume 3D.
+            keyLight.light.intensity = isDay ? 3_800 : 850
             keyLight.light.color = isDay
                 ? sunColour(atElevation: sun.elevationDegrees)
                 : UIColor(red: 0.66, green: 0.76, blue: 1.0, alpha: 1)
@@ -1293,9 +1299,9 @@ struct RealityFloorplanView: UIViewRepresentable {
             // crepuscoli ancora di piu': la tinta deve vincere l'ambiente
             // bianco, o i muri restano pallidi.
             fillLight.light.intensity = switch currentSkyPhase {
-            case .day: 560
+            case .day: 420 // Abbassata da 560 per aumentare il contrasto con la keyLight (ridurre piattezza)
             case .dawn, .dusk: 900   // dormiente: le fasi non vengono prodotte
-            case .night: 110
+            case .night: 90  // Abbassata da 110
             }
             // Il fill dipinge le facciate in ombra — cioe' quasi tutta la
             // casa vista dalla dashboard. E' QUI che alba, tramonto e luna

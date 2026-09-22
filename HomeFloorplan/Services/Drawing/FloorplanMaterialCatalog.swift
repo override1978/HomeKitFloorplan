@@ -57,6 +57,22 @@ enum FloorplanMaterialCatalog {
             return UnlitMaterial(color: .clear)
         case .wallContact:
             return contactMaterial(texture: contactFalloffTexture, opacity: 0.30)
+        case .wallCorner:
+            // Piu' leggera della fascia a terra, perche' agli angoli le velature
+            // sono **due** — una per parete — e si sommano proprio dove si
+            // toccano. Ma non troppo: la casa la si guarda da lontano, dalla
+            // dashboard, e li' una parete e' alta ottanta pixel. Il numero
+            // fisicamente giusto sparisce a quella distanza, che e' la sola che
+            // conta — vale la stessa ragione per cui la fascia a terra sale
+            // trentaquattro centimetri e non cinque.
+            // ⚠️ TEMPORANEO — valore di diagnosi, non di gusto. Serve a
+            // separare «non si vede» da «non c'e'»: a 0.85 una fascia disegnata
+            // e' impossibile da non notare. Va riportato a 0.30 appena la
+            // domanda ha risposta.
+            // REPORT UTENTE: Gli angoli a 0.85 sono "troppo marcati neri".
+            // Abbassiamo l'opacità per renderli un'ombra d'ambiente (AO) sottile e realistica.
+            return contactMaterial(texture: cornerFalloffTexture,
+                                   opacity: 0.18, culled: false)
         case .groundContact:
             return contactMaterial(texture: groundContactTexture, opacity: 0.36)
         case .shutter:
@@ -511,26 +527,62 @@ enum FloorplanMaterialCatalog {
     /// Il terreno del palco segue il cielo: greige di giorno, terra brunita
     /// al crepuscolo, blu-grigio scuro di notte — cupola e terreno si
     /// fondono all'orizzonte invece di staccarsi in una banda.
-    static func stageGroundMaterial(phase: SkyPhase, background: UIColor) -> any RealityKit.Material {
+    static func stageGroundMaterial(phase: SkyPhase, background: UIColor, groundSizeInMeters: Float) -> any RealityKit.Material {
         switch phase {
         case .day, .dawn, .dusk:
-            return groundMaterial(background: background)
+            return groundMaterial(background: background, groundSizeInMeters: groundSizeInMeters)
         case .night:
-            return groundMaterial(background: UIColor(red: 0.155, green: 0.165, blue: 0.215, alpha: 1))
+            return groundMaterial(background: UIColor(red: 0.155, green: 0.165, blue: 0.215, alpha: 1), groundSizeInMeters: groundSizeInMeters)
         }
     }
 
-    static func groundMaterial(background: UIColor) -> any RealityKit.Material {
-        guard let image = groundGradientImage(background),
-              let texture = try? TextureResource(image: image, withName: nil,
-                                                 options: .init(semantic: .color))
-        else { return opaque(darkened(background, by: 0.12), roughness: 0.98) }
+    static func groundMaterial(background: UIColor, groundSizeInMeters: Float) -> any RealityKit.Material {
+        // REPORT UTENTE: Il piano liscio o vuoto non piace, vuole un effetto "piastrelle grandi" su cui batta il sole.
+        // Generiamo una texture procedurale a griglia (piastrelloni) molto leggera.
+        guard let image = largeGridTextureImage(background),
+              let texture = try? TextureResource(image: image, withName: nil, options: .init(semantic: .color))
+        else {
+            var material = PhysicallyBasedMaterial()
+            let darkBase = darkened(background, by: 0.15)
+            material.baseColor = .init(tint: darkBase)
+            material.roughness = 0.85
+            material.metallic = 0.0
+            return material
+        }
 
         var material = PhysicallyBasedMaterial()
-        material.baseColor = .init(tint: .white, texture: .init(texture, sampler: clampSampler))
-        material.roughness = 0.98
+        material.baseColor = .init(tint: .white, texture: .init(texture, sampler: repeatSampler))
+        // Roughness alta (opaco) così si legge bene l'ombra del sole
+        material.roughness = 0.90
         material.metallic = 0.0
+        
+        // IL BUG ERA QUI: .generatePlane spalma l'UV (0..1) su TUTTA la larghezza del piano (che è enorme, groundSize).
+        // Quindi se vogliamo una piastrella ogni 1.2 metri, dobbiamo moltiplicare la scala per groundSize, 
+        // così la texture si ripete (groundSize / 1.2) volte.
+        let tileScale = groundSizeInMeters / 1.2
+        material.textureCoordinateTransform = .init(scale: SIMD2(tileScale, tileScale))
         return material
+    }
+
+    private static func largeGridTextureImage(_ background: UIColor) -> CGImage? {
+        let side = 128
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { context in
+            // Colore base della piastrella (leggermente più scuro del background per staccare la casa)
+            darkened(background, by: 0.15).setFill()
+            context.cgContext.fill(CGRect(origin: .zero, size: CGSize(width: side, height: side)))
+            
+            // Colore della fuga (ancora più scuro)
+            darkened(background, by: 0.25).setFill()
+            
+            // Fuga orizzontale in alto
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: side, height: 2))
+            // Fuga verticale a sinistra
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 2, height: side))
+        }
+        return image.cgImage
     }
 
     private static func groundGradientImage(_ background: UIColor) -> CGImage? {
@@ -609,11 +661,23 @@ enum FloorplanMaterialCatalog {
     /// quanti metri copre una ripetizione, e il campionamento va in `.repeat`
     /// o oltre il primo metro la texture resterebbe spalmata.
     private static func textured(_ texture: TextureResource,
+                                 normalMap: TextureResource? = nil,
+                                 roughnessMap: TextureResource? = nil,
                                  roughness: Float,
                                  tileSize: Float) -> PhysicallyBasedMaterial {
         var material = PhysicallyBasedMaterial()
         material.baseColor = .init(tint: .white, texture: .init(texture, sampler: repeatSampler))
-        material.roughness = .init(floatLiteral: roughness)
+        
+        if let roughnessMap {
+            material.roughness = .init(texture: .init(roughnessMap, sampler: repeatSampler))
+        } else {
+            material.roughness = .init(floatLiteral: roughness)
+        }
+        
+        if let normalMap {
+            material.normal = .init(texture: .init(normalMap, sampler: repeatSampler))
+        }
+        
         material.metallic = .init(floatLiteral: 0)
         material.textureCoordinateTransform = .init(scale: SIMD2(1 / tileSize, 1 / tileSize))
         return material
@@ -905,12 +969,21 @@ enum FloorplanMaterialCatalog {
     /// nera ma un blu molto scuro — l'ombra prende il colore del cielo che la
     /// riempie, e un nero puro su un interno chiaro sembra sporco.
     private static func contactMaterial(texture: TextureResource?,
-                                        opacity: Float) -> any RealityKit.Material {
+                                        opacity: Float,
+                                        culled: Bool = true) -> any RealityKit.Material {
         guard let texture else { return UnlitMaterial(color: .clear) }
         var material = UnlitMaterial()
         material.color = .init(tint: UIColor(red: 0.13, green: 0.14, blue: 0.19, alpha: 1),
                                texture: .init(texture, sampler: clampSampler))
         material.blending = .transparent(opacity: .init(floatLiteral: opacity))
+        // ⚠️ Un velo d'ombra non ha un dietro. Le altre due velature ereditano
+        // l'avvolgimento dalla faccia che copiano, quindi guardano gia' dalla
+        // parte giusta; la velatura d'angolo il suo quadrilatero se lo
+        // costruisce, e il verso glielo darebbe il capo da cui parte — che ai
+        // due capi di uno stesso muro e' opposto. Meta' degli spigoli finivano
+        // scartati dal culling: non deboli, **assenti**. Riordinare i vertici
+        // non si puo', perche' il loro ordine e' il contratto con le UV.
+        if !culled { material.faceCulling = .none }
         return material
     }
 
@@ -934,6 +1007,41 @@ enum FloorplanMaterialCatalog {
                                             locations: [0, 0.52, 0.84, 1]) else { return }
             // Come per la velatura di stato: l'estremo pieno sta in fondo
             // all'immagine, perche' `v = 0` pesca il fondo, non la cima.
+            context.cgContext.drawLinearGradient(gradient,
+                                                 start: CGPoint(x: 0, y: 0),
+                                                 end: CGPoint(x: 0, y: size.height),
+                                                 options: [])
+        }
+        guard let cgImage = image.cgImage else { return nil }
+        return try? TextureResource(image: cgImage, withName: nil, options: .init(semantic: .color))
+    }()
+
+    /// La sfumatura di uno spigolo verticale: larga, non concentrata.
+    ///
+    /// ⚠️ Non riusa `contactFalloffTexture`, e la tentazione era forte — una
+    /// sfumatura e' monodimensionale, e sembrava bastasse leggerla di traverso.
+    /// Ma quella curva concentra il pieno nell'ultimo sedicesimo, perche' un
+    /// contatto col pavimento si spegne in pochi centimetri; stesa su trenta
+    /// centimetri di spigolo dava **un filo nero e poi niente**, che a schermo
+    /// non si legge come un angolo ma come un graffio.
+    ///
+    /// Un angolo verticale si spegne piano: e' l'altra parete a togliere luce,
+    /// e la toglie per tutta la sua profondita'.
+    private static let cornerFalloffTexture: TextureResource? = {
+        let size = CGSize(width: 8, height: 256)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let colours = [UIColor(white: 1, alpha: 0).cgColor,
+                           UIColor(white: 1, alpha: 0.15).cgColor,
+                           UIColor(white: 1, alpha: 0.45).cgColor,
+                           UIColor(white: 1, alpha: 1).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                            colors: colours,
+                                            locations: [0, 0.45, 0.75, 1]) else { return }
+            // Come per le altre due: l'estremo pieno sta in fondo all'immagine,
+            // perche' `v = 0` pesca il fondo e `v = 0` e' lo spigolo.
             context.cgContext.drawLinearGradient(gradient,
                                                  start: CGPoint(x: 0, y: 0),
                                                  end: CGPoint(x: 0, y: size.height),
@@ -1053,7 +1161,12 @@ enum FloorplanMaterialCatalog {
             return opaque(UIColor(red: 0.72, green: 0.58, blue: 0.42, alpha: 1), roughness: 0.55)
         }
 
-        return textured(texture, roughness: 0.55, tileSize: 1.0)
+        // Opzione 1: Aggiungere vere mappe PBR (Normal e Roughness)
+        // Se non esistono nel catalogo, fallirà elegantemente tornando a nil per quelle mappe
+        let normalMap = try? TextureResource.load(named: "oak_veneer_01_nor_gl_1k")
+        let roughnessMap = try? TextureResource.load(named: "oak_veneer_01_rough_1k")
+
+        return textured(texture, normalMap: normalMap, roughnessMap: roughnessMap, roughness: 0.55, tileSize: 1.0)
     }
 
     private static func marbleTextureImage(size: Int = 768) -> CGImage? {

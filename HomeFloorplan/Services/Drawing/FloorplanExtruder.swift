@@ -76,6 +76,15 @@ enum FloorplanExtruder {
         /// una seconda shadow map su tutta la scena, e darebbe una seconda
         /// direzione d'ombra che in un interno non esiste.
         case wallContact
+        /// Lo spigolo verticale dove due muri della stessa stanza si
+        /// incontrano.
+        ///
+        /// Stessa idea della velatura alla base — luce dipinta e non calcolata
+        /// — ruotata di novanta gradi. Senza, due pareti che si toccano
+        /// restano due fogli accostati: e' lo spigolo scuro a dire che sono
+        /// due facce di un volume, ed e' la ragione per cui una stanza vuota
+        /// sembrava fatta di cartone.
+        case wallCorner
         case groundContact
         /// La tapparella calata davanti a un vano. Sta **fuori dal muro** come
         /// nella realtà: scorre in un cassonetto esterno, non dentro la stanza.
@@ -106,6 +115,14 @@ enum FloorplanExtruder {
         var openingID: UUID? = nil
         /// Tipo muro sorgente, utile per distinguere ingresso, interno e balcone.
         var wallKind: WallKind? = nil
+        /// Versore in pianta che punta **dalla faccia verso la sua stanza**,
+        /// solo per le facce verticali di muro.
+        ///
+        /// Lo sa solo chi estrude il muro — nel renderer il verso della normale
+        /// non e' affidabile, come gia' dice `wallGlow` — e agli spigoli serve
+        /// due volte: per spingere la velatura dentro la stanza e per
+        /// distinguere un angolo vero da uno sporgente.
+        var inward: SIMD2<Double>? = nil
         /// Lato apertura scelto nel 2D.
         var flipSide: Bool = false
         /// Tinta scelta dall'utente per questo arredo, se ne ha una.
@@ -144,6 +161,8 @@ enum FloorplanExtruder {
             result.append(contentsOf: furnitureFaces(item, in: document,
                                                      televisionSpots: televisionSpots))
         }
+        // Dopo tutti i muri, perche' uno spigolo e' di due muri insieme.
+        result += cornerFaces(for: result)
         return result
     }
 
@@ -171,7 +190,7 @@ enum FloorplanExtruder {
         // VERA della casa — il box rettangolare lasciava un vassoio vuoto
         // davanti alle piante a L. Le pareti interne coincidenti restano
         // sepolte dentro il volume: non si vedono mai.
-        let slabDepth = 0.12
+        let slabDepth = 0.25 // Aumentato da 0.12 a 0.25 per dare l'idea di un vero plinto architettonico (Diorama)
         for index in 0..<outline.count {
             let next = (index + 1) % outline.count
             let p0 = SIMD2(metres(outline[index].x), metres(outline[index].y))
@@ -1069,7 +1088,9 @@ enum FloorplanExtruder {
             // muro, troppo poco perché si veda lo stacco.
             let centre = faces[index].centroid
             let offset = simd_dot(SIMD2(centre.x, centre.y) - start, unitNormal)
-            let push = unitNormal * (offset > 0 ? 0.006 : -0.006)
+            let inward = unitNormal * (offset > 0 ? 1 : -1)
+            faces[index].inward = inward
+            let push = inward * 0.006
             var glow = faces[index]
             glow.kind = .wallGlow
             glow.points = faces[index].points.map { SIMD3($0.x + push.x, $0.y + push.y, $0.z) }
@@ -1077,8 +1098,7 @@ enum FloorplanExtruder {
 
             // Tre millimetri: **davanti** al muro e **dietro** la velatura di
             // stato, così le due non litigano per lo stesso piano.
-            if let contact = contactFace(faces[index],
-                                         push: unitNormal * (offset > 0 ? 0.003 : -0.003)) {
+            if let contact = contactFace(faces[index], push: inward * 0.003) {
                 glows.append(contact)
             }
         }
@@ -1164,6 +1184,208 @@ enum FloorplanExtruder {
     /// Quanto sale la velatura di contatto. Oltre questa quota la luce ci
     /// arriva, e scurire diventa sporcare.
     static let contactHeight: Double = 0.34
+
+    /// Quanto si allontana dallo spigolo la velatura d'angolo.
+    ///
+    /// Piu' corta della fascia a terra sarebbe sbagliata — un angolo occlude su
+    /// due pareti, non su una — ma oltre il quarto di metro smette di leggersi
+    /// come ombra e diventa una parete dipinta di scuro.
+    static let cornerReach: Double = 0.32
+
+    /// Sotto questa larghezza una facciata non e' una parete: e' il **taglio**
+    /// di una parete.
+    ///
+    /// Le estremita' di un muro sono facce verticali come le altre — larghe
+    /// quanto lo spessore — e da dentro la stanza ne guardano parecchie: gli
+    /// stipiti di ogni porta, i tappi dove un muro finisce. Appoggiarci un
+    /// angolo dipinge una fascia scura **sullo spessore del muro**, che e' il
+    /// posto dove l'occhio si aspetta il contrario: uno stipite prende luce da
+    /// due lati, non ombra.
+    static let minimumCornerSide: Double = 0.25
+
+    /// Le velature negli spigoli verticali di ogni stanza.
+    ///
+    /// Si calcolano **dopo** tutti i muri, e non dentro `wallFaces`, per una
+    /// ragione che non si aggira: uno spigolo appartiene a due muri diversi, e
+    /// nessuno dei due, mentre viene estruso, sa di essere in un angolo.
+    ///
+    /// E non si cerca un vertice condiviso, perche' non esiste: alle giunzioni i
+    /// muri si compenetrano apposta (le code di `headOverhang`), quindi le facce
+    /// si attraversano e i loro capi cadono oltre l'angolo. Lo spigolo e'
+    /// l'**incrocio delle due rette di base**.
+    private static func cornerFaces(for faces: [Face]) -> [Face] {
+        /// Una facciata interna ridotta a cio' che serve all'angolo: dov'e', da
+        /// che parte guarda, e fin dove sale.
+        struct Side {
+            var index: Int
+            var origin: SIMD2<Double>
+            var axis: SIMD2<Double>
+            var length: Double
+            var inward: SIMD2<Double>
+            var bottom: Double
+            var top: Double
+        }
+
+        var sides: [UUID: [Side]] = [:]
+        for (index, face) in faces.enumerated() {
+            guard face.kind == .wallSide,
+                  let roomID = face.roomID,
+                  let inward = face.inward
+            else { continue }
+
+            let heights = face.points.map(\.z)
+            guard let bottom = heights.min(), let top = heights.max(), top - bottom > 0.05
+            else { continue }
+
+            let base = face.points.filter { abs($0.z - bottom) < 0.001 }
+            guard base.count == 2 else { continue }
+
+            let head = SIMD2(base[0].x, base[0].y)
+            let span = SIMD2(base[1].x, base[1].y) - head
+            let length = simd_length(span)
+            guard length > minimumCornerSide else { continue }
+
+            sides[roomID, default: []].append(
+                Side(index: index, origin: head, axis: span / length, length: length,
+                     inward: inward, bottom: bottom, top: top)
+            )
+        }
+
+        /// Quanto muro prosegue **senza interruzioni** dallo spigolo.
+        ///
+        /// Non si puo' misurare sulla faccia su cui e' caduto l'incrocio: le
+        /// facciate arrivano gia' tassellate (una stanza rettangolare ne
+        /// produce oltre cento, da una trentina di centimetri l'una) e quella
+        /// lunghezza taglierebbe la velatura a meta'. Ma non si puo' nemmeno
+        /// prendere il muro intero, perche' un tratto corto fra due porte la
+        /// velatura la deve accorciare davvero: e' il motivo per cui questo
+        /// conto esiste. Quindi si seguono i pezzi **contigui** sulla stessa
+        /// retta e sulla stessa facciata, e ci si ferma al primo vuoto.
+        func contiguousRun(from corner: SIMD2<Double>,
+                           along away: SIMD2<Double>,
+                           facing inward: SIMD2<Double>,
+                           in group: [Side]) -> Double {
+            var intervals: [(start: Double, end: Double)] = []
+            for other in group {
+                guard abs(simd_dot(other.axis, away)) > 0.999,
+                      simd_dot(other.inward, inward) > 0.999
+                else { continue }
+
+                // Stessa retta: la componente perpendicolare dev'essere nulla.
+                let delta = other.origin - corner
+                let lateral = delta - away * simd_dot(delta, away)
+                guard simd_length(lateral) < 0.02 else { continue }
+
+                let head = simd_dot(other.origin - corner, away)
+                let tail = simd_dot(other.origin + other.axis * other.length - corner, away)
+                intervals.append((Swift.min(head, tail), Swift.max(head, tail)))
+            }
+
+            // Copertura a partire dallo spigolo, un millimetro di tolleranza
+            // sulle giunzioni fra un pezzo e il successivo.
+            var reach = 0.0
+            var grew = true
+            while grew {
+                grew = false
+                for interval in intervals where interval.start <= reach + 0.001 && interval.end > reach {
+                    reach = interval.end
+                    grew = true
+                }
+            }
+            return Swift.max(reach, 0)
+        }
+
+        /// L'identita' di una velatura e' lo **spigolo** piu' il verso in cui
+        /// corre, non la faccia che l'ha generata: allo stesso vertice si
+        /// affacciano piu' pezzi dello stesso muro, e vanno collassati in uno.
+        func cornerKey(_ corner: SIMD2<Double>, _ away: SIMD2<Double>) -> String {
+            func quantised(_ value: Double, _ step: Double) -> Int {
+                Int((value / step).rounded())
+            }
+            return "\(quantised(corner.x, 0.005)):\(quantised(corner.y, 0.005))"
+                + ":\(quantised(away.x, 0.01)):\(quantised(away.y, 0.01))"
+        }
+
+        var produced: [Face] = []
+        // Allo stesso spigolo arrivano piu' pezzi della stessa facciata — la
+        // tassellatura li spezza, e una finestra li sovrappone anche in quota —
+        // e la velatura la si posa una volta sola.
+        var done: Set<String> = []
+
+        for group in sides.values {
+            for first in group.indices {
+                for second in group.indices where second > first {
+                    let a = group[first], b = group[second]
+
+                    let cross = a.axis.x * b.axis.y - a.axis.y * b.axis.x
+                    // Sotto i venti gradi non c'e' uno spigolo: c'e' un muro che
+                    // prosegue quasi dritto, e scurirlo sarebbe una macchia in
+                    // mezzo alla parete.
+                    guard abs(cross) > 0.34 else { continue }
+
+                    let delta = b.origin - a.origin
+                    let alongA = (delta.x * b.axis.y - delta.y * b.axis.x) / cross
+                    let alongB = (delta.x * a.axis.y - delta.y * a.axis.x) / cross
+                    let corner = a.origin + a.axis * alongA
+
+                    // L'incrocio dev'essere a un capo di tutti e due, non in
+                    // mezzo: due muri che si incrociano a meta' sono un muro che
+                    // ne attraversa un altro, e li' di angoli ce ne sono quattro
+                    // diversi, non uno.
+                    let slack = 0.40
+                    guard alongA > -slack, alongA < a.length + slack,
+                          alongB > -slack, alongB < b.length + slack,
+                          min(alongA, a.length - alongA) < slack,
+                          min(alongB, b.length - alongB) < slack
+                    else { continue }
+
+                    // Da che parte prosegue ogni muro, a partire dallo spigolo.
+                    let awayA = alongA <= a.length / 2 ? a.axis : -a.axis
+                    let awayB = alongB <= b.length / 2 ? b.axis : -b.axis
+
+                    // ⚠️ Concavo solo se **ognuno dei due si allontana verso il
+                    // dentro dell'altro**. Il vertice sporgente di una stanza a
+                    // elle passa tutti i controlli di sopra e va trattato al
+                    // contrario: li' di luce ne arriva di piu', non di meno, e
+                    // scurirlo scava un solco dove il volume dovrebbe sporgere.
+                    guard simd_dot(awayA, b.inward) > 0, simd_dot(awayB, a.inward) > 0
+                    else { continue }
+
+                    for (side, away) in [(a, awayA), (b, awayB)] {
+                        let key = cornerKey(corner, away)
+                        guard !done.contains(key) else { continue }
+
+                        let run = contiguousRun(from: corner, along: away,
+                                                facing: side.inward, in: group)
+                        let reach = min(cornerReach, run)
+                        guard reach > 0.03 else { continue }
+                        done.insert(key)
+
+                        // Quattro millimetri: **davanti** alla fascia a terra e
+                        // dietro la velatura di stato, come gia' fa il contatto
+                        // col muro. Le tre non litigano per lo stesso piano, e
+                        // dove si sovrappongono — l'angolo a filo di pavimento —
+                        // il buio si somma, che e' esattamente dove va.
+                        let push = side.inward * 0.004
+                        let near = corner + push
+                        let far = corner + away * reach + push
+
+                        var face = faces[side.index]
+                        face.kind = .wallCorner
+                        face.points = [
+                            SIMD3(near.x, near.y, side.bottom),
+                            SIMD3(far.x, far.y, side.bottom),
+                            SIMD3(far.x, far.y, side.top),
+                            SIMD3(near.x, near.y, side.top)
+                        ]
+                        produced.append(face)
+                    }
+                }
+            }
+        }
+
+        return produced
+    }
 
     /// La forma di una tenda sopra un balcone, **senza il suo stato**.
     ///

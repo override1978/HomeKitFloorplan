@@ -92,6 +92,8 @@ enum FloorplanSceneBuilder {
             return .wallGlow
         case .wallContact:
             return .wallContact
+        case .wallCorner:
+            return .wallCorner
         case .groundContact:
             return .groundContact
         case .shutter:
