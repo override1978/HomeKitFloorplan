@@ -1,0 +1,150 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSCalendarsFullAccessUsageDescription": {
+      "comment": "Permission prompt shown by iOS.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan reads today's events to place them in your home's daily timeline, next to automations and sunrise and sunset times. Events stay on your device."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan legge gli impegni di oggi per collocarli nella giornata della casa, accanto ad automazioni e orari del sole. Gli eventi restano sul dispositivo."
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription": {
+      "comment": "Permission prompt shown by iOS.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan uses the camera for augmented-reality diagnostics: point your device at a room and check that the floorplan matches the real one."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan usa la fotocamera per la diagnostica in realtà aumentata: inquadri la stanza e verifichi che la planimetria coincida con quella reale."
+          }
+        }
+      }
+    },
+    "NSHomeKitUsageDescription": {
+      "comment": "Permission prompt shown by iOS.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan reads your HomeKit accessories to show their state on the floorplan and let you control them."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan accede ai tuoi dispositivi HomeKit per mostrarne lo stato sulla planimetria e permetterti di controllarli."
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription": {
+      "comment": "Permission prompt shown by iOS.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan uses your location to let you mark your home on the map, to fetch local weather, and to align the floorplan to north during AR diagnostics."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan usa la posizione per farti indicare casa sulla mappa, per ottenere il meteo locale e per orientare la planimetria a nord durante la diagnostica AR."
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "comment": "Permission prompt shown by iOS.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan uses the microphone only while you are dictating to the assistant, to capture what you say."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan usa il microfono solo mentre detti all'assistente, per registrare quello che dici."
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryUsageDescription": {
+      "comment": "Permission prompt shown by iOS.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan accesses your photo library so you can import an image to use as a floorplan."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan accede alla Libreria Foto per importare un'immagine da usare come planimetria."
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription": {
+      "comment": "Permission prompt shown by iOS.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan turns your speech into text so you can ask the assistant instead of typing. Recognition runs only while you are dictating."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan trascrive la tua voce in testo, così puoi chiedere all'assistente invece di scrivere. Il riconoscimento è attivo solo mentre detti."
+          }
+        }
+      }
+    },
+    "NSWeatherKitUsageDescription": {
+      "comment": "Permission prompt shown by iOS.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan uses local weather to adapt its environmental suggestions to outdoor conditions."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HomeFloorplan usa il meteo locale per adattare i suggerimenti ambientali alle condizioni esterne."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.1"
+}

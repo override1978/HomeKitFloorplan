@@ -9,13 +9,11 @@
 		<string>com.homefloorplan.dataLifecycle</string>
 	</array>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>HomeFloorplan legge gli impegni di oggi per collocarli nella giornata della casa, accanto ad automazioni e orari del sole. Gli eventi restano sul dispositivo e non vengono inviati a nessun servizio.</string>
+	<string>HomeFloorplan reads today's events to place them in your home's daily timeline, next to automations and sunrise and sunset times. Events stay on your device.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>HomeFloorplan usa la fotocamera per mostrare la diagnostica della planimetria in realtà aumentata.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>HomeFloorplan usa la posizione solo durante la diagnostica AR per allineare la planimetria al nord del dispositivo.</string>
+	<string>HomeFloorplan uses the camera for augmented-reality diagnostics: point your device at a room and check that the floorplan matches the real one.</string>
 	<key>NSWeatherKitUsageDescription</key>
-	<string>HomeFloorplan usa WeatherKit per ottenere le previsioni meteo locali e adattare i suggerimenti ambientali alle condizioni climatiche esterne.</string>
+	<string>HomeFloorplan uses local weather to adapt its environmental suggestions to outdoor conditions.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
