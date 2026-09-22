@@ -117,17 +117,21 @@ struct CompactHomeView: View {
                     destinationRow(.security,
                                    title: String(localized: "sidebar.security", defaultValue: "Security"),
                                    icon: "shield.lefthalf.filled")
+#if DEBUG
                     destinationRow(.energy,
                                    title: String(localized: "sidebar.energy", defaultValue: "Energy"),
                                    icon: "bolt.fill")
+#endif
                     destinationRow(.homeIntelligence,
                                    title: String(localized: "sidebar.intelligence", defaultValue: "Intelligence"),
                                    icon: "sparkles.rectangle.stack")
+#if DEBUG
                     if areHabitsEnabled {
                         destinationRow(.habits,
                                        title: String(localized: "sidebar.habits", defaultValue: "Habits"),
                                        icon: "brain.head.profile")
                     }
+#endif
                 } header: {
                     Text(String(localized: "sidebar.section.analysis", defaultValue: "Analysis"))
                 }
@@ -454,9 +458,17 @@ struct CompactHomeView: View {
         case .environment:
             EnvironmentDashboardView()
         case .energy:
+#if DEBUG
             EnergyMonitorView()
+#else
+            EmptyView()
+#endif
         case .habits:
+#if DEBUG
             HabitsView()
+#else
+            EmptyView()
+#endif
         case .homeIntelligence:
             HomeIntelligenceDashboardView()
         case .settings:

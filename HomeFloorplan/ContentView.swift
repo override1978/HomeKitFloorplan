@@ -330,9 +330,23 @@ struct ContentView: View {
         case .environment:
             EnvironmentDashboardView()
         case .energy:
+#if DEBUG
             EnergyMonitorView()
+#else
+            emptyState(
+                title: String(localized: "content.debug.unavailable.title", defaultValue: "Debug unavailable"),
+                message: String(localized: "content.debug.unavailable.message", defaultValue: "Debug views are only available in debug builds.")
+            )
+#endif
         case .habits:
+#if DEBUG
             HabitsView()
+#else
+            emptyState(
+                title: String(localized: "content.debug.unavailable.title", defaultValue: "Debug unavailable"),
+                message: String(localized: "content.debug.unavailable.message", defaultValue: "Debug views are only available in debug builds.")
+            )
+#endif
         case .homeIntelligence:
             HomeIntelligenceDashboardView()
         case .debugHomeKit:

@@ -136,8 +136,11 @@ struct SettingsView: View {
                     )
                 }
 
-                // Abitudini in beta: fuori dalla sidebar di default (build App
-                // Store pulita), attivabile qui per il testing su TestFlight.
+#if DEBUG
+                // Abitudini in beta: strumento di sviluppo. L'interruttore
+                // esiste solo nelle build di debug — nelle build distribuite la
+                // sezione non e' raggiungibile, quindi offrire di mostrarla
+                // significherebbe promettere una schermata che non si apre.
                 Toggle(isOn: $habitsSectionVisible) {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
@@ -150,6 +153,7 @@ struct SettingsView: View {
                         Image(systemName: "brain.head.profile")
                     }
                 }
+#endif
             } header: {
                 Text(String(localized: "settings.section.intelligence", defaultValue: "Intelligence"))
             }
@@ -172,6 +176,10 @@ struct SettingsView: View {
                 Text(String(localized: "settings.notifications.center.header", defaultValue: "Notifications"))
             }
 
+#if DEBUG
+            // La tariffa serve solo alle viste Energia, che nelle
+            // build distribuite non esistono: senza schermate che la
+            // leggano sarebbe un campo che non fa niente.
             // MARK: - Energia
 
             Section {
@@ -199,6 +207,7 @@ struct SettingsView: View {
                 Text(String(localized: "settings.energy.tariff.footer",
                             defaultValue: "Used to estimate costs from measured consumption. Leave 0 to show energy only, without costs."))
             }
+#endif
 
             // MARK: - Dati
 

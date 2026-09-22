@@ -131,17 +131,25 @@ struct SidebarView: View {
                     NavigationLink(value: SidebarSelection.security) {
                         Label(String(localized: "sidebar.security", defaultValue: "Security"), systemImage: "shield.lefthalf.filled")
                     }
+#if DEBUG
+                    // Energia e Abitudini restano strumenti di sviluppo: fuori
+                    // dalle build di distribuzione non hanno una voce in
+                    // navigazione (vedi anche la rotta in ContentView, che le
+                    // chiude anche a chi arriva da una selezione salvata).
                     NavigationLink(value: SidebarSelection.energy) {
                         Label(String(localized: "sidebar.energy", defaultValue: "Energy"), systemImage: "bolt.fill")
                     }
+#endif
                     NavigationLink(value: SidebarSelection.homeIntelligence) {
                         Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligence"), systemImage: "sparkles.rectangle.stack")
                     }
+#if DEBUG
                     if areHabitsEnabled {
                         NavigationLink(value: SidebarSelection.habits) {
                             Label(String(localized: "sidebar.habits", defaultValue: "Habits"), systemImage: "brain.head.profile")
                         }
                     }
+#endif
                 } label: {
                     Text(String(localized: "sidebar.section.analysis", defaultValue: "Analysis"))
                         .font(.subheadline.weight(.semibold))
