@@ -48,6 +48,46 @@ struct FloorplanCategoryFilterPanel: View {
                     set(overlayVM.categoryFilter == count.category ? nil : count.category)
                 }
             }
+
+            // ⚠️ «Tutti» e «vedi tutti i dispositivi» NON sono la stessa cosa,
+            // ed è l'equivoco che mancava a questo pannello: «Tutti» toglie il
+            // filtro e riporta ai cluster per stanza, che *raggruppano*; la
+            // vista esplosa apre ogni marker di ogni stanza. Da qui la seconda
+            // non si poteva raggiungere, e i singoli accessori restavano
+            // visibili solo scegliendo una categoria alla volta.
+            //
+            // Sta sotto un divisorio e con la sua icona proprio per non
+            // leggersi come un doppione della riga «Tutti» — la stessa
+            // precauzione già presa nella riga di chip su iPhone.
+            Divider()
+                .padding(.vertical, 6)
+                .padding(.horizontal, 4)
+
+            expandAllRow
+        }
+    }
+
+    private var isAnythingExpanded: Bool {
+        overlayVM.areAllRoomsExpanded || overlayVM.expandedRoomID != nil
+    }
+
+    private var expandAllRow: some View {
+        row(label: isAnythingExpanded
+            ? String(localized: "floorplan.filter.collapseAll", defaultValue: "Close all rooms")
+            : String(localized: "floorplan.filter.expandAll", defaultValue: "Show all devices"),
+            dot: nil,
+            symbol: isAnythingExpanded
+            ? "arrow.down.right.and.arrow.up.left"
+            : "arrow.up.left.and.arrow.down.right",
+            count: isAnythingExpanded ? nil : total,
+            isSelected: overlayVM.areAllRoomsExpanded) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                if isAnythingExpanded {
+                    overlayVM.collapseAllRooms()
+                } else {
+                    overlayVM.expandAllRooms()
+                }
+            }
         }
     }
 
@@ -59,22 +99,27 @@ struct FloorplanCategoryFilterPanel: View {
 
     private func row(label: String,
                      dot: Color?,
-                     count: Int,
+                     symbol: String? = nil,
+                     count: Int?,
                      isSelected: Bool,
                      action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 9) {
                 // «Tutti» non ha un colore suo: al suo posto un cerchio vuoto,
                 // che tiene la colonna allineata senza inventare una categoria
-                // che non esiste.
+                // che non esiste. La vista esplosa non è una categoria affatto,
+                // e al posto del pallino porta la sua icona.
                 Group {
-                    if let dot {
+                    if let symbol {
+                        Image(systemName: symbol)
+                            .font(.system(size: 10, weight: .semibold))
+                    } else if let dot {
                         Circle().fill(dot)
                     } else {
                         Circle().strokeBorder(Color.secondary.opacity(0.5), lineWidth: 1.5)
                     }
                 }
-                .frame(width: 9, height: 9)
+                .frame(width: 11, height: 11)
 
                 Text(label)
                     .font(.subheadline.weight(isSelected ? .semibold : .regular))
@@ -82,10 +127,12 @@ struct FloorplanCategoryFilterPanel: View {
 
                 Spacer(minLength: 8)
 
-                Text("\(count)")
-                    .font(.footnote.weight(.semibold))
-                    .monospacedDigit()
-                    .opacity(isSelected ? 1 : 0.6)
+                if let count {
+                    Text("\(count)")
+                        .font(.footnote.weight(.semibold))
+                        .monospacedDigit()
+                        .opacity(isSelected ? 1 : 0.6)
+                }
             }
             .foregroundStyle(isSelected
                              ? FloorplanTokens.Surface.filterChipActiveText

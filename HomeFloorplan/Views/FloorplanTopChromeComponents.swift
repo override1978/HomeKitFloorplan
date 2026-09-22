@@ -51,8 +51,24 @@ struct FloorplanTopBarView: View {
     /// sidebar (~290), azioni per esteso (~450), la pill con quattro etichette
     /// (~480) e i margini (~40). Dato che ora le azioni di setup sono estratte
     /// occupano più spazio, quindi alzo la soglia per evitare overlap.
+    ///
+    /// In modalità Controlli la riga porta anche filtro e vista esplosa: due
+    /// cerchi da 36 più spaziatura, una cinquantina di punti. La soglia li
+    /// somma invece di ignorarli — è lo stesso conto di sopra con un termine in
+    /// più, e il termine si paga solo quando quei bottoni ci sono davvero.
+    /// Qui sotto è già successo che un controllo cresciuto di una sessantina di
+    /// punti finisse sopra la pill delle modalità, centrata: la collisione non
+    /// si vede su questo file, si vede sull'iPad.
     private var collapsesActions: Bool {
-        size.width < 1250
+        size.width < (showsCategoryControls ? 1300 : 1250)
+    }
+
+    /// Quando la barra porta i due bottoni dei controlli — filtro e vista
+    /// esplosa. Era ripetuta in tre punti; averla in uno solo e' anche cio' che
+    /// permette alla soglia qui sopra di sapere quando pagarli.
+    private var showsCategoryControls: Bool {
+        guard !isEditing, let overlayVM else { return false }
+        return overlayVM.activeMode == .controls && categoryCounts.count > 1
     }
 
     var body: some View {
@@ -105,10 +121,9 @@ struct FloorplanTopBarView: View {
                         if !isCompact {
                             // Filtro categoria su iPad (Option A): dietro un bottone singolo,
                             // allineato con il design mobile.
-                            if !isEditing,
-                               let overlayVM, overlayVM.activeMode == .controls,
-                               categoryCounts.count > 1 {
+                            if showsCategoryControls, let overlayVM {
                                 compactFilterMenu(overlayVM: overlayVM)
+                                expandAllButton(overlayVM: overlayVM)
                             }
                             
                             FloorplanTopRightActions(
@@ -131,10 +146,9 @@ struct FloorplanTopBarView: View {
                             // Filtro categoria su iPhone: dietro un bottone
                             // singolo (design v3, regola mobile 5 — mai una
                             // riga fissa). Ogni Menu ha la PROPRIA superficie.
-                            if !isEditing,
-                               let overlayVM, overlayVM.activeMode == .controls,
-                               categoryCounts.count > 1 {
+                            if showsCategoryControls, let overlayVM {
                                 compactFilterMenu(overlayVM: overlayVM)
+                                expandAllButton(overlayVM: overlayVM)
                             }
 
                             // Le due porte verso le altre facce della stessa
@@ -244,6 +258,49 @@ struct FloorplanTopBarView: View {
                      defaultValue: "Filter by category"))
     }
 
+    /// La vista esplosa a portata di un tocco, accanto al filtro.
+    ///
+    /// La voce nel pannello resta — e' il posto dove si spiega, con la sua
+    /// etichetta — ma per un comando che si usa a raffica due tocchi sono
+    /// troppi: aprire il pannello e poi scegliere.
+    ///
+    /// ⚠️ Non e' un terzo filtro, ed e' il rischio di metterlo qui: «Tutti»
+    /// toglie il filtro e torna ai cluster per stanza, questo apre ogni marker
+    /// di ogni stanza. Per questo porta l'icona delle frecce e non un
+    /// pallino, e si riempie quando e' attivo — deve leggersi come un
+    /// interruttore di vista, non come una categoria.
+    @ViewBuilder
+    private func expandAllButton(overlayVM: FloorplanOverlayViewModel) -> some View {
+        let isExpanded = overlayVM.areAllRoomsExpanded || overlayVM.expandedRoomID != nil
+
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                if isExpanded {
+                    overlayVM.collapseAllRooms()
+                } else {
+                    overlayVM.expandAllRooms()
+                }
+            }
+        } label: {
+            Image(systemName: isExpanded
+                  ? "arrow.down.right.and.arrow.up.left"
+                  : "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.primary)
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        // Il vetro fuori dal bottone, la forma da toccare dentro: stessa
+        // regola del filtro qui accanto.
+        .glassChromeSurface(in: Circle())
+        .accessibilityLabel(isExpanded
+            ? String(localized: "floorplan.filter.collapseAll", defaultValue: "Close all rooms")
+            : String(localized: "floorplan.filter.expandAll", defaultValue: "Show all devices"))
+        .accessibilityAddTraits(overlayVM.areAllRoomsExpanded ? [.isSelected] : [])
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: isExpanded)
+    }
+
     /// Il gesto d'apertura: pannello su iPad, tendina su iPhone.
     @ViewBuilder
     private func filterOpener<Label: View>(overlayVM: FloorplanOverlayViewModel,
@@ -300,6 +357,30 @@ struct FloorplanTopBarView: View {
                 } else {
                     Text("\(count.category.displayName) · \(count.total)")
                 }
+            }
+        }
+
+        // La vista esplosa in una sezione a parte: non è un filtro, è l'unico
+        // modo di vedere tutti i marker insieme invece che raggruppati per
+        // stanza. Mescolarla alle categorie la farebbe leggere come un'altra
+        // riga di «Tutti», che fa un'altra cosa.
+        Section {
+            let isExpanded = overlayVM.areAllRoomsExpanded || overlayVM.expandedRoomID != nil
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    if isExpanded {
+                        overlayVM.collapseAllRooms()
+                    } else {
+                        overlayVM.expandAllRooms()
+                    }
+                }
+            } label: {
+                Label(isExpanded
+                      ? String(localized: "floorplan.filter.collapseAll", defaultValue: "Close all rooms")
+                      : String(localized: "floorplan.filter.expandAll", defaultValue: "Show all devices"),
+                      systemImage: isExpanded
+                      ? "arrow.down.right.and.arrow.up.left"
+                      : "arrow.up.left.and.arrow.down.right")
             }
         }
     }
