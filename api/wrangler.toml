@@ -1,0 +1,16 @@
+name = "gethomefloorplan-api"
+main = "src/index.ts"
+
+compatibility_date = "2026-09-01"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[kv_namespaces]]
+binding = "STATE"
+id = "<kv-namespace-id>"
+
+# I segreti NON vanno qui. Si creano con:
+#   wrangler secret put CLIMATE_READ_TOKEN
+#   wrangler secret put CLIMATE_ADMIN_TOKEN
+#   wrangler secret put CLIMATE_BRIDGE_TOKEN

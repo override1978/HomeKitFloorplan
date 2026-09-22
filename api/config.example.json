@@ -1,0 +1,43 @@
+{
+  "schema": 2,
+  "prices": {
+    "pGasQuota": 0.677,
+    "tauGas": 0.2547,
+    "kSmcKwh": 10.69,
+    "etaBoiler": 0.90,
+    "pElecQuota": 0.184363,
+    "tauElec": 0.2112
+  },
+  "hysteresisCop": 0.15,
+  "heartbeatMin": 30,
+  "staleAfterMin": 60,
+  "weatherMaxAgeMin": 120,
+  "location": {
+    "lat": "<latitudine>",
+    "lon": "<longitudine>"
+  },
+  "equipment": {
+    "split_pt": {
+      "type": "air_to_air_heat_pump",
+      "manufacturer": "Mitsubishi Electric",
+      "model": "MSZ-LN",
+      "performanceModel": {
+        "type": "outdoor_temperature_cop_table",
+        "copTable": [[15, 5.0], [10, 4.3], [5, 3.6], [0, 3.0], [-5, 2.5], [-10, 2.2]]
+      }
+    },
+    "split_mansarda": {
+      "type": "air_to_air_heat_pump",
+      "manufacturer": "Mitsubishi Electric",
+      "model": "MSZ-LN",
+      "performanceModel": {
+        "type": "outdoor_temperature_cop_table",
+        "copTable": [[15, 5.0], [10, 4.3], [5, 3.6], [0, 3.0], [-5, 2.5], [-10, 2.2]]
+      }
+    }
+  },
+  "zones": {
+    "living": { "equipmentId": "split_pt" },
+    "mansarda": { "equipmentId": "split_mansarda" }
+  }
+}
