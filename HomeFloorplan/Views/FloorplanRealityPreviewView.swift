@@ -360,6 +360,20 @@ struct FloorplanRealityPreviewView: View {
         .fullScreenCover(item: $arDiagnosticsSnapshot) { snapshot in
             ARDiagnosticsView(snapshot: snapshot)
         }
+        // Finche' la geometria non c'e', la cover non deve restare vuota: si
+        // apre subito e dichiara che sta lavorando, invece di mostrare il
+        // fondale nudo mentre la casa viene estrusa.
+        .overlay {
+            if floorplanScene == nil {
+                ZStack {
+                    Color(background).ignoresSafeArea()
+                    ProgressView()
+                        .controlSize(.large)
+                }
+                .transition(.opacity)
+            }
+        }
+        .task { await buildSceneAfterAppear() }
         .onAppear {
             exposure = Exposure.nearest(to: northBearingDegrees)
             ceilingHeight = current.ceilingHeight
@@ -367,7 +381,14 @@ struct FloorplanRealityPreviewView: View {
             // chiusi: `startObserving` fa il readValue iniziale e arma le
             // notifiche. La vista si apre dalla lista, che non osserva niente.
             observeCurrentFloorplan()
-            rebuildScene()
+            // ⚠️ **Niente `rebuildScene()` qui.** L'estrusione della casa e la
+            // costruzione delle mesh RealityKit stanno sul main actor, e
+            // chiamate dall'`onAppear` cadono nello stesso fotogramma in cui la
+            // cover entra: il bottone che l'ha aperta resta schiacciato a
+            // meta' deformazione finche' non hanno finito. Spostarle dopo la
+            // comparsa **sposta il costo, non lo toglie** — la stessa mossa di
+            // `loadDayAfterAppear` nell'editor — ma lo si paga quando la cover
+            // e' gia' a schermo e mostra di star lavorando.
             presentSetupIfFirstVisit()
             loadEnvironmentIfNeeded()
             homeKit.startObserving(accessoryUUIDs: RoomPresenceLocator.presenceAccessoryUUIDs(homeKit: homeKit))
@@ -2624,6 +2645,23 @@ struct FloorplanRealityPreviewView: View {
         if !released.isEmpty { homeKit.stopObserving(accessoryUUIDs: released) }
         homeKit.startObserving(accessoryUUIDs: wanted)
         observedUUIDs = wanted
+    }
+
+    /// La prima costruzione della casa, dopo che la cover e' a schermo.
+    ///
+    /// Lo `yield` lascia a SwiftUI il fotogramma d'apertura; gli ottanta
+    /// millisecondi coprono il resto dell'animazione di presentazione, cosi'
+    /// l'estrusione non cade dentro la transizione.
+    ///
+    /// `guard` sul nil e non sul primo avvio: se qualcosa ha gia' costruito la
+    /// scena — un cambio di piano arrivato nel frattempo — rifarla sarebbe solo
+    /// lavoro doppio sullo stesso main actor che si sta cercando di liberare.
+    private func buildSceneAfterAppear() async {
+        guard floorplanScene == nil else { return }
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(80))
+        guard !Task.isCancelled, floorplanScene == nil else { return }
+        rebuildScene()
     }
 
     private func rebuildScene() {
