@@ -89,15 +89,24 @@ struct IdleScreensaverView: View {
         let dim = isNight ? 0.62 : 0.92
 
         VStack(spacing: 26) {
+            // ⚠️ I 128pt sono un'aspirazione, non una misura: l'ora la
+            // formatta la lingua, e dove si usa il formato a dodici ore
+            // «10:47 PM» sono otto caratteri — oltre cinquecento punti, contro
+            // i trecentonovanta di un iPhone. Senza adattamento l'orologio
+            // traboccava, e si vedeva solo installando l'app in inglese.
             Text(now, format: .dateTime.hour().minute())
                 .font(.system(size: 128, weight: .ultraLight, design: .rounded))
                 // Cifre a larghezza fissa: senza, l'orologio si sposta di
                 // qualche punto passando da 1 a 8 e la deriva sembra a scatti.
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.45)
                 .foregroundStyle(.white.opacity(dim))
 
             Text(now, format: .dateTime.weekday(.wide).day().month(.wide))
                 .font(.system(size: 21, weight: .regular, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 .foregroundStyle(.white.opacity(dim * 0.6))
 
             if outdoor != nil || indoor != nil {
@@ -109,6 +118,8 @@ struct IdleScreensaverView: View {
                 Text(sun)
                     .font(.system(size: 14, weight: .regular, design: .rounded))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .foregroundStyle(.white.opacity(dim * 0.38))
             }
 
@@ -117,39 +128,67 @@ struct IdleScreensaverView: View {
                 .foregroundStyle(.white.opacity(dim * 0.22))
                 .padding(.top, 18)
         }
+        // Un margine laterale c'e' sempre: la deriva sposta il blocco di
+        // diciotto punti, e senza respiro li andrebbe a spendere contro il
+        // bordo dello schermo.
+        .padding(.horizontal, 28)
     }
 
+    /// Fuori e dentro: in riga se ci stanno, incolonnati altrimenti.
+    ///
+    /// In inglese «Indoor» e il formato a dodici ore allargano tutto, e su un
+    /// telefono stretto la riga non ci sta. Le due misure si compongono da
+    /// pezzi separati invece che da un contenuto unico riusato, cosi' nella
+    /// versione incolonnata il trattino divisorio semplicemente non c'e' —
+    /// riusare la stessa HStack lo avrebbe lasciato in mezzo, un segmento
+    /// verticale di un punto fra due righe.
     private func climateRow(dim: Double) -> some View {
-        HStack(spacing: 26) {
-            if let outdoor {
-                HStack(spacing: 10) {
-                    Image(systemName: outdoor.symbol)
-                        .font(.system(size: 26, weight: .light))
-                        .symbolRenderingMode(.hierarchical)
-                    Text(formatted(outdoor.celsius))
-                        .font(.system(size: 34, weight: .light, design: .rounded))
-                        .monospacedDigit()
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 26) {
+                outdoorReading(dim: dim)
+                if outdoor != nil, indoor != nil {
+                    Capsule()
+                        .fill(.white.opacity(dim * 0.18))
+                        .frame(width: 1, height: 26)
                 }
-                .foregroundStyle(.white.opacity(dim * 0.82))
+                indoorReading(dim: dim)
             }
 
-            if outdoor != nil, indoor != nil {
-                Capsule()
-                    .fill(.white.opacity(dim * 0.18))
-                    .frame(width: 1, height: 26)
+            VStack(spacing: 10) {
+                outdoorReading(dim: dim)
+                indoorReading(dim: dim)
             }
+        }
+    }
 
-            if let indoor {
-                HStack(spacing: 8) {
-                    Text(String(localized: "screensaver.indoor", defaultValue: "Indoor"))
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(dim * 0.45))
-                    Text(formatted(indoor))
-                        .font(.system(size: 34, weight: .light, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(dim * 0.82))
-                }
+    @ViewBuilder
+    private func outdoorReading(dim: Double) -> some View {
+        if let outdoor {
+            HStack(spacing: 10) {
+                Image(systemName: outdoor.symbol)
+                    .font(.system(size: 26, weight: .light))
+                    .symbolRenderingMode(.hierarchical)
+                Text(formatted(outdoor.celsius))
+                    .font(.system(size: 34, weight: .light, design: .rounded))
+                    .monospacedDigit()
             }
+            .foregroundStyle(.white.opacity(dim * 0.82))
+        }
+    }
+
+    @ViewBuilder
+    private func indoorReading(dim: Double) -> some View {
+        if let indoor {
+            HStack(spacing: 8) {
+                Text(String(localized: "screensaver.indoor", defaultValue: "Indoor"))
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(dim * 0.45))
+                Text(formatted(indoor))
+                    .font(.system(size: 34, weight: .light, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(dim * 0.82))
+            }
+            .lineLimit(1)
         }
     }
 
@@ -196,9 +235,18 @@ struct IdleScreensaverView: View {
         return hour < 7 || hour >= 21
     }
 
+    /// Il valore nell'unita' scelta dall'utente, senza decimali.
+    ///
+    /// La conversione la fa `TemperatureUnit.convert`, che esiste gia': rifare
+    /// la moltiplicazione qui avrebbe significato due formule da tenere
+    /// allineate. Il `format` pronto dell'enum non va bene solo perche' mette
+    /// un decimale, e su un orologio da parete «21.4°» e' rumore.
+    ///
+    /// Le due temperature arrivano entrambe in gradi Celsius: il meteo perche'
+    /// `WeatherKitService` converte esplicitamente, l'interna perche' la
+    /// caratteristica HomeKit `CurrentTemperature` e' Celsius per specifica.
     private func formatted(_ celsius: Double) -> String {
-        let value = unit == .fahrenheit ? celsius * 9 / 5 + 32 : celsius
-        return "\(Int(value.rounded()))\(unit.symbol)"
+        "\(Int(unit.convert(celsius).rounded()))\(unit.symbol)"
     }
 
     // MARK: Prossimità

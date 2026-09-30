@@ -49454,33 +49454,35 @@
       }
     },
     "settings.appearance.subtitle": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Markers, glass effect, and screen saver."
+            "value": "Markers, effects, day ribbon, and screen saver."
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Marker, effetto vetro e salvaschermo."
+            "value": "Marker, effetti, nastro della giornata e schermo di riposo."
           }
         }
       }
     },
     "settings.appearance.title": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Appearance"
+            "value": "Floorplan"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aspetto"
+            "value": "Planimetria"
           }
         }
       }
@@ -49532,6 +49534,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "Avanzate"
+          }
+        }
+      }
+    },
+    "settings.calendar.denied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Calendar access denied. You can grant it in System Settings, under Privacy."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accesso al calendario negato. Si concede da Impostazioni di sistema, alla voce Privacy."
+          }
+        }
+      }
+    },
+    "settings.calendar.footer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Events are read from the device calendar and stay there: they are not saved in the app's store nor sent to any service."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gli eventi si leggono dal calendario del dispositivo e restano lì: non vengono salvati nell'archivio dell'app né inviati a nessun servizio."
+          }
+        }
+      }
+    },
+    "settings.calendar.toggle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Events in the day"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impegni nella giornata"
+          }
+        }
+      }
+    },
+    "settings.calendar.toggle.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show today's events next to automations and sun times."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostra gli eventi di oggi accanto ad automazioni e orari del sole."
           }
         }
       }
@@ -49676,6 +49746,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "In archivio"
+          }
+        }
+      }
+    },
+    "settings.data.summary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintenance, stored readings, and raw data retention."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manutenzione, letture archiviate e conservazione dei dati grezzi."
           }
         }
       }
@@ -50726,6 +50813,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sincronizzazione…"
+          }
+        }
+      }
+    },
+    "settings.icloud.summary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync status, device role, and diagnostics."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stato della sincronizzazione, ruolo del dispositivo e diagnostica."
           }
         }
       }
@@ -52050,6 +52154,23 @@
         }
       }
     },
+    "settings.section.calendar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Day ribbon"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nastro della giornata"
+          }
+        }
+      }
+    },
     "settings.section.customize": {
       "localizations": {
         "en": {
@@ -52127,6 +52248,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Intelligenza"
+          }
+        }
+      }
+    },
+    "settings.section.storage": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Storage & Sync"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivio e sincronizzazione"
           }
         }
       }

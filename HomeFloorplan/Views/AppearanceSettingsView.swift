@@ -24,6 +24,11 @@ struct AppearanceSettingsView: View {
     @AppStorage("idleTimeout")
     private var idleTimeoutSeconds: Double = 90
 
+    @AppStorage(CalendarEventsService.enabledKey)
+    private var showsCalendarInDay = false
+
+    @Environment(CalendarEventsService.self) private var calendarEvents
+
     private var currentMarkerSize: MarkerSize {
         MarkerSize(rawValue: markerSizeRaw) ?? .regular
     }
@@ -72,6 +77,53 @@ struct AppearanceSettingsView: View {
                 Text(String(localized: "settings.appearance.effects.header", defaultValue: "Effects"))
             }
 
+            // Gli impegni del calendario avevano una sezione propria
+            // nell'elenco principale, ed era fuori posto: non sono una
+            // funzione a sé, sono **una cosa in più nel nastro della
+            // giornata** — cioè una scelta su cosa mostra la planimetria,
+            // esattamente come la dimensione dei marker.
+            Section {
+                Toggle(isOn: $showsCalendarInDay) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(String(localized: "settings.calendar.toggle",
+                                        defaultValue: "Events in the day"))
+                            Text(String(localized: "settings.calendar.toggle.subtitle",
+                                        defaultValue: "Show today's events next to automations and sun times."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "calendar")
+                    }
+                }
+                .onChange(of: showsCalendarInDay) { _, isOn in
+                    // Il permesso si chiede qui e non di sorpresa mentre si
+                    // guarda la planimetria: chiedere nel momento in cui
+                    // l'utente ha appena espresso l'intenzione è l'unico in cui
+                    // la domanda ha senso.
+                    guard isOn else { return }
+                    Task { await calendarEvents.requestAccess() }
+                }
+
+                if showsCalendarInDay, calendarEvents.access == .denied {
+                    Label {
+                        Text(String(localized: "settings.calendar.denied",
+                                    defaultValue: "Calendar access denied. You can grant it in System Settings, under Privacy."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    }
+                }
+            } header: {
+                Text(String(localized: "settings.section.calendar", defaultValue: "Day ribbon"))
+            } footer: {
+                Text(String(localized: "settings.calendar.footer",
+                            defaultValue: "Events are read from the device calendar and stay there: they are not saved in the app's store nor sent to any service."))
+            }
+
             Section {
                 Picker(String(localized: "settings.screensaver.picker", defaultValue: "Activate after"),
                        selection: $idleTimeoutSeconds) {
@@ -93,7 +145,7 @@ struct AppearanceSettingsView: View {
             }
         }
         .tint(BrandColor.primary)
-        .navigationTitle(String(localized: "settings.appearance.title", defaultValue: "Appearance"))
+        .navigationTitle(String(localized: "settings.appearance.title", defaultValue: "Floorplan"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }

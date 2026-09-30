@@ -29,7 +29,6 @@ struct SidebarView: View {
     @AppStorage("sidebar.section.settings.expanded")   private var settingsExpanded:   Bool = true
     /// Sezione Abitudini (beta): nascosta di default nella build App Store,
     /// riattivabile da Impostazioni → Home Intelligence per il testing.
-    @AppStorage("habits.sectionVisible")               private var areHabitsEnabled:  Bool = false
 
     @State private var showingNewFloorplan = false
     @State private var pendingDeleteFloorplan: Floorplan?
@@ -144,10 +143,12 @@ struct SidebarView: View {
                         Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligence"), systemImage: "sparkles.rectangle.stack")
                     }
 #if DEBUG
-                    if areHabitsEnabled {
-                        NavigationLink(value: SidebarSelection.habits) {
-                            Label(String(localized: "sidebar.habits", defaultValue: "Habits"), systemImage: "brain.head.profile")
-                        }
+                    // Nessuna bandierina davanti: l'interruttore che la
+                    // alzava e' sparito dalle Impostazioni, e una condizione
+                    // che nessuno puo' piu' soddisfare non e' una condizione,
+                    // e' una riga morta.
+                    NavigationLink(value: SidebarSelection.habits) {
+                        Label(String(localized: "sidebar.habits", defaultValue: "Habits"), systemImage: "brain.head.profile")
                     }
 #endif
                 } label: {

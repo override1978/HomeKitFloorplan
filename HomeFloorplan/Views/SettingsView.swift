@@ -5,7 +5,6 @@ import CoreLocation
 import UserNotifications
 
 struct SettingsView: View {
-    @AppStorage("habits.sectionVisible") private var habitsSectionVisible = false
     /// €/kWh per stimare i costi dai consumi misurati. 0 = niente costi in UI,
     /// solo energia: meglio nessun numero che un numero inventato.
     @AppStorage("energy.tariffPerKWh") private var energyTariffPerKWh = 0.0
@@ -13,37 +12,23 @@ struct SettingsView: View {
     /// default è `false` come in `LocalDataProtection`: i due valori devono
     /// coincidere, altrimenti l'interruttore mostra uno stato e il ciclo dati
     /// ne applica un altro.
-    @AppStorage(LocalDataProtection.preserveSwiftDataKey) private var preservesRawData = false
     @Environment(HomeKitService.self)       private var homeKit
     @Environment(OnboardingService.self)    private var onboarding
     @Environment(WeatherKitService.self)    private var weatherKit
-    @Environment(SmartLightingEngine.self)  private var smartLightingEngine
     @Environment(AISettings.self)           private var aiSettings
+    @Environment(SmartLightingEngine.self)  private var smartLightingEngine
     @Environment(CloudKitSyncService.self)  private var cloudKitSync
     @Environment(DataLifecycleService.self) private var dataLifecycleService
-    @Environment(CalendarEventsService.self) private var calendarEvents
     /// Spento di default: una casa non legge gli impegni di nessuno finché
     /// non glielo si chiede.
-    @AppStorage(CalendarEventsService.enabledKey) private var showsCalendarInDay = false
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    @Query(sort: \SyncableSettings.modifiedAt) var settingsArray: [SyncableSettings]
+    /// Serve ancora qui: `syncAISettingsToCloud()` scrive le preferenze AI nel
+    /// record condiviso. Il ruolo del dispositivo invece è migrato in
+    /// `ICloudSettingsView`, che è l'unica schermata che lo mostra.
+    @Query(sort: \SyncableSettings.modifiedAt) private var settingsArray: [SyncableSettings]
     private var syncableSettings: SyncableSettings? { settingsArray.first }
-
-    private var deviceRole: String {
-        guard let s = syncableSettings, !s.masterDeviceID.isEmpty else {
-            return String(localized: "settings.device.role.master", defaultValue: "Primary")
-        }
-        return s.masterDeviceID == DeviceIdentity.id
-            ? String(localized: "settings.device.role.master", defaultValue: "Primary")
-            : String(localized: "settings.device.role.slave",  defaultValue: "Secondary")
-    }
-
-    private var isMasterDevice: Bool {
-        guard let s = syncableSettings else { return true }
-        return s.masterDeviceID.isEmpty || s.masterDeviceID == DeviceIdentity.id
-    }
 
     @AppStorage("alertNotificationsEnabled")
     private var alertNotificationsEnabled: Bool = false
@@ -52,7 +37,6 @@ struct SettingsView: View {
     private var securityNotificationsEnabled: Bool = false
 
     // MARK: - Home Location state
-    @State private var dataCounts: (readings: Int, summaries: Int, oldest: Date?)?
     @State private var showsLocationPicker = false
     @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
     @AppStorage("homeLocation.cityName") private var homeLocationCityName: String = ""
@@ -80,8 +64,8 @@ struct SettingsView: View {
                 } label: {
                     settingsLinkRow(
                         icon: "paintbrush",
-                        title: String(localized: "settings.appearance.title", defaultValue: "Appearance"),
-                        subtitle: String(localized: "settings.appearance.subtitle", defaultValue: "Markers, glass effect, and screen saver.")
+                        title: String(localized: "settings.appearance.title", defaultValue: "Floorplan"),
+                        subtitle: String(localized: "settings.appearance.subtitle", defaultValue: "Markers, effects, day ribbon, and screen saver.")
                     )
                 }
 
@@ -113,6 +97,12 @@ struct SettingsView: View {
                     )
                 }
 
+
+#if DEBUG
+                // Visibile solo in sviluppo, come Energia e Abitudini: e'
+                // l'unico ingresso a Smart Lighting e anche l'unico posto da
+                // cui si accende, quindi fuori dal debug il motore resta spento
+                // e irraggiungibile.
                 NavigationLink {
                     SmartLightingSettingsView()
                 } label: {
@@ -125,6 +115,7 @@ struct SettingsView: View {
                         badge: String(localized: "settings.badge.advanced", defaultValue: "Advanced")
                     )
                 }
+#endif
 
                 NavigationLink {
                     EnvironmentSettingsView()
@@ -136,24 +127,6 @@ struct SettingsView: View {
                     )
                 }
 
-#if DEBUG
-                // Abitudini in beta: strumento di sviluppo. L'interruttore
-                // esiste solo nelle build di debug — nelle build distribuite la
-                // sezione non e' raggiungibile, quindi offrire di mostrarla
-                // significherebbe promettere una schermata che non si apre.
-                Toggle(isOn: $habitsSectionVisible) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(String(localized: "settings.habits.beta.title", defaultValue: "Habits (beta)"))
-                            Text(String(localized: "settings.habits.beta.subtitle", defaultValue: "Show the experimental Habits section in the sidebar."))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "brain.head.profile")
-                    }
-                }
-#endif
             } header: {
                 Text(String(localized: "settings.section.intelligence", defaultValue: "Intelligence"))
             }
@@ -209,151 +182,35 @@ struct SettingsView: View {
             }
 #endif
 
-            // MARK: - Dati
+            // MARK: - Archivio e sincronizzazione
 
             Section {
-                HStack {
-                    Label(String(localized: "settings.data.lastCycle", defaultValue: "Last maintenance"),
-                          systemImage: "arrow.triangle.2.circlepath")
-                    Spacer()
-                    Text(dataLifecycleService.lastCycleDate.map {
-                        $0.formatted(.relative(presentation: .named))
-                    } ?? String(localized: "settings.data.never", defaultValue: "Never"))
-                        .foregroundStyle(.secondary)
-                }
-
-                if let dataCounts {
-                    HStack {
-                        Label(String(localized: "settings.data.stored", defaultValue: "Stored"),
-                              systemImage: "internaldrive")
-                        Spacer()
-                        Text(String(format: String(localized: "settings.data.counts",
-                                                   defaultValue: "%d readings · %d summaries"),
-                                    dataCounts.readings, dataCounts.summaries))
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-
-                    HStack {
-                        Label(String(localized: "settings.data.oldest", defaultValue: "Oldest reading"),
-                              systemImage: "calendar")
-                        Spacer()
-                        Text(dataCounts.oldest.map {
-                            $0.formatted(date: .abbreviated, time: .omitted)
-                        } ?? "—")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Button {
-                    Task {
-                        await dataLifecycleService.runFullCycle()
-                        refreshDataCounts()
-                    }
+                NavigationLink {
+                    DataSettingsView()
                 } label: {
-                    Label(String(localized: "settings.data.runNow", defaultValue: "Run maintenance now"),
-                          systemImage: "play.circle")
-                }
-                .disabled(dataLifecycleService.isRunning)
-
-                Toggle(isOn: $preservesRawData) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(String(localized: "settings.data.preserveRaw",
-                                        defaultValue: "Keep raw data"))
-                            Text(String(localized: "settings.data.preserveRaw.subtitle",
-                                        defaultValue: "Readings and events older than 30 days are removed once summarised. Their information survives in the permanent daily summaries."))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "externaldrive")
-                    }
-                }
-            } header: {
-                Text(String(localized: "settings.section.data", defaultValue: "Data"))
-            } footer: {
-                Text(String(localized: "settings.data.footer", defaultValue: "Readings are summarised into permanent daily aggregates, which feed the environmental baselines. Maintenance normally runs by itself once a day."))
-            }
-
-            // MARK: - Calendario
-
-            Section {
-                Toggle(isOn: $showsCalendarInDay) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(String(localized: "settings.calendar.toggle",
-                                        defaultValue: "Impegni nella giornata"))
-                            Text(String(localized: "settings.calendar.toggle.subtitle",
-                                        defaultValue: "Mostra gli eventi di oggi accanto ad automazioni e orari del sole."))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "calendar")
-                    }
-                }
-                .onChange(of: showsCalendarInDay) { _, isOn in
-                    // Il permesso si chiede qui e non di sorpresa mentre si
-                    // guarda la planimetria: chiedere nel momento in cui
-                    // l'utente ha appena espresso l'intenzione è l'unico in cui
-                    // la domanda ha senso.
-                    guard isOn else { return }
-                    Task { await calendarEvents.requestAccess() }
+                    settingsLinkRow(
+                        icon: "internaldrive",
+                        title: String(localized: "settings.section.data", defaultValue: "Data"),
+                        subtitle: String(localized: "settings.data.summary",
+                                         defaultValue: "Maintenance, stored readings, and raw data retention."),
+                        status: DataSettingsView.lastCycleText(dataLifecycleService.lastCycleDate)
+                    )
                 }
 
-                if showsCalendarInDay, calendarEvents.access == .denied {
-                    Label {
-                        Text(String(localized: "settings.calendar.denied",
-                                    defaultValue: "Accesso al calendario negato. Si concede da Impostazioni di sistema, alla voce Privacy."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
-                    }
-                }
-            } header: {
-                Text(String(localized: "settings.section.calendar", defaultValue: "Calendario"))
-            } footer: {
-                Text(String(localized: "settings.calendar.footer",
-                            defaultValue: "Gli eventi si leggono dal calendario del dispositivo e restano lì: non vengono salvati nell'archivio dell'app né inviati a nessun servizio."))
-            }
-
-            // MARK: - iCloud
-
-            Section {
-                HStack {
-                    Label(String(localized: "settings.device.role.label", defaultValue: "Device Role"), systemImage: isMasterDevice ? "iphone.badge.play" : "iphone")
-                    Spacer()
-                    Text(deviceRole)
-                        .foregroundStyle(.secondary)
-                }
-                if !isMasterDevice {
-                    Button {
-                        cloudKitSync.becomeMaster()
-                    } label: {
-                        Label(String(localized: "settings.device.becomeMaster", defaultValue: "Become Primary Device"), systemImage: "crown")
-                            .foregroundStyle(.tint)
-                    }
-                }
-
-                iCloudSyncRow
-
-                ShareLink(item: SyncDiagnosticsLogger.fileURL) {
-                    Label(
-                        String(localized: "settings.icloud.diagnostics.export", defaultValue: "Export Sync Diagnostics"),
-                        systemImage: "square.and.arrow.up"
+                NavigationLink {
+                    ICloudSettingsView()
+                } label: {
+                    settingsLinkRow(
+                        icon: "icloud",
+                        title: String(localized: "settings.icloud.header", defaultValue: "iCloud"),
+                        subtitle: String(localized: "settings.icloud.summary",
+                                         defaultValue: "Sync status, device role, and diagnostics."),
+                        status: syncStatus.shortLabel,
+                        statusColor: syncStatus.color
                     )
                 }
             } header: {
-                Text(String(localized: "settings.icloud.header", defaultValue: "iCloud"))
-            } footer: {
-                if isMasterDevice {
-                    Text(String(localized: "settings.icloud.master.footer", defaultValue: "Floorplans, settings, and automation opportunities sync automatically via iCloud. This device runs behavioral analysis and generates automation suggestions."))
-                } else {
-                    Text(String(localized: "settings.icloud.slave.footer", defaultValue: "Floorplans, settings, and automation opportunities sync automatically via iCloud. This device receives data from iCloud; tap \"Become Primary\" to run analysis here instead."))
-                }
+                Text(String(localized: "settings.section.storage", defaultValue: "Storage & Sync"))
             }
 
             // MARK: - Info
@@ -410,7 +267,6 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.large)
         .onAppear {
             refreshNotificationAuthorizationStatus()
-            refreshDataCounts()
         }
         .sheet(isPresented: $showsLocationPicker) {
             let lat = UserDefaults.standard.double(forKey: LocationPresenceService.homeLatKey)
@@ -474,6 +330,7 @@ struct SettingsView: View {
         return .secondary
     }
 
+
     private var smartLightingStatusText: String {
         smartLightingEngine.isGloballyEnabled
         ? String(localized: "settings.status.on", defaultValue: "On")
@@ -526,19 +383,6 @@ struct SettingsView: View {
 
     /// Conteggi dello store, letti una volta alla comparsa: un fetchCount nel
     /// body verrebbe rieseguito a ogni render.
-    private func refreshDataCounts() {
-        let ctx = ModelContext(modelContext.container)
-        var oldest = FetchDescriptor<SensorReading>(
-            sortBy: [SortDescriptor(\SensorReading.timestamp, order: .forward)]
-        )
-        oldest.fetchLimit = 1
-        dataCounts = (
-            readings: (try? ctx.fetchCount(FetchDescriptor<SensorReading>())) ?? 0,
-            summaries: (try? ctx.fetchCount(FetchDescriptor<DailySensorSummary>())) ?? 0,
-            oldest: (try? ctx.fetch(oldest))?.first?.timestamp
-        )
-    }
-
     private func refreshNotificationAuthorizationStatus() {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             Task { @MainActor in
@@ -601,84 +445,12 @@ struct SettingsView: View {
     }
 
     private func statusPill(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12), in: Capsule())
+        SettingsStatusPill(text: text, color: color)
     }
 
-    // MARK: - iCloud Sync Row
-
-    @ViewBuilder
-    private var iCloudSyncRow: some View {
-        HStack(spacing: 12) {
-            if cloudKitSync.isSyncing {
-                ProgressView()
-                    .frame(width: 28)
-            } else if cloudKitSync.lastError != nil {
-                Image(systemName: "exclamationmark.icloud")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.red)
-                    .frame(width: 28)
-            } else {
-                Image(systemName: "checkmark.icloud")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(cloudKitSync.lastSyncedAt != nil ? .green : .secondary)
-                    .frame(width: 28)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(String(localized: "settings.icloud.sync.title", defaultValue: "Sync status"))
-                    .foregroundStyle(.primary)
-
-                if cloudKitSync.isSyncing {
-                    Text(String(localized: "settings.icloud.status.syncing", defaultValue: "Syncing…"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if let error = cloudKitSync.lastError {
-                    Text(error.localizedDescription)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
-                } else if let date = cloudKitSync.lastSyncedAt {
-                    Text(String(
-                        format: String(localized: "settings.icloud.status.lastSync",
-                                       defaultValue: "Last synced %@"),
-                        date.formatted(.relative(presentation: .named))
-                    ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                } else {
-                    Text(String(localized: "settings.icloud.status.notYet", defaultValue: "Not yet synced"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-            }
-
-            Spacer()
-
-            if cloudKitSync.lastError != nil {
-                statusPill(
-                    String(localized: "settings.icloud.status.error", defaultValue: "Error"),
-                    color: .red
-                )
-            } else if cloudKitSync.isSyncing {
-                statusPill(
-                    String(localized: "settings.icloud.status.active", defaultValue: "Active"),
-                    color: BrandColor.primary
-                )
-            } else if cloudKitSync.lastSyncedAt != nil {
-                statusPill(
-                    String(localized: "settings.icloud.status.ok", defaultValue: "In sync"),
-                    color: .green
-                )
-            }
-        }
-        .padding(.vertical, 2)
-    }
+    /// Lo stato di iCloud per la riga di riepilogo. Lo stesso valore che la
+    /// schermata di dettaglio mostra per esteso.
+    private var syncStatus: SettingsSyncStatus { SettingsSyncStatus(service: cloudKitSync) }
 
     // MARK: - Home Location
 

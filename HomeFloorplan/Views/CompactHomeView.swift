@@ -33,7 +33,6 @@ struct CompactHomeView: View {
     @AppStorage("primaryFloorplanID")    private var primaryFloorplanID:    String = ""
     @AppStorage("pinnedFloorplanIDs")    private var pinnedFloorplanIDsRaw: String = "[]"
     /// Sezione Abitudini (beta): nascosta di default, come in sidebar.
-    @AppStorage("habits.sectionVisible") private var areHabitsEnabled:      Bool   = false
 
     @State private var showChat = false
 
@@ -126,11 +125,9 @@ struct CompactHomeView: View {
                                    title: String(localized: "sidebar.intelligence", defaultValue: "Intelligence"),
                                    icon: "sparkles.rectangle.stack")
 #if DEBUG
-                    if areHabitsEnabled {
-                        destinationRow(.habits,
-                                       title: String(localized: "sidebar.habits", defaultValue: "Habits"),
-                                       icon: "brain.head.profile")
-                    }
+                    destinationRow(.habits,
+                                   title: String(localized: "sidebar.habits", defaultValue: "Habits"),
+                                   icon: "brain.head.profile")
 #endif
                 } header: {
                     Text(String(localized: "sidebar.section.analysis", defaultValue: "Analysis"))
