@@ -21,6 +21,11 @@ enum VimarAutoImport {
     /// Da chiamare dopo un import manuale riuscito, mentre l'accesso
     /// security-scoped all'URL è ancora attivo: da qui in poi l'app sa
     /// dove vive l'export.
+    /// True dopo il primo import manuale: c'è un export da tenere aggiornato.
+    static var hasRememberedFile: Bool {
+        UserDefaults.standard.data(forKey: bookmarkKey) != nil
+    }
+
     static func rememberFile(at url: URL) {
         guard let bookmark = try? url.bookmarkData() else { return }
         UserDefaults.standard.set(bookmark, forKey: bookmarkKey)

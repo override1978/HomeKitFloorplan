@@ -92,7 +92,12 @@ final class AmbientalAIService {
 
     /// Analizza tutte le stanze fornite e aggiunge insight per quelle che ne hanno bisogno.
     /// Rispetta l'intervallo minimo di 15 minuti per stanza.
-    func analyzeRooms(_ rooms: [RoomEnvironmentData]) async {
+    /// - Parameter onRoomProcessed: chiamato dopo ogni stanza con (stanze fatte, totale),
+    ///   anche quando la stanza viene saltata: serve a chi mostra un avanzamento (App Intent).
+    func analyzeRooms(
+        _ rooms: [RoomEnvironmentData],
+        onRoomProcessed: ((Int, Int) -> Void)? = nil
+    ) async {
         if !isRestored { restoreFromStorage() }
         guard aiSettings.isOperational, aiSettings.anomalyDetectionEnabled else { return }
 
@@ -119,7 +124,8 @@ final class AmbientalAIService {
         // Rimuovi insight scaduti prima di procedere
         insights = insights.filter { $0.isVisible }
 
-        for room in rooms {
+        for (index, room) in rooms.enumerated() {
+            defer { onRoomProcessed?(index + 1, rooms.count) }
             let now = Date()
             if let last = lastAnalysisByRoom[room.roomName],
                now.timeIntervalSince(last) < minInterval { continue }

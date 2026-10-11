@@ -21,7 +21,6 @@ struct NewFloorplanSheet: View {
     @State private var errorMessage: String?
 
     @State private var showDrawingEditor = false
-    @State private var showImageDraftImport = false
     @State private var linkedRooms: [LinkedRoom] = []
     @State private var savedDrawingDocument: DrawingDocument?
     @State private var savedExteriorFillColorIndex: Int = -1
@@ -66,23 +65,6 @@ struct NewFloorplanSheet: View {
                     Text(String(localized: "floorplan.draw.footer", defaultValue: "Draw rooms and link them to HomeKit rooms."))
                 }
 
-                Section {
-                    Button {
-                        showImageDraftImport = true
-                    } label: {
-                        HStack {
-                            Label(String(localized: "floorplan.imageDraft.title", defaultValue: "Detect wall draft from image"), systemImage: "wand.and.rays")
-                                .foregroundStyle(BrandColor.primary)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.tertiary)
-                                .font(.caption.weight(.semibold))
-                        }
-                    }
-                } footer: {
-                    Text(String(localized: "floorplan.imageDraft.footer", defaultValue: "Import an existing image and detect clear wall segments locally. Review the draft in the 2D editor before saving."))
-                }
-
                 if let errorMessage {
                     Section {
                         Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -106,19 +88,6 @@ struct NewFloorplanSheet: View {
                 drawingEditor
                     .environment(homeKit)
                     .ignoresSafeArea()
-            }
-            .sheet(isPresented: $showImageDraftImport) {
-                FloorplanImageDraftImportSheet { draftDocument in
-                    savedDrawingDocument = draftDocument
-                    linkedRooms = []
-                    savedExteriorFillColorIndex = -1
-                    savedVisualExportStyle = .standard
-                    savedExportRotation = .asDrawn
-                    if name.trimmingCharacters(in: .whitespaces).isEmpty {
-                        name = String(localized: "floorplan.imageDraft.defaultName", defaultValue: "Image wall draft")
-                    }
-                    showDrawingEditor = true
-                }
             }
         }
         .suppressesIdleScreensaver(.modalPresentation)

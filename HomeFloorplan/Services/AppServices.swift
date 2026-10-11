@@ -171,7 +171,5 @@ final class AppServices {
         self.locationPresenceService = LocationPresenceService()
         self.familyPresenceService = FamilyPresenceService()
         self.maintenancePredictionService = MaintenancePredictionService(modelContainer: container)
-
-        SmartLightingIntentBridge.register(engine: lightingEngine)
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import BackgroundTasks
 import HomeKit
+import AppIntents
 
 @main
 struct HomeFloorplanApp: App {
@@ -56,7 +57,11 @@ struct HomeFloorplanApp: App {
         let container = Self.makeModelContainer()
         self.sharedModelContainer = container
 
-        self._services = State(initialValue: AppServices(container: container))
+        let services = AppServices(container: container)
+        self._services = State(initialValue: services)
+        // Gli App Intent possono lanciare l'app a freddo (Siri, Comandi) senza
+        // che nessuna view compaia: la registrazione deve stare qui.
+        AppDependencyManager.shared.add(dependency: services)
 
         // Apply persisted idle timeout so the screensaver respects the user's setting from launch.
         let savedTimeout = UserDefaults.standard.double(forKey: "idleTimeout")
