@@ -99,7 +99,7 @@ final class AmbientalAIService {
         onRoomProcessed: ((Int, Int) -> Void)? = nil
     ) async {
         if !isRestored { restoreFromStorage() }
-        guard aiSettings.isOperational, aiSettings.anomalyDetectionEnabled else { return }
+        guard canRunEnvironmentalAI else { return }
 
         normalizeVisibleInsightSeverities(rooms: rooms)
 
@@ -297,7 +297,12 @@ final class AmbientalAIService {
         // Step 4: costruisce payload con stato pre-valutato (no raw values/thresholds)
         let payload = buildPayload(room: room, readings: readings, baseline: effectiveBaseline, preResult: preResult)
         let weatherNote = currentWeather.map { WeatherContextProvider.systemPromptNote(snapshot: $0) }
-        let systemPrompt = buildSystemPrompt(roomType: preResult.roomType, baselineLevel: baselineResult.level, weatherNote: weatherNote)
+        let prompts = (
+            claude: buildSystemPrompt(roomType: preResult.roomType, baselineLevel: baselineResult.level,
+                                      weatherNote: weatherNote),
+            onDevice: buildSystemPrompt(roomType: preResult.roomType, baselineLevel: baselineResult.level,
+                                        weatherNote: weatherNote, forOnDevice: true)
+        )
 
         // Phase 3 trace: payload summary with actionable breakdown
         #if DEBUG
@@ -319,9 +324,11 @@ final class AmbientalAIService {
         #endif
 
         do {
-            let response = try await aiService.sendPrompt(
-                systemPrompt: systemPrompt,
-                userPrompt: payload
+            let response = try await generateInsightResponse(
+                roomName: room.roomName,
+                claudePrompt: prompts.claude,
+                onDevicePrompt: prompts.onDevice,
+                payload: payload
             )
             lastAnalysisError = nil
             lastAnalysisFailedAt = nil
@@ -393,9 +400,71 @@ final class AmbientalAIService {
         }
     }
 
+    // MARK: - Motore
+
+    /// Si può analizzare: AI e rilevamento anomalie attivi, e almeno un motore
+    /// pronto — Apple Intelligence sul dispositivo (niente chiave né consenso:
+    /// i dati non escono) oppure Claude configurato.
+    var canRunEnvironmentalAI: Bool {
+        guard aiSettings.isAIEnabled, aiSettings.anomalyDetectionEnabled else { return false }
+        return OnDeviceEnvironmentalAI.isAvailable || aiSettings.isOperational
+    }
+
+    /// Apple Intelligence locale quando c'è, altrimenti Claude. Se il modello
+    /// locale fallisce (guardrail, contesto) e Claude è configurato, ripiega su
+    /// Claude: meglio una risposta dal cloud che nessuna.
+    private func generateInsightResponse(
+        roomName: String,
+        claudePrompt: String,
+        onDevicePrompt: String,
+        payload: String
+    ) async throws -> String {
+        guard OnDeviceEnvironmentalAI.isAvailable else {
+            return try await aiService.sendPrompt(systemPrompt: claudePrompt, userPrompt: payload)
+        }
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let onDevice: String
+        do {
+            onDevice = try await OnDeviceEnvironmentalAI.respond(instructions: onDevicePrompt, payload: payload)
+        } catch {
+            dprint("⚠️ [EnvironmentAI] \(roomName): on-device failed (\(error.localizedDescription))")
+            guard aiSettings.isOperational else { throw error }
+            return try await aiService.sendPrompt(systemPrompt: claudePrompt, userPrompt: payload)
+        }
+
+        #if DEBUG
+        // Confronto sul campo: stessa stanza, stessi dati, due motori.
+        if aiSettings.isOperational {
+            let onDeviceDuration = clock.now - start
+            let claudeStart = clock.now
+            let claude = try? await aiService.sendPrompt(systemPrompt: claudePrompt, userPrompt: payload)
+            EnvironmentalAIComparisonLog.record(
+                roomName: roomName,
+                onDevice: onDevice,
+                onDeviceDuration: onDeviceDuration,
+                claude: claude,
+                claudeDuration: clock.now - claudeStart
+            )
+        }
+        #endif
+
+        return onDevice
+    }
+
     // MARK: - System Prompt Builder
 
-    private func buildSystemPrompt(roomType: RoomType, baselineLevel: BaselineLevel = .personal, weatherNote: String? = nil) -> String {
+    /// - Parameter forOnDevice: versione compatta per il modello Apple Intelligence
+    ///   locale — stesso contesto, regole più brevi (un modello piccolo segue
+    ///   meglio poche istruzioni chiare) e niente formato JSON, che lì è imposto
+    ///   dallo schema `@Generable`.
+    private func buildSystemPrompt(
+        roomType: RoomType,
+        baselineLevel: BaselineLevel = .personal,
+        weatherNote: String? = nil,
+        forOnDevice: Bool = false
+    ) -> String {
         let cal = Calendar.current
         let now = Date()
         let hour  = cal.component(.hour,  from: now)
@@ -444,6 +513,26 @@ final class AmbientalAIService {
         }
 
         let weatherLine = weatherNote.map { "\n        \($0)" } ?? ""
+
+        if forOnDevice {
+            // Frase esatta raccomandata da Apple per le lingue diverse da en_US:
+            // riduce le allucinazioni nei contesti multilingua.
+            let localeLine = AILocale.languageCode == "en" ? "" : "The person's locale is it_IT.\n"
+            return """
+            \(localeLine)You MUST write message and whyExplanation in \(lang).
+            You analyze one room of a smart home. Context: \(timeSlot), season: \(season), room type: \(roomContext).\(weatherLine)
+            The input JSON is already evaluated: `sensorStatus` gives urgency (normal, warning, danger) and \(baselineNote). `presence` says if people are home, sleeping, or the home is empty.
+
+            Rules:
+            - Never re-evaluate thresholds. Look only at sensors with urgency not normal, isAnomaly or actionableAnomaly true.
+            - If everything is normal, set hasInsight to false.
+            - A sensor with isStale true may be outdated: do not draw conclusions from it alone.
+            - Never mention devices, brands or hardware.
+            - Explain the likely cause (shower, cooking, people, sun, closed windows) using words like "tends to" or "probably".
+            - The message is colloquial, includes the room name and has no technical words like baseline, deviation or anomaly.
+            Example message: "Kitchen humidity has been lingering after cooking."
+            """
+        }
 
         return """
         You are a smart home AI assistant. RESPOND IN \(lang.uppercased()).

@@ -31,6 +31,21 @@ struct AISettingsView: View {
                 featuresSection
             }
             infoSection
+            #if DEBUG
+            Section {
+                NavigationLink {
+                    EnvironmentalAIComparisonView()
+                } label: {
+                    Label {
+                        Text(verbatim: "Confronto Apple Intelligence / Claude")
+                    } icon: {
+                        Image(systemName: "apple.intelligence")
+                    }
+                }
+            } footer: {
+                Text(verbatim: "Solo DEBUG. Motore attivo per l'analisi ambientale: \(OnDeviceEnvironmentalAI.isAvailable ? "Apple Intelligence sul dispositivo" : "Claude (Apple Intelligence non disponibile qui)").")
+            }
+            #endif
         }
         .navigationTitle(String(localized: "ai.settings.title", defaultValue: "Artificial Intelligence"))
         .navigationBarTitleDisplayMode(.large)

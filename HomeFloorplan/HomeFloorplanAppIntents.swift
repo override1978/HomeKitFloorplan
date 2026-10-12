@@ -133,7 +133,7 @@ extension AppServices {
     /// pre-processore salta la chiamata, e un "analizzate N stanze" da solo
     /// non dice niente. Senza AI configurata si risponde comunque.
     func runOnDemandHomeAnalysis(progress: Progress?) async throws -> HomeAnalysisSummary {
-        let runAI = aiSettings.isOperational && aiSettings.anomalyDetectionEnabled
+        let runAI = ambientalAIService.canRunEnvironmentalAI
 
         // Al lancio a freddo Siri aspetta poco: ogni fase ha un tetto, e se lo
         // sfora la risposta parte con quello che c'è mentre il lavoro continua.
