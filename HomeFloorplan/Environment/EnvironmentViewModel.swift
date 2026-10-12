@@ -315,6 +315,16 @@ final class EnvironmentViewModel {
     private var modelContainer: ModelContainer?
     private var currentLoadTask: Task<Void, Never>?
 
+    /// Ordine stanze e stanza esterna scelti dall'utente. I test passano un
+    /// archivio proprio: girando su un dispositivo vero, `.standard` sono le
+    /// preferenze dell'app installata, e l'ordine scelto lì scavalca quello
+    /// automatico che i test verificano.
+    @ObservationIgnored private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
     // MARK: - Cache per il percorso vivo
 
     /// Soglie utente, tenute da parte dopo il primo caricamento.
@@ -351,8 +361,8 @@ final class EnvironmentViewModel {
     /// Ordine personalizzato: array di roomName nell'ordine desiderato dall'utente.
     /// Vuoto = nessun ordine personalizzato (usa il default per urgency).
     private var customOrderNames: [String] {
-        get { UserDefaults.standard.stringArray(forKey: Self.orderKey) ?? [] }
-        set { UserDefaults.standard.set(newValue, forKey: Self.orderKey) }
+        get { defaults.stringArray(forKey: Self.orderKey) ?? [] }
+        set { defaults.set(newValue, forKey: Self.orderKey) }
     }
 
     /// Persiste l'ordine corrente. Passa un array vuoto per ripristinare il default.
@@ -440,7 +450,7 @@ final class EnvironmentViewModel {
     @discardableResult
     func applyLiveState(_ homeState: HomeState, now: Date = Date()) -> [RoomEnvironmentData] {
         var byRoom: [String: [SensorData]] = [:]
-        let outdoorRoom = UserDefaults.standard.string(forKey: "outdoorRoomName") ?? ""
+        let outdoorRoom = defaults.string(forKey: "outdoorRoomName") ?? ""
 
         for roomUUID in homeState.knownRoomUUIDs {
             guard let roomName = homeState.roomName(roomUUID) else { continue }
@@ -767,7 +777,7 @@ final class EnvironmentViewModel {
 
                 let syntheticID = UUID(uuidString: Self.stableUUID(room: roomName, type: serviceType.rawValue)) ?? UUID()
 
-                let outdoorRoom = UserDefaults.standard.string(forKey: "outdoorRoomName") ?? ""
+                let outdoorRoom = defaults.string(forKey: "outdoorRoomName") ?? ""
                 byRoom[roomName, default: []].append(SensorData(
                     id: syntheticID,
                     accessoryUUIDs: group.map(\.accessoryUUID),

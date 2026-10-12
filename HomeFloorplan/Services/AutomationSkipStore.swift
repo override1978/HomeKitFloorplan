@@ -43,7 +43,14 @@ final class AutomationSkipStore {
     /// non venga mai persa.
     static let restoreGrace: TimeInterval = 5 * 60
 
-    init() { load() }
+    /// Dove vivono i salti. I test passano un archivio proprio: girando su un
+    /// dispositivo vero, `.standard` sono le preferenze dell'app installata.
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        load()
+    }
 
     // MARK: - Lettura
 
@@ -80,11 +87,11 @@ final class AutomationSkipStore {
     // MARK: - Persistenza
 
     private func load() {
-        guard let raw = UserDefaults.standard.dictionary(forKey: Self.storageKey) else { return }
+        guard let raw = defaults.dictionary(forKey: Self.storageKey) else { return }
         skips = raw.compactMapValues { $0 as? Date }
     }
 
     private func save() {
-        UserDefaults.standard.set(skips, forKey: Self.storageKey)
+        defaults.set(skips, forKey: Self.storageKey)
     }
 }

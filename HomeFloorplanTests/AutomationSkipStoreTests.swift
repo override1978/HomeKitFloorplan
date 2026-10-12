@@ -6,9 +6,15 @@ import Testing
 @Suite("AutomationSkipStore — «stavolta no» e il ritorno")
 struct AutomationSkipStoreTests {
 
+    /// Archivio separato, svuotato a ogni test: mai le preferenze vere
+    /// dell'app, che sul dispositivo contengono i salti impostati davvero.
+    /// Nome fisso, così sul dispositivo resta un solo file e non uno per test.
+    private static let suiteName = "HomeFloorplanTests.AutomationSkipStore"
+    private let defaults = UserDefaults(suiteName: AutomationSkipStoreTests.suiteName)!
+
     private func makeStore() -> AutomationSkipStore {
-        UserDefaults.standard.removeObject(forKey: "automations.skippedUntil")
-        return AutomationSkipStore()
+        defaults.removePersistentDomain(forName: Self.suiteName)
+        return AutomationSkipStore(defaults: defaults)
     }
 
     @Test("Un'automazione non saltata non risulta saltata")
@@ -60,7 +66,7 @@ struct AutomationSkipStoreTests {
         store.recordSkip("trigger", firingAt: fire)
 
         // Come dopo una chiusura dell'app: stesso archivio, oggetto nuovo.
-        let reborn = AutomationSkipStore()
+        let reborn = AutomationSkipStore(defaults: defaults)
         #expect(reborn.isSkipped("trigger"),
                 "tenerla in memoria lascerebbe l'automazione spenta per sempre dopo un riavvio")
         reborn.clearSkip("trigger")

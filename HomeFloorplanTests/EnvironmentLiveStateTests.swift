@@ -13,6 +13,12 @@ struct EnvironmentLiveStateTests {
 
     private func makeState() -> HomeState { HomeState(coalescing: false) }
 
+    /// Preferenze vuote e separate: sul dispositivo `.standard` contiene
+    /// l'ordine stanze scelto dall'utente, che scavalca quello automatico.
+    private func makeViewModel() -> EnvironmentViewModel {
+        EnvironmentViewModel(defaults: UserDefaults(suiteName: "EnvironmentLiveStateTests.\(UUID().uuidString)")!)
+    }
+
     private func feed(_ state: HomeState,
                       _ type: SensorServiceType,
                       _ value: Double,
@@ -34,7 +40,7 @@ struct EnvironmentLiveStateTests {
     @Test("Costruisce le stanze senza toccare l'archivio: nessun ModelContainer configurato")
     func buildsWithoutDatabase() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let now = Date()
 
         feed(state, .temperature, 21.5, at: now)
@@ -51,7 +57,7 @@ struct EnvironmentLiveStateTests {
     @Test("`lastUpdated` è l'istante in cui il sensore si è fatto sentire")
     func lastUpdatedComesFromConfirmation() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let t0 = Date()
         let t1 = t0.addingTimeInterval(5 * 60)
 
@@ -66,7 +72,7 @@ struct EnvironmentLiveStateTests {
     @Test("Gli UUID degli accessori restano nel formato che l'archivio usa")
     func accessoryUUIDFormatMatchesArchive() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let now = Date()
 
         feed(state, .temperature, 21.5, accessory: Self.sensorA, at: now)
@@ -81,7 +87,7 @@ struct EnvironmentLiveStateTests {
     @Test("Più sensori numerici nella stessa stanza: media")
     func averagesNumericSensors() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let now = Date()
 
         feed(state, .temperature, 20, accessory: Self.sensorA, at: now)
@@ -95,7 +101,7 @@ struct EnvironmentLiveStateTests {
     @Test("Allarmi e qualità aria: vince il peggiore, non la media")
     func worstCaseForAlerts() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let now = Date()
 
         feed(state, .smoke, 0, accessory: Self.sensorA, at: now)
@@ -110,7 +116,7 @@ struct EnvironmentLiveStateTests {
     @Test("La stanza muta resta in scena, ma dichiarata muta")
     func silentRoomIsMarkedNotHidden() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let t0 = Date()
         let later = t0.addingTimeInterval(HomeState.defaultStaleInterval + 60)
 
@@ -131,7 +137,7 @@ struct EnvironmentLiveStateTests {
     @Test("Una stanza muta non è una stanza eccellente")
     func silentRoomIsNotExcellent() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let t0 = Date()
         let later = t0.addingTimeInterval(HomeState.defaultStaleInterval + 60)
 
@@ -152,7 +158,7 @@ struct EnvironmentLiveStateTests {
     @Test("Un sensore muto fra due vivi non tinge la stanza ma resta leggibile")
     func partiallySilentRoom() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let t0 = Date()
         let t1 = t0.addingTimeInterval(HomeState.defaultStaleInterval + 60)
 
@@ -173,7 +179,7 @@ struct EnvironmentLiveStateTests {
     @Test("Il sensore morto non trascina il punteggio della stanza")
     func deadSensorDoesNotDragTheScore() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let t0 = Date()
         let t1 = t0.addingTimeInterval(HomeState.defaultStaleInterval + 60)
 
@@ -196,7 +202,7 @@ struct EnvironmentLiveStateTests {
     @Test("Stanze distinte restano distinte e si ordinano per urgenza")
     func roomsAreSeparateAndSortedByUrgency() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let now = Date()
 
         feed(state, .carbonDioxide, 400, room: Self.soggiorno, roomName: "Soggiorno", at: now)
@@ -213,7 +219,7 @@ struct EnvironmentLiveStateTests {
     @Test("Senza soglie caricate valgono quelle di default del tipo")
     func fallsBackToDefaultThresholds() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let now = Date()
 
         feed(state, .carbonDioxide, 400, at: now)
@@ -226,7 +232,7 @@ struct EnvironmentLiveStateTests {
     @Test("Senza storico il trend è fermo, non inventato")
     func trendIsSteadyUntilTheArchiveAnswers() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let now = Date()
 
         feed(state, .temperature, 21.5, at: now)
@@ -238,7 +244,7 @@ struct EnvironmentLiveStateTests {
     @Test("L'ordine dei sensori non cambia fra due ricostruzioni identiche")
     func sensorOrderIsStable() {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let now = Date()
 
         // Quattro tipi tutti tranquilli: senza spareggio l'urgenza non
@@ -260,7 +266,7 @@ struct EnvironmentLiveStateTests {
     @Test("Anche l'ordine delle stanze tranquille è stabile")
     func roomOrderIsStable() {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let now = Date()
 
         feed(state, .temperature, 21, room: Self.soggiorno, roomName: "Soggiorno", at: now)
@@ -359,7 +365,7 @@ struct EnvironmentLiveStateTests {
     @Test("L'identità di una stanza non cambia fra due ricostruzioni")
     func roomIdentityIsStable() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let now = Date()
 
         feed(state, .temperature, 21, room: Self.soggiorno, roomName: "Soggiorno", at: now)
@@ -376,7 +382,7 @@ struct EnvironmentLiveStateTests {
     @Test("L'identità sopravvive anche a un cambio di valore")
     func roomIdentitySurvivesValueChange() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let t0 = Date()
         let t1 = t0.addingTimeInterval(60)
 
@@ -396,21 +402,21 @@ struct EnvironmentLiveStateTests {
         let now = Date()
         feed(state, .temperature, 21, at: now)
 
-        let a = try #require(EnvironmentViewModel().applyLiveState(state, now: now).first)
-        let b = try #require(EnvironmentViewModel().applyLiveState(state, now: now).first)
+        let a = try #require(makeViewModel().applyLiveState(state, now: now).first)
+        let b = try #require(makeViewModel().applyLiveState(state, now: now).first)
         #expect(a.id == b.id)
     }
 
     @Test("Stato vuoto: nessuna stanza, nessun crash")
     func emptyStateYieldsNoRooms() {
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         #expect(vm.applyLiveState(makeState()).isEmpty)
     }
 
     @Test("Una nuova misura riallinea la schermata senza toccare il disco")
     func newReadingRefreshesRooms() throws {
         let state = makeState()
-        let vm = EnvironmentViewModel()
+        let vm = makeViewModel()
         let t0 = Date()
         let t1 = t0.addingTimeInterval(60)
 
