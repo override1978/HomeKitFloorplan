@@ -137,7 +137,6 @@ final class AppServices {
                 aiSettings.selectedProvider = .claude
             }
             aiSettings.isAIEnabled             = settings.aiIsEnabled
-            aiSettings.suggestionsEnabled      = settings.aiSuggestionsEnabled
             aiSettings.anomalyDetectionEnabled = settings.aiAnomalyDetectionEnabled
             aiSettings.ruleEngineEnabled       = settings.aiRuleEngineEnabled
             aiSettings.hasAIDataConsent        = settings.aiHasDataConsent

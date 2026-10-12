@@ -6,28 +6,6 @@ import Testing
 @Suite("AutomationProposalMapper chatbot proposals")
 struct AutomationProposalMapperTests {
 
-    /// UUID stabile per l'accessorio demo usato nel test di fallback-per-nome.
-    static let climaSoggiornoID = UUID(uuidString: "DE300000-0000-4000-8000-000000000001")!
-
-    /// Fixture capability minima (accessorio azionabile "Demo Clima Soggiorno"),
-    /// inlined dopo la rimozione di HabitScenarioFactory col ritiro del motore.
-    private func demoCapabilities() -> [AutomationCapabilityDescriptor] {
-        [
-            AutomationCapabilityDescriptor(
-                id: "\(Self.climaSoggiornoID.uuidString)-power",
-                accessoryID: Self.climaSoggiornoID,
-                accessoryName: "Demo Clima Soggiorno",
-                roomName: "Demo Soggiorno",
-                characteristicID: UUID(uuidString: "DE300000-0000-4000-8000-0000000000AA")!,
-                characteristicType: "00000025-0000-1000-8000-0026BB765291", // PowerState
-                title: "Power",
-                valueKind: .boolean(activeLabel: "On", inactiveLabel: "Off"),
-                supportedRoles: [.trigger, .condition],
-                defaultOperator: .equals
-            )
-        ]
-    }
-
     @Test("setMode keeps secondary target temperature")
     func setModeKeepsSecondaryTargetTemperature() {
         let accessoryID = UUID()
@@ -51,40 +29,6 @@ struct AutomationProposalMapperTests {
         #expect(action.kind == .setMode)
         #expect(action.value == 2)
         #expect(action.secondaryValue == 24)
-    }
-
-    @Test("UUID effetto estraneo: riabbinato per nome alle capability locali")
-    func staleEffectAccessoryIDResolvesByName() {
-        // Scenario device slave: il target risolto a monte porta un UUID HomeKit
-        // di un ALTRO device, assente dal catalogo capabilities. Il mapper deve
-        // riabbinare per nome invece di produrre una proposta senza azioni.
-        let foreignID = UUID()
-        let proposal = AutomationProposalMapper.proposal(
-            from: makeSuggestion(targetAccessoryName: "Clima Soggiorno"),
-            targetAccessoryID: foreignID,
-            capabilities: demoCapabilities(),
-            scenes: []
-        )
-
-        guard case .accessory(let action) = proposal.actions.first else {
-            Issue.record("Expected accessory action resolved by name fallback")
-            return
-        }
-        #expect(action.accessoryID == Self.climaSoggiornoID)
-        #expect(action.accessoryID != foreignID)
-    }
-
-    @Test("UUID estraneo senza nome abbinabile: nessuna azione, limitation esplicita")
-    func unresolvableEffectAccessoryYieldsNoAction() {
-        let proposal = AutomationProposalMapper.proposal(
-            from: makeSuggestion(targetAccessoryName: "Accessorio Inesistente"),
-            targetAccessoryID: UUID(),
-            capabilities: demoCapabilities(),
-            scenes: []
-        )
-
-        #expect(proposal.actions.isEmpty)
-        #expect(proposal.unsupportedReason != nil, "azione mancante = proposta esplicitamente non supportata, mai un builder vuoto silenzioso")
     }
 
     @Test("setHumidity maps to humidity proposal action")
@@ -152,21 +96,6 @@ struct AutomationProposalMapperTests {
         #expect(schedule.hour == 7)
         #expect(schedule.minute == 30)
         #expect(schedule.weekdays == Set([2, 3, 4, 5, 6]))
-    }
-
-    private func makeSuggestion(targetAccessoryName: String) -> HabitInterpreterCore.RoutineSuggestion {
-        HabitInterpreterCore.RoutineSuggestion(
-            title: "Test routine",
-            explanation: "test",
-            triggerType: "calendar",
-            triggerTime: "14:00",
-            weekdays: nil,
-            triggerAccessoryName: nil,
-            targetAccessoryName: targetAccessoryName,
-            additionalTargetNames: nil,
-            action: "on",
-            scheduleKind: nil
-        )
     }
 
     private func makeProposal(

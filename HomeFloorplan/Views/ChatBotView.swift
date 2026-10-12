@@ -1170,16 +1170,6 @@ struct ChatBotView: View {
                 ]
             ),
             ChatSuggestionCategory(
-                id: "habits",
-                icon: "brain.head.profile",
-                title: String(localized: "agent.suggestions.habits", defaultValue: "Habits"),
-                prompts: [
-                    String(localized: "agent.prompt.habits.learned", defaultValue: "What routines have you learned?"),
-                    String(localized: "agent.prompt.habits.ready", defaultValue: "What automations are ready?"),
-                    String(localized: "agent.prompt.habits.createOpportunity", defaultValue: "Create an automation opportunity from my routines")
-                ]
-            ),
-            ChatSuggestionCategory(
                 id: "automations",
                 icon: "wand.and.stars",
                 title: String(localized: "agent.suggestions.automations", defaultValue: "Automations"),

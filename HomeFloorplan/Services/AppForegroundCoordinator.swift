@@ -247,7 +247,5 @@ struct AppForegroundCoordinator {
                 await matterEnergyLiveStore.refreshIfNeeded(home: home)
             }
         }
-        // Motore statistico ritirato: nessuna analisi comportamentale al
-        // foreground (pivot Abitudini — evidenze + interprete LLM on-demand).
     }
 }

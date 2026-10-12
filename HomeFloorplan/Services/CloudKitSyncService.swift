@@ -541,7 +541,6 @@ final class CloudKitSyncService {
 
         settings.aiProviderRaw             = aiSettings.selectedProvider.rawValue
         settings.aiIsEnabled               = aiSettings.isAIEnabled
-        settings.aiSuggestionsEnabled      = aiSettings.suggestionsEnabled
         settings.aiAnomalyDetectionEnabled = aiSettings.anomalyDetectionEnabled
         settings.aiRuleEngineEnabled       = aiSettings.ruleEngineEnabled
         settings.aiHasDataConsent          = aiSettings.hasAIDataConsent

@@ -58,7 +58,7 @@ enum AIProvider: String, CaseIterable, Codable {
         }
     }
 
-    /// Plain prompt features such as environmental insights and habit naming.
+    /// Plain prompt features such as environmental insights.
     var supportsPromptAnalysis: Bool {
         true
     }
@@ -77,7 +77,6 @@ enum AIProvider: String, CaseIterable, Codable {
 private enum AISettingsKeys {
     static let selectedProvider      = "ai.selectedProvider"
     static let isAIEnabled           = "ai.isEnabled"
-    static let suggestionsEnabled    = "ai.suggestionsEnabled"
     static let anomalyEnabled        = "ai.anomalyDetectionEnabled"
     static let ruleEngineEnabled     = "ai.ruleEngineEnabled"
     static let lastTestDate          = "ai.lastConnectionTestDate"
@@ -105,11 +104,6 @@ final class AISettings {
     }
 
     // MARK: - Feature toggles
-
-    /// Suggerimenti abitudini (IDEA-04).
-    var suggestionsEnabled: Bool {
-        didSet { UserDefaults.standard.set(suggestionsEnabled, forKey: AISettingsKeys.suggestionsEnabled) }
-    }
 
     /// Rilevamento anomalie sensori (IDEA-05).
     var anomalyDetectionEnabled: Bool {
@@ -188,7 +182,6 @@ final class AISettings {
         }
 
         self.isAIEnabled             = ud.bool(forKey: AISettingsKeys.isAIEnabled)
-        self.suggestionsEnabled      = ud.bool(forKey: AISettingsKeys.suggestionsEnabled)
         self.anomalyDetectionEnabled = ud.bool(forKey: AISettingsKeys.anomalyEnabled)
         self.ruleEngineEnabled       = ud.bool(forKey: AISettingsKeys.ruleEngineEnabled)
         self.lastConnectionTest      = ud.object(forKey: AISettingsKeys.lastTestDate) as? Date

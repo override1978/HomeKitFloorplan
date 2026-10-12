@@ -91,7 +91,7 @@ struct SettingsView: View {
                     settingsLinkRow(
                         icon: "brain",
                         title: String(localized: "settings.ai.link", defaultValue: "Home Intelligence"),
-                        subtitle: String(localized: "settings.ai.summary", defaultValue: "AI insights, habit suggestions, anomaly summaries, and assistant features."),
+                        subtitle: String(localized: "settings.ai.summary.v2", defaultValue: "AI insights, anomaly summaries, and assistant features."),
                         status: aiStatusText,
                         statusColor: aiStatusColor
                     )
@@ -99,7 +99,7 @@ struct SettingsView: View {
 
 
 #if DEBUG
-                // Visibile solo in sviluppo, come Energia e Abitudini: e'
+                // Visibile solo in sviluppo, come Energia: e'
                 // l'unico ingresso a Smart Lighting e anche l'unico posto da
                 // cui si accende, quindi fuori dal debug il motore resta spento
                 // e irraggiungibile.
@@ -283,7 +283,6 @@ struct SettingsView: View {
         }
         .onChange(of: aiSettings.selectedProvider) { _, _ in syncAISettingsToCloud() }
         .onChange(of: aiSettings.isAIEnabled) { _, _ in syncAISettingsToCloud() }
-        .onChange(of: aiSettings.suggestionsEnabled) { _, _ in syncAISettingsToCloud() }
         .onChange(of: aiSettings.anomalyDetectionEnabled) { _, _ in syncAISettingsToCloud() }
         .onChange(of: aiSettings.ruleEngineEnabled) { _, _ in syncAISettingsToCloud() }
         .onChange(of: aiSettings.hasAIDataConsent) { _, _ in syncAISettingsToCloud() }
@@ -294,7 +293,6 @@ struct SettingsView: View {
         guard let syncableSettings else { return }
         syncableSettings.aiProviderRaw             = aiSettings.selectedProvider.rawValue
         syncableSettings.aiIsEnabled               = aiSettings.isAIEnabled
-        syncableSettings.aiSuggestionsEnabled      = aiSettings.suggestionsEnabled
         syncableSettings.aiAnomalyDetectionEnabled = aiSettings.anomalyDetectionEnabled
         syncableSettings.aiRuleEngineEnabled       = aiSettings.ruleEngineEnabled
         syncableSettings.aiHasDataConsent          = aiSettings.hasAIDataConsent

@@ -398,15 +398,6 @@ final class ToolDispatcher {
             ]
         ),
         ToolSchema(
-            name: "getHabits",
-            description: "Restituisce le abitudini comportamentali rilevate e le opportunità di automazione in attesa di approvazione.",
-            inputSchema: [
-                "type": "object",
-                "properties": [:],
-                "required": []
-            ]
-        ),
-        ToolSchema(
             name: "diagnoseAutomations",
             description: "Elenca e diagnostica le regole/automazioni create nell'app: trigger, azione, modalità HomeKit/In-App, stato enabled, scene collegate e problemi evidenti. Usa per domande come 'che automazioni ho?', 'perché non parte?', 'questa regola è sincronizzata con HomeKit?'.",
             inputSchema: [
@@ -703,7 +694,7 @@ final class ToolDispatcher {
             name: "proposeOpportunity",
             description: """
             Crea una proposta di automazione dalla conversazione e la mostra all'utente \
-            come bottone di revisione nel nuovo Automation Builder e nella sezione Abitudini. \
+            come bottone di revisione nel nuovo Automation Builder. \
             Usa quando l'utente chiede una regola/automazione oppure usa un comando con trigger \
             temporale o condizionale anche senza dire "automazione" \
             ("ogni sera alle 22 spegni le luci", "quando la porta si apre accendi i faretti", \
@@ -772,7 +763,7 @@ final class ToolDispatcher {
                     ],
                     "naturalLanguage": [
                         "type": "string",
-                        "description": "Descrizione completa in linguaggio naturale mostrata in HabitsView (include orario, giorni, condizioni, ecc.)."
+                        "description": "Descrizione completa in linguaggio naturale mostrata nella scheda di revisione (include orario, giorni, condizioni, ecc.)."
                     ],
                     "triggerType": [
                         "type": "string",
@@ -837,7 +828,6 @@ final class ToolDispatcher {
         case "listAccessories":    return listAccessories(input: input)
         case "getHistory":         return await getHistory(input: input)
         case "getSecurityState":   return getSecurityState(input: input)
-        case "getHabits":          return getHabits(input: input)
         case "diagnoseAutomations": return diagnoseAutomations(input: input)
         case "getOutdoor":         return getOutdoor(input: input)
         case "controlAccessory":    return await controlAccessory(input: input)
@@ -849,7 +839,7 @@ final class ToolDispatcher {
         case "getLightingStatus":   return getLightingStatus(input: input)
         case "configureLighting":   return configureLighting(input: input)
         default:
-            return "Tool '\(toolName)' non riconosciuto. Tool disponibili: readSensor, getRoomState, listAccessories, getHistory, getSecurityState, getHabits, diagnoseAutomations, getOutdoor, controlAccessory, proposeAction, chooseAccessory, proposeOpportunity, createScene, listScenes, getLightingStatus, configureLighting."
+            return "Tool '\(toolName)' non riconosciuto. Tool disponibili: readSensor, getRoomState, listAccessories, getHistory, getSecurityState, diagnoseAutomations, getOutdoor, controlAccessory, proposeAction, chooseAccessory, proposeOpportunity, createScene, listScenes, getLightingStatus, configureLighting."
         }
     }
 
@@ -1067,47 +1057,6 @@ final class ToolDispatcher {
         }
 
         return lines.joined(separator: "\n")
-    }
-
-    // MARK: - getHabits
-
-    private func getHabits(input: [String: Any]) -> String {
-        let evidences = UsageEvidenceService.evidences(modelContainer: modelContainer)
-
-        guard !evidences.isEmpty else {
-            return "Nessuna routine osservata. Servono più giorni di utilizzo manuale, "
-                 + "oppure la casa è già coperta dalle automazioni esistenti."
-        }
-
-        var lines = ["Routine osservate (\(evidences.count)):"]
-        for e in evidences.prefix(8) {
-            let room = e.roomName.map { " [\($0)]" } ?? ""
-            lines.append(
-                "- \(e.accessoryName)\(room): \(Self.formatWindow(e)) \(Self.formatWeekdays(e.weekdayPattern)), "
-                + "\(e.distinctDays) giorni distinti su \(e.observedSpanDays)"
-            )
-        }
-        if evidences.count > 8 { lines.append("  (+ altre \(evidences.count - 8))") }
-
-        return lines.joined(separator: "\n")
-    }
-
-    private static func formatWindow(_ e: UsageEvidenceBuilder.Evidence) -> String {
-        func hhmm(_ minutes: Int) -> String {
-            String(format: "%02d:%02d", minutes / 60, minutes % 60)
-        }
-        return "\(hhmm(e.windowStartMinute))-\(hhmm(e.windowEndMinute))"
-    }
-
-    private static func formatWeekdays(_ pattern: UsageEvidenceBuilder.WeekdayPattern) -> String {
-        switch pattern {
-        case .everyDay: return "tutti i giorni"
-        case .weekdays: return "lun-ven"
-        case .weekend:  return "sab-dom"
-        case .days(let set):
-            let names = ["", "dom", "lun", "mar", "mer", "gio", "ven", "sab"]
-            return set.sorted().compactMap { names.indices.contains($0) ? names[$0] : nil }.joined(separator: "/")
-        }
     }
 
     // MARK: - diagnoseAutomations

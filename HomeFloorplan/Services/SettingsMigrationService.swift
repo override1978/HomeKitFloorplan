@@ -27,7 +27,6 @@ struct SettingsMigrationService {
         if let existing {
             existing.aiProviderRaw             = aiSettings.selectedProvider.rawValue
             existing.aiIsEnabled               = aiSettings.isAIEnabled
-            existing.aiSuggestionsEnabled      = aiSettings.suggestionsEnabled
             existing.aiAnomalyDetectionEnabled = aiSettings.anomalyDetectionEnabled
             existing.aiRuleEngineEnabled       = aiSettings.ruleEngineEnabled
             existing.aiHasDataConsent          = aiSettings.hasAIDataConsent
@@ -37,7 +36,7 @@ struct SettingsMigrationService {
             let settings = SyncableSettings(
                 aiProviderRaw:              aiSettings.selectedProvider.rawValue,
                 aiIsEnabled:               aiSettings.isAIEnabled,
-                aiSuggestionsEnabled:       aiSettings.suggestionsEnabled,
+                aiSuggestionsEnabled:       false,
                 aiAnomalyDetectionEnabled:  aiSettings.anomalyDetectionEnabled,
                 aiRuleEngineEnabled:        aiSettings.ruleEngineEnabled,
                 aiHasDataConsent:           aiSettings.hasAIDataConsent,

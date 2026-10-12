@@ -60,7 +60,6 @@ final class AgentLoopService {
             - getHistory: storico sensori (ultime N ore, default 24h)
             - getUsage: ore utilizzo dispositivi energia (luci, prese, ecc.)
             - getSecurityState: stato allarme, serrature, sensori contatto
-            - getHabits: abitudini rilevate e opportunità di automazione
             - diagnoseAutomations: elenco e diagnosi delle automazioni/regole già create nell'app. \
               Usa per "che automazioni ho?", "perché non parte?", "è sincronizzata con HomeKit?", \
               "quali regole sono disabilitate?". Può filtrare per nome regola/scena/azione.
@@ -315,7 +314,6 @@ final class AgentLoopService {
             - getHistory: sensor history (last N hours, default 24h)
             - getUsage: device usage hours (lights, outlets, etc.)
             - getSecurityState: alarm, locks, contact sensor state
-            - getHabits: detected habits and automation opportunities
             - diagnoseAutomations: list and diagnose automations/rules already created in the app. \
               Use for "what automations do I have?", "why doesn't it run?", "is it synced with HomeKit?", \
               "which rules are disabled?". Can filter by rule/scene/action name.

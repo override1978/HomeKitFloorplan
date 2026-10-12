@@ -109,8 +109,8 @@ struct AISettingsView: View {
     private var providerCapabilitiesSection: some View {
         Section {
             capabilityRow(
-                title: String(localized: "ai.settings.capability.analysis", defaultValue: "Environmental and habit insights"),
-                detail: String(localized: "ai.settings.capability.analysis.detail", defaultValue: "Used for room analysis, anomaly summaries, and habit naming."),
+                title: String(localized: "ai.settings.capability.environment", defaultValue: "Environmental insights"),
+                detail: String(localized: "ai.settings.capability.environment.detail", defaultValue: "Used for room analysis and anomaly summaries."),
                 isAvailable: settings.selectedProvider.supportsPromptAnalysis
             )
 
@@ -258,26 +258,20 @@ struct AISettingsView: View {
     @ViewBuilder
     private var featuresSection: some View {
         Section {
-            Toggle(isOn: binding(\.suggestionsEnabled)) {
-                Label(
-                    String(localized: "ai.settings.suggestions", defaultValue: "Habit Suggestions"),
-                    systemImage: "lightbulb"
-                )
-            }
-            .disabled(!settings.isOperational)
-
             Toggle(isOn: binding(\.anomalyDetectionEnabled)) {
                 Label(
                     String(localized: "ai.settings.anomaly", defaultValue: "Anomaly Detection"),
                     systemImage: "exclamationmark.triangle"
                 )
             }
-            .disabled(!settings.isOperational)
+            // Con Apple Intelligence sul dispositivo l'analisi ambientale non
+            // ha bisogno della chiave Claude.
+            .disabled(!settings.isOperational && !OnDeviceEnvironmentalAI.isAvailable)
 
         } header: {
             Text(String(localized: "ai.settings.features.header", defaultValue: "AI Features"))
         } footer: {
-            if !settings.isOperational {
+            if !settings.isOperational && !OnDeviceEnvironmentalAI.isAvailable {
                 Text(String(localized: "ai.settings.features.noKey",
                             defaultValue: "Set up a valid API key to enable AI features."))
             }

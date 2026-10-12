@@ -27,8 +27,6 @@ struct SidebarView: View {
     @AppStorage("sidebar.section.analysis.expanded")   private var analysisExpanded:   Bool = true
     @AppStorage("sidebar.section.scenes.expanded")     private var scenesExpanded:     Bool = true
     @AppStorage("sidebar.section.settings.expanded")   private var settingsExpanded:   Bool = true
-    /// Sezione Abitudini (beta): nascosta di default nella build App Store,
-    /// riattivabile da Impostazioni → Home Intelligence per il testing.
 
     @State private var showingNewFloorplan = false
     @State private var pendingDeleteFloorplan: Floorplan?
@@ -121,7 +119,7 @@ struct SidebarView: View {
                 }
             }
 
-            // MARK: Analisi — Ambiente, Sicurezza, Intelligenza, Abitudini
+            // MARK: Analisi — Ambiente, Sicurezza, Intelligenza
             Section {
                 DisclosureGroup(isExpanded: $analysisExpanded) {
                     NavigationLink(value: SidebarSelection.environment) {
@@ -131,9 +129,9 @@ struct SidebarView: View {
                         Label(String(localized: "sidebar.security", defaultValue: "Security"), systemImage: "shield.lefthalf.filled")
                     }
 #if DEBUG
-                    // Energia e Abitudini restano strumenti di sviluppo: fuori
+                    // Energia resta uno strumento di sviluppo: fuori
                     // dalle build di distribuzione non hanno una voce in
-                    // navigazione (vedi anche la rotta in ContentView, che le
+                    // navigazione (vedi anche la rotta in ContentView, che la
                     // chiude anche a chi arriva da una selezione salvata).
                     NavigationLink(value: SidebarSelection.energy) {
                         Label(String(localized: "sidebar.energy", defaultValue: "Energy"), systemImage: "bolt.fill")
@@ -142,15 +140,6 @@ struct SidebarView: View {
                     NavigationLink(value: SidebarSelection.homeIntelligence) {
                         Label(String(localized: "sidebar.intelligence", defaultValue: "Intelligence"), systemImage: "sparkles.rectangle.stack")
                     }
-#if DEBUG
-                    // Nessuna bandierina davanti: l'interruttore che la
-                    // alzava e' sparito dalle Impostazioni, e una condizione
-                    // che nessuno puo' piu' soddisfare non e' una condizione,
-                    // e' una riga morta.
-                    NavigationLink(value: SidebarSelection.habits) {
-                        Label(String(localized: "sidebar.habits", defaultValue: "Habits"), systemImage: "brain.head.profile")
-                    }
-#endif
                 } label: {
                     Text(String(localized: "sidebar.section.analysis", defaultValue: "Analysis"))
                         .font(.subheadline.weight(.semibold))
@@ -392,7 +381,6 @@ enum SidebarSelection: Hashable {
     case security
     case environment
     case energy
-    case habits
     case homeIntelligence
     case debugHomeKit
     case homeIntelligenceDebug

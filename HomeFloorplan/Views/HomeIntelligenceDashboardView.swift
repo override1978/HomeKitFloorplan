@@ -122,7 +122,7 @@ private enum LocalizedInsightCopy {
 ///   2. Needs Attention      — actionable signals without duplicating dashboards
 ///   3. Journal              — recent proactive notifications
 ///   4. Opportunities        — automation suggestions ready for action
-///   5. Learning Summary     — compact learning state with link to Habits
+///   5. Learning Summary     — compact learning state
 ///   6. AI Effectiveness     — trust score + per-intent breakdown
 struct HomeIntelligenceDashboardView: View {
 
@@ -887,18 +887,6 @@ struct HomeIntelligenceDashboardView: View {
                 }
             }
         }
-    }
-
-    // MARK: - Section: Abitudini (unified 3-tier)
-
-    private func abitudiniTierLabel(title: String, icon: String) -> some View {
-        Label(title, systemImage: icon)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .tracking(0.3)
-            .padding(.horizontal, 2)
-            .padding(.top, 4)
     }
 
     // MARK: - Owner Indicator

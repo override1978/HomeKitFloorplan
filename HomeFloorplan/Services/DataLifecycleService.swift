@@ -79,15 +79,10 @@ final class DataLifecycleService {
     /// l'unico canale leggibile in produzione, esportabile da Impostazioni →
     /// iCloud. Costa quattro fetchCount all'avvio.
     ///
-    /// `events` è il conteggio degli `AccessoryEvent` grezzi, e mancava. È
-    /// l'unico ingresso da cui dipende tutta la pila delle Abitudini
-    /// (`UsageEvidenceService` legge solo quelli), quindi senza quel numero non
-    /// si distingue "le evidenze d'uso non trovano nulla" da "non c'è nulla da
-    /// cui trovarlo" — che è la stessa ambiguità che ha fatto costruire per
-    /// intero tre motori abitudini prima di scoprire che giravano a vuoto.
-    /// `usageSummaries` non basta a scioglierla: l'aggregazione chiude solo le
-    /// settimane ISO complete, quindi resta ferma per giorni anche quando gli
-    /// eventi arrivano.
+    /// `events` è il conteggio degli `AccessoryEvent` grezzi: distingue
+    /// "l'analisi non trova nulla" da "non c'è nulla da cui trovarlo".
+    /// `usageSummaries` non basta: l'aggregazione chiude solo le settimane ISO
+    /// complete, quindi resta ferma per giorni anche quando gli eventi arrivano.
     nonisolated static func logDataHealth(modelContainer: ModelContainer, isMaster: Bool) {
         let ctx = ModelContext(modelContainer)
         let readings  = (try? ctx.fetchCount(FetchDescriptor<SensorReading>())) ?? -1

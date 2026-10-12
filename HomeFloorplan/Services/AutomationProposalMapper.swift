@@ -25,22 +25,10 @@ enum AutomationProposalMapper {
         var scheduleOffsetMinutes: Int
         var presenceKind: String?
         var presenceUserScope: String?
-        /// Trigger "accessoryState" (sequenze A→B): nome dell'accessorio causa
-        /// e stato che innesca (true = si accende/attiva).
-        var triggerAccessoryName: String? = nil
-        var triggerAccessoryActive: Bool? = nil
         /// P2 v2 — condizioni contestuali oltre la primaria (che vive nei campi
         /// sensorType/Threshold/Direction). Risolte per (tipo, stanza): late binding,
         /// nessun ID HomeKit.
         var secondaryConditions: [ContextualCondition] = []
-        /// Nome dell'accessorio effetto: fallback di risoluzione quando l'UUID non
-        /// corrisponde a nessun accessorio locale (gli identifier HomeKit sono
-        /// per-device: le opportunity sincronizzate da un altro device arrivano
-        /// con UUID estranei).
-        var effectAccessoryName: String? = nil
-        /// Target aggiuntivi (per nome) risolti in azioni extra con la stessa
-        /// actionRaw: una proposta raggruppata invece di n proposte fotocopia.
-        var additionalTargetNames: [String] = []
     }
 
     static func chatbotProposal(
@@ -136,114 +124,6 @@ enum AutomationProposalMapper {
         )
         var limitations: [String] = []
         return self.action(from: draft, capabilities: [], scenes: [], limitations: &limitations)
-    }
-
-    static func causeTriggerState(fromSignature signature: String) -> Bool? {
-        let parts = signature.split(separator: ":", omittingEmptySubsequences: false)
-        guard parts.count >= 3, let action = parts.last else { return nil }
-        switch action {
-        case "on", "activate", "dim", "open", "unlock":
-            return true
-        case "off", "close", "lock":
-            return false
-        default:
-            return nil
-        }
-    }
-
-    /// Livello B: proposta da un suggerimento dell'interprete LLM.
-    /// Il target è già risolto in UUID dal servizio (match nome normalizzato).
-    static func proposal(
-        from suggestion: HabitInterpreterCore.RoutineSuggestion,
-        targetAccessoryID: UUID?,
-        capabilities: [AutomationCapabilityDescriptor],
-        scenes: [SceneItem]
-    ) -> AutomationProposal {
-        var draft = Draft(
-            source: .opportunity,
-            title: suggestion.title,
-            explanation: suggestion.explanation,
-            confidence: nil,
-            triggerType: suggestion.triggerType,
-            triggerTime: suggestion.triggerTime,
-            triggerWeekdays: suggestion.weekdays ?? Array(1...7),
-            sensorType: nil,
-            sensorRoom: "",
-            sensorAccessoryName: nil,
-            sensorThreshold: nil,
-            sensorDirection: nil,
-            accessoryIDString: targetAccessoryID?.uuidString,
-            actionRaw: suggestion.action,
-            actionValue: nil,
-            actionValue2: nil,
-            sceneName: nil,
-            scheduleKind: suggestion.scheduleKind,
-            scheduleOffsetMinutes: 0,
-            presenceKind: nil,
-            presenceUserScope: nil,
-            triggerAccessoryName: suggestion.triggerAccessoryName,
-            triggerAccessoryActive: suggestion.triggerType == "accessoryState" ? true : nil
-        )
-        // Fallback per nome sul catalogo capabilities: il resolver a monte usa
-        // allAccessories, ma l'azione è valida solo se il target è nel catalogo
-        // (era la causa del wizard aperto senza azione: "no valid action target").
-        draft.effectAccessoryName = suggestion.targetAccessoryName
-        draft.additionalTargetNames = suggestion.additionalTargetNames ?? []
-        return proposal(from: draft, capabilities: capabilities, scenes: scenes)
-    }
-
-    /// Pivot evidenze: costruisce una proposta dall'evidenza d'uso osservata.
-    /// L'utente è il giudice — la proposta arriva pre-compilata (orario = inizio
-    /// finestra, giorni dal pattern) e si rifinisce nel wizard esistente.
-    static func proposal(
-        from evidence: UsageEvidenceBuilder.Evidence,
-        capabilities: [AutomationCapabilityDescriptor],
-        scenes: [SceneItem]
-    ) -> AutomationProposal {
-        let time = String(format: "%02d:%02d",
-                          evidence.windowStartMinute / 60,
-                          evidence.windowStartMinute % 60)
-        let endTime = String(format: "%02d:%02d",
-                             evidence.windowEndMinute / 60,
-                             evidence.windowEndMinute % 60)
-
-        let weekdays: [Int]
-        switch evidence.weekdayPattern {
-        case .everyDay:      weekdays = Array(1...7)
-        case .weekdays:      weekdays = [2, 3, 4, 5, 6]
-        case .weekend:       weekdays = [1, 7]
-        case .days(let set): weekdays = set.sorted()
-        }
-
-        let draft = Draft(
-            source: .opportunity,
-            title: String(format: String(localized: "evidence.proposal.title",
-                                         defaultValue: "Turn on %@ at %@"),
-                          evidence.accessoryName, time),
-            explanation: String(format: String(localized: "evidence.proposal.explanation",
-                                               defaultValue: "Observed on between %@ and %@ on %d different days over the last %d days."),
-                                time, endTime, evidence.distinctDays, evidence.observedSpanDays),
-            confidence: nil,
-            triggerType: "calendar",
-            triggerTime: time,
-            triggerWeekdays: weekdays,
-            sensorType: nil,
-            sensorRoom: evidence.roomName ?? "",
-            sensorAccessoryName: nil,
-            sensorThreshold: nil,
-            sensorDirection: nil,
-            accessoryIDString: evidence.accessoryID.uuidString,
-            actionRaw: evidence.eventType == "blind" ? "open" : "on",
-            actionValue: nil,
-            actionValue2: nil,
-            sceneName: nil,
-            scheduleKind: nil,
-            scheduleOffsetMinutes: 0,
-            presenceKind: nil,
-            presenceUserScope: nil
-        )
-
-        return proposal(from: draft, capabilities: capabilities, scenes: scenes)
     }
 
     private static func proposal(
@@ -350,23 +230,6 @@ enum AutomationProposalMapper {
             actions.append(action)
         }
 
-        // Azioni extra per i target aggiuntivi (proposte raggruppate).
-        for extraName in draft.additionalTargetNames {
-            var extraDraft = draft
-            extraDraft.accessoryIDString = nil
-            extraDraft.sceneName = nil
-            extraDraft.effectAccessoryName = extraName
-            var extraLimitations: [String] = []
-            if let extra = action(from: extraDraft, capabilities: capabilities,
-                                  scenes: scenes, limitations: &extraLimitations) {
-                actions.append(extra)
-            } else {
-                limitations.append(String(format: String(localized: "automation.proposal.limit.extraTarget",
-                                                         defaultValue: "\"%@\" could not be added as an action."),
-                                          extraName))
-            }
-        }
-
         let unsupportedReason: String?
         if startEvents.isEmpty {
             unsupportedReason = String(localized: "automation.proposal.unsupported.trigger", defaultValue: "This opportunity cannot be converted because its trigger is not supported by the automation builder yet.")
@@ -414,54 +277,10 @@ enum AutomationProposalMapper {
         case "presence", "people":
             return .presence(presenceTrigger(from: draft))
 
-        case "accessoryState":
-            guard let selection = accessoryStateSelection(from: draft, capabilities: capabilities, limitations: &limitations) else {
-                return nil
-            }
-            return .accessory(selection)
-
         default:
             limitations.append(String(localized: "automation.proposal.limit.inAppTrigger", defaultValue: "In-app triggers need to be reviewed before they can become HomeKit automations."))
             return nil
         }
-    }
-
-    /// Selezione trigger per le sequenze A→B: la capability boolean (power/active)
-    /// dell'accessorio causa, risolta per nome (match esatto, poi contains).
-    private static func accessoryStateSelection(
-        from draft: Draft,
-        capabilities: [AutomationCapabilityDescriptor],
-        limitations: inout [String]
-    ) -> AutomationProposalCapabilitySelection? {
-        guard let causeName = draft.triggerAccessoryName?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !causeName.isEmpty,
-              let triggersOnActive = draft.triggerAccessoryActive else {
-            limitations.append(String(localized: "automation.proposal.limit.missingCauseAccessory", defaultValue: "The triggering accessory of this sequence could not be resolved."))
-            return nil
-        }
-
-        let candidates = capabilities.filter { capability in
-            guard capability.supportedRoles.contains(.trigger) else { return false }
-            if case .boolean = capability.valueKind { return true }
-            return false
-        }
-
-        let normalizedCause = causeName.lowercased()
-        let capability = candidates.first { $0.accessoryName.lowercased() == normalizedCause }
-            ?? candidates.first { $0.accessoryName.lowercased().contains(normalizedCause) || normalizedCause.contains($0.accessoryName.lowercased()) }
-
-        guard let capability else {
-            limitations.append(String(localized: "automation.proposal.limit.missingCauseAccessory", defaultValue: "The triggering accessory of this sequence could not be resolved."))
-            return nil
-        }
-
-        return AutomationProposalCapabilitySelection(
-            capabilityID: capability.id,
-            accessoryID: capability.accessoryID,
-            characteristicID: capability.characteristicID,
-            comparisonOperator: triggersOnActive ? .becomesActive : .becomesInactive,
-            targetValue: .bool(triggersOnActive)
-        )
     }
 
     private static func presenceTrigger(from draft: Draft) -> AutomationProposalPresenceTrigger {
@@ -701,23 +520,8 @@ enum AutomationProposalMapper {
             return .scene(AutomationProposalSceneReference(sceneID: scene?.id, name: sceneName))
         }
 
-        let parsedID = draft.accessoryIDString.flatMap(UUID.init(uuidString:))
-
-        // Con un catalogo capability disponibile, un UUID che non corrisponde a
-        // nessun accessorio locale è tipico delle opportunity sincronizzate da un
-        // altro device (gli identifier HomeKit sono per-device): si riabbina per
-        // nome+stanza invece di produrre una proposta senza azioni.
-        let accessoryID: UUID
-        if let parsedID,
-           capabilities.isEmpty || capabilities.contains(where: { $0.accessoryID == parsedID }) {
-            accessoryID = parsedID
-        } else if let fallbackID = effectAccessoryID(
-            named: draft.effectAccessoryName,
-            roomName: draft.sensorRoom,
-            capabilities: capabilities
-        ) {
-            accessoryID = fallbackID
-        } else {
+        guard let accessoryID = draft.accessoryIDString.flatMap(UUID.init(uuidString:)),
+              capabilities.isEmpty || capabilities.contains(where: { $0.accessoryID == accessoryID }) else {
             limitations.append(String(localized: "automation.proposal.limit.missingActionTarget", defaultValue: "The opportunity does not include a valid action target."))
             return nil
         }
@@ -764,36 +568,6 @@ enum AutomationProposalMapper {
             limitations.append(String(localized: "automation.proposal.limit.unsupportedAction", defaultValue: "This action needs the advanced accessory editor and is not converted automatically yet."))
             return nil
         }
-    }
-
-    /// Risoluzione dell'accessorio effetto per nome (match esatto, poi contains),
-    /// preferendo la stessa stanza del trigger quando più accessori condividono il nome.
-    private static func effectAccessoryID(
-        named accessoryName: String?,
-        roomName: String,
-        capabilities: [AutomationCapabilityDescriptor]
-    ) -> UUID? {
-        guard let accessoryName = accessoryName?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !accessoryName.isEmpty else {
-            return nil
-        }
-
-        let normalizedName = accessoryName.lowercased()
-        let normalizedRoom = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let exact = capabilities.filter { $0.accessoryName.lowercased() == normalizedName }
-        let candidates = exact.isEmpty
-            ? capabilities.filter {
-                $0.accessoryName.lowercased().contains(normalizedName) ||
-                normalizedName.contains($0.accessoryName.lowercased())
-            }
-            : exact
-
-        let sameRoom = candidates.first {
-            !normalizedRoom.isEmpty &&
-            $0.roomName.localizedCaseInsensitiveCompare(normalizedRoom) == .orderedSame
-        }
-        return (sameRoom ?? candidates.first)?.accessoryID
     }
 
     private static func accessoryAction(

@@ -19,6 +19,9 @@ final class SyncableSettings {
     // — AI Settings —
     var aiProviderRaw: String           // AIProvider.rawValue
     var aiIsEnabled: Bool
+    /// Non più usato: era l'interruttore dei suggerimenti Abitudini, funzione
+    /// rimossa. Resta nel modello e nel record CloudKit per non cambiare lo
+    /// schema di dati già sincronizzati; si scrive sempre `false`.
     var aiSuggestionsEnabled: Bool
     var aiAnomalyDetectionEnabled: Bool
     var aiRuleEngineEnabled: Bool
